@@ -1,0 +1,8 @@
+{
+  "name": "Watch2Gether Mobile",
+  "description": "Replica sencilla de Watch2Gether optimizada para móvil: añade tu link de peli/vídeo, salas con enlace de invitación y chat en tiempo real.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
