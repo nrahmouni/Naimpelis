@@ -4,7 +4,7 @@ import { Participant } from '../types';
 
 interface RoomJoinScreenProps {
   initialRoomId?: string;
-  onJoinRoom: (roomId: string, user: { name: string; avatar: string; color: string }) => void;
+  onJoinRoom: (roomId: string, user: { name: string; avatar: string; color: string }, hostToken?: string) => void;
 }
 
 const AVATARS = ['🍿', '🎬', '🦁', '🦊', '🐱', '🐶', '👽', '🤖', '👑'];
@@ -18,28 +18,51 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
   const [userName, setUserName] = useState('');
   const [selectedAvatar, setSelectedAvatar] = useState('🍿');
   const [selectedColor, setSelectedColor] = useState('#f43f5e');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleCreateNewRoom = () => {
-    // If the user arrived with an invitation link, use that exact room ID!
-    const targetRoomId = initialRoomId || `sala-${Math.random().toString(36).substring(2, 8)}`;
-    const nameToUse = userName.trim() || `Cinefilo_${Math.floor(Math.random() * 900 + 100)}`;
-    onJoinRoom(targetRoomId, {
-      name: nameToUse,
-      avatar: selectedAvatar,
-      color: selectedColor,
-    });
+  const getUserMeta = () => ({
+    name: userName.trim() || `Cinefilo_${Math.floor(Math.random() * 900 + 100)}`,
+    avatar: selectedAvatar,
+    color: selectedColor,
+  });
+
+  const handleCreateNewRoom = async () => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/rooms', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'Sala de Cine 🍿' }),
+      });
+      if (!response.ok) throw new Error('No se pudo crear la sala.');
+      const room = await response.json();
+      onJoinRoom(room.id, getUserMeta(), room.hostToken);
+    } catch {
+      setError('No se pudo crear la sala. Inténtalo de nuevo.');
+      setIsLoading(false);
+    }
+  };
+
+  const handleJoinRoom = async (targetRoomId: string) => {
+    setIsLoading(true);
+    setError('');
+    try {
+      const response = await fetch(`/api/rooms/${encodeURIComponent(targetRoomId)}`);
+      if (!response.ok) throw new Error('Sala no encontrada.');
+      onJoinRoom(targetRoomId, getUserMeta());
+    } catch {
+      setError('No se encontró esa sala. Comprueba el código de invitación.');
+      setIsLoading(false);
+    }
   };
 
   const handleJoinExisting = (e: React.FormEvent) => {
     e.preventDefault();
     if (roomIdInput.trim()) {
       const cleanRoomId = roomIdInput.trim().replace(/^.*[?&]room=/, '');
-      const nameToUse = userName.trim() || `Cinefilo_${Math.floor(Math.random() * 900 + 100)}`;
-      onJoinRoom(cleanRoomId, {
-        name: nameToUse,
-        avatar: selectedAvatar,
-        color: selectedColor,
-      });
+      void handleJoinRoom(cleanRoomId);
     }
   };
 
@@ -106,21 +129,23 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
             </div>
 
             <button
-              onClick={handleCreateNewRoom}
+              onClick={() => void handleJoinRoom(initialRoomId)}
+              disabled={isLoading}
               className="w-full py-3 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-950/50 active:scale-95 transition-all"
             >
               <Play className="w-4 h-4 fill-white" />
-              <span>Entrar a la Sala Ahora</span>
+              <span>{isLoading ? 'Conectando...' : 'Entrar a la Sala Ahora'}</span>
             </button>
           </div>
         ) : (
           <div className="w-full space-y-4">
             <button
-              onClick={handleCreateNewRoom}
+              onClick={() => void handleCreateNewRoom()}
+              disabled={isLoading}
               className="w-full py-3.5 rounded-2xl bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-950/50 active:scale-95 transition-all"
             >
               <Sparkles className="w-4 h-4" />
-              <span>Crear Nueva Sala de Cine</span>
+              <span>{isLoading ? 'Creando...' : 'Crear Nueva Sala de Cine'}</span>
             </button>
 
             <div className="flex items-center gap-2 my-2">
@@ -140,6 +165,7 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
               />
               <button
                 type="submit"
+                disabled={isLoading}
                 className="px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs flex items-center gap-1 border border-slate-700 transition-colors"
               >
                 <span>Entrar</span>
@@ -148,6 +174,7 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
             </form>
           </div>
         )}
+        {error && <p role="alert" className="w-full mt-3 text-xs text-rose-300">{error}</p>}
       </div>
     </div>
   );

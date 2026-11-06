@@ -1,17 +1,22 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { randomBytes, randomUUID } from 'crypto';
+import { Readable } from 'stream';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { RemoteBrowserManager, isAllowedRemoteBrowserUrl } from './server/RemoteBrowserManager';
+import { RemoteBrowserInput } from './src/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(express.json({ limit: '16kb' }));
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
-
-app.use(express.json());
+const wss = new WebSocketServer({ server: httpServer, path: '/ws', maxPayload: 16 * 1024 });
+const roomHostTokens = new Map<string, string>();
 
 // In-memory room store
 interface RoomStore {
@@ -36,12 +41,15 @@ interface RoomStore {
       isHost: boolean;
       joinedAt: number;
     }[];
+    screenShareActive: boolean;
+    remoteBrowserActive: boolean;
+    remoteBrowserUrl?: string;
     messages: any[];
     createdAt: number;
   };
 }
 
-const rooms: RoomStore = {
+const rooms: RoomStore = Object.assign(Object.create(null), {
   'cinema-pro': {
     id: 'cinema-pro',
     name: 'Sala de Cine Principal 🍿',
@@ -55,6 +63,8 @@ const rooms: RoomStore = {
       lastUpdated: Date.now(),
     },
     participants: [],
+    screenShareActive: false,
+    remoteBrowserActive: false,
     messages: [
       {
         id: 'msg-welcome',
@@ -69,7 +79,7 @@ const rooms: RoomStore = {
     ],
     createdAt: Date.now(),
   },
-};
+});
 
 // WebSocket connection map: client ws -> metadata
 interface ClientMeta {
@@ -82,15 +92,29 @@ interface ClientMeta {
 }
 
 const clients = new Map<WebSocket, ClientMeta>();
+const roomClients = new Map<string, Set<WebSocket>>();
 
 function broadcastToRoom(roomId: string, message: any, excludeWs?: WebSocket) {
   const payload = JSON.stringify(message);
-  clients.forEach((meta, ws) => {
-    if (meta.roomId === roomId && ws.readyState === WebSocket.OPEN && ws !== excludeWs) {
-      ws.send(payload);
+  roomClients.get(roomId)?.forEach((ws) => {
+    if (ws.readyState !== WebSocket.OPEN || ws === excludeWs) return;
+    if (ws.bufferedAmount > 1024 * 1024) {
+      ws.close(1013, 'Slow consumer');
+      return;
     }
+    ws.send(payload);
   });
 }
+
+function sendToParticipant(roomId: string, userId: string, message: any) {
+  const payload = JSON.stringify(message);
+  roomClients.get(roomId)?.forEach((ws) => {
+    const meta = clients.get(ws);
+    if (meta?.userId === userId && ws.readyState === WebSocket.OPEN) ws.send(payload);
+  });
+}
+
+const remoteBrowserManager = new RemoteBrowserManager(broadcastToRoom);
 
 function getOrCreateRoom(roomId: string, roomName?: string) {
   if (!rooms[roomId]) {
@@ -107,6 +131,8 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
         lastUpdated: Date.now(),
       },
       participants: [],
+      screenShareActive: false,
+      remoteBrowserActive: false,
       messages: [
         {
           id: `sys-${Date.now()}`,
@@ -125,32 +151,105 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
   return rooms[roomId];
 }
 
-wss.on('connection', (ws) => {
+const proxyAllowedDomains = (process.env.PROXY_ALLOWED_HOSTS || 'movidy.pw,bingetrix.sc,vidsrc.me,vidsrc.to,vidsrc.pm,autoembed.to')
+  .split(',')
+  .map((domain) => domain.trim().toLowerCase())
+  .filter(Boolean);
+const tmdbCache = new Map<string, { expiresAt: number; value: unknown }>();
+
+function readTmdbCache<T>(key: string): T | undefined {
+  const entry = tmdbCache.get(key);
+  if (!entry) return undefined;
+  if (entry.expiresAt <= Date.now()) {
+    tmdbCache.delete(key);
+    return undefined;
+  }
+  return entry.value as T;
+}
+
+function writeTmdbCache(key: string, value: unknown, ttlMs: number) {
+  if (tmdbCache.size >= 200) tmdbCache.delete(tmdbCache.keys().next().value!);
+  tmdbCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+function parseAllowedProxyUrl(value: string) {
+  const parsed = new URL(value);
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  const isAllowedHost = proxyAllowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || !isAllowedHost) {
+    throw new Error('Proxy destination is not allowed');
+  }
+  return parsed;
+}
+
+async function readTextWithLimit(response: Response, maxBytes: number) {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel();
+      throw new Error('Proxy response is too large');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+wss.on('connection', (ws, request) => {
+  const origin = request.headers.origin;
+  const requestHost = request.headers.host?.toLowerCase();
+  try {
+    if (!origin || !requestHost || new URL(origin).host.toLowerCase() !== requestHost) {
+      ws.close(1008, 'Invalid origin');
+      return;
+    }
+  } catch {
+    ws.close(1008, 'Invalid origin');
+    return;
+  }
+
   clients.set(ws, { ws });
 
   ws.on('message', (raw) => {
     try {
       const data = JSON.parse(raw.toString());
+      if (!data || typeof data !== 'object' || typeof data.type !== 'string' || !data.payload || typeof data.payload !== 'object') return;
       const { type, payload } = data;
 
-      if (type === 'JOIN_ROOM') {
-        const { roomId, userId, userName, userAvatar, userColor } = payload;
-        const room = getOrCreateRoom(roomId);
+      if (type === 'PING') {
+        ws.send(JSON.stringify({ type: 'PONG', payload: { sentAt: payload.sentAt } }));
+        return;
+      }
 
-        // Assign host if first or existing host left
-        if (!room.hostId || room.participants.length === 0) {
-          room.hostId = userId;
+      if (type === 'JOIN_ROOM') {
+        if (clients.get(ws)?.roomId) return;
+        const { roomId, userName, userAvatar, userColor, hostToken } = payload;
+        if (typeof roomId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(roomId)) return;
+        if (typeof userName !== 'string' || userName.length > 40) return;
+        if (typeof userAvatar !== 'string' || userAvatar.length > 16) return;
+        if (typeof userColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(userColor)) return;
+        const room = rooms[roomId];
+        if (!room) {
+          ws.send(JSON.stringify({ type: 'ROOM_ERROR', payload: { message: 'Sala no encontrada' } }));
+          return;
         }
 
+        const userId = randomUUID();
+        const isRoomOwner = typeof hostToken === 'string' && roomHostTokens.get(roomId) === hostToken;
+        const canClaimPublicDemo = room.id === 'cinema-pro' && room.participants.length === 0;
+        if ((isRoomOwner || canClaimPublicDemo) && (!room.hostId || room.hostId === 'system')) room.hostId = userId;
+
         const isHost = room.hostId === userId;
-        
-        // Remove duplicate entry if reconnection
-        room.participants = room.participants.filter(p => p.id !== userId);
         const newParticipant = {
           id: userId,
-          name: userName || 'Invitado',
-          avatar: userAvatar || '🍿',
-          color: userColor || '#3b82f6',
+          name: userName.trim() || 'Invitado',
+          avatar: userAvatar,
+          color: userColor,
           isHost,
           joinedAt: Date.now(),
         };
@@ -164,6 +263,9 @@ wss.on('connection', (ws) => {
           userAvatar,
           userColor,
         });
+        const roomConnections = roomClients.get(roomId) || new Set<WebSocket>();
+        roomConnections.add(ws);
+        roomClients.set(roomId, roomConnections);
 
         // Add system message
         const joinMsg = {
@@ -184,9 +286,10 @@ wss.on('connection', (ws) => {
         ws.send(
           JSON.stringify({
             type: 'ROOM_STATE',
-            payload: room,
+            payload: { ...room, currentUserId: userId },
           })
         );
+        remoteBrowserManager.sendLatestFrame(roomId, ws);
 
         // Broadcast user joined update to others in room
         broadcastToRoom(
@@ -201,10 +304,89 @@ wss.on('connection', (ws) => {
           },
           ws
         );
+        return;
+      }
+
+      const meta = clients.get(ws);
+      if (!meta?.roomId || !meta.userId || payload.roomId !== meta.roomId) return;
+      const room = rooms[meta.roomId];
+      if (!room || !room.participants.some((participant) => participant.id === meta.userId)) return;
+
+      if (type === 'START_REMOTE_BROWSER') {
+        if (room.hostId !== meta.userId) return;
+        const { url } = payload;
+        if (typeof url !== 'string' || url.length > 2048 || !isAllowedRemoteBrowserUrl(url)) {
+          ws.send(JSON.stringify({ type: 'REMOTE_BROWSER_ERROR', payload: { message: 'El dominio no está permitido para el navegador remoto.' } }));
+          return;
+        }
+        room.remoteBrowserActive = false;
+        remoteBrowserManager.start(meta.roomId, meta.userId, url)
+          .then(() => {
+            room.remoteBrowserActive = true;
+            room.remoteBrowserUrl = url;
+            room.videoState.url = url;
+            room.videoState.sourceType = 'iframe';
+            room.videoState.currentTime = 0;
+            room.videoState.isPlaying = true;
+            room.videoState.lastUpdated = Date.now();
+            broadcastToRoom(meta.roomId!, {
+              type: 'REMOTE_BROWSER_READY',
+              payload: { url, width: 1280, height: 720 },
+            });
+            broadcastToRoom(meta.roomId!, {
+              type: 'VIDEO_STATE_UPDATED',
+              payload: { videoState: room.videoState, action: 'change_url' },
+            });
+          })
+          .catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : 'No se pudo iniciar Chromium.';
+            sendToParticipant(meta.roomId!, meta.userId!, {
+              type: 'REMOTE_BROWSER_ERROR',
+              payload: { message },
+            });
+          });
+      } else if (type === 'REMOTE_BROWSER_INPUT') {
+        if (room.hostId !== meta.userId) return;
+        void remoteBrowserManager.input(meta.roomId, meta.userId, payload.input as RemoteBrowserInput)
+          .catch(() => sendToParticipant(meta.roomId!, meta.userId!, {
+            type: 'REMOTE_BROWSER_ERROR',
+            payload: { message: 'No se pudo aplicar la interacción al navegador remoto.' },
+          }));
+      } else if (type === 'STOP_REMOTE_BROWSER') {
+        if (room.hostId !== meta.userId) return;
+        void remoteBrowserManager.stop(meta.roomId).then(() => {
+          room.remoteBrowserActive = false;
+          room.remoteBrowserUrl = undefined;
+          broadcastToRoom(meta.roomId!, { type: 'REMOTE_BROWSER_STOPPED', payload: {} });
+        });
+      } else if (type === 'UPDATE_PROFILE') {
+        const { userName, userAvatar, userColor } = payload;
+        if (typeof userName !== 'string' || !userName.trim() || userName.length > 40) return;
+        if (typeof userAvatar !== 'string' || userAvatar.length > 16) return;
+        if (typeof userColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(userColor)) return;
+        meta.userName = userName.trim();
+        meta.userAvatar = userAvatar;
+        meta.userColor = userColor;
+        const participant = room.participants.find((item) => item.id === meta.userId);
+        if (participant) {
+          participant.name = meta.userName;
+          participant.avatar = meta.userAvatar;
+          participant.color = meta.userColor;
+        }
+        broadcastToRoom(meta.roomId, {
+          type: 'PARTICIPANTS_UPDATED',
+          payload: { participants: room.participants, hostId: room.hostId },
+        });
       } else if (type === 'SYNC_VIDEO_STATE') {
+        if (room.hostId !== meta.userId) return;
         const { roomId, action, videoUrl, videoTitle, sourceType, currentTime, isPlaying, updatedBy, poster, overview, releaseYear, originalPortalUrl, altEmbeds, trailerUrl } = payload;
-        const room = rooms[roomId];
-        if (!room) return;
+        if (!['play', 'pause', 'seek', 'change_url'].includes(action)) return;
+        if (videoUrl !== undefined && (typeof videoUrl !== 'string' || videoUrl.length > 2048)) return;
+        if (videoTitle !== undefined && (typeof videoTitle !== 'string' || videoTitle.length > 300)) return;
+        if (sourceType !== undefined && !['youtube', 'vimeo', 'direct', 'iframe'].includes(sourceType)) return;
+        if (currentTime !== undefined && (typeof currentTime !== 'number' || !Number.isFinite(currentTime) || currentTime < 0 || currentTime > 86400)) return;
+        if (isPlaying !== undefined && typeof isPlaying !== 'boolean') return;
+        if (altEmbeds !== undefined && (!Array.isArray(altEmbeds) || altEmbeds.length > 10 || altEmbeds.some((url: unknown) => typeof url !== 'string' || url.length > 2048))) return;
 
         if (videoUrl !== undefined) room.videoState.url = videoUrl;
         if (videoTitle !== undefined) room.videoState.title = videoTitle;
@@ -219,19 +401,20 @@ wss.on('connection', (ws) => {
         if (trailerUrl !== undefined) (room.videoState as any).trailerUrl = trailerUrl;
         
         room.videoState.lastUpdated = Date.now();
-        room.videoState.updatedBy = updatedBy;
+        room.videoState.updatedBy = meta.userName;
 
         let systemMsgText = '';
         if (action === 'change_url') {
-          systemMsgText = `🎬 ${updatedBy || 'Un usuario'} cambió el vídeo a "${videoTitle || 'nuevo vídeo'}"`;
+          systemMsgText = `🎬 ${meta.userName || 'Un usuario'} cambió el vídeo a "${videoTitle || 'nuevo vídeo'}"`;
         } else if (action === 'play') {
-          systemMsgText = `▶️ ${updatedBy || 'Un usuario'} reprodujo el vídeo`;
+          systemMsgText = `▶️ ${meta.userName || 'Un usuario'} reprodujo el vídeo`;
         } else if (action === 'pause') {
-          systemMsgText = `⏸️ ${updatedBy || 'Un usuario'} pausó el vídeo`;
+          systemMsgText = `⏸️ ${meta.userName || 'Un usuario'} pausó el vídeo`;
         } else if (action === 'seek') {
-          systemMsgText = `⏩ ${updatedBy || 'Un usuario'} saltó a otra parte del vídeo`;
+          systemMsgText = `⏩ ${meta.userName || 'Un usuario'} saltó a otra parte del vídeo`;
         }
 
+        let roomMessage;
         if (systemMsgText) {
           const sysMsg = {
             id: `sys-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -244,29 +427,29 @@ wss.on('connection', (ws) => {
             isSystem: true,
             systemType: action,
           };
+          roomMessage = sysMsg;
           room.messages.push(sysMsg);
           if (room.messages.length > 150) room.messages.shift();
         }
 
-        broadcastToRoom(roomId, {
+        broadcastToRoom(meta.roomId, {
           type: 'VIDEO_STATE_UPDATED',
           payload: {
             videoState: room.videoState,
             action,
-            messages: room.messages,
+            message: roomMessage,
           },
         });
       } else if (type === 'SEND_CHAT') {
-        const { roomId, text, senderId, senderName, senderAvatar, senderColor } = payload;
-        const room = rooms[roomId];
-        if (!room || !text.trim()) return;
+        const { text } = payload;
+        if (typeof text !== 'string' || !text.trim() || text.length > 1000) return;
 
         const newMsg = {
           id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          senderId,
-          senderName,
-          senderAvatar,
-          senderColor,
+          senderId: meta.userId,
+          senderName: meta.userName,
+          senderAvatar: meta.userAvatar,
+          senderColor: meta.userColor,
           text: text.trim(),
           timestamp: Date.now(),
         };
@@ -274,42 +457,59 @@ wss.on('connection', (ws) => {
         room.messages.push(newMsg);
         if (room.messages.length > 150) room.messages.shift();
 
-        broadcastToRoom(roomId, {
+        broadcastToRoom(meta.roomId, {
           type: 'NEW_CHAT_MESSAGE',
           payload: newMsg,
         });
       } else if (type === 'SEND_REACTION') {
-        const { roomId, emoji, senderName, senderColor } = payload;
-        const room = rooms[roomId];
-        if (!room) return;
+        const { emoji } = payload;
+        if (typeof emoji !== 'string' || emoji.length > 16) return;
 
         const reaction = {
           id: `react-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           emoji,
-          senderName,
-          senderColor,
+          senderName: meta.userName,
+          senderColor: meta.userColor,
           timestamp: Date.now(),
         };
 
-        broadcastToRoom(roomId, {
+        broadcastToRoom(meta.roomId, {
           type: 'FLOATING_REACTION',
           payload: reaction,
         });
       } else if (type === 'WEBRTC_SIGNAL') {
-        const { roomId, signalData, targetId, senderId } = payload;
-        broadcastToRoom(roomId, {
+        const { signalData, targetId } = payload;
+        if (!signalData || typeof signalData !== 'object' || Array.isArray(signalData) || typeof signalData.type !== 'string' || typeof targetId !== 'string') return;
+        if (!['screen_share_started', 'screen_share_stopped', 'request_offer', 'offer', 'answer', 'candidate'].includes(signalData.type)) return;
+        if (targetId !== 'all' && !room.participants.some((participant) => participant.id === targetId)) return;
+        if ((signalData.type === 'screen_share_started' || signalData.type === 'screen_share_stopped') && (meta.userId !== room.hostId || targetId !== 'all')) return;
+        if (signalData.type === 'request_offer' && (targetId !== room.hostId || meta.userId === room.hostId)) return;
+        if (signalData.type === 'offer' && (meta.userId !== room.hostId || targetId === room.hostId)) return;
+        if (signalData.type === 'answer' && (meta.userId === room.hostId || targetId !== room.hostId)) return;
+        if (signalData.type === 'screen_share_started') room.screenShareActive = true;
+        if (signalData.type === 'screen_share_stopped') room.screenShareActive = false;
+        const signalMessage = {
           type: 'WEBRTC_SIGNAL',
           payload: {
             signalData,
             targetId,
-            senderId,
+            senderId: meta.userId,
           },
-        }, ws);
+        };
+        if (targetId === 'all') broadcastToRoom(meta.roomId, signalMessage, ws);
+        else sendToParticipant(meta.roomId, targetId, signalMessage);
       } else if (type === 'TRANSFER_HOST') {
-        const { roomId, newHostId } = payload;
-        const room = rooms[roomId];
-        if (!room) return;
+        if (room.hostId !== meta.userId) return;
+        const { newHostId } = payload;
+        if (typeof newHostId !== 'string' || !room.participants.some((participant) => participant.id === newHostId)) return;
 
+        if (room.screenShareActive) {
+          room.screenShareActive = false;
+          broadcastToRoom(meta.roomId, {
+            type: 'WEBRTC_SIGNAL',
+            payload: { signalData: { type: 'screen_share_stopped' }, targetId: 'all', senderId: meta.userId },
+          });
+        }
         room.hostId = newHostId;
         room.participants.forEach(p => {
           p.isHost = p.id === newHostId;
@@ -328,8 +528,9 @@ wss.on('connection', (ws) => {
           systemType: 'host_change',
         };
         room.messages.push(sysMsg);
+        if (room.messages.length > 150) room.messages.shift();
 
-        broadcastToRoom(roomId, {
+        broadcastToRoom(meta.roomId, {
           type: 'HOST_TRANSFERRED',
           payload: {
             hostId: newHostId,
@@ -346,16 +547,37 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     const meta = clients.get(ws);
     clients.delete(ws);
+    if (meta?.roomId) {
+      const roomConnections = roomClients.get(meta.roomId);
+      roomConnections?.delete(ws);
+      if (roomConnections?.size === 0) roomClients.delete(meta.roomId);
+    }
 
     if (meta && meta.roomId && meta.userId) {
       const room = rooms[meta.roomId];
       if (room) {
         room.participants = room.participants.filter((p) => p.id !== meta.userId);
+        if (room.hostId === meta.userId && room.screenShareActive) {
+          room.screenShareActive = false;
+          broadcastToRoom(meta.roomId, {
+            type: 'WEBRTC_SIGNAL',
+            payload: { signalData: { type: 'screen_share_stopped' }, targetId: 'all', senderId: 'system' },
+          }, ws);
+        }
+        if (room.hostId === meta.userId && room.remoteBrowserActive) {
+          void remoteBrowserManager.stop(meta.roomId).then(() => {
+            room.remoteBrowserActive = false;
+            room.remoteBrowserUrl = undefined;
+            broadcastToRoom(meta.roomId!, { type: 'REMOTE_BROWSER_STOPPED', payload: {} });
+          });
+        }
         
         // Host migration if host left
-        if (room.hostId === meta.userId && room.participants.length > 0) {
-          room.hostId = room.participants[0].id;
-          room.participants[0].isHost = true;
+        if (room.hostId === meta.userId) {
+          room.hostId = room.participants[0]?.id || '';
+          room.participants.forEach((participant) => {
+            participant.isHost = participant.id === room.hostId;
+          });
         }
 
         const leaveMsg = {
@@ -370,6 +592,7 @@ wss.on('connection', (ws) => {
           systemType: 'leave',
         };
         room.messages.push(leaveMsg);
+        if (room.messages.length > 150) room.messages.shift();
 
         broadcastToRoom(meta.roomId, {
           type: 'PARTICIPANTS_UPDATED',
@@ -395,16 +618,21 @@ app.get('/api/rooms/:roomId', (req, res) => {
 
 app.post('/api/rooms', (req, res) => {
   const { name } = req.body;
-  const roomId = `room-${Math.random().toString(36).substring(2, 8)}`;
+  if (name !== undefined && (typeof name !== 'string' || name.length > 80)) {
+    return res.status(400).json({ error: 'Invalid room name' });
+  }
+  const roomId = `room-${randomUUID()}`;
+  const hostToken = randomBytes(32).toString('base64url');
   const room = getOrCreateRoom(roomId, name);
-  res.json(room);
+  roomHostTokens.set(roomId, hostToken);
+  res.json({ id: room.id, name: room.name, hostToken });
 });
 
 // Movie Resolver: Automatically recognizes movie URLs (like bingetrix.sc/watch/1423191, tmdb, etc.)
 app.get('/api/resolve-movie', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   const queryUrl = (req.query.url as string) || '';
-  if (!queryUrl) {
+  if (!queryUrl || queryUrl.length > 2048) {
     return res.status(400).json({ success: false, error: 'Missing url parameter' });
   }
 
@@ -412,14 +640,18 @@ app.get('/api/resolve-movie', async (req, res) => {
     // Check if it's a Bingetrix URL (e.g. bingetrix.sc/watch/1423191) or default TMDB ID
     const bingetrixMatch = queryUrl.match(/(?:bingetrix\.[a-z]+\/(?:watch|movie|tv)\/|tmdb\/|movie\/)(\d+)/i);
     const tmdbId = bingetrixMatch ? bingetrixMatch[1] : '1423191';
-    const tmdbApiKey = '90b2cae8d7161e8ba0f3836240d7d352';
+    const tmdbApiKey = process.env.TMDB_API_KEY;
+    if (!tmdbApiKey) return res.status(503).json({ success: false, error: 'Movie metadata is unavailable' });
+    const cacheKey = `resolve:${tmdbId}`;
+    const cached = readTmdbCache<Record<string, unknown>>(cacheKey);
+    if (cached) return res.json({ ...cached, originalUrl: queryUrl });
 
     // Query TMDB for movie details & trailers
     const [movieRes, videosRes] = await Promise.all([
-      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}&language=es-ES`)
+      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}&language=es-ES`, { signal: AbortSignal.timeout(8000) })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
-      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/videos?api_key=${tmdbApiKey}`)
+      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/videos?api_key=${tmdbApiKey}`, { signal: AbortSignal.timeout(8000) })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     ]);
@@ -441,7 +673,7 @@ app.get('/api/resolve-movie', async (req, res) => {
       `https://autoembed.to/movie/tmdb/${tmdbId}`,
     ];
 
-    return res.json({
+    const result = {
       success: true,
       type: 'movie_portal',
       tmdbId,
@@ -451,8 +683,9 @@ app.get('/api/resolve-movie', async (req, res) => {
       releaseYear,
       trailerUrl,
       streamEmbeds,
-      originalUrl: queryUrl,
-    });
+    };
+    writeTmdbCache(cacheKey, result, 60 * 60 * 1000);
+    return res.json({ ...result, originalUrl: queryUrl });
   } catch (err: any) {
     console.error('Error resolving movie URL:', err);
     return res.status(500).json({ success: false, error: 'Failed to resolve movie URL' });
@@ -462,14 +695,20 @@ app.get('/api/resolve-movie', async (req, res) => {
 // Movie Catalog Search Endpoint for Virtual Browser Movie Finder
 app.get('/api/search-movies', async (req, res) => {
   const query = (req.query.query as string) || '';
-  const tmdbApiKey = '90b2cae8d7161e8ba0f3836240d7d352';
+  if (query.length > 120) return res.status(400).json({ error: 'Search query is too long' });
+  const tmdbApiKey = process.env.TMDB_API_KEY;
+  if (!tmdbApiKey) return res.status(503).json({ error: 'Movie catalog is unavailable' });
 
   try {
+    const normalizedQuery = query.trim().toLowerCase();
+    const cacheKey = `search:${normalizedQuery || 'trending'}`;
+    const cached = readTmdbCache<{ results: unknown[] }>(cacheKey);
+    if (cached) return res.json(cached);
     const searchUrl = query.trim()
       ? `https://api.themoviedb.org/3/search/multi?api_key=${tmdbApiKey}&language=es-ES&query=${encodeURIComponent(query)}&page=1`
       : `https://api.themoviedb.org/3/trending/movie/week?api_key=${tmdbApiKey}&language=es-ES`;
 
-    const r = await fetch(searchUrl);
+    const r = await fetch(searchUrl, { signal: AbortSignal.timeout(8000) });
     const data = await r.json();
 
     const items = (data.results || [])
@@ -509,7 +748,9 @@ app.get('/api/search-movies', async (req, res) => {
         };
       });
 
-    res.json({ results: items });
+    const result = { results: items };
+    writeTmdbCache(cacheKey, result, normalizedQuery ? 30 * 60 * 1000 : 5 * 60 * 1000);
+    res.json(result);
   } catch (err: any) {
     console.error('Search movies error:', err);
     res.status(500).json({ error: 'Error al buscar películas' });
@@ -520,40 +761,50 @@ app.get('/api/search-movies', async (req, res) => {
 app.get('/api/proxy-web', async (req, res) => {
   const targetUrl = (req.query.url as string) || '';
   const roomId = (req.query.roomId as string) || '';
-  
-  // Check if URL is incomplete or missing a proper TLD extension
-  const hasValidTld = /\.[a-z]{2,}(\/|$)/i.test(targetUrl);
-  if (!targetUrl || !hasValidTld) {
-    return res.status(200).send(`
-      <div style="background:#090d16;color:#e2e8f0;padding:24px;font-family:sans-serif;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
-        <h3 style="margin-bottom:8px;color:#f87171;">Introduce una dirección web válida</h3>
-        <p style="color:#94a3b8;font-size:13px;max-width:400px;margin-bottom:16px;">Escribe un dominio completo con su extensión (ej: movidy.pw) o usa el buscador de películas.</p>
-        <a href="/api/proxy-web?url=${encodeURIComponent('https://movidy.pw/')}&roomId=${encodeURIComponent(roomId)}" style="background:#2563eb;color:white;padding:10px 20px;border-radius:12px;text-decoration:none;font-size:13px;font-weight:bold;">Ir a Movidy.pw</a>
-      </div>
-    `);
+  if (!targetUrl || targetUrl.length > 2048 || !/^[a-zA-Z0-9_-]{1,100}$/.test(roomId)) {
+    return res.status(400).json({ error: 'Invalid proxy request' });
   }
 
   try {
-    let finalUrl = targetUrl;
-    if (!/^https?:\/\//i.test(finalUrl)) {
-      finalUrl = 'https://' + finalUrl;
+    let parsed = parseAllowedProxyUrl(/^https?:\/\//i.test(targetUrl) ? targetUrl : `https://${targetUrl}`);
+    let response: Response | undefined;
+    for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        response = await fetch(parsed, {
+          redirect: 'manual',
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+            ...(typeof req.headers.range === 'string' ? { Range: req.headers.range } : {}),
+          },
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers.get('location');
+      await response.body?.cancel();
+      if (!location || redirectCount === 5) throw new Error('Too many proxy redirects');
+      parsed = parseAllowedProxyUrl(new URL(location, parsed).toString());
     }
-    const parsed = new URL(finalUrl);
-    const response = await fetch(finalUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-      },
-    });
+    if (!response) throw new Error('Proxy upstream unavailable');
+    const finalUrl = parsed.toString();
 
     const contentType = response.headers.get('content-type') || 'text/html';
-    res.setHeader('Content-Type', contentType);
-    res.removeHeader('X-Frame-Options');
-    res.removeHeader('Content-Security-Policy');
+    res.status(response.status).setHeader('Content-Type', contentType);
 
     if (contentType.includes('text/html')) {
-      let html = await response.text();
+      if (Number(response.headers.get('content-length')) > 5 * 1024 * 1024) {
+        return res.status(413).send('La página externa supera el tamaño permitido.');
+      }
+      let html = await readTextWithLimit(response, 5 * 1024 * 1024);
+      const baseHref = parsed.origin.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      const jsString = (value: string) => JSON.stringify(value).replace(/</g, '\\u003c');
+      const encodedRoomId = encodeURIComponent(roomId);
 
       // Interceptor script injected into virtual browser:
       // 1. Intercepts link clicks and form submits, converting them to proxy URLs
@@ -561,7 +812,7 @@ app.get('/api/proxy-web', async (req, res) => {
       // 3. Intercepts HTML5 video play, pause, seek and timeupdate events to synchronize playback across room
       // 4. Blocks popunder and intrusive new window redirects (window.open = noop)
       const syncScript = `
-        <base href="${parsed.origin}/">
+        <base href="${baseHref}/">
         <script>
           (function() {
             // Block popups and intrusive ads
@@ -575,11 +826,11 @@ app.get('/api/proxy-web', async (req, res) => {
                 const href = link.getAttribute('href');
                 if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
                   e.preventDefault();
-                  let resolved = new URL(href, "${finalUrl}").href;
+                  let resolved = new URL(href, ${jsString(finalUrl)}).href;
                   if (window.parent && window.parent !== window) {
                     window.parent.postMessage({ type: 'VIRTUAL_BROWSER_NAVIGATE', url: resolved }, '*');
                   }
-                  window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved) + '&roomId=${roomId}';
+                  window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved) + '&roomId=${encodedRoomId}';
                 }
               }
             }, true);
@@ -644,7 +895,7 @@ app.get('/api/proxy-web', async (req, res) => {
             // Notify parent when DOM finishes loading
             window.addEventListener('load', function() {
               if (window.parent && window.parent !== window) {
-                window.parent.postMessage({ type: 'VIRTUAL_BROWSER_URL_CHANGED', url: "${finalUrl}" }, '*');
+                window.parent.postMessage({ type: 'VIRTUAL_BROWSER_URL_CHANGED', url: ${jsString(finalUrl)} }, '*');
               }
             });
           })();
@@ -653,7 +904,7 @@ app.get('/api/proxy-web', async (req, res) => {
 
       // Rewrite child iframe src attributes to route through /api/proxy-web so inner video elements are ALSO proxied and intercepted!
       html = html.replace(/<iframe\s+([^>]*?)src=["'](https?:\/\/[^"']+)["']/gi, (match, prefix, iframeSrc) => {
-        const proxiedIframeSrc = `/api/proxy-web?url=${encodeURIComponent(iframeSrc)}&roomId=${roomId}`;
+        const proxiedIframeSrc = `/api/proxy-web?url=${encodeURIComponent(iframeSrc)}&roomId=${encodedRoomId}`;
         return `<iframe ${prefix}src="${proxiedIframeSrc}"`;
       });
 
@@ -665,17 +916,16 @@ app.get('/api/proxy-web', async (req, res) => {
       return res.send(html);
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    res.send(Buffer.from(arrayBuffer));
+    res.status(response.status).setHeader('Content-Type', contentType);
+    for (const header of ['content-length', 'content-range', 'accept-ranges', 'cache-control']) {
+      const value = response.headers.get(header);
+      if (value) res.setHeader(header, value);
+    }
+    if (!response.body) return res.end();
+    Readable.fromWeb(response.body as any).on('error', () => res.destroy()).pipe(res);
   } catch (err: any) {
     console.error('Virtual browser proxy error:', err);
-    res.status(200).send(`
-      <div style="background:#090d16;color:#e2e8f0;padding:24px;font-family:sans-serif;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
-        <h3 style="margin-bottom:8px;color:#f87171;">Cargando Movidy / Portal Externo</h3>
-        <p style="color:#94a3b8;font-size:13px;max-width:400px;margin-bottom:16px;">El sitio externo puede requerir apertura directa o estar protegido contra incrustación por proxy.</p>
-        <a href="${targetUrl}" target="_blank" style="background:#2563eb;color:white;padding:10px 20px;border-radius:12px;text-decoration:none;font-size:13px;font-weight:bold;box-shadow:0 4px 12px rgba(37,99,235,0.4);">Abrir Portal en Pestaña Nueva</a>
-      </div>
-    `);
+    res.status(502).send('No se pudo cargar el sitio externo.');
   }
 });
 

@@ -13,8 +13,15 @@ import {
   Maximize2,
   Minimize2,
   Play,
-  Star
+  Star,
+  Youtube,
+  FileVideo,
 } from 'lucide-react';
+import { SAMPLE_VIDEOS } from '../data/sampleVideos';
+import { VideoState } from '../types';
+import { parseVideoUrl } from '../utils/videoParser';
+import { RemoteBrowserViewport } from './RemoteBrowserViewport';
+import { socketService } from '../services/socket';
 
 interface MovieItem {
   id: number;
@@ -32,7 +39,8 @@ interface MovieItem {
 
 interface VirtualChromeBrowserProps {
   currentUrl: string;
-  videoState?: any;
+  videoState?: VideoState;
+  remoteBrowserActive: boolean;
   isHost: boolean;
   roomId: string;
   onNavigate: (newUrl: string, title?: string) => void;
@@ -43,6 +51,7 @@ interface VirtualChromeBrowserProps {
 export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   currentUrl,
   videoState,
+  remoteBrowserActive,
   isHost,
   roomId,
   onNavigate,
@@ -53,9 +62,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [addressInput, setAddressInput] = useState(currentUrl || 'https://bingetrix.sc/watch/1423191');
   const [movies, setMovies] = useState<MovieItem[]>([]);
-  const [selectedMovie, setSelectedMovie] = useState<MovieItem | null>(null);
   const [isLoadingMovies, setIsLoadingMovies] = useState(false);
-  const [isLoadingWeb, setIsLoadingWeb] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Sync state for iframe video
@@ -77,6 +84,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   // Listen for navigation & video sync postMessages sent by proxied iframe
   useEffect(() => {
     const handleProxyMessage = (event: MessageEvent) => {
+      if (event.source !== iframeRef.current?.contentWindow) return;
       if (!event.data) return;
 
       if (
@@ -108,6 +116,13 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
     window.addEventListener('message', handleProxyMessage);
     return () => window.removeEventListener('message', handleProxyMessage);
   }, [currentUrl, isHost, onNavigate, onPlaybackChange]);
+
+  useEffect(() => socketService.subscribe(({ type, payload }) => {
+    if ((type === 'REMOTE_BROWSER_LOCATION' || type === 'REMOTE_BROWSER_FRAME') && typeof payload?.url === 'string') {
+      setAddressInput(payload.url);
+      setActiveTab('web');
+    }
+  }), []);
 
   // When remote videoState updates (e.g. Host seeks to 15:51), forward command to iframe!
   useEffect(() => {
@@ -171,7 +186,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   };
 
   const handleSelectMovie = (movie: MovieItem) => {
-    setSelectedMovie(movie);
     // Switch to web player tab and navigate both users
     setActiveTab('web');
     setAddressInput(movie.streamUrl);
@@ -199,6 +213,9 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   };
 
   const isDirectEmbedProvider = /vidsrc|autoembed|2embed|\/embed\//i.test(addressInput);
+  const isPlaybackControllable = ['youtube', 'direct'].includes(parseVideoUrl(addressInput).type) || remoteBrowserActive;
+  const youtubeSample = SAMPLE_VIDEOS.find((video) => video.id === 'yt-blender-movie');
+  const directSample = SAMPLE_VIDEOS.find((video) => video.id === 'big-buck-bunny');
 
   const proxyUrl = isDirectEmbedProvider
     ? addressInput
@@ -227,19 +244,32 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
             <span>Buscador / Catálogo</span>
           </button>
 
-          {/* Movidy Quick Portal Button */}
+          {/* Supported playback sources */}
           <button
             onClick={() => {
-              const movidyUrl = 'https://movidy.pw/';
-              setAddressInput(movidyUrl);
+              if (!youtubeSample) return;
+              setAddressInput(youtubeSample.url);
               setActiveTab('web');
-              onNavigate(movidyUrl, 'Movidy Películas');
+              onNavigate(youtubeSample.url, youtubeSample.title);
             }}
-            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold transition-all shadow-md shrink-0 active:scale-95"
-            title="Abrir Movidy"
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-200 ring-1 ring-rose-300/20 hover:bg-rose-500/25 text-xs font-semibold transition-colors shrink-0"
+            title="Reproducir el vídeo de muestra de YouTube con sincronización"
           >
-            <Globe className="w-3.5 h-3.5" />
-            <span>Movidy.pw</span>
+            <Youtube className="w-3.5 h-3.5" />
+            <span>YouTube</span>
+          </button>
+          <button
+            onClick={() => {
+              if (!directSample) return;
+              setAddressInput(directSample.url);
+              setActiveTab('web');
+              onNavigate(directSample.url, directSample.title);
+            }}
+            className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-emerald-500/15 text-emerald-200 ring-1 ring-emerald-300/20 hover:bg-emerald-500/25 text-xs font-semibold transition-colors shrink-0"
+            title="Reproducir un archivo MP4 de muestra con sincronización"
+          >
+            <FileVideo className="w-3.5 h-3.5" />
+            <span>MP4</span>
           </button>
 
           {/* Tab 2: Virtual Web Browser View */}
@@ -258,8 +288,12 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
 
         {/* Window controls */}
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-md font-mono hidden sm:inline-block">
-            Sincronizado
+          <span className={`text-[10px] px-2 py-0.5 rounded-md font-medium hidden sm:inline-block ${
+            isPlaybackControllable
+              ? 'text-emerald-200 bg-emerald-500/10 border border-emerald-400/20'
+              : 'text-amber-100 bg-amber-500/10 border border-amber-300/20'
+          }`}>
+            {remoteBrowserActive ? 'Navegador remoto sincronizado' : isPlaybackControllable ? 'Reproducción sincronizable' : 'Solo se comparte el enlace'}
           </span>
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
@@ -276,13 +310,13 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
         <div className="flex items-center gap-1 text-slate-300 shrink-0">
           <button
             onClick={() => {
-              const bUrl = 'https://bingetrix.sc/watch/1423191';
-              setAddressInput(bUrl);
+              if (!youtubeSample) return;
+              setAddressInput(youtubeSample.url);
               setActiveTab('web');
-              onNavigate(bUrl, 'Bingetrix');
+              onNavigate(youtubeSample.url, youtubeSample.title);
             }}
             className="p-1 rounded hover:bg-slate-800 text-rose-400 hover:text-rose-300"
-            title="Ir a inicio de Bingetrix"
+            title="Abrir vídeo de muestra sincronizable"
           >
             <Home className="w-3.5 h-3.5" />
           </button>
@@ -294,10 +328,10 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
               onNavigate(addressInput, 'Película Sincronizada');
             }}
             className="flex items-center gap-1 px-2 py-1 rounded bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition-all active:scale-95"
-            title="Sincronizar y recargar esta película en las pantallas de todos los invitados"
+            title={isPlaybackControllable ? 'Enviar estado de reproducción a la sala' : 'Abrir esta dirección en las pantallas de la sala'}
           >
             <RotateCw className="w-3.5 h-3.5" />
-            <span className="text-[10px] hidden xs:inline">Sincronizar</span>
+            <span className="text-[10px] hidden xs:inline">{isPlaybackControllable ? 'Sincronizar' : 'Abrir para todos'}</span>
           </button>
         </div>
 
@@ -411,15 +445,27 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
         ) : (
           /* Web Browser Viewport */
           <div className="w-full h-full relative group">
-            <iframe
-              ref={iframeRef}
-              src={proxyUrl}
-              title="Virtual Chrome Player"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
-              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-              allowFullScreen
-              className="w-full h-full border-0 bg-black"
-            />
+            {!isPlaybackControllable && (
+              <div
+                role="status"
+                className="absolute inset-x-3 top-3 z-10 rounded-xl border border-amber-200/15 bg-slate-950/90 px-3 py-2 text-xs leading-relaxed text-slate-200 shadow-lg backdrop-blur"
+              >
+                Este reproductor externo no permite control remoto. Para mostrar el mismo instante, el anfitrión puede compartir su pantalla.
+              </div>
+            )}
+            {videoState?.sourceType === 'iframe' ? (
+              <RemoteBrowserViewport isHost={isHost} active={remoteBrowserActive} />
+            ) : (
+              <iframe
+                ref={iframeRef}
+                src={proxyUrl}
+                title="Virtual Chrome Player"
+                sandbox="allow-scripts allow-forms allow-presentation"
+                allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+                allowFullScreen
+                className="h-full w-full border-0 bg-black"
+              />
+            )}
           </div>
         )}
       </div>

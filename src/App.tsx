@@ -35,6 +35,8 @@ export default function App() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
+  const [remoteBrowserActive, setRemoteBrowserActive] = useState(false);
+  const [remoteBrowserError, setRemoteBrowserError] = useState('');
 
   const [videoState, setVideoState] = useState<VideoState>({
     url: 'https://movidy.pw/',
@@ -56,27 +58,37 @@ export default function App() {
   useEffect(() => {
     if (!joinedRoom) return;
     const interval = setInterval(() => {
-      const start = performance.now();
-      fetch('/api/rooms/' + encodeURIComponent(roomId))
-        .then(() => {
-          const roundTrip = Math.round(performance.now() - start);
-          setLatencyMs(roundTrip);
-        })
-        .catch(() => {});
+      socketService.ping();
     }, 4000);
 
     return () => clearInterval(interval);
-  }, [joinedRoom, roomId]);
+  }, [joinedRoom]);
 
   // Subscribe to real-time events once connected
   useEffect(() => {
     if (!joinedRoom || !roomId) return;
 
     const unsubscribe = socketService.subscribe(({ type, payload }) => {
-      if (type === 'ROOM_STATE') {
+      if (type === 'PONG') {
+        setLatencyMs(Math.round(performance.now() - payload.sentAt));
+      } else if (type === 'REMOTE_BROWSER_READY') {
+        setRemoteBrowserActive(true);
+        setRemoteBrowserError('');
+      } else if (type === 'REMOTE_BROWSER_STOPPED') {
+        setRemoteBrowserActive(false);
+      } else if (type === 'REMOTE_BROWSER_ERROR') {
+        setRemoteBrowserActive(false);
+        setRemoteBrowserError(payload?.message || 'No se pudo iniciar el navegador remoto.');
+      } else if (type === 'ROOM_STATE') {
         setHostId(payload.hostId);
         setRoomName(payload.name || `Sala ${roomId}`);
         setParticipants(payload.participants || []);
+        setIsScreenSharing(payload.screenShareActive || false);
+        setRemoteBrowserActive(payload.remoteBrowserActive || false);
+        setRemoteBrowserError('');
+        if (payload.currentUserId) {
+          setCurrentUser((prev) => ({ ...prev, id: payload.currentUserId }));
+        }
         if (payload.videoState) {
           setVideoState(payload.videoState);
           // If the room is already in Virtual Browser/iframe mode, switch invited user immediately!
@@ -89,7 +101,7 @@ export default function App() {
         }
 
         // Update current user's host status if set by server
-        const meInRoom = payload.participants?.find((p: Participant) => p.id === currentUser.id);
+        const meInRoom = payload.participants?.find((p: Participant) => p.id === payload.currentUserId);
         if (meInRoom) {
           setCurrentUser((prev) => ({ ...prev, isHost: meInRoom.isHost }));
         }
@@ -97,7 +109,7 @@ export default function App() {
         setParticipants(payload.participants || []);
         if (payload.hostId) setHostId(payload.hostId);
         if (payload.message) {
-          setMessages((prev) => [...prev, payload.message]);
+          setMessages((prev) => [...prev, payload.message].slice(-150));
         }
 
         const meInRoom = payload.participants?.find((p: Participant) => p.id === currentUser.id);
@@ -109,11 +121,11 @@ export default function App() {
         if (payload.videoState?.sourceType === 'iframe' || payload.videoState?.url?.includes('vidsrc') || payload.videoState?.url?.includes('bingetrix')) {
           setIsVirtualBrowser(true);
         }
-        if (payload.messages) {
-          setMessages(payload.messages);
+        if (payload.message) {
+          setMessages((prev) => [...prev, payload.message].slice(-150));
         }
       } else if (type === 'NEW_CHAT_MESSAGE') {
-        setMessages((prev) => [...prev, payload]);
+        setMessages((prev) => [...prev, payload].slice(-150));
       } else if (type === 'FLOATING_REACTION') {
         setReactions((prev) => [...prev, payload]);
         // Remove reaction after floating animation finishes (2.2s)
@@ -124,12 +136,14 @@ export default function App() {
         setHostId(payload.hostId);
         setParticipants(payload.participants);
         if (payload.message) {
-          setMessages((prev) => [...prev, payload.message]);
+          setMessages((prev) => [...prev, payload.message].slice(-150));
         }
         setCurrentUser((prev) => ({ ...prev, isHost: payload.hostId === prev.id }));
       } else if (type === 'WEBRTC_SIGNAL') {
         if (payload?.signalData?.type === 'screen_share_started') {
           setIsScreenSharing(true);
+        } else if (payload?.signalData?.type === 'screen_share_stopped') {
+          setIsScreenSharing(false);
         }
       }
     });
@@ -139,7 +153,7 @@ export default function App() {
     };
   }, [joinedRoom, roomId, currentUser.id]);
 
-  const handleJoinRoom = (targetRoomId: string, userMeta: { name: string; avatar: string; color: string }) => {
+  const handleJoinRoom = (targetRoomId: string, userMeta: { name: string; avatar: string; color: string }, hostToken?: string) => {
     const updatedUser = {
       ...currentUser,
       name: userMeta.name,
@@ -151,11 +165,11 @@ export default function App() {
     setJoinedRoom(true);
 
     // Update browser URL query param without full page reload
-    const newUrl = `${window.location.pathname}?room=${targetRoomId}`;
+    const newUrl = `${window.location.pathname}?room=${encodeURIComponent(targetRoomId)}`;
     window.history.replaceState({ path: newUrl }, '', newUrl);
 
     // Connect to WebSocket server & fallback
-    socketService.connect(targetRoomId, updatedUser);
+    socketService.connect(targetRoomId, updatedUser, hostToken);
   };
 
   // Video State Handler
@@ -174,6 +188,15 @@ export default function App() {
   const [isVirtualBrowser, setIsVirtualBrowser] = useState(true);
   const [isScreenSharing, setIsScreenSharing] = useState(false);
 
+  const handleToggleScreenShare = (enabled: boolean) => {
+    if (enabled) {
+      setIsScreenSharing(true);
+      return;
+    }
+    socketService.sendWebRTCSignal(roomId, { type: 'screen_share_stopped' }, 'all', currentUser.id);
+    setIsScreenSharing(false);
+  };
+
   // Handle URL change with movie resolver and virtual browser proxy support
   const handleUrlChange = async (newUrl: string, title?: string, forceVirtualBrowser?: boolean) => {
     let finalUrl = newUrl;
@@ -184,34 +207,49 @@ export default function App() {
     let originalPortalUrl = '';
     let altEmbeds: string[] = [];
     let trailerUrl = '';
-    let determinedSourceType: VideoSourceType = forceVirtualBrowser ? 'iframe' : 'direct';
+    const parsedSource = parseVideoUrl(finalUrl);
+    let determinedSourceType: VideoSourceType = parsedSource.type;
+    const isMoviePortal = /bingetrix\.[a-z]+\/(?:watch|movie|tv)\/\d+/i.test(newUrl);
 
-    // If user explicitly picked Virtual Browser or it's a web portal
-    if (forceVirtualBrowser || /bingetrix\.[a-z]+\/(?:watch|movie|tv)\/\d+/i.test(newUrl)) {
-      determinedSourceType = 'iframe';
-      originalPortalUrl = newUrl;
-      finalTitle = 'Bingetrix - Resident Evil (2026)';
-
-      try {
-        const res = await fetch(`/api/resolve-movie?url=${encodeURIComponent(newUrl)}`);
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && data.success) {
-            finalTitle = `${data.title} ${data.releaseYear ? `(${data.releaseYear})` : ''}`;
-            poster = data.poster || '';
-            overview = data.overview || '';
-            releaseYear = data.releaseYear || '';
-            altEmbeds = data.streamEmbeds || [];
-            trailerUrl = data.trailerUrl || '';
-          }
-        }
-      } catch (err) {
-        console.error('Error resolving movie URL:', err);
-      }
+    if (parsedSource.type === 'youtube' || parsedSource.type === 'direct') {
+      setIsVirtualBrowser(false);
+      socketService.stopRemoteBrowser();
+      setRemoteBrowserActive(false);
     } else {
-      const parsed = parseVideoUrl(finalUrl);
-      determinedSourceType = parsed.type;
+      determinedSourceType = 'iframe';
+      setIsVirtualBrowser(true);
+      if (currentUser.isHost) {
+        setRemoteBrowserError('');
+        socketService.startRemoteBrowser(finalUrl);
+      }
+
+      if (isMoviePortal) {
+        originalPortalUrl = newUrl;
+        finalTitle = title || 'Portal de películas';
+        try {
+          const res = await fetch(`/api/resolve-movie?url=${encodeURIComponent(newUrl)}`);
+          const contentType = res.headers.get('content-type') || '';
+          if (res.ok && contentType.includes('application/json')) {
+            const data = await res.json();
+            if (data && data.success) {
+              finalTitle = `${data.title} ${data.releaseYear ? `(${data.releaseYear})` : ''}`;
+              poster = data.poster || '';
+              overview = data.overview || '';
+              releaseYear = data.releaseYear || '';
+              altEmbeds = data.streamEmbeds || [];
+              trailerUrl = data.trailerUrl || '';
+            }
+          }
+        } catch (err) {
+          console.error('Error resolving movie URL:', err);
+        }
+      } else if (!title) {
+        try {
+          finalTitle = new URL(newUrl).hostname;
+        } catch {
+          finalTitle = 'Sitio web externo';
+        }
+      }
     }
 
     const newVideoState: VideoState = {
@@ -254,6 +292,7 @@ export default function App() {
   const handleSaveProfile = (name: string, avatar: string, color: string) => {
     const updatedUser = { ...currentUser, name, avatar, color };
     setCurrentUser(updatedUser);
+    socketService.updateProfile(updatedUser);
   };
 
   const handleLeaveRoom = () => {
@@ -273,8 +312,11 @@ export default function App() {
     );
   }
 
+  const isSynchronizedPlayer = videoState.sourceType === 'youtube' || videoState.sourceType === 'direct';
+  const shouldUseVirtualBrowser = !isSynchronizedPlayer && (isVirtualBrowser || videoState.sourceType === 'iframe');
+
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans">
+    <div className="flex h-full flex-col overflow-hidden bg-[#080c0f] font-sans text-slate-100">
       {/* Top Bar Header */}
       <Header
         roomName={roomName}
@@ -294,7 +336,7 @@ export default function App() {
             );
           }
         }}
-        onToggleScreenShare={(enabled) => setIsScreenSharing(enabled)}
+        onToggleScreenShare={handleToggleScreenShare}
         onOpenInvite={() => setShowInviteModal(true)}
         onOpenParticipants={() => setShowParticipantsModal(true)}
         onOpenProfile={() => setShowProfileModal(true)}
@@ -305,18 +347,21 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
         {/* Upper / Left: Video Player, WebRTC Screen Share or Virtual Browser Section */}
-        <div className="w-full md:w-3/5 lg:w-2/3 flex flex-col bg-black border-b md:border-b-0 md:border-r border-slate-800/80 shrink-0 md:shrink h-[42vh] sm:h-[48vh] md:h-full overflow-hidden">
+        <div className="h-[46svh] w-full shrink-0 overflow-hidden border-b border-white/[0.08] bg-black sm:h-[50svh] md:h-full md:w-[68%] md:shrink">
           {isScreenSharing ? (
             <ScreenShareContainer
               isHost={currentUser.isHost}
               roomId={roomId}
+              hostId={hostId}
               currentUserId={currentUser.id}
-              onStopScreenShare={() => setIsScreenSharing(false)}
+              onStopScreenShare={() => handleToggleScreenShare(false)}
             />
-          ) : isVirtualBrowser || videoState.sourceType === 'iframe' ? (
+          ) : shouldUseVirtualBrowser ? (
             <VirtualChromeBrowser
               currentUrl={videoState.url}
               videoState={videoState}
+              remoteBrowserActive={remoteBrowserActive}
+              remoteBrowserError={remoteBrowserError}
               isHost={currentUser.isHost}
               roomId={roomId}
               onNavigate={(navUrl, navTitle) => {
@@ -339,7 +384,7 @@ export default function App() {
         </div>
 
         {/* Lower / Right: Handsome Live Chat - Takes full remaining height! */}
-        <div className="w-full md:w-2/5 lg:w-1/3 flex-1 flex flex-col min-h-0 bg-slate-950 overflow-hidden">
+        <div className="flex min-h-0 w-full flex-1 flex-col overflow-hidden bg-[#0d1317] md:w-[32%]">
           <HandsomeChat
             messages={messages}
             currentUser={currentUser}
