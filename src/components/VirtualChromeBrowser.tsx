@@ -41,6 +41,7 @@ interface VirtualChromeBrowserProps {
   currentUrl: string;
   videoState?: VideoState;
   remoteBrowserActive: boolean;
+  remoteBrowserError?: string;
   isHost: boolean;
   roomId: string;
   onNavigate: (newUrl: string, title?: string) => void;
@@ -52,6 +53,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   currentUrl,
   videoState,
   remoteBrowserActive,
+  remoteBrowserError,
   isHost,
   roomId,
   onNavigate,
@@ -445,7 +447,15 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
         ) : (
           /* Web Browser Viewport */
           <div className="w-full h-full relative group">
-            {!isPlaybackControllable && (
+            {remoteBrowserError && (
+              <div
+                role="alert"
+                className="absolute inset-x-3 top-3 z-10 rounded-xl border border-rose-400/30 bg-rose-950/80 px-3 py-2 text-xs leading-relaxed text-rose-100 shadow-lg backdrop-blur"
+              >
+                {remoteBrowserError}
+              </div>
+            )}
+            {!isPlaybackControllable && !remoteBrowserError && (
               <div
                 role="status"
                 className="absolute inset-x-3 top-3 z-10 rounded-xl border border-amber-200/15 bg-slate-950/90 px-3 py-2 text-xs leading-relaxed text-slate-200 shadow-lg backdrop-blur"
