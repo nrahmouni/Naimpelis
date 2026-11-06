@@ -40,8 +40,8 @@ export default function App() {
   const [catalogRequest, setCatalogRequest] = useState(0);
 
   const [videoState, setVideoState] = useState<VideoState>({
-    url: 'https://www.themoviedb.org/',
-    title: 'Catálogo de películas',
+    url: 'https://movidy.pw/ver/hope/',
+    title: 'Movidy',
     sourceType: 'iframe',
     currentTime: 0,
     isPlaying: false,
@@ -330,7 +330,7 @@ export default function App() {
             setCatalogRequest((request) => request + 1);
             if (videoState.sourceType !== 'iframe') {
               handleUrlChange(
-                videoState.url.includes('themoviedb.org') ? videoState.url : 'https://www.themoviedb.org/',
+                videoState.url || 'https://movidy.pw/ver/hope/',
                 'Navegador Virtual',
                 true
               );

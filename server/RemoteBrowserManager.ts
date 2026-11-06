@@ -2,7 +2,7 @@ import { chromium, Browser, BrowserContext, CDPSession, Page } from 'playwright'
 import WebSocket from 'ws';
 import { RemoteBrowserInput } from '../src/types';
 
-const DEFAULT_ALLOWED_HOSTS = 'themoviedb.org,youtube.com';
+const DEFAULT_ALLOWED_HOSTS = 'bingetrix.sc,movidy.pw,vidsrc.pm,vidsrc.me,vidsrc.to,autoembed.to';
 const allowedHosts = (process.env.RBI_ALLOWED_HOSTS || DEFAULT_ALLOWED_HOSTS)
   .split(',')
   .map((host) => host.trim().toLowerCase())

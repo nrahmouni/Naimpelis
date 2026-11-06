@@ -57,7 +57,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
 }) => {
   const [activeTab, setActiveTab] = useState<'finder' | 'web'>('finder');
   const [searchQuery, setSearchQuery] = useState('');
-  const [addressInput, setAddressInput] = useState(currentUrl || 'https://www.themoviedb.org');
+  const [addressInput, setAddressInput] = useState(currentUrl || 'https://movidy.pw/ver/hope/');
   const [movies, setMovies] = useState<MovieItem[]>([]);
   const [isLoadingMovies, setIsLoadingMovies] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
@@ -195,6 +195,13 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
 
   const handleSelectMovie = (movie: MovieItem) => {
     setSelectedMovie(movie);
+  };
+
+  const handleOpenPortal = (url: string, title: string) => {
+    setSelectedMovie(null);
+    setAddressInput(url);
+    setActiveTab('web');
+    onNavigate(url, title);
   };
 
   const handlePlayTrailer = async () => {
@@ -434,25 +441,43 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
                     <h1 className="mt-1 text-xl font-black text-white sm:text-2xl">Películas y series</h1>
                     <p className="mt-1 text-xs text-slate-400">Explora títulos, consulta sus fichas y comparte tráileres oficiales.</p>
                   </div>
-                  <form onSubmit={handleSearchSubmit} className="flex gap-2 sm:w-[min(100%,24rem)]">
-                    <div className="relative min-w-0 flex-1">
-                      <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                      <input
-                        type="search"
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        placeholder="Buscar película o serie"
-                        aria-label="Buscar película o serie"
-                        className="w-full rounded-full border border-white/10 bg-white/[0.06] py-2.5 pl-10 pr-4 text-xs text-white placeholder:text-slate-500 focus:border-rose-400/60 focus:outline-none"
-                      />
+                  <div className="flex flex-col gap-2 sm:w-[min(100%,27rem)]">
+                    <form onSubmit={handleSearchSubmit} className="flex gap-2">
+                      <div className="relative min-w-0 flex-1">
+                        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                        <input
+                          type="search"
+                          value={searchQuery}
+                          onChange={(e) => setSearchQuery(e.target.value)}
+                          placeholder="Buscar película o serie"
+                          aria-label="Buscar película o serie"
+                          className="w-full rounded-full border border-white/10 bg-white/[0.06] py-2.5 pl-10 pr-4 text-xs text-white placeholder:text-slate-500 focus:border-rose-400/60 focus:outline-none"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        className="rounded-full bg-rose-500 px-4 text-xs font-bold text-white transition hover:bg-rose-400"
+                      >
+                        Buscar
+                      </button>
+                    </form>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPortal('https://movidy.pw/ver/hope/', 'Movidy')}
+                        className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[10px] font-semibold text-slate-200 transition hover:border-rose-400/40 hover:bg-rose-500/10"
+                      >
+                        Abrir Movidy
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenPortal('https://bingetrix.sc/movie/1423191', 'Bingetrix')}
+                        className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1.5 text-[10px] font-semibold text-slate-200 transition hover:border-rose-400/40 hover:bg-rose-500/10"
+                      >
+                        Abrir Bingetrix
+                      </button>
                     </div>
-                    <button
-                      type="submit"
-                      className="rounded-full bg-rose-500 px-4 text-xs font-bold text-white transition hover:bg-rose-400"
-                    >
-                      Buscar
-                    </button>
-                  </form>
+                  </div>
                 </div>
 
                 <div className="mb-3 flex items-center justify-between">

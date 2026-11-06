@@ -60,8 +60,8 @@ const rooms: RoomStore = Object.assign(Object.create(null), {
     name: 'Sala de Cine Principal 🍿',
     hostId: 'system',
     videoState: {
-      url: 'https://www.themoviedb.org/',
-      title: 'Catálogo de películas',
+      url: 'https://movidy.pw/ver/hope/',
+      title: 'Movidy',
       sourceType: 'iframe',
       currentTime: 0,
       isPlaying: false,
@@ -144,8 +144,8 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
       name: roomName || `Sala ${roomId.substring(0, 6)}`,
       hostId: '',
       videoState: {
-        url: 'https://www.themoviedb.org/',
-        title: 'Catálogo de películas',
+        url: 'https://movidy.pw/ver/hope/',
+        title: 'Movidy',
         sourceType: 'iframe',
         currentTime: 0,
         isPlaying: false,
@@ -172,7 +172,7 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
   return rooms[roomId];
 }
 
-const proxyAllowedDomains = (process.env.PROXY_ALLOWED_HOSTS || 'themoviedb.org,youtube.com')
+const proxyAllowedDomains = (process.env.PROXY_ALLOWED_HOSTS || 'movidy.pw,bingetrix.sc,vidsrc.me,vidsrc.to,vidsrc.pm,autoembed.to')
   .split(',')
   .map((domain) => domain.trim().toLowerCase())
   .filter(Boolean);
