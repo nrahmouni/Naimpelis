@@ -37,10 +37,11 @@ export default function App() {
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
   const [remoteBrowserActive, setRemoteBrowserActive] = useState(false);
   const [remoteBrowserError, setRemoteBrowserError] = useState('');
+  const [catalogRequest, setCatalogRequest] = useState(0);
 
   const [videoState, setVideoState] = useState<VideoState>({
-    url: 'https://movidy.pw/',
-    title: 'Movidy - Cine y Series',
+    url: 'https://www.themoviedb.org/',
+    title: 'Catálogo de películas',
     sourceType: 'iframe',
     currentTime: 0,
     isPlaying: false,
@@ -92,7 +93,7 @@ export default function App() {
         if (payload.videoState) {
           setVideoState(payload.videoState);
           // If the room is already in Virtual Browser/iframe mode, switch invited user immediately!
-          if (payload.videoState.sourceType === 'iframe' || payload.videoState.url?.includes('vidsrc') || payload.videoState.url?.includes('bingetrix')) {
+          if (payload.videoState.sourceType === 'iframe') {
             setIsVirtualBrowser(true);
           }
         }
@@ -118,7 +119,7 @@ export default function App() {
         }
       } else if (type === 'VIDEO_STATE_UPDATED') {
         setVideoState(payload.videoState);
-        if (payload.videoState?.sourceType === 'iframe' || payload.videoState?.url?.includes('vidsrc') || payload.videoState?.url?.includes('bingetrix')) {
+        if (payload.videoState?.sourceType === 'iframe') {
           setIsVirtualBrowser(true);
         }
         if (payload.message) {
@@ -205,11 +206,10 @@ export default function App() {
     let overview = '';
     let releaseYear = '';
     let originalPortalUrl = '';
-    let altEmbeds: string[] = [];
     let trailerUrl = '';
     const parsedSource = parseVideoUrl(finalUrl);
     let determinedSourceType: VideoSourceType = parsedSource.type;
-    const isMoviePortal = /bingetrix\.[a-z]+\/(?:watch|movie|tv)\/\d+/i.test(newUrl);
+    const isTmdbTitlePage = /themoviedb\.org\/(?:movie|tv)\/\d+/i.test(newUrl);
 
     if (parsedSource.type === 'youtube' || parsedSource.type === 'vimeo' || parsedSource.type === 'direct') {
       setIsVirtualBrowser(false);
@@ -223,9 +223,9 @@ export default function App() {
         socketService.startRemoteBrowser(finalUrl);
       }
 
-      if (isMoviePortal) {
+      if (isTmdbTitlePage) {
         originalPortalUrl = newUrl;
-        finalTitle = title || 'Portal de películas';
+        finalTitle = title || 'Ficha de película';
         try {
           const res = await fetch(`/api/resolve-movie?url=${encodeURIComponent(newUrl)}`);
           const contentType = res.headers.get('content-type') || '';
@@ -236,7 +236,6 @@ export default function App() {
               poster = data.poster || '';
               overview = data.overview || '';
               releaseYear = data.releaseYear || '';
-              altEmbeds = data.streamEmbeds || [];
               trailerUrl = data.trailerUrl || '';
             }
           }
@@ -264,7 +263,6 @@ export default function App() {
       overview,
       releaseYear,
       originalPortalUrl,
-      altEmbeds,
       trailerUrl,
     };
 
@@ -328,12 +326,15 @@ export default function App() {
         isScreenSharing={isScreenSharing}
         onToggleVirtualBrowser={(enabled) => {
           setIsVirtualBrowser(enabled);
-          if (enabled && videoState.sourceType !== 'iframe') {
-            handleUrlChange(
-              videoState.url.includes('bingetrix') ? videoState.url : 'https://bingetrix.sc/watch/1423191',
-              'Navegador Virtual',
-              true
-            );
+          if (enabled) {
+            setCatalogRequest((request) => request + 1);
+            if (videoState.sourceType !== 'iframe') {
+              handleUrlChange(
+                videoState.url.includes('themoviedb.org') ? videoState.url : 'https://www.themoviedb.org/',
+                'Navegador Virtual',
+                true
+              );
+            }
           }
         }}
         onToggleScreenShare={handleToggleScreenShare}
@@ -347,7 +348,7 @@ export default function App() {
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
         {/* Upper / Left: Video Player, WebRTC Screen Share or Virtual Browser Section */}
-        <div className="h-[46svh] w-full shrink-0 overflow-hidden border-b border-white/[0.08] bg-black sm:h-[50svh] md:h-full md:w-[68%] md:shrink">
+        <div className="h-[60svh] w-full shrink-0 overflow-hidden border-b border-white/[0.08] bg-black sm:h-[62svh] md:h-full md:w-[68%] md:shrink">
           {isScreenSharing ? (
             <ScreenShareContainer
               isHost={currentUser.isHost}
@@ -364,6 +365,7 @@ export default function App() {
               remoteBrowserError={remoteBrowserError}
               isHost={currentUser.isHost}
               roomId={roomId}
+              catalogRequest={catalogRequest}
               onNavigate={(navUrl, navTitle) => {
                 handleUrlChange(navUrl, navTitle || 'Navegador Virtual Sincronizado', true);
               }}

@@ -339,7 +339,7 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
               rel="noopener noreferrer"
               className="px-2.5 py-1 rounded-full bg-slate-900/90 hover:bg-rose-600 text-slate-200 hover:text-white border border-slate-700/70 text-[10px] font-semibold flex items-center gap-1 shadow-lg backdrop-blur-md transition-all active:scale-95"
             >
-              <span>Abrir en Bingetrix</span>
+              <span>Abrir ficha</span>
               <span className="text-[11px]">↗</span>
             </a>
           </div>
@@ -463,17 +463,16 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
             </div>
           </div>
 
-          {/* Alternate Stream Switcher if movie portal */}
-          {videoState.altEmbeds && videoState.altEmbeds.length > 0 && (
+          {videoState.trailerUrl && (
             <div className="flex items-center gap-1 shrink-0">
-              {videoState.trailerUrl && (
-                <button
-                  onClick={() => onStateChange('seek', 0, true)}
-                  className="px-2 py-1 rounded-lg bg-rose-600/20 text-rose-300 border border-rose-500/30 text-[10px] font-semibold hover:bg-rose-600/30 transition-colors"
-                >
-                  Tráiler HD
-                </button>
-              )}
+              <a
+                href={videoState.trailerUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-2 py-1 rounded-lg bg-rose-600/20 text-rose-300 border border-rose-500/30 text-[10px] font-semibold hover:bg-rose-600/30 transition-colors"
+              >
+                Tráiler oficial
+              </a>
             </div>
           )}
         </div>

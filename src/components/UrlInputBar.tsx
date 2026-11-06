@@ -79,7 +79,7 @@ export const UrlInputBar: React.FC<UrlInputBarProps> = ({
             onChange={(e) => setInputUrl(e.target.value)}
             placeholder={
               isVirtualBrowser
-                ? 'Pega enlace o web (ej: https://bingetrix.sc/watch/1423191)...'
+                ? 'Pega una página web (ej: https://www.themoviedb.org/movie/1423191)...'
                 : 'Pega enlace de vídeo (YouTube, MP4, etc.)...'
             }
             className={`w-full pl-8 pr-2.5 py-1 bg-slate-950 border rounded-xl text-xs text-slate-100 placeholder-slate-500 focus:outline-none transition-all ${

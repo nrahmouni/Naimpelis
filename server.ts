@@ -60,9 +60,9 @@ const rooms: RoomStore = Object.assign(Object.create(null), {
     name: 'Sala de Cine Principal 🍿',
     hostId: 'system',
     videoState: {
-      url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-      title: 'Big Buck Bunny (4K)',
-      sourceType: 'direct',
+      url: 'https://www.themoviedb.org/',
+      title: 'Catálogo de películas',
+      sourceType: 'iframe',
       currentTime: 0,
       isPlaying: false,
       lastUpdated: Date.now(),
@@ -144,9 +144,9 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
       name: roomName || `Sala ${roomId.substring(0, 6)}`,
       hostId: '',
       videoState: {
-        url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-        title: 'Big Buck Bunny (4K)',
-        sourceType: 'direct',
+        url: 'https://www.themoviedb.org/',
+        title: 'Catálogo de películas',
+        sourceType: 'iframe',
         currentTime: 0,
         isPlaying: false,
         lastUpdated: Date.now(),
@@ -172,7 +172,7 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
   return rooms[roomId];
 }
 
-const proxyAllowedDomains = (process.env.PROXY_ALLOWED_HOSTS || 'movidy.pw,bingetrix.sc,vidsrc.me,vidsrc.to,vidsrc.pm,autoembed.to')
+const proxyAllowedDomains = (process.env.PROXY_ALLOWED_HOSTS || 'themoviedb.org,youtube.com')
   .split(',')
   .map((domain) => domain.trim().toLowerCase())
   .filter(Boolean);
@@ -650,7 +650,7 @@ app.post('/api/rooms', (req, res) => {
   res.json({ id: room.id, name: room.name, hostToken });
 });
 
-// Movie Resolver: Automatically recognizes movie URLs (like bingetrix.sc/watch/1423191, tmdb, etc.)
+// Resolve public movie metadata and official trailers from TMDB.
 app.get('/api/resolve-movie', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   const queryUrl = (req.query.url as string) || '';
@@ -659,29 +659,31 @@ app.get('/api/resolve-movie', async (req, res) => {
   }
 
   try {
-    // Check if it's a Bingetrix URL (e.g. bingetrix.sc/watch/1423191) or default TMDB ID
-    const bingetrixMatch = queryUrl.match(/(?:bingetrix\.[a-z]+\/(?:watch|movie|tv)\/|tmdb\/|movie\/)(\d+)/i);
-    const tmdbId = bingetrixMatch ? bingetrixMatch[1] : '1423191';
+    const tmdbMatch = queryUrl.match(/(?:themoviedb\.org\/(?:movie|tv)\/|tmdb\/(?:tv\/)?)(\d+)/i);
+    if (!tmdbMatch) return res.status(400).json({ success: false, error: 'Invalid TMDB title reference' });
+    const tmdbId = tmdbMatch[1];
+    const isTv = /(?:themoviedb\.org\/tv\/|tmdb\/tv\/)/i.test(queryUrl);
     const tmdbApiKey = process.env.TMDB_API_KEY;
     if (!tmdbApiKey) return res.status(503).json({ success: false, error: 'Movie metadata is unavailable' });
-    const cacheKey = `resolve:${tmdbId}`;
+    const cacheKey = `resolve:${isTv ? 'tv' : 'movie'}:${tmdbId}`;
     const cached = readTmdbCache<Record<string, unknown>>(cacheKey);
     if (cached) return res.json({ ...cached, originalUrl: queryUrl });
 
-    // Query TMDB for movie details & trailers
+    const mediaPath = isTv ? 'tv' : 'movie';
     const [movieRes, videosRes] = await Promise.all([
-      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}&language=es-ES`, { signal: AbortSignal.timeout(8000) })
+      fetch(`https://api.themoviedb.org/3/${mediaPath}/${tmdbId}?api_key=${tmdbApiKey}&language=es-ES`, { signal: AbortSignal.timeout(8000) })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
-      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/videos?api_key=${tmdbApiKey}`, { signal: AbortSignal.timeout(8000) })
+      fetch(`https://api.themoviedb.org/3/${mediaPath}/${tmdbId}/videos?api_key=${tmdbApiKey}`, { signal: AbortSignal.timeout(8000) })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     ]);
 
-    const title = movieRes?.title || movieRes?.name || movieRes?.original_title || 'Resident Evil';
-    const overview = movieRes?.overview || 'Película de terror y acción.';
+    if (!movieRes) return res.status(404).json({ success: false, error: 'Title not found' });
+    const title = movieRes.title || movieRes.name || movieRes.original_title || movieRes.original_name;
+    const overview = movieRes.overview || '';
     const poster = movieRes?.poster_path ? `https://image.tmdb.org/t/p/w500${movieRes.poster_path}` : '';
-    const releaseYear = movieRes?.release_date ? movieRes.release_date.split('-')[0] : '2026';
+    const releaseYear = (movieRes.release_date || movieRes.first_air_date || '').split('-')[0];
 
     const videos = (videosRes as any)?.results || [];
     const trailer = videos.find((v: any) => v.site === 'YouTube' && v.type === 'Trailer') ||
@@ -689,22 +691,15 @@ app.get('/api/resolve-movie', async (req, res) => {
     const trailerKey = trailer?.key || '';
     const trailerUrl = trailerKey ? `https://www.youtube.com/watch?v=${trailerKey}` : '';
 
-    const streamEmbeds = [
-      `https://vidsrc.me/embed/movie/${tmdbId}`,
-      `https://vidsrc.to/embed/movie/${tmdbId}`,
-      `https://autoembed.to/movie/tmdb/${tmdbId}`,
-    ];
-
     const result = {
       success: true,
-      type: 'movie_portal',
+      type: isTv ? 'tv' : 'movie',
       tmdbId,
       title,
       overview,
       poster,
       releaseYear,
       trailerUrl,
-      streamEmbeds,
     };
     writeTmdbCache(cacheKey, result, 60 * 60 * 1000);
     return res.json({ ...result, originalUrl: queryUrl });
@@ -745,16 +740,6 @@ app.get('/api/search-movies', async (req, res) => {
         const backdrop = m.backdrop_path ? `https://image.tmdb.org/t/p/w780${m.backdrop_path}` : '';
         const rating = m.vote_average ? m.vote_average.toFixed(1) : '';
 
-        // Working stream embeds
-        const streamUrl = isTv
-          ? `https://vidsrc.pm/embed/tv/${id}/1/1`
-          : `https://vidsrc.pm/embed/movie/${id}`;
-
-        const bingetrixUrl = `https://bingetrix.sc/watch/${id}`;
-        const movidyUrl = isTv
-          ? `https://movidy.pw/embed/tv/${id}/1/1`
-          : `https://movidy.pw/embed/movie/${id}`;
-
         return {
           id,
           title,
@@ -764,9 +749,6 @@ app.get('/api/search-movies', async (req, res) => {
           backdrop,
           rating,
           isTv,
-          streamUrl,
-          bingetrixUrl,
-          movidyUrl,
         };
       });
 

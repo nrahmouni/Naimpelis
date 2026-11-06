@@ -72,6 +72,22 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Room actions */}
       <div className="flex shrink-0 items-center gap-1.5 md:gap-2">
+        {onToggleVirtualBrowser && (
+          <button
+            onClick={() => onToggleVirtualBrowser(true)}
+            className={`flex h-9 w-9 items-center justify-center rounded-xl border transition-colors sm:w-auto sm:gap-2 sm:px-3 ${
+              isVirtualBrowser
+                ? 'border-rose-300/20 bg-rose-400/15 text-rose-100'
+                : 'border-white/10 bg-white/[0.04] text-slate-200 hover:bg-white/[0.09]'
+            }`}
+            title="Abrir catálogo de películas"
+            aria-label="Abrir catálogo de películas"
+          >
+            <Film className="h-4 w-4" />
+            <span className="hidden text-xs font-semibold sm:inline">Catálogo</span>
+          </button>
+        )}
+
         {onToggleScreenShare && (
           <button
             onClick={() => onToggleScreenShare(!isScreenSharing)}
