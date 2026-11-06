@@ -3,6 +3,7 @@ import { Play, Pause, Volume2, VolumeX, Maximize, RefreshCw, Crown, AlertCircle,
 import { FloatingReaction, VideoState } from '../types';
 import { formatTime, parseVideoUrl } from '../utils/videoParser';
 import { YouTubeController, YouTubePlayer } from './YouTubePlayer';
+import { VimeoController, VimeoPlayer } from './VimeoPlayer';
 
 interface VideoPlayerContainerProps {
   videoState: VideoState;
@@ -26,7 +27,7 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const youTubeControllerRef = useRef<YouTubeController | null>(null);
+  const playbackControllerRef = useRef<YouTubeController | VimeoController | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(videoState.isPlaying);
   const [currentTime, setCurrentTime] = useState(videoState.currentTime);
@@ -128,10 +129,10 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
       } else {
         videoRef.current.pause();
       }
-    } else if (parsedVideo.type === 'youtube' && youTubeControllerRef.current) {
-      youTubeControllerRef.current.seekTo(targetTime);
-      if (videoState.isPlaying) youTubeControllerRef.current.play();
-      else youTubeControllerRef.current.pause();
+    } else if ((parsedVideo.type === 'youtube' || parsedVideo.type === 'vimeo') && playbackControllerRef.current) {
+      playbackControllerRef.current.seekTo(targetTime);
+      if (videoState.isPlaying) playbackControllerRef.current.play();
+      else playbackControllerRef.current.pause();
     } else if (iframeRef.current) {
       // Reload iframe if out of sync
       iframeRef.current.src = iframeRef.current.src;
@@ -249,7 +250,28 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
             isHost={isHost}
             onStateChange={onStateChange}
             onController={(controller) => {
-              youTubeControllerRef.current = controller;
+              playbackControllerRef.current = controller;
+            }}
+            onProgress={(time, nextDuration, playing) => {
+              setCurrentTime(time);
+              setDuration(nextDuration);
+              setIsPlaying(playing);
+              if (!isHost && videoState.isPlaying) {
+                const expectedTime = videoState.currentTime + (Date.now() - videoState.lastUpdated) / 1000;
+                setOutOfSync(Math.abs(time - expectedTime) > 3);
+              } else {
+                setOutOfSync(false);
+              }
+            }}
+          />
+        ) : parsedVideo.type === 'vimeo' ? (
+          <VimeoPlayer
+            videoId={parsedVideo.videoId}
+            videoState={videoState}
+            isHost={isHost}
+            onStateChange={onStateChange}
+            onController={(controller) => {
+              playbackControllerRef.current = controller;
             }}
             onProgress={(time, nextDuration, playing) => {
               setCurrentTime(time);

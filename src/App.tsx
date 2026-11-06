@@ -211,7 +211,7 @@ export default function App() {
     let determinedSourceType: VideoSourceType = parsedSource.type;
     const isMoviePortal = /bingetrix\.[a-z]+\/(?:watch|movie|tv)\/\d+/i.test(newUrl);
 
-    if (parsedSource.type === 'youtube' || parsedSource.type === 'direct') {
+    if (parsedSource.type === 'youtube' || parsedSource.type === 'vimeo' || parsedSource.type === 'direct') {
       setIsVirtualBrowser(false);
       socketService.stopRemoteBrowser();
       setRemoteBrowserActive(false);
@@ -312,7 +312,7 @@ export default function App() {
     );
   }
 
-  const isSynchronizedPlayer = videoState.sourceType === 'youtube' || videoState.sourceType === 'direct';
+  const isSynchronizedPlayer = ['youtube', 'vimeo', 'direct'].includes(videoState.sourceType);
   const shouldUseVirtualBrowser = !isSynchronizedPlayer && (isVirtualBrowser || videoState.sourceType === 'iframe');
 
   return (

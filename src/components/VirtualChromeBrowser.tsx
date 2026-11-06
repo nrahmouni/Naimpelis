@@ -215,7 +215,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   };
 
   const isDirectEmbedProvider = /vidsrc|autoembed|2embed|\/embed\//i.test(addressInput);
-  const isPlaybackControllable = ['youtube', 'direct'].includes(parseVideoUrl(addressInput).type) || remoteBrowserActive;
+  const isPlaybackControllable = ['youtube', 'vimeo', 'direct'].includes(parseVideoUrl(addressInput).type) || remoteBrowserActive;
   const youtubeSample = SAMPLE_VIDEOS.find((video) => video.id === 'yt-blender-movie');
   const directSample = SAMPLE_VIDEOS.find((video) => video.id === 'big-buck-bunny');
 

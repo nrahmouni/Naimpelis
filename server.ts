@@ -16,6 +16,11 @@ const app = express();
 app.use(express.json({ limit: '16kb' }));
 const httpServer = createServer(app);
 const wss = new WebSocketServer({ server: httpServer, path: '/ws', maxPayload: 16 * 1024 });
+wss.on('error', (error) => {
+  if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') {
+    console.error('WebSocket server error:', error);
+  }
+});
 const roomHostTokens = new Map<string, string>();
 
 // In-memory room store
@@ -114,7 +119,23 @@ function sendToParticipant(roomId: string, userId: string, message: any) {
   });
 }
 
-const remoteBrowserManager = new RemoteBrowserManager(broadcastToRoom);
+const remoteBrowserManager = new RemoteBrowserManager((roomId, message) => {
+  broadcastToRoom(roomId, message);
+  const event = message as { type?: string; payload?: { url?: string } };
+  const room = rooms[roomId];
+  if (event.type !== 'REMOTE_BROWSER_LOCATION' || !room || !isAllowedRemoteBrowserUrl(event.payload?.url || '')) return;
+
+  const url = event.payload!.url!;
+  room.remoteBrowserUrl = url;
+  room.videoState.url = url;
+  room.videoState.title = new URL(url).hostname;
+  room.videoState.sourceType = 'iframe';
+  room.videoState.lastUpdated = Date.now();
+  broadcastToRoom(roomId, {
+    type: 'VIDEO_STATE_UPDATED',
+    payload: { videoState: room.videoState, action: 'navigate' },
+  });
+});
 
 function getOrCreateRoom(roomId: string, roomName?: string) {
   if (!rooms[roomId]) {
@@ -510,6 +531,7 @@ wss.on('connection', (ws, request) => {
             payload: { signalData: { type: 'screen_share_stopped' }, targetId: 'all', senderId: meta.userId },
           });
         }
+        if (room.remoteBrowserActive) remoteBrowserManager.transferHost(meta.roomId, newHostId);
         room.hostId = newHostId;
         room.participants.forEach(p => {
           p.isHost = p.id === newHostId;
@@ -931,13 +953,17 @@ app.get('/api/proxy-web', async (req, res) => {
 
 // Vite Integration
 async function startServer() {
-  const PORT = process.env.PORT || 3000;
+  const requestedPort = Number(process.env.PORT) || 3000;
+  const allowPortFallback = process.env.NODE_ENV !== 'production' && !process.env.PORT;
   const isProd = process.env.NODE_ENV === 'production';
 
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: process.env.DISABLE_HMR !== 'true' },
+      server: {
+        middlewareMode: true,
+        ws: process.env.DISABLE_HMR !== 'true' ? { server: httpServer } : false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -948,9 +974,43 @@ async function startServer() {
     });
   }
 
-  httpServer.listen(PORT, () => {
-    console.log(`🎬 Watch2Gether Server running on http://0.0.0.0:${PORT}`);
+  const listen = (port: number, attempts = 0): Promise<number> => new Promise((resolve, reject) => {
+    const onListening = () => {
+      httpServer.off('error', onError);
+      const address = httpServer.address();
+      resolve(typeof address === 'object' && address ? address.port : port);
+    };
+    const onError = (error: NodeJS.ErrnoException) => {
+      httpServer.off('listening', onListening);
+      if (error.code === 'EADDRINUSE' && allowPortFallback && attempts < 20) {
+        console.warn(`Port ${port} is busy; trying ${port + 1}.`);
+        resolve(listen(port + 1, attempts + 1));
+        return;
+      }
+      reject(error);
+    };
+    httpServer.once('listening', onListening);
+    httpServer.once('error', onError);
+    httpServer.listen(port);
   });
+
+  try {
+    const activePort = await listen(requestedPort);
+    console.log(`🎬 Watch2Gether Server running on http://0.0.0.0:${activePort}`);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    console.error(`Unable to start on port ${requestedPort}${code === 'EADDRINUSE' ? ': port is already in use. Set PORT to an available port.' : ''}.`, error);
+    process.exitCode = 1;
+  }
 }
+
+const shutdown = () => {
+  httpServer.close(() => {
+    void remoteBrowserManager.close().finally(() => process.exit(0));
+  });
+};
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
 
 startServer();

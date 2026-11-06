@@ -27,7 +27,11 @@ export function isAllowedRemoteBrowserUrl(value: string) {
   try {
     const url = new URL(value);
     const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
-    return ['http:', 'https:'].includes(url.protocol) && allowedHosts.some(
+    return ['http:', 'https:'].includes(url.protocol)
+      && !url.username
+      && !url.password
+      && (!url.port || url.port === '80' || url.port === '443')
+      && allowedHosts.some(
       (host) => hostname === host || hostname.endsWith(`.${host}`)
     );
   } catch {
@@ -165,6 +169,11 @@ export class RemoteBrowserManager {
         await session.page.reload({ waitUntil: 'domcontentloaded' });
         return true;
     }
+  }
+
+  public transferHost(roomId: string, hostId: string) {
+    const session = this.sessions.get(roomId);
+    if (session) session.hostId = hostId;
   }
 
   public sendLatestFrame(roomId: string, client: WebSocket) {
