@@ -1,4 +1,4 @@
-import { ChatMessage, FloatingReaction, Participant, RemoteBrowserInput, RoomData, VideoState } from '../types';
+import { ChatMessage, FloatingReaction, Participant, RoomData, VideoState } from '../types';
 
 type MessageHandler = (data: { type: string; payload: any }) => void;
 
@@ -8,7 +8,6 @@ class SocketService {
   private broadcastChannel: BroadcastChannel | null = null;
   private roomId: string | null = null;
   private userId: string | null = null;
-  private hostToken: string | null = null;
   private isConnected: boolean = false;
   private reconnectTimer: any = null;
 
@@ -23,11 +22,9 @@ class SocketService {
     }
   }
 
-  public connect(roomId: string, user: { id: string; name: string; avatar: string; color: string }, hostToken?: string) {
+  public connect(roomId: string, user: { id: string; name: string; avatar: string; color: string }) {
     this.roomId = roomId;
     this.userId = user.id;
-    this.hostToken = hostToken || sessionStorage.getItem(`watch2gether-host:${roomId}`);
-    if (hostToken) sessionStorage.setItem(`watch2gether-host:${roomId}`, hostToken);
 
     if (this.ws) {
       this.ws.close();
@@ -46,10 +43,10 @@ class SocketService {
             type: 'JOIN_ROOM',
             payload: {
               roomId,
+              userId: user.id,
               userName: user.name,
               userAvatar: user.avatar,
               userColor: user.color,
-              hostToken: this.hostToken,
             },
           })
         );
@@ -75,7 +72,7 @@ class SocketService {
           clearTimeout(this.reconnectTimer);
           this.reconnectTimer = setTimeout(() => {
             if (this.roomId && !this.isConnected) {
-              this.connect(this.roomId, user, this.hostToken || undefined);
+              this.connect(this.roomId, user);
             }
           }, 3000);
         }
@@ -90,33 +87,6 @@ class SocketService {
     return () => {
       this.listeners.delete(handler);
     };
-  }
-
-  public ping() {
-    if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify({ type: 'PING', payload: { sentAt: performance.now() } }));
-    }
-  }
-
-  public startRemoteBrowser(url: string) {
-    if (!this.roomId || this.ws?.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify({
-      type: 'START_REMOTE_BROWSER',
-      payload: { roomId: this.roomId, url },
-    }));
-  }
-
-  public stopRemoteBrowser() {
-    if (!this.roomId || this.ws?.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify({ type: 'STOP_REMOTE_BROWSER', payload: { roomId: this.roomId } }));
-  }
-
-  public sendRemoteBrowserInput(input: RemoteBrowserInput) {
-    if (!this.roomId || this.ws?.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify({
-      type: 'REMOTE_BROWSER_INPUT',
-      payload: { roomId: this.roomId, input },
-    }));
   }
 
   private notifyListeners(type: string, payload: any) {
@@ -256,19 +226,6 @@ class SocketService {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type: 'TRANSFER_HOST', payload }));
     }
-  }
-
-  public updateProfile(user: { name: string; avatar: string; color: string }) {
-    if (!this.roomId || this.ws?.readyState !== WebSocket.OPEN) return;
-    this.ws.send(JSON.stringify({
-      type: 'UPDATE_PROFILE',
-      payload: {
-        roomId: this.roomId,
-        userName: user.name,
-        userAvatar: user.avatar,
-        userColor: user.color,
-      },
-    }));
   }
 
   public disconnect() {

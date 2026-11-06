@@ -5,7 +5,6 @@ import { socketService } from '../services/socket';
 interface ScreenShareContainerProps {
   isHost: boolean;
   roomId: string;
-  hostId: string;
   currentUserId: string;
   onStopScreenShare: () => void;
 }
@@ -13,7 +12,6 @@ interface ScreenShareContainerProps {
 export const ScreenShareContainer: React.FC<ScreenShareContainerProps> = ({
   isHost,
   roomId,
-  hostId,
   currentUserId,
   onStopScreenShare,
 }) => {
@@ -27,15 +25,6 @@ export const ScreenShareContainer: React.FC<ScreenShareContainerProps> = ({
   );
 
   const peerConnectionsRef = useRef<{ [peerId: string]: RTCPeerConnection }>({});
-  const pendingCandidatesRef = useRef<{ [peerId: string]: RTCIceCandidateInit[] }>({});
-  const streamRef = useRef<MediaStream | null>(null);
-  const activeRef = useRef(false);
-
-  const flushPendingCandidates = async (peerId: string, pc: RTCPeerConnection) => {
-    const candidates = pendingCandidatesRef.current[peerId] || [];
-    delete pendingCandidatesRef.current[peerId];
-    await Promise.all(candidates.map((candidate) => pc.addIceCandidate(new RTCIceCandidate(candidate)).catch(() => undefined)));
-  };
 
   // Helper to create RTCPeerConnection
   const createPeerConnection = (peerId: string) => {
@@ -62,14 +51,6 @@ export const ScreenShareContainer: React.FC<ScreenShareContainerProps> = ({
       }
     };
 
-    pc.oniceconnectionstatechange = () => {
-      if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
-        setConnectionStatus('Transmisión en directo');
-      } else if (pc.iceConnectionState === 'failed') {
-        setConnectionStatus('La red requiere una ruta TURN para conectar');
-      }
-    };
-
     peerConnectionsRef.current[peerId] = pc;
     return pc;
   };
@@ -89,12 +70,7 @@ export const ScreenShareContainer: React.FC<ScreenShareContainerProps> = ({
         video: { cursor: 'always' } as any,
         audio: true,
       });
-      if (!activeRef.current) {
-        mediaStream.getTracks().forEach((track) => track.stop());
-        return;
-      }
       setStream(mediaStream);
-      streamRef.current = mediaStream;
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = mediaStream;
       }
@@ -112,9 +88,12 @@ export const ScreenShareContainer: React.FC<ScreenShareContainerProps> = ({
   };
 
   useEffect(() => {
-    activeRef.current = true;
-    if (isHost && typeof navigator.mediaDevices?.getDisplayMedia !== 'function') {
-      setIsMobileUnsupported(true);
+    if (isHost && !stream) {
+      if (typeof navigator.mediaDevices?.getDisplayMedia === 'function') {
+        startScreenShare();
+      } else {
+        setIsMobileUnsupported(true);
+      }
     }
 
     // Subscribe to WebRTC signals
@@ -123,11 +102,13 @@ export const ScreenShareContainer: React.FC<ScreenShareContainerProps> = ({
         const { signalData, senderId, targetId } = payload;
         if (targetId && targetId !== 'all' && targetId !== currentUserId) return;
 
-        const activeStream = streamRef.current;
-        if (signalData.type === 'request_offer' && isHost && activeStream) {
+        if (signalData.type === 'screen_share_started' && !isHost) {
+          // Guest requests offer from Host
+          socketService.sendWebRTCSignal(roomId, { type: 'request_offer' }, senderId, currentUserId);
+        } else if (signalData.type === 'request_offer' && isHost && stream) {
           // Host creates peer connection and sends offer to requesting guest
           const pc = createPeerConnection(senderId);
-          activeStream.getTracks().forEach((track) => pc.addTrack(track, activeStream));
+          stream.getTracks().forEach((track) => pc.addTrack(track, stream));
 
           pc.createOffer()
             .then((offer) => pc.setLocalDescription(offer))
@@ -142,7 +123,6 @@ export const ScreenShareContainer: React.FC<ScreenShareContainerProps> = ({
         } else if (signalData.type === 'offer' && !isHost) {
           const pc = createPeerConnection(senderId);
           pc.setRemoteDescription(new RTCSessionDescription(signalData.offer))
-            .then(() => flushPendingCandidates(senderId, pc))
             .then(() => pc.createAnswer())
             .then((answer) => pc.setLocalDescription(answer))
             .then(() => {
@@ -156,40 +136,26 @@ export const ScreenShareContainer: React.FC<ScreenShareContainerProps> = ({
         } else if (signalData.type === 'answer' && isHost) {
           const pc = peerConnectionsRef.current[senderId];
           if (pc) {
-            pc.setRemoteDescription(new RTCSessionDescription(signalData.answer))
-              .then(() => flushPendingCandidates(senderId, pc))
-              .catch(() => setConnectionStatus('No se pudo completar la conexión P2P'));
+            pc.setRemoteDescription(new RTCSessionDescription(signalData.answer));
           }
         } else if (signalData.type === 'candidate') {
           const pc = peerConnectionsRef.current[senderId];
-          if (signalData.candidate) {
-            if (!pc || !pc.remoteDescription) {
-              pendingCandidatesRef.current[senderId] = [
-                ...(pendingCandidatesRef.current[senderId] || []),
-                signalData.candidate,
-              ];
-            } else {
-              pc.addIceCandidate(new RTCIceCandidate(signalData.candidate)).catch(() => undefined);
-            }
+          if (pc && signalData.candidate) {
+            pc.addIceCandidate(new RTCIceCandidate(signalData.candidate)).catch(() => {});
           }
         }
       }
     });
 
-    if (!isHost && hostId) {
-      socketService.sendWebRTCSignal(roomId, { type: 'request_offer' }, hostId, currentUserId);
-    }
-
     return () => {
       unsubscribe();
       // Clean up connections and tracks
       Object.values(peerConnectionsRef.current).forEach((pc) => pc.close());
-      pendingCandidatesRef.current = {};
-      activeRef.current = false;
-      streamRef.current?.getTracks().forEach((track) => track.stop());
-      streamRef.current = null;
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
     };
-  }, [isHost, roomId, hostId, currentUserId]);
+  }, [isHost, roomId, currentUserId]);
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen);

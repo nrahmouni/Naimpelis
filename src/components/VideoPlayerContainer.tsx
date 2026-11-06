@@ -2,8 +2,6 @@ import React, { useRef, useState, useEffect } from 'react';
 import { Play, Pause, Volume2, VolumeX, Maximize, RefreshCw, Crown, AlertCircle, Sparkles } from 'lucide-react';
 import { FloatingReaction, VideoState } from '../types';
 import { formatTime, parseVideoUrl } from '../utils/videoParser';
-import { YouTubeController, YouTubePlayer } from './YouTubePlayer';
-import { VimeoController, VimeoPlayer } from './VimeoPlayer';
 
 interface VideoPlayerContainerProps {
   videoState: VideoState;
@@ -27,7 +25,6 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
   const videoRef = useRef<HTMLVideoElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const playbackControllerRef = useRef<YouTubeController | VimeoController | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(videoState.isPlaying);
   const [currentTime, setCurrentTime] = useState(videoState.currentTime);
@@ -56,7 +53,29 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
         vid.pause();
         setIsPlaying(false);
       }
-    } else if (parsedVideo.type === 'youtube') {
+    } else if (parsedVideo.type === 'youtube' && iframeRef.current?.contentWindow) {
+      // Sync YouTube via postMessage API
+      try {
+        if (videoState.isPlaying) {
+          iframeRef.current.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func: 'playVideo', args: '' }),
+            '*'
+          );
+        } else {
+          iframeRef.current.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func: 'pauseVideo', args: '' }),
+            '*'
+          );
+        }
+        if (videoState.currentTime > 0) {
+          iframeRef.current.contentWindow.postMessage(
+            JSON.stringify({ event: 'command', func: 'seekTo', args: [videoState.currentTime, true] }),
+            '*'
+          );
+        }
+      } catch (err) {
+        // ignore cross-domain iframes
+      }
       setIsPlaying(videoState.isPlaying);
       setCurrentTime(videoState.currentTime);
     } else {
@@ -129,10 +148,17 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
       } else {
         videoRef.current.pause();
       }
-    } else if ((parsedVideo.type === 'youtube' || parsedVideo.type === 'vimeo') && playbackControllerRef.current) {
-      playbackControllerRef.current.seekTo(targetTime);
-      if (videoState.isPlaying) playbackControllerRef.current.play();
-      else playbackControllerRef.current.pause();
+    } else if (parsedVideo.type === 'youtube' && iframeRef.current?.contentWindow) {
+      try {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'seekTo', args: [targetTime, true] }),
+          '*'
+        );
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: videoState.isPlaying ? 'playVideo' : 'pauseVideo', args: '' }),
+          '*'
+        );
+      } catch (err) {}
     } else if (iframeRef.current) {
       // Reload iframe if out of sync
       iframeRef.current.src = iframeRef.current.src;
@@ -189,7 +215,7 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
               key={r.id}
               className="absolute bottom-12 left-1/2 -translate-x-1/2 animate-float-up flex items-center gap-1 bg-slate-900/80 backdrop-blur-md px-3 py-1 rounded-full border border-slate-700/60 shadow-lg text-white text-sm font-semibold whitespace-nowrap"
               style={{
-                left: `${30 + ((parseInt(r.id.replace(/\D/g, ''), 10) || 0) % 40)}%`,
+                left: `${30 + (Math.random() * 40)}%`,
               }}
             >
               <span className="text-xl">{r.emoji}</span>
@@ -237,54 +263,12 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
               ref={iframeRef}
               src={parsedVideo.embedUrl}
               title={videoState.title || 'Navegador Virtual'}
-              sandbox="allow-scripts allow-forms allow-popups allow-presentation"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups allow-presentation"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
               className="w-full flex-1 border-0 bg-white"
             />
           </div>
-        ) : parsedVideo.type === 'youtube' ? (
-          <YouTubePlayer
-            videoId={parsedVideo.videoId}
-            videoState={videoState}
-            isHost={isHost}
-            onStateChange={onStateChange}
-            onController={(controller) => {
-              playbackControllerRef.current = controller;
-            }}
-            onProgress={(time, nextDuration, playing) => {
-              setCurrentTime(time);
-              setDuration(nextDuration);
-              setIsPlaying(playing);
-              if (!isHost && videoState.isPlaying) {
-                const expectedTime = videoState.currentTime + (Date.now() - videoState.lastUpdated) / 1000;
-                setOutOfSync(Math.abs(time - expectedTime) > 3);
-              } else {
-                setOutOfSync(false);
-              }
-            }}
-          />
-        ) : parsedVideo.type === 'vimeo' ? (
-          <VimeoPlayer
-            videoId={parsedVideo.videoId}
-            videoState={videoState}
-            isHost={isHost}
-            onStateChange={onStateChange}
-            onController={(controller) => {
-              playbackControllerRef.current = controller;
-            }}
-            onProgress={(time, nextDuration, playing) => {
-              setCurrentTime(time);
-              setDuration(nextDuration);
-              setIsPlaying(playing);
-              if (!isHost && videoState.isPlaying) {
-                const expectedTime = videoState.currentTime + (Date.now() - videoState.lastUpdated) / 1000;
-                setOutOfSync(Math.abs(time - expectedTime) > 3);
-              } else {
-                setOutOfSync(false);
-              }
-            }}
-          />
         ) : parsedVideo.type === 'direct' ? (
           <video
             ref={videoRef}
@@ -339,7 +323,7 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
               rel="noopener noreferrer"
               className="px-2.5 py-1 rounded-full bg-slate-900/90 hover:bg-rose-600 text-slate-200 hover:text-white border border-slate-700/70 text-[10px] font-semibold flex items-center gap-1 shadow-lg backdrop-blur-md transition-all active:scale-95"
             >
-              <span>Abrir ficha</span>
+              <span>Abrir en Bingetrix</span>
               <span className="text-[11px]">↗</span>
             </a>
           </div>
@@ -463,16 +447,17 @@ export const VideoPlayerContainer: React.FC<VideoPlayerContainerProps> = ({
             </div>
           </div>
 
-          {videoState.trailerUrl && (
+          {/* Alternate Stream Switcher if movie portal */}
+          {videoState.altEmbeds && videoState.altEmbeds.length > 0 && (
             <div className="flex items-center gap-1 shrink-0">
-              <a
-                href={videoState.trailerUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-2 py-1 rounded-lg bg-rose-600/20 text-rose-300 border border-rose-500/30 text-[10px] font-semibold hover:bg-rose-600/30 transition-colors"
-              >
-                Tráiler oficial
-              </a>
+              {videoState.trailerUrl && (
+                <button
+                  onClick={() => onStateChange('seek', 0, true)}
+                  className="px-2 py-1 rounded-lg bg-rose-600/20 text-rose-300 border border-rose-500/30 text-[10px] font-semibold hover:bg-rose-600/30 transition-colors"
+                >
+                  Tráiler HD
+                </button>
+              )}
             </div>
           )}
         </div>

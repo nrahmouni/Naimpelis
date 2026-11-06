@@ -52,19 +52,9 @@ export interface RoomData {
   hostId: string;
   videoState: VideoState;
   participants: Participant[];
-  screenShareActive?: boolean;
-  remoteBrowserActive?: boolean;
   messages: ChatMessage[];
   createdAt: number;
 }
-
-export type RemoteBrowserInput =
-  | { kind: 'click'; x: number; y: number; button?: 'left' | 'right' | 'middle' }
-  | { kind: 'wheel'; x: number; y: number; deltaX: number; deltaY: number }
-  | { kind: 'key'; key: string }
-  | { kind: 'text'; text: string }
-  | { kind: 'navigate'; url: string }
-  | { kind: 'reload' };
 
 export interface SampleVideo {
   id: string;
