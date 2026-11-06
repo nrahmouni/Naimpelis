@@ -739,6 +739,12 @@ app.get('/api/search-movies', async (req, res) => {
         const poster = m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : '';
         const backdrop = m.backdrop_path ? `https://image.tmdb.org/t/p/w780${m.backdrop_path}` : '';
         const rating = m.vote_average ? m.vote_average.toFixed(1) : '';
+        const bingetrixUrl = isTv
+          ? `https://bingetrix.sc/tv/${id}`
+          : `https://bingetrix.sc/movie/${id}`;
+        const movidyUrl = isTv
+          ? `https://movidy.pw/embed/tv/${id}/1/1`
+          : `https://movidy.pw/embed/movie/${id}`;
 
         return {
           id,
@@ -749,6 +755,8 @@ app.get('/api/search-movies', async (req, res) => {
           backdrop,
           rating,
           isTv,
+          bingetrixUrl,
+          movidyUrl,
         };
       });
 

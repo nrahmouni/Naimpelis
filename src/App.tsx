@@ -330,8 +330,8 @@ export default function App() {
             setCatalogRequest((request) => request + 1);
             if (videoState.sourceType !== 'iframe') {
               handleUrlChange(
-                videoState.url || 'https://movidy.pw/ver/hope/',
-                'Navegador Virtual',
+                'https://movidy.pw/ver/hope/',
+                'Movidy',
                 true
               );
             }

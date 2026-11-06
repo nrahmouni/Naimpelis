@@ -28,6 +28,8 @@ interface MovieItem {
   backdrop: string;
   rating: string;
   isTv: boolean;
+  bingetrixUrl: string;
+  movidyUrl: string;
 }
 
 interface VirtualChromeBrowserProps {
@@ -271,12 +273,17 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
             }`}
           >
             <Film className="w-3.5 h-3.5 text-rose-500 shrink-0" />
-            <span>Buscador / Catálogo</span>
+            <span>Mi catálogo</span>
           </button>
 
           {/* Tab 2: Virtual Web Browser View */}
           <button
-            onClick={() => setActiveTab('web')}
+            onClick={() => {
+              setActiveTab('web');
+              if (isHost && !remoteBrowserActive && videoState?.sourceType === 'iframe') {
+                onNavigate(addressInput || 'https://movidy.pw/ver/hope/', 'Movidy');
+              }
+            }}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-t-xl text-xs font-bold transition-all border-t border-x ${
               activeTab === 'web'
                 ? 'bg-slate-900 text-blue-400 border-slate-800 shadow-sm'
@@ -284,7 +291,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
             }`}
           >
             <Globe className="w-3.5 h-3.5 text-blue-400 shrink-0" />
-            <span className="hidden sm:inline">Navegador Web</span>
+            <span>Movidy / Web</span>
           </button>
         </div>
 
@@ -412,8 +419,22 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
                       <div className="mt-5 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => void handlePlayTrailer()}
+                          onClick={() => handleOpenPortal(selectedMovie.movidyUrl, 'Movidy')}
                           className="inline-flex items-center gap-2 rounded-full bg-rose-500 px-4 py-2 text-xs font-bold text-white shadow-lg shadow-rose-950/30 transition hover:bg-rose-400"
+                        >
+                          <Play className="h-4 w-4 fill-current" /> Abrir en Movidy
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPortal(selectedMovie.bingetrixUrl, 'Bingetrix')}
+                          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                        >
+                          Abrir en Bingetrix <ExternalLink className="h-3.5 w-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handlePlayTrailer()}
+                          className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/[0.06] px-4 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
                         >
                           <Play className="h-4 w-4 fill-current" /> Ver tráiler oficial
                         </button>
