@@ -73,6 +73,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const proxyUrl = `/api/proxy-web?url=${encodeURIComponent(currentUrl || addressInput)}&roomId=${encodeURIComponent(roomId)}`;
 
   // Sync logic for video and navigation
   useEffect(() => {
@@ -183,6 +184,14 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
     setAddressInput(url);
     setActiveTab('web');
     onNavigate(url, 'Deportes en Directo');
+  };
+
+  const handleSelectMovie = (movie: MovieItem) => {
+    const url = activeCategory === 'movidy' ? movie.movidyUrl : movie.streamUrl;
+    setSelectedMovie(movie);
+    setAddressInput(url);
+    setActiveTab('web');
+    onNavigate(url, movie.title);
   };
 
   // ... (keep rest of the file)

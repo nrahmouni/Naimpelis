@@ -542,7 +542,7 @@ app.get('/api/sports-events', async (req, res) => {
     const targetUrl = 'https://www.livesoccertv.com/';
     
     browser = await puppeteer.launch({ 
-      headless: 'new',
+      headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'] 
     });
     const page = await browser.newPage();
@@ -587,7 +587,7 @@ app.get('/api/sports-match-options', async (req, res) => {
   let browser;
   try {
     browser = await puppeteer.launch({ 
-      headless: 'new',
+      headless: true,
       args: ['--no-sandbox', '--disable-setuid-sandbox'] 
     });
     const page = await browser.newPage();
@@ -617,6 +617,11 @@ app.get('/api/sports-match-options', async (req, res) => {
     res.status(500).json({ success: false, error: 'Failed to fetch stream options' });
   }
 });
+
+app.get('/api/proxy-web', async (req, res) => {
+  const targetUrl = req.query.url as string;
+  const roomId = (req.query.roomId as string) || '';
+  if (!targetUrl) return res.status(400).send('Missing URL');
 
   try {
     let finalUrl = targetUrl;
