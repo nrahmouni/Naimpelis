@@ -11,7 +11,6 @@ import { HealthMonitorModal } from './components/HealthMonitorModal';
 import { RoomJoinScreen } from './components/RoomJoinScreen';
 import { socketService } from './services/socket';
 import { SendToTvModal } from './components/SendToTvModal';
-import { MessageSquare, X } from 'lucide-react';
 import { ChatMessage, FloatingReaction, Participant, VideoSourceType, VideoState } from './types';
 import { parseVideoUrl } from './utils/videoParser';
 
@@ -37,9 +36,6 @@ export default function App() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
-
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [unreadChatCount, setUnreadChatCount] = useState(0);
 
   const [videoState, setVideoState] = useState<VideoState>({
     url: 'https://bingetrix.sc/watch',
@@ -139,10 +135,6 @@ export default function App() {
         }
       } else if (type === 'NEW_CHAT_MESSAGE') {
         setMessages((prev) => [...prev, payload]);
-        setIsChatOpen((open) => {
-          if (!open) setUnreadChatCount((count) => count + 1);
-          return open;
-        });
       } else if (type === 'FLOATING_REACTION') {
         setReactions((prev) => [...prev, payload]);
         // Remove reaction after floating animation finishes (2.2s)
@@ -303,9 +295,8 @@ export default function App() {
   }
 
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans">
-      {/* Top Bar Header */}
-      <Header
+    <div className="flex h-dvh flex-col overflow-hidden bg-[#0b0e11] font-sans text-slate-100">
+      {!isTvScreenMode && <Header
         roomName={roomName}
         roomId={roomId}
         participants={participants}
@@ -330,7 +321,7 @@ export default function App() {
         onOpenProfile={() => setShowProfileModal(true)}
         onLeaveRoom={handleLeaveRoom}
         onOpenHealthMonitor={() => setShowHealthMonitor(true)}
-      />
+      />}
 
       {/* Main Content Area */}
       {isTvScreenMode ? (
@@ -345,11 +336,7 @@ export default function App() {
 
           {videoState.sourceType === 'iframe' || isVirtualBrowser ? (
             <iframe
-              src={
-                /vidsrc|autoembed|2embed|movidy|\/embed\//i.test(videoState.url)
-                  ? videoState.url
-                  : `/api/proxy-web?url=${encodeURIComponent(videoState.url)}&roomId=${encodeURIComponent(roomId)}`
-              }
+              src={`/api/proxy-web?url=${encodeURIComponent(videoState.url)}&roomId=${encodeURIComponent(roomId)}`}
               title="TV Cinema Screen"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
@@ -368,9 +355,8 @@ export default function App() {
           )}
         </div>
       ) : (
-        <div className="flex-1 w-full h-full min-h-0 relative flex flex-col overflow-hidden bg-black">
-          {/* Main Content: Full-screen Video Player, WebRTC Screen Share or Virtual Browser */}
-          <div className="flex-1 w-full h-full min-h-0 flex flex-col overflow-hidden">
+        <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2 sm:gap-3 sm:p-3 md:flex-row">
+          <section aria-label="Reproductor compartido" className="min-h-[140px] w-full min-w-0 flex-[1.2] overflow-hidden rounded-2xl border border-white/[0.08] bg-black shadow-[0_12px_36px_rgba(0,0,0,0.2)] md:min-h-[220px] md:flex-[2.1]">
             {isScreenSharing ? (
               <ScreenShareContainer
                 isHost={currentUser.isHost}
@@ -402,64 +388,16 @@ export default function App() {
                 onSendReaction={handleSendReaction}
               />
             )}
-          </div>
-
-          {/* Floating Chat Action Button - By default chat is always in this floating button */}
-          {!isChatOpen && (
-            <button
-              onClick={() => {
-                setIsChatOpen(true);
-                setUnreadChatCount(0);
-              }}
-              className="fixed bottom-5 right-5 z-40 flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-rose-600 via-rose-500 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-extrabold text-sm shadow-2xl shadow-rose-950/80 border border-white/20 active:scale-95 transition-all duration-200 group cursor-pointer"
-              aria-label="Abrir chat flotante"
-            >
-              <div className="relative">
-                <MessageSquare className="w-5 h-5 transition-transform group-hover:scale-110" />
-                {unreadChatCount > 0 && (
-                  <span className="absolute -top-2.5 -right-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-slate-950 font-black text-[10px] ring-2 ring-slate-950 animate-bounce">
-                    {unreadChatCount > 9 ? '9+' : unreadChatCount}
-                  </span>
-                )}
-              </div>
-              <span className="font-extrabold tracking-wide">Chat</span>
-              <span className="text-white/70 text-xs font-normal">({participants.length})</span>
-            </button>
-          )}
-
-          {/* Floating Chat Modal / Drawer - Appears on top when opened, can be minimized/closed */}
-          {isChatOpen && (
-            <div className="fixed inset-x-3 bottom-3 top-20 md:inset-x-auto md:top-auto md:bottom-5 md:right-5 md:w-[380px] md:h-[540px] z-50 flex flex-col rounded-2xl shadow-2xl shadow-black/90 border border-slate-700/80 bg-slate-950/95 backdrop-blur-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
-              {/* Header */}
-              <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-900 border-b border-slate-800 text-slate-100 select-none">
-                <div className="flex items-center gap-2 min-w-0">
-                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
-                  <span className="font-extrabold text-sm truncate">Chat de la Sala</span>
-                  <span className="text-xs text-slate-400 font-medium">({participants.length} en línea)</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    onClick={() => setIsChatOpen(false)}
-                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
-                    title="Minimizar a botón flotante"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Chat View */}
-              <div className="flex-1 min-h-0 flex flex-col">
-                <HandsomeChat
-                  messages={messages}
-                  currentUser={currentUser}
-                  onSendMessage={handleSendMessage}
-                  onClose={() => setIsChatOpen(false)}
-                />
-              </div>
-            </div>
-          )}
-        </div>
+          </section>
+          <aside aria-label="Chat de la sala" className="flex min-h-[120px] w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111518] shadow-[0_12px_36px_rgba(0,0,0,0.16)] md:min-h-[160px]">
+            <HandsomeChat
+              messages={messages}
+              currentUser={currentUser}
+              onSendMessage={handleSendMessage}
+              participantCount={participants.length}
+            />
+          </aside>
+        </main>
       )}
 
       {/* Modals */}

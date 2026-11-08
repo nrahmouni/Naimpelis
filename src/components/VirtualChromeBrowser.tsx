@@ -4,7 +4,6 @@ import {
   ArrowRight,
   RotateCw, 
   Lock, 
-  Globe, 
   Search, 
   Film,
   Maximize2,
@@ -12,15 +11,10 @@ import {
   Play,
   Star,
   Clapperboard,
-  Radio,
-  Trophy,
   ShieldCheck,
-  ExternalLink,
   Tv2,
   Sparkles,
   Layers,
-  Home,
-  Sparkle
 } from 'lucide-react';
 import { VideoState } from '../types';
 import { parseVideoUrl } from '../utils/videoParser';
@@ -70,7 +64,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   const [isLoadingMovies, setIsLoadingMovies] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isStreamIsolated, setIsStreamIsolated] = useState(false);
-  const [showHubPicker, setShowHubPicker] = useState(true);
   const [selectedMovie, setSelectedMovie] = useState<MovieItem | null>(null);
   const [catalogError, setCatalogError] = useState('');
 
@@ -86,10 +79,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
       return 'https://bingetrix.sc/watch';
     }
     return url;
-  };
-
-  const isDirectEmbed = (url: string) => {
-    return /footunder\.online|crackstreams|embedindia|trend48|vidsrc|autoembed|tutvlive/i.test(url);
   };
 
   const isRecognizedStream = /footunder|canal-|stream-|bingetrix\.sc\/(?:watch|movie|tv)|movidy\.pw\/ver|vidsrc|embed|crackstreams/i.test(addressInput);
@@ -109,8 +98,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
     const effective = getEffectiveStreamUrl(newUrl);
     setAddressInput(effective);
     setActiveTab('web');
-    setShowHubPicker(false);
-
     setHistoryStack((prev) => {
       const updated = prev.slice(0, historyIndex + 1);
       updated.push(effective);
@@ -145,8 +132,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
 
   const handleReload = () => {
     if (iframeRef.current) {
-      const target = isDirectEmbed(addressInput) ? getEffectiveStreamUrl(addressInput) : proxyUrl;
-      iframeRef.current.src = target;
+      iframeRef.current.src = proxyUrl;
     }
     onNavigate(addressInput, 'Recargado');
   };
@@ -249,84 +235,44 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
                 <RotateCw className="w-3.5 h-3.5" />
               </button>
               <button
-                onClick={() => setShowHubPicker(true)}
+                onClick={() => {
+                  setSelectedMovie(null);
+                  setActiveTab('finder');
+                }}
                 className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs transition-all"
-                title="Seleccionar qué ver (Fútbol o Cine)"
+                title="Volver a la cartelera"
               >
-                <Home className="w-3.5 h-3.5" />
+                <Clapperboard className="w-3.5 h-3.5" />
                 <span className="text-[11px] hidden sm:inline">Inicio</span>
               </button>
             </div>
 
-            {/* Separator */}
-            <div className="h-5 w-[1px] bg-slate-800 shrink-0" />
+          </div>
 
-            {/* Category 1: Bingetrix */}
+          <div className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1">
             <button
-              onClick={() => navigateToUrl('https://bingetrix.sc/watch', 'Bingetrix')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                activeTab === 'web' && addressInput.includes('bingetrix')
-                  ? 'bg-amber-500 text-slate-950 shadow-md font-extrabold'
-                  : 'bg-slate-900 text-amber-300 hover:bg-slate-800'
-              }`}
+              type="button"
+              onClick={() => { setActiveTab('finder'); setSelectedMovie(null); }}
+              aria-pressed={activeTab === 'finder'}
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${activeTab === 'finder' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
-              <Film className="w-3.5 h-3.5" />
-              <span>Bingetrix</span>
+              Cartelera
             </button>
-
-            {/* Category 2: Movidy */}
             <button
-              onClick={() => navigateToUrl('https://movidy.pw/', 'Movidy')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                activeTab === 'web' && addressInput.includes('movidy')
-                  ? 'bg-rose-600 text-white shadow-md font-extrabold'
-                  : 'bg-slate-900 text-rose-300 hover:bg-slate-800'
-              }`}
+              type="button"
+              onClick={() => handleOpenSportsTab('all')}
+              aria-pressed={activeTab === 'sports'}
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${activeTab === 'sports' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
-              <Globe className="w-3.5 h-3.5" />
-              <span>Movidy</span>
+              Deportes
             </button>
-
-            {/* Category 3: RojaDirecta TV */}
             <button
-              onClick={() => handleOpenSportsTab('rojadirectv')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                activeTab === 'sports' && sportsSource === 'rojadirectv'
-                  ? 'bg-rose-600 text-white shadow-md font-extrabold'
-                  : 'bg-slate-900 text-rose-300 hover:bg-slate-800'
-              }`}
+              type="button"
+              onClick={() => setActiveTab('web')}
+              aria-pressed={activeTab === 'web'}
+              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${activeTab === 'web' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
-              <Radio className="w-3.5 h-3.5" />
-              <span>RojaDirecta TV</span>
-            </button>
-
-            {/* Category 4: RojaDirecta HD */}
-            <button
-              onClick={() => handleOpenSportsTab('rojadirectahd')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                activeTab === 'sports' && sportsSource === 'rojadirectahd'
-                  ? 'bg-blue-600 text-white shadow-md font-extrabold'
-                  : 'bg-slate-900 text-blue-300 hover:bg-slate-800'
-              }`}
-            >
-              <Trophy className="w-3.5 h-3.5" />
-              <span>RojaDirecta HD</span>
-            </button>
-
-            {/* Category 5: Cartelera */}
-            <button
-              onClick={() => {
-                setActiveTab('finder');
-                setSelectedMovie(null);
-              }}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all shrink-0 ${
-                activeTab === 'finder'
-                  ? 'bg-purple-600 text-white shadow-md font-extrabold'
-                  : 'bg-slate-900 text-purple-300 hover:bg-slate-800'
-              }`}
-            >
-              <Clapperboard className="w-3.5 h-3.5" />
-              <span>Cartelera</span>
+              Navegar
             </button>
           </div>
 
@@ -370,17 +316,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
             <span className="text-[11px] hidden sm:inline">{isStreamIsolated ? 'Modo Aislado' : 'Aislar Stream'}</span>
           </button>
 
-          {/* Direct External Link */}
-          <a
-            href={getEffectiveStreamUrl(addressInput)}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 hover:text-white border border-slate-700 text-xs font-bold transition-all active:scale-95 shrink-0"
-            title="Abrir en pestaña nueva externa"
-          >
-            <ExternalLink className="w-3.5 h-3.5" />
-            <span className="text-[11px] hidden sm:inline">Abrir directo</span>
-          </a>
         </div>
       </div>
 
@@ -419,33 +354,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
                 Buscar
               </button>
             </form>
-
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => handleOpenPortal('https://movidy.pw/', 'Movidy')}
-                className="px-3 py-1.5 rounded-full bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition-all"
-              >
-                🎬 Abrir Movidy
-              </button>
-              <button
-                onClick={() => handleOpenPortal('https://bingetrix.sc/watch/1423191', 'Bingetrix')}
-                className="px-3 py-1.5 rounded-full bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all"
-              >
-                🍿 Abrir Bingetrix
-              </button>
-              <button
-                onClick={() => handleOpenSportsTab('rojadirectv')}
-                className="px-3 py-1.5 rounded-full bg-rose-600/20 hover:bg-rose-600/30 text-rose-300 border border-rose-500/30 text-xs font-bold transition-all"
-              >
-                ⚽ RojaDirecta TV
-              </button>
-              <button
-                onClick={() => handleOpenSportsTab('rojadirectahd')}
-                className="px-3 py-1.5 rounded-full bg-blue-600/20 hover:bg-blue-600/30 text-blue-300 border border-blue-500/30 text-xs font-bold transition-all"
-              >
-                🏆 RojaDirecta HD
-              </button>
-            </div>
 
             {catalogError && (
               <div className="p-3 bg-rose-950/40 border border-rose-500/30 rounded-xl text-xs text-rose-300">
@@ -535,9 +443,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
                   </button>
                   <button
                     onClick={() => {
-                      if (iframeRef.current) {
-                        iframeRef.current.src = isDirectEmbed(addressInput) ? getEffectiveStreamUrl(addressInput) : proxyUrl;
-                      }
+                      if (iframeRef.current) iframeRef.current.src = proxyUrl;
                     }}
                     className="p-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition-all"
                     title="Recargar stream"
@@ -556,7 +462,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
 
             <iframe
               ref={iframeRef}
-              src={isDirectEmbed(addressInput) ? getEffectiveStreamUrl(addressInput) : proxyUrl}
+              src={proxyUrl}
               title="Virtual Chrome Player"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture; display-capture"
               allowFullScreen
@@ -568,83 +474,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
         )}
       </div>
 
-      {/* Initial / On-Demand Hub Selector Modal */}
-      {showHubPicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-in fade-in duration-200">
-          <div className="w-full max-w-xl bg-slate-950 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-5 text-slate-100 relative">
-            <div className="flex items-center justify-between border-b border-slate-800/80 pb-3">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
-                <h2 className="text-lg font-extrabold tracking-tight text-white">¿Qué deseas ver en la sala?</h2>
-              </div>
-              <button
-                onClick={() => setShowHubPicker(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-900 transition-colors"
-              >
-                ✕
-              </button>
-            </div>
-
-            <p className="text-xs text-slate-400 leading-relaxed">
-              Selecciona tu experiencia de entretenimiento sin publicidad ni desorden. Todos los contenidos se sincronizan en tiempo real con los integrantes de la sala.
-            </p>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              {/* Option 1: Cine, Películas y Series */}
-              <button
-                onClick={() => navigateToUrl('https://bingetrix.sc/watch', 'Bingetrix')}
-                className="flex flex-col items-start p-4 rounded-2xl bg-gradient-to-br from-amber-950/40 via-slate-900 to-slate-900 border border-amber-500/30 hover:border-amber-400 hover:scale-[1.02] transition-all text-left group shadow-lg"
-              >
-                <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center mb-3 group-hover:bg-amber-500 group-hover:text-slate-950 transition-colors">
-                  <Film className="w-5 h-5" />
-                </div>
-                <h3 className="text-sm font-extrabold text-white group-hover:text-amber-300 transition-colors">
-                  🍿 Cine, Películas & Series
-                </h3>
-                <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                  Explora el catálogo de Bingetrix y Movidy sin anuncios ni popups.
-                </p>
-              </button>
-
-              {/* Option 2: Fútbol & Deportes */}
-              <button
-                onClick={() => {
-                  setSelectedMovie(null);
-                  setSportsSource('rojadirectv');
-                  setActiveTab('sports');
-                  setShowHubPicker(false);
-                }}
-                className="flex flex-col items-start p-4 rounded-2xl bg-gradient-to-br from-rose-950/40 via-slate-900 to-slate-900 border border-rose-500/30 hover:border-rose-400 hover:scale-[1.02] transition-all text-left group shadow-lg"
-              >
-                <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center mb-3 group-hover:bg-rose-500 group-hover:text-white transition-colors">
-                  <Trophy className="w-5 h-5" />
-                </div>
-                <h3 className="text-sm font-extrabold text-white group-hover:text-rose-300 transition-colors">
-                  ⚽ Fútbol & Deportes en Vivo
-                </h3>
-                <p className="text-[11px] text-slate-400 mt-1 leading-snug">
-                  Agenda en directo con señales de RojaDirecta TV y RojaDirecta HD.
-                </p>
-              </button>
-            </div>
-
-            {/* Option 3: Search / Cartelera */}
-            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between">
-              <span className="text-xs text-slate-500">¿Buscas una película en específico?</span>
-              <button
-                onClick={() => {
-                  setActiveTab('finder');
-                  setSelectedMovie(null);
-                  setShowHubPicker(false);
-                }}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-300 transition-all"
-              >
-                🔍 Cartelera y Buscador
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

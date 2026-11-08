@@ -1160,10 +1160,22 @@ app.get('/api/proxy-web', async (req, res) => {
         </script>
       `;
 
-      // Rewrite child iframe src attributes to route through /api/proxy-web so inner video elements are ALSO proxied and intercepted!
-      html = html.replace(/<iframe\s+([^>]*?)src=["'](https?:\/\/[^"']+)["']/gi, (match, prefix, iframeSrc) => {
-        const proxiedIframeSrc = `/api/proxy-web?url=${encodeURIComponent(iframeSrc)}&roomId=${encodedRoomId}`;
-        return `<iframe ${prefix}src="${proxiedIframeSrc}"`;
+      // Proxy allowed player frames without sandbox restrictions that prevent playback.
+      html = html.replace(/<iframe\b[^>]*>/gi, (iframeTag) => {
+        const srcMatch = iframeTag.match(/\bsrc\s*=\s*(["'])(.*?)\1/i);
+        if (!srcMatch) return iframeTag;
+
+        let frameUrl: URL;
+        try {
+          frameUrl = parseAllowedProxyUrl(new URL(srcMatch[2], finalUrl).toString());
+        } catch {
+          return iframeTag;
+        }
+
+        const proxiedFrameUrl = `/api/proxy-web?url=${encodeURIComponent(frameUrl.toString())}&roomId=${encodedRoomId}`;
+        return iframeTag
+          .replace(srcMatch[0], `src="${proxiedFrameUrl}"`)
+          .replace(/\s+sandbox(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '');
       });
 
       if (html.includes('<head>')) {

@@ -23,7 +23,7 @@ export const InviteModal: React.FC<InviteModalProps> = ({ roomId, roomName, onCl
     if (navigator.share) {
       try {
         await navigator.share({
-          title: `Únete a ${roomName} en Watch2Gether`,
+          title: `Únete a ${roomName} en Naimpelis`,
           text: `¡Hola! Entra en mi sala para ver películas y vídeos en sincronía:`,
           url: inviteUrl,
         });
@@ -34,12 +34,12 @@ export const InviteModal: React.FC<InviteModalProps> = ({ roomId, roomName, onCl
   };
 
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(
-    `¡Únete a mi sala "${roomName}" en Watch2Gether para ver películas juntos! 🍿\n${inviteUrl}`
+    `¡Únete a mi sala "${roomName}" en Naimpelis para ver películas juntos! 🍿\n${inviteUrl}`
   )}`;
 
   const telegramUrl = `https://t.me/share/url?url=${encodeURIComponent(
     inviteUrl
-  )}&text=${encodeURIComponent(`¡Únete a mi sala "${roomName}" en Watch2Gether!`)}`;
+  )}&text=${encodeURIComponent(`¡Únete a mi sala "${roomName}" en Naimpelis!`)}`;
 
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">

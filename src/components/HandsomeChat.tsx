@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Smile, ChevronDown } from 'lucide-react';
+import { Send, Smile, ChevronDown, MessageSquare } from 'lucide-react';
 import { ChatMessage, Participant } from '../types';
 import { triggerHaptic, playCinemaSound } from '../utils/haptics';
 
@@ -8,6 +8,7 @@ interface HandsomeChatProps {
   currentUser: Participant;
   onSendMessage: (text: string) => void;
   onClose?: () => void;
+  participantCount: number;
 }
 
 const EMOJIS = ['🍿', '❤️', '🔥', '😂', '😮', '👏', '🎬', '🤩', '👍', '💀', '🎉', '🤯'];
@@ -16,6 +17,7 @@ export const HandsomeChat: React.FC<HandsomeChatProps> = ({
   messages,
   currentUser,
   onSendMessage,
+  participantCount,
 }) => {
   const [inputText, setInputText] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -57,6 +59,13 @@ export const HandsomeChat: React.FC<HandsomeChatProps> = ({
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-[#0d1317]">
+      <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
+        <div className="flex items-center gap-2.5">
+          <MessageSquare className="h-4 w-4 text-slate-400" />
+          <h2 className="text-[13px] font-semibold text-slate-100">Chat</h2>
+        </div>
+        <span className="text-[11px] text-slate-500">{participantCount} en sala</span>
+      </div>
       {/* Messages List Container */}
       <div
         ref={chatContainerRef}
