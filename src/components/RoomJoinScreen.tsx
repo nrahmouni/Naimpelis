@@ -44,8 +44,8 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
     handleSaveAndJoin(targetRoomId);
   };
 
-  const handleJoinExisting = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleJoinExisting = (event: React.FormEvent) => {
+    event.preventDefault();
     if (roomIdInput.trim()) {
       const cleanRoomId = roomIdInput.trim().replace(/^.*[?&]room=/, '');
       handleSaveAndJoin(cleanRoomId);
@@ -132,8 +132,8 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
                 </button>
               ))}
             </div>
+            <span className="text-sm font-bold tracking-tight text-white">Watch2Gether</span>
           </div>
-        </div>
 
         {!initialRoomId && recentRooms.length > 0 && (
           <div className="flex w-full p-0.5 mb-3 bg-slate-950/60 border border-slate-800/80 rounded-xl">
@@ -167,6 +167,7 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
                 <p className="text-[11px] text-slate-400 font-mono truncate">ID: {initialRoomId}</p>
               </div>
             </div>
+          )}
 
             <button
               onClick={handleCreateNewRoom}
