@@ -376,17 +376,31 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
                       <div className="mt-4 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => handleOpenPortal(`https://bingetrix.sc/${selectedMovie.isTv ? 'tv' : 'movie'}/${selectedMovie.id}`, 'Bingetrix')}
-                          className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-rose-500"
+                          onClick={() => handleOpenPortal(`https://vidsrc.me/embed/${selectedMovie.isTv ? 'tv?tmdb=' : 'movie?tmdb='}${selectedMovie.id}`, selectedMovie.title)}
+                          className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-rose-500 shadow-md"
                         >
-                          <Play className="h-3.5 w-3.5 fill-current" /> Ver en Bingetrix
+                          <Play className="h-3.5 w-3.5 fill-current" /> Reproducir HD (VidSrc)
                         </button>
                         <button
                           type="button"
-                          onClick={() => handleOpenPortal('https://movidy.pw/', 'Movidy')}
+                          onClick={() => handleOpenPortal(`https://vidsrc.to/embed/${selectedMovie.isTv ? 'tv' : 'movie'}/${selectedMovie.id}`, selectedMovie.title)}
+                          className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3.5 py-2 text-xs font-bold text-rose-200 transition hover:bg-rose-500/20"
+                        >
+                          VidSrc 2
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPortal(`https://embed.su/embed/${selectedMovie.isTv ? 'tv' : 'movie'}/${selectedMovie.id}`, selectedMovie.title)}
+                          className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3.5 py-2 text-xs font-bold text-amber-200 transition hover:bg-amber-500/20"
+                        >
+                          Embed.su
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPortal(`https://bingetrix.sc/${selectedMovie.isTv ? 'tv' : 'movie'}/${selectedMovie.id}`, selectedMovie.title)}
                           className="rounded-xl border border-white/15 bg-white/[0.05] px-3.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
                         >
-                          Buscar en Movidy
+                          Bingetrix
                         </button>
                       </div>
                     </div>
@@ -422,15 +436,94 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
           </div>
         ) : (
           /* Web Browser Viewport - Filtered & Protected */
-          <div className="w-full h-full relative group bg-black">
-            {/* Ad-Block & Popup Blocker Active Indicator */}
-            <div className="absolute top-2 right-3 z-10 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/80 backdrop-blur border border-emerald-500/40 text-[11px] text-emerald-300 font-bold shadow-lg">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Sin Publicidad · Popups Bloqueados</span>
+          <div className="w-full h-full flex flex-col relative group bg-black">
+            {/* Quick Server Switcher & Stream Fallback Toolbar */}
+            <div className="bg-slate-950/90 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 overflow-x-auto shrink-0 select-none backdrop-blur">
+              <div className="flex items-center gap-1.5 text-[11px] shrink-0 font-bold text-slate-300">
+                <span className="text-rose-400">⚡ Reproductores:</span>
+              </div>
+              
+              <div className="flex items-center gap-1.5 overflow-x-auto text-[11px]">
+                {addressInput.match(/(?:movie|tv|tmdb)[\/=](\d+)/i) ? (
+                  /* TMDB Movie/Show Direct Servers */
+                  <>
+                    {(() => {
+                      const match = addressInput.match(/(?:movie|tv|tmdb)[\/=](\d+)/i);
+                      const id = match ? match[1] : '';
+                      const isTv = /(?:tv|series)[\/=]/i.test(addressInput);
+                      return (
+                        <>
+                          <button
+                            onClick={() => handleOpenPortal(`https://vidsrc.me/embed/${isTv ? 'tv?tmdb=' : 'movie?tmdb='}${id}`, 'VidSrc HD')}
+                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all shadow-sm shrink-0"
+                          >
+                            VidSrc 1 (HD)
+                          </button>
+                          <button
+                            onClick={() => handleOpenPortal(`https://vidsrc.to/embed/${isTv ? 'tv' : 'movie'}/${id}`, 'VidSrc 2')}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
+                          >
+                            VidSrc 2
+                          </button>
+                          <button
+                            onClick={() => handleOpenPortal(`https://embed.su/embed/${isTv ? 'tv' : 'movie'}/${id}`, 'EmbedSU')}
+                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
+                          >
+                            Embed.su
+                          </button>
+                          <button
+                            onClick={() => handleOpenPortal(`https://bingetrix.sc/${isTv ? 'tv' : 'movie'}/${id}`, 'Bingetrix')}
+                            className="px-2.5 py-1 rounded-lg bg-amber-600/20 text-amber-300 border border-amber-500/30 font-bold transition-all shrink-0"
+                          >
+                            Bingetrix
+                          </button>
+                        </>
+                      );
+                    })()}
+                  </>
+                ) : addressInput.includes('footunder') || addressInput.includes('rojadirect') || addressInput.includes('crackstream') ? (
+                  /* Sports Canal Alternative Switcher */
+                  <>
+                    <button
+                      onClick={() => handleOpenSportsTab('all')}
+                      className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all shrink-0"
+                    >
+                      🏆 Cambiar de Canal / Partido
+                    </button>
+                    <button
+                      onClick={handleReload}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
+                    >
+                      🔄 Reintentar Canal
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      onClick={() => handleOpenPortal('https://bingetrix.sc/watch', 'Bingetrix')}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
+                    >
+                      Bingetrix
+                    </button>
+                    <button
+                      onClick={() => handleOpenPortal('https://movidy.pw/', 'Movidy')}
+                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
+                    >
+                      Movidy
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {/* Ad-Block Active Indicator */}
+              <div className="pointer-events-none flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-[10px] text-emerald-400 font-bold border border-emerald-500/20 shrink-0">
+                <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                <span>Sin Anuncios</span>
+              </div>
             </div>
 
             {remoteBrowserError && (
-              <div className="absolute inset-x-3 top-3 z-10 rounded-xl border border-rose-400/30 bg-rose-950/80 px-3 py-2 text-xs text-rose-100 shadow-lg backdrop-blur">
+              <div className="absolute inset-x-3 top-10 z-10 rounded-xl border border-rose-400/30 bg-rose-950/80 px-3 py-2 text-xs text-rose-100 shadow-lg backdrop-blur">
                 {remoteBrowserError}
               </div>
             )}
@@ -441,7 +534,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
               title="Virtual Chrome Player"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture; display-capture"
               allowFullScreen
-              className="h-full w-full border-0 bg-black"
+              className="flex-1 w-full border-0 bg-black"
             />
           </div>
         )}

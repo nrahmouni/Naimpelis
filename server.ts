@@ -197,9 +197,22 @@ function writeTmdbCache(key: string, value: unknown, ttlMs: number) {
 function parseAllowedProxyUrl(value: string) {
   const parsed = new URL(value);
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-  const isAllowedHost = proxyAllowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
-  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || !isAllowedHost) {
-    throw new Error('Proxy destination is not allowed');
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
+    throw new Error('Proxy destination protocol not allowed');
+  }
+  // Block internal private IP ranges / localhost to prevent SSRF while allowing all public streams
+  if (
+    hostname === 'localhost' ||
+    hostname === '127.0.0.1' ||
+    hostname === '0.0.0.0' ||
+    hostname === '::1' ||
+    /^127\./.test(hostname) ||
+    /^10\./.test(hostname) ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
+    /^192\.168\./.test(hostname) ||
+    /^169\.254\./.test(hostname)
+  ) {
+    throw new Error('Private IP access not allowed');
   }
   return parsed;
 }
@@ -981,6 +994,13 @@ app.get('/api/proxy-web', async (req, res) => {
       }
     }
     let fallbackIndex = 0;
+    let refererHeader = parsed.origin;
+    if (parsed.hostname.includes('footunder') || parsed.hostname.includes('tvtodo') || parsed.hostname.includes('nplayer')) {
+      refererHeader = 'https://www.rojadirectv.live/';
+    } else if (parsed.hostname.includes('crackstreams')) {
+      refererHeader = 'https://rojadirecta-hd.li/';
+    }
+
     let response: Response | undefined;
     let redirectCount = 0;
     while (redirectCount <= 5) {
@@ -996,10 +1016,17 @@ app.get('/api/proxy-web', async (req, res) => {
               'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
               'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
               'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-              'Referer': parsed.origin,
+              'Referer': refererHeader,
               ...(typeof req.headers.range === 'string' ? { Range: req.headers.range } : {}),
             },
           });
+        } catch (fetchErr: unknown) {
+          clearTimeout(timeout);
+          if (fallbackIndex < fallbackUrls.length) {
+            parsed = parseAllowedProxyUrl(fallbackUrls[fallbackIndex++].toString());
+            continue;
+          }
+          return res.status(502).send(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Servidor no disponible</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#080b11;color:#e2e8f0;font:14px system-ui,sans-serif;text-align:center"><main style="max-width:28rem;padding:2rem"><h1 style="font-size:1.2rem">El servidor del reproductor no responde</h1><p style="color:#94a3b8">El servidor (${parsed.hostname}) no se encuentra o no responde. Por favor, selecciona un reproductor alternativo (VidSrc HD, EmbedSU, etc.) en la barra superior.</p></main></body></html>`);
         } finally {
           clearTimeout(timeout);
         }
@@ -1017,8 +1044,7 @@ app.get('/api/proxy-web', async (req, res) => {
       }
       if (response.status === 404 && fallbackIndex < fallbackUrls.length) {
         await response.body?.cancel();
-        parsed = fallbackUrls[fallbackIndex];
-        fallbackIndex += 1;
+        parsed = parseAllowedProxyUrl(fallbackUrls[fallbackIndex++].toString());
         continue;
       }
       break;
@@ -1027,7 +1053,16 @@ app.get('/api/proxy-web', async (req, res) => {
     const finalUrl = parsed.toString();
 
     const contentType = response.headers.get('content-type') || 'text/html';
+    // Strip framing & security headers so video player embed scripts can run freely
+    res.removeHeader('X-Frame-Options');
+    res.removeHeader('Content-Security-Policy');
+    res.removeHeader('Content-Security-Policy-Report-Only');
+    res.removeHeader('Frame-Options');
+    res.removeHeader('Clear-Site-Data');
+    res.removeHeader('Cross-Origin-Embedder-Policy');
+    res.removeHeader('Cross-Origin-Opener-Policy');
     res.status(response.status).setHeader('Content-Type', contentType);
+
     if (response.status === 404 && contentType.includes('text/html')) {
       await response.body?.cancel();
       return res.status(404).send(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canal no disponible</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#080b11;color:#e2e8f0;font:14px system-ui,sans-serif;text-align:center"><main style="max-width:28rem;padding:2rem"><h1 style="font-size:1.2rem">Este canal ya no está disponible</h1><p style="color:#94a3b8">El servidor del canal devolvió un error 404. Vuelve a Deportes y prueba otro canal del mismo partido.</p></main></body></html>`);
@@ -1039,8 +1074,10 @@ app.get('/api/proxy-web', async (req, res) => {
       }
       let html = await readTextWithLimit(response, 5 * 1024 * 1024);
 
-      // Targeted anti-ad filter: only block known aggressive ad network scripts
-      html = html.replace(/<script[^>]*src=["'][^"']*(therocketlanguages|adskeeper|propeller|popcash|adnxs|doubleclick|adsterra|monetag|exoclick|alwingulla)[^"']*["'][^>]*>[\s\S]*?<\/script>/gi, '');
+      // Targeted anti-ad and anti-devtools filter: block popunders & devtool redirect traps
+      html = html.replace(/<script[^>]*src=["'][^"']*(therocketlanguages|adskeeper|propeller|popcash|adnxs|doubleclick|adsterra|monetag|exoclick|alwingulla|jokeconnate|consultingestablishmenthedgehog|wingsmob|defrostgauntlet|capitalhospitals|console-ban|disable-devtool)[^"']*["'][^>]*>[\s\S]*?<\/script>/gi, '');
+      // Strip anti-embed script blocks containing sandboxed frame checks
+      html = html.replace(/<script\b[^>]*>[\s\S]*?(?:sandboxed frame|window\.top\.location|window\.self\s*!==\s*window\.top)[\s\S]*?<\/script>/gi, '');
       html = html.replace(/<meta\b[^>]*>/gi, (tag) => (
         /\bhttp-equiv\s*=\s*(?:"refresh"|'refresh'|refresh)/i.test(tag) ? '' : tag
       ));
@@ -1052,7 +1089,7 @@ app.get('/api/proxy-web', async (req, res) => {
         .map((fallbackUrl) => `&fallback=${encodeURIComponent(fallbackUrl.toString())}`)
         .join('');
 
-      // Safe non-destructive CSS and sync injection
+      // Safe non-destructive CSS, anti-sandbox spoofing and video sync injection
       const syncScript = `
         <base href="${baseHref}/">
         <style>
@@ -1069,89 +1106,91 @@ app.get('/api/proxy-web', async (req, res) => {
         </style>
         <script>
           (function() {
-            // Block popups and intrusive ads
-            window.open = function() { console.log('Blocked popup in virtual browser'); return null; };
+            var proxyPrefix = window.location.origin + '/api/proxy-web?roomId=${encodedRoomId}${fallbackQuery}&url=';
+
+            // Anti-sandbox spoofing: Trick video player scripts into seeing window.top === window.self
+            try {
+              Object.defineProperty(window, 'top', {
+                get: function() { return window.self; },
+                configurable: true
+              });
+              Object.defineProperty(window, 'parent', {
+                get: function() { return window.self; },
+                configurable: true
+              });
+            } catch(e) {}
+
+            // Disable popup windows & dialog traps
+            window.open = function() { console.log('Blocked popup window'); return null; };
             window.alert = function(m) { console.log('Alert suppressed:', m); };
             window.confirm = function() { return false; };
             window.prompt = function() { return null; };
 
-            // Catch script- and gesture-triggered popups before they navigate away.
-            document.addEventListener('click', function(e) {
-              const target = e.target instanceof Element ? e.target : null;
-              if (!target) return;
-              const link = target.closest('a');
-              if (!link) return;
+            // Neutralize anti-devtools traps & forced page redirects
+            try {
+              window.devtoolsDetector = { addListener: function(){}, launch: function(){} };
+              window.consoleBan = { init: function(){} };
+            } catch(e) {}
 
-              const rawHref = link.getAttribute('href') || '';
-              if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return;
-              const rect = link.getBoundingClientRect();
-              const style = window.getComputedStyle(link);
-              const isOverlay = rect.width > window.innerWidth * 0.7 && rect.height > window.innerHeight * 0.7;
-              const isPositioned = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex, 10) > 20;
-              if (isOverlay && isPositioned) {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                link.remove();
-                return;
+            // Intercept internal fetch & XHR calls using ABSOLUTE proxy URL to bypass <base href> overrides
+            (function() {
+              var origFetch = window.fetch;
+              if (origFetch) {
+                window.fetch = function(input, init) {
+                  try {
+                    var urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : '');
+                    if (urlStr && !urlStr.startsWith('data:') && !urlStr.startsWith('blob:') && !urlStr.includes('/api/proxy-web')) {
+                      var target = new URL(urlStr, ${jsString(finalUrl)});
+                      if (['http:', 'https:'].includes(target.protocol)) {
+                        var proxied = proxyPrefix + encodeURIComponent(target.href);
+                        if (typeof input === 'string') {
+                          input = proxied;
+                        } else if (input && input.url) {
+                          input = new Request(proxied, input);
+                        }
+                      }
+                    }
+                  } catch(e) {}
+                  return origFetch.call(this, input, init);
+                };
               }
 
-              let resolved;
-              try {
-                resolved = new URL(rawHref, ${jsString(finalUrl)});
-              } catch(e) {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                return;
+              var origOpen = XMLHttpRequest.prototype.open;
+              if (origOpen) {
+                XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
+                  try {
+                    if (typeof url === 'string' && !url.startsWith('data:') && !url.startsWith('blob:') && !url.includes('/api/proxy-web')) {
+                      var target = new URL(url, ${jsString(finalUrl)});
+                      if (['http:', 'https:'].includes(target.protocol)) {
+                        url = proxyPrefix + encodeURIComponent(target.href);
+                      }
+                    }
+                  } catch(e) {}
+                  return origOpen.call(this, method, url, async, user, password);
+                };
               }
+            })();
 
-              const allowedHosts = ${JSON.stringify(proxyAllowedDomains)};
-              const isAllowed = allowedHosts.some(function(host) {
-                return resolved.hostname === host || resolved.hostname.endsWith('.' + host);
-              });
-              if (!isAllowed || link.target === '_blank') {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                return;
-              }
-              e.preventDefault();
-              e.stopImmediatePropagation();
-              if (window.parent && window.parent !== window) {
-                window.parent.postMessage({ type: 'VIRTUAL_BROWSER_NAVIGATE', url: resolved.href }, '*');
-              }
-              window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved.href) + '&roomId=${encodedRoomId}';
-            }, true);
-
-            // Intercept clicks on links and destroy invisible popunder overlay catchers
+            // Safe link & popunder ad filter that NEVER destroys player elements or breaks video clicks
             document.addEventListener('click', function(e) {
               const elem = e.target;
-              if (!elem) return;
+              if (!elem || !(elem instanceof Element)) return;
 
-              // Destroy transparent overlay divs covering the video player
-              if (elem.tagName !== 'VIDEO' && elem.tagName !== 'IFRAME' && elem.tagName !== 'BUTTON' && elem.tagName !== 'INPUT') {
-                const rect = elem.getBoundingClientRect();
-                const style = window.getComputedStyle(elem);
-                const isOverlay = rect.width > window.innerWidth * 0.7 && rect.height > window.innerHeight * 0.7;
-                const isPositioned = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex, 10) > 20;
-                
-                if (isOverlay && isPositioned) {
-                  console.log('Removed popunder overlay element:', elem);
-                  elem.remove();
-                  e.preventDefault();
-                  e.stopPropagation();
-                  return false;
-                }
+              // Do NOT interfere if user clicks on video, iframe, canvas, player containers, or media controls
+              if (elem.closest('video, iframe, canvas, audio, button, input, select, form, label, .player, #player, [class*="player"], [id*="player"]')) {
+                return;
               }
 
               const link = elem.closest('a');
-              if (link && link.href) {
-                const rect = link.getBoundingClientRect();
-                const style = window.getComputedStyle(link);
-                const isOverlay = rect.width > window.innerWidth * 0.7 && rect.height > window.innerHeight * 0.7;
-                const isPositioned = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex, 10) > 20;
-                if (isOverlay && isPositioned) {
+              if (link) {
+                const href = link.getAttribute('href') || '';
+                if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
+                const isAdLink = /(therocketlanguages|adskeeper|propeller|popcash|adnxs|doubleclick|adsterra|monetag|exoclick|alwingulla|jokeconnate|consultingestablishmenthedgehog|wingsmob|defrostgauntlet|capitalhospitals|tutvlive)/i.test(href);
+                if (isAdLink || link.target === '_blank') {
                   e.preventDefault();
                   e.stopImmediatePropagation();
-                  link.remove();
+                  if (isAdLink) link.remove();
+                  return;
                 }
               }
             }, true);
@@ -1162,27 +1201,26 @@ app.get('/api/proxy-web', async (req, res) => {
             removeRefreshTags();
             new MutationObserver(removeRefreshTags).observe(document.documentElement, { childList: true, subtree: true });
 
-            const allowedFrameHosts = ${JSON.stringify(proxyAllowedDomains)};
+            // Automatically proxy all child iframes using ABSOLUTE proxy URLs
             const proxyPlayerFrame = function(frame) {
               const src = frame.getAttribute('src');
-              if (!src || src.startsWith('/api/proxy-web')) return;
+              if (!src || src.includes('/api/proxy-web') || src.startsWith('about:') || src.startsWith('javascript:')) return;
               let destination;
               try {
                 destination = new URL(src, ${jsString(finalUrl)});
               } catch(e) {
                 return;
               }
-              const isAllowedFrame = allowedFrameHosts.some(function(host) {
-                return destination.hostname === host || destination.hostname.endsWith('.' + host);
-              });
-              if (!isAllowedFrame) return;
-              frame.setAttribute('src', '/api/proxy-web?url=' + encodeURIComponent(destination.href) + '&roomId=${encodedRoomId}${fallbackQuery}');
+              if (!['http:', 'https:'].includes(destination.protocol)) return;
+              frame.setAttribute('src', proxyPrefix + encodeURIComponent(destination.href));
             };
+
             const proxyPlayerFrames = function(root) {
               if (root instanceof HTMLIFrameElement) proxyPlayerFrame(root);
               if (root.querySelectorAll) root.querySelectorAll('iframe').forEach(proxyPlayerFrame);
             };
             proxyPlayerFrames(document);
+
             new MutationObserver(function(records) {
               records.forEach(function(record) {
                 if (record.type === 'attributes') {
