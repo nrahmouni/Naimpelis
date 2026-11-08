@@ -13,12 +13,16 @@ import { socketService } from './services/socket';
 import { SendToTvModal } from './components/SendToTvModal';
 import { ChatMessage, FloatingReaction, Participant, VideoSourceType, VideoState } from './types';
 import { parseVideoUrl } from './utils/videoParser';
+import { ChevronDown } from 'lucide-react';
+import { Language, TRANSLATIONS } from './utils/i18n';
 
 export default function App() {
   const [joinedRoom, setJoinedRoom] = useState(false);
   const [roomId, setRoomId] = useState<string>('');
   const [hostId, setHostId] = useState<string>('');
   const [roomName, setRoomName] = useState<string>('Sala de Cine 🍿');
+  const [language, setLanguage] = useState<Language>('es');
+  const t = TRANSLATIONS[language];
 
   // Check URL query parameters for invitation links
   const queryParams = new URLSearchParams(window.location.search);
@@ -26,7 +30,7 @@ export default function App() {
 
   const [currentUser, setCurrentUser] = useState<Participant>({
     id: `user-${Math.random().toString(36).substring(2, 8)}`,
-    name: `Cinefilo_${Math.floor(Math.random() * 900 + 100)}`,
+    name: '',
     avatar: '🍿',
     color: '#f43f5e',
     isHost: false,
@@ -160,13 +164,14 @@ export default function App() {
     };
   }, [joinedRoom, roomId, currentUser.id]);
 
-  const handleJoinRoom = (targetRoomId: string, userMeta: { name: string; avatar: string; color: string }) => {
+  const handleJoinRoom = (targetRoomId: string, userMeta: { name: string; avatar: string; color: string }, lang: Language) => {
     const updatedUser = {
       ...currentUser,
       name: userMeta.name,
       avatar: userMeta.avatar,
       color: userMeta.color,
     };
+    setLanguage(lang);
     setCurrentUser(updatedUser);
     setRoomId(targetRoomId);
     setJoinedRoom(true);
@@ -303,13 +308,14 @@ export default function App() {
         participants={participants}
         currentUser={currentUser}
         latencyMs={latencyMs}
+        language={language}
         isVirtualBrowser={isVirtualBrowser}
         isScreenSharing={isScreenSharing}
         onToggleVirtualBrowser={(enabled) => {
           setIsVirtualBrowser(enabled);
           if (enabled && videoState.sourceType !== 'iframe') {
             handleUrlChange(
-              videoState.url.includes('bingetrix') ? videoState.url : 'https://bingetrix.sc/watch/1423191',
+              videoState.url.includes('bingetrix') ? videoState.url : 'https://movidy.pw/',
               'Navegador Virtual',
               true
             );
@@ -326,12 +332,10 @@ export default function App() {
 
       {/* Main Content Area */}
       {isTvScreenMode ? (
-        /* Fullscreen Pure TV Cinema Viewport (Zero distracting bars on the big screen) */
         <div className="flex-1 w-full h-full bg-black relative flex items-center justify-center overflow-hidden">
-          {/* Subtle TV Cinema Watermark */}
           <div className="absolute top-3 left-4 z-20 pointer-events-none flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-xs text-white/80">
             <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-            <span className="font-bold">Modo Cine TV</span>
+            <span className="font-bold">{t.tv} Mode</span>
             <span className="text-white/40 font-mono">| {roomName}</span>
           </div>
 
@@ -361,9 +365,8 @@ export default function App() {
           )}
         </div>
       ) : (
-        <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-          {/* Upper / Left: Video Player, WebRTC Screen Share or Virtual Browser Section */}
-          <div className="w-full md:w-3/5 lg:w-2/3 flex flex-col bg-black border-b md:border-b-0 md:border-r border-slate-800/80 shrink-0 md:shrink h-[42vh] sm:h-[48vh] md:h-full overflow-hidden">
+        <div className="flex-1 relative flex flex-col min-h-0 overflow-hidden">
+          <div className="w-full h-full flex flex-col bg-black overflow-hidden">
             {isScreenSharing ? (
               <ScreenShareContainer
                 isHost={currentUser.isHost}
@@ -377,6 +380,7 @@ export default function App() {
                 videoState={videoState}
                 isHost={currentUser.isHost}
                 roomId={roomId}
+                language={language}
                 onNavigate={(navUrl, navTitle) => {
                   handleUrlChange(navUrl, navTitle || 'Navegador Virtual Sincronizado', true);
                 }}
@@ -396,14 +400,12 @@ export default function App() {
             )}
           </div>
 
-          {/* Lower / Right: Handsome Live Chat - Takes full remaining height! */}
-          <div className="w-full md:w-2/5 lg:w-1/3 flex-1 flex flex-col min-h-0 bg-slate-950 overflow-hidden">
-            <HandsomeChat
-              messages={messages}
-              currentUser={currentUser}
-              onSendMessage={handleSendMessage}
-            />
-          </div>
+          <HandsomeChat
+            messages={messages}
+            currentUser={currentUser}
+            language={language}
+            onSendMessage={handleSendMessage}
+          />
         </div>
       )}
 
@@ -423,6 +425,7 @@ export default function App() {
         <InviteModal
           roomId={roomId}
           roomName={roomName}
+          language={language}
           onClose={() => setShowInviteModal(false)}
         />
       )}
@@ -432,6 +435,7 @@ export default function App() {
           participants={participants}
           currentUser={currentUser}
           hostId={hostId}
+          language={language}
           onTransferHost={handleTransferHost}
           onClose={() => setShowParticipantsModal(false)}
         />
@@ -440,6 +444,7 @@ export default function App() {
       {showProfileModal && (
         <UserProfileModal
           currentUser={currentUser}
+          language={language}
           onSave={handleSaveProfile}
           onClose={() => setShowProfileModal(false)}
         />
@@ -451,6 +456,7 @@ export default function App() {
           videoState={videoState}
           isHost={currentUser.isHost}
           participantCount={participants.length}
+          language={language}
           onForceResync={() => {
             // Force re-sync with latest video state from server
             fetch('/api/rooms/' + encodeURIComponent(roomId))

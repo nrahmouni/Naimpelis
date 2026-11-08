@@ -1,25 +1,18 @@
-import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { randomBytes, randomUUID } from 'crypto';
-import { Readable } from 'stream';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import puppeteer from 'puppeteer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json({ limit: '16kb' }));
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ server: httpServer, path: '/ws', maxPayload: 16 * 1024 });
-wss.on('error', (error) => {
-  if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') {
-    console.error('WebSocket server error:', error);
-  }
-});
-const roomHostTokens = new Map<string, string>();
+const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+
+app.use(express.json());
 
 // In-memory room store
 interface RoomStore {
@@ -44,27 +37,25 @@ interface RoomStore {
       isHost: boolean;
       joinedAt: number;
     }[];
-    screenShareActive: boolean;
     messages: any[];
     createdAt: number;
   };
 }
 
-const rooms: RoomStore = Object.assign(Object.create(null), {
+const rooms: RoomStore = {
   'cinema-pro': {
     id: 'cinema-pro',
     name: 'Sala de Cine Principal 🍿',
     hostId: 'system',
     videoState: {
-      url: 'https://movidy.pw/ver/hope/',
-      title: 'Movidy',
+      url: 'https://movidy.pw/',
+      title: 'Movidy - Cine y Series',
       sourceType: 'iframe',
       currentTime: 0,
       isPlaying: false,
       lastUpdated: Date.now(),
     },
     participants: [],
-    screenShareActive: false,
     messages: [
       {
         id: 'msg-welcome',
@@ -79,7 +70,7 @@ const rooms: RoomStore = Object.assign(Object.create(null), {
     ],
     createdAt: Date.now(),
   },
-});
+};
 
 // WebSocket connection map: client ws -> metadata
 interface ClientMeta {
@@ -92,25 +83,13 @@ interface ClientMeta {
 }
 
 const clients = new Map<WebSocket, ClientMeta>();
-const roomClients = new Map<string, Set<WebSocket>>();
 
 function broadcastToRoom(roomId: string, message: any, excludeWs?: WebSocket) {
   const payload = JSON.stringify(message);
-  roomClients.get(roomId)?.forEach((ws) => {
-    if (ws.readyState !== WebSocket.OPEN || ws === excludeWs) return;
-    if (ws.bufferedAmount > 1024 * 1024) {
-      ws.close(1013, 'Slow consumer');
-      return;
+  clients.forEach((meta, ws) => {
+    if (meta.roomId === roomId && ws.readyState === WebSocket.OPEN && ws !== excludeWs) {
+      ws.send(payload);
     }
-    ws.send(payload);
-  });
-}
-
-function sendToParticipant(roomId: string, userId: string, message: any) {
-  const payload = JSON.stringify(message);
-  roomClients.get(roomId)?.forEach((ws) => {
-    const meta = clients.get(ws);
-    if (meta?.userId === userId && ws.readyState === WebSocket.OPEN) ws.send(payload);
   });
 }
 
@@ -121,15 +100,14 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
       name: roomName || `Sala ${roomId.substring(0, 6)}`,
       hostId: '',
       videoState: {
-        url: 'https://movidy.pw/ver/hope/',
-        title: 'Movidy',
+        url: 'https://movidy.pw/',
+        title: 'Movidy - Cine y Series',
         sourceType: 'iframe',
         currentTime: 0,
         isPlaying: false,
         lastUpdated: Date.now(),
       },
       participants: [],
-      screenShareActive: false,
       messages: [
         {
           id: `sys-${Date.now()}`,
@@ -148,105 +126,32 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
   return rooms[roomId];
 }
 
-const proxyAllowedDomains = (process.env.PROXY_ALLOWED_HOSTS || 'movidy.pw,bingetrix.sc,vidsrc.me,vidsrc.to,vidsrc.pm,autoembed.to')
-  .split(',')
-  .map((domain) => domain.trim().toLowerCase())
-  .filter(Boolean);
-const tmdbCache = new Map<string, { expiresAt: number; value: unknown }>();
-
-function readTmdbCache<T>(key: string): T | undefined {
-  const entry = tmdbCache.get(key);
-  if (!entry) return undefined;
-  if (entry.expiresAt <= Date.now()) {
-    tmdbCache.delete(key);
-    return undefined;
-  }
-  return entry.value as T;
-}
-
-function writeTmdbCache(key: string, value: unknown, ttlMs: number) {
-  if (tmdbCache.size >= 200) tmdbCache.delete(tmdbCache.keys().next().value!);
-  tmdbCache.set(key, { value, expiresAt: Date.now() + ttlMs });
-}
-
-function parseAllowedProxyUrl(value: string) {
-  const parsed = new URL(value);
-  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-  const isAllowedHost = proxyAllowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
-  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || !isAllowedHost) {
-    throw new Error('Proxy destination is not allowed');
-  }
-  return parsed;
-}
-
-async function readTextWithLimit(response: Response, maxBytes: number) {
-  if (!response.body) return '';
-  const reader = response.body.getReader();
-  const chunks: Buffer[] = [];
-  let totalBytes = 0;
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    totalBytes += value.byteLength;
-    if (totalBytes > maxBytes) {
-      await reader.cancel();
-      throw new Error('Proxy response is too large');
-    }
-    chunks.push(Buffer.from(value));
-  }
-  return Buffer.concat(chunks).toString('utf8');
-}
-
-wss.on('connection', (ws, request) => {
-  const origin = request.headers.origin;
-  const requestHost = request.headers.host?.toLowerCase();
-  try {
-    if (!origin || !requestHost || new URL(origin).host.toLowerCase() !== requestHost) {
-      ws.close(1008, 'Invalid origin');
-      return;
-    }
-  } catch {
-    ws.close(1008, 'Invalid origin');
-    return;
-  }
-
+wss.on('connection', (ws) => {
   clients.set(ws, { ws });
 
   ws.on('message', (raw) => {
     try {
       const data = JSON.parse(raw.toString());
-      if (!data || typeof data !== 'object' || typeof data.type !== 'string' || !data.payload || typeof data.payload !== 'object') return;
       const { type, payload } = data;
 
-      if (type === 'PING') {
-        ws.send(JSON.stringify({ type: 'PONG', payload: { sentAt: payload.sentAt } }));
-        return;
-      }
-
       if (type === 'JOIN_ROOM') {
-        if (clients.get(ws)?.roomId) return;
-        const { roomId, userName, userAvatar, userColor, hostToken } = payload;
-        if (typeof roomId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(roomId)) return;
-        if (typeof userName !== 'string' || userName.length > 40) return;
-        if (typeof userAvatar !== 'string' || userAvatar.length > 16) return;
-        if (typeof userColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(userColor)) return;
-        const room = rooms[roomId];
-        if (!room) {
-          ws.send(JSON.stringify({ type: 'ROOM_ERROR', payload: { message: 'Sala no encontrada' } }));
-          return;
+        const { roomId, userId, userName, userAvatar, userColor } = payload;
+        const room = getOrCreateRoom(roomId);
+
+        // Assign host if first or existing host left
+        if (!room.hostId || room.participants.length === 0) {
+          room.hostId = userId;
         }
 
-        const userId = randomUUID();
-        const isRoomOwner = typeof hostToken === 'string' && roomHostTokens.get(roomId) === hostToken;
-        const canClaimPublicDemo = room.id === 'cinema-pro' && room.participants.length === 0;
-        if ((isRoomOwner || canClaimPublicDemo) && (!room.hostId || room.hostId === 'system')) room.hostId = userId;
-
         const isHost = room.hostId === userId;
+        
+        // Remove duplicate entry if reconnection
+        room.participants = room.participants.filter(p => p.id !== userId);
         const newParticipant = {
           id: userId,
-          name: userName.trim() || 'Invitado',
-          avatar: userAvatar,
-          color: userColor,
+          name: userName || 'Invitado',
+          avatar: userAvatar || '🍿',
+          color: userColor || '#3b82f6',
           isHost,
           joinedAt: Date.now(),
         };
@@ -260,9 +165,6 @@ wss.on('connection', (ws, request) => {
           userAvatar,
           userColor,
         });
-        const roomConnections = roomClients.get(roomId) || new Set<WebSocket>();
-        roomConnections.add(ws);
-        roomClients.set(roomId, roomConnections);
 
         // Add system message
         const joinMsg = {
@@ -283,9 +185,10 @@ wss.on('connection', (ws, request) => {
         ws.send(
           JSON.stringify({
             type: 'ROOM_STATE',
-            payload: { ...room, currentUserId: userId },
+            payload: room,
           })
         );
+
         // Broadcast user joined update to others in room
         broadcastToRoom(
           roomId,
@@ -299,42 +202,10 @@ wss.on('connection', (ws, request) => {
           },
           ws
         );
-        return;
-      }
-
-      const meta = clients.get(ws);
-      if (!meta?.roomId || !meta.userId || payload.roomId !== meta.roomId) return;
-      const room = rooms[meta.roomId];
-      if (!room || !room.participants.some((participant) => participant.id === meta.userId)) return;
-
-      if (type === 'UPDATE_PROFILE') {
-        const { userName, userAvatar, userColor } = payload;
-        if (typeof userName !== 'string' || !userName.trim() || userName.length > 40) return;
-        if (typeof userAvatar !== 'string' || userAvatar.length > 16) return;
-        if (typeof userColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(userColor)) return;
-        meta.userName = userName.trim();
-        meta.userAvatar = userAvatar;
-        meta.userColor = userColor;
-        const participant = room.participants.find((item) => item.id === meta.userId);
-        if (participant) {
-          participant.name = meta.userName;
-          participant.avatar = meta.userAvatar;
-          participant.color = meta.userColor;
-        }
-        broadcastToRoom(meta.roomId, {
-          type: 'PARTICIPANTS_UPDATED',
-          payload: { participants: room.participants, hostId: room.hostId },
-        });
       } else if (type === 'SYNC_VIDEO_STATE') {
-        if (room.hostId !== meta.userId) return;
         const { roomId, action, videoUrl, videoTitle, sourceType, currentTime, isPlaying, updatedBy, poster, overview, releaseYear, originalPortalUrl, altEmbeds, trailerUrl } = payload;
-        if (!['play', 'pause', 'seek', 'change_url'].includes(action)) return;
-        if (videoUrl !== undefined && (typeof videoUrl !== 'string' || videoUrl.length > 2048)) return;
-        if (videoTitle !== undefined && (typeof videoTitle !== 'string' || videoTitle.length > 300)) return;
-        if (sourceType !== undefined && !['youtube', 'vimeo', 'direct', 'iframe'].includes(sourceType)) return;
-        if (currentTime !== undefined && (typeof currentTime !== 'number' || !Number.isFinite(currentTime) || currentTime < 0 || currentTime > 86400)) return;
-        if (isPlaying !== undefined && typeof isPlaying !== 'boolean') return;
-        if (altEmbeds !== undefined && (!Array.isArray(altEmbeds) || altEmbeds.length > 10 || altEmbeds.some((url: unknown) => typeof url !== 'string' || url.length > 2048))) return;
+        const room = rooms[roomId];
+        if (!room) return;
 
         if (videoUrl !== undefined) room.videoState.url = videoUrl;
         if (videoTitle !== undefined) room.videoState.title = videoTitle;
@@ -349,20 +220,19 @@ wss.on('connection', (ws, request) => {
         if (trailerUrl !== undefined) (room.videoState as any).trailerUrl = trailerUrl;
         
         room.videoState.lastUpdated = Date.now();
-        room.videoState.updatedBy = meta.userName;
+        room.videoState.updatedBy = updatedBy;
 
         let systemMsgText = '';
         if (action === 'change_url') {
-          systemMsgText = `🎬 ${meta.userName || 'Un usuario'} cambió el vídeo a "${videoTitle || 'nuevo vídeo'}"`;
+          systemMsgText = `🎬 ${updatedBy || 'Un usuario'} cambió el vídeo a "${videoTitle || 'nuevo vídeo'}"`;
         } else if (action === 'play') {
-          systemMsgText = `▶️ ${meta.userName || 'Un usuario'} reprodujo el vídeo`;
+          systemMsgText = `▶️ ${updatedBy || 'Un usuario'} reprodujo el vídeo`;
         } else if (action === 'pause') {
-          systemMsgText = `⏸️ ${meta.userName || 'Un usuario'} pausó el vídeo`;
+          systemMsgText = `⏸️ ${updatedBy || 'Un usuario'} pausó el vídeo`;
         } else if (action === 'seek') {
-          systemMsgText = `⏩ ${meta.userName || 'Un usuario'} saltó a otra parte del vídeo`;
+          systemMsgText = `⏩ ${updatedBy || 'Un usuario'} saltó a otra parte del vídeo`;
         }
 
-        let roomMessage;
         if (systemMsgText) {
           const sysMsg = {
             id: `sys-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -375,29 +245,29 @@ wss.on('connection', (ws, request) => {
             isSystem: true,
             systemType: action,
           };
-          roomMessage = sysMsg;
           room.messages.push(sysMsg);
           if (room.messages.length > 150) room.messages.shift();
         }
 
-        broadcastToRoom(meta.roomId, {
+        broadcastToRoom(roomId, {
           type: 'VIDEO_STATE_UPDATED',
           payload: {
             videoState: room.videoState,
             action,
-            message: roomMessage,
+            messages: room.messages,
           },
         });
       } else if (type === 'SEND_CHAT') {
-        const { text } = payload;
-        if (typeof text !== 'string' || !text.trim() || text.length > 1000) return;
+        const { roomId, text, senderId, senderName, senderAvatar, senderColor } = payload;
+        const room = rooms[roomId];
+        if (!room || !text.trim()) return;
 
         const newMsg = {
           id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          senderId: meta.userId,
-          senderName: meta.userName,
-          senderAvatar: meta.userAvatar,
-          senderColor: meta.userColor,
+          senderId,
+          senderName,
+          senderAvatar,
+          senderColor,
           text: text.trim(),
           timestamp: Date.now(),
         };
@@ -405,59 +275,42 @@ wss.on('connection', (ws, request) => {
         room.messages.push(newMsg);
         if (room.messages.length > 150) room.messages.shift();
 
-        broadcastToRoom(meta.roomId, {
+        broadcastToRoom(roomId, {
           type: 'NEW_CHAT_MESSAGE',
           payload: newMsg,
         });
       } else if (type === 'SEND_REACTION') {
-        const { emoji } = payload;
-        if (typeof emoji !== 'string' || emoji.length > 16) return;
+        const { roomId, emoji, senderName, senderColor } = payload;
+        const room = rooms[roomId];
+        if (!room) return;
 
         const reaction = {
           id: `react-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           emoji,
-          senderName: meta.userName,
-          senderColor: meta.userColor,
+          senderName,
+          senderColor,
           timestamp: Date.now(),
         };
 
-        broadcastToRoom(meta.roomId, {
+        broadcastToRoom(roomId, {
           type: 'FLOATING_REACTION',
           payload: reaction,
         });
       } else if (type === 'WEBRTC_SIGNAL') {
-        const { signalData, targetId } = payload;
-        if (!signalData || typeof signalData !== 'object' || Array.isArray(signalData) || typeof signalData.type !== 'string' || typeof targetId !== 'string') return;
-        if (!['screen_share_started', 'screen_share_stopped', 'request_offer', 'offer', 'answer', 'candidate'].includes(signalData.type)) return;
-        if (targetId !== 'all' && !room.participants.some((participant) => participant.id === targetId)) return;
-        if ((signalData.type === 'screen_share_started' || signalData.type === 'screen_share_stopped') && (meta.userId !== room.hostId || targetId !== 'all')) return;
-        if (signalData.type === 'request_offer' && (targetId !== room.hostId || meta.userId === room.hostId)) return;
-        if (signalData.type === 'offer' && (meta.userId !== room.hostId || targetId === room.hostId)) return;
-        if (signalData.type === 'answer' && (meta.userId === room.hostId || targetId !== room.hostId)) return;
-        if (signalData.type === 'screen_share_started') room.screenShareActive = true;
-        if (signalData.type === 'screen_share_stopped') room.screenShareActive = false;
-        const signalMessage = {
+        const { roomId, signalData, targetId, senderId } = payload;
+        broadcastToRoom(roomId, {
           type: 'WEBRTC_SIGNAL',
           payload: {
             signalData,
             targetId,
-            senderId: meta.userId,
+            senderId,
           },
-        };
-        if (targetId === 'all') broadcastToRoom(meta.roomId, signalMessage, ws);
-        else sendToParticipant(meta.roomId, targetId, signalMessage);
+        }, ws);
       } else if (type === 'TRANSFER_HOST') {
-        if (room.hostId !== meta.userId) return;
-        const { newHostId } = payload;
-        if (typeof newHostId !== 'string' || !room.participants.some((participant) => participant.id === newHostId)) return;
+        const { roomId, newHostId } = payload;
+        const room = rooms[roomId];
+        if (!room) return;
 
-        if (room.screenShareActive) {
-          room.screenShareActive = false;
-          broadcastToRoom(meta.roomId, {
-            type: 'WEBRTC_SIGNAL',
-            payload: { signalData: { type: 'screen_share_stopped' }, targetId: 'all', senderId: meta.userId },
-          });
-        }
         room.hostId = newHostId;
         room.participants.forEach(p => {
           p.isHost = p.id === newHostId;
@@ -476,9 +329,8 @@ wss.on('connection', (ws, request) => {
           systemType: 'host_change',
         };
         room.messages.push(sysMsg);
-        if (room.messages.length > 150) room.messages.shift();
 
-        broadcastToRoom(meta.roomId, {
+        broadcastToRoom(roomId, {
           type: 'HOST_TRANSFERRED',
           payload: {
             hostId: newHostId,
@@ -495,29 +347,16 @@ wss.on('connection', (ws, request) => {
   ws.on('close', () => {
     const meta = clients.get(ws);
     clients.delete(ws);
-    if (meta?.roomId) {
-      const roomConnections = roomClients.get(meta.roomId);
-      roomConnections?.delete(ws);
-      if (roomConnections?.size === 0) roomClients.delete(meta.roomId);
-    }
 
     if (meta && meta.roomId && meta.userId) {
       const room = rooms[meta.roomId];
       if (room) {
         room.participants = room.participants.filter((p) => p.id !== meta.userId);
-        if (room.hostId === meta.userId && room.screenShareActive) {
-          room.screenShareActive = false;
-          broadcastToRoom(meta.roomId, {
-            type: 'WEBRTC_SIGNAL',
-            payload: { signalData: { type: 'screen_share_stopped' }, targetId: 'all', senderId: 'system' },
-          }, ws);
-        }
+        
         // Host migration if host left
-        if (room.hostId === meta.userId) {
-          room.hostId = room.participants[0]?.id || '';
-          room.participants.forEach((participant) => {
-            participant.isHost = participant.id === room.hostId;
-          });
+        if (room.hostId === meta.userId && room.participants.length > 0) {
+          room.hostId = room.participants[0].id;
+          room.participants[0].isHost = true;
         }
 
         const leaveMsg = {
@@ -532,7 +371,6 @@ wss.on('connection', (ws, request) => {
           systemType: 'leave',
         };
         room.messages.push(leaveMsg);
-        if (room.messages.length > 150) room.messages.shift();
 
         broadcastToRoom(meta.roomId, {
           type: 'PARTICIPANTS_UPDATED',
@@ -558,50 +396,39 @@ app.get('/api/rooms/:roomId', (req, res) => {
 
 app.post('/api/rooms', (req, res) => {
   const { name } = req.body;
-  if (name !== undefined && (typeof name !== 'string' || name.length > 80)) {
-    return res.status(400).json({ error: 'Invalid room name' });
-  }
-  const roomId = `room-${randomUUID()}`;
-  const hostToken = randomBytes(32).toString('base64url');
+  const roomId = `room-${Math.random().toString(36).substring(2, 8)}`;
   const room = getOrCreateRoom(roomId, name);
-  roomHostTokens.set(roomId, hostToken);
-  res.json({ id: room.id, name: room.name, hostToken });
+  res.json(room);
 });
 
-// Resolve public movie metadata and official trailers from TMDB.
+// Movie Resolver: Automatically recognizes movie URLs (like bingetrix.sc/watch/1423191, tmdb, etc.)
 app.get('/api/resolve-movie', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   const queryUrl = (req.query.url as string) || '';
-  if (!queryUrl || queryUrl.length > 2048) {
+  if (!queryUrl) {
     return res.status(400).json({ success: false, error: 'Missing url parameter' });
   }
 
   try {
-    const tmdbMatch = queryUrl.match(/(?:themoviedb\.org\/(?:movie|tv)\/|tmdb\/(?:tv\/)?)(\d+)/i);
-    if (!tmdbMatch) return res.status(400).json({ success: false, error: 'Invalid TMDB title reference' });
-    const tmdbId = tmdbMatch[1];
-    const isTv = /(?:themoviedb\.org\/tv\/|tmdb\/tv\/)/i.test(queryUrl);
-    const tmdbApiKey = process.env.TMDB_API_KEY;
-    if (!tmdbApiKey) return res.status(503).json({ success: false, error: 'Movie metadata is unavailable' });
-    const cacheKey = `resolve:${isTv ? 'tv' : 'movie'}:${tmdbId}`;
-    const cached = readTmdbCache<Record<string, unknown>>(cacheKey);
-    if (cached) return res.json({ ...cached, originalUrl: queryUrl });
+    // Check if it's a Bingetrix URL (e.g. bingetrix.sc/watch/1423191) or default TMDB ID
+    const bingetrixMatch = queryUrl.match(/(?:bingetrix\.[a-z]+\/(?:watch|movie|tv)\/|tmdb\/|movie\/)(\d+)/i);
+    const tmdbId = bingetrixMatch ? bingetrixMatch[1] : '1423191';
+    const tmdbApiKey = '90b2cae8d7161e8ba0f3836240d7d352';
 
-    const mediaPath = isTv ? 'tv' : 'movie';
+    // Query TMDB for movie details & trailers
     const [movieRes, videosRes] = await Promise.all([
-      fetch(`https://api.themoviedb.org/3/${mediaPath}/${tmdbId}?api_key=${tmdbApiKey}&language=es-ES`, { signal: AbortSignal.timeout(8000) })
+      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}&language=es-ES`)
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
-      fetch(`https://api.themoviedb.org/3/${mediaPath}/${tmdbId}/videos?api_key=${tmdbApiKey}`, { signal: AbortSignal.timeout(8000) })
+      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/videos?api_key=${tmdbApiKey}`)
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     ]);
 
-    if (!movieRes) return res.status(404).json({ success: false, error: 'Title not found' });
-    const title = movieRes.title || movieRes.name || movieRes.original_title || movieRes.original_name;
-    const overview = movieRes.overview || '';
+    const title = movieRes?.title || movieRes?.name || movieRes?.original_title || 'Resident Evil';
+    const overview = movieRes?.overview || 'Película de terror y acción.';
     const poster = movieRes?.poster_path ? `https://image.tmdb.org/t/p/w500${movieRes.poster_path}` : '';
-    const releaseYear = (movieRes.release_date || movieRes.first_air_date || '').split('-')[0];
+    const releaseYear = movieRes?.release_date ? movieRes.release_date.split('-')[0] : '2026';
 
     const videos = (videosRes as any)?.results || [];
     const trailer = videos.find((v: any) => v.site === 'YouTube' && v.type === 'Trailer') ||
@@ -609,18 +436,24 @@ app.get('/api/resolve-movie', async (req, res) => {
     const trailerKey = trailer?.key || '';
     const trailerUrl = trailerKey ? `https://www.youtube.com/watch?v=${trailerKey}` : '';
 
-    const result = {
+    const streamEmbeds = [
+      `https://vidsrc.me/embed/movie/${tmdbId}`,
+      `https://vidsrc.to/embed/movie/${tmdbId}`,
+      `https://autoembed.to/movie/tmdb/${tmdbId}`,
+    ];
+
+    return res.json({
       success: true,
-      type: isTv ? 'tv' : 'movie',
+      type: 'movie_portal',
       tmdbId,
       title,
       overview,
       poster,
       releaseYear,
       trailerUrl,
-    };
-    writeTmdbCache(cacheKey, result, 60 * 60 * 1000);
-    return res.json({ ...result, originalUrl: queryUrl });
+      streamEmbeds,
+      originalUrl: queryUrl,
+    });
   } catch (err: any) {
     console.error('Error resolving movie URL:', err);
     return res.status(500).json({ success: false, error: 'Failed to resolve movie URL' });
@@ -629,22 +462,24 @@ app.get('/api/resolve-movie', async (req, res) => {
 
 // Movie Catalog Search Endpoint for Virtual Browser Movie Finder
 app.get('/api/search-movies', async (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
   const query = (req.query.query as string) || '';
-  if (query.length > 120) return res.status(400).json({ error: 'Search query is too long' });
-  const tmdbApiKey = process.env.TMDB_API_KEY || '90b2cae8d7161e8ba0f3836240d7d352';
+  const category = (req.query.category as string) || 'trending';
+  const tmdbApiKey = '90b2cae8d7161e8ba0f3836240d7d352';
 
   try {
-    const normalizedQuery = query.trim().toLowerCase();
-    const cacheKey = `search:${normalizedQuery || 'trending'}`;
-    const cached = readTmdbCache<{ results: unknown[] }>(cacheKey);
-    if (cached) return res.json(cached);
-    const searchUrl = query.trim()
-      ? `https://api.themoviedb.org/3/search/multi?api_key=${tmdbApiKey}&language=es-ES&query=${encodeURIComponent(query)}&page=1`
-      : `https://api.themoviedb.org/3/trending/movie/week?api_key=${tmdbApiKey}&language=es-ES`;
+    let searchUrl = '';
+    
+    if (query.trim()) {
+      searchUrl = `https://api.themoviedb.org/3/search/multi?api_key=${tmdbApiKey}&language=es-ES&query=${encodeURIComponent(query)}&page=1`;
+    } else if (category === 'english') {
+      searchUrl = `https://api.themoviedb.org/3/discover/movie?api_key=${tmdbApiKey}&language=en-US&sort_by=popularity.desc&with_original_language=en&page=1`;
+    } else if (category === 'movidy') {
+      searchUrl = `https://api.themoviedb.org/3/discover/movie?api_key=${tmdbApiKey}&language=es-ES&sort_by=popularity.desc&page=1`;
+    } else {
+      searchUrl = `https://api.themoviedb.org/3/trending/movie/week?api_key=${tmdbApiKey}&language=es-ES`;
+    }
 
-    const r = await fetch(searchUrl, { signal: AbortSignal.timeout(8000) });
-    if (!r.ok) throw new Error(`TMDB HTTP ${r.status}`);
+    const r = await fetch(searchUrl);
     const data = await r.json();
 
     const items = (data.results || [])
@@ -659,6 +494,25 @@ app.get('/api/search-movies', async (req, res) => {
         const backdrop = m.backdrop_path ? `https://image.tmdb.org/t/p/w780${m.backdrop_path}` : '';
         const rating = m.vote_average ? m.vote_average.toFixed(1) : '';
 
+        // Choose stream provider based on category preference
+        let streamUrl = '';
+        if (category === 'movidy') {
+          // Use a provider that defaults to or supports Spanish more easily
+          streamUrl = isTv
+            ? `https://vidsrc.me/embed/tv?tmdb=${id}&season=1&episode=1&lang=es`
+            : `https://vidsrc.me/embed/movie?tmdb=${id}&lang=es`;
+        } else {
+          // Default or English preference
+          streamUrl = isTv
+            ? `https://vidsrc.pm/embed/tv/${id}/1/1`
+            : `https://vidsrc.pm/embed/movie/${id}`;
+        }
+
+        const bingetrixUrl = `https://bingetrix.sc/watch/${id}`;
+        const movidyUrl = isTv
+          ? `https://movidy.pw/embed/tv/${id}/1/1`
+          : `https://movidy.pw/embed/movie/${id}`;
+
         return {
           id,
           title,
@@ -668,66 +522,123 @@ app.get('/api/search-movies', async (req, res) => {
           backdrop,
           rating,
           isTv,
+          streamUrl,
+          bingetrixUrl,
+          movidyUrl,
         };
       });
 
-    const result = { results: items };
-    writeTmdbCache(cacheKey, result, normalizedQuery ? 30 * 60 * 1000 : 5 * 60 * 1000);
-    res.json(result);
+    res.json({ results: items });
   } catch (err: any) {
     console.error('Search movies error:', err);
-    res.status(200).json({ results: [] });
+    res.status(500).json({ error: 'Error al buscar películas' });
   }
 });
 
-// Virtual Chrome Browser Proxy: strips framing restrictions, blocks intrusive redirects and injects sync bridge
-app.get('/api/proxy-web', async (req, res) => {
-  const targetUrl = (req.query.url as string) || '';
-  const roomId = (req.query.roomId as string) || '';
-  if (!targetUrl || targetUrl.length > 2048 || !/^[a-zA-Z0-9_-]{1,100}$/.test(roomId)) {
-    return res.status(400).json({ error: 'Invalid proxy request' });
+// Sports Events Scraper
+app.get('/api/sports-events', async (req, res) => {
+  let browser;
+  try {
+    const targetUrl = 'https://www.livesoccertv.com/';
+    
+    browser = await puppeteer.launch({ 
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+    });
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+    await page.goto(targetUrl, { waitUntil: 'networkidle2' });
+    
+    const events = await page.evaluate(() => {
+      const items = document.querySelectorAll('a[href*="/match/"]');
+      const results: any[] = [];
+      items.forEach(item => {
+        const text = item.textContent?.trim() || '';
+        if (text.includes(' vs ')) {
+          results.push({
+            id: `sport-${Math.random().toString(36).substring(2, 9)}`,
+            title: text.replace(/\s+/g, ' '),
+            sport: 'soccer',
+            sourceUrl: (item as HTMLAnchorElement).href,
+            status: 'live',
+            time: 'Live'
+          });
+        }
+      });
+      return results.slice(0, 20);
+    });
+    
+    console.log('Scraped events:', events);
+    
+    await browser.close();
+    res.json({ success: true, events });
+  } catch (err: any) {
+    if (browser) await browser.close();
+    console.error('Sports scraper error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch sports events' });
   }
+});
+
+// Sports Match Options Scraper
+app.get('/api/sports-match-options', async (req, res) => {
+  const matchUrl = req.query.url as string;
+  if (!matchUrl) return res.status(400).json({ error: 'Missing URL' });
+  
+  let browser;
+  try {
+    browser = await puppeteer.launch({ 
+      headless: 'new',
+      args: ['--no-sandbox', '--disable-setuid-sandbox'] 
+    });
+    const page = await browser.newPage();
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36');
+    await page.goto(matchUrl, { waitUntil: 'networkidle2' });
+    
+    const options = await page.evaluate(() => {
+      const links = document.querySelectorAll('a[href*="http"]');
+      const results: any[] = [];
+      links.forEach(link => {
+        const url = (link as HTMLAnchorElement).href;
+        if (url.includes('stream') || url.includes('player') || url.includes('watch')) {
+          results.push({
+            label: link.textContent?.trim() || 'Ver Stream',
+            url: url
+          });
+        }
+      });
+      return results.slice(0, 10);
+    });
+    
+    await browser.close();
+    res.json({ success: true, options });
+  } catch (err: any) {
+    if (browser) await browser.close();
+    console.error('Match options scraper error:', err);
+    res.status(500).json({ success: false, error: 'Failed to fetch stream options' });
+  }
+});
 
   try {
-    let parsed = parseAllowedProxyUrl(/^https?:\/\//i.test(targetUrl) ? targetUrl : `https://${targetUrl}`);
-    let response: Response | undefined;
-    for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
-      try {
-        response = await fetch(parsed, {
-          redirect: 'manual',
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-            ...(typeof req.headers.range === 'string' ? { Range: req.headers.range } : {}),
-          },
-        });
-      } finally {
-        clearTimeout(timeout);
-      }
-      if (![301, 302, 303, 307, 308].includes(response.status)) break;
-      const location = response.headers.get('location');
-      await response.body?.cancel();
-      if (!location || redirectCount === 5) throw new Error('Too many proxy redirects');
-      parsed = parseAllowedProxyUrl(new URL(location, parsed).toString());
+    let finalUrl = targetUrl;
+    if (!/^https?:\/\//i.test(finalUrl)) {
+      finalUrl = 'https://' + finalUrl;
     }
-    if (!response) throw new Error('Proxy upstream unavailable');
-    const finalUrl = parsed.toString();
+    const parsed = new URL(finalUrl);
+    const response = await fetch(finalUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+      },
+    });
 
     const contentType = response.headers.get('content-type') || 'text/html';
-    res.status(response.status).setHeader('Content-Type', contentType);
+    res.setHeader('Content-Type', contentType);
+    res.removeHeader('X-Frame-Options');
+    res.removeHeader('Content-Security-Policy');
 
     if (contentType.includes('text/html')) {
-      if (Number(response.headers.get('content-length')) > 5 * 1024 * 1024) {
-        return res.status(413).send('La página externa supera el tamaño permitido.');
-      }
-      let html = await readTextWithLimit(response, 5 * 1024 * 1024);
-      const baseHref = parsed.origin.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-      const jsString = (value: string) => JSON.stringify(value).replace(/</g, '\\u003c');
-      const encodedRoomId = encodeURIComponent(roomId);
+      let html = await response.text();
 
       // Interceptor script injected into virtual browser:
       // 1. Intercepts link clicks and form submits, converting them to proxy URLs
@@ -735,25 +646,101 @@ app.get('/api/proxy-web', async (req, res) => {
       // 3. Intercepts HTML5 video play, pause, seek and timeupdate events to synchronize playback across room
       // 4. Blocks popunder and intrusive new window redirects (window.open = noop)
       const syncScript = `
-        <base href="${baseHref}/">
+        <base href="${parsed.origin}/">
+        <style>
+          /* Enhanced Ad-Blocking CSS for common movie portals */
+          iframe[src*="doubleclick.net"], 
+          iframe[src*="googleads"], 
+          iframe[src*="ad-delivery"],
+          iframe[src*="adnxs"],
+          div[class*="ad-"], 
+          div[class*="ads-"],
+          div[id*="ad-"], 
+          div[id*="ads-"],
+          div[class*="banner"],
+          .vjs-overlay,
+          .player-overlay,
+          #over_player,
+          .popunder,
+          .mgid-box {
+            display: none !important;
+            visibility: hidden !important;
+            pointer-events: none !important;
+            opacity: 0 !important;
+            height: 0 !important;
+            width: 0 !important;
+          }
+          
+          /* Prevent layout shifts from hidden ads */
+          body {
+            overflow-x: hidden !important;
+          }
+        </style>
         <script>
           (function() {
-            // Block popups and intrusive ads
-            window.open = function() { console.log('Blocked popup in virtual browser'); return null; };
-            window.alert = function(m) { console.log('Alert suppressed:', m); };
+            // Strictly block popups and new windows
+            const noop = function() { console.log('Action blocked by Watch2Gether Security'); return null; };
+            window.open = function(url) {
+               console.log('Blocked window.open attempt to:', url);
+               return { close: noop, focus: noop, blur: noop, postMessage: noop };
+            };
+            window.alert = noop;
+            window.confirm = function() { return true; };
+            window.prompt = noop;
+            
+            // Prevent "leaving site" dialogs from ads
+            window.onbeforeunload = null;
+            Object.defineProperty(window, 'onbeforeunload', {
+              get: function() { return null; },
+              set: function() { },
+              configurable: false
+            });
 
-            // Listen to link clicks and route through parent or proxy
+            // Listen to ALL clicks to catch target="_blank" and other navigation attempts
             document.addEventListener('click', function(e) {
               const link = e.target.closest('a');
               if (link && link.href) {
                 const href = link.getAttribute('href');
+                // Ignore hash links and javascript
                 if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
                   e.preventDefault();
-                  let resolved = new URL(href, ${jsString(finalUrl)}).href;
+                  e.stopPropagation();
+                  
+                  let resolved = new URL(href, "${finalUrl}").href;
+                  
+                  // Notify parent to sync navigation for everyone
                   if (window.parent && window.parent !== window) {
                     window.parent.postMessage({ type: 'VIRTUAL_BROWSER_NAVIGATE', url: resolved }, '*');
                   }
-                  window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved) + '&roomId=${encodedRoomId}';
+                  
+                  // Stay within the proxy
+                  window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved) + '&roomId=${roomId}';
+                }
+              }
+            }, true);
+
+            // Intercept form submissions (common for search and some ad redirects)
+            document.addEventListener('submit', function(e) {
+              const form = e.target;
+              if (form && form.action) {
+                e.preventDefault();
+                const formData = new FormData(form);
+                const params = new URLSearchParams();
+                for (const pair of formData.entries()) {
+                  params.append(pair[0], pair[1].toString());
+                }
+                
+                const method = form.method.toUpperCase();
+                let targetUrl = new URL(form.action, "${finalUrl}").href;
+                
+                if (method === 'GET') {
+                  targetUrl += (targetUrl.includes('?') ? '&' : '?') + params.toString();
+                  window.location.href = '/api/proxy-web?url=' + encodeURIComponent(targetUrl) + '&roomId=${roomId}';
+                } else {
+                  // For POST, we might need more complex handling, but let's at least try to notify
+                  console.log('Intercepted POST form submission to:', targetUrl);
+                  // Optional: Implement a proxy POST handler if needed
+                  form.submit(); // Fallback
                 }
               }
             }, true);
@@ -803,7 +790,7 @@ app.get('/api/proxy-web', async (req, res) => {
                 const shouldPlay = e.data.isPlaying;
                 const videos = document.querySelectorAll('video');
                 videos.forEach(function(vid) {
-                  if (typeof targetTime === 'number' && Math.abs(vid.currentTime - targetTime) > 1.2) {
+                  if (typeof targetTime === 'number' && Math.abs(vid.currentTime - targetTime) > 1.5) {
                     vid.currentTime = targetTime;
                   }
                   if (shouldPlay && vid.paused) {
@@ -818,7 +805,7 @@ app.get('/api/proxy-web', async (req, res) => {
             // Notify parent when DOM finishes loading
             window.addEventListener('load', function() {
               if (window.parent && window.parent !== window) {
-                window.parent.postMessage({ type: 'VIRTUAL_BROWSER_URL_CHANGED', url: ${jsString(finalUrl)} }, '*');
+                window.parent.postMessage({ type: 'VIRTUAL_BROWSER_URL_CHANGED', url: "${finalUrl}" }, '*');
               }
             });
           })();
@@ -827,7 +814,7 @@ app.get('/api/proxy-web', async (req, res) => {
 
       // Rewrite child iframe src attributes to route through /api/proxy-web so inner video elements are ALSO proxied and intercepted!
       html = html.replace(/<iframe\s+([^>]*?)src=["'](https?:\/\/[^"']+)["']/gi, (match, prefix, iframeSrc) => {
-        const proxiedIframeSrc = `/api/proxy-web?url=${encodeURIComponent(iframeSrc)}&roomId=${encodedRoomId}`;
+        const proxiedIframeSrc = `/api/proxy-web?url=${encodeURIComponent(iframeSrc)}&roomId=${roomId}`;
         return `<iframe ${prefix}src="${proxiedIframeSrc}"`;
       });
 
@@ -839,32 +826,29 @@ app.get('/api/proxy-web', async (req, res) => {
       return res.send(html);
     }
 
-    res.status(response.status).setHeader('Content-Type', contentType);
-    for (const header of ['content-length', 'content-range', 'accept-ranges', 'cache-control']) {
-      const value = response.headers.get(header);
-      if (value) res.setHeader(header, value);
-    }
-    if (!response.body) return res.end();
-    Readable.fromWeb(response.body as any).on('error', () => res.destroy()).pipe(res);
+    const arrayBuffer = await response.arrayBuffer();
+    res.send(Buffer.from(arrayBuffer));
   } catch (err: any) {
     console.error('Virtual browser proxy error:', err);
-    res.status(502).send('No se pudo cargar el sitio externo.');
+    res.status(200).send(`
+      <div style="background:#090d16;color:#e2e8f0;padding:24px;font-family:sans-serif;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
+        <h3 style="margin-bottom:8px;color:#f87171;">Cargando Movidy / Portal Externo</h3>
+        <p style="color:#94a3b8;font-size:13px;max-width:400px;margin-bottom:16px;">El sitio externo puede requerir apertura directa o estar protegido contra incrustación por proxy.</p>
+        <a href="${targetUrl}" target="_blank" style="background:#2563eb;color:white;padding:10px 20px;border-radius:12px;text-decoration:none;font-size:13px;font-weight:bold;box-shadow:0 4px 12px rgba(37,99,235,0.4);">Abrir Portal en Pestaña Nueva</a>
+      </div>
+    `);
   }
 });
 
 // Vite Integration
 async function startServer() {
-  const requestedPort = Number(process.env.PORT) || 3000;
-  const allowPortFallback = process.env.NODE_ENV !== 'production' && !process.env.PORT;
+  const PORT = process.env.PORT || 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        ws: process.env.DISABLE_HMR !== 'true' ? { server: httpServer } : false,
-      },
+      server: { middlewareMode: true, hmr: process.env.DISABLE_HMR !== 'true' },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -875,41 +859,9 @@ async function startServer() {
     });
   }
 
-  const listen = (port: number, attempts = 0): Promise<number> => new Promise((resolve, reject) => {
-    const onListening = () => {
-      httpServer.off('error', onError);
-      const address = httpServer.address();
-      resolve(typeof address === 'object' && address ? address.port : port);
-    };
-    const onError = (error: NodeJS.ErrnoException) => {
-      httpServer.off('listening', onListening);
-      if (error.code === 'EADDRINUSE' && allowPortFallback && attempts < 20) {
-        console.warn(`Port ${port} is busy; trying ${port + 1}.`);
-        resolve(listen(port + 1, attempts + 1));
-        return;
-      }
-      reject(error);
-    };
-    httpServer.once('listening', onListening);
-    httpServer.once('error', onError);
-    httpServer.listen(port);
+  httpServer.listen(PORT, () => {
+    console.log(`🎬 Watch2Gether Server running on http://0.0.0.0:${PORT}`);
   });
-
-  try {
-    const activePort = await listen(requestedPort);
-    console.log(`🎬 Watch2Gether Server running on http://0.0.0.0:${activePort}`);
-  } catch (error) {
-    const code = (error as NodeJS.ErrnoException).code;
-    console.error(`Unable to start on port ${requestedPort}${code === 'EADDRINUSE' ? ': port is already in use. Set PORT to an available port.' : ''}.`, error);
-    process.exitCode = 1;
-  }
 }
-
-const shutdown = () => {
-  httpServer.close(() => process.exit(0));
-};
-
-process.once('SIGINT', shutdown);
-process.once('SIGTERM', shutdown);
 
 startServer();

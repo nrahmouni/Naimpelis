@@ -2,48 +2,30 @@ import { SampleVideo } from '../types';
 
 export const SAMPLE_VIDEOS: SampleVideo[] = [
   {
-    id: 'big-buck-bunny',
-    title: 'Big Buck Bunny (Cortometraje 4K)',
-    category: 'Animación / Cine',
-    duration: '09:56',
+    id: 'movidy-pw',
+    title: 'Movidy.pw (Películas y Series)',
+    category: 'Portal Cine',
+    duration: '∞',
     thumbnail: '🎬',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    description: 'Famoso cortometraje animado de comedia en 4K ideal para probar sincronización en directo.'
+    url: 'https://movidy.pw/',
+    description: 'Acceso directo al portal de Movidy para ver los últimos estrenos sincronizados.'
   },
   {
-    id: 'tears-of-steel',
-    title: 'Tears of Steel (Sci-Fi Cyberpunk)',
-    category: 'Ciencia Ficción',
-    duration: '12:14',
-    thumbnail: '🚀',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
-    description: 'Espectacular producción de ciencia ficción distópica y efectos especiales.'
+    id: 'rojadirecta',
+    title: 'Rojadirecta (Deportes en Vivo)',
+    category: 'Deportes',
+    duration: 'Vivo',
+    thumbnail: '⚽',
+    url: 'https://rojadirectaya.com/',
+    description: 'Partidos de fútbol y otros deportes en directo sincronizados para toda la sala.'
   },
   {
-    id: 'sintel-trailer',
-    title: 'Sintel - The Dragon Girl',
-    category: 'Fantasía / Aventuras',
-    duration: '00:52',
-    thumbnail: '🐉',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
-    description: 'Tráiler cinematográfico sobre la búsqueda de un dragón místico.'
-  },
-  {
-    id: 'for-bigger-blazes',
-    title: 'For Bigger Blazes (Trailer Acción HD)',
-    category: 'Acción / Motor',
-    duration: '00:15',
-    thumbnail: '🔥',
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    description: 'Vídeo dinámico de alta definición con máxima fluidez.'
-  },
-  {
-    id: 'yt-blender-movie',
-    title: 'Blender Open Movie - YouTube Link',
-    category: 'YouTube HD',
-    duration: '14:48',
-    thumbnail: '📺',
-    url: 'https://www.youtube.com/watch?v=aqz-KE-bpKQ',
-    description: 'Enlace de YouTube oficial para probar la integración con reproducción remota de YouTube.'
+    id: 'bingetrix',
+    title: 'Bingetrix (Resident Evil y más)',
+    category: 'Portal Premium',
+    duration: '∞',
+    thumbnail: '💎',
+    url: 'https://bingetrix.sc/watch/1423191',
+    description: 'Acceso al portal de Bingetrix con resolución automática de metadatos.'
   }
 ];
