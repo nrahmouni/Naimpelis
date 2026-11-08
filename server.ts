@@ -1008,6 +1008,9 @@ app.get('/api/proxy-web', async (req, res) => {
 
       // Targeted anti-ad filter: only block known aggressive ad network scripts
       html = html.replace(/<script[^>]*src=["'][^"']*(therocketlanguages|adskeeper|propeller|popcash|adnxs|doubleclick|adsterra|monetag|exoclick|alwingulla)[^"']*["'][^>]*>[\s\S]*?<\/script>/gi, '');
+      html = html.replace(/<meta\b[^>]*>/gi, (tag) => (
+        /\bhttp-equiv\s*=\s*(?:"refresh"|'refresh'|refresh)/i.test(tag) ? '' : tag
+      ));
 
       const baseHref = parsed.origin.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       const jsString = (value: string) => JSON.stringify(value).replace(/</g, '\\u003c');
@@ -1033,8 +1036,54 @@ app.get('/api/proxy-web', async (req, res) => {
             // Block popups and intrusive ads
             window.open = function() { console.log('Blocked popup in virtual browser'); return null; };
             window.alert = function(m) { console.log('Alert suppressed:', m); };
-            window.confirm = function() { return true; };
+            window.confirm = function() { return false; };
             window.prompt = function() { return null; };
+
+            // Catch script- and gesture-triggered popups before they navigate away.
+            document.addEventListener('click', function(e) {
+              const target = e.target instanceof Element ? e.target : null;
+              if (!target) return;
+              const link = target.closest('a');
+              if (!link) return;
+
+              const rawHref = link.getAttribute('href') || '';
+              if (!rawHref || rawHref.startsWith('#') || rawHref.startsWith('javascript:')) return;
+              const rect = link.getBoundingClientRect();
+              const style = window.getComputedStyle(link);
+              const isOverlay = rect.width > window.innerWidth * 0.7 && rect.height > window.innerHeight * 0.7;
+              const isPositioned = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex, 10) > 20;
+              if (isOverlay && isPositioned) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                link.remove();
+                return;
+              }
+
+              let resolved;
+              try {
+                resolved = new URL(rawHref, ${jsString(finalUrl)});
+              } catch(e) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+              }
+
+              const allowedHosts = ${JSON.stringify(proxyAllowedDomains)};
+              const isAllowed = allowedHosts.some(function(host) {
+                return resolved.hostname === host || resolved.hostname.endsWith('.' + host);
+              });
+              if (!isAllowed || link.target === '_blank') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+              }
+              e.preventDefault();
+              e.stopImmediatePropagation();
+              if (window.parent && window.parent !== window) {
+                window.parent.postMessage({ type: 'VIRTUAL_BROWSER_NAVIGATE', url: resolved.href }, '*');
+              }
+              window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved.href) + '&roomId=${encodedRoomId}';
+            }, true);
 
             // Intercept clicks on links and destroy invisible popunder overlay catchers
             document.addEventListener('click', function(e) {
@@ -1059,23 +1108,41 @@ app.get('/api/proxy-web', async (req, res) => {
 
               const link = elem.closest('a');
               if (link && link.href) {
-                const href = link.getAttribute('href') || '';
-                if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
+                const rect = link.getBoundingClientRect();
+                const style = window.getComputedStyle(link);
+                const isOverlay = rect.width > window.innerWidth * 0.7 && rect.height > window.innerHeight * 0.7;
+                const isPositioned = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex, 10) > 20;
+                if (isOverlay && isPositioned) {
                   e.preventDefault();
-                  e.stopPropagation();
-
-                  // Block target="_blank" ad redirects
-                  if (link.target === '_blank' && !href.includes('bingetrix') && !href.includes('movidy') && !href.includes('rojadirect')) {
-                    console.log('Blocked external popup ad link:', href);
-                    return false;
-                  }
-
-                  let resolved = new URL(href, ${jsString(finalUrl)}).href;
-                  if (window.parent && window.parent !== window) {
-                    window.parent.postMessage({ type: 'VIRTUAL_BROWSER_NAVIGATE', url: resolved }, '*');
-                  }
-                  window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved) + '&roomId=${encodedRoomId}';
+                  e.stopImmediatePropagation();
+                  link.remove();
                 }
+              }
+            }, true);
+
+            const removeRefreshTags = function() {
+              document.querySelectorAll('meta[http-equiv="refresh" i]').forEach(function(tag) { tag.remove(); });
+            };
+            removeRefreshTags();
+            new MutationObserver(removeRefreshTags).observe(document.documentElement, { childList: true, subtree: true });
+            document.addEventListener('submit', function(e) {
+              const form = e.target;
+              if (!(form instanceof HTMLFormElement)) return;
+              let action;
+              try {
+                action = new URL(form.action || ${jsString(finalUrl)}, ${jsString(finalUrl)});
+              } catch(e) {
+                e.preventDefault();
+                e.stopImmediatePropagation();
+                return;
+              }
+              const allowedHosts = ${JSON.stringify(proxyAllowedDomains)};
+              const isAllowed = allowedHosts.some(function(host) {
+                return action.hostname === host || action.hostname.endsWith('.' + host);
+              });
+              if (!isAllowed || form.target === '_blank') {
+                e.preventDefault();
+                e.stopImmediatePropagation();
               }
             }, true);
 

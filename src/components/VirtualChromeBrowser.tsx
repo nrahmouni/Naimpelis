@@ -162,6 +162,10 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
     onNavigate(url, title);
   };
 
+  const handleSelectMovie = (movie: MovieItem) => {
+    setSelectedMovie(movie);
+  };
+
   const handleOpenSportsTab = (source: 'all' | 'rojadirectv' | 'rojadirectahd') => {
     setSelectedMovie(null);
     setSportsSource(source);
@@ -306,6 +310,22 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
         ) : activeTab === 'finder' ? (
           /* Movie Catalog Explorer View */
           <div className="h-full overflow-y-auto p-4 space-y-4 bg-slate-950">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => handleOpenPortal('https://movidy.pw/', 'Movidy')}
+                className="rounded-xl border border-rose-500/30 bg-rose-600/15 px-3 py-2 text-xs font-bold text-rose-200 transition hover:bg-rose-600/30"
+              >
+                Abrir Movidy
+              </button>
+              <button
+                type="button"
+                onClick={() => handleOpenPortal('https://bingetrix.sc/watch', 'Bingetrix')}
+                className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-bold text-amber-200 transition hover:bg-amber-500/20"
+              >
+                Abrir Bingetrix
+              </button>
+            </div>
             <form onSubmit={handleSearchSubmit} className="flex gap-2">
               <input
                 type="search"
@@ -334,32 +354,66 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
                 <p className="text-xs font-bold">Cargando catálogo...</p>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {movies.map((m) => (
-                  <button
-                    key={m.id}
-                    onClick={() => {
-                      const mediaType = m.isTv ? 'tv' : 'movie';
-                      handleOpenPortal(`https://bingetrix.sc/${mediaType}/${m.id}`, m.title);
-                    }}
-                    className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden text-left hover:border-rose-500/50 transition-all group hover:shadow-lg"
-                  >
-                    <div className="aspect-[2/3] relative bg-slate-950 overflow-hidden">
-                      {m.poster ? (
-                        <img src={m.poster} alt={m.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-slate-600">
-                          <Film className="w-8 h-8" />
+              <>
+                {selectedMovie && (
+                  <section className="flex flex-col gap-4 rounded-2xl border border-white/10 bg-slate-900 p-4 sm:flex-row">
+                    {selectedMovie.poster && (
+                      <img src={selectedMovie.poster} alt="" className="hidden w-24 self-start rounded-xl object-cover sm:block" />
+                    )}
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <h2 className="text-base font-bold text-white">{selectedMovie.title}</h2>
+                          <p className="mt-1 text-xs text-slate-400">{selectedMovie.year || 'Año desconocido'} · {selectedMovie.isTv ? 'Serie' : 'Película'}</p>
                         </div>
-                      )}
+                        <button type="button" onClick={() => setSelectedMovie(null)} aria-label="Cerrar detalles" className="rounded-lg px-2 py-1 text-xs text-slate-400 hover:bg-white/10 hover:text-white">Cerrar</button>
+                      </div>
+                      <p className="mt-3 line-clamp-3 text-xs leading-5 text-slate-300">{selectedMovie.overview}</p>
+                      <div className="mt-4 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPortal(`https://bingetrix.sc/${selectedMovie.isTv ? 'tv' : 'movie'}/${selectedMovie.id}`, 'Bingetrix')}
+                          className="inline-flex items-center gap-2 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-bold text-white transition hover:bg-rose-500"
+                        >
+                          <Play className="h-3.5 w-3.5 fill-current" /> Ver en Bingetrix
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenPortal('https://movidy.pw/', 'Movidy')}
+                          className="rounded-xl border border-white/15 bg-white/[0.05] px-3.5 py-2 text-xs font-semibold text-slate-200 transition hover:bg-white/10"
+                        >
+                          Buscar en Movidy
+                        </button>
+                      </div>
                     </div>
-                    <div className="p-2">
-                      <h4 className="text-xs font-bold text-slate-100 group-hover:text-rose-400 truncate">{m.title}</h4>
-                      <p className="text-[10px] text-slate-500">{m.year || 'Año n/d'}</p>
-                    </div>
-                  </button>
-                ))}
-              </div>
+                  </section>
+                )}
+                <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
+                  {movies.map((m) => (
+                    <button
+                      type="button"
+                      key={m.id}
+                      onClick={() => handleSelectMovie(m)}
+                      aria-pressed={selectedMovie?.id === m.id}
+                      className={`group overflow-hidden rounded-2xl border bg-slate-900 text-left transition hover:shadow-lg ${
+                        selectedMovie?.id === m.id ? 'border-rose-500' : 'border-slate-800 hover:border-rose-500/50'
+                      }`}
+                    >
+                      <div className="relative aspect-[2/3] overflow-hidden bg-slate-950">
+                        {m.poster ? (
+                          <img src={m.poster} alt={m.title} className="h-full w-full object-cover transition-transform group-hover:scale-105" />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-slate-600"><Film className="h-8 w-8" /></div>
+                        )}
+                      </div>
+                      <div className="p-2">
+                        <h4 className="truncate text-xs font-bold text-slate-100 group-hover:text-rose-400">{m.title}</h4>
+                        <p className="text-[10px] text-slate-500">{m.year || 'Año n/d'}</p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         ) : (
