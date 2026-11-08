@@ -119,7 +119,7 @@ function sendToParticipant(roomId: string, userId: string, message: any) {
   });
 }
 
-const remoteBrowserManager = new RemoteBrowserManager((roomId: string, message: unknown) => {
+const remoteBrowserManager = new RemoteBrowserManager((roomId, message) => {
   broadcastToRoom(roomId, message);
   const event = message as { type?: string; payload?: { url?: string } };
   const room = rooms[roomId];
@@ -172,8 +172,7 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
   return rooms[roomId];
 }
 
-const defaultProxyHosts = 'movidy.pw,bingetrix.sc,vidsrc.me,vidsrc.to,vidsrc.pm,autoembed.to,rojadirectv.live,rojadirecta-hd.li,rojadirectatv.asia,footunder.online,crackstreams1.cx,embedindia.st,trend48.st';
-const proxyAllowedDomains = (process.env.PROXY_ALLOWED_HOSTS || defaultProxyHosts)
+const proxyAllowedDomains = (process.env.PROXY_ALLOWED_HOSTS || 'movidy.pw,bingetrix.sc,vidsrc.me,vidsrc.to,vidsrc.pm,autoembed.to')
   .split(',')
   .map((domain) => domain.trim().toLowerCase())
   .filter(Boolean);
@@ -197,22 +196,9 @@ function writeTmdbCache(key: string, value: unknown, ttlMs: number) {
 function parseAllowedProxyUrl(value: string) {
   const parsed = new URL(value);
   const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
-  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password) {
-    throw new Error('Proxy destination protocol not allowed');
-  }
-  // Block internal private IP ranges / localhost to prevent SSRF while allowing all public streams
-  if (
-    hostname === 'localhost' ||
-    hostname === '127.0.0.1' ||
-    hostname === '0.0.0.0' ||
-    hostname === '::1' ||
-    /^127\./.test(hostname) ||
-    /^10\./.test(hostname) ||
-    /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) ||
-    /^192\.168\./.test(hostname) ||
-    /^169\.254\./.test(hostname)
-  ) {
-    throw new Error('Private IP access not allowed');
+  const isAllowedHost = proxyAllowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || !isAllowedHost) {
+    throw new Error('Proxy destination is not allowed');
   }
   return parsed;
 }
@@ -268,7 +254,11 @@ wss.on('connection', (ws, request) => {
         if (typeof userName !== 'string' || userName.length > 40) return;
         if (typeof userAvatar !== 'string' || userAvatar.length > 16) return;
         if (typeof userColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(userColor)) return;
-        const room = getOrCreateRoom(roomId);
+        const room = rooms[roomId];
+        if (!room) {
+          ws.send(JSON.stringify({ type: 'ROOM_ERROR', payload: { message: 'Sala no encontrada' } }));
+          return;
+        }
 
         const userId = randomUUID();
         const isRoomOwner = typeof hostToken === 'string' && roomHostTokens.get(roomId) === hostToken;
@@ -339,11 +329,12 @@ wss.on('connection', (ws, request) => {
       }
 
       const meta = clients.get(ws);
-      if (!meta?.roomId || !meta.userId) return;
+      if (!meta?.roomId || !meta.userId || payload.roomId !== meta.roomId) return;
       const room = rooms[meta.roomId];
       if (!room || !room.participants.some((participant) => participant.id === meta.userId)) return;
 
       if (type === 'START_REMOTE_BROWSER') {
+        if (room.hostId !== meta.userId) return;
         const { url } = payload;
         if (typeof url !== 'string' || url.length > 2048 || !isAllowedRemoteBrowserUrl(url)) {
           ws.send(JSON.stringify({ type: 'REMOTE_BROWSER_ERROR', payload: { message: 'El dominio no está permitido para el navegador remoto.' } }));
@@ -376,6 +367,7 @@ wss.on('connection', (ws, request) => {
             });
           });
       } else if (type === 'REMOTE_BROWSER_INPUT') {
+        if (room.hostId !== meta.userId) return;
         void remoteBrowserManager.input(meta.roomId, meta.userId, payload.input as RemoteBrowserInput)
           .catch(() => sendToParticipant(meta.roomId!, meta.userId!, {
             type: 'REMOTE_BROWSER_ERROR',
@@ -770,202 +762,6 @@ app.get('/api/search-movies', async (req, res) => {
   }
 });
 
-// Sports Events Aggregator for RojaDirecta (rojadirectv.live & rojadirecta-hd.li) - Ad-Free
-app.get('/api/sports-events', async (_req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  const cacheKey = 'sports:events:all';
-  const cached = readTmdbCache<{ success: boolean; updatedAt: number; sources: any; events: any[] }>(cacheKey);
-  if (cached) {
-    return res.json(cached);
-  }
-
-  try {
-    const [rojaRes, hdRes] = await Promise.allSettled([
-      // Source 1: rojadirectv.live
-      fetch('https://www.rojadirectv.live/', {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-        },
-        signal: AbortSignal.timeout(8000),
-      }).then(async (r) => (r.ok ? r.text() : '')),
-
-      // Source 2: rojadirecta-hd.li (CrackStreams central event API)
-      fetch('http://crackstreams1.cx/event-manager/events-api.php', {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-          'Accept': 'application/json',
-          'Referer': 'https://rojadirecta-hd.li/',
-        },
-        signal: AbortSignal.timeout(8000),
-      }).then(async (r) => (r.ok ? r.json() : null)),
-    ]);
-
-    const allEvents: any[] = [];
-    let rojaCount = 0;
-    let hdCount = 0;
-
-    // Parse Source 1: rojadirectv.live
-    if (rojaRes.status === 'fulfilled' && rojaRes.value) {
-      const html = rojaRes.value;
-      const rowRegex = /<tr>([\s\S]*?)<\/tr>/g;
-      let rowMatch;
-      const rawEvents: any[] = [];
-
-      while ((rowMatch = rowRegex.exec(html)) !== null) {
-        const row = rowMatch[1];
-        const timeMatch = row.match(/<span class="t">([^<]+)<\/span>/);
-        const linkMatch = row.match(/<a href="([^"]+)"[^>]*><b>([^<]+)<\/b><\/a>/);
-        const canalMatch = row.match(/class="btn-canal">([^<]+)<\/a>/);
-        const sportMatch = row.match(/<td[^>]*>([^<:]+):/);
-
-        if (timeMatch && linkMatch) {
-          let streamUrl = '';
-          try {
-            const urlObj = new URL(linkMatch[1], 'https://www.rojadirectv.live');
-            const b64 = urlObj.searchParams.get('r');
-            if (b64) streamUrl = Buffer.from(b64, 'base64').toString('utf8');
-          } catch {}
-
-          const rawSport = (sportMatch ? sportMatch[1] : 'Deportes')
-            .replace(/^[^a-zA-ZáéíóúÁÉÍÓÚñÑ]+/, '')
-            .trim();
-          const title = linkMatch[2].trim();
-          const embedUrl = new URL(linkMatch[1], 'https://www.rojadirectv.live').href;
-          const canal = canalMatch ? canalMatch[1].trim() : 'Canal 1';
-
-          rawEvents.push({
-            time: timeMatch[1].trim(),
-            title,
-            sport: rawSport,
-            embedUrl,
-            streamUrl: streamUrl || embedUrl,
-            canal,
-          });
-        }
-      }
-
-      // Group by match
-      const groupedMap = new Map<string, any>();
-      for (const ev of rawEvents) {
-        const key = `${ev.time}_${ev.sport}_${ev.title.toLowerCase()}`;
-        if (groupedMap.has(key)) {
-          const m = groupedMap.get(key);
-          if (!m.channels.some((c: any) => c.name === ev.canal || c.url === ev.streamUrl)) {
-            m.channels.push({ name: ev.canal, url: ev.streamUrl, type: 'stream' });
-          }
-        } else {
-          groupedMap.set(key, {
-            id: `rdv-${groupedMap.size + 1}`,
-            source: 'rojadirectv',
-            sourceName: 'RojaDirecta TV (.live)',
-            title: ev.title,
-            sport: ev.sport,
-            competition: ev.sport,
-            time: ev.time,
-            status: 'live',
-            channels: [{ name: ev.canal, url: ev.streamUrl, type: 'stream' }],
-            sourceUrl: 'https://www.rojadirectv.live/',
-          });
-        }
-      }
-
-      const parsedRoja = Array.from(groupedMap.values());
-      rojaCount = parsedRoja.length;
-      allEvents.push(...parsedRoja);
-    }
-
-    // Parse Source 2: rojadirecta-hd.li
-    if (hdRes.status === 'fulfilled' && hdRes.value && Array.isArray(hdRes.value.events)) {
-      const hdList = hdRes.value.events;
-      const now = Date.now();
-      const retentionMs = 3.5 * 60 * 60 * 1000;
-
-      for (const ev of hdList) {
-        if (!ev || !ev.home || !ev.away) continue;
-        const start = ev.utc ? new Date(ev.utc).getTime() : NaN;
-        if (!isNaN(start) && now > start + retentionMs) continue;
-
-        let status = 'upcoming';
-        if (!isNaN(start) && now >= start && now < start + retentionMs) {
-          status = 'live';
-        }
-
-        const channels: any[] = [];
-        if (Array.isArray(ev.streams)) {
-          ev.streams.forEach((stUrl: string, idx: number) => {
-            if (stUrl && typeof stUrl === 'string') {
-              channels.push({
-                name: `Stream HD ${idx + 1}`,
-                url: stUrl,
-                type: 'stream',
-              });
-            }
-          });
-        }
-
-        if (channels.length === 0 && ev.url) {
-          const directUrl = ev.url.startsWith('http') ? ev.url : `https://crackstreams1.cx${ev.url.startsWith('/') ? '' : '/'}${ev.url}`;
-          channels.push({
-            name: 'Canal HD',
-            url: directUrl,
-            type: 'embed',
-          });
-        }
-
-        const matchTime = ev.time || (ev.utc ? new Date(ev.utc).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Hoy');
-
-        allEvents.push({
-          id: `rdhd-${ev.id || allEvents.length + 1}`,
-          source: 'rojadirectahd',
-          sourceName: 'RojaDirecta HD (.li)',
-          title: `${ev.home} vs ${ev.away}`,
-          homeTeam: ev.home,
-          awayTeam: ev.away,
-          sport: ev.sport || 'FÚTBOL',
-          competition: ev.competition || ev.sport || 'Competición Oficial',
-          time: matchTime,
-          utc: ev.utc,
-          status,
-          logo: ev.logo || 'https://crackstreams1.cx/images/hd2/soccer.png',
-          channels,
-          sourceUrl: 'https://rojadirecta-hd.li/',
-        });
-        hdCount++;
-      }
-    }
-
-    // Sort: Live events first, then by time
-    allEvents.sort((a, b) => {
-      if (a.status === 'live' && b.status !== 'live') return -1;
-      if (b.status === 'live' && a.status !== 'live') return 1;
-      return 0;
-    });
-
-    const payload = {
-      success: true,
-      updatedAt: Date.now(),
-      sources: {
-        rojadirectv: { name: 'RojaDirecta TV (.live)', url: 'https://www.rojadirectv.live/', total: rojaCount },
-        rojadirectahd: { name: 'RojaDirecta HD (.li)', url: 'https://rojadirecta-hd.li/', total: hdCount },
-      },
-      events: allEvents,
-    };
-
-    writeTmdbCache(cacheKey, payload, 60 * 1000);
-    return res.json(payload);
-  } catch (err: any) {
-    console.error('Error fetching sports events:', err);
-    return res.status(500).json({
-      success: false,
-      error: 'Error al conectar con los servidores de RojaDirecta.',
-      sources: {},
-      events: [],
-    });
-  }
-});
-
 // Virtual Chrome Browser Proxy: strips framing restrictions, blocks intrusive redirects and injects sync bridge
 app.get('/api/proxy-web', async (req, res) => {
   const targetUrl = (req.query.url as string) || '';
@@ -976,277 +772,71 @@ app.get('/api/proxy-web', async (req, res) => {
 
   try {
     let parsed = parseAllowedProxyUrl(/^https?:\/\//i.test(targetUrl) ? targetUrl : `https://${targetUrl}`);
-    const rawFallbacks = Array.isArray(req.query.fallback) ? req.query.fallback : [req.query.fallback];
-    const fallbackUrls: URL[] = [];
-    for (const fallback of rawFallbacks) {
-      if (typeof fallback !== 'string' || fallback.length > 2048 || fallbackUrls.length >= 4) continue;
-      try {
-        const fallbackUrl = parseAllowedProxyUrl(fallback);
-        if (fallbackUrl.toString() !== parsed.toString()) fallbackUrls.push(fallbackUrl);
-      } catch {
-        continue;
-      }
-    }
-    let fallbackIndex = 0;
-    let refererHeader = parsed.origin;
-    if (parsed.hostname.includes('footunder') || parsed.hostname.includes('tvtodo') || parsed.hostname.includes('nplayer')) {
-      refererHeader = 'https://www.rojadirectv.live/';
-    } else if (parsed.hostname.includes('crackstreams')) {
-      refererHeader = 'https://rojadirecta-hd.li/';
-    }
-
     let response: Response | undefined;
-    let redirectCount = 0;
-    while (redirectCount <= 5) {
-      let notFoundRetries = 0;
-      while (true) {
-        const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 10000);
-        try {
-          response = await fetch(parsed, {
-            redirect: 'manual',
-            signal: controller.signal,
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-              'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-              'Referer': refererHeader,
-              ...(typeof req.headers.range === 'string' ? { Range: req.headers.range } : {}),
-            },
-          });
-        } catch (fetchErr: unknown) {
-          clearTimeout(timeout);
-          if (fallbackIndex < fallbackUrls.length) {
-            parsed = parseAllowedProxyUrl(fallbackUrls[fallbackIndex++].toString());
-            continue;
-          }
-          return res.status(502).send(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Servidor no disponible</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#080b11;color:#e2e8f0;font:14px system-ui,sans-serif;text-align:center"><main style="max-width:28rem;padding:2rem"><h1 style="font-size:1.2rem">El servidor del reproductor no responde</h1><p style="color:#94a3b8">El servidor (${parsed.hostname}) no se encuentra o no responde. Por favor, selecciona un reproductor alternativo (VidSrc HD, EmbedSU, etc.) en la barra superior.</p></main></body></html>`);
-        } finally {
-          clearTimeout(timeout);
-        }
-        if (response.status !== 404 || notFoundRetries >= 1) break;
-        await response.body?.cancel();
-        notFoundRetries += 1;
+    for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        response = await fetch(parsed, {
+          redirect: 'manual',
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+            ...(typeof req.headers.range === 'string' ? { Range: req.headers.range } : {}),
+          },
+        });
+      } finally {
+        clearTimeout(timeout);
       }
-      if ([301, 302, 303, 307, 308].includes(response.status)) {
-        const location = response.headers.get('location');
-        await response.body?.cancel();
-        if (!location || redirectCount === 5) throw new Error('Too many proxy redirects');
-        parsed = parseAllowedProxyUrl(new URL(location, parsed).toString());
-        redirectCount += 1;
-        continue;
-      }
-      if (response.status === 404 && fallbackIndex < fallbackUrls.length) {
-        await response.body?.cancel();
-        parsed = parseAllowedProxyUrl(fallbackUrls[fallbackIndex++].toString());
-        continue;
-      }
-      break;
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers.get('location');
+      await response.body?.cancel();
+      if (!location || redirectCount === 5) throw new Error('Too many proxy redirects');
+      parsed = parseAllowedProxyUrl(new URL(location, parsed).toString());
     }
     if (!response) throw new Error('Proxy upstream unavailable');
     const finalUrl = parsed.toString();
 
     const contentType = response.headers.get('content-type') || 'text/html';
-    // Strip framing & security headers so video player embed scripts can run freely
-    res.removeHeader('X-Frame-Options');
-    res.removeHeader('Content-Security-Policy');
-    res.removeHeader('Content-Security-Policy-Report-Only');
-    res.removeHeader('Frame-Options');
-    res.removeHeader('Clear-Site-Data');
-    res.removeHeader('Cross-Origin-Embedder-Policy');
-    res.removeHeader('Cross-Origin-Opener-Policy');
     res.status(response.status).setHeader('Content-Type', contentType);
-
-    if (response.status === 404 && contentType.includes('text/html')) {
-      await response.body?.cancel();
-      return res.status(404).send(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canal no disponible</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#080b11;color:#e2e8f0;font:14px system-ui,sans-serif;text-align:center"><main style="max-width:28rem;padding:2rem"><h1 style="font-size:1.2rem">Este canal ya no está disponible</h1><p style="color:#94a3b8">El servidor del canal devolvió un error 404. Vuelve a Deportes y prueba otro canal del mismo partido.</p></main></body></html>`);
-    }
 
     if (contentType.includes('text/html')) {
       if (Number(response.headers.get('content-length')) > 5 * 1024 * 1024) {
         return res.status(413).send('La página externa supera el tamaño permitido.');
       }
       let html = await readTextWithLimit(response, 5 * 1024 * 1024);
-
-      // Targeted anti-ad and anti-devtools filter: block popunders & devtool redirect traps
-      html = html.replace(/<script[^>]*src=["'][^"']*(therocketlanguages|adskeeper|propeller|popcash|adnxs|doubleclick|adsterra|monetag|exoclick|alwingulla|jokeconnate|consultingestablishmenthedgehog|wingsmob|defrostgauntlet|capitalhospitals|console-ban|disable-devtool)[^"']*["'][^>]*>[\s\S]*?<\/script>/gi, '');
-      // Strip anti-embed script blocks containing sandboxed frame checks
-      html = html.replace(/<script\b[^>]*>[\s\S]*?(?:sandboxed frame|window\.top\.location|window\.self\s*!==\s*window\.top)[\s\S]*?<\/script>/gi, '');
-      html = html.replace(/<meta\b[^>]*>/gi, (tag) => (
-        /\bhttp-equiv\s*=\s*(?:"refresh"|'refresh'|refresh)/i.test(tag) ? '' : tag
-      ));
-
       const baseHref = parsed.origin.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       const jsString = (value: string) => JSON.stringify(value).replace(/</g, '\\u003c');
       const encodedRoomId = encodeURIComponent(roomId);
-      const fallbackQuery = fallbackUrls
-        .map((fallbackUrl) => `&fallback=${encodeURIComponent(fallbackUrl.toString())}`)
-        .join('');
 
-      // Safe non-destructive CSS, anti-sandbox spoofing and video sync injection
+      // Interceptor script injected into virtual browser:
+      // 1. Intercepts link clicks and form submits, converting them to proxy URLs
+      // 2. Notifies parent Watch2Gether app of URL changes so other users navigate simultaneously
+      // 3. Intercepts HTML5 video play, pause, seek and timeupdate events to synchronize playback across room
+      // 4. Blocks popunder and intrusive new window redirects (window.open = noop)
       const syncScript = `
         <base href="${baseHref}/">
-        <style>
-          .banner, .adsbygoogle, .ad-banner, .advertisement,
-          .sharethis-inline-share-buttons, #_wauoyb,
-          iframe[src*="facebook"], iframe[src*="adsterra"] {
-            display: none !important;
-            opacity: 0 !important;
-            pointer-events: none !important;
-            visibility: hidden !important;
-            height: 0 !important;
-            width: 0 !important;
-          }
-        </style>
         <script>
           (function() {
-            var proxyPrefix = window.location.origin + '/api/proxy-web?roomId=${encodedRoomId}${fallbackQuery}&url=';
-
-            // Anti-sandbox spoofing: Trick video player scripts into seeing window.top === window.self
-            try {
-              Object.defineProperty(window, 'top', {
-                get: function() { return window.self; },
-                configurable: true
-              });
-              Object.defineProperty(window, 'parent', {
-                get: function() { return window.self; },
-                configurable: true
-              });
-            } catch(e) {}
-
-            // Disable popup windows & dialog traps
-            window.open = function() { console.log('Blocked popup window'); return null; };
+            // Block popups and intrusive ads
+            window.open = function() { console.log('Blocked popup in virtual browser'); return null; };
             window.alert = function(m) { console.log('Alert suppressed:', m); };
-            window.confirm = function() { return false; };
-            window.prompt = function() { return null; };
 
-            // Neutralize anti-devtools traps & forced page redirects
-            try {
-              window.devtoolsDetector = { addListener: function(){}, launch: function(){} };
-              window.consoleBan = { init: function(){} };
-            } catch(e) {}
-
-            // Intercept internal fetch & XHR calls using ABSOLUTE proxy URL to bypass <base href> overrides
-            (function() {
-              var origFetch = window.fetch;
-              if (origFetch) {
-                window.fetch = function(input, init) {
-                  try {
-                    var urlStr = typeof input === 'string' ? input : (input && input.url ? input.url : '');
-                    if (urlStr && !urlStr.startsWith('data:') && !urlStr.startsWith('blob:') && !urlStr.includes('/api/proxy-web')) {
-                      var target = new URL(urlStr, ${jsString(finalUrl)});
-                      if (['http:', 'https:'].includes(target.protocol)) {
-                        var proxied = proxyPrefix + encodeURIComponent(target.href);
-                        if (typeof input === 'string') {
-                          input = proxied;
-                        } else if (input && input.url) {
-                          input = new Request(proxied, input);
-                        }
-                      }
-                    }
-                  } catch(e) {}
-                  return origFetch.call(this, input, init);
-                };
-              }
-
-              var origOpen = XMLHttpRequest.prototype.open;
-              if (origOpen) {
-                XMLHttpRequest.prototype.open = function(method, url, async, user, password) {
-                  try {
-                    if (typeof url === 'string' && !url.startsWith('data:') && !url.startsWith('blob:') && !url.includes('/api/proxy-web')) {
-                      var target = new URL(url, ${jsString(finalUrl)});
-                      if (['http:', 'https:'].includes(target.protocol)) {
-                        url = proxyPrefix + encodeURIComponent(target.href);
-                      }
-                    }
-                  } catch(e) {}
-                  return origOpen.call(this, method, url, async, user, password);
-                };
-              }
-            })();
-
-            // Safe link & popunder ad filter that NEVER destroys player elements or breaks video clicks
+            // Listen to link clicks and route through parent or proxy
             document.addEventListener('click', function(e) {
-              const elem = e.target;
-              if (!elem || !(elem instanceof Element)) return;
-
-              // Do NOT interfere if user clicks on video, iframe, canvas, player containers, or media controls
-              if (elem.closest('video, iframe, canvas, audio, button, input, select, form, label, .player, #player, [class*="player"], [id*="player"]')) {
-                return;
-              }
-
-              const link = elem.closest('a');
-              if (link) {
-                const href = link.getAttribute('href') || '';
-                if (!href || href.startsWith('#') || href.startsWith('javascript:')) return;
-                const isAdLink = /(therocketlanguages|adskeeper|propeller|popcash|adnxs|doubleclick|adsterra|monetag|exoclick|alwingulla|jokeconnate|consultingestablishmenthedgehog|wingsmob|defrostgauntlet|capitalhospitals|tutvlive)/i.test(href);
-                if (isAdLink || link.target === '_blank') {
+              const link = e.target.closest('a');
+              if (link && link.href) {
+                const href = link.getAttribute('href');
+                if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
                   e.preventDefault();
-                  e.stopImmediatePropagation();
-                  if (isAdLink) link.remove();
-                  return;
+                  let resolved = new URL(href, ${jsString(finalUrl)}).href;
+                  if (window.parent && window.parent !== window) {
+                    window.parent.postMessage({ type: 'VIRTUAL_BROWSER_NAVIGATE', url: resolved }, '*');
+                  }
+                  window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved) + '&roomId=${encodedRoomId}';
                 }
-              }
-            }, true);
-
-            const removeRefreshTags = function() {
-              document.querySelectorAll('meta[http-equiv="refresh" i]').forEach(function(tag) { tag.remove(); });
-            };
-            removeRefreshTags();
-            new MutationObserver(removeRefreshTags).observe(document.documentElement, { childList: true, subtree: true });
-
-            // Automatically proxy all child iframes using ABSOLUTE proxy URLs
-            const proxyPlayerFrame = function(frame) {
-              const src = frame.getAttribute('src');
-              if (!src || src.includes('/api/proxy-web') || src.startsWith('about:') || src.startsWith('javascript:')) return;
-              let destination;
-              try {
-                destination = new URL(src, ${jsString(finalUrl)});
-              } catch(e) {
-                return;
-              }
-              if (!['http:', 'https:'].includes(destination.protocol)) return;
-              frame.setAttribute('src', proxyPrefix + encodeURIComponent(destination.href));
-            };
-
-            const proxyPlayerFrames = function(root) {
-              if (root instanceof HTMLIFrameElement) proxyPlayerFrame(root);
-              if (root.querySelectorAll) root.querySelectorAll('iframe').forEach(proxyPlayerFrame);
-            };
-            proxyPlayerFrames(document);
-
-            new MutationObserver(function(records) {
-              records.forEach(function(record) {
-                if (record.type === 'attributes') {
-                  proxyPlayerFrame(record.target);
-                } else {
-                  record.addedNodes.forEach(proxyPlayerFrames);
-                }
-              });
-            }).observe(document.documentElement, {
-              attributes: true,
-              attributeFilter: ['src'],
-              childList: true,
-              subtree: true
-            });
-            document.addEventListener('submit', function(e) {
-              const form = e.target;
-              if (!(form instanceof HTMLFormElement)) return;
-              let action;
-              try {
-                action = new URL(form.action || ${jsString(finalUrl)}, ${jsString(finalUrl)});
-              } catch(e) {
-                e.preventDefault();
-                e.stopImmediatePropagation();
-                return;
-              }
-              const allowedHosts = ${JSON.stringify(proxyAllowedDomains)};
-              const isAllowed = allowedHosts.some(function(host) {
-                return action.hostname === host || action.hostname.endsWith('.' + host);
-              });
-              if (!isAllowed || form.target === '_blank') {
-                e.preventDefault();
-                e.stopImmediatePropagation();
               }
             }, true);
 
@@ -1317,22 +907,10 @@ app.get('/api/proxy-web', async (req, res) => {
         </script>
       `;
 
-      // Remove sandbox only from allowlisted player frames; embedded players reject it.
-      html = html.replace(/<iframe\b[^>]*>/gi, (iframeTag) => {
-        const srcMatch = iframeTag.match(/\bsrc\s*=\s*(["'])(.*?)\1/i);
-        if (!srcMatch) return iframeTag;
-
-        let frameUrl: URL;
-        try {
-          frameUrl = parseAllowedProxyUrl(new URL(srcMatch[2], finalUrl).toString());
-        } catch {
-          return iframeTag;
-        }
-
-        const proxiedFrameUrl = `/api/proxy-web?url=${encodeURIComponent(frameUrl.toString())}&roomId=${encodedRoomId}${fallbackQuery}`;
-        return iframeTag
-          .replace(srcMatch[0], `src="${proxiedFrameUrl}"`)
-          .replace(/\s+sandbox(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '');
+      // Rewrite child iframe src attributes to route through /api/proxy-web so inner video elements are ALSO proxied and intercepted!
+      html = html.replace(/<iframe\s+([^>]*?)src=["'](https?:\/\/[^"']+)["']/gi, (match, prefix, iframeSrc) => {
+        const proxiedIframeSrc = `/api/proxy-web?url=${encodeURIComponent(iframeSrc)}&roomId=${encodedRoomId}`;
+        return `<iframe ${prefix}src="${proxiedIframeSrc}"`;
       });
 
       if (html.includes('<head>')) {

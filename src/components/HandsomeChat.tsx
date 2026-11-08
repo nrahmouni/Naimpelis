@@ -1,14 +1,11 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Smile, ChevronDown, MessageSquare, X } from 'lucide-react';
+import { Send, Smile, MessageSquare, Sparkles, ChevronDown } from 'lucide-react';
 import { ChatMessage, Participant } from '../types';
-import { triggerHaptic, playCinemaSound } from '../utils/haptics';
 
 interface HandsomeChatProps {
   messages: ChatMessage[];
   currentUser: Participant;
   onSendMessage: (text: string) => void;
-  onClose?: () => void;
-  participantCount: number;
 }
 
 const EMOJIS = ['🍿', '❤️', '🔥', '😂', '😮', '👏', '🎬', '🤩', '👍', '💀', '🎉', '🤯'];
@@ -17,8 +14,6 @@ export const HandsomeChat: React.FC<HandsomeChatProps> = ({
   messages,
   currentUser,
   onSendMessage,
-  onClose,
-  participantCount,
 }) => {
   const [inputText, setInputText] = useState('');
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
@@ -45,104 +40,98 @@ export const HandsomeChat: React.FC<HandsomeChatProps> = ({
   const handleSend = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (inputText.trim()) {
-      triggerHaptic('light');
-      playCinemaSound('reaction');
       onSendMessage(inputText.trim());
       setInputText('');
       setShowEmojiPicker(false);
     }
   };
 
+
+
   const addEmoji = (emoji: string) => {
-    triggerHaptic('light');
     setInputText((prev) => prev + emoji);
   };
 
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-[#0d1317]">
-      <div className="flex h-12 shrink-0 items-center justify-between border-b border-white/[0.07] px-4">
-        <div className="flex items-center gap-2.5">
-          <MessageSquare className="h-4 w-4 text-slate-400" />
-          <h2 className="text-[13px] font-semibold text-slate-100">Chat</h2>
-        </div>
-        <span className="text-[11px] text-slate-500">{participantCount} en sala</span>
-        {onClose && (
-          <button type="button" onClick={onClose} aria-label="Cerrar chat" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white">
-            <X className="h-4 w-4" />
-          </button>
-        )}
-      </div>
-      {/* Messages List Container */}
+
+
       <div
         ref={chatContainerRef}
         onScroll={handleScroll}
-        className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-0"
+        role="log"
+        aria-label="Mensajes de la sala"
+        aria-live="polite"
+        className="relative flex-1 space-y-3 overflow-y-auto p-4"
       >
-        {messages.map((msg) => {
-          const isMe = msg.senderId === currentUser.id;
-          const isSystem = msg.isSystem;
+        {messages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center p-6 text-center text-slate-500">
+            <Sparkles className="mb-2 h-8 w-8 text-rose-300/50" />
+            <p className="text-sm font-medium">La conversación empieza aquí</p>
+          </div>
+        ) : (
+          messages.map((msg) => {
+            const isMe = msg.senderId === currentUser.id;
+            if (msg.isSystem) {
+              return (
+                <div key={msg.id} className="my-2 flex justify-center">
+                  <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-white/[0.06] bg-white/[0.03] px-3 py-1.5 text-center text-[11px] text-slate-400">
+                    <span>{msg.senderAvatar}</span>
+                    <span>{msg.text}</span>
+                  </div>
+                </div>
+              );
+            }
 
-          if (isSystem) {
             return (
-              <div key={msg.id} className="flex justify-center my-1">
-                <span className="px-3 py-1 rounded-full bg-slate-900/90 border border-slate-800 text-[11px] text-slate-400 font-medium shadow-sm">
-                  {msg.text}
-                </span>
+              <div key={msg.id} className={`flex gap-2.5 text-sm ${isMe ? 'flex-row-reverse' : 'flex-row'}`}>
+                <div
+                  className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 text-xs shadow-sm"
+                  style={{ backgroundColor: msg.senderColor || '#3b82f6' }}
+                >
+                  {msg.senderAvatar}
+                </div>
+                <div className={`flex max-w-[84%] flex-col ${isMe ? 'items-end' : 'items-start'}`}>
+                  <div className="mb-1 flex items-center gap-1.5 px-1">
+                    <span className="text-xs font-semibold text-slate-300">{msg.senderName}</span>
+                    <span className="font-mono text-[10px] text-slate-500">
+                      {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div className={`break-words rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed shadow-sm ${
+                    isMe
+                      ? 'rounded-tr-sm bg-rose-500 text-white'
+                      : 'rounded-tl-sm border border-white/[0.06] bg-white/[0.05] text-slate-100'
+                  }`}>
+                    {msg.text}
+                  </div>
+                </div>
               </div>
             );
-          }
-
-          return (
-            <div
-              key={msg.id}
-              className={`flex items-start gap-2 ${isMe ? 'flex-row-reverse' : 'flex-row'}`}
-            >
-              <div
-                className="w-7 h-7 rounded-full flex items-center justify-center text-xs shrink-0 shadow-sm border border-white/10"
-                style={{ backgroundColor: msg.senderColor || '#3b82f6' }}
-              >
-                {msg.senderAvatar || '🍿'}
-              </div>
-
-              <div
-                className={`max-w-[80%] rounded-2xl px-3.5 py-2 text-xs leading-relaxed shadow-md ${
-                  isMe
-                    ? 'bg-rose-600 text-white rounded-tr-xs font-medium'
-                    : 'bg-[#1b272e] text-slate-100 rounded-tl-xs border border-white/5'
-                }`}
-              >
-                {!isMe && (
-                  <p className="text-[10px] font-bold text-rose-300 mb-0.5" style={{ color: msg.senderColor }}>
-                    {msg.senderName}
-                  </p>
-                )}
-                <p className="break-words">{msg.text}</p>
-              </div>
-            </div>
-          );
-        })}
+          })
+        )}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* Scroll Down Button */}
       {showScrollDown && (
         <button
           onClick={() => scrollToBottom(true)}
-          className="absolute bottom-16 right-4 z-20 flex h-8 w-8 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg active:scale-90"
+          className="absolute bottom-20 right-4 z-20 flex h-9 w-9 items-center justify-center rounded-full bg-rose-500 text-white shadow-lg transition-transform hover:bg-rose-400 active:scale-90"
+          aria-label="Ir al mensaje más reciente"
         >
           <ChevronDown className="h-4 w-4" />
         </button>
       )}
 
-      {/* Emoji Picker Popup */}
       {showEmojiPicker && (
-        <div className="absolute bottom-16 left-3 z-30 grid w-60 grid-cols-6 gap-1 rounded-2xl border border-white/10 bg-[#151d22] p-2 shadow-2xl">
+        <div className="absolute bottom-16 left-3 z-30 grid w-60 grid-cols-6 gap-1 rounded-xl border border-white/10 bg-[#151d22] p-2 shadow-2xl">
           {EMOJIS.map((emoji) => (
             <button
               key={emoji}
               type="button"
               onClick={() => addEmoji(emoji)}
-              className="flex h-9 w-9 items-center justify-center rounded-xl text-lg hover:bg-white/10 active:scale-90"
+              className="flex h-9 w-9 items-center justify-center rounded-lg text-lg transition-colors hover:bg-white/[0.08]"
+              aria-label={`Añadir ${emoji}`}
             >
               {emoji}
             </button>
@@ -150,14 +139,14 @@ export const HandsomeChat: React.FC<HandsomeChatProps> = ({
         </div>
       )}
 
-      {/* Input Bar */}
-      <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-white/10 bg-[#11181c] p-2.5">
+      <form onSubmit={handleSend} className="flex items-center gap-2 border-t border-white/[0.07] bg-[#11181c] p-3">
         <button
           type="button"
           onClick={() => setShowEmojiPicker(!showEmojiPicker)}
-          className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${
-            showEmojiPicker ? 'border-rose-400 bg-rose-600/20 text-rose-300' : 'border-white/10 bg-white/5 text-slate-300'
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border transition-colors ${
+            showEmojiPicker ? 'border-rose-300/30 bg-rose-300/10 text-rose-100' : 'border-white/[0.08] bg-white/[0.04] text-slate-300 hover:bg-white/[0.08]'
           }`}
+          aria-label="Abrir selector de emojis"
         >
           <Smile className="h-4 w-4" />
         </button>
@@ -166,13 +155,15 @@ export const HandsomeChat: React.FC<HandsomeChatProps> = ({
           value={inputText}
           onChange={(e) => setInputText(e.target.value)}
           maxLength={1000}
+          aria-label="Escribe un mensaje"
           placeholder="Escribe un mensaje..."
-          className="h-10 min-w-0 flex-1 rounded-xl border border-white/10 bg-[#090e11] px-3 text-xs text-slate-100 placeholder:text-slate-500 focus:border-rose-500 focus:outline-none"
+          className="h-11 min-w-0 flex-1 rounded-xl border border-white/[0.08] bg-[#090e11] px-3.5 text-sm text-slate-100 placeholder:text-slate-500 focus:border-rose-300/40 focus:outline-none focus:ring-2 focus:ring-rose-300/10"
         />
         <button
           type="submit"
           disabled={!inputText.trim()}
-          className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-600 text-white shadow-md active:scale-95 disabled:opacity-40"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-rose-500 text-white shadow-md transition-colors hover:bg-rose-400 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-rose-500"
+          aria-label="Enviar mensaje"
         >
           <Send className="h-4 w-4" />
         </button>

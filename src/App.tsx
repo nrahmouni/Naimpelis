@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { MessageSquare } from 'lucide-react';
 import { Header } from './components/Header';
 import { VideoPlayerContainer } from './components/VideoPlayerContainer';
 import { VirtualChromeBrowser } from './components/VirtualChromeBrowser';
@@ -39,8 +38,8 @@ export default function App() {
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
 
   const [videoState, setVideoState] = useState<VideoState>({
-    url: 'https://bingetrix.sc/watch',
-    title: 'Bingetrix',
+    url: 'https://movidy.pw/',
+    title: 'Movidy - Cine y Series',
     sourceType: 'iframe',
     currentTime: 0,
     isPlaying: false,
@@ -53,8 +52,6 @@ export default function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const [showTvModal, setShowTvModal] = useState(false);
-  const [showChat, setShowChat] = useState(false);
-  const [chatSeenCount, setChatSeenCount] = useState(0);
   const isTvScreenMode = queryParams.get('tv') === '1';
   const [latencyMs, setLatencyMs] = useState(24);
 
@@ -199,21 +196,40 @@ export default function App() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   // Handle URL change with movie resolver and virtual browser proxy support
-  const handleUrlChange = async (newUrl: string, title?: string, forceVirtualBrowser?: boolean, fallbackUrls: string[] = []) => {
+  const handleUrlChange = async (newUrl: string, title?: string, forceVirtualBrowser?: boolean) => {
     let finalUrl = newUrl;
     let finalTitle = title || 'Película / Vídeo';
     let poster = '';
     let overview = '';
     let releaseYear = '';
     let originalPortalUrl = '';
-    let altEmbeds: string[] = fallbackUrls;
+    let altEmbeds: string[] = [];
     let trailerUrl = '';
     let determinedSourceType: VideoSourceType = forceVirtualBrowser ? 'iframe' : 'direct';
 
     // If user explicitly picked Virtual Browser or it's a web portal
     if (forceVirtualBrowser || /bingetrix\.[a-z]+\/(?:watch|movie|tv)\/\d+/i.test(newUrl)) {
       determinedSourceType = 'iframe';
-      if (/bingetrix\.[a-z]+\/(?:watch|movie|tv)\/\d+/i.test(newUrl)) originalPortalUrl = newUrl;
+      originalPortalUrl = newUrl;
+      finalTitle = 'Bingetrix - Resident Evil (2026)';
+
+      try {
+        const res = await fetch(`/api/resolve-movie?url=${encodeURIComponent(newUrl)}`);
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = await res.json();
+          if (data && data.success) {
+            finalTitle = `${data.title} ${data.releaseYear ? `(${data.releaseYear})` : ''}`;
+            poster = data.poster || '';
+            overview = data.overview || '';
+            releaseYear = data.releaseYear || '';
+            altEmbeds = data.streamEmbeds || [];
+            trailerUrl = data.trailerUrl || '';
+          }
+        }
+      } catch (err) {
+        console.error('Error resolving movie URL:', err);
+      }
     } else {
       const parsed = parseVideoUrl(finalUrl);
       determinedSourceType = parsed.type;
@@ -279,14 +295,26 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-[#0b0e11] font-sans text-slate-100">
-      {!isTvScreenMode && <Header
+    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans">
+      {/* Top Bar Header */}
+      <Header
         roomName={roomName}
         roomId={roomId}
         participants={participants}
         currentUser={currentUser}
         latencyMs={latencyMs}
+        isVirtualBrowser={isVirtualBrowser}
         isScreenSharing={isScreenSharing}
+        onToggleVirtualBrowser={(enabled) => {
+          setIsVirtualBrowser(enabled);
+          if (enabled && videoState.sourceType !== 'iframe') {
+            handleUrlChange(
+              videoState.url.includes('bingetrix') ? videoState.url : 'https://bingetrix.sc/watch/1423191',
+              'Navegador Virtual',
+              true
+            );
+          }
+        }}
         onToggleScreenShare={(enabled) => setIsScreenSharing(enabled)}
         onOpenInvite={() => setShowInviteModal(true)}
         onOpenTv={() => setShowTvModal(true)}
@@ -294,7 +322,7 @@ export default function App() {
         onOpenProfile={() => setShowProfileModal(true)}
         onLeaveRoom={handleLeaveRoom}
         onOpenHealthMonitor={() => setShowHealthMonitor(true)}
-      />}
+      />
 
       {/* Main Content Area */}
       {isTvScreenMode ? (
@@ -309,8 +337,13 @@ export default function App() {
 
           {videoState.sourceType === 'iframe' || isVirtualBrowser ? (
             <iframe
-              src={`/api/proxy-web?url=${encodeURIComponent(videoState.url)}&roomId=${encodeURIComponent(roomId)}`}
+              src={
+                /vidsrc|autoembed|2embed|movidy|\/embed\//i.test(videoState.url)
+                  ? videoState.url
+                  : `/api/proxy-web?url=${encodeURIComponent(videoState.url)}&roomId=${encodeURIComponent(roomId)}`
+              }
               title="TV Cinema Screen"
+              sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
               allowFullScreen
               className="w-full h-full border-0 bg-black"
@@ -328,8 +361,9 @@ export default function App() {
           )}
         </div>
       ) : (
-        <main className="flex min-h-0 flex-1 flex-col gap-2 overflow-hidden p-2 sm:gap-3 sm:p-3 md:flex-row">
-          <section aria-label="Reproductor compartido" className="min-h-[140px] w-full min-w-0 flex-[1.2] overflow-hidden rounded-2xl border border-white/[0.08] bg-black shadow-[0_12px_36px_rgba(0,0,0,0.2)] md:min-h-[220px] md:flex-[2.1]">
+        <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
+          {/* Upper / Left: Video Player, WebRTC Screen Share or Virtual Browser Section */}
+          <div className="w-full md:w-3/5 lg:w-2/3 flex flex-col bg-black border-b md:border-b-0 md:border-r border-slate-800/80 shrink-0 md:shrink h-[42vh] sm:h-[48vh] md:h-full overflow-hidden">
             {isScreenSharing ? (
               <ScreenShareContainer
                 isHost={currentUser.isHost}
@@ -341,11 +375,10 @@ export default function App() {
               <VirtualChromeBrowser
                 currentUrl={videoState.url}
                 videoState={videoState}
-                remoteBrowserActive={false}
                 isHost={currentUser.isHost}
                 roomId={roomId}
-                onNavigate={(navUrl, navTitle, fallbackUrls) => {
-                  handleUrlChange(navUrl, navTitle || 'Navegador Virtual Sincronizado', true, fallbackUrls);
+                onNavigate={(navUrl, navTitle) => {
+                  handleUrlChange(navUrl, navTitle || 'Navegador Virtual Sincronizado', true);
                 }}
                 onPlaybackChange={handleVideoPlaybackChange}
                 onSendReaction={handleSendReaction}
@@ -361,44 +394,17 @@ export default function App() {
                 onSendReaction={handleSendReaction}
               />
             )}
-          </section>
-        </main>
-      )}
+          </div>
 
-      {!isTvScreenMode && (
-        <>
-          {showChat && (
-            <aside aria-label="Chat de la sala" className="fixed bottom-20 right-4 z-40 flex h-[min(32rem,calc(100dvh-7rem))] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111518] shadow-2xl shadow-black/50">
-              <HandsomeChat
-                messages={messages}
-                currentUser={currentUser}
-                onSendMessage={handleSendMessage}
-                onClose={() => {
-                  setChatSeenCount(messages.length);
-                  setShowChat(false);
-                }}
-                participantCount={participants.length}
-              />
-            </aside>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              setChatSeenCount(messages.length);
-              setShowChat((open) => !open);
-            }}
-            aria-label={showChat ? 'Cerrar chat' : 'Abrir chat'}
-            aria-expanded={showChat}
-            className="fixed bottom-4 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg shadow-rose-950/40 transition hover:bg-rose-500"
-          >
-            <MessageSquare className="h-5 w-5" />
-            {!showChat && messages.slice(chatSeenCount).some((message) => message.senderId !== currentUser.id && !message.isSystem) && (
-              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#0b0e11] bg-amber-400 px-1 text-[10px] font-bold text-slate-950">
-                {messages.slice(chatSeenCount).filter((message) => message.senderId !== currentUser.id && !message.isSystem).length}
-              </span>
-            )}
-          </button>
-        </>
+          {/* Lower / Right: Handsome Live Chat - Takes full remaining height! */}
+          <div className="w-full md:w-2/5 lg:w-1/3 flex-1 flex flex-col min-h-0 bg-slate-950 overflow-hidden">
+            <HandsomeChat
+              messages={messages}
+              currentUser={currentUser}
+              onSendMessage={handleSendMessage}
+            />
+          </div>
+        </div>
       )}
 
       {/* Modals */}

@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
-import { User, X, Check } from 'lucide-react';
+import { User, Check, X, Palette, Sparkles } from 'lucide-react';
 import { Participant } from '../types';
-import { triggerHaptic } from '../utils/haptics';
 
 interface UserProfileModalProps {
   currentUser: Participant;
@@ -9,8 +8,17 @@ interface UserProfileModalProps {
   onClose: () => void;
 }
 
-const AVATARS = ['🍿', '🎬', '🦁', '🦊', '🐱', '🐶', '👽', '🤖', '👑', '🕶️', '🔥', '⚡'];
-const COLORS = ['#f43f5e', '#3b82f6', '#10b981', '#8b5cf6', '#f59e0b', '#ec4899', '#06b6d4', '#e11d48'];
+const AVATARS = ['🍿', '🎬', '🦁', '🦊', '🐱', '🐶', '🐼', '🐯', '👽', '🤖', '👑', '😎'];
+const COLORS = [
+  '#f43f5e', // Rose
+  '#3b82f6', // Blue
+  '#10b981', // Emerald
+  '#8b5cf6', // Violet
+  '#f59e0b', // Amber
+  '#ec4899', // Pink
+  '#06b6d4', // Cyan
+  '#84cc16', // Lime
+];
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   currentUser,
@@ -21,10 +29,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   const [avatar, setAvatar] = useState(currentUser.avatar);
   const [color, setColor] = useState(currentUser.color);
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (name.trim()) {
-      triggerHaptic('success');
       onSave(name.trim(), avatar, color);
       onClose();
     }
@@ -33,55 +40,59 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   return (
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-slate-900 border border-slate-800 rounded-3xl w-full max-w-sm overflow-hidden shadow-2xl flex flex-col">
+        {/* Header */}
         <div className="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <User className="w-5 h-5 text-rose-500" />
-            <h3 className="text-sm font-bold text-slate-100">Tu Perfil en la Sala</h3>
+            <h3 className="text-sm font-bold text-slate-100">Configurar Tu Perfil</h3>
           </div>
-          <button onClick={onClose} className="p-1 rounded bg-slate-800 text-slate-400 hover:text-white">
+          <button
+            onClick={onClose}
+            className="w-8 h-8 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-400 text-xs flex items-center justify-center"
+          >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSave} className="p-5 space-y-4">
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="p-5 flex flex-col gap-4">
+          {/* Avatar Preview */}
+          <div className="flex flex-col items-center justify-center gap-2">
+            <div
+              className="w-16 h-16 rounded-full flex items-center justify-center text-3xl shadow-lg ring-4 ring-slate-800 border border-white/20 transition-all"
+              style={{ backgroundColor: color }}
+            >
+              {avatar}
+            </div>
+            <span className="text-xs font-semibold text-slate-300">Tu Avatar en el Chat</span>
+          </div>
+
+          {/* Name Field */}
           <div>
-            <label className="text-xs font-bold text-slate-300 block mb-1">Nombre / Apodo</label>
+            <label className="block text-xs font-semibold text-slate-300 mb-1">Nombre o Apodo</label>
             <input
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-slate-100 focus:outline-none"
+              placeholder="Ej: Cinefilo_99"
+              className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-700/70 rounded-xl text-xs text-slate-100 focus:outline-none focus:ring-2 focus:ring-rose-500"
               required
             />
           </div>
 
+          {/* Select Avatar Icon */}
           <div>
-            <label className="text-xs font-bold text-slate-300 block mb-1.5">Color de Usuario</label>
-            <div className="flex items-center gap-2">
-              {COLORS.map((c) => (
-                <button
-                  key={c}
-                  type="button"
-                  onClick={() => setColor(c)}
-                  className={`w-6 h-6 rounded-full transition-transform ${
-                    color === c ? 'scale-125 ring-2 ring-white' : 'opacity-70'
-                  }`}
-                  style={{ backgroundColor: c }}
-                />
-              ))}
-            </div>
-          </div>
-
-          <div>
-            <label className="text-xs font-bold text-slate-300 block mb-1.5">Avatar</label>
-            <div className="grid grid-cols-6 gap-2">
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Icono de Avatar</label>
+            <div className="grid grid-cols-6 gap-1.5">
               {AVATARS.map((emoji) => (
                 <button
                   key={emoji}
                   type="button"
                   onClick={() => setAvatar(emoji)}
-                  className={`h-9 rounded-xl flex items-center justify-center text-lg border ${
-                    avatar === emoji ? 'bg-rose-600/30 border-rose-500' : 'bg-slate-950 border-slate-800'
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center text-lg border transition-all ${
+                    avatar === emoji
+                      ? 'bg-rose-600 text-white border-rose-400 scale-110 shadow-md'
+                      : 'bg-slate-950 border-slate-800 hover:bg-slate-800'
                   }`}
                 >
                   {emoji}
@@ -90,12 +101,29 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
             </div>
           </div>
 
+          {/* Select Color */}
+          <div>
+            <label className="block text-xs font-semibold text-slate-300 mb-1.5">Color de Usuario</label>
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+              {COLORS.map((c) => (
+                <button
+                  key={c}
+                  type="button"
+                  onClick={() => setColor(c)}
+                  className={`w-7 h-7 rounded-full transition-all border-2 shrink-0 ${
+                    color === c ? 'border-white scale-110 shadow-md' : 'border-transparent opacity-80'
+                  }`}
+                  style={{ backgroundColor: c }}
+                />
+              ))}
+            </div>
+          </div>
+
           <button
             type="submit"
-            className="w-full py-3 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-lg"
+            className="w-full py-2.5 mt-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold shadow-lg shadow-rose-950/40 active:scale-95 transition-all"
           >
-            <Check className="w-4 h-4" />
-            <span>Guardar Cambios</span>
+            Guardar Cambios
           </button>
         </form>
       </div>
