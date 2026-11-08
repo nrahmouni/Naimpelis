@@ -6,8 +6,6 @@ import { randomBytes, randomUUID } from 'crypto';
 import { Readable } from 'stream';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { RemoteBrowserManager, isAllowedRemoteBrowserUrl } from './server/RemoteBrowserManager';
-import { RemoteBrowserInput } from './src/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -47,8 +45,6 @@ interface RoomStore {
       joinedAt: number;
     }[];
     screenShareActive: boolean;
-    remoteBrowserActive: boolean;
-    remoteBrowserUrl?: string;
     messages: any[];
     createdAt: number;
   };
@@ -69,7 +65,6 @@ const rooms: RoomStore = Object.assign(Object.create(null), {
     },
     participants: [],
     screenShareActive: false,
-    remoteBrowserActive: false,
     messages: [
       {
         id: 'msg-welcome',
@@ -119,24 +114,6 @@ function sendToParticipant(roomId: string, userId: string, message: any) {
   });
 }
 
-const remoteBrowserManager = new RemoteBrowserManager((roomId, message) => {
-  broadcastToRoom(roomId, message);
-  const event = message as { type?: string; payload?: { url?: string } };
-  const room = rooms[roomId];
-  if (event.type !== 'REMOTE_BROWSER_LOCATION' || !room || !isAllowedRemoteBrowserUrl(event.payload?.url || '')) return;
-
-  const url = event.payload!.url!;
-  room.remoteBrowserUrl = url;
-  room.videoState.url = url;
-  room.videoState.title = new URL(url).hostname;
-  room.videoState.sourceType = 'iframe';
-  room.videoState.lastUpdated = Date.now();
-  broadcastToRoom(roomId, {
-    type: 'VIDEO_STATE_UPDATED',
-    payload: { videoState: room.videoState, action: 'navigate' },
-  });
-});
-
 function getOrCreateRoom(roomId: string, roomName?: string) {
   if (!rooms[roomId]) {
     rooms[roomId] = {
@@ -153,7 +130,6 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
       },
       participants: [],
       screenShareActive: false,
-      remoteBrowserActive: false,
       messages: [
         {
           id: `sys-${Date.now()}`,
@@ -310,8 +286,6 @@ wss.on('connection', (ws, request) => {
             payload: { ...room, currentUserId: userId },
           })
         );
-        remoteBrowserManager.sendLatestFrame(roomId, ws);
-
         // Broadcast user joined update to others in room
         broadcastToRoom(
           roomId,
@@ -333,54 +307,7 @@ wss.on('connection', (ws, request) => {
       const room = rooms[meta.roomId];
       if (!room || !room.participants.some((participant) => participant.id === meta.userId)) return;
 
-      if (type === 'START_REMOTE_BROWSER') {
-        if (room.hostId !== meta.userId) return;
-        const { url } = payload;
-        if (typeof url !== 'string' || url.length > 2048 || !isAllowedRemoteBrowserUrl(url)) {
-          ws.send(JSON.stringify({ type: 'REMOTE_BROWSER_ERROR', payload: { message: 'El dominio no está permitido para el navegador remoto.' } }));
-          return;
-        }
-        room.remoteBrowserActive = false;
-        remoteBrowserManager.start(meta.roomId, meta.userId, url)
-          .then(() => {
-            room.remoteBrowserActive = true;
-            room.remoteBrowserUrl = url;
-            room.videoState.url = url;
-            room.videoState.sourceType = 'iframe';
-            room.videoState.currentTime = 0;
-            room.videoState.isPlaying = true;
-            room.videoState.lastUpdated = Date.now();
-            broadcastToRoom(meta.roomId!, {
-              type: 'REMOTE_BROWSER_READY',
-              payload: { url, width: 1280, height: 720 },
-            });
-            broadcastToRoom(meta.roomId!, {
-              type: 'VIDEO_STATE_UPDATED',
-              payload: { videoState: room.videoState, action: 'change_url' },
-            });
-          })
-          .catch((error: unknown) => {
-            const message = error instanceof Error ? error.message : 'No se pudo iniciar Chromium.';
-            sendToParticipant(meta.roomId!, meta.userId!, {
-              type: 'REMOTE_BROWSER_ERROR',
-              payload: { message },
-            });
-          });
-      } else if (type === 'REMOTE_BROWSER_INPUT') {
-        if (room.hostId !== meta.userId) return;
-        void remoteBrowserManager.input(meta.roomId, meta.userId, payload.input as RemoteBrowserInput)
-          .catch(() => sendToParticipant(meta.roomId!, meta.userId!, {
-            type: 'REMOTE_BROWSER_ERROR',
-            payload: { message: 'No se pudo aplicar la interacción al navegador remoto.' },
-          }));
-      } else if (type === 'STOP_REMOTE_BROWSER') {
-        if (room.hostId !== meta.userId) return;
-        void remoteBrowserManager.stop(meta.roomId).then(() => {
-          room.remoteBrowserActive = false;
-          room.remoteBrowserUrl = undefined;
-          broadcastToRoom(meta.roomId!, { type: 'REMOTE_BROWSER_STOPPED', payload: {} });
-        });
-      } else if (type === 'UPDATE_PROFILE') {
+      if (type === 'UPDATE_PROFILE') {
         const { userName, userAvatar, userColor } = payload;
         if (typeof userName !== 'string' || !userName.trim() || userName.length > 40) return;
         if (typeof userAvatar !== 'string' || userAvatar.length > 16) return;
@@ -531,7 +458,6 @@ wss.on('connection', (ws, request) => {
             payload: { signalData: { type: 'screen_share_stopped' }, targetId: 'all', senderId: meta.userId },
           });
         }
-        if (room.remoteBrowserActive) remoteBrowserManager.transferHost(meta.roomId, newHostId);
         room.hostId = newHostId;
         room.participants.forEach(p => {
           p.isHost = p.id === newHostId;
@@ -586,14 +512,6 @@ wss.on('connection', (ws, request) => {
             payload: { signalData: { type: 'screen_share_stopped' }, targetId: 'all', senderId: 'system' },
           }, ws);
         }
-        if (room.hostId === meta.userId && room.remoteBrowserActive) {
-          void remoteBrowserManager.stop(meta.roomId).then(() => {
-            room.remoteBrowserActive = false;
-            room.remoteBrowserUrl = undefined;
-            broadcastToRoom(meta.roomId!, { type: 'REMOTE_BROWSER_STOPPED', payload: {} });
-          });
-        }
-        
         // Host migration if host left
         if (room.hostId === meta.userId) {
           room.hostId = room.participants[0]?.id || '';
@@ -988,9 +906,7 @@ async function startServer() {
 }
 
 const shutdown = () => {
-  httpServer.close(() => {
-    void remoteBrowserManager.close().finally(() => process.exit(0));
-  });
+  httpServer.close(() => process.exit(0));
 };
 
 process.once('SIGINT', shutdown);

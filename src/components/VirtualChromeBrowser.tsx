@@ -16,8 +16,6 @@ import {
 } from 'lucide-react';
 import { VideoState } from '../types';
 import { parseVideoUrl } from '../utils/videoParser';
-import { RemoteBrowserViewport } from './RemoteBrowserViewport';
-import { socketService } from '../services/socket';
 
 interface MovieItem {
   id: number;
@@ -33,8 +31,6 @@ interface MovieItem {
 interface VirtualChromeBrowserProps {
   currentUrl: string;
   videoState?: VideoState;
-  remoteBrowserActive: boolean;
-  remoteBrowserError?: string;
   isHost: boolean;
   roomId: string;
   catalogRequest?: number;
@@ -46,8 +42,6 @@ interface VirtualChromeBrowserProps {
 export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   currentUrl,
   videoState,
-  remoteBrowserActive,
-  remoteBrowserError,
   isHost,
   roomId,
   catalogRequest = 0,
@@ -115,13 +109,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
     window.addEventListener('message', handleProxyMessage);
     return () => window.removeEventListener('message', handleProxyMessage);
   }, [currentUrl, isHost, onNavigate, onPlaybackChange]);
-
-  useEffect(() => socketService.subscribe(({ type, payload }) => {
-    if ((type === 'REMOTE_BROWSER_LOCATION' || type === 'REMOTE_BROWSER_FRAME') && typeof payload?.url === 'string') {
-      setAddressInput(payload.url);
-      setActiveTab('web');
-    }
-  }), []);
 
   // When remote videoState updates (e.g. Host seeks to 15:51), forward command to iframe!
   useEffect(() => {
@@ -245,7 +232,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
     onNavigate(url);
   };
 
-  const isPlaybackControllable = ['youtube', 'vimeo', 'direct'].includes(parseVideoUrl(addressInput).type) || remoteBrowserActive;
+  const isPlaybackControllable = ['youtube', 'vimeo', 'direct'].includes(parseVideoUrl(addressInput).type);
   const proxyUrl = `/api/proxy-web?url=${encodeURIComponent(addressInput)}&roomId=${encodeURIComponent(roomId)}`;
 
   return (
@@ -295,7 +282,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
               ? 'text-emerald-200 bg-emerald-500/10 border border-emerald-400/20'
               : 'text-amber-100 bg-amber-500/10 border border-amber-300/20'
           }`}>
-            {remoteBrowserActive ? 'Navegador remoto sincronizado' : isPlaybackControllable ? 'Reproducción sincronizable' : 'Solo se comparte el enlace'}
+            {isPlaybackControllable ? 'Reproducción sincronizable' : 'Solo se comparte el enlace'}
           </span>
           <button
             onClick={() => setIsFullscreen(!isFullscreen)}
@@ -546,15 +533,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
         ) : (
           /* Web Browser Viewport */
           <div className="w-full h-full relative group">
-            {remoteBrowserError && (
-              <div
-                role="alert"
-                className="absolute inset-x-3 top-3 z-10 rounded-xl border border-rose-400/30 bg-rose-950/80 px-3 py-2 text-xs leading-relaxed text-rose-100 shadow-lg backdrop-blur"
-              >
-                {remoteBrowserError}
-              </div>
-            )}
-            {!isPlaybackControllable && !remoteBrowserError && (
+            {!isPlaybackControllable && (
               <div
                 role="status"
                 className="absolute inset-x-3 top-3 z-10 rounded-xl border border-amber-200/15 bg-slate-950/90 px-3 py-2 text-xs leading-relaxed text-slate-200 shadow-lg backdrop-blur"
@@ -562,19 +541,15 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
                 Este reproductor externo no permite control remoto. Para mostrar el mismo instante, el anfitrión puede compartir su pantalla.
               </div>
             )}
-            {videoState?.sourceType === 'iframe' ? (
-              <RemoteBrowserViewport isHost={isHost} active={remoteBrowserActive} />
-            ) : (
-              <iframe
-                ref={iframeRef}
-                src={proxyUrl}
-                title="Virtual Chrome Player"
-                sandbox="allow-scripts allow-forms allow-presentation"
-                allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                allowFullScreen
-                className="h-full w-full border-0 bg-black"
-              />
-            )}
+            <iframe
+              ref={iframeRef}
+              src={proxyUrl}
+              title="Virtual Chrome Player"
+              sandbox="allow-scripts allow-forms allow-presentation"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+              className="h-full w-full border-0 bg-black"
+            />
           </div>
         )}
       </div>
