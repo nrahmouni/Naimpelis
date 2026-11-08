@@ -10,11 +10,7 @@ import {
   Minimize2,
   Play,
   Star,
-  Clapperboard,
   ShieldCheck,
-  Tv2,
-  Sparkles,
-  Layers,
 } from 'lucide-react';
 import { VideoState } from '../types';
 import { parseVideoUrl } from '../utils/videoParser';
@@ -63,7 +59,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   const [movies, setMovies] = useState<MovieItem[]>([]);
   const [isLoadingMovies, setIsLoadingMovies] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [isStreamIsolated, setIsStreamIsolated] = useState(false);
   const [selectedMovie, setSelectedMovie] = useState<MovieItem | null>(null);
   const [catalogError, setCatalogError] = useState('');
 
@@ -80,8 +75,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
     }
     return url;
   };
-
-  const isRecognizedStream = /footunder|canal-|stream-|bingetrix\.sc\/(?:watch|movie|tv)|movidy\.pw\/ver|vidsrc|embed|crackstreams/i.test(addressInput);
 
   // Sync addressInput when remote videoUrl changes
   useEffect(() => {
@@ -195,7 +188,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   };
 
   const proxyUrl = `/api/proxy-web?url=${encodeURIComponent(addressInput)}&roomId=${encodeURIComponent(roomId)}`;
-  const isSportsStream = /rojadirect|footunder|crackstreams|embedindia|trend48/i.test(addressInput);
 
   return (
     <div
@@ -207,7 +199,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
       {/* Sleek Unified Navigation Bar with Full History Navigation (Atrás, Adelante, Recargar, Inicio) */}
       <div className="bg-slate-950 px-2.5 pt-2 pb-1.5 flex flex-col gap-2 border-b border-slate-800 select-none">
         {/* Row 1: Browser Navigation Controls + Main Portal Categories */}
-        <div className="flex items-center justify-between gap-2 overflow-x-auto scrollbar-none">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 min-w-0">
             {/* Navigation History Controls */}
             <div className="flex items-center gap-1 p-0.5 rounded-xl bg-slate-900 border border-slate-800 shrink-0">
@@ -238,12 +230,12 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
 
           </div>
 
-          <div className="flex shrink-0 items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1">
+          <div className="order-3 flex w-full shrink-0 items-center gap-1 rounded-xl border border-slate-800 bg-slate-900 p-1 sm:order-none sm:w-auto">
             <button
               type="button"
               onClick={() => { setActiveTab('finder'); setSelectedMovie(null); }}
               aria-pressed={activeTab === 'finder'}
-              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${activeTab === 'finder' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition sm:flex-none ${activeTab === 'finder' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
               Cartelera
             </button>
@@ -251,7 +243,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
               type="button"
               onClick={() => handleOpenSportsTab('all')}
               aria-pressed={activeTab === 'sports'}
-              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${activeTab === 'sports' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition sm:flex-none ${activeTab === 'sports' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
               Deportes
             </button>
@@ -259,7 +251,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
               type="button"
               onClick={() => setActiveTab('web')}
               aria-pressed={activeTab === 'web'}
-              className={`rounded-lg px-2.5 py-1.5 text-xs font-semibold transition ${activeTab === 'web' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
+              className={`flex-1 rounded-lg px-2.5 py-1.5 text-xs font-semibold transition sm:flex-none ${activeTab === 'web' ? 'bg-rose-600 text-white' : 'text-slate-400 hover:text-white'}`}
             >
               Navegar
             </button>
@@ -290,20 +282,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
               />
             </div>
           </form>
-
-          {/* Stream Isolation Toggle Button */}
-          <button
-            onClick={() => setIsStreamIsolated(!isStreamIsolated)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold transition-all active:scale-95 shrink-0 border ${
-              isStreamIsolated
-                ? 'bg-amber-500 text-slate-950 border-amber-400 font-extrabold shadow-lg shadow-amber-950/50 animate-pulse'
-                : 'bg-slate-900 hover:bg-slate-800 text-amber-300 border-amber-500/30'
-            }`}
-            title="Aislar solo el reproductor de vídeo eliminando el resto de la página web"
-          >
-            <Tv2 className="w-3.5 h-3.5" />
-            <span className="text-[11px] hidden sm:inline">{isStreamIsolated ? 'Modo Aislado' : 'Aislar Stream'}</span>
-          </button>
 
         </div>
       </div>
@@ -361,7 +339,8 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
                   <button
                     key={m.id}
                     onClick={() => {
-                      handleOpenPortal(`https://bingetrix.sc/watch/${m.id}`, m.title);
+                      const mediaType = m.isTv ? 'tv' : 'movie';
+                      handleOpenPortal(`https://bingetrix.sc/${mediaType}/${m.id}`, m.title);
                     }}
                     className="bg-slate-900 border border-slate-800 rounded-2xl overflow-hidden text-left hover:border-rose-500/50 transition-all group hover:shadow-lg"
                   >
@@ -390,58 +369,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
             <div className="absolute top-2 right-3 z-10 pointer-events-none flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-950/80 backdrop-blur border border-emerald-500/40 text-[11px] text-emerald-300 font-bold shadow-lg">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>Sin Publicidad · Popups Bloqueados</span>
-              {isSportsStream && (
-                <span className="text-rose-300 ml-1">· Deportes</span>
-              )}
             </div>
-
-            {/* Smart Stream Detection Banner */}
-            {isRecognizedStream && !isStreamIsolated && (
-              <div className="absolute top-3 left-3 z-20 flex items-center gap-2 bg-gradient-to-r from-amber-950/90 to-slate-900/90 backdrop-blur-md border border-amber-500/40 px-3 py-1.5 rounded-xl shadow-xl animate-in fade-in slide-in-from-top-2">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-spin" />
-                <span className="text-xs font-bold text-amber-200">Vídeo en directo detectado</span>
-                <button
-                  onClick={() => setIsStreamIsolated(true)}
-                  className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-extrabold text-[11px] transition-all active:scale-95 shadow-md"
-                >
-                  Aislar solo el Vídeo
-                </button>
-              </div>
-            )}
-
-            {/* Stream Isolation Controls Header Overlay */}
-            {isStreamIsolated && (
-              <div className="absolute top-0 inset-x-0 z-30 flex items-center justify-between px-3 py-2 bg-gradient-to-b from-slate-950 via-slate-950/90 to-transparent border-b border-amber-500/30">
-                <div className="flex items-center gap-2">
-                  <div className="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
-                  <span className="text-xs font-extrabold text-amber-300 tracking-wide">
-                    Modo Stream Aislado (Solo Vídeo)
-                  </span>
-                  <span className="text-[10px] text-slate-400 font-mono hidden sm:inline">
-                    | {videoState?.title || addressInput}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setIsStreamIsolated(false)}
-                    className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-bold text-slate-200 transition-all active:scale-95"
-                  >
-                    <Layers className="w-3.5 h-3.5 text-slate-400" />
-                    <span>Ver página web</span>
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (iframeRef.current) iframeRef.current.src = proxyUrl;
-                    }}
-                    className="p-1 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-300 transition-all"
-                    title="Recargar stream"
-                  >
-                    <RotateCw className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            )}
 
             {remoteBrowserError && (
               <div className="absolute inset-x-3 top-3 z-10 rounded-xl border border-rose-400/30 bg-rose-950/80 px-3 py-2 text-xs text-rose-100 shadow-lg backdrop-blur">
@@ -455,9 +383,7 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
               title="Virtual Chrome Player"
               allow="autoplay; fullscreen; encrypted-media; picture-in-picture; display-capture"
               allowFullScreen
-              className={`h-full w-full border-0 bg-black transition-all ${
-                isStreamIsolated ? 'pt-10 object-contain scale-[1.01]' : ''
-              }`}
+              className="h-full w-full border-0 bg-black"
             />
           </div>
         )}

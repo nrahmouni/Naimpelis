@@ -52,7 +52,7 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
   };
 
   return (
-    <main className="relative flex min-h-full items-center justify-center overflow-hidden bg-[#0b0e11] px-4 py-8 text-slate-100 selection:bg-rose-500 selection:text-white sm:px-6">
+    <main className="relative flex min-h-dvh items-start justify-center overflow-x-hidden bg-[#0b0e11] px-3 py-4 text-slate-100 selection:bg-rose-500 selection:text-white sm:items-center sm:px-6 sm:py-8">
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 overflow-hidden">
         <div className="absolute -left-40 -top-40 h-[32rem] w-[32rem] rounded-full bg-rose-600/[0.12] blur-[120px]" />
         <div className="absolute -bottom-56 -right-36 h-[36rem] w-[36rem] rounded-full bg-indigo-500/[0.09] blur-[130px]" />
@@ -63,33 +63,33 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
         initial={{ opacity: 0, y: 18, scale: 0.98 }}
         animate={{ opacity: 1, y: 0, scale: 1 }}
         transition={{ duration: 0.35, ease: 'easeOut' }}
-        className="relative z-10 grid w-full max-w-5xl overflow-hidden rounded-[28px] border border-white/[0.09] bg-[#111518]/90 shadow-[0_32px_100px_rgba(0,0,0,0.48)] backdrop-blur-2xl md:grid-cols-[1fr_0.92fr]"
+        className="relative z-10 grid w-full max-w-5xl overflow-hidden rounded-2xl border border-white/[0.09] bg-[#111518]/90 shadow-[0_32px_100px_rgba(0,0,0,0.48)] backdrop-blur-2xl sm:rounded-[28px] md:grid-cols-[1fr_0.92fr]"
       >
-        <section className="flex flex-col justify-between border-b border-white/[0.07] p-7 sm:p-10 md:border-b-0 md:border-r md:p-12">
+        <section className="flex flex-col justify-between border-b border-white/[0.07] p-5 sm:p-10 md:border-b-0 md:border-r md:p-12">
           <div className="flex items-center gap-3">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-rose-500 to-rose-700 text-white shadow-lg shadow-rose-950/30">
               <Film className="h-5 w-5" />
             </div>
             <span className="text-sm font-bold tracking-tight text-white">Naimpelis</span>
           </div>
-          <div className="py-9 md:py-14">
-            <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-rose-300/15 bg-rose-400/[0.07] px-3 py-1.5 text-[11px] font-medium text-rose-200">
+          <div className="py-5 sm:py-9 md:py-14">
+            <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-rose-300/15 bg-rose-400/[0.07] px-2.5 py-1.5 text-[10px] font-medium text-rose-200 sm:mb-5 sm:px-3 sm:text-[11px]">
               <Sparkles className="h-3.5 w-3.5" />
               Tu próxima noche de cine empieza aquí
             </div>
-            <h1 className="max-w-md text-[2.4rem] font-semibold leading-[1.08] tracking-[-0.045em] text-white sm:text-5xl">
+            <h1 className="max-w-md text-3xl font-semibold leading-[1.08] tracking-[-0.045em] text-white sm:text-5xl">
               Elige algo.
               <br />
               <span className="bg-gradient-to-r from-rose-300 to-amber-200 bg-clip-text text-transparent">Invita a todos.</span>
             </h1>
-            <p className="mt-5 max-w-sm text-sm leading-6 text-slate-400 sm:text-[15px]">
+            <p className="mt-3 max-w-sm text-xs leading-5 text-slate-400 sm:mt-5 sm:text-[15px] sm:leading-6">
               Películas, series y deporte en sincronía. Una sala privada, sin complicaciones.
             </p>
           </div>
-          <p className="text-xs text-slate-500">Reproducción compartida · Chat en directo</p>
+          <p className="hidden text-xs text-slate-500 sm:block">Reproducción compartida · Chat en directo</p>
         </section>
 
-        <section className="p-6 sm:p-9 md:p-10">
+        <section className="p-5 sm:p-9 md:p-10">
           {initialRoomId ? (
             <div className="mb-6 flex items-center gap-3 rounded-2xl border border-rose-300/15 bg-rose-400/[0.06] p-3.5">
               <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-rose-400/10 text-rose-200">
@@ -102,12 +102,12 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
             </div>
           ) : null}
 
-          <div className="mb-6">
+          <div className="mb-5 sm:mb-6">
             <h2 className="text-lg font-semibold tracking-tight text-white">Antes de entrar</h2>
             <p className="mt-1 text-xs leading-5 text-slate-400">Elige cómo te verá tu grupo. Puedes cambiarlo después.</p>
           </div>
 
-          <div className="space-y-5">
+          <div className="space-y-4 sm:space-y-5">
             <div>
               <label htmlFor="display-name" className="mb-2 block text-xs font-medium text-slate-300">Tu nombre</label>
               <input
@@ -158,7 +158,7 @@ export const RoomJoinScreen: React.FC<RoomJoinScreenProps> = ({
             </div>
           </div>
 
-          <div className="my-6 h-px bg-white/[0.07]" />
+          <div className="my-5 h-px bg-white/[0.07] sm:my-6" />
           {initialRoomId ? (
             <button
               type="button"

@@ -1146,7 +1146,7 @@ app.get('/api/proxy-web', async (req, res) => {
         </script>
       `;
 
-      // Route allowlisted player frames through the proxy while preserving their attributes.
+      // Remove sandbox only from allowlisted player frames; embedded players reject it.
       html = html.replace(/<iframe\b[^>]*>/gi, (iframeTag) => {
         const srcMatch = iframeTag.match(/\bsrc\s*=\s*(["'])(.*?)\1/i);
         if (!srcMatch) return iframeTag;
@@ -1160,7 +1160,8 @@ app.get('/api/proxy-web', async (req, res) => {
 
         const proxiedFrameUrl = `/api/proxy-web?url=${encodeURIComponent(frameUrl.toString())}&roomId=${encodedRoomId}`;
         return iframeTag
-          .replace(srcMatch[0], `src="${proxiedFrameUrl}"`);
+          .replace(srcMatch[0], `src="${proxiedFrameUrl}"`)
+          .replace(/\s+sandbox(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '');
       });
 
       if (html.includes('<head>')) {
