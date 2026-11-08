@@ -74,10 +74,12 @@ export interface SampleVideo {
 }
 
 export interface RemoteBrowserInput {
-  type: 'click' | 'mousemove' | 'keydown' | 'keyup' | 'scroll';
+  type: 'click' | 'mousemove' | 'move' | 'keydown' | 'keyup' | 'key' | 'type' | 'scroll' | 'navigate' | 'back' | 'forward' | 'reload';
   x?: number;
   y?: number;
   key?: string;
+  text?: string;
+  url?: string;
   deltaY?: number;
 }
 

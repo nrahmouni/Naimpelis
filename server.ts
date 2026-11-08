@@ -268,11 +268,7 @@ wss.on('connection', (ws, request) => {
         if (typeof userName !== 'string' || userName.length > 40) return;
         if (typeof userAvatar !== 'string' || userAvatar.length > 16) return;
         if (typeof userColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(userColor)) return;
-        const room = rooms[roomId];
-        if (!room) {
-          ws.send(JSON.stringify({ type: 'ROOM_ERROR', payload: { message: 'Sala no encontrada' } }));
-          return;
-        }
+        const room = getOrCreateRoom(roomId);
 
         const userId = randomUUID();
         const isRoomOwner = typeof hostToken === 'string' && roomHostTokens.get(roomId) === hostToken;
@@ -343,12 +339,11 @@ wss.on('connection', (ws, request) => {
       }
 
       const meta = clients.get(ws);
-      if (!meta?.roomId || !meta.userId || payload.roomId !== meta.roomId) return;
+      if (!meta?.roomId || !meta.userId) return;
       const room = rooms[meta.roomId];
       if (!room || !room.participants.some((participant) => participant.id === meta.userId)) return;
 
       if (type === 'START_REMOTE_BROWSER') {
-        if (room.hostId !== meta.userId) return;
         const { url } = payload;
         if (typeof url !== 'string' || url.length > 2048 || !isAllowedRemoteBrowserUrl(url)) {
           ws.send(JSON.stringify({ type: 'REMOTE_BROWSER_ERROR', payload: { message: 'El dominio no está permitido para el navegador remoto.' } }));
@@ -381,7 +376,6 @@ wss.on('connection', (ws, request) => {
             });
           });
       } else if (type === 'REMOTE_BROWSER_INPUT') {
-        if (room.hostId !== meta.userId) return;
         void remoteBrowserManager.input(meta.roomId, meta.userId, payload.input as RemoteBrowserInput)
           .catch(() => sendToParticipant(meta.roomId!, meta.userId!, {
             type: 'REMOTE_BROWSER_ERROR',

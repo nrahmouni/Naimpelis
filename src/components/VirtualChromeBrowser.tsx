@@ -40,6 +40,9 @@ interface VirtualChromeBrowserProps {
   onSendReaction: (emoji: string) => void;
 }
 
+import { socketService } from '../services/socket';
+import { Monitor, Tv } from 'lucide-react';
+
 export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   currentUrl,
   videoState,
@@ -62,12 +65,50 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
   const [selectedMovie, setSelectedMovie] = useState<MovieItem | null>(null);
   const [catalogError, setCatalogError] = useState('');
 
+  // Remote Chromium Browser State (Default to robust Iframe Proxy mode for instant playback)
+  const [useRemoteBrowser, setUseRemoteBrowser] = useState(false);
+  const [remoteFrame, setRemoteFrame] = useState<string | null>(null);
+  const [isStartingRemote, setIsStartingRemote] = useState(false);
+
   // Browser Navigation History Stack
   const [historyStack, setHistoryStack] = useState<string[]>([currentUrl || 'https://bingetrix.sc/watch']);
   const [historyIndex, setHistoryIndex] = useState(0);
 
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
+
+  // Subscribe to Remote Browser WebSocket Frames
+  useEffect(() => {
+    const unsubscribe = socketService.subscribe(({ type, payload }) => {
+      if (type === 'REMOTE_BROWSER_FRAME' && payload?.frame) {
+        setRemoteFrame(payload.frame);
+        if (payload.url && payload.url !== addressInput) {
+          setAddressInput(payload.url);
+        }
+      } else if (type === 'REMOTE_BROWSER_READY') {
+        setIsStartingRemote(false);
+      }
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [addressInput]);
+
+  const handleStartRemote = (urlToStart?: string) => {
+    const target = urlToStart || addressInput;
+    setIsStartingRemote(true);
+    socketService.startRemoteBrowser(target);
+  };
+
+  const handleRemoteCanvasClick = (e: React.MouseEvent<HTMLImageElement>) => {
+    if (!imgRef.current) return;
+    const rect = imgRef.current.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * 1280);
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 720);
+    socketService.sendRemoteBrowserInput({ type: 'click', x, y });
+  };
 
   const getEffectiveStreamUrl = (url: string) => {
     if (/^https?:\/\/bingetrix\.sc\/?$/i.test(url.trim())) {
@@ -437,88 +478,86 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
         ) : (
           /* Web Browser Viewport - Filtered & Protected */
           <div className="w-full h-full flex flex-col relative group bg-black">
-            {/* Quick Server Switcher & Stream Fallback Toolbar */}
+            {/* Mode Switcher & Control Header Bar */}
             <div className="bg-slate-950/90 border-b border-slate-800 px-3 py-1.5 flex items-center justify-between gap-2 overflow-x-auto shrink-0 select-none backdrop-blur">
-              <div className="flex items-center gap-1.5 text-[11px] shrink-0 font-bold text-slate-300">
-                <span className="text-rose-400">⚡ Reproductores:</span>
+              <div className="flex items-center gap-1.5 text-[11px] shrink-0 font-bold">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUseRemoteBrowser(true);
+                    if (!remoteFrame) handleStartRemote();
+                  }}
+                  className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all ${
+                    useRemoteBrowser
+                      ? 'bg-rose-600 text-white shadow-md'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  }`}
+                >
+                  <Monitor className="w-3.5 h-3.5 text-rose-300" />
+                  <span>Navegador Virtual Remoto (0 Publicidad)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setUseRemoteBrowser(false)}
+                  className={`px-2.5 py-1 rounded-lg flex items-center gap-1.5 transition-all ${
+                    !useRemoteBrowser
+                      ? 'bg-rose-600 text-white shadow-md'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
+                  }`}
+                >
+                  <Tv className="w-3.5 h-3.5" />
+                  <span>Modo Iframe</span>
+                </button>
               </div>
-              
-              <div className="flex items-center gap-1.5 overflow-x-auto text-[11px]">
-                {addressInput.match(/(?:movie|tv|tmdb)[\/=](\d+)/i) ? (
-                  /* TMDB Movie/Show Direct Servers */
-                  <>
-                    {(() => {
-                      const match = addressInput.match(/(?:movie|tv|tmdb)[\/=](\d+)/i);
-                      const id = match ? match[1] : '';
-                      const isTv = /(?:tv|series)[\/=]/i.test(addressInput);
-                      return (
-                        <>
-                          <button
-                            onClick={() => handleOpenPortal(`https://vidsrc.me/embed/${isTv ? 'tv?tmdb=' : 'movie?tmdb='}${id}`, 'VidSrc HD')}
-                            className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all shadow-sm shrink-0"
-                          >
-                            VidSrc 1 (HD)
-                          </button>
-                          <button
-                            onClick={() => handleOpenPortal(`https://vidsrc.to/embed/${isTv ? 'tv' : 'movie'}/${id}`, 'VidSrc 2')}
-                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
-                          >
-                            VidSrc 2
-                          </button>
-                          <button
-                            onClick={() => handleOpenPortal(`https://embed.su/embed/${isTv ? 'tv' : 'movie'}/${id}`, 'EmbedSU')}
-                            className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
-                          >
-                            Embed.su
-                          </button>
-                          <button
-                            onClick={() => handleOpenPortal(`https://bingetrix.sc/${isTv ? 'tv' : 'movie'}/${id}`, 'Bingetrix')}
-                            className="px-2.5 py-1 rounded-lg bg-amber-600/20 text-amber-300 border border-amber-500/30 font-bold transition-all shrink-0"
-                          >
-                            Bingetrix
-                          </button>
-                        </>
-                      );
-                    })()}
-                  </>
-                ) : addressInput.includes('footunder') || addressInput.includes('rojadirect') || addressInput.includes('crackstream') ? (
-                  /* Sports Canal Alternative Switcher */
-                  <>
-                    <button
-                      onClick={() => handleOpenSportsTab('all')}
-                      className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all shrink-0"
-                    >
-                      🏆 Cambiar de Canal / Partido
-                    </button>
+
+              {/* Server Switchers for Iframe Mode */}
+              {!useRemoteBrowser && (
+                <div className="flex items-center gap-1.5 overflow-x-auto text-[11px]">
+                  {addressInput.match(/(?:movie|tv|tmdb)[\/=](\d+)/i) ? (
+                    <>
+                      {(() => {
+                        const match = addressInput.match(/(?:movie|tv|tmdb)[\/=](\d+)/i);
+                        const id = match ? match[1] : '';
+                        const isTv = /(?:tv|series)[\/=]/i.test(addressInput);
+                        return (
+                          <>
+                            <button
+                              onClick={() => handleOpenPortal(`https://vidsrc.me/embed/${isTv ? 'tv?tmdb=' : 'movie?tmdb='}${id}`, 'VidSrc HD')}
+                              className="px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white font-bold transition-all shrink-0"
+                            >
+                              VidSrc 1 (HD)
+                            </button>
+                            <button
+                              onClick={() => handleOpenPortal(`https://vidsrc.to/embed/${isTv ? 'tv' : 'movie'}/${id}`, 'VidSrc 2')}
+                              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
+                            >
+                              VidSrc 2
+                            </button>
+                            <button
+                              onClick={() => handleOpenPortal(`https://embed.su/embed/${isTv ? 'tv' : 'movie'}/${id}`, 'EmbedSU')}
+                              className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
+                            >
+                              Embed.su
+                            </button>
+                          </>
+                        );
+                      })()}
+                    </>
+                  ) : (
                     <button
                       onClick={handleReload}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
+                      className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
                     >
-                      🔄 Reintentar Canal
+                      🔄 Reintentar
                     </button>
-                  </>
-                ) : (
-                  <>
-                    <button
-                      onClick={() => handleOpenPortal('https://bingetrix.sc/watch', 'Bingetrix')}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
-                    >
-                      Bingetrix
-                    </button>
-                    <button
-                      onClick={() => handleOpenPortal('https://movidy.pw/', 'Movidy')}
-                      className="px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold transition-all shrink-0"
-                    >
-                      Movidy
-                    </button>
-                  </>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
 
               {/* Ad-Block Active Indicator */}
               <div className="pointer-events-none flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/10 text-[10px] text-emerald-400 font-bold border border-emerald-500/20 shrink-0">
                 <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                <span>Sin Anuncios</span>
+                <span>Popups y Anuncios Bloqueados</span>
               </div>
             </div>
 
@@ -528,14 +567,67 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
               </div>
             )}
 
-            <iframe
-              ref={iframeRef}
-              src={proxyUrl}
-              title="Virtual Chrome Player"
-              allow="autoplay; fullscreen; encrypted-media; picture-in-picture; display-capture"
-              allowFullScreen
-              className="flex-1 w-full border-0 bg-black"
-            />
+            {useRemoteBrowser ? (
+              /* REAL-TIME PUPPETEER CHROMIUM REMOTE BROWSER CANVAS VIEW */
+              <div className="flex-1 w-full relative flex items-center justify-center bg-black overflow-hidden select-none">
+                {remoteFrame ? (
+                  <div className="relative w-full h-full flex items-center justify-center">
+                    <img
+                      ref={imgRef}
+                      src={remoteFrame}
+                      alt="Navegador Remoto en Vivo"
+                      onClick={handleRemoteCanvasClick}
+                      className="max-w-full max-h-full object-contain cursor-pointer shadow-2xl"
+                      title="Haz clic en cualquier parte de la pantalla para interactuar o reproducir el vídeo"
+                    />
+                    <div className="absolute bottom-3 left-3 pointer-events-none px-3 py-1 rounded-xl bg-slate-950/80 border border-emerald-500/30 backdrop-blur text-[11px] text-emerald-300 font-bold shadow-lg flex items-center gap-2">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>Navegador Chromium Servidor en Vivo · Haz clic para interactuar</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-6 text-center max-w-sm space-y-4">
+                    <div className="p-4 rounded-2xl bg-rose-600/15 border border-rose-500/30 text-rose-400">
+                      <Monitor className="w-10 h-10 animate-bounce" />
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-white">Navegador Virtual Remoto en Vivo</h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        Ejecuta Chromium real en el servidor. Muestra cualquier página o vídeo en tiempo real sin publicidad, sin saltos de ventana ni errores de sandbox.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleStartRemote()}
+                      disabled={isStartingRemote}
+                      className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-lg flex items-center gap-2"
+                    >
+                      {isStartingRemote ? (
+                        <>
+                          <div className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                          <span>Iniciando Chromium Remoto...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 fill-current" />
+                          <span>Iniciar Navegador Remoto Sin Anuncios</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              /* TRADITIONAL IFRAME PROXY VIEWPORT */
+              <iframe
+                ref={iframeRef}
+                src={proxyUrl}
+                title="Virtual Chrome Player"
+                allow="autoplay; fullscreen; encrypted-media; picture-in-picture; display-capture"
+                allowFullScreen
+                className="flex-1 w-full border-0 bg-black"
+              />
+            )}
           </div>
         )}
       </div>

@@ -135,6 +135,18 @@ class SocketService {
       userColor,
     });
   }
+
+  startRemoteBrowser(url: string) {
+    this.send('START_REMOTE_BROWSER', { roomId: this.roomId, url });
+  }
+
+  sendRemoteBrowserInput(input: any) {
+    this.send('REMOTE_BROWSER_INPUT', { roomId: this.roomId, input });
+  }
+
+  stopRemoteBrowser() {
+    this.send('STOP_REMOTE_BROWSER', { roomId: this.roomId });
+  }
 }
 
 export const socketService = new SocketService();
