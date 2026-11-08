@@ -199,40 +199,21 @@ export default function App() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
 
   // Handle URL change with movie resolver and virtual browser proxy support
-  const handleUrlChange = async (newUrl: string, title?: string, forceVirtualBrowser?: boolean) => {
+  const handleUrlChange = async (newUrl: string, title?: string, forceVirtualBrowser?: boolean, fallbackUrls: string[] = []) => {
     let finalUrl = newUrl;
     let finalTitle = title || 'Película / Vídeo';
     let poster = '';
     let overview = '';
     let releaseYear = '';
     let originalPortalUrl = '';
-    let altEmbeds: string[] = [];
+    let altEmbeds: string[] = fallbackUrls;
     let trailerUrl = '';
     let determinedSourceType: VideoSourceType = forceVirtualBrowser ? 'iframe' : 'direct';
 
     // If user explicitly picked Virtual Browser or it's a web portal
     if (forceVirtualBrowser || /bingetrix\.[a-z]+\/(?:watch|movie|tv)\/\d+/i.test(newUrl)) {
       determinedSourceType = 'iframe';
-      originalPortalUrl = newUrl;
-      finalTitle = 'Bingetrix - Resident Evil (2026)';
-
-      try {
-        const res = await fetch(`/api/resolve-movie?url=${encodeURIComponent(newUrl)}`);
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && data.success) {
-            finalTitle = `${data.title} ${data.releaseYear ? `(${data.releaseYear})` : ''}`;
-            poster = data.poster || '';
-            overview = data.overview || '';
-            releaseYear = data.releaseYear || '';
-            altEmbeds = data.streamEmbeds || [];
-            trailerUrl = data.trailerUrl || '';
-          }
-        }
-      } catch (err) {
-        console.error('Error resolving movie URL:', err);
-      }
+      if (/bingetrix\.[a-z]+\/(?:watch|movie|tv)\/\d+/i.test(newUrl)) originalPortalUrl = newUrl;
     } else {
       const parsed = parseVideoUrl(finalUrl);
       determinedSourceType = parsed.type;
@@ -363,8 +344,8 @@ export default function App() {
                 remoteBrowserActive={false}
                 isHost={currentUser.isHost}
                 roomId={roomId}
-                onNavigate={(navUrl, navTitle) => {
-                  handleUrlChange(navUrl, navTitle || 'Navegador Virtual Sincronizado', true);
+                onNavigate={(navUrl, navTitle, fallbackUrls) => {
+                  handleUrlChange(navUrl, navTitle || 'Navegador Virtual Sincronizado', true, fallbackUrls);
                 }}
                 onPlaybackChange={handleVideoPlaybackChange}
                 onSendReaction={handleSendReaction}

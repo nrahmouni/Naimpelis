@@ -969,36 +969,69 @@ app.get('/api/proxy-web', async (req, res) => {
 
   try {
     let parsed = parseAllowedProxyUrl(/^https?:\/\//i.test(targetUrl) ? targetUrl : `https://${targetUrl}`);
-    let response: Response | undefined;
-    for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10000);
+    const rawFallbacks = Array.isArray(req.query.fallback) ? req.query.fallback : [req.query.fallback];
+    const fallbackUrls: URL[] = [];
+    for (const fallback of rawFallbacks) {
+      if (typeof fallback !== 'string' || fallback.length > 2048 || fallbackUrls.length >= 4) continue;
       try {
-        response = await fetch(parsed, {
-          redirect: 'manual',
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-            'Referer': parsed.origin,
-            ...(typeof req.headers.range === 'string' ? { Range: req.headers.range } : {}),
-          },
-        });
-      } finally {
-        clearTimeout(timeout);
+        const fallbackUrl = parseAllowedProxyUrl(fallback);
+        if (fallbackUrl.toString() !== parsed.toString()) fallbackUrls.push(fallbackUrl);
+      } catch {
+        continue;
       }
-      if (![301, 302, 303, 307, 308].includes(response.status)) break;
-      const location = response.headers.get('location');
-      await response.body?.cancel();
-      if (!location || redirectCount === 5) throw new Error('Too many proxy redirects');
-      parsed = parseAllowedProxyUrl(new URL(location, parsed).toString());
+    }
+    let fallbackIndex = 0;
+    let response: Response | undefined;
+    let redirectCount = 0;
+    while (redirectCount <= 5) {
+      let notFoundRetries = 0;
+      while (true) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 10000);
+        try {
+          response = await fetch(parsed, {
+            redirect: 'manual',
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+              'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+              'Referer': parsed.origin,
+              ...(typeof req.headers.range === 'string' ? { Range: req.headers.range } : {}),
+            },
+          });
+        } finally {
+          clearTimeout(timeout);
+        }
+        if (response.status !== 404 || notFoundRetries >= 1) break;
+        await response.body?.cancel();
+        notFoundRetries += 1;
+      }
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const location = response.headers.get('location');
+        await response.body?.cancel();
+        if (!location || redirectCount === 5) throw new Error('Too many proxy redirects');
+        parsed = parseAllowedProxyUrl(new URL(location, parsed).toString());
+        redirectCount += 1;
+        continue;
+      }
+      if (response.status === 404 && fallbackIndex < fallbackUrls.length) {
+        await response.body?.cancel();
+        parsed = fallbackUrls[fallbackIndex];
+        fallbackIndex += 1;
+        continue;
+      }
+      break;
     }
     if (!response) throw new Error('Proxy upstream unavailable');
     const finalUrl = parsed.toString();
 
     const contentType = response.headers.get('content-type') || 'text/html';
     res.status(response.status).setHeader('Content-Type', contentType);
+    if (response.status === 404 && contentType.includes('text/html')) {
+      await response.body?.cancel();
+      return res.status(404).send(`<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Canal no disponible</title><body style="margin:0;min-height:100vh;display:grid;place-items:center;background:#080b11;color:#e2e8f0;font:14px system-ui,sans-serif;text-align:center"><main style="max-width:28rem;padding:2rem"><h1 style="font-size:1.2rem">Este canal ya no está disponible</h1><p style="color:#94a3b8">El servidor del canal devolvió un error 404. Vuelve a Deportes y prueba otro canal del mismo partido.</p></main></body></html>`);
+    }
 
     if (contentType.includes('text/html')) {
       if (Number(response.headers.get('content-length')) > 5 * 1024 * 1024) {
@@ -1015,6 +1048,9 @@ app.get('/api/proxy-web', async (req, res) => {
       const baseHref = parsed.origin.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       const jsString = (value: string) => JSON.stringify(value).replace(/</g, '\\u003c');
       const encodedRoomId = encodeURIComponent(roomId);
+      const fallbackQuery = fallbackUrls
+        .map((fallbackUrl) => `&fallback=${encodeURIComponent(fallbackUrl.toString())}`)
+        .join('');
 
       // Safe non-destructive CSS and sync injection
       const syncScript = `
@@ -1125,6 +1161,42 @@ app.get('/api/proxy-web', async (req, res) => {
             };
             removeRefreshTags();
             new MutationObserver(removeRefreshTags).observe(document.documentElement, { childList: true, subtree: true });
+
+            const allowedFrameHosts = ${JSON.stringify(proxyAllowedDomains)};
+            const proxyPlayerFrame = function(frame) {
+              const src = frame.getAttribute('src');
+              if (!src || src.startsWith('/api/proxy-web')) return;
+              let destination;
+              try {
+                destination = new URL(src, ${jsString(finalUrl)});
+              } catch(e) {
+                return;
+              }
+              const isAllowedFrame = allowedFrameHosts.some(function(host) {
+                return destination.hostname === host || destination.hostname.endsWith('.' + host);
+              });
+              if (!isAllowedFrame) return;
+              frame.setAttribute('src', '/api/proxy-web?url=' + encodeURIComponent(destination.href) + '&roomId=${encodedRoomId}${fallbackQuery}');
+            };
+            const proxyPlayerFrames = function(root) {
+              if (root instanceof HTMLIFrameElement) proxyPlayerFrame(root);
+              if (root.querySelectorAll) root.querySelectorAll('iframe').forEach(proxyPlayerFrame);
+            };
+            proxyPlayerFrames(document);
+            new MutationObserver(function(records) {
+              records.forEach(function(record) {
+                if (record.type === 'attributes') {
+                  proxyPlayerFrame(record.target);
+                } else {
+                  record.addedNodes.forEach(proxyPlayerFrames);
+                }
+              });
+            }).observe(document.documentElement, {
+              attributes: true,
+              attributeFilter: ['src'],
+              childList: true,
+              subtree: true
+            });
             document.addEventListener('submit', function(e) {
               const form = e.target;
               if (!(form instanceof HTMLFormElement)) return;
@@ -1225,7 +1297,7 @@ app.get('/api/proxy-web', async (req, res) => {
           return iframeTag;
         }
 
-        const proxiedFrameUrl = `/api/proxy-web?url=${encodeURIComponent(frameUrl.toString())}&roomId=${encodedRoomId}`;
+        const proxiedFrameUrl = `/api/proxy-web?url=${encodeURIComponent(frameUrl.toString())}&roomId=${encodedRoomId}${fallbackQuery}`;
         return iframeTag
           .replace(srcMatch[0], `src="${proxiedFrameUrl}"`)
           .replace(/\s+sandbox(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '');

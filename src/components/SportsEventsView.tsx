@@ -17,7 +17,7 @@ import { SportsEvent, SportsChannel } from '../types';
 
 interface SportsEventsViewProps {
   initialSource?: 'all' | 'rojadirectv' | 'rojadirectahd';
-  onSelectStream: (url: string, title: string) => void;
+  onSelectStream: (url: string, title: string, fallbackUrls?: string[]) => void;
   onOpenWeb: (url: string, title: string) => void;
 }
 
@@ -263,7 +263,11 @@ export const SportsEventsView: React.FC<SportsEventsViewProps> = ({
                       <button
                         key={`${ev.id}-ch-${idx}`}
                         onClick={() => {
-                          onSelectStream(ch.url, `${ev.title} (${ch.name})`);
+                          const fallbackUrls = ev.channels
+                            .filter((channel) => channel.url !== ch.url)
+                            .map((channel) => channel.url)
+                            .slice(0, 4);
+                          onSelectStream(ch.url, `${ev.title} (${ch.name})`, fallbackUrls);
                         }}
                         className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600/20 hover:bg-rose-600 text-rose-200 hover:text-white border border-rose-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm"
                         title={`Transmitir ${ch.name} a la sala sin anuncios`}

@@ -35,7 +35,7 @@ interface VirtualChromeBrowserProps {
   isHost: boolean;
   roomId: string;
   catalogRequest?: number;
-  onNavigate: (newUrl: string, title?: string) => void;
+  onNavigate: (newUrl: string, title?: string, fallbackUrls?: string[]) => void;
   onPlaybackChange?: (action: 'play' | 'pause' | 'seek', time: number, isPlaying: boolean) => void;
   onSendReaction: (emoji: string) => void;
 }
@@ -191,7 +191,11 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
     onNavigate(url);
   };
 
-  const proxyUrl = `/api/proxy-web?url=${encodeURIComponent(addressInput)}&roomId=${encodeURIComponent(roomId)}`;
+  const fallbackQuery = (videoState?.altEmbeds || [])
+    .slice(0, 4)
+    .map((url) => `&fallback=${encodeURIComponent(url)}`)
+    .join('');
+  const proxyUrl = `/api/proxy-web?url=${encodeURIComponent(addressInput)}&roomId=${encodeURIComponent(roomId)}${fallbackQuery}`;
 
   return (
     <div
@@ -296,10 +300,10 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
           /* Dedicated Sports Hub Tab with RojaDirecta feeds */
           <SportsEventsView
             initialSource={sportsSource}
-            onSelectStream={(streamUrl, title) => {
+            onSelectStream={(streamUrl, title, fallbackUrls) => {
               setAddressInput(streamUrl);
               setActiveTab('web');
-              onNavigate(streamUrl, title);
+              onNavigate(streamUrl, title, fallbackUrls);
             }}
             onOpenWeb={(webUrl, title) => {
               setAddressInput(webUrl);
