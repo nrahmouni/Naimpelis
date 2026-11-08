@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { MessageSquare } from 'lucide-react';
 import { Header } from './components/Header';
 import { VideoPlayerContainer } from './components/VideoPlayerContainer';
 import { VirtualChromeBrowser } from './components/VirtualChromeBrowser';
@@ -52,6 +53,8 @@ export default function App() {
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
   const [showTvModal, setShowTvModal] = useState(false);
+  const [showChat, setShowChat] = useState(false);
+  const [chatSeenCount, setChatSeenCount] = useState(0);
   const isTvScreenMode = queryParams.get('tv') === '1';
   const [latencyMs, setLatencyMs] = useState(24);
 
@@ -302,18 +305,7 @@ export default function App() {
         participants={participants}
         currentUser={currentUser}
         latencyMs={latencyMs}
-        isVirtualBrowser={isVirtualBrowser}
         isScreenSharing={isScreenSharing}
-        onToggleVirtualBrowser={(enabled) => {
-          setIsVirtualBrowser(enabled);
-          if (enabled && videoState.sourceType !== 'iframe') {
-            handleUrlChange(
-              videoState.url.includes('bingetrix') ? videoState.url : 'https://bingetrix.sc/watch',
-              'Navegador Virtual',
-              true
-            );
-          }
-        }}
         onToggleScreenShare={(enabled) => setIsScreenSharing(enabled)}
         onOpenInvite={() => setShowInviteModal(true)}
         onOpenTv={() => setShowTvModal(true)}
@@ -389,15 +381,43 @@ export default function App() {
               />
             )}
           </section>
-          <aside aria-label="Chat de la sala" className="flex min-h-[120px] w-full min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.08] bg-[#111518] shadow-[0_12px_36px_rgba(0,0,0,0.16)] md:min-h-[160px]">
-            <HandsomeChat
-              messages={messages}
-              currentUser={currentUser}
-              onSendMessage={handleSendMessage}
-              participantCount={participants.length}
-            />
-          </aside>
         </main>
+      )}
+
+      {!isTvScreenMode && (
+        <>
+          {showChat && (
+            <aside aria-label="Chat de la sala" className="fixed bottom-20 right-4 z-40 flex h-[min(32rem,calc(100dvh-7rem))] w-[min(22rem,calc(100vw-2rem))] flex-col overflow-hidden rounded-2xl border border-white/10 bg-[#111518] shadow-2xl shadow-black/50">
+              <HandsomeChat
+                messages={messages}
+                currentUser={currentUser}
+                onSendMessage={handleSendMessage}
+                onClose={() => {
+                  setChatSeenCount(messages.length);
+                  setShowChat(false);
+                }}
+                participantCount={participants.length}
+              />
+            </aside>
+          )}
+          <button
+            type="button"
+            onClick={() => {
+              setChatSeenCount(messages.length);
+              setShowChat((open) => !open);
+            }}
+            aria-label={showChat ? 'Cerrar chat' : 'Abrir chat'}
+            aria-expanded={showChat}
+            className="fixed bottom-4 right-4 z-40 flex h-12 w-12 items-center justify-center rounded-full bg-rose-600 text-white shadow-lg shadow-rose-950/40 transition hover:bg-rose-500"
+          >
+            <MessageSquare className="h-5 w-5" />
+            {!showChat && messages.slice(chatSeenCount).some((message) => message.senderId !== currentUser.id && !message.isSystem) && (
+              <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full border-2 border-[#0b0e11] bg-amber-400 px-1 text-[10px] font-bold text-slate-950">
+                {messages.slice(chatSeenCount).filter((message) => message.senderId !== currentUser.id && !message.isSystem).length}
+              </span>
+            )}
+          </button>
+        </>
       )}
 
       {/* Modals */}

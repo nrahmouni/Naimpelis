@@ -234,17 +234,6 @@ export const VirtualChromeBrowser: React.FC<VirtualChromeBrowserProps> = ({
               >
                 <RotateCw className="w-3.5 h-3.5" />
               </button>
-              <button
-                onClick={() => {
-                  setSelectedMovie(null);
-                  setActiveTab('finder');
-                }}
-                className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-amber-300 font-bold text-xs transition-all"
-                title="Volver a la cartelera"
-              >
-                <Clapperboard className="w-3.5 h-3.5" />
-                <span className="text-[11px] hidden sm:inline">Inicio</span>
-              </button>
             </div>
 
           </div>

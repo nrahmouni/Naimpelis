@@ -8,9 +8,7 @@ interface HeaderProps {
   participants: Participant[];
   currentUser: Participant;
   latencyMs: number;
-  isVirtualBrowser?: boolean;
   isScreenSharing?: boolean;
-  onToggleVirtualBrowser?: (enabled: boolean) => void;
   onToggleScreenShare?: (enabled: boolean) => void;
   onOpenInvite: () => void;
   onOpenTv?: () => void;
@@ -27,9 +25,7 @@ export const Header: React.FC<HeaderProps> = ({
   participants,
   currentUser,
   latencyMs,
-  isVirtualBrowser = true,
   isScreenSharing = false,
-  onToggleVirtualBrowser,
   onToggleScreenShare,
   onOpenInvite,
   onOpenTv,
@@ -82,11 +78,6 @@ export const Header: React.FC<HeaderProps> = ({
             <Tv className="h-3.5 w-3.5" /> Tele
           </button>
         )}
-        {onToggleVirtualBrowser && (
-          <button type="button" onClick={() => onToggleVirtualBrowser(true)} aria-label="Abrir catálogo" aria-pressed={isVirtualBrowser} className={`hidden h-9 w-9 items-center justify-center rounded-xl border text-slate-300 transition hover:bg-white/[0.08] sm:inline-flex ${isVirtualBrowser ? 'border-rose-300/20 bg-rose-400/10 text-rose-200' : 'border-white/[0.08] bg-white/[0.035]'}`}>
-            <Film className="h-4 w-4" />
-          </button>
-        )}
         {onToggleScreenShare && (
           <button type="button" onClick={() => onToggleScreenShare(!isScreenSharing)} disabled={!currentUser.isHost} aria-label={isScreenSharing ? 'Dejar de compartir pantalla' : 'Compartir pantalla'} className={`hidden h-9 w-9 items-center justify-center rounded-xl border text-slate-300 transition hover:bg-white/[0.08] disabled:opacity-40 sm:inline-flex ${isScreenSharing ? 'border-rose-300/20 bg-rose-400/10 text-rose-200' : 'border-white/[0.08] bg-white/[0.035]'}`}>
             <Monitor className="h-4 w-4" />
@@ -111,7 +102,6 @@ export const Header: React.FC<HeaderProps> = ({
 
       {isMenuOpen && (
         <div id="room-actions-menu" className="absolute right-3 top-[calc(100%+8px)] z-50 w-64 rounded-2xl border border-white/10 bg-[#171c20] p-2 shadow-2xl shadow-black/50 sm:hidden">
-          {onToggleVirtualBrowser && <button type="button" onClick={() => { onToggleVirtualBrowser(true); setIsMenuOpen(false); }} className={menuItem}><Film className="h-4 w-4 text-slate-400" /> Abrir catálogo</button>}
           {onToggleScreenShare && <button type="button" onClick={() => { onToggleScreenShare(!isScreenSharing); setIsMenuOpen(false); }} disabled={!currentUser.isHost} className={menuItem}><Monitor className="h-4 w-4 text-slate-400" /> {isScreenSharing ? 'Dejar de compartir' : 'Compartir pantalla'}</button>}
           {onOpenAi && <button type="button" onClick={() => { onOpenAi(); setIsMenuOpen(false); }} className={menuItem}><Sparkles className="h-4 w-4 text-amber-300" /> Recomendaciones IA</button>}
           {onOpenTv && <button type="button" onClick={() => { onOpenTv(); setIsMenuOpen(false); }} className={menuItem}><Tv className="h-4 w-4 text-blue-300" /> Enviar a la TV</button>}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Smile, ChevronDown, MessageSquare } from 'lucide-react';
+import { Send, Smile, ChevronDown, MessageSquare, X } from 'lucide-react';
 import { ChatMessage, Participant } from '../types';
 import { triggerHaptic, playCinemaSound } from '../utils/haptics';
 
@@ -17,6 +17,7 @@ export const HandsomeChat: React.FC<HandsomeChatProps> = ({
   messages,
   currentUser,
   onSendMessage,
+  onClose,
   participantCount,
 }) => {
   const [inputText, setInputText] = useState('');
@@ -65,6 +66,11 @@ export const HandsomeChat: React.FC<HandsomeChatProps> = ({
           <h2 className="text-[13px] font-semibold text-slate-100">Chat</h2>
         </div>
         <span className="text-[11px] text-slate-500">{participantCount} en sala</span>
+        {onClose && (
+          <button type="button" onClick={onClose} aria-label="Cerrar chat" className="flex h-8 w-8 items-center justify-center rounded-lg text-slate-400 transition hover:bg-white/10 hover:text-white">
+            <X className="h-4 w-4" />
+          </button>
+        )}
       </div>
       {/* Messages List Container */}
       <div

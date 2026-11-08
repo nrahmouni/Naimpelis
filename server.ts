@@ -1030,20 +1030,6 @@ app.get('/api/proxy-web', async (req, res) => {
         </style>
         <script>
           (function() {
-            // Bypass anti-sandbox / anti-embed checks by spoofing frameElement & window.top
-            try {
-              Object.defineProperty(window, 'frameElement', {
-                get: function() { return null; },
-                configurable: true
-              });
-            } catch(e) {}
-            try {
-              Object.defineProperty(window, 'top', {
-                get: function() { return window.self; },
-                configurable: true
-              });
-            } catch(e) {}
-
             // Block popups and intrusive ads
             window.open = function() { console.log('Blocked popup in virtual browser'); return null; };
             window.alert = function(m) { console.log('Alert suppressed:', m); };
@@ -1160,7 +1146,7 @@ app.get('/api/proxy-web', async (req, res) => {
         </script>
       `;
 
-      // Proxy allowed player frames without sandbox restrictions that prevent playback.
+      // Route allowlisted player frames through the proxy while preserving their attributes.
       html = html.replace(/<iframe\b[^>]*>/gi, (iframeTag) => {
         const srcMatch = iframeTag.match(/\bsrc\s*=\s*(["'])(.*?)\1/i);
         if (!srcMatch) return iframeTag;
@@ -1174,8 +1160,7 @@ app.get('/api/proxy-web', async (req, res) => {
 
         const proxiedFrameUrl = `/api/proxy-web?url=${encodeURIComponent(frameUrl.toString())}&roomId=${encodedRoomId}`;
         return iframeTag
-          .replace(srcMatch[0], `src="${proxiedFrameUrl}"`)
-          .replace(/\s+sandbox(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+))?/gi, '');
+          .replace(srcMatch[0], `src="${proxiedFrameUrl}"`);
       });
 
       if (html.includes('<head>')) {
