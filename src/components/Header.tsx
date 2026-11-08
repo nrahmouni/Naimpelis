@@ -1,5 +1,5 @@
 import React from 'react';
-import { Share2, Users, Crown, Film, Sparkles, UserCheck } from 'lucide-react';
+import { Share2, Users, Crown, Film, Sparkles, Tv } from 'lucide-react';
 import { Participant } from '../types';
 
 interface HeaderProps {
@@ -13,6 +13,8 @@ interface HeaderProps {
   onToggleVirtualBrowser?: (enabled: boolean) => void;
   onToggleScreenShare?: (enabled: boolean) => void;
   onOpenInvite: () => void;
+  onOpenTv?: () => void;
+  onOpenAi?: () => void;
   onOpenParticipants: () => void;
   onOpenProfile: () => void;
   onLeaveRoom: () => void;
@@ -30,6 +32,8 @@ export const Header: React.FC<HeaderProps> = ({
   onToggleVirtualBrowser,
   onToggleScreenShare,
   onOpenInvite,
+  onOpenTv,
+  onOpenAi,
   onOpenParticipants,
   onOpenProfile,
   onLeaveRoom,
@@ -42,81 +46,64 @@ export const Header: React.FC<HeaderProps> = ({
   };
 
   return (
-    <header className="bg-slate-950 border-b border-slate-800/80 px-2 py-1 flex items-center justify-between gap-1 sticky top-0 z-30 shadow-sm h-8 select-none">
-      {/* Brand & Room Name */}
-      <div className="flex items-center gap-1 min-w-0">
-        <button
-          onClick={onLeaveRoom}
-          className="w-5 h-5 rounded-md bg-rose-600 flex items-center justify-center text-white shrink-0 hover:opacity-90 active:scale-95 transition-all text-[10px]"
-          title="Cambiar de sala"
-        >
-          <Film className="w-3 h-3" />
-        </button>
-        <div className="min-w-0 flex items-center gap-1">
-          <h1 className="text-[11px] font-bold text-slate-200 truncate tracking-tight">
-            {roomName}
+    <header className="bg-slate-950 border-b border-slate-800/80 px-2.5 py-1.5 flex items-center justify-between gap-1 sticky top-0 z-30 shadow-sm h-10 select-none">
+      {/* Brand & Room Info */}
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="w-6 h-6 rounded-lg bg-gradient-to-tr from-rose-600 to-amber-500 flex items-center justify-center text-white shrink-0 shadow-md">
+          <Film className="w-3.5 h-3.5" />
+        </div>
+        <div className="min-w-0">
+          <h1 className="text-xs font-bold text-slate-100 truncate flex items-center gap-1">
+            <span>{roomName}</span>
           </h1>
-          {currentUser.isHost && (
-            <span className="inline-flex items-center gap-0.5 px-1 text-[8px] font-bold text-amber-400 bg-amber-500/10 rounded shrink-0">
-              <Crown className="w-2 h-2" />
-            </span>
-          )}
+          <p className="text-[10px] text-slate-400 font-mono truncate">ID: {roomId}</p>
         </div>
       </div>
 
-      {/* Action Zone */}
+      {/* Actions Strip */}
       <div className="flex items-center gap-1 shrink-0">
-        {/* WebRTC Screen Share Button */}
-        {onToggleScreenShare && (
+        {onOpenAi && (
           <button
-            onClick={() => onToggleScreenShare(!isScreenSharing)}
-            className={`flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold transition-all active:scale-95 ${
-              isScreenSharing
-                ? 'bg-rose-600 text-white animate-pulse'
-                : 'bg-rose-500/20 text-rose-300'
-            }`}
-            title="Transmitir tu pantalla o ventana en directo"
+            onClick={onOpenAi}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm"
+            title="Cinéfilo AI: Recomendador con Gemini"
           >
-            <span>📡</span>
-            <span className="hidden xs:inline">{isScreenSharing ? 'En Vivo' : 'Pantalla'}</span>
+            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+            <span className="hidden xs:inline">IA</span>
           </button>
         )}
 
-        {/* Latency Badge */}
-        <button
-          onClick={onOpenHealthMonitor}
-          className={`flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-mono font-bold transition-all active:scale-95 ${getLatencyColor(
-            latencyMs
-          )}`}
-          title="Monitor de salud"
-        >
-          <span className="w-1 h-1 rounded-full bg-current animate-pulse" />
-          <span>{latencyMs}ms</span>
-        </button>
+        {onOpenTv && (
+          <button
+            onClick={onOpenTv}
+            className="flex items-center gap-1 px-2 py-1 rounded-lg bg-blue-600/20 hover:bg-blue-600/40 text-blue-300 border border-blue-500/30 text-xs font-bold transition-all active:scale-95 shadow-sm"
+            title="Enviar a la Tele (Smart TV / Chromecast / AirPlay)"
+          >
+            <Tv className="w-3.5 h-3.5 text-blue-400" />
+            <span className="hidden xs:inline">Tele</span>
+          </button>
+        )}
 
-        {/* Participants Button */}
         <button
           onClick={onOpenParticipants}
-          className="flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-800 text-slate-200 text-[10px] font-bold active:scale-95"
-          title="Ver usuarios"
+          className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-800 text-slate-200 text-xs font-bold active:scale-95 border border-slate-700/60"
+          title="Ver participantes"
         >
-          <Users className="w-2.5 h-2.5 text-slate-400" />
+          <Users className="w-3 h-3 text-slate-400" />
           <span>{participants.length}</span>
         </button>
 
-        {/* Invite CTA Button */}
         <button
           onClick={onOpenInvite}
-          className="flex items-center gap-0.5 px-2 py-0.5 rounded bg-rose-600 hover:bg-rose-500 text-white text-[10px] font-bold transition-all active:scale-95"
+          className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-bold transition-all active:scale-95 shadow-md shadow-rose-950/40"
         >
-          <Share2 className="w-2.5 h-2.5" />
+          <Share2 className="w-3 h-3" />
           <span className="hidden xs:inline">Invitar</span>
         </button>
 
-        {/* User Profile Avatar */}
         <button
           onClick={onOpenProfile}
-          className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] border border-slate-700 active:scale-95 shrink-0"
+          className="w-6 h-6 rounded-full flex items-center justify-center text-xs border border-slate-700 active:scale-95 shrink-0 shadow-sm"
           style={{ backgroundColor: currentUser.color }}
           title={`Perfil: ${currentUser.name}`}
         >

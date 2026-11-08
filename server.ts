@@ -1,17 +1,27 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer } from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { randomBytes, randomUUID } from 'crypto';
+import { Readable } from 'stream';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { RemoteBrowserManager, isAllowedRemoteBrowserUrl } from './server/RemoteBrowserManager';
+import { RemoteBrowserInput } from './src/types';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
+app.use(express.json({ limit: '16kb' }));
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
-
-app.use(express.json());
+const wss = new WebSocketServer({ server: httpServer, path: '/ws', maxPayload: 16 * 1024 });
+wss.on('error', (error) => {
+  if ((error as NodeJS.ErrnoException).code !== 'EADDRINUSE') {
+    console.error('WebSocket server error:', error);
+  }
+});
+const roomHostTokens = new Map<string, string>();
 
 // In-memory room store
 interface RoomStore {
@@ -36,25 +46,30 @@ interface RoomStore {
       isHost: boolean;
       joinedAt: number;
     }[];
+    screenShareActive: boolean;
+    remoteBrowserActive: boolean;
+    remoteBrowserUrl?: string;
     messages: any[];
     createdAt: number;
   };
 }
 
-const rooms: RoomStore = {
+const rooms: RoomStore = Object.assign(Object.create(null), {
   'cinema-pro': {
     id: 'cinema-pro',
     name: 'Sala de Cine Principal 🍿',
     hostId: 'system',
     videoState: {
-      url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-      title: 'Big Buck Bunny (4K)',
-      sourceType: 'direct',
+      url: 'https://movidy.pw/ver/hope/',
+      title: 'Movidy',
+      sourceType: 'iframe',
       currentTime: 0,
       isPlaying: false,
       lastUpdated: Date.now(),
     },
     participants: [],
+    screenShareActive: false,
+    remoteBrowserActive: false,
     messages: [
       {
         id: 'msg-welcome',
@@ -69,7 +84,7 @@ const rooms: RoomStore = {
     ],
     createdAt: Date.now(),
   },
-};
+});
 
 // WebSocket connection map: client ws -> metadata
 interface ClientMeta {
@@ -82,15 +97,45 @@ interface ClientMeta {
 }
 
 const clients = new Map<WebSocket, ClientMeta>();
+const roomClients = new Map<string, Set<WebSocket>>();
 
 function broadcastToRoom(roomId: string, message: any, excludeWs?: WebSocket) {
   const payload = JSON.stringify(message);
-  clients.forEach((meta, ws) => {
-    if (meta.roomId === roomId && ws.readyState === WebSocket.OPEN && ws !== excludeWs) {
-      ws.send(payload);
+  roomClients.get(roomId)?.forEach((ws) => {
+    if (ws.readyState !== WebSocket.OPEN || ws === excludeWs) return;
+    if (ws.bufferedAmount > 1024 * 1024) {
+      ws.close(1013, 'Slow consumer');
+      return;
     }
+    ws.send(payload);
   });
 }
+
+function sendToParticipant(roomId: string, userId: string, message: any) {
+  const payload = JSON.stringify(message);
+  roomClients.get(roomId)?.forEach((ws) => {
+    const meta = clients.get(ws);
+    if (meta?.userId === userId && ws.readyState === WebSocket.OPEN) ws.send(payload);
+  });
+}
+
+const remoteBrowserManager = new RemoteBrowserManager((roomId: string, message: unknown) => {
+  broadcastToRoom(roomId, message);
+  const event = message as { type?: string; payload?: { url?: string } };
+  const room = rooms[roomId];
+  if (event.type !== 'REMOTE_BROWSER_LOCATION' || !room || !isAllowedRemoteBrowserUrl(event.payload?.url || '')) return;
+
+  const url = event.payload!.url!;
+  room.remoteBrowserUrl = url;
+  room.videoState.url = url;
+  room.videoState.title = new URL(url).hostname;
+  room.videoState.sourceType = 'iframe';
+  room.videoState.lastUpdated = Date.now();
+  broadcastToRoom(roomId, {
+    type: 'VIDEO_STATE_UPDATED',
+    payload: { videoState: room.videoState, action: 'navigate' },
+  });
+});
 
 function getOrCreateRoom(roomId: string, roomName?: string) {
   if (!rooms[roomId]) {
@@ -99,14 +144,16 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
       name: roomName || `Sala ${roomId.substring(0, 6)}`,
       hostId: '',
       videoState: {
-        url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-        title: 'Big Buck Bunny (4K)',
-        sourceType: 'direct',
+        url: 'https://movidy.pw/ver/hope/',
+        title: 'Movidy',
+        sourceType: 'iframe',
         currentTime: 0,
         isPlaying: false,
         lastUpdated: Date.now(),
       },
       participants: [],
+      screenShareActive: false,
+      remoteBrowserActive: false,
       messages: [
         {
           id: `sys-${Date.now()}`,
@@ -125,32 +172,106 @@ function getOrCreateRoom(roomId: string, roomName?: string) {
   return rooms[roomId];
 }
 
-wss.on('connection', (ws) => {
+const defaultProxyHosts = 'movidy.pw,bingetrix.sc,vidsrc.me,vidsrc.to,vidsrc.pm,autoembed.to,rojadirectv.live,rojadirecta-hd.li,rojadirectatv.asia,footunder.online,crackstreams1.cx,embedindia.st,trend48.st';
+const proxyAllowedDomains = (process.env.PROXY_ALLOWED_HOSTS || defaultProxyHosts)
+  .split(',')
+  .map((domain) => domain.trim().toLowerCase())
+  .filter(Boolean);
+const tmdbCache = new Map<string, { expiresAt: number; value: unknown }>();
+
+function readTmdbCache<T>(key: string): T | undefined {
+  const entry = tmdbCache.get(key);
+  if (!entry) return undefined;
+  if (entry.expiresAt <= Date.now()) {
+    tmdbCache.delete(key);
+    return undefined;
+  }
+  return entry.value as T;
+}
+
+function writeTmdbCache(key: string, value: unknown, ttlMs: number) {
+  if (tmdbCache.size >= 200) tmdbCache.delete(tmdbCache.keys().next().value!);
+  tmdbCache.set(key, { value, expiresAt: Date.now() + ttlMs });
+}
+
+function parseAllowedProxyUrl(value: string) {
+  const parsed = new URL(value);
+  const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
+  const isAllowedHost = proxyAllowedDomains.some((domain) => hostname === domain || hostname.endsWith(`.${domain}`));
+  if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || !isAllowedHost) {
+    throw new Error('Proxy destination is not allowed');
+  }
+  return parsed;
+}
+
+async function readTextWithLimit(response: Response, maxBytes: number) {
+  if (!response.body) return '';
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    totalBytes += value.byteLength;
+    if (totalBytes > maxBytes) {
+      await reader.cancel();
+      throw new Error('Proxy response is too large');
+    }
+    chunks.push(Buffer.from(value));
+  }
+  return Buffer.concat(chunks).toString('utf8');
+}
+
+wss.on('connection', (ws, request) => {
+  const origin = request.headers.origin;
+  const requestHost = request.headers.host?.toLowerCase();
+  try {
+    if (!origin || !requestHost || new URL(origin).host.toLowerCase() !== requestHost) {
+      ws.close(1008, 'Invalid origin');
+      return;
+    }
+  } catch {
+    ws.close(1008, 'Invalid origin');
+    return;
+  }
+
   clients.set(ws, { ws });
 
   ws.on('message', (raw) => {
     try {
       const data = JSON.parse(raw.toString());
+      if (!data || typeof data !== 'object' || typeof data.type !== 'string' || !data.payload || typeof data.payload !== 'object') return;
       const { type, payload } = data;
 
-      if (type === 'JOIN_ROOM') {
-        const { roomId, userId, userName, userAvatar, userColor } = payload;
-        const room = getOrCreateRoom(roomId);
+      if (type === 'PING') {
+        ws.send(JSON.stringify({ type: 'PONG', payload: { sentAt: payload.sentAt } }));
+        return;
+      }
 
-        // Assign host if first or existing host left
-        if (!room.hostId || room.participants.length === 0) {
-          room.hostId = userId;
+      if (type === 'JOIN_ROOM') {
+        if (clients.get(ws)?.roomId) return;
+        const { roomId, userName, userAvatar, userColor, hostToken } = payload;
+        if (typeof roomId !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(roomId)) return;
+        if (typeof userName !== 'string' || userName.length > 40) return;
+        if (typeof userAvatar !== 'string' || userAvatar.length > 16) return;
+        if (typeof userColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(userColor)) return;
+        const room = rooms[roomId];
+        if (!room) {
+          ws.send(JSON.stringify({ type: 'ROOM_ERROR', payload: { message: 'Sala no encontrada' } }));
+          return;
         }
 
+        const userId = randomUUID();
+        const isRoomOwner = typeof hostToken === 'string' && roomHostTokens.get(roomId) === hostToken;
+        const canClaimPublicDemo = room.id === 'cinema-pro' && room.participants.length === 0;
+        if ((isRoomOwner || canClaimPublicDemo) && (!room.hostId || room.hostId === 'system')) room.hostId = userId;
+
         const isHost = room.hostId === userId;
-        
-        // Remove duplicate entry if reconnection
-        room.participants = room.participants.filter(p => p.id !== userId);
         const newParticipant = {
           id: userId,
-          name: userName || 'Invitado',
-          avatar: userAvatar || '🍿',
-          color: userColor || '#3b82f6',
+          name: userName.trim() || 'Invitado',
+          avatar: userAvatar,
+          color: userColor,
           isHost,
           joinedAt: Date.now(),
         };
@@ -164,6 +285,9 @@ wss.on('connection', (ws) => {
           userAvatar,
           userColor,
         });
+        const roomConnections = roomClients.get(roomId) || new Set<WebSocket>();
+        roomConnections.add(ws);
+        roomClients.set(roomId, roomConnections);
 
         // Add system message
         const joinMsg = {
@@ -184,9 +308,10 @@ wss.on('connection', (ws) => {
         ws.send(
           JSON.stringify({
             type: 'ROOM_STATE',
-            payload: room,
+            payload: { ...room, currentUserId: userId },
           })
         );
+        remoteBrowserManager.sendLatestFrame(roomId, ws);
 
         // Broadcast user joined update to others in room
         broadcastToRoom(
@@ -201,10 +326,89 @@ wss.on('connection', (ws) => {
           },
           ws
         );
+        return;
+      }
+
+      const meta = clients.get(ws);
+      if (!meta?.roomId || !meta.userId || payload.roomId !== meta.roomId) return;
+      const room = rooms[meta.roomId];
+      if (!room || !room.participants.some((participant) => participant.id === meta.userId)) return;
+
+      if (type === 'START_REMOTE_BROWSER') {
+        if (room.hostId !== meta.userId) return;
+        const { url } = payload;
+        if (typeof url !== 'string' || url.length > 2048 || !isAllowedRemoteBrowserUrl(url)) {
+          ws.send(JSON.stringify({ type: 'REMOTE_BROWSER_ERROR', payload: { message: 'El dominio no está permitido para el navegador remoto.' } }));
+          return;
+        }
+        room.remoteBrowserActive = false;
+        remoteBrowserManager.start(meta.roomId, meta.userId, url)
+          .then(() => {
+            room.remoteBrowserActive = true;
+            room.remoteBrowserUrl = url;
+            room.videoState.url = url;
+            room.videoState.sourceType = 'iframe';
+            room.videoState.currentTime = 0;
+            room.videoState.isPlaying = true;
+            room.videoState.lastUpdated = Date.now();
+            broadcastToRoom(meta.roomId!, {
+              type: 'REMOTE_BROWSER_READY',
+              payload: { url, width: 1280, height: 720 },
+            });
+            broadcastToRoom(meta.roomId!, {
+              type: 'VIDEO_STATE_UPDATED',
+              payload: { videoState: room.videoState, action: 'change_url' },
+            });
+          })
+          .catch((error: unknown) => {
+            const message = error instanceof Error ? error.message : 'No se pudo iniciar Chromium.';
+            sendToParticipant(meta.roomId!, meta.userId!, {
+              type: 'REMOTE_BROWSER_ERROR',
+              payload: { message },
+            });
+          });
+      } else if (type === 'REMOTE_BROWSER_INPUT') {
+        if (room.hostId !== meta.userId) return;
+        void remoteBrowserManager.input(meta.roomId, meta.userId, payload.input as RemoteBrowserInput)
+          .catch(() => sendToParticipant(meta.roomId!, meta.userId!, {
+            type: 'REMOTE_BROWSER_ERROR',
+            payload: { message: 'No se pudo aplicar la interacción al navegador remoto.' },
+          }));
+      } else if (type === 'STOP_REMOTE_BROWSER') {
+        if (room.hostId !== meta.userId) return;
+        void remoteBrowserManager.stop(meta.roomId).then(() => {
+          room.remoteBrowserActive = false;
+          room.remoteBrowserUrl = undefined;
+          broadcastToRoom(meta.roomId!, { type: 'REMOTE_BROWSER_STOPPED', payload: {} });
+        });
+      } else if (type === 'UPDATE_PROFILE') {
+        const { userName, userAvatar, userColor } = payload;
+        if (typeof userName !== 'string' || !userName.trim() || userName.length > 40) return;
+        if (typeof userAvatar !== 'string' || userAvatar.length > 16) return;
+        if (typeof userColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(userColor)) return;
+        meta.userName = userName.trim();
+        meta.userAvatar = userAvatar;
+        meta.userColor = userColor;
+        const participant = room.participants.find((item) => item.id === meta.userId);
+        if (participant) {
+          participant.name = meta.userName;
+          participant.avatar = meta.userAvatar;
+          participant.color = meta.userColor;
+        }
+        broadcastToRoom(meta.roomId, {
+          type: 'PARTICIPANTS_UPDATED',
+          payload: { participants: room.participants, hostId: room.hostId },
+        });
       } else if (type === 'SYNC_VIDEO_STATE') {
+        if (room.hostId !== meta.userId) return;
         const { roomId, action, videoUrl, videoTitle, sourceType, currentTime, isPlaying, updatedBy, poster, overview, releaseYear, originalPortalUrl, altEmbeds, trailerUrl } = payload;
-        const room = rooms[roomId];
-        if (!room) return;
+        if (!['play', 'pause', 'seek', 'change_url'].includes(action)) return;
+        if (videoUrl !== undefined && (typeof videoUrl !== 'string' || videoUrl.length > 2048)) return;
+        if (videoTitle !== undefined && (typeof videoTitle !== 'string' || videoTitle.length > 300)) return;
+        if (sourceType !== undefined && !['youtube', 'vimeo', 'direct', 'iframe'].includes(sourceType)) return;
+        if (currentTime !== undefined && (typeof currentTime !== 'number' || !Number.isFinite(currentTime) || currentTime < 0 || currentTime > 86400)) return;
+        if (isPlaying !== undefined && typeof isPlaying !== 'boolean') return;
+        if (altEmbeds !== undefined && (!Array.isArray(altEmbeds) || altEmbeds.length > 10 || altEmbeds.some((url: unknown) => typeof url !== 'string' || url.length > 2048))) return;
 
         if (videoUrl !== undefined) room.videoState.url = videoUrl;
         if (videoTitle !== undefined) room.videoState.title = videoTitle;
@@ -219,19 +423,20 @@ wss.on('connection', (ws) => {
         if (trailerUrl !== undefined) (room.videoState as any).trailerUrl = trailerUrl;
         
         room.videoState.lastUpdated = Date.now();
-        room.videoState.updatedBy = updatedBy;
+        room.videoState.updatedBy = meta.userName;
 
         let systemMsgText = '';
         if (action === 'change_url') {
-          systemMsgText = `🎬 ${updatedBy || 'Un usuario'} cambió el vídeo a "${videoTitle || 'nuevo vídeo'}"`;
+          systemMsgText = `🎬 ${meta.userName || 'Un usuario'} cambió el vídeo a "${videoTitle || 'nuevo vídeo'}"`;
         } else if (action === 'play') {
-          systemMsgText = `▶️ ${updatedBy || 'Un usuario'} reprodujo el vídeo`;
+          systemMsgText = `▶️ ${meta.userName || 'Un usuario'} reprodujo el vídeo`;
         } else if (action === 'pause') {
-          systemMsgText = `⏸️ ${updatedBy || 'Un usuario'} pausó el vídeo`;
+          systemMsgText = `⏸️ ${meta.userName || 'Un usuario'} pausó el vídeo`;
         } else if (action === 'seek') {
-          systemMsgText = `⏩ ${updatedBy || 'Un usuario'} saltó a otra parte del vídeo`;
+          systemMsgText = `⏩ ${meta.userName || 'Un usuario'} saltó a otra parte del vídeo`;
         }
 
+        let roomMessage;
         if (systemMsgText) {
           const sysMsg = {
             id: `sys-${Date.now()}-${Math.random().toString(36).substring(2, 5)}`,
@@ -244,29 +449,29 @@ wss.on('connection', (ws) => {
             isSystem: true,
             systemType: action,
           };
+          roomMessage = sysMsg;
           room.messages.push(sysMsg);
           if (room.messages.length > 150) room.messages.shift();
         }
 
-        broadcastToRoom(roomId, {
+        broadcastToRoom(meta.roomId, {
           type: 'VIDEO_STATE_UPDATED',
           payload: {
             videoState: room.videoState,
             action,
-            messages: room.messages,
+            message: roomMessage,
           },
         });
       } else if (type === 'SEND_CHAT') {
-        const { roomId, text, senderId, senderName, senderAvatar, senderColor } = payload;
-        const room = rooms[roomId];
-        if (!room || !text.trim()) return;
+        const { text } = payload;
+        if (typeof text !== 'string' || !text.trim() || text.length > 1000) return;
 
         const newMsg = {
           id: `msg-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          senderId,
-          senderName,
-          senderAvatar,
-          senderColor,
+          senderId: meta.userId,
+          senderName: meta.userName,
+          senderAvatar: meta.userAvatar,
+          senderColor: meta.userColor,
           text: text.trim(),
           timestamp: Date.now(),
         };
@@ -274,42 +479,60 @@ wss.on('connection', (ws) => {
         room.messages.push(newMsg);
         if (room.messages.length > 150) room.messages.shift();
 
-        broadcastToRoom(roomId, {
+        broadcastToRoom(meta.roomId, {
           type: 'NEW_CHAT_MESSAGE',
           payload: newMsg,
         });
       } else if (type === 'SEND_REACTION') {
-        const { roomId, emoji, senderName, senderColor } = payload;
-        const room = rooms[roomId];
-        if (!room) return;
+        const { emoji } = payload;
+        if (typeof emoji !== 'string' || emoji.length > 16) return;
 
         const reaction = {
           id: `react-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
           emoji,
-          senderName,
-          senderColor,
+          senderName: meta.userName,
+          senderColor: meta.userColor,
           timestamp: Date.now(),
         };
 
-        broadcastToRoom(roomId, {
+        broadcastToRoom(meta.roomId, {
           type: 'FLOATING_REACTION',
           payload: reaction,
         });
       } else if (type === 'WEBRTC_SIGNAL') {
-        const { roomId, signalData, targetId, senderId } = payload;
-        broadcastToRoom(roomId, {
+        const { signalData, targetId } = payload;
+        if (!signalData || typeof signalData !== 'object' || Array.isArray(signalData) || typeof signalData.type !== 'string' || typeof targetId !== 'string') return;
+        if (!['screen_share_started', 'screen_share_stopped', 'request_offer', 'offer', 'answer', 'candidate'].includes(signalData.type)) return;
+        if (targetId !== 'all' && !room.participants.some((participant) => participant.id === targetId)) return;
+        if ((signalData.type === 'screen_share_started' || signalData.type === 'screen_share_stopped') && (meta.userId !== room.hostId || targetId !== 'all')) return;
+        if (signalData.type === 'request_offer' && (targetId !== room.hostId || meta.userId === room.hostId)) return;
+        if (signalData.type === 'offer' && (meta.userId !== room.hostId || targetId === room.hostId)) return;
+        if (signalData.type === 'answer' && (meta.userId === room.hostId || targetId !== room.hostId)) return;
+        if (signalData.type === 'screen_share_started') room.screenShareActive = true;
+        if (signalData.type === 'screen_share_stopped') room.screenShareActive = false;
+        const signalMessage = {
           type: 'WEBRTC_SIGNAL',
           payload: {
             signalData,
             targetId,
-            senderId,
+            senderId: meta.userId,
           },
-        }, ws);
+        };
+        if (targetId === 'all') broadcastToRoom(meta.roomId, signalMessage, ws);
+        else sendToParticipant(meta.roomId, targetId, signalMessage);
       } else if (type === 'TRANSFER_HOST') {
-        const { roomId, newHostId } = payload;
-        const room = rooms[roomId];
-        if (!room) return;
+        if (room.hostId !== meta.userId) return;
+        const { newHostId } = payload;
+        if (typeof newHostId !== 'string' || !room.participants.some((participant) => participant.id === newHostId)) return;
 
+        if (room.screenShareActive) {
+          room.screenShareActive = false;
+          broadcastToRoom(meta.roomId, {
+            type: 'WEBRTC_SIGNAL',
+            payload: { signalData: { type: 'screen_share_stopped' }, targetId: 'all', senderId: meta.userId },
+          });
+        }
+        if (room.remoteBrowserActive) remoteBrowserManager.transferHost(meta.roomId, newHostId);
         room.hostId = newHostId;
         room.participants.forEach(p => {
           p.isHost = p.id === newHostId;
@@ -328,8 +551,9 @@ wss.on('connection', (ws) => {
           systemType: 'host_change',
         };
         room.messages.push(sysMsg);
+        if (room.messages.length > 150) room.messages.shift();
 
-        broadcastToRoom(roomId, {
+        broadcastToRoom(meta.roomId, {
           type: 'HOST_TRANSFERRED',
           payload: {
             hostId: newHostId,
@@ -346,16 +570,37 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     const meta = clients.get(ws);
     clients.delete(ws);
+    if (meta?.roomId) {
+      const roomConnections = roomClients.get(meta.roomId);
+      roomConnections?.delete(ws);
+      if (roomConnections?.size === 0) roomClients.delete(meta.roomId);
+    }
 
     if (meta && meta.roomId && meta.userId) {
       const room = rooms[meta.roomId];
       if (room) {
         room.participants = room.participants.filter((p) => p.id !== meta.userId);
+        if (room.hostId === meta.userId && room.screenShareActive) {
+          room.screenShareActive = false;
+          broadcastToRoom(meta.roomId, {
+            type: 'WEBRTC_SIGNAL',
+            payload: { signalData: { type: 'screen_share_stopped' }, targetId: 'all', senderId: 'system' },
+          }, ws);
+        }
+        if (room.hostId === meta.userId && room.remoteBrowserActive) {
+          void remoteBrowserManager.stop(meta.roomId).then(() => {
+            room.remoteBrowserActive = false;
+            room.remoteBrowserUrl = undefined;
+            broadcastToRoom(meta.roomId!, { type: 'REMOTE_BROWSER_STOPPED', payload: {} });
+          });
+        }
         
         // Host migration if host left
-        if (room.hostId === meta.userId && room.participants.length > 0) {
-          room.hostId = room.participants[0].id;
-          room.participants[0].isHost = true;
+        if (room.hostId === meta.userId) {
+          room.hostId = room.participants[0]?.id || '';
+          room.participants.forEach((participant) => {
+            participant.isHost = participant.id === room.hostId;
+          });
         }
 
         const leaveMsg = {
@@ -370,6 +615,7 @@ wss.on('connection', (ws) => {
           systemType: 'leave',
         };
         room.messages.push(leaveMsg);
+        if (room.messages.length > 150) room.messages.shift();
 
         broadcastToRoom(meta.roomId, {
           type: 'PARTICIPANTS_UPDATED',
@@ -395,39 +641,50 @@ app.get('/api/rooms/:roomId', (req, res) => {
 
 app.post('/api/rooms', (req, res) => {
   const { name } = req.body;
-  const roomId = `room-${Math.random().toString(36).substring(2, 8)}`;
+  if (name !== undefined && (typeof name !== 'string' || name.length > 80)) {
+    return res.status(400).json({ error: 'Invalid room name' });
+  }
+  const roomId = `room-${randomUUID()}`;
+  const hostToken = randomBytes(32).toString('base64url');
   const room = getOrCreateRoom(roomId, name);
-  res.json(room);
+  roomHostTokens.set(roomId, hostToken);
+  res.json({ id: room.id, name: room.name, hostToken });
 });
 
-// Movie Resolver: Automatically recognizes movie URLs (like bingetrix.sc/watch/1423191, tmdb, etc.)
+// Resolve public movie metadata and official trailers from TMDB.
 app.get('/api/resolve-movie', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   const queryUrl = (req.query.url as string) || '';
-  if (!queryUrl) {
+  if (!queryUrl || queryUrl.length > 2048) {
     return res.status(400).json({ success: false, error: 'Missing url parameter' });
   }
 
   try {
-    // Check if it's a Bingetrix URL (e.g. bingetrix.sc/watch/1423191) or default TMDB ID
-    const bingetrixMatch = queryUrl.match(/(?:bingetrix\.[a-z]+\/(?:watch|movie|tv)\/|tmdb\/|movie\/)(\d+)/i);
-    const tmdbId = bingetrixMatch ? bingetrixMatch[1] : '1423191';
-    const tmdbApiKey = '90b2cae8d7161e8ba0f3836240d7d352';
+    const tmdbMatch = queryUrl.match(/(?:themoviedb\.org\/(?:movie|tv)\/|tmdb\/(?:tv\/)?)(\d+)/i);
+    if (!tmdbMatch) return res.status(400).json({ success: false, error: 'Invalid TMDB title reference' });
+    const tmdbId = tmdbMatch[1];
+    const isTv = /(?:themoviedb\.org\/tv\/|tmdb\/tv\/)/i.test(queryUrl);
+    const tmdbApiKey = process.env.TMDB_API_KEY;
+    if (!tmdbApiKey) return res.status(503).json({ success: false, error: 'Movie metadata is unavailable' });
+    const cacheKey = `resolve:${isTv ? 'tv' : 'movie'}:${tmdbId}`;
+    const cached = readTmdbCache<Record<string, unknown>>(cacheKey);
+    if (cached) return res.json({ ...cached, originalUrl: queryUrl });
 
-    // Query TMDB for movie details & trailers
+    const mediaPath = isTv ? 'tv' : 'movie';
     const [movieRes, videosRes] = await Promise.all([
-      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${tmdbApiKey}&language=es-ES`)
+      fetch(`https://api.themoviedb.org/3/${mediaPath}/${tmdbId}?api_key=${tmdbApiKey}&language=es-ES`, { signal: AbortSignal.timeout(8000) })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
-      fetch(`https://api.themoviedb.org/3/movie/${tmdbId}/videos?api_key=${tmdbApiKey}`)
+      fetch(`https://api.themoviedb.org/3/${mediaPath}/${tmdbId}/videos?api_key=${tmdbApiKey}`, { signal: AbortSignal.timeout(8000) })
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null),
     ]);
 
-    const title = movieRes?.title || movieRes?.name || movieRes?.original_title || 'Resident Evil';
-    const overview = movieRes?.overview || 'Película de terror y acción.';
+    if (!movieRes) return res.status(404).json({ success: false, error: 'Title not found' });
+    const title = movieRes.title || movieRes.name || movieRes.original_title || movieRes.original_name;
+    const overview = movieRes.overview || '';
     const poster = movieRes?.poster_path ? `https://image.tmdb.org/t/p/w500${movieRes.poster_path}` : '';
-    const releaseYear = movieRes?.release_date ? movieRes.release_date.split('-')[0] : '2026';
+    const releaseYear = (movieRes.release_date || movieRes.first_air_date || '').split('-')[0];
 
     const videos = (videosRes as any)?.results || [];
     const trailer = videos.find((v: any) => v.site === 'YouTube' && v.type === 'Trailer') ||
@@ -435,24 +692,18 @@ app.get('/api/resolve-movie', async (req, res) => {
     const trailerKey = trailer?.key || '';
     const trailerUrl = trailerKey ? `https://www.youtube.com/watch?v=${trailerKey}` : '';
 
-    const streamEmbeds = [
-      `https://vidsrc.me/embed/movie/${tmdbId}`,
-      `https://vidsrc.to/embed/movie/${tmdbId}`,
-      `https://autoembed.to/movie/tmdb/${tmdbId}`,
-    ];
-
-    return res.json({
+    const result = {
       success: true,
-      type: 'movie_portal',
+      type: isTv ? 'tv' : 'movie',
       tmdbId,
       title,
       overview,
       poster,
       releaseYear,
       trailerUrl,
-      streamEmbeds,
-      originalUrl: queryUrl,
-    });
+    };
+    writeTmdbCache(cacheKey, result, 60 * 60 * 1000);
+    return res.json({ ...result, originalUrl: queryUrl });
   } catch (err: any) {
     console.error('Error resolving movie URL:', err);
     return res.status(500).json({ success: false, error: 'Failed to resolve movie URL' });
@@ -461,15 +712,22 @@ app.get('/api/resolve-movie', async (req, res) => {
 
 // Movie Catalog Search Endpoint for Virtual Browser Movie Finder
 app.get('/api/search-movies', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   const query = (req.query.query as string) || '';
-  const tmdbApiKey = '90b2cae8d7161e8ba0f3836240d7d352';
+  if (query.length > 120) return res.status(400).json({ error: 'Search query is too long' });
+  const tmdbApiKey = process.env.TMDB_API_KEY || '90b2cae8d7161e8ba0f3836240d7d352';
 
   try {
+    const normalizedQuery = query.trim().toLowerCase();
+    const cacheKey = `search:${normalizedQuery || 'trending'}`;
+    const cached = readTmdbCache<{ results: unknown[] }>(cacheKey);
+    if (cached) return res.json(cached);
     const searchUrl = query.trim()
       ? `https://api.themoviedb.org/3/search/multi?api_key=${tmdbApiKey}&language=es-ES&query=${encodeURIComponent(query)}&page=1`
       : `https://api.themoviedb.org/3/trending/movie/week?api_key=${tmdbApiKey}&language=es-ES`;
 
-    const r = await fetch(searchUrl);
+    const r = await fetch(searchUrl, { signal: AbortSignal.timeout(8000) });
+    if (!r.ok) throw new Error(`TMDB HTTP ${r.status}`);
     const data = await r.json();
 
     const items = (data.results || [])
@@ -484,16 +742,6 @@ app.get('/api/search-movies', async (req, res) => {
         const backdrop = m.backdrop_path ? `https://image.tmdb.org/t/p/w780${m.backdrop_path}` : '';
         const rating = m.vote_average ? m.vote_average.toFixed(1) : '';
 
-        // Working stream embeds
-        const streamUrl = isTv
-          ? `https://vidsrc.pm/embed/tv/${id}/1/1`
-          : `https://vidsrc.pm/embed/movie/${id}`;
-
-        const bingetrixUrl = `https://bingetrix.sc/watch/${id}`;
-        const movidyUrl = isTv
-          ? `https://movidy.pw/embed/tv/${id}/1/1`
-          : `https://movidy.pw/embed/movie/${id}`;
-
         return {
           id,
           title,
@@ -503,16 +751,211 @@ app.get('/api/search-movies', async (req, res) => {
           backdrop,
           rating,
           isTv,
-          streamUrl,
-          bingetrixUrl,
-          movidyUrl,
         };
       });
 
-    res.json({ results: items });
+    const result = { results: items };
+    writeTmdbCache(cacheKey, result, normalizedQuery ? 30 * 60 * 1000 : 5 * 60 * 1000);
+    res.json(result);
   } catch (err: any) {
     console.error('Search movies error:', err);
-    res.status(500).json({ error: 'Error al buscar películas' });
+    res.status(200).json({ results: [] });
+  }
+});
+
+// Sports Events Aggregator for RojaDirecta (rojadirectv.live & rojadirecta-hd.li) - Ad-Free
+app.get('/api/sports-events', async (_req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  const cacheKey = 'sports:events:all';
+  const cached = readTmdbCache<{ success: boolean; updatedAt: number; sources: any; events: any[] }>(cacheKey);
+  if (cached) {
+    return res.json(cached);
+  }
+
+  try {
+    const [rojaRes, hdRes] = await Promise.allSettled([
+      // Source 1: rojadirectv.live
+      fetch('https://www.rojadirectv.live/', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+        },
+        signal: AbortSignal.timeout(8000),
+      }).then(async (r) => (r.ok ? r.text() : '')),
+
+      // Source 2: rojadirecta-hd.li (CrackStreams central event API)
+      fetch('http://crackstreams1.cx/event-manager/events-api.php', {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          'Accept': 'application/json',
+          'Referer': 'https://rojadirecta-hd.li/',
+        },
+        signal: AbortSignal.timeout(8000),
+      }).then(async (r) => (r.ok ? r.json() : null)),
+    ]);
+
+    const allEvents: any[] = [];
+    let rojaCount = 0;
+    let hdCount = 0;
+
+    // Parse Source 1: rojadirectv.live
+    if (rojaRes.status === 'fulfilled' && rojaRes.value) {
+      const html = rojaRes.value;
+      const rowRegex = /<tr>([\s\S]*?)<\/tr>/g;
+      let rowMatch;
+      const rawEvents: any[] = [];
+
+      while ((rowMatch = rowRegex.exec(html)) !== null) {
+        const row = rowMatch[1];
+        const timeMatch = row.match(/<span class="t">([^<]+)<\/span>/);
+        const linkMatch = row.match(/<a href="([^"]+)"[^>]*><b>([^<]+)<\/b><\/a>/);
+        const canalMatch = row.match(/class="btn-canal">([^<]+)<\/a>/);
+        const sportMatch = row.match(/<td[^>]*>([^<:]+):/);
+
+        if (timeMatch && linkMatch) {
+          let streamUrl = '';
+          try {
+            const urlObj = new URL(linkMatch[1], 'https://www.rojadirectv.live');
+            const b64 = urlObj.searchParams.get('r');
+            if (b64) streamUrl = Buffer.from(b64, 'base64').toString('utf8');
+          } catch {}
+
+          const rawSport = (sportMatch ? sportMatch[1] : 'Deportes')
+            .replace(/^[^a-zA-ZáéíóúÁÉÍÓÚñÑ]+/, '')
+            .trim();
+          const title = linkMatch[2].trim();
+          const embedUrl = new URL(linkMatch[1], 'https://www.rojadirectv.live').href;
+          const canal = canalMatch ? canalMatch[1].trim() : 'Canal 1';
+
+          rawEvents.push({
+            time: timeMatch[1].trim(),
+            title,
+            sport: rawSport,
+            embedUrl,
+            streamUrl: streamUrl || embedUrl,
+            canal,
+          });
+        }
+      }
+
+      // Group by match
+      const groupedMap = new Map<string, any>();
+      for (const ev of rawEvents) {
+        const key = `${ev.time}_${ev.sport}_${ev.title.toLowerCase()}`;
+        if (groupedMap.has(key)) {
+          const m = groupedMap.get(key);
+          if (!m.channels.some((c: any) => c.name === ev.canal || c.url === ev.streamUrl)) {
+            m.channels.push({ name: ev.canal, url: ev.streamUrl, type: 'stream' });
+          }
+        } else {
+          groupedMap.set(key, {
+            id: `rdv-${groupedMap.size + 1}`,
+            source: 'rojadirectv',
+            sourceName: 'RojaDirecta TV (.live)',
+            title: ev.title,
+            sport: ev.sport,
+            competition: ev.sport,
+            time: ev.time,
+            status: 'live',
+            channels: [{ name: ev.canal, url: ev.streamUrl, type: 'stream' }],
+            sourceUrl: 'https://www.rojadirectv.live/',
+          });
+        }
+      }
+
+      const parsedRoja = Array.from(groupedMap.values());
+      rojaCount = parsedRoja.length;
+      allEvents.push(...parsedRoja);
+    }
+
+    // Parse Source 2: rojadirecta-hd.li
+    if (hdRes.status === 'fulfilled' && hdRes.value && Array.isArray(hdRes.value.events)) {
+      const hdList = hdRes.value.events;
+      const now = Date.now();
+      const retentionMs = 3.5 * 60 * 60 * 1000;
+
+      for (const ev of hdList) {
+        if (!ev || !ev.home || !ev.away) continue;
+        const start = ev.utc ? new Date(ev.utc).getTime() : NaN;
+        if (!isNaN(start) && now > start + retentionMs) continue;
+
+        let status = 'upcoming';
+        if (!isNaN(start) && now >= start && now < start + retentionMs) {
+          status = 'live';
+        }
+
+        const channels: any[] = [];
+        if (Array.isArray(ev.streams)) {
+          ev.streams.forEach((stUrl: string, idx: number) => {
+            if (stUrl && typeof stUrl === 'string') {
+              channels.push({
+                name: `Stream HD ${idx + 1}`,
+                url: stUrl,
+                type: 'stream',
+              });
+            }
+          });
+        }
+
+        if (channels.length === 0 && ev.url) {
+          const directUrl = ev.url.startsWith('http') ? ev.url : `https://crackstreams1.cx${ev.url.startsWith('/') ? '' : '/'}${ev.url}`;
+          channels.push({
+            name: 'Canal HD',
+            url: directUrl,
+            type: 'embed',
+          });
+        }
+
+        const matchTime = ev.time || (ev.utc ? new Date(ev.utc).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : 'Hoy');
+
+        allEvents.push({
+          id: `rdhd-${ev.id || allEvents.length + 1}`,
+          source: 'rojadirectahd',
+          sourceName: 'RojaDirecta HD (.li)',
+          title: `${ev.home} vs ${ev.away}`,
+          homeTeam: ev.home,
+          awayTeam: ev.away,
+          sport: ev.sport || 'FÚTBOL',
+          competition: ev.competition || ev.sport || 'Competición Oficial',
+          time: matchTime,
+          utc: ev.utc,
+          status,
+          logo: ev.logo || 'https://crackstreams1.cx/images/hd2/soccer.png',
+          channels,
+          sourceUrl: 'https://rojadirecta-hd.li/',
+        });
+        hdCount++;
+      }
+    }
+
+    // Sort: Live events first, then by time
+    allEvents.sort((a, b) => {
+      if (a.status === 'live' && b.status !== 'live') return -1;
+      if (b.status === 'live' && a.status !== 'live') return 1;
+      return 0;
+    });
+
+    const payload = {
+      success: true,
+      updatedAt: Date.now(),
+      sources: {
+        rojadirectv: { name: 'RojaDirecta TV (.live)', url: 'https://www.rojadirectv.live/', total: rojaCount },
+        rojadirectahd: { name: 'RojaDirecta HD (.li)', url: 'https://rojadirecta-hd.li/', total: hdCount },
+      },
+      events: allEvents,
+    };
+
+    writeTmdbCache(cacheKey, payload, 60 * 1000);
+    return res.json(payload);
+  } catch (err: any) {
+    console.error('Error fetching sports events:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Error al conectar con los servidores de RojaDirecta.',
+      sources: {},
+      events: [],
+    });
   }
 });
 
@@ -520,66 +963,132 @@ app.get('/api/search-movies', async (req, res) => {
 app.get('/api/proxy-web', async (req, res) => {
   const targetUrl = (req.query.url as string) || '';
   const roomId = (req.query.roomId as string) || '';
-  
-  // Check if URL is incomplete or missing a proper TLD extension
-  const hasValidTld = /\.[a-z]{2,}(\/|$)/i.test(targetUrl);
-  if (!targetUrl || !hasValidTld) {
-    return res.status(200).send(`
-      <div style="background:#090d16;color:#e2e8f0;padding:24px;font-family:sans-serif;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
-        <h3 style="margin-bottom:8px;color:#f87171;">Introduce una dirección web válida</h3>
-        <p style="color:#94a3b8;font-size:13px;max-width:400px;margin-bottom:16px;">Escribe un dominio completo con su extensión (ej: movidy.pw) o usa el buscador de películas.</p>
-        <a href="/api/proxy-web?url=${encodeURIComponent('https://movidy.pw/')}&roomId=${encodeURIComponent(roomId)}" style="background:#2563eb;color:white;padding:10px 20px;border-radius:12px;text-decoration:none;font-size:13px;font-weight:bold;">Ir a Movidy.pw</a>
-      </div>
-    `);
+  if (!targetUrl || targetUrl.length > 2048 || !/^[a-zA-Z0-9_-]{1,100}$/.test(roomId)) {
+    return res.status(400).json({ error: 'Invalid proxy request' });
   }
 
   try {
-    let finalUrl = targetUrl;
-    if (!/^https?:\/\//i.test(finalUrl)) {
-      finalUrl = 'https://' + finalUrl;
+    let parsed = parseAllowedProxyUrl(/^https?:\/\//i.test(targetUrl) ? targetUrl : `https://${targetUrl}`);
+    let response: Response | undefined;
+    for (let redirectCount = 0; redirectCount <= 5; redirectCount += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+      try {
+        response = await fetch(parsed, {
+          redirect: 'manual',
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+            'Referer': parsed.origin,
+            ...(typeof req.headers.range === 'string' ? { Range: req.headers.range } : {}),
+          },
+        });
+      } finally {
+        clearTimeout(timeout);
+      }
+      if (![301, 302, 303, 307, 308].includes(response.status)) break;
+      const location = response.headers.get('location');
+      await response.body?.cancel();
+      if (!location || redirectCount === 5) throw new Error('Too many proxy redirects');
+      parsed = parseAllowedProxyUrl(new URL(location, parsed).toString());
     }
-    const parsed = new URL(finalUrl);
-    const response = await fetch(finalUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
-      },
-    });
+    if (!response) throw new Error('Proxy upstream unavailable');
+    const finalUrl = parsed.toString();
 
     const contentType = response.headers.get('content-type') || 'text/html';
-    res.setHeader('Content-Type', contentType);
-    res.removeHeader('X-Frame-Options');
-    res.removeHeader('Content-Security-Policy');
+    res.status(response.status).setHeader('Content-Type', contentType);
 
     if (contentType.includes('text/html')) {
-      let html = await response.text();
+      if (Number(response.headers.get('content-length')) > 5 * 1024 * 1024) {
+        return res.status(413).send('La página externa supera el tamaño permitido.');
+      }
+      let html = await readTextWithLimit(response, 5 * 1024 * 1024);
 
-      // Interceptor script injected into virtual browser:
-      // 1. Intercepts link clicks and form submits, converting them to proxy URLs
-      // 2. Notifies parent Watch2Gether app of URL changes so other users navigate simultaneously
-      // 3. Intercepts HTML5 video play, pause, seek and timeupdate events to synchronize playback across room
-      // 4. Blocks popunder and intrusive new window redirects (window.open = noop)
+      // Targeted anti-ad filter: only block known aggressive ad network scripts
+      html = html.replace(/<script[^>]*src=["'][^"']*(therocketlanguages|adskeeper|propeller|popcash|adnxs|doubleclick|adsterra|monetag|exoclick|alwingulla)[^"']*["'][^>]*>[\s\S]*?<\/script>/gi, '');
+
+      const baseHref = parsed.origin.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+      const jsString = (value: string) => JSON.stringify(value).replace(/</g, '\\u003c');
+      const encodedRoomId = encodeURIComponent(roomId);
+
+      // Safe non-destructive CSS and sync injection
       const syncScript = `
-        <base href="${parsed.origin}/">
+        <base href="${baseHref}/">
+        <style>
+          .banner, .adsbygoogle, .ad-banner, .advertisement,
+          .sharethis-inline-share-buttons, #_wauoyb,
+          iframe[src*="facebook"], iframe[src*="adsterra"] {
+            display: none !important;
+            opacity: 0 !important;
+            pointer-events: none !important;
+            visibility: hidden !important;
+            height: 0 !important;
+            width: 0 !important;
+          }
+        </style>
         <script>
           (function() {
+            // Bypass anti-sandbox / anti-embed checks by spoofing frameElement & window.top
+            try {
+              Object.defineProperty(window, 'frameElement', {
+                get: function() { return null; },
+                configurable: true
+              });
+            } catch(e) {}
+            try {
+              Object.defineProperty(window, 'top', {
+                get: function() { return window.self; },
+                configurable: true
+              });
+            } catch(e) {}
+
             // Block popups and intrusive ads
             window.open = function() { console.log('Blocked popup in virtual browser'); return null; };
             window.alert = function(m) { console.log('Alert suppressed:', m); };
+            window.confirm = function() { return true; };
+            window.prompt = function() { return null; };
 
-            // Listen to link clicks and route through parent or proxy
+            // Intercept clicks on links and destroy invisible popunder overlay catchers
             document.addEventListener('click', function(e) {
-              const link = e.target.closest('a');
+              const elem = e.target;
+              if (!elem) return;
+
+              // Destroy transparent overlay divs covering the video player
+              if (elem.tagName !== 'VIDEO' && elem.tagName !== 'IFRAME' && elem.tagName !== 'BUTTON' && elem.tagName !== 'INPUT') {
+                const rect = elem.getBoundingClientRect();
+                const style = window.getComputedStyle(elem);
+                const isOverlay = rect.width > window.innerWidth * 0.7 && rect.height > window.innerHeight * 0.7;
+                const isPositioned = style.position === 'fixed' || style.position === 'absolute' || parseInt(style.zIndex, 10) > 20;
+                
+                if (isOverlay && isPositioned) {
+                  console.log('Removed popunder overlay element:', elem);
+                  elem.remove();
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return false;
+                }
+              }
+
+              const link = elem.closest('a');
               if (link && link.href) {
-                const href = link.getAttribute('href');
+                const href = link.getAttribute('href') || '';
                 if (href && !href.startsWith('#') && !href.startsWith('javascript:')) {
                   e.preventDefault();
-                  let resolved = new URL(href, "${finalUrl}").href;
+                  e.stopPropagation();
+
+                  // Block target="_blank" ad redirects
+                  if (link.target === '_blank' && !href.includes('bingetrix') && !href.includes('movidy') && !href.includes('rojadirect')) {
+                    console.log('Blocked external popup ad link:', href);
+                    return false;
+                  }
+
+                  let resolved = new URL(href, ${jsString(finalUrl)}).href;
                   if (window.parent && window.parent !== window) {
                     window.parent.postMessage({ type: 'VIRTUAL_BROWSER_NAVIGATE', url: resolved }, '*');
                   }
-                  window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved) + '&roomId=${roomId}';
+                  window.location.href = '/api/proxy-web?url=' + encodeURIComponent(resolved) + '&roomId=${encodedRoomId}';
                 }
               }
             }, true);
@@ -644,7 +1153,7 @@ app.get('/api/proxy-web', async (req, res) => {
             // Notify parent when DOM finishes loading
             window.addEventListener('load', function() {
               if (window.parent && window.parent !== window) {
-                window.parent.postMessage({ type: 'VIRTUAL_BROWSER_URL_CHANGED', url: "${finalUrl}" }, '*');
+                window.parent.postMessage({ type: 'VIRTUAL_BROWSER_URL_CHANGED', url: ${jsString(finalUrl)} }, '*');
               }
             });
           })();
@@ -653,7 +1162,7 @@ app.get('/api/proxy-web', async (req, res) => {
 
       // Rewrite child iframe src attributes to route through /api/proxy-web so inner video elements are ALSO proxied and intercepted!
       html = html.replace(/<iframe\s+([^>]*?)src=["'](https?:\/\/[^"']+)["']/gi, (match, prefix, iframeSrc) => {
-        const proxiedIframeSrc = `/api/proxy-web?url=${encodeURIComponent(iframeSrc)}&roomId=${roomId}`;
+        const proxiedIframeSrc = `/api/proxy-web?url=${encodeURIComponent(iframeSrc)}&roomId=${encodedRoomId}`;
         return `<iframe ${prefix}src="${proxiedIframeSrc}"`;
       });
 
@@ -665,29 +1174,32 @@ app.get('/api/proxy-web', async (req, res) => {
       return res.send(html);
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    res.send(Buffer.from(arrayBuffer));
+    res.status(response.status).setHeader('Content-Type', contentType);
+    for (const header of ['content-length', 'content-range', 'accept-ranges', 'cache-control']) {
+      const value = response.headers.get(header);
+      if (value) res.setHeader(header, value);
+    }
+    if (!response.body) return res.end();
+    Readable.fromWeb(response.body as any).on('error', () => res.destroy()).pipe(res);
   } catch (err: any) {
     console.error('Virtual browser proxy error:', err);
-    res.status(200).send(`
-      <div style="background:#090d16;color:#e2e8f0;padding:24px;font-family:sans-serif;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;">
-        <h3 style="margin-bottom:8px;color:#f87171;">Cargando Movidy / Portal Externo</h3>
-        <p style="color:#94a3b8;font-size:13px;max-width:400px;margin-bottom:16px;">El sitio externo puede requerir apertura directa o estar protegido contra incrustación por proxy.</p>
-        <a href="${targetUrl}" target="_blank" style="background:#2563eb;color:white;padding:10px 20px;border-radius:12px;text-decoration:none;font-size:13px;font-weight:bold;box-shadow:0 4px 12px rgba(37,99,235,0.4);">Abrir Portal en Pestaña Nueva</a>
-      </div>
-    `);
+    res.status(502).send('No se pudo cargar el sitio externo.');
   }
 });
 
 // Vite Integration
 async function startServer() {
-  const PORT = process.env.PORT || 3000;
+  const requestedPort = Number(process.env.PORT) || 3000;
+  const allowPortFallback = process.env.NODE_ENV !== 'production' && !process.env.PORT;
   const isProd = process.env.NODE_ENV === 'production';
 
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: process.env.DISABLE_HMR !== 'true' },
+      server: {
+        middlewareMode: true,
+        ws: process.env.DISABLE_HMR !== 'true' ? { server: httpServer } : false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -698,9 +1210,43 @@ async function startServer() {
     });
   }
 
-  httpServer.listen(PORT, () => {
-    console.log(`🎬 Watch2Gether Server running on http://0.0.0.0:${PORT}`);
+  const listen = (port: number, attempts = 0): Promise<number> => new Promise((resolve, reject) => {
+    const onListening = () => {
+      httpServer.off('error', onError);
+      const address = httpServer.address();
+      resolve(typeof address === 'object' && address ? address.port : port);
+    };
+    const onError = (error: NodeJS.ErrnoException) => {
+      httpServer.off('listening', onListening);
+      if (error.code === 'EADDRINUSE' && allowPortFallback && attempts < 20) {
+        console.warn(`Port ${port} is busy; trying ${port + 1}.`);
+        resolve(listen(port + 1, attempts + 1));
+        return;
+      }
+      reject(error);
+    };
+    httpServer.once('listening', onListening);
+    httpServer.once('error', onError);
+    httpServer.listen(port);
   });
+
+  try {
+    const activePort = await listen(requestedPort);
+    console.log(`🎬 Watch2Gether Server running on http://0.0.0.0:${activePort}`);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    console.error(`Unable to start on port ${requestedPort}${code === 'EADDRINUSE' ? ': port is already in use. Set PORT to an available port.' : ''}.`, error);
+    process.exitCode = 1;
+  }
 }
+
+const shutdown = () => {
+  httpServer.close(() => {
+    void remoteBrowserManager.close().finally(() => process.exit(0));
+  });
+};
+
+process.once('SIGINT', shutdown);
+process.once('SIGTERM', shutdown);
 
 startServer();

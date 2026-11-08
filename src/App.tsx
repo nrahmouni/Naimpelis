@@ -10,6 +10,8 @@ import { UserProfileModal } from './components/UserProfileModal';
 import { HealthMonitorModal } from './components/HealthMonitorModal';
 import { RoomJoinScreen } from './components/RoomJoinScreen';
 import { socketService } from './services/socket';
+import { SendToTvModal } from './components/SendToTvModal';
+import { MessageSquare, X } from 'lucide-react';
 import { ChatMessage, FloatingReaction, Participant, VideoSourceType, VideoState } from './types';
 import { parseVideoUrl } from './utils/videoParser';
 
@@ -36,9 +38,12 @@ export default function App() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [reactions, setReactions] = useState<FloatingReaction[]>([]);
 
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+
   const [videoState, setVideoState] = useState<VideoState>({
-    url: 'https://movidy.pw/',
-    title: 'Movidy - Cine y Series',
+    url: 'https://bingetrix.sc/watch',
+    title: 'Bingetrix',
     sourceType: 'iframe',
     currentTime: 0,
     isPlaying: false,
@@ -50,7 +55,27 @@ export default function App() {
   const [showParticipantsModal, setShowParticipantsModal] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [showHealthMonitor, setShowHealthMonitor] = useState(false);
+  const [showTvModal, setShowTvModal] = useState(false);
+  const isTvScreenMode = queryParams.get('tv') === '1';
   const [latencyMs, setLatencyMs] = useState(24);
+
+  // Auto-connect when opened in Smart TV mode
+  useEffect(() => {
+    if (isTvScreenMode && initialRoomFromUrl && !joinedRoom) {
+      const tvUser = {
+        id: `tv-${Math.random().toString(36).substring(2, 7)}`,
+        name: '📺 Smart TV Pantalla',
+        avatar: '📺',
+        color: '#3b82f6',
+        isHost: false,
+        joinedAt: Date.now(),
+      };
+      setCurrentUser(tvUser);
+      setRoomId(initialRoomFromUrl);
+      setJoinedRoom(true);
+      socketService.connect(initialRoomFromUrl, tvUser);
+    }
+  }, [isTvScreenMode, initialRoomFromUrl, joinedRoom]);
 
   // Monitor latency periodically via WebSocket round-trip
   useEffect(() => {
@@ -114,6 +139,10 @@ export default function App() {
         }
       } else if (type === 'NEW_CHAT_MESSAGE') {
         setMessages((prev) => [...prev, payload]);
+        setIsChatOpen((open) => {
+          if (!open) setUnreadChatCount((count) => count + 1);
+          return open;
+        });
       } else if (type === 'FLOATING_REACTION') {
         setReactions((prev) => [...prev, payload]);
         // Remove reaction after floating animation finishes (2.2s)
@@ -288,7 +317,7 @@ export default function App() {
           setIsVirtualBrowser(enabled);
           if (enabled && videoState.sourceType !== 'iframe') {
             handleUrlChange(
-              videoState.url.includes('bingetrix') ? videoState.url : 'https://bingetrix.sc/watch/1423191',
+              videoState.url.includes('bingetrix') ? videoState.url : 'https://bingetrix.sc/watch',
               'Navegador Virtual',
               true
             );
@@ -296,6 +325,7 @@ export default function App() {
         }}
         onToggleScreenShare={(enabled) => setIsScreenSharing(enabled)}
         onOpenInvite={() => setShowInviteModal(true)}
+        onOpenTv={() => setShowTvModal(true)}
         onOpenParticipants={() => setShowParticipantsModal(true)}
         onOpenProfile={() => setShowProfileModal(true)}
         onLeaveRoom={handleLeaveRoom}
@@ -303,32 +333,32 @@ export default function App() {
       />
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col md:flex-row min-h-0 overflow-hidden">
-        {/* Upper / Left: Video Player, WebRTC Screen Share or Virtual Browser Section */}
-        <div className="w-full md:w-3/5 lg:w-2/3 flex flex-col bg-black border-b md:border-b-0 md:border-r border-slate-800/80 shrink-0 md:shrink h-[42vh] sm:h-[48vh] md:h-full overflow-hidden">
-          {isScreenSharing ? (
-            <ScreenShareContainer
-              isHost={currentUser.isHost}
-              roomId={roomId}
-              currentUserId={currentUser.id}
-              onStopScreenShare={() => setIsScreenSharing(false)}
-            />
-          ) : isVirtualBrowser || videoState.sourceType === 'iframe' ? (
-            <VirtualChromeBrowser
-              currentUrl={videoState.url}
-              videoState={videoState}
-              isHost={currentUser.isHost}
-              roomId={roomId}
-              onNavigate={(navUrl, navTitle) => {
-                handleUrlChange(navUrl, navTitle || 'Navegador Virtual Sincronizado', true);
-              }}
-              onPlaybackChange={handleVideoPlaybackChange}
-              onSendReaction={handleSendReaction}
+      {isTvScreenMode ? (
+        /* Fullscreen Pure TV Cinema Viewport (Zero distracting bars on the big screen) */
+        <div className="flex-1 w-full h-full bg-black relative flex items-center justify-center overflow-hidden">
+          {/* Subtle TV Cinema Watermark */}
+          <div className="absolute top-3 left-4 z-20 pointer-events-none flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-xs text-white/80">
+            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+            <span className="font-bold">Modo Cine TV</span>
+            <span className="text-white/40 font-mono">| {roomName}</span>
+          </div>
+
+          {videoState.sourceType === 'iframe' || isVirtualBrowser ? (
+            <iframe
+              src={
+                /vidsrc|autoembed|2embed|movidy|\/embed\//i.test(videoState.url)
+                  ? videoState.url
+                  : `/api/proxy-web?url=${encodeURIComponent(videoState.url)}&roomId=${encodeURIComponent(roomId)}`
+              }
+              title="TV Cinema Screen"
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+              className="w-full h-full border-0 bg-black"
             />
           ) : (
             <VideoPlayerContainer
               videoState={videoState}
-              isHost={currentUser.isHost}
+              isHost={false}
               userName={currentUser.name}
               userColor={currentUser.color}
               reactions={reactions}
@@ -337,18 +367,113 @@ export default function App() {
             />
           )}
         </div>
+      ) : (
+        <div className="flex-1 w-full h-full min-h-0 relative flex flex-col overflow-hidden bg-black">
+          {/* Main Content: Full-screen Video Player, WebRTC Screen Share or Virtual Browser */}
+          <div className="flex-1 w-full h-full min-h-0 flex flex-col overflow-hidden">
+            {isScreenSharing ? (
+              <ScreenShareContainer
+                isHost={currentUser.isHost}
+                roomId={roomId}
+                currentUserId={currentUser.id}
+                onStopScreenShare={() => setIsScreenSharing(false)}
+              />
+            ) : isVirtualBrowser || videoState.sourceType === 'iframe' ? (
+              <VirtualChromeBrowser
+                currentUrl={videoState.url}
+                videoState={videoState}
+                remoteBrowserActive={false}
+                isHost={currentUser.isHost}
+                roomId={roomId}
+                onNavigate={(navUrl, navTitle) => {
+                  handleUrlChange(navUrl, navTitle || 'Navegador Virtual Sincronizado', true);
+                }}
+                onPlaybackChange={handleVideoPlaybackChange}
+                onSendReaction={handleSendReaction}
+              />
+            ) : (
+              <VideoPlayerContainer
+                videoState={videoState}
+                isHost={currentUser.isHost}
+                userName={currentUser.name}
+                userColor={currentUser.color}
+                reactions={reactions}
+                onStateChange={handleVideoPlaybackChange}
+                onSendReaction={handleSendReaction}
+              />
+            )}
+          </div>
 
-        {/* Lower / Right: Handsome Live Chat - Takes full remaining height! */}
-        <div className="w-full md:w-2/5 lg:w-1/3 flex-1 flex flex-col min-h-0 bg-slate-950 overflow-hidden">
-          <HandsomeChat
-            messages={messages}
-            currentUser={currentUser}
-            onSendMessage={handleSendMessage}
-          />
+          {/* Floating Chat Action Button - By default chat is always in this floating button */}
+          {!isChatOpen && (
+            <button
+              onClick={() => {
+                setIsChatOpen(true);
+                setUnreadChatCount(0);
+              }}
+              className="fixed bottom-5 right-5 z-40 flex items-center gap-2.5 px-4 py-3 rounded-full bg-gradient-to-r from-rose-600 via-rose-500 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-extrabold text-sm shadow-2xl shadow-rose-950/80 border border-white/20 active:scale-95 transition-all duration-200 group cursor-pointer"
+              aria-label="Abrir chat flotante"
+            >
+              <div className="relative">
+                <MessageSquare className="w-5 h-5 transition-transform group-hover:scale-110" />
+                {unreadChatCount > 0 && (
+                  <span className="absolute -top-2.5 -right-2.5 flex h-5 w-5 items-center justify-center rounded-full bg-amber-400 text-slate-950 font-black text-[10px] ring-2 ring-slate-950 animate-bounce">
+                    {unreadChatCount > 9 ? '9+' : unreadChatCount}
+                  </span>
+                )}
+              </div>
+              <span className="font-extrabold tracking-wide">Chat</span>
+              <span className="text-white/70 text-xs font-normal">({participants.length})</span>
+            </button>
+          )}
+
+          {/* Floating Chat Modal / Drawer - Appears on top when opened, can be minimized/closed */}
+          {isChatOpen && (
+            <div className="fixed inset-x-3 bottom-3 top-20 md:inset-x-auto md:top-auto md:bottom-5 md:right-5 md:w-[380px] md:h-[540px] z-50 flex flex-col rounded-2xl shadow-2xl shadow-black/90 border border-slate-700/80 bg-slate-950/95 backdrop-blur-xl overflow-hidden animate-in fade-in slide-in-from-bottom-4 duration-200">
+              {/* Header */}
+              <div className="flex items-center justify-between px-3.5 py-2.5 bg-slate-900 border-b border-slate-800 text-slate-100 select-none">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                  <span className="font-extrabold text-sm truncate">Chat de la Sala</span>
+                  <span className="text-xs text-slate-400 font-medium">({participants.length} en línea)</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setIsChatOpen(false)}
+                    className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-400 hover:text-white transition-colors"
+                    title="Minimizar a botón flotante"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Chat View */}
+              <div className="flex-1 min-h-0 flex flex-col">
+                <HandsomeChat
+                  messages={messages}
+                  currentUser={currentUser}
+                  onSendMessage={handleSendMessage}
+                  onClose={() => setIsChatOpen(false)}
+                />
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
 
       {/* Modals */}
+      {showTvModal && (
+        <SendToTvModal
+          isOpen={showTvModal}
+          onClose={() => setShowTvModal(false)}
+          roomId={roomId}
+          roomName={roomName}
+          currentVideoUrl={videoState.url}
+          currentVideoTitle={videoState.title}
+        />
+      )}
+
       {showInviteModal && (
         <InviteModal
           roomId={roomId}

@@ -56,6 +56,13 @@ export interface RoomData {
   createdAt: number;
 }
 
+export interface RecentRoom {
+  id: string;
+  name: string;
+  lastJoined: number;
+  lastVideoTitle?: string;
+}
+
 export interface SampleVideo {
   id: string;
   title: string;
@@ -65,3 +72,35 @@ export interface SampleVideo {
   url: string;
   description: string;
 }
+
+export interface RemoteBrowserInput {
+  type: 'click' | 'mousemove' | 'keydown' | 'keyup' | 'scroll';
+  x?: number;
+  y?: number;
+  key?: string;
+  deltaY?: number;
+}
+
+export interface SportsChannel {
+  name: string;
+  url: string;
+  type?: 'embed' | 'stream' | 'direct';
+}
+
+export interface SportsEvent {
+  id: string;
+  source: 'rojadirectv' | 'rojadirectahd';
+  sourceName: string;
+  title: string;
+  homeTeam?: string;
+  awayTeam?: string;
+  sport: string;
+  competition: string;
+  time: string;
+  utc?: string;
+  status: 'live' | 'upcoming' | 'ended';
+  logo?: string;
+  channels: SportsChannel[];
+  sourceUrl: string;
+}
+

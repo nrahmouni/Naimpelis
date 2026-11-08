@@ -12,7 +12,6 @@
   }
 }
 
-/* Custom scrollbars for chat and mobile drawers */
 ::-webkit-scrollbar {
   width: 5px;
   height: 5px;
@@ -59,4 +58,3 @@
 .animate-pulse-glow {
   animation: pulseGlow 3s infinite ease-in-out;
 }
-
