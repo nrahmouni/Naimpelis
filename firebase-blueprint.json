@@ -1,0 +1,296 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated user cinema profile (zero PII stored; strictly owner-accessible).",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the owner.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Display nickname chosen by the user in NAIMCINE.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "avatar": {
+          "type": "string",
+          "description": "Emoji avatar icon.",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "color": {
+          "type": "string",
+          "description": "Hex accent color.",
+          "minLength": 4,
+          "maxLength": 16,
+          "pattern": "^#[0-9a-fA-F]{3,8}$"
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "Optional Google profile picture URL.",
+          "maxLength": 600
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was first created."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated."
+        }
+      },
+      "required": ["uid", "displayName", "avatar", "color", "createdAt", "updatedAt"]
+    },
+    "WatchHistoryItem": {
+      "title": "WatchHistoryItem",
+      "description": "Cloud-synced movie or TV episode watch history record with exact playback resume timestamp.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "itemId": {
+          "type": "string",
+          "description": "Deterministic sanitized media identifier (e.g. movie-12345 or tv-1399-1-2).",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "mediaType": {
+          "type": "string",
+          "description": "Type of media item.",
+          "enum": ["movie", "tv"],
+          "maxLength": 10
+        },
+        "tmdbId": {
+          "type": "integer",
+          "description": "Optional TMDB numeric ID."
+        },
+        "title": {
+          "type": "string",
+          "description": "Movie or series title.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "Formatted subtitle or episode code.",
+          "maxLength": 240
+        },
+        "poster": {
+          "type": "string",
+          "description": "Poster image URL.",
+          "maxLength": 600
+        },
+        "backdrop": {
+          "type": "string",
+          "description": "Backdrop or episode still URL.",
+          "maxLength": 600
+        },
+        "year": {
+          "type": "string",
+          "description": "Release year.",
+          "maxLength": 16
+        },
+        "season": {
+          "type": "integer",
+          "description": "Season number for TV episodes."
+        },
+        "episode": {
+          "type": "integer",
+          "description": "Episode number for TV episodes."
+        },
+        "episodeTitle": {
+          "type": "string",
+          "description": "Episode title for TV episodes.",
+          "maxLength": 200
+        },
+        "preferLang": {
+          "type": "string",
+          "description": "Preferred audio/stream language.",
+          "enum": ["ES", "EN"],
+          "minLength": 2,
+          "maxLength": 2
+        },
+        "bingetrixUrl": {
+          "type": "string",
+          "description": "Optional upstream Bingetrix URL.",
+          "maxLength": 600
+        },
+        "movidyUrl": {
+          "type": "string",
+          "description": "Optional upstream Movidy URL.",
+          "maxLength": 600
+        },
+        "resumeTimeSec": {
+          "type": "number",
+          "description": "Playback position in seconds where the user left off."
+        },
+        "durationSec": {
+          "type": "number",
+          "description": "Total media duration in seconds."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of initial watch record."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp of latest watch progress update."
+        }
+      },
+      "required": [
+        "uid",
+        "itemId",
+        "mediaType",
+        "title",
+        "subtitle",
+        "poster",
+        "backdrop",
+        "preferLang",
+        "resumeTimeSec",
+        "durationSec",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "FavoriteItem": {
+      "title": "FavoriteItem",
+      "description": "Cloud-synced favorite movie, TV series, or live sports broadcast channel.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "favId": {
+          "type": "string",
+          "description": "Deterministic sanitized favorite identifier.",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "kind": {
+          "type": "string",
+          "description": "Category of favorite item.",
+          "enum": ["movie", "series", "channel"],
+          "maxLength": 12
+        },
+        "tmdbId": {
+          "type": "integer",
+          "description": "Optional TMDB ID for movies and TV series."
+        },
+        "title": {
+          "type": "string",
+          "description": "Movie, series, or channel display title.",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "subtitle": {
+          "type": "string",
+          "description": "Secondary label (year, genre, or competition).",
+          "maxLength": 240
+        },
+        "poster": {
+          "type": "string",
+          "description": "Poster or channel badge image URL.",
+          "maxLength": 600
+        },
+        "backdrop": {
+          "type": "string",
+          "description": "Optional backdrop image URL.",
+          "maxLength": 600
+        },
+        "year": {
+          "type": "string",
+          "description": "Optional release year.",
+          "maxLength": 16
+        },
+        "rating": {
+          "type": "string",
+          "description": "Optional rating string.",
+          "maxLength": 16
+        },
+        "preferLang": {
+          "type": "string",
+          "description": "Optional preferred language.",
+          "enum": ["ES", "EN"],
+          "minLength": 2,
+          "maxLength": 2
+        },
+        "channelUrl": {
+          "type": "string",
+          "description": "Source stream reference URL when kind is channel.",
+          "maxLength": 600
+        },
+        "channelLabel": {
+          "type": "string",
+          "description": "Signal or channel label when kind is channel.",
+          "maxLength": 120
+        },
+        "competition": {
+          "type": "string",
+          "description": "Sports competition label when kind is channel.",
+          "maxLength": 120
+        },
+        "sport": {
+          "type": "string",
+          "description": "Sport category when kind is channel.",
+          "enum": ["soccer", "motor", "basketball", "tennis", "other"],
+          "maxLength": 24
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when favorited."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when last updated."
+        }
+      },
+      "required": [
+        "uid",
+        "favId",
+        "kind",
+        "title",
+        "subtitle",
+        "poster",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/userProfiles/{userId}": {
+      "schema": "UserProfile",
+      "description": "Owner-only user cinema profile documents."
+    },
+    "/watchHistory/{historyId}": {
+      "schema": "WatchHistoryItem",
+      "description": "Owner-only movie and TV episode watch history with exact resume timestamps."
+    },
+    "/favorites/{favoriteId}": {
+      "schema": "FavoriteItem",
+      "description": "Owner-only favorite movies, TV series, and live sports channels."
+    }
+  }
+}

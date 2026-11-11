@@ -25,6 +25,8 @@ import {
   Radio,
   SkipForward,
   Youtube,
+  Moon,
+  Sun,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -76,6 +78,9 @@ interface NativeCinemaPlayerProps {
     section: 'movies' | 'series' | 'sports' | 'youtube' | 'direct'
   ) => void;
   onNextEpisode?: () => void;
+  onProgressUpdate?: (currentTimeSec: number, durationSec: number) => void;
+  isCinemaMode?: boolean;
+  onToggleCinemaMode?: () => void;
   isMinimized?: boolean;
   onToggleMinimize?: () => void;
   onClosePlayer?: () => void;
@@ -96,6 +101,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onPromoteCloudStreamToNative,
   onOpenCatalogSection,
   onNextEpisode,
+  onProgressUpdate,
+  isCinemaMode = false,
+  onToggleCinemaMode,
   isMinimized = false,
   onToggleMinimize,
   onClosePlayer,
@@ -110,6 +118,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const isApplyingRemoteRef = useRef(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ time: number; side: 'left' | 'right' } | null>(null);
+  const lastProgressEmitRef = useRef<number>(0);
 
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -165,6 +174,30 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
+
+  // Keyboard shortcuts for Modo Cine (T / Escape) when player is active
+  useEffect(() => {
+    if (isTvMode || videoState.mode === 'idle') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      ) {
+        return;
+      }
+      if (e.key === 'Escape' && isCinemaMode && !document.fullscreenElement) {
+        onToggleCinemaMode?.();
+      } else if ((e.key === 't' || e.key === 'T') && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        onToggleCinemaMode?.();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isTvMode, videoState.mode, isCinemaMode, onToggleCinemaMode]);
 
   // ============================================================================
   // SCREEN WAKE LOCK (Prevents phone/tablet screen from sleeping mid-movie/match)
@@ -533,11 +566,23 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     let cancelled = false;
     setIsBuffering(true);
 
+    const targetResumeSec =
+      !videoState.isLive && Number.isFinite(videoState.currentTime) && videoState.currentTime > 3
+        ? Math.floor(videoState.currentTime)
+        : 0;
+
     const startPlaybackSafely = async () => {
       if (!video || cancelled) return;
-      if (!videoState.isLive && videoState.currentTime > 2) {
+      if (targetResumeSec > 3) {
         try {
-          video.currentTime = videoState.currentTime;
+          if (Math.abs((video.currentTime || 0) - targetResumeSec) > 2) {
+            video.currentTime = targetResumeSec;
+          }
+          showTransientToast(
+            lang === 'es'
+              ? `Reanudando en ${formatTimecode(targetResumeSec)}`
+              : `Resuming at ${formatTimecode(targetResumeSec)}`
+          );
         } catch {
           // ignore
         }
@@ -577,6 +622,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         const hls = new Hls({
           enableWorker: true,
           lowLatencyMode: false,
+          startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
           backBufferLength: 60,
           maxBufferLength: 45,
           maxMaxBufferLength: 90,
@@ -1158,6 +1204,40 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </div>
               )}
 
+              {/* Modo Cine Switch in Top Player Bar */}
+              {!isTvMode && !isFullscreen && onToggleCinemaMode && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isCinemaMode}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerHaptic('light');
+                    onToggleCinemaMode();
+                  }}
+                  title={
+                    lang === 'es'
+                      ? 'Modo Cine: oscurecer el resto de la pantalla (T)'
+                      : 'Cinema Mode: dim surrounding app (T)'
+                  }
+                  aria-label="Modo Cine"
+                  className={`h-9 px-2.5 rounded-xl backdrop-blur-md border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all ${
+                    isCinemaMode
+                      ? 'bg-amber-400/20 hover:bg-amber-400/30 border-amber-400/50 text-amber-200'
+                      : 'bg-black/65 hover:bg-black/85 border-white/15 text-zinc-100'
+                  }`}
+                >
+                  {isCinemaMode ? (
+                    <Sun className="w-3.5 h-3.5 text-amber-300" />
+                  ) : (
+                    <Moon className="w-3.5 h-3.5 text-amber-300" />
+                  )}
+                  <span className="hidden sm:inline">
+                    {lang === 'es' ? 'Modo Cine' : 'Cinema Mode'}
+                  </span>
+                </button>
+              )}
+
               {/* Minimize Player while browsing catalog */}
               {!isTvMode && !isFullscreen && onToggleMinimize && (
                 <button
@@ -1271,7 +1351,20 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           playsInline
           x-webkit-airplay="allow"
           onClick={handleVideoSurfaceTap}
-          onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
+          onTimeUpdate={(e) => {
+            const ct = e.currentTarget.currentTime;
+            const dur = e.currentTarget.duration || 0;
+            setCurrentTime(ct);
+            if (
+              onProgressUpdate &&
+              !videoState.isLive &&
+              ct > 4 &&
+              Date.now() - lastProgressEmitRef.current > 5000
+            ) {
+              lastProgressEmitRef.current = Date.now();
+              onProgressUpdate(ct, dur);
+            }
+          }}
           onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
           onWaiting={() => setIsBuffering(true)}
           onPlaying={() => {
@@ -1279,7 +1372,20 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             setLocalPlaying(true);
             setStreamError(null);
           }}
-          onPause={() => setLocalPlaying(false)}
+          onPause={(e) => {
+            setLocalPlaying(false);
+            if (
+              onProgressUpdate &&
+              !videoState.isLive &&
+              e.currentTarget.currentTime > 4
+            ) {
+              lastProgressEmitRef.current = Date.now();
+              onProgressUpdate(
+                e.currentTarget.currentTime,
+                e.currentTarget.duration || 0
+              );
+            }
+          }}
           onVolumeChange={(e) => {
             setIsMuted(e.currentTarget.muted || e.currentTarget.volume === 0);
             setVolume(e.currentTarget.volume);
@@ -1345,33 +1451,57 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {videoState.mode === 'youtube' && (
           <div className="relative w-full h-full bg-black">
             <div id={ytContainerId.current} className="w-full h-full" />
-            {/* Minimize & Close quick pill on YouTube stage */}
-            {!isMinimized && !isTvMode && (onToggleMinimize || onClosePlayer) && (
-              <div className="absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5">
-                {onToggleMinimize && (
-                  <button
-                    type="button"
-                    onClick={onToggleMinimize}
-                    className="h-9 px-2.5 rounded-xl bg-black/75 hover:bg-black border border-white/15 text-xs font-medium text-white flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Minimize2 className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">
-                      {lang === 'es' ? 'Minimizar' : 'Minimize'}
-                    </span>
-                  </button>
-                )}
-                {onClosePlayer && (
-                  <button
-                    type="button"
-                    onClick={onClosePlayer}
-                    aria-label="Cerrar reproductor"
-                    className="w-9 h-9 rounded-xl bg-black/75 hover:bg-rose-600 border border-white/15 flex items-center justify-center text-white cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-            )}
+            {/* Modo Cine, Minimize & Close quick controls on YouTube stage */}
+            {!isMinimized &&
+              !isTvMode &&
+              (onToggleCinemaMode || onToggleMinimize || onClosePlayer) && (
+                <div className="absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5">
+                  {onToggleCinemaMode && (
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={isCinemaMode}
+                      onClick={onToggleCinemaMode}
+                      className={`h-9 px-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                        isCinemaMode
+                          ? 'bg-amber-400/25 border-amber-400/55 text-amber-200'
+                          : 'bg-black/75 hover:bg-black border-white/15 text-white'
+                      }`}
+                    >
+                      {isCinemaMode ? (
+                        <Sun className="w-3.5 h-3.5 text-amber-300" />
+                      ) : (
+                        <Moon className="w-3.5 h-3.5 text-amber-300" />
+                      )}
+                      <span className="hidden sm:inline">
+                        {lang === 'es' ? 'Modo Cine' : 'Cinema Mode'}
+                      </span>
+                    </button>
+                  )}
+                  {onToggleMinimize && (
+                    <button
+                      type="button"
+                      onClick={onToggleMinimize}
+                      className="h-9 px-2.5 rounded-xl bg-black/75 hover:bg-black border border-white/15 text-xs font-medium text-white flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Minimize2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">
+                        {lang === 'es' ? 'Minimizar' : 'Minimize'}
+                      </span>
+                    </button>
+                  )}
+                  {onClosePlayer && (
+                    <button
+                      type="button"
+                      onClick={onClosePlayer}
+                      aria-label="Cerrar reproductor"
+                      className="w-9 h-9 rounded-xl bg-black/75 hover:bg-rose-600 border border-white/15 flex items-center justify-center text-white cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+              )}
           </div>
         )}
 
@@ -1620,6 +1750,41 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   <RefreshCw className="w-4 h-4" />
                 </button>
 
+                {/* MODO CINE FOCUS BUTTON IN TRANSPORT BAR */}
+                {!isTvMode && !isFullscreen && onToggleCinemaMode && (
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={isCinemaMode}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('light');
+                      onToggleCinemaMode();
+                    }}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
+                      isCinemaMode
+                        ? 'bg-amber-400 text-[#090A0F]'
+                        : 'hover:bg-white/12 text-zinc-100'
+                    }`}
+                    title={
+                      lang === 'es'
+                        ? isCinemaMode
+                          ? 'Desactivar Modo Cine'
+                          : 'Activar Modo Cine (oscurecer fondo)'
+                        : isCinemaMode
+                        ? 'Disable Cinema Mode'
+                        : 'Enable Cinema Mode'
+                    }
+                    aria-label="Modo Cine"
+                  >
+                    {isCinemaMode ? (
+                      <Sun className="w-4 h-4" />
+                    ) : (
+                      <Moon className="w-4 h-4" />
+                    )}
+                  </button>
+                )}
+
                 {/* DIRECT CHROMECAST / AIRPLAY TO TV BUTTON */}
                 {!isTvMode && (
                   <button
@@ -1759,16 +1924,17 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* DEDICATED THUMB-FRIENDLY TRACK / SIGNAL / CAST STRIP BELOW VIDEO     */}
+      {/* DEDICATED THUMB-FRIENDLY TRACK / MODO CINE / CAST STRIP BELOW VIDEO  */}
       {/* ==================================================================== */}
       {!isTvMode &&
         !isMinimized &&
         videoState.mode !== 'idle' &&
-        (hasTracks || videoState.seriesMeta || canUseNativePiPOrCast) && (
-          <div className="bg-[#12141D] border-t border-white/[0.08] px-3 sm:px-4 py-2 flex items-center justify-between gap-2.5">
+        videoState.mode !== 'cloud' &&
+        (hasTracks || videoState.seriesMeta || canUseNativePiPOrCast || onToggleCinemaMode) && (
+          <div className="bg-[#11131B] border-t border-white/[0.08] px-3 sm:px-4 py-2 flex items-center justify-between gap-2.5">
             <div className="hidden sm:flex items-center gap-2 text-xs text-zinc-400 shrink-0">
               <Radio className="w-3.5 h-3.5 text-[#FB7185]" />
-              <span>{videoState.isLive ? 'Señales en vivo:' : 'Idioma / Acciones:'}</span>
+              <span>{videoState.isLive ? 'Señales en vivo:' : 'Sala de proyección:'}</span>
             </div>
 
             <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 sm:justify-end">
@@ -1792,6 +1958,39 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   </button>
                 );
               })}
+
+              {/* MODO CINE TOGGLE SWITCH */}
+              {onToggleCinemaMode && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isCinemaMode}
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onToggleCinemaMode();
+                  }}
+                  className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all border ${
+                    isCinemaMode
+                      ? 'bg-amber-400/18 border-amber-400/50 text-amber-200 shadow-[0_0_20px_rgba(251,191,36,0.18)]'
+                      : 'bg-[#191C28] hover:bg-[#232838] text-zinc-200 border-white/[0.07]'
+                  }`}
+                >
+                  <Moon className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                  <span>{lang === 'es' ? 'Modo Cine' : 'Cinema Mode'}</span>
+                  <span
+                    aria-hidden="true"
+                    className={`w-7 h-4 rounded-full p-0.5 flex items-center transition-colors ${
+                      isCinemaMode ? 'bg-amber-400 justify-end' : 'bg-white/15 justify-start'
+                    }`}
+                  >
+                    <span
+                      className={`w-3 h-3 rounded-full ${
+                        isCinemaMode ? 'bg-[#090A0F]' : 'bg-zinc-300'
+                      }`}
+                    />
+                  </span>
+                </button>
+              )}
 
               {canUseNativePiPOrCast && (
                 <>

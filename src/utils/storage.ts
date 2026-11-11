@@ -1,4 +1,4 @@
-import { CatalogMovie, WatchHistoryItem } from '../types';
+import { CatalogMovie, FavoriteChannelItem, WatchHistoryItem } from '../types';
 
 export interface StoredProfile {
   id: string;
@@ -18,6 +18,7 @@ export interface RecentRoomEntry {
 const USER_PROFILE_KEY = 'naimcine_profile_v1';
 const RECENT_ROOMS_KEY = 'naimcine_recent_rooms_v1';
 const WATCHLIST_KEY = 'naimcine_watchlist_v1';
+const FAVORITE_CHANNELS_KEY = 'naimcine_fav_channels_v1';
 const WATCH_HISTORY_KEY = 'naimcine_watch_history_v1';
 const GUEST_POPUP_DISMISSED_KEY = 'naimcine_guest_popup_dismissed_v1';
 
@@ -33,6 +34,37 @@ export function generateRandomGuestName(): string {
   const prefix =
     RANDOM_GUEST_PREFIXES[Math.floor(Math.random() * RANDOM_GUEST_PREFIXES.length)];
   return `${prefix}_${Math.floor(Math.random() * 89 + 10)}`;
+}
+
+export function sanitizeItemKey(raw: string): string {
+  const cleaned = raw
+    .replace(/[^a-zA-Z0-9_-]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 96);
+  return cleaned || 'item-1';
+}
+
+export function getCatalogFavoriteKey(item: CatalogMovie): string {
+  if (item.tmdbId) {
+    return sanitizeItemKey(`${item.mediaType === 'tv' ? 'series' : 'movie'}-${item.tmdbId}`);
+  }
+  return sanitizeItemKey(`${item.mediaType === 'tv' ? 'series' : 'movie'}-${item.id}`);
+}
+
+export function buildChannelFavId(channelUrl: string, channelLabel: string): string {
+  // Deterministic alphanumeric hash + readable slug within 96 chars
+  let hash = 0;
+  const seed = `${channelUrl}|${channelLabel}`;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+  }
+  const slug = channelLabel
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+    .slice(0, 48);
+  return sanitizeItemKey(`ch-${slug || 'live'}-${hash.toString(36)}`);
 }
 
 export function getStoredProfile(): StoredProfile {
@@ -150,6 +182,9 @@ export function addRecentRoom(room: {
   }
 }
 
+// ============================================================================
+// FAVORITE MOVIES & TV SERIES ('MI LISTA / SERIES FAVORITAS')
+// ============================================================================
 export function getWatchlist(): CatalogMovie[] {
   if (typeof window === 'undefined') return [];
   try {
@@ -164,37 +199,43 @@ export function getWatchlist(): CatalogMovie[] {
   return [];
 }
 
-export function toggleWatchlistItem(item: CatalogMovie): CatalogMovie[] {
-  if (typeof window === 'undefined') return [];
-  const current = getWatchlist();
-  const key = item.tmdbId ? `${item.mediaType || 'movie'}-${item.tmdbId}` : item.id;
-  const exists = current.some(
-    (x) => (x.tmdbId ? `${x.mediaType || 'movie'}-${x.tmdbId}` : x.id) === key
-  );
-  const next = exists
-    ? current.filter(
-        (x) => (x.tmdbId ? `${x.mediaType || 'movie'}-${x.tmdbId}` : x.id) !== key
-      )
-    : [item, ...current].slice(0, 60);
-
+export function saveWatchlist(items: CatalogMovie[]): CatalogMovie[] {
+  if (typeof window === 'undefined') return items;
+  const trimmed = items.slice(0, 80);
   try {
-    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(next));
+    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(trimmed));
   } catch {
     // ignore
   }
-  return next;
+  return trimmed;
+}
+
+export function toggleWatchlistItem(item: CatalogMovie): {
+  list: CatalogMovie[];
+  added: boolean;
+} {
+  if (typeof window === 'undefined') return { list: [], added: false };
+  const current = getWatchlist();
+  const key = getCatalogFavoriteKey(item);
+  const exists = current.some((x) => getCatalogFavoriteKey(x) === key);
+  const next = exists
+    ? current.filter((x) => getCatalogFavoriteKey(x) !== key)
+    : [item, ...current].slice(0, 80);
+
+  saveWatchlist(next);
+  return { list: next, added: !exists };
 }
 
 // ============================================================================
-// LOCAL WATCH HISTORY ('HISTORIAL DE VISUALIZACIÓN' FOR CINE · SERIES)
+// FAVORITE LIVE SPORTS CHANNELS ('CANALES FAVORITOS')
 // ============================================================================
-export function getWatchHistory(): WatchHistoryItem[] {
+export function getFavoriteChannels(): FavoriteChannelItem[] {
   if (typeof window === 'undefined') return [];
   try {
-    const raw = localStorage.getItem(WATCH_HISTORY_KEY);
+    const raw = localStorage.getItem(FAVORITE_CHANNELS_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.slice(0, 18);
+      if (Array.isArray(parsed)) return parsed.slice(0, 40);
     }
   } catch {
     // ignore
@@ -202,36 +243,145 @@ export function getWatchHistory(): WatchHistoryItem[] {
   return [];
 }
 
-export function addWatchHistoryItem(
-  entry: Omit<WatchHistoryItem, 'watchedAt'>
-): WatchHistoryItem[] {
-  if (typeof window === 'undefined') return [];
-  const current = getWatchHistory();
-  const filtered = current.filter((item) => item.id !== entry.id);
-  const next: WatchHistoryItem[] = [
-    {
-      ...entry,
-      watchedAt: Date.now(),
-    },
-    ...filtered,
-  ].slice(0, 18);
-
+export function saveFavoriteChannels(
+  items: FavoriteChannelItem[]
+): FavoriteChannelItem[] {
+  if (typeof window === 'undefined') return items;
+  const trimmed = items.slice(0, 40);
   try {
-    localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(next));
+    localStorage.setItem(FAVORITE_CHANNELS_KEY, JSON.stringify(trimmed));
   } catch {
     // ignore
   }
-  return next;
+  return trimmed;
+}
+
+export function toggleFavoriteChannel(
+  entry: Omit<FavoriteChannelItem, 'addedAt'>
+): {
+  list: FavoriteChannelItem[];
+  added: boolean;
+  item: FavoriteChannelItem;
+} {
+  const fullItem: FavoriteChannelItem = {
+    ...entry,
+    favId: sanitizeItemKey(entry.favId),
+    addedAt: Date.now(),
+  };
+  if (typeof window === 'undefined') {
+    return { list: [], added: false, item: fullItem };
+  }
+  const current = getFavoriteChannels();
+  const exists = current.some((c) => c.favId === fullItem.favId);
+  const next = exists
+    ? current.filter((c) => c.favId !== fullItem.favId)
+    : [fullItem, ...current].slice(0, 40);
+
+  saveFavoriteChannels(next);
+  return { list: next, added: !exists, item: fullItem };
+}
+
+// ============================================================================
+// WATCH HISTORY & EXACT RESUME TIMESTAMPS ('SEGUIR VIENDO')
+// ============================================================================
+export function getWatchHistory(): WatchHistoryItem[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(WATCH_HISTORY_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.slice(0, 30);
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export function saveWatchHistory(items: WatchHistoryItem[]): WatchHistoryItem[] {
+  if (typeof window === 'undefined') return items;
+  const trimmed = items.slice(0, 30);
+  try {
+    localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(trimmed));
+  } catch {
+    // ignore
+  }
+  return trimmed;
+}
+
+export function addWatchHistoryItem(
+  entry: Omit<WatchHistoryItem, 'watchedAt'>
+): { list: WatchHistoryItem[]; item: WatchHistoryItem } {
+  const cleanId = sanitizeItemKey(entry.id);
+  const current = getWatchHistory();
+  const existing = current.find((i) => sanitizeItemKey(i.id) === cleanId);
+
+  const mergedItem: WatchHistoryItem = {
+    ...entry,
+    id: cleanId,
+    resumeTimeSec:
+      entry.resumeTimeSec !== undefined
+        ? entry.resumeTimeSec
+        : existing?.resumeTimeSec || 0,
+    durationSec:
+      entry.durationSec !== undefined
+        ? entry.durationSec
+        : existing?.durationSec || 0,
+    watchedAt: Date.now(),
+  };
+
+  if (typeof window === 'undefined') {
+    return { list: [mergedItem], item: mergedItem };
+  }
+
+  const filtered = current.filter((item) => sanitizeItemKey(item.id) !== cleanId);
+  const next: WatchHistoryItem[] = [mergedItem, ...filtered].slice(0, 30);
+  saveWatchHistory(next);
+  return { list: next, item: mergedItem };
+}
+
+export function updateWatchHistoryProgress(
+  rawId: string,
+  resumeTimeSec: number,
+  durationSec: number
+): { list: WatchHistoryItem[]; updated?: WatchHistoryItem } {
+  if (typeof window === 'undefined') return { list: [] };
+  const cleanId = sanitizeItemKey(rawId);
+  const current = getWatchHistory();
+  const idx = current.findIndex((i) => sanitizeItemKey(i.id) === cleanId);
+  if (idx === -1) return { list: current };
+
+  const safeResume = Math.max(0, Math.min(86400, Math.floor(resumeTimeSec)));
+  const safeDuration = Math.max(
+    0,
+    Math.min(86400, Math.floor(Number.isFinite(durationSec) ? durationSec : 0))
+  );
+
+  // If user reached >= 96% of total duration, reset resumeTimeSec to 0 (completed)
+  const finalResume =
+    safeDuration > 120 && safeResume / safeDuration >= 0.96 ? 0 : safeResume;
+
+  const updatedItem: WatchHistoryItem = {
+    ...current[idx],
+    id: cleanId,
+    resumeTimeSec: finalResume,
+    durationSec: safeDuration || current[idx].durationSec || 0,
+    watchedAt: Date.now(),
+  };
+
+  const next = [
+    updatedItem,
+    ...current.filter((_, i) => i !== idx),
+  ].slice(0, 30);
+  saveWatchHistory(next);
+  return { list: next, updated: updatedItem };
 }
 
 export function removeWatchHistoryItem(id: string): WatchHistoryItem[] {
   if (typeof window === 'undefined') return [];
-  const next = getWatchHistory().filter((item) => item.id !== id);
-  try {
-    localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(next));
-  } catch {
-    // ignore
-  }
+  const cleanId = sanitizeItemKey(id);
+  const next = getWatchHistory().filter((item) => sanitizeItemKey(item.id) !== cleanId);
+  saveWatchHistory(next);
   return next;
 }
 

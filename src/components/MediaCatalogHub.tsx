@@ -16,10 +16,13 @@ import {
   ListVideo,
   Link2,
   Clock,
+  Star,
+  RotateCcw,
 } from 'lucide-react';
 import {
   AppLanguage,
   CatalogMovie,
+  FavoriteChannelItem,
   RoomQueueItem,
   SportsMatch,
   TvEpisodeItem,
@@ -29,9 +32,19 @@ import {
 } from '../types';
 import { UI_COPY } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
-import { getWatchlist, toggleWatchlistItem } from '../utils/storage';
+import { buildChannelFavId, getCatalogFavoriteKey, sanitizeItemKey } from '../utils/storage';
 import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.jpg';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
+
+function formatShortTime(sec?: number): string {
+  if (!sec || !Number.isFinite(sec) || sec <= 0) return '';
+  const total = Math.floor(sec);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
 
 export type CatalogSection =
   | 'movies'
@@ -87,13 +100,18 @@ interface MediaCatalogHubProps {
   loadingItemId: string | null;
   roomQueue: RoomQueueItem[];
   watchHistory: WatchHistoryItem[];
+  watchlist: CatalogMovie[];
+  favoriteChannels: FavoriteChannelItem[];
+  onToggleCatalogFavorite: (item: CatalogMovie) => void;
+  onToggleChannelFavorite: (entry: Omit<FavoriteChannelItem, 'addedAt'>) => void;
+  onPlayFavoriteChannel: (channel: FavoriteChannelItem) => void;
   onPlayMovie: (movie: CatalogMovie, preferLang: 'ES' | 'EN') => void;
   onPlaySeriesEpisode: (
     series: TvSeriesDetails,
     episode: TvEpisodeItem,
     preferLang: 'ES' | 'EN'
   ) => void;
-  onReplayHistoryItem: (item: WatchHistoryItem) => void;
+  onReplayHistoryItem: (item: WatchHistoryItem, forceRestart?: boolean) => void;
   onRemoveHistoryItem: (id: string) => void;
   onClearHistory: () => void;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
@@ -113,6 +131,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   loadingItemId,
   roomQueue,
   watchHistory,
+  watchlist,
+  favoriteChannels,
+  onToggleCatalogFavorite,
+  onToggleChannelFavorite,
+  onPlayFavoriteChannel,
   onPlayMovie,
   onPlaySeriesEpisode,
   onReplayHistoryItem,
@@ -128,8 +151,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 }) => {
   const t = UI_COPY[lang];
 
-  // Watchlist state ("Mi Lista")
-  const [watchlist, setWatchlist] = useState<CatalogMovie[]>(() => getWatchlist());
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
 
   // Movies & Bingetrix state
@@ -353,15 +374,20 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const handleToggleBookmark = (item: CatalogMovie, e: React.MouseEvent) => {
     e.stopPropagation();
     triggerHaptic('light');
-    setWatchlist(toggleWatchlistItem(item));
+    onToggleCatalogFavorite(item);
   };
 
   const isBookmarked = (item: CatalogMovie) => {
-    const key = item.tmdbId ? `${item.mediaType || 'movie'}-${item.tmdbId}` : item.id;
-    return watchlist.some(
-      (x) => (x.tmdbId ? `${x.mediaType || 'movie'}-${x.tmdbId}` : x.id) === key
-    );
+    const key = getCatalogFavoriteKey(item);
+    return watchlist.some((x) => getCatalogFavoriteKey(x) === key);
   };
+
+  const isChannelFavorited = (favId: string) => {
+    const clean = sanitizeItemKey(favId);
+    return favoriteChannels.some((c) => sanitizeItemKey(c.favId) === clean);
+  };
+
+  const favoriteSeriesList = watchlist.filter((w) => w.mediaType === 'tv');
 
   const filteredSports = sportsEvents.filter((ev) => {
     if (sportFilter !== 'all' && ev.sport !== sportFilter) return false;
@@ -386,9 +412,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     onPlayCustomUrl(customUrl.trim());
   };
 
-  const displayedMovies = showWatchlistOnly
-    ? watchlist.filter((w) => (w.mediaType || 'movie') === 'movie')
-    : movies;
+  const displayedMovies = showWatchlistOnly ? watchlist : movies;
 
   const showSpotlight =
     (activeSection === 'movies' || activeSection === 'vose') &&
@@ -404,7 +428,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     activeSection === 'movies' || activeSection === 'vose' || activeSection === 'series';
 
   return (
-    <div className="w-full space-y-5">
+    <div className="w-full min-w-0 max-w-full space-y-5">
       {/* ================================================================== */}
       {/* CINEMA UNIVERSE SWITCHER (MOVIES ES · BINGETRIX EN · SERIES TV)    */}
       {/* ================================================================== */}
@@ -517,11 +541,19 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </button>
           </div>
 
-          <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-0.5">
+          <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-0.5 min-w-0">
             {watchHistory.map((hItem) => {
               const isLoadingThis = loadingItemId === hItem.id;
               const thumb = hItem.backdrop || hItem.poster;
               const imgBroken = brokenPosters[`hist-${hItem.id}`];
+              const resumeSec = hItem.resumeTimeSec || 0;
+              const durSec = hItem.durationSec || 0;
+              const hasResume = resumeSec > 5;
+              const progressPct = hasResume
+                ? durSec > 60
+                  ? Math.min(96, Math.max(8, Math.round((resumeSec / durSec) * 100)))
+                  : 28
+                : 0;
 
               return (
                 <div
@@ -529,13 +561,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   onClick={() => {
                     if (loadingItemId) return;
                     triggerHaptic('light');
-                    onReplayHistoryItem(hItem);
+                    onReplayHistoryItem(hItem, false);
                   }}
                   role="button"
                   tabIndex={0}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' && !loadingItemId) {
-                      onReplayHistoryItem(hItem);
+                      onReplayHistoryItem(hItem, false);
                     }
                   }}
                   className="group relative w-[205px] sm:w-[225px] shrink-0 rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-[#E11D48]/60 transition-all flex flex-col cursor-pointer"
@@ -565,25 +597,45 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       </div>
                     )}
 
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
 
-                    {/* Remove single history item */}
-                    <button
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerHaptic('light');
-                        onRemoveHistoryItem(hItem.id);
-                      }}
-                      aria-label="Quitar del historial"
-                      className="w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center absolute top-1.5 right-1.5 z-10 cursor-pointer transition-colors"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
+                    {/* Restart from 00:00 + Remove item buttons */}
+                    <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1">
+                      {hasResume && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (loadingItemId) return;
+                            triggerHaptic('light');
+                            onReplayHistoryItem(hItem, true);
+                          }}
+                          title={lang === 'es' ? 'Empezar desde el principio' : 'Start from beginning'}
+                          aria-label="Empezar desde el principio"
+                          className="w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                        >
+                          <RotateCcw className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerHaptic('light');
+                          onRemoveHistoryItem(hItem.id);
+                        }}
+                        aria-label="Quitar del historial"
+                        className="w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
 
-                    <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-semibold text-zinc-200 truncate">
-                        {hItem.mediaType === 'tv' && hItem.season && hItem.episode
+                    <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold text-zinc-100 truncate">
+                        {hasResume
+                          ? `${lang === 'es' ? 'Seguir' : 'Resume'} · ${formatShortTime(resumeSec)}`
+                          : hItem.mediaType === 'tv' && hItem.season && hItem.episode
                           ? `Serie · ${hItem.season}x${String(hItem.episode).padStart(2, '0')}`
                           : `Película · ${hItem.year || 'HD'}`}
                       </span>
@@ -595,6 +647,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         )}
                       </span>
                     </div>
+
+                    {/* Exact Playback Progress Bar */}
+                    {hasResume && (
+                      <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
+                        <div
+                          className="h-full bg-[#E11D48]"
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                    )}
                   </div>
 
                   <div className="p-2.5 flex flex-col gap-0.5">
@@ -602,7 +664,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       {hItem.title}
                     </h4>
                     <span className="text-[11px] text-zinc-400 line-clamp-1">
-                      {hItem.episodeTitle || hItem.subtitle || (hItem.preferLang === 'EN' ? 'English 1080p' : 'Español HD')}
+                      {hItem.mediaType === 'tv' && hItem.season && hItem.episode
+                        ? `${hItem.season}x${String(hItem.episode).padStart(2, '0')} · ${
+                            hItem.episodeTitle || 'Episodio'
+                          }`
+                        : hItem.subtitle ||
+                          (hItem.preferLang === 'EN' ? 'English 1080p' : 'Español HD')}
                     </span>
                   </div>
                 </div>
@@ -793,12 +860,24 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       onClick={() => {
                         if (loadingItemId) return;
                         triggerHaptic('light');
+                        if (movie.mediaType === 'tv' && movie.tmdbId) {
+                          setShowWatchlistOnly(false);
+                          onChangeSection('series');
+                          openSeriesDetails(movie.tmdbId, 1);
+                          return;
+                        }
                         onPlayMovie(movie, activeSection === 'vose' ? 'EN' : 'ES');
                       }}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !loadingItemId) {
+                          if (movie.mediaType === 'tv' && movie.tmdbId) {
+                            setShowWatchlistOnly(false);
+                            onChangeSection('series');
+                            openSeriesDetails(movie.tmdbId, 1);
+                            return;
+                          }
                           onPlayMovie(movie, activeSection === 'vose' ? 'EN' : 'ES');
                         }
                       }}
@@ -949,30 +1028,93 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     <span>{lang === 'es' ? 'Volver a Series' : 'Back to Series'}</span>
                   </button>
 
-                  {/* Audio Language Preference Toggle for Episodes */}
-                  <div className="flex items-center p-1 rounded-xl bg-[#090A0F] border border-white/10">
+                  {/* Favorite Series + Audio Language Preference Toggle */}
+                  <div className="flex flex-wrap items-center gap-2">
                     <button
                       type="button"
-                      onClick={() => setSeriesLangMode('ES')}
-                      className={`min-h-[34px] px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                        seriesLangMode === 'ES'
-                          ? 'bg-[#E11D48] text-white'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
+                      onClick={(e) =>
+                        handleToggleBookmark(
+                          {
+                            id: `series-${selectedSeries.tmdbId}`,
+                            tmdbId: selectedSeries.tmdbId,
+                            mediaType: 'tv',
+                            title: selectedSeries.title,
+                            year: selectedSeries.year,
+                            rating: selectedSeries.rating,
+                            overview: selectedSeries.overview,
+                            poster: selectedSeries.poster,
+                            backdrop: selectedSeries.backdrop,
+                            languages: [],
+                          },
+                          e
+                        )
+                      }
+                      className="min-h-[40px] px-3.5 rounded-xl bg-[#090A0F] hover:bg-white/10 border border-white/12 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
-                      Español · LAT
+                      <Heart
+                        className={`w-4 h-4 ${
+                          isBookmarked({
+                            id: `series-${selectedSeries.tmdbId}`,
+                            tmdbId: selectedSeries.tmdbId,
+                            mediaType: 'tv',
+                            title: selectedSeries.title,
+                            year: selectedSeries.year,
+                            rating: selectedSeries.rating,
+                            overview: '',
+                            poster: selectedSeries.poster,
+                            backdrop: selectedSeries.backdrop,
+                            languages: [],
+                          })
+                            ? 'fill-current text-[#FB7185]'
+                            : 'text-zinc-300'
+                        }`}
+                      />
+                      <span>
+                        {isBookmarked({
+                          id: `series-${selectedSeries.tmdbId}`,
+                          tmdbId: selectedSeries.tmdbId,
+                          mediaType: 'tv',
+                          title: selectedSeries.title,
+                          year: selectedSeries.year,
+                          rating: selectedSeries.rating,
+                          overview: '',
+                          poster: selectedSeries.poster,
+                          backdrop: selectedSeries.backdrop,
+                          languages: [],
+                        })
+                          ? lang === 'es'
+                            ? 'Serie Favorita'
+                            : 'Favorited'
+                          : lang === 'es'
+                          ? 'Guardar Serie'
+                          : 'Favorite Series'}
+                      </span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => setSeriesLangMode('EN')}
-                      className={`min-h-[34px] px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                        seriesLangMode === 'EN'
-                          ? 'bg-[#E11D48] text-white'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      Bingetrix · EN
-                    </button>
+
+                    <div className="flex items-center p-1 rounded-xl bg-[#090A0F] border border-white/10">
+                      <button
+                        type="button"
+                        onClick={() => setSeriesLangMode('ES')}
+                        className={`min-h-[34px] px-3 rounded-lg text-xs font-semibold cursor-pointer ${
+                          seriesLangMode === 'ES'
+                            ? 'bg-[#E11D48] text-white'
+                            : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        Español · LAT
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSeriesLangMode('EN')}
+                        className={`min-h-[34px] px-3 rounded-lg text-xs font-semibold cursor-pointer ${
+                          seriesLangMode === 'EN'
+                            ? 'bg-[#E11D48] text-white'
+                            : 'text-zinc-400 hover:text-white'
+                        }`}
+                      >
+                        Bingetrix · EN
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1035,6 +1177,17 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       const epLoadId = `tv-${selectedSeries.tmdbId}-${ep.seasonNumber}-${ep.episodeNumber}`;
                       const isExtractingEp = loadingItemId === epLoadId;
                       const stillBroken = brokenEpisodeImgs[ep.id];
+                      const epHistory = watchHistory.find(
+                        (h) => sanitizeItemKey(h.id) === sanitizeItemKey(epLoadId)
+                      );
+                      const epResume = epHistory?.resumeTimeSec || 0;
+                      const epDur = epHistory?.durationSec || 0;
+                      const epProgressPct =
+                        epResume > 5
+                          ? epDur > 60
+                            ? Math.min(96, Math.max(8, Math.round((epResume / epDur) * 100)))
+                            : 30
+                          : 0;
 
                       return (
                         <button
@@ -1073,12 +1226,21 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                 )}
                               </div>
                             </div>
+                            {epProgressPct > 0 && (
+                              <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
+                                <div
+                                  className="h-full bg-[#E11D48]"
+                                  style={{ width: `${epProgressPct}%` }}
+                                />
+                              </div>
+                            )}
                           </div>
 
                           <div className="min-w-0 flex-1 space-y-1">
                             <div className="text-[11px] font-mono text-[#FB7185]">
                               {ep.seasonNumber}x{String(ep.episodeNumber).padStart(2, '0')}
                               {ep.runtime ? ` · ${ep.runtime}m` : ''}
+                              {epResume > 5 ? ` · Seguir ${formatShortTime(epResume)}` : ''}
                             </div>
                             <h4 className="font-display font-semibold text-xs sm:text-sm text-white line-clamp-1">
                               {ep.title}
@@ -1170,6 +1332,68 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 </div>
               )}
 
+              {/* Quick-Access Favorite TV Series Rail */}
+              {!debouncedSeriesQuery && favoriteSeriesList.length > 0 && (
+                <section className="rounded-2xl bg-[#12141D]/90 border border-white/[0.08] p-3.5 sm:p-4 space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <Heart className="w-4 h-4 fill-current text-[#FB7185] shrink-0" />
+                    <h3 className="font-display font-semibold text-xs sm:text-sm text-white">
+                      {lang === 'es' ? 'Mis Series Favoritas' : 'My Favorite Series'} (
+                      {favoriteSeriesList.length})
+                    </h3>
+                  </div>
+                  <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-0.5 min-w-0">
+                    {favoriteSeriesList.map((favShow) => (
+                      <div
+                        key={favShow.id}
+                        onClick={() => {
+                          if (!favShow.tmdbId) return;
+                          triggerHaptic('light');
+                          openSeriesDetails(favShow.tmdbId, 1);
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && favShow.tmdbId) {
+                            openSeriesDetails(favShow.tmdbId, 1);
+                          }
+                        }}
+                        className="group relative w-[132px] sm:w-[148px] shrink-0 rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-[#FB7185]/60 transition-all flex flex-col cursor-pointer"
+                      >
+                        <div className="relative aspect-[2/3] w-full bg-[#191C28] overflow-hidden">
+                          {favShow.poster ? (
+                            <img
+                              src={favShow.poster}
+                              alt={favShow.title}
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-full h-full flex items-center justify-center">
+                              <Tv className="w-6 h-6 text-zinc-500" />
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleBookmark(favShow, e)}
+                            aria-label="Quitar de series favoritas"
+                            className="w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-[#FB7185] flex items-center justify-center absolute top-1.5 right-1.5 z-10 cursor-pointer"
+                          >
+                            <Heart className="w-3.5 h-3.5 fill-current" />
+                          </button>
+                        </div>
+                        <div className="p-2">
+                          <div className="font-display font-semibold text-xs text-white line-clamp-1">
+                            {favShow.title}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
               {loadingSeries || loadingSeriesDetails ? (
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
                   {Array.from({ length: 10 }).map((_, i) => (
@@ -1183,15 +1407,23 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4">
                     {seriesList.map((show) => {
+                      const seriesItem: CatalogMovie = { ...show, mediaType: 'tv' };
+                      const savedSeries = isBookmarked(seriesItem);
                       const imgBroken = brokenPosters[show.id];
                       return (
-                        <button
+                        <div
                           key={show.id}
-                          type="button"
                           onClick={() => {
                             if (!show.tmdbId) return;
                             triggerHaptic('light');
                             openSeriesDetails(show.tmdbId, 1);
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && show.tmdbId) {
+                              openSeriesDetails(show.tmdbId, 1);
+                            }
                           }}
                           className="group text-left rounded-2xl overflow-hidden bg-[#12141D] border border-white/[0.08] hover:border-white/25 active:scale-[0.98] transition-all flex flex-col cursor-pointer"
                         >
@@ -1216,7 +1448,26 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               </div>
                             )}
 
-                            <div className="absolute inset-0 bg-black/45 opacity-0 sm:group-hover:opacity-100 flex items-center justify-center transition-opacity">
+                            {/* Favorite Series Heart Toggle */}
+                            <button
+                              type="button"
+                              onClick={(e) => handleToggleBookmark(seriesItem, e)}
+                              aria-label="Marcar serie como favorita"
+                              title={
+                                savedSeries
+                                  ? 'Quitar de Series Favoritas'
+                                  : 'Añadir a Series Favoritas'
+                              }
+                              className="absolute top-2 right-2 z-10 w-9 h-9 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md flex items-center justify-center text-white transition-colors cursor-pointer"
+                            >
+                              <Heart
+                                className={`w-4 h-4 ${
+                                  savedSeries ? 'fill-current text-[#FB7185]' : 'text-zinc-200'
+                                }`}
+                              />
+                            </button>
+
+                            <div className="absolute inset-0 bg-black/45 opacity-0 sm:group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
                               <div className="px-3.5 py-2 rounded-xl bg-[#E11D48] text-white text-xs font-semibold flex items-center gap-1.5 shadow-xl">
                                 <Play className="w-3.5 h-3.5 fill-current" />
                                 <span>{lang === 'es' ? 'Ver Episodios' : 'Episodes'}</span>
@@ -1240,7 +1491,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               )}
                             </div>
                           </div>
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -1339,6 +1590,74 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </div>
           </div>
 
+          {/* Quick-Launch Favorite Sports Channels Rail */}
+          {favoriteChannels.length > 0 && (
+            <section className="rounded-2xl bg-[#12141D]/95 border border-amber-400/25 p-3.5 sm:p-4 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <Star className="w-4 h-4 fill-current text-amber-400 shrink-0" />
+                  <h3 className="font-display font-semibold text-xs sm:text-sm text-white truncate">
+                    {lang === 'es'
+                      ? 'Mis Canales Favoritos · Acceso Rápido'
+                      : 'My Favorite Channels · Quick Launch'}{' '}
+                    ({favoriteChannels.length})
+                  </h3>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 min-w-0">
+                {favoriteChannels.map((favCh) => {
+                  const isActiveFav = activeVideoRawUrl === favCh.channelUrl;
+                  const isLoadingFav = loadingItemId === `favch-${favCh.favId}`;
+                  return (
+                    <div
+                      key={favCh.favId}
+                      className={`inline-flex items-center rounded-xl border shrink-0 overflow-hidden transition-colors ${
+                        isActiveFav
+                          ? 'bg-[#E11D48] border-[#E11D48] text-white'
+                          : 'bg-[#090A0F] border-white/12 text-zinc-100'
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        disabled={Boolean(loadingItemId)}
+                        onClick={() => {
+                          triggerHaptic('medium');
+                          onPlayFavoriteChannel(favCh);
+                        }}
+                        className="min-h-[42px] pl-3.5 pr-2.5 text-xs font-semibold flex items-center gap-2 whitespace-nowrap cursor-pointer"
+                      >
+                        {isLoadingFav ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Play className="w-3.5 h-3.5 fill-current" />
+                        )}
+                        <div className="text-left">
+                          <div className="leading-tight">{favCh.channelLabel}</div>
+                          <div className="text-[10px] opacity-75 font-normal">
+                            {favCh.title}
+                          </div>
+                        </div>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          onToggleChannelFavorite(favCh);
+                        }}
+                        aria-label="Quitar canal de favoritos"
+                        title="Quitar canal de favoritos"
+                        className="min-h-[42px] px-2.5 border-l border-white/10 text-amber-400 hover:text-rose-300 flex items-center justify-center cursor-pointer"
+                      >
+                        <Star className="w-3.5 h-3.5 fill-current" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
           {loadingSports && sportsEvents.length === 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {Array.from({ length: 4 }).map((_, i) => (
@@ -1360,7 +1679,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     return (
                       <div
                         key={mux.id}
-                        className="relative rounded-3xl overflow-hidden border border-white/[0.09] bg-[#12141D] min-h-[195px] sm:min-h-[210px] p-5 flex flex-col justify-between gap-4"
+                        className="relative rounded-3xl overflow-hidden border border-white/[0.09] bg-[#12141D] min-h-[195px] sm:min-h-[210px] p-5 flex flex-col justify-between gap-4 min-w-0"
                       >
                         {!imgFailed ? (
                           <img
@@ -1391,27 +1710,64 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           )}
                         </div>
 
-                        <div className="relative z-10 flex items-center sm:flex-wrap gap-2 overflow-x-auto no-scrollbar pt-1">
+                        <div className="relative z-10 flex items-center sm:flex-wrap gap-2 overflow-x-auto no-scrollbar pt-1 min-w-0">
                           {mux.channels.map((ch, idx) => {
                             const activeCh = activeVideoRawUrl === ch.sourceUrl;
+                            const chFavId = buildChannelFavId(ch.sourceUrl, ch.label);
+                            const chSaved = isChannelFavorited(chFavId);
+
                             return (
-                              <button
+                              <div
                                 key={ch.id}
-                                type="button"
-                                disabled={Boolean(loadingItemId)}
-                                onClick={() => {
-                                  triggerHaptic('medium');
-                                  onPlaySportsMatch(mux, idx);
-                                }}
-                                className={`min-h-[42px] px-3.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                                className={`inline-flex items-center rounded-xl shrink-0 overflow-hidden transition-all ${
                                   activeCh
                                     ? 'bg-[#E11D48] text-white shadow-md shadow-[#E11D48]/30'
                                     : 'bg-white/12 hover:bg-white/20 text-white backdrop-blur-md border border-white/15'
                                 }`}
                               >
-                                <Play className="w-3.5 h-3.5 fill-current" />
-                                <span>{ch.label}</span>
-                              </button>
+                                <button
+                                  type="button"
+                                  disabled={Boolean(loadingItemId)}
+                                  onClick={() => {
+                                    triggerHaptic('medium');
+                                    onPlaySportsMatch(mux, idx);
+                                  }}
+                                  className="min-h-[42px] pl-3.5 pr-2.5 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                  <span>{ch.label}</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    triggerHaptic('light');
+                                    onToggleChannelFavorite({
+                                      favId: chFavId,
+                                      title: mux.title,
+                                      channelLabel: ch.label,
+                                      channelUrl: ch.sourceUrl,
+                                      competition: mux.competition,
+                                      sport: mux.sport,
+                                    });
+                                  }}
+                                  title={
+                                    chSaved
+                                      ? 'Quitar de Canales Favoritos'
+                                      : 'Marcar como Canal Favorito'
+                                  }
+                                  aria-label="Marcar como canal favorito"
+                                  className="min-h-[42px] px-2.5 border-l border-white/15 flex items-center justify-center cursor-pointer"
+                                >
+                                  <Star
+                                    className={`w-3.5 h-3.5 ${
+                                      chSaved
+                                        ? 'fill-current text-amber-400'
+                                        : 'text-zinc-300 hover:text-amber-300'
+                                    }`}
+                                  />
+                                </button>
+                              </div>
                             );
                           })}
                         </div>
@@ -1434,7 +1790,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       return (
                         <div
                           key={match.id}
-                          className="rounded-2xl bg-[#12141D] border border-white/[0.08] hover:border-white/20 p-4 flex flex-col justify-between gap-3 transition-colors"
+                          className="rounded-2xl bg-[#12141D] border border-white/[0.08] hover:border-white/20 p-4 flex flex-col justify-between gap-3 transition-colors min-w-0"
                         >
                           <div className="flex items-start justify-between gap-3">
                             <div className="min-w-0">
@@ -1456,27 +1812,65 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             )}
                           </div>
 
-                          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-0.5">
+                          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-0.5 min-w-0">
                             {match.channels.slice(0, 6).map((ch, idx) => {
                               const activeCh = activeVideoRawUrl === ch.sourceUrl;
+                              const label = ch.label || `Señal ${idx + 1}`;
+                              const chFavId = buildChannelFavId(ch.sourceUrl, label);
+                              const chSaved = isChannelFavorited(chFavId);
+
                               return (
-                                <button
+                                <div
                                   key={ch.id}
-                                  type="button"
-                                  disabled={Boolean(loadingItemId)}
-                                  onClick={() => {
-                                    triggerHaptic('light');
-                                    onPlaySportsMatch(match, idx);
-                                  }}
-                                  className={`min-h-[42px] px-3.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 active:scale-95 transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                                  className={`inline-flex items-center rounded-xl shrink-0 overflow-hidden transition-all ${
                                     activeCh
                                       ? 'bg-[#E11D48] text-white'
                                       : 'bg-[#191C28] hover:bg-[#232838] text-zinc-200 border border-white/[0.08]'
                                   }`}
                                 >
-                                  <Play className="w-3 h-3 fill-current" />
-                                  <span>{ch.label || `Señal ${idx + 1}`}</span>
-                                </button>
+                                  <button
+                                    type="button"
+                                    disabled={Boolean(loadingItemId)}
+                                    onClick={() => {
+                                      triggerHaptic('light');
+                                      onPlaySportsMatch(match, idx);
+                                    }}
+                                    className="min-h-[42px] pl-3.5 pr-2.5 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                                  >
+                                    <Play className="w-3 h-3 fill-current" />
+                                    <span>{label}</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      triggerHaptic('light');
+                                      onToggleChannelFavorite({
+                                        favId: chFavId,
+                                        title: match.title,
+                                        channelLabel: label,
+                                        channelUrl: ch.sourceUrl,
+                                        competition: match.competition,
+                                        sport: match.sport,
+                                      });
+                                    }}
+                                    title={
+                                      chSaved
+                                        ? 'Quitar de Canales Favoritos'
+                                        : 'Guardar este canal en Favoritos'
+                                    }
+                                    aria-label="Marcar canal favorito"
+                                    className="min-h-[42px] px-2 border-l border-white/[0.08] flex items-center justify-center cursor-pointer"
+                                  >
+                                    <Star
+                                      className={`w-3.5 h-3.5 ${
+                                        chSaved
+                                          ? 'fill-current text-amber-400'
+                                          : 'text-zinc-400 hover:text-amber-300'
+                                      }`}
+                                    />
+                                  </button>
+                                </div>
                               );
                             })}
                           </div>

@@ -123,7 +123,7 @@ export const PWAInstallNotification: React.FC<PWAInstallNotificationProps> = ({
         <div
           role="region"
           aria-label="Instalar aplicación NAIM CINE"
-          className="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-5 sm:w-[390px] z-40 rounded-2xl bg-[#12141D]/95 backdrop-blur-xl border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.85)] p-3.5 flex items-center gap-3 animate-room-warp"
+          className="fixed bottom-4 left-3 right-3 sm:left-auto sm:right-5 sm:w-[390px] z-30 rounded-2xl bg-[#12141D]/95 backdrop-blur-xl border border-white/15 shadow-[0_20px_60px_rgba(0,0,0,0.85)] p-3.5 flex items-center gap-3 animate-room-warp"
         >
           <NaimBrandLogo size={44} />
 

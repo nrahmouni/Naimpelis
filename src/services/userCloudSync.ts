@@ -1,0 +1,722 @@
+import {
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+  User,
+} from 'firebase/auth';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  limit,
+  onSnapshot,
+  query,
+  serverTimestamp,
+  setDoc,
+  Timestamp,
+  updateDoc,
+  where,
+} from 'firebase/firestore';
+import {
+  auth,
+  db,
+  googleProvider,
+  handleFirestoreError,
+  OperationType,
+} from '../firebase';
+import {
+  CatalogMovie,
+  FavoriteChannelItem,
+  WatchHistoryItem,
+} from '../types';
+import {
+  getCatalogFavoriteKey,
+  sanitizeItemKey,
+  StoredProfile,
+} from '../utils/storage';
+
+// ============================================================================
+// DEFENSIVE PAYLOAD SANITIZERS (SYNCHRONIZED WITH firebase-blueprint.json)
+// ============================================================================
+function clampString(val: unknown, maxLen: number, fallback = ''): string {
+  if (typeof val !== 'string') return fallback;
+  const trimmed = val.trim();
+  return trimmed.slice(0, maxLen);
+}
+
+function clampNumber(val: unknown, min: number, max: number, fallback = 0): number {
+  const num = typeof val === 'number' ? val : Number(val);
+  if (!Number.isFinite(num)) return fallback;
+  return Math.max(min, Math.min(max, num));
+}
+
+function clampOptionalPositiveInt(
+  val: unknown,
+  min: number,
+  max: number
+): number | undefined {
+  if (val === undefined || val === null || val === '') return undefined;
+  const n = Math.floor(Number(val));
+  if (!Number.isFinite(n) || n < min || n > max) return undefined;
+  return n;
+}
+
+function sanitizeHexColor(raw: unknown): string {
+  if (typeof raw === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(raw.trim())) {
+    return raw.trim();
+  }
+  return '#E11D48';
+}
+
+function toMillis(ts: unknown, fallback = Date.now()): number {
+  if (ts instanceof Timestamp) return ts.toMillis();
+  if (
+    ts &&
+    typeof ts === 'object' &&
+    'seconds' in ts &&
+    typeof (ts as { seconds: unknown }).seconds === 'number'
+  ) {
+    return (ts as { seconds: number }).seconds * 1000;
+  }
+  return fallback;
+}
+
+// Track which composite document IDs are confirmed to exist in Firestore
+const knownHistoryDocIds = new Set<string>();
+const knownFavoriteDocIds = new Set<string>();
+
+export function buildHistoryDocId(uid: string, rawItemId: string): string {
+  return `${uid}_${sanitizeItemKey(rawItemId)}`;
+}
+
+export function buildFavoriteDocId(uid: string, rawFavId: string): string {
+  return `${uid}_${sanitizeItemKey(rawFavId)}`;
+}
+
+// ============================================================================
+// AUTHENTICATION ACTIONS (GOOGLE POPUP ONLY)
+// ============================================================================
+export async function signInWithGoogleAccount(): Promise<User | null> {
+  try {
+    const cred = await signInWithPopup(auth, googleProvider);
+    return cred.user;
+  } catch (err: unknown) {
+    const code =
+      err && typeof err === 'object' && 'code' in err
+        ? String((err as { code?: string }).code)
+        : '';
+    if (
+      code === 'auth/popup-closed-by-user' ||
+      code === 'auth/cancelled-popup-request'
+    ) {
+      return null;
+    }
+    throw err;
+  }
+}
+
+export async function signOutGoogleAccount(): Promise<void> {
+  knownHistoryDocIds.clear();
+  knownFavoriteDocIds.clear();
+  await signOut(auth);
+}
+
+export function subscribeAuthState(
+  onChange: (user: User | null) => void
+): () => void {
+  return onAuthStateChanged(auth, (user) => {
+    if (!user) {
+      knownHistoryDocIds.clear();
+      knownFavoriteDocIds.clear();
+    }
+    onChange(user);
+  });
+}
+
+// ============================================================================
+// USER PROFILE SYNC (/userProfiles/{userId})
+// ============================================================================
+export async function ensureCloudUserProfile(
+  user: User,
+  localProfile: StoredProfile
+): Promise<StoredProfile> {
+  const path = `userProfiles/${user.uid}`;
+  const profileRef = doc(db, 'userProfiles', user.uid);
+
+  let snap;
+  try {
+    snap = await getDoc(profileRef);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.GET, path);
+  }
+
+  const googleFirstName = user.displayName
+    ? clampString(user.displayName, 24, 'Cineasta')
+    : '';
+  const preferredName = clampString(
+    localProfile.isCustomized
+      ? localProfile.name
+      : googleFirstName || localProfile.name,
+    40,
+    'Cineasta'
+  );
+  const avatar = clampString(localProfile.avatar || '🍿', 16, '🍿');
+  const color = sanitizeHexColor(localProfile.color);
+  const photoURL = user.photoURL ? clampString(user.photoURL, 600) : undefined;
+
+  if (snap && snap.exists()) {
+    const data = snap.data();
+    return {
+      id: user.uid,
+      name: clampString(data.displayName, 24, preferredName),
+      avatar: clampString(data.avatar, 16, avatar),
+      color: sanitizeHexColor(data.color),
+      isCustomized: true,
+    };
+  }
+
+  const createPayload: Record<string, unknown> = {
+    uid: user.uid,
+    displayName: preferredName,
+    avatar,
+    color,
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  };
+  if (photoURL) {
+    createPayload.photoURL = photoURL;
+  }
+
+  try {
+    await setDoc(profileRef, createPayload);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+
+  return {
+    id: user.uid,
+    name: preferredName.slice(0, 24),
+    avatar,
+    color,
+    isCustomized: true,
+  };
+}
+
+export async function updateCloudUserProfile(
+  profile: StoredProfile
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const path = `userProfiles/${user.uid}`;
+  const profileRef = doc(db, 'userProfiles', user.uid);
+
+  const updatePayload: Record<string, unknown> = {
+    displayName: clampString(profile.name, 40, 'Cineasta'),
+    avatar: clampString(profile.avatar || '🍿', 16, '🍿'),
+    color: sanitizeHexColor(profile.color),
+    updatedAt: serverTimestamp(),
+  };
+  if (user.photoURL) {
+    updatePayload.photoURL = clampString(user.photoURL, 600);
+  }
+
+  try {
+    await updateDoc(profileRef, updatePayload);
+  } catch (error) {
+    // If profile wasn't created yet, create it cleanly
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('No document to update') || msg.includes('not-found')) {
+      await ensureCloudUserProfile(user, profile);
+      return;
+    }
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+// ============================================================================
+// WATCH HISTORY & EXACT TIMESTAMP SYNC (/watchHistory/{historyId})
+// ============================================================================
+function buildWatchHistoryFields(uid: string, item: WatchHistoryItem) {
+  const itemId = sanitizeItemKey(item.id);
+  const mediaType = item.mediaType === 'tv' ? 'tv' : 'movie';
+  const preferLang = item.preferLang === 'EN' ? 'EN' : 'ES';
+  const base: Record<string, unknown> = {
+    uid,
+    itemId,
+    mediaType,
+    title: clampString(item.title, 200, 'NAIM CINE'),
+    subtitle: clampString(item.subtitle || 'HD', 240, 'HD'),
+    poster: clampString(item.poster || '/icon.svg', 600, '/icon.svg'),
+    backdrop: clampString(
+      item.backdrop || item.poster || '/icon.svg',
+      600,
+      '/icon.svg'
+    ),
+    preferLang,
+    resumeTimeSec: Math.floor(clampNumber(item.resumeTimeSec ?? 0, 0, 86400, 0)),
+    durationSec: Math.floor(clampNumber(item.durationSec ?? 0, 0, 86400, 0)),
+  };
+
+  const tmdbId = clampOptionalPositiveInt(item.tmdbId, 1, 999999999);
+  if (tmdbId !== undefined) base.tmdbId = tmdbId;
+  if (item.year) base.year = clampString(item.year, 16);
+
+  const season = clampOptionalPositiveInt(item.season, 1, 200);
+  if (season !== undefined) base.season = season;
+
+  const episode = clampOptionalPositiveInt(item.episode, 1, 5000);
+  if (episode !== undefined) base.episode = episode;
+
+  if (item.episodeTitle) base.episodeTitle = clampString(item.episodeTitle, 200);
+  if (item.bingetrixUrl) base.bingetrixUrl = clampString(item.bingetrixUrl, 600);
+  if (item.movidyUrl) base.movidyUrl = clampString(item.movidyUrl, 600);
+
+  return { itemId, base };
+}
+
+export async function upsertCloudWatchHistory(
+  item: WatchHistoryItem
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const { itemId, base } = buildWatchHistoryFields(user.uid, item);
+  const docId = `${user.uid}_${itemId}`;
+  const path = `watchHistory/${docId}`;
+  const docRef = doc(db, 'watchHistory', docId);
+
+  const mutableFields: Record<string, unknown> = { ...base };
+  delete mutableFields.uid;
+  delete mutableFields.itemId;
+  delete mutableFields.mediaType;
+  mutableFields.updatedAt = serverTimestamp();
+
+  if (knownHistoryDocIds.has(docId)) {
+    try {
+      await updateDoc(docRef, mutableFields);
+      return;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!msg.includes('No document to update') && !msg.includes('not-found')) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    }
+  }
+
+  // Check existence first if unknown so we never overwrite immutable createdAt
+  try {
+    const existingSnap = await getDoc(docRef);
+    if (existingSnap.exists()) {
+      knownHistoryDocIds.add(docId);
+      await updateDoc(docRef, mutableFields);
+      return;
+    }
+  } catch {
+    // Doc doesn't exist yet -> proceed to create
+  }
+
+  try {
+    await setDoc(docRef, {
+      ...base,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    knownHistoryDocIds.add(docId);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function updateCloudWatchProgressOnly(
+  rawItemId: string,
+  resumeTimeSec: number,
+  durationSec: number
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const itemId = sanitizeItemKey(rawItemId);
+  const docId = `${user.uid}_${itemId}`;
+  if (!knownHistoryDocIds.has(docId)) return;
+
+  const safeResume = Math.floor(clampNumber(resumeTimeSec, 0, 86400, 0));
+  const safeDuration = Math.floor(clampNumber(durationSec, 0, 86400, 0));
+  const finalResume =
+    safeDuration > 120 && safeResume / safeDuration >= 0.96 ? 0 : safeResume;
+
+  const path = `watchHistory/${docId}`;
+  const docRef = doc(db, 'watchHistory', docId);
+
+  try {
+    await updateDoc(docRef, {
+      resumeTimeSec: finalResume,
+      durationSec: safeDuration,
+      updatedAt: serverTimestamp(),
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    if (msg.includes('No document to update') || msg.includes('not-found')) {
+      knownHistoryDocIds.delete(docId);
+      return;
+    }
+    handleFirestoreError(error, OperationType.UPDATE, path);
+  }
+}
+
+export async function deleteCloudWatchHistoryItem(rawItemId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const itemId = sanitizeItemKey(rawItemId);
+  const docId = `${user.uid}_${itemId}`;
+  const path = `watchHistory/${docId}`;
+
+  try {
+    await deleteDoc(doc(db, 'watchHistory', docId));
+    knownHistoryDocIds.delete(docId);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+export async function clearCloudWatchHistoryItems(
+  items: WatchHistoryItem[]
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  await Promise.all(
+    items.map(async (item) => {
+      const docId = `${user.uid}_${sanitizeItemKey(item.id)}`;
+      const path = `watchHistory/${docId}`;
+      try {
+        await deleteDoc(doc(db, 'watchHistory', docId));
+        knownHistoryDocIds.delete(docId);
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, path);
+      }
+    })
+  );
+}
+
+// ============================================================================
+// FAVORITE MOVIES, SERIES & LIVE CHANNELS SYNC (/favorites/{favoriteId})
+// ============================================================================
+export async function upsertCloudCatalogFavorite(
+  item: CatalogMovie
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const favId = getCatalogFavoriteKey(item);
+  const kind = item.mediaType === 'tv' ? 'series' : 'movie';
+  const docId = `${user.uid}_${favId}`;
+  const path = `favorites/${docId}`;
+  const docRef = doc(db, 'favorites', docId);
+
+  const base: Record<string, unknown> = {
+    uid: user.uid,
+    favId,
+    kind,
+    title: clampString(item.title, 200, 'Favorito'),
+    subtitle: clampString(item.year || (kind === 'series' ? 'Serie TV' : 'HD'), 240, 'HD'),
+    poster: clampString(item.poster || '/icon.svg', 600, '/icon.svg'),
+  };
+
+  const tmdbId = clampOptionalPositiveInt(item.tmdbId, 1, 999999999);
+  if (tmdbId !== undefined) base.tmdbId = tmdbId;
+  if (item.backdrop) base.backdrop = clampString(item.backdrop, 600);
+  if (item.year) base.year = clampString(item.year, 16);
+  if (item.rating) base.rating = clampString(item.rating, 16);
+
+  const mutable: Record<string, unknown> = { ...base, updatedAt: serverTimestamp() };
+  delete mutable.uid;
+  delete mutable.favId;
+  delete mutable.kind;
+
+  if (knownFavoriteDocIds.has(docId)) {
+    try {
+      await updateDoc(docRef, mutable);
+      return;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!msg.includes('No document to update') && !msg.includes('not-found')) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    }
+  }
+
+  try {
+    const existingSnap = await getDoc(docRef);
+    if (existingSnap.exists()) {
+      knownFavoriteDocIds.add(docId);
+      await updateDoc(docRef, mutable);
+      return;
+    }
+  } catch {
+    // proceed to create
+  }
+
+  try {
+    await setDoc(docRef, {
+      ...base,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    knownFavoriteDocIds.add(docId);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function upsertCloudChannelFavorite(
+  ch: FavoriteChannelItem
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const favId = sanitizeItemKey(ch.favId);
+  const docId = `${user.uid}_${favId}`;
+  const path = `favorites/${docId}`;
+  const docRef = doc(db, 'favorites', docId);
+
+  const validSport =
+    ch.sport === 'soccer' ||
+    ch.sport === 'motor' ||
+    ch.sport === 'basketball' ||
+    ch.sport === 'tennis' ||
+    ch.sport === 'other'
+      ? ch.sport
+      : 'soccer';
+
+  const base: Record<string, unknown> = {
+    uid: user.uid,
+    favId,
+    kind: 'channel',
+    title: clampString(ch.title, 200, ch.channelLabel || 'Canal en Directo'),
+    subtitle: clampString(ch.competition || '24/7 Directo', 240, 'Directo'),
+    poster: clampString(ch.poster || '/icon.svg', 600, '/icon.svg'),
+    channelUrl: clampString(ch.channelUrl, 600),
+    channelLabel: clampString(ch.channelLabel, 120, 'Señal HD'),
+    competition: clampString(ch.competition || 'Deportes', 120, 'Deportes'),
+    sport: validSport,
+  };
+
+  const mutable: Record<string, unknown> = { ...base, updatedAt: serverTimestamp() };
+  delete mutable.uid;
+  delete mutable.favId;
+  delete mutable.kind;
+
+  if (knownFavoriteDocIds.has(docId)) {
+    try {
+      await updateDoc(docRef, mutable);
+      return;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      if (!msg.includes('No document to update') && !msg.includes('not-found')) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    }
+  }
+
+  try {
+    const existingSnap = await getDoc(docRef);
+    if (existingSnap.exists()) {
+      knownFavoriteDocIds.add(docId);
+      await updateDoc(docRef, mutable);
+      return;
+    }
+  } catch {
+    // proceed to create
+  }
+
+  try {
+    await setDoc(docRef, {
+      ...base,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    });
+    knownFavoriteDocIds.add(docId);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.CREATE, path);
+  }
+}
+
+export async function deleteCloudFavoriteById(rawFavId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const favId = sanitizeItemKey(rawFavId);
+  const docId = `${user.uid}_${favId}`;
+  const path = `favorites/${docId}`;
+
+  try {
+    await deleteDoc(doc(db, 'favorites', docId));
+    knownFavoriteDocIds.delete(docId);
+  } catch (error) {
+    handleFirestoreError(error, OperationType.DELETE, path);
+  }
+}
+
+// ============================================================================
+// REAL-TIME CLOUD LISTENERS + LOCAL DATA MIGRATION ON SIGN-IN
+// ============================================================================
+export function subscribeUserCloudCollections(
+  uid: string,
+  callbacks: {
+    onWatchHistory: (items: WatchHistoryItem[]) => void;
+    onFavorites: (
+      watchlist: CatalogMovie[],
+      channels: FavoriteChannelItem[]
+    ) => void;
+  }
+): () => void {
+  const historyQuery = query(
+    collection(db, 'watchHistory'),
+    where('uid', '==', uid),
+    limit(40)
+  );
+  const favoritesQuery = query(
+    collection(db, 'favorites'),
+    where('uid', '==', uid),
+    limit(100)
+  );
+
+  const unsubHistory = onSnapshot(
+    historyQuery,
+    (snapshot) => {
+      knownHistoryDocIds.clear();
+      const items: WatchHistoryItem[] = [];
+      snapshot.forEach((docSnap) => {
+        knownHistoryDocIds.add(docSnap.id);
+        const d = docSnap.data();
+        items.push({
+          id: String(d.itemId || ''),
+          mediaType: d.mediaType === 'tv' ? 'tv' : 'movie',
+          tmdbId: typeof d.tmdbId === 'number' ? d.tmdbId : undefined,
+          title: String(d.title || ''),
+          subtitle: d.subtitle ? String(d.subtitle) : undefined,
+          poster: String(d.poster || ''),
+          backdrop: d.backdrop ? String(d.backdrop) : undefined,
+          year: d.year ? String(d.year) : undefined,
+          season: typeof d.season === 'number' ? d.season : undefined,
+          episode: typeof d.episode === 'number' ? d.episode : undefined,
+          episodeTitle: d.episodeTitle ? String(d.episodeTitle) : undefined,
+          preferLang: d.preferLang === 'EN' ? 'EN' : 'ES',
+          bingetrixUrl: d.bingetrixUrl ? String(d.bingetrixUrl) : undefined,
+          movidyUrl: d.movidyUrl ? String(d.movidyUrl) : undefined,
+          resumeTimeSec:
+            typeof d.resumeTimeSec === 'number' ? d.resumeTimeSec : 0,
+          durationSec: typeof d.durationSec === 'number' ? d.durationSec : 0,
+          watchedAt: toMillis(d.updatedAt || d.createdAt),
+        });
+      });
+
+      items.sort((a, b) => b.watchedAt - a.watchedAt);
+      callbacks.onWatchHistory(items);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'watchHistory');
+    }
+  );
+
+  const unsubFavorites = onSnapshot(
+    favoritesQuery,
+    (snapshot) => {
+      knownFavoriteDocIds.clear();
+      const watchlist: { item: CatalogMovie; updatedAtMs: number }[] = [];
+      const channels: FavoriteChannelItem[] = [];
+
+      snapshot.forEach((docSnap) => {
+        knownFavoriteDocIds.add(docSnap.id);
+        const d = docSnap.data();
+        const updatedAtMs = toMillis(d.updatedAt || d.createdAt);
+
+        if (d.kind === 'channel') {
+          if (d.channelUrl) {
+            channels.push({
+              favId: String(d.favId || ''),
+              title: String(d.title || ''),
+              channelLabel: String(d.channelLabel || d.title || 'Canal HD'),
+              channelUrl: String(d.channelUrl),
+              competition: String(d.competition || d.subtitle || 'Directo'),
+              sport:
+                d.sport === 'motor' ||
+                d.sport === 'basketball' ||
+                d.sport === 'tennis' ||
+                d.sport === 'other'
+                  ? d.sport
+                  : 'soccer',
+              poster: d.poster ? String(d.poster) : undefined,
+              addedAt: updatedAtMs,
+            });
+          }
+        } else {
+          const isSeries = d.kind === 'series';
+          watchlist.push({
+            updatedAtMs,
+            item: {
+              id: String(d.favId || ''),
+              tmdbId: typeof d.tmdbId === 'number' ? d.tmdbId : undefined,
+              mediaType: isSeries ? 'tv' : 'movie',
+              title: String(d.title || ''),
+              year: String(d.year || (isSeries ? 'TV' : 'HD')),
+              rating: String(d.rating || ''),
+              overview: '',
+              poster: String(d.poster || ''),
+              backdrop: String(d.backdrop || d.poster || ''),
+              languages: [],
+            },
+          });
+        }
+      });
+
+      watchlist.sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+      channels.sort((a, b) => b.addedAt - a.addedAt);
+      callbacks.onFavorites(
+        watchlist.map((w) => w.item),
+        channels
+      );
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'favorites');
+    }
+  );
+
+  return () => {
+    unsubHistory();
+    unsubFavorites();
+  };
+}
+
+export async function migrateLocalStateToCloud(params: {
+  localHistory: WatchHistoryItem[];
+  localWatchlist: CatalogMovie[];
+  localChannels: FavoriteChannelItem[];
+}): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  for (const h of params.localHistory.slice(0, 15)) {
+    const docId = `${user.uid}_${sanitizeItemKey(h.id)}`;
+    if (!knownHistoryDocIds.has(docId)) {
+      await upsertCloudWatchHistory(h);
+    }
+  }
+
+  for (const m of params.localWatchlist.slice(0, 25)) {
+    const docId = `${user.uid}_${getCatalogFavoriteKey(m)}`;
+    if (!knownFavoriteDocIds.has(docId)) {
+      await upsertCloudCatalogFavorite(m);
+    }
+  }
+
+  for (const ch of params.localChannels.slice(0, 20)) {
+    const docId = `${user.uid}_${sanitizeItemKey(ch.favId)}`;
+    if (!knownFavoriteDocIds.has(docId)) {
+      await upsertCloudChannelFavorite(ch);
+    }
+  }
+}

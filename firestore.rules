@@ -1,0 +1,322 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // =========================================================================
+    // 1. GLOBAL SAFETY NET (DEFAULT-DENY CATCH-ALL)
+    // =========================================================================
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // 2. HARDENED PRIMITIVES
+    // =========================================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerified() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function hasOwnerProfile() {
+      return exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) ||
+        existsAfter(/databases/$(database)/documents/userProfiles/$(request.auth.uid));
+    }
+
+    // =========================================================================
+    // 3. ENTITY VALIDATION BLUEPRINTS (SYNCHRONIZED WITH firebase-blueprint.json)
+    // =========================================================================
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'avatar', 'color', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly(['uid', 'displayName', 'avatar', 'color', 'photoURL', 'createdAt', 'updatedAt']) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == request.auth.uid &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 40 &&
+        data.avatar is string && data.avatar.size() >= 1 && data.avatar.size() <= 16 &&
+        data.color is string && data.color.size() >= 4 && data.color.size() <= 16 && data.color.matches('^#[0-9a-fA-F]{3,8}$') &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 600)) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidWatchHistoryItem(data) {
+      return data.keys().hasAll([
+          'uid',
+          'itemId',
+          'mediaType',
+          'title',
+          'subtitle',
+          'poster',
+          'backdrop',
+          'preferLang',
+          'resumeTimeSec',
+          'durationSec',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'itemId',
+          'mediaType',
+          'tmdbId',
+          'title',
+          'subtitle',
+          'poster',
+          'backdrop',
+          'year',
+          'season',
+          'episode',
+          'episodeTitle',
+          'preferLang',
+          'bingetrixUrl',
+          'movidyUrl',
+          'resumeTimeSec',
+          'durationSec',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == request.auth.uid &&
+        data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 96 && data.itemId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.mediaType is string && data.mediaType.size() <= 10 && (data.mediaType == 'movie' || data.mediaType == 'tv') &&
+        (!('tmdbId' in data) || (data.tmdbId is int && data.tmdbId > 0 && data.tmdbId <= 999999999)) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.subtitle is string && data.subtitle.size() <= 240 &&
+        data.poster is string && data.poster.size() <= 600 &&
+        data.backdrop is string && data.backdrop.size() <= 600 &&
+        (!('year' in data) || (data.year is string && data.year.size() <= 16)) &&
+        (!('season' in data) || (data.season is int && data.season >= 1 && data.season <= 200)) &&
+        (!('episode' in data) || (data.episode is int && data.episode >= 1 && data.episode <= 5000)) &&
+        (!('episodeTitle' in data) || (data.episodeTitle is string && data.episodeTitle.size() <= 200)) &&
+        data.preferLang is string && data.preferLang.size() == 2 && (data.preferLang == 'ES' || data.preferLang == 'EN') &&
+        (!('bingetrixUrl' in data) || (data.bingetrixUrl is string && data.bingetrixUrl.size() <= 600)) &&
+        (!('movidyUrl' in data) || (data.movidyUrl is string && data.movidyUrl.size() <= 600)) &&
+        data.resumeTimeSec is number && data.resumeTimeSec >= 0 && data.resumeTimeSec <= 86400 &&
+        data.durationSec is number && data.durationSec >= 0 && data.durationSec <= 86400 &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidFavoriteItem(data) {
+      return data.keys().hasAll([
+          'uid',
+          'favId',
+          'kind',
+          'title',
+          'subtitle',
+          'poster',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'favId',
+          'kind',
+          'tmdbId',
+          'title',
+          'subtitle',
+          'poster',
+          'backdrop',
+          'year',
+          'rating',
+          'preferLang',
+          'channelUrl',
+          'channelLabel',
+          'competition',
+          'sport',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == request.auth.uid &&
+        data.favId is string && data.favId.size() >= 1 && data.favId.size() <= 96 && data.favId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.kind is string && data.kind.size() <= 12 && (data.kind == 'movie' || data.kind == 'series' || data.kind == 'channel') &&
+        (!('tmdbId' in data) || (data.tmdbId is int && data.tmdbId > 0 && data.tmdbId <= 999999999)) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.subtitle is string && data.subtitle.size() <= 240 &&
+        data.poster is string && data.poster.size() <= 600 &&
+        (!('backdrop' in data) || (data.backdrop is string && data.backdrop.size() <= 600)) &&
+        (!('year' in data) || (data.year is string && data.year.size() <= 16)) &&
+        (!('rating' in data) || (data.rating is string && data.rating.size() <= 16)) &&
+        (!('preferLang' in data) || (data.preferLang is string && data.preferLang.size() == 2 && (data.preferLang == 'ES' || data.preferLang == 'EN'))) &&
+        (!('channelUrl' in data) || (data.channelUrl is string && data.channelUrl.size() <= 600)) &&
+        (!('channelLabel' in data) || (data.channelLabel is string && data.channelLabel.size() <= 120)) &&
+        (!('competition' in data) || (data.competition is string && data.competition.size() <= 120)) &&
+        (!('sport' in data) || (data.sport is string && data.sport.size() <= 24 && (
+          data.sport == 'soccer' ||
+          data.sport == 'motor' ||
+          data.sport == 'basketball' ||
+          data.sport == 'tennis' ||
+          data.sport == 'other'
+        ))) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    // =========================================================================
+    // 4. COLLECTION RULES (ALL COLLECTIONS IN firebase-blueprint.json)
+    // =========================================================================
+
+    // User Profiles: strictly owner-only; list disabled to prevent enumeration
+    match /userProfiles/{userId} {
+      allow get: if isVerified() && isValidId(userId) && userId == request.auth.uid;
+      allow list: if false;
+
+      allow create: if isVerified() &&
+        isValidId(userId) &&
+        userId == request.auth.uid &&
+        isValidUserProfile(incoming()) &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerified() &&
+        isValidId(userId) &&
+        userId == request.auth.uid &&
+        isValidUserProfile(incoming()) &&
+        existing().uid == request.auth.uid &&
+        incoming().uid == existing().uid &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action: UpdateProfileDetails
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'displayName',
+            'avatar',
+            'color',
+            'photoURL',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() && isValidId(userId) && userId == request.auth.uid;
+    }
+
+    // Watch History: owner-only with anti-squatting composite ID binding & exact resume timestamps
+    match /watchHistory/{historyId} {
+      allow get: if isVerified() &&
+        isValidId(historyId) &&
+        existing().uid == request.auth.uid &&
+        historyId == request.auth.uid + '_' + existing().itemId;
+
+      allow list: if isVerified() &&
+        existing().uid == request.auth.uid;
+
+      allow create: if isVerified() &&
+        isValidId(historyId) &&
+        isValidWatchHistoryItem(incoming()) &&
+        historyId == request.auth.uid + '_' + incoming().itemId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        hasOwnerProfile();
+
+      allow update: if isVerified() &&
+        isValidId(historyId) &&
+        isValidWatchHistoryItem(incoming()) &&
+        existing().uid == request.auth.uid &&
+        historyId == request.auth.uid + '_' + existing().itemId &&
+        incoming().uid == existing().uid &&
+        incoming().itemId == existing().itemId &&
+        incoming().mediaType == existing().mediaType &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action 1: UpdatePlaybackProgress (periodic timestamp sync)
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'resumeTimeSec',
+            'durationSec',
+            'updatedAt'
+          ]) ||
+          // Action 2: UpdateHistoryMetadata (replay or episode metadata refresh)
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'tmdbId',
+            'title',
+            'subtitle',
+            'poster',
+            'backdrop',
+            'year',
+            'season',
+            'episode',
+            'episodeTitle',
+            'preferLang',
+            'bingetrixUrl',
+            'movidyUrl',
+            'resumeTimeSec',
+            'durationSec',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() &&
+        isValidId(historyId) &&
+        existing().uid == request.auth.uid &&
+        historyId == request.auth.uid + '_' + existing().itemId;
+    }
+
+    // Favorites: owner-only movies, TV series, and live sports channels with anti-squatting ID binding
+    match /favorites/{favoriteId} {
+      allow get: if isVerified() &&
+        isValidId(favoriteId) &&
+        existing().uid == request.auth.uid &&
+        favoriteId == request.auth.uid + '_' + existing().favId;
+
+      allow list: if isVerified() &&
+        existing().uid == request.auth.uid;
+
+      allow create: if isVerified() &&
+        isValidId(favoriteId) &&
+        isValidFavoriteItem(incoming()) &&
+        favoriteId == request.auth.uid + '_' + incoming().favId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time &&
+        hasOwnerProfile();
+
+      allow update: if isVerified() &&
+        isValidId(favoriteId) &&
+        isValidFavoriteItem(incoming()) &&
+        existing().uid == request.auth.uid &&
+        favoriteId == request.auth.uid + '_' + existing().favId &&
+        incoming().uid == existing().uid &&
+        incoming().favId == existing().favId &&
+        incoming().kind == existing().kind &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action: UpdateFavoriteMetadata
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'tmdbId',
+            'title',
+            'subtitle',
+            'poster',
+            'backdrop',
+            'year',
+            'rating',
+            'preferLang',
+            'channelUrl',
+            'channelLabel',
+            'competition',
+            'sport',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() &&
+        isValidId(favoriteId) &&
+        existing().uid == request.auth.uid &&
+        favoriteId == request.auth.uid + '_' + existing().favId;
+    }
+  }
+}

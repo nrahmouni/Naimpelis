@@ -148,6 +148,17 @@ export interface SportsMatch {
   channels: StreamTrack[];
 }
 
+export interface FavoriteChannelItem {
+  favId: string;
+  title: string;
+  channelLabel: string;
+  channelUrl: string;
+  competition: string;
+  sport: 'soccer' | 'motor' | 'basketball' | 'tennis' | 'other';
+  poster?: string;
+  addedAt: number;
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -192,6 +203,8 @@ export interface WatchHistoryItem {
   preferLang: 'ES' | 'EN';
   bingetrixUrl?: string;
   movidyUrl?: string;
+  resumeTimeSec?: number;
+  durationSec?: number;
   watchedAt: number;
 }
 
@@ -206,4 +219,3 @@ export interface RoomData {
   messages: ChatMessage[];
   createdAt: number;
 }
-

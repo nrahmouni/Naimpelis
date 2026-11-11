@@ -8,16 +8,21 @@ import {
   Tv,
   Check,
   Edit3,
+  Cloud,
+  LogIn,
+  LogOut,
+  Monitor,
+  Smartphone,
 } from 'lucide-react';
+import { User } from 'firebase/auth';
 import { QRCodeSVG } from 'qrcode.react';
 import { AppLanguage, ChatMessage, Participant } from '../types';
 import { UI_COPY } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { buildShortInviteUrl } from '../utils/shortLink';
+import { EffectiveViewMode, getMonogramInitials } from './MobileViewportGuard';
 
 const QUICK_REACTIONS = ['🔥', '😂', '⚽', '🍿', '🤯', '👏', '❤️'];
-const AVATARS = ['🍿', '🎬', '⚽', '🏎️', '🎧', '🦊', '🦁', '⚡'];
-const COLORS = ['#e11d48', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ec4899'];
 
 interface PartySidebarProps {
   roomId: string;
@@ -26,6 +31,12 @@ interface PartySidebarProps {
   participants: Participant[];
   messages: ChatMessage[];
   lang: AppLanguage;
+  effectiveView?: EffectiveViewMode;
+  onToggleViewMode?: () => void;
+  authUser?: User | null;
+  authLoading?: boolean;
+  onSignIn?: () => Promise<void>;
+  onSignOut?: () => Promise<void>;
   initialView?: 'chat' | 'room';
   hideInternalTabs?: boolean;
   onSendMessage: (text: string) => void;
@@ -41,6 +52,12 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   participants,
   messages,
   lang,
+  effectiveView = 'desktop',
+  onToggleViewMode,
+  authUser,
+  authLoading,
+  onSignIn,
+  onSignOut,
   initialView = 'chat',
   hideInternalTabs = false,
   onSendMessage,
@@ -55,8 +72,6 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const [showTvQr, setShowTvQr] = useState(false);
   const [editingProfile, setEditingProfile] = useState(false);
   const [editName, setEditName] = useState(currentUser.name);
-  const [editAvatar, setEditAvatar] = useState(currentUser.avatar);
-  const [editColor, setEditColor] = useState(currentUser.color);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
@@ -109,15 +124,19 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
     e.preventDefault();
     if (!editName.trim()) return;
     triggerHaptic('success');
-    onUpdateProfile(editName.trim().slice(0, 24), editAvatar, editColor);
+    onUpdateProfile(
+      editName.trim().slice(0, 24),
+      currentUser.avatar || '🎬',
+      currentUser.color || '#E11D48'
+    );
     setEditingProfile(false);
   };
 
   const isCurrentUserHost = currentUser.id === hostId;
 
   return (
-    <aside className="flex flex-col h-full w-full bg-[#12141D] lg:border-l lg:border-white/[0.08] select-none">
-      {/* Desktop Sidebar Segmented Header (hidden on mobile where bottom nav handles switching) */}
+    <aside className="flex flex-col h-full w-full bg-[#11131B] border-l border-white/[0.08] select-none">
+      {/* Desktop Sidebar Segmented Header */}
       {!hideInternalTabs && (
         <div className="p-2.5 border-b border-white/[0.08] flex items-center gap-1.5 shrink-0">
           <button
@@ -155,6 +174,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       {activeTab === 'chat' ? (
         <>
           <div className="flex-1 overflow-y-auto overscroll-contain p-3.5 sm:p-4 space-y-3 min-h-0">
+            {messages.length === 0 && (
+              <div className="py-10 text-center text-xs text-zinc-500">
+                {lang === 'es'
+                  ? 'La sala está lista. Comparte el enlace para comentar juntos en vivo.'
+                  : 'Room is ready. Share your link to chat together live.'}
+              </div>
+            )}
             {messages.map((msg) => {
               if (msg.isSystem) {
                 return (
@@ -179,10 +205,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   className={`flex items-start gap-2.5 ${isMe ? 'flex-row-reverse' : ''}`}
                 >
                   <div
-                    className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 border border-white/10"
-                    style={{ backgroundColor: `${msg.senderColor}22` }}
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center font-display font-bold text-[11px] shrink-0 border ${
+                      isMe
+                        ? 'bg-[#E11D48]/18 border-[#E11D48]/40 text-white'
+                        : 'bg-[#191C28] border-white/10 text-zinc-200'
+                    }`}
                   >
-                    {msg.senderAvatar}
+                    {getMonogramInitials(msg.senderName)}
                   </div>
                   <div
                     className={`max-w-[78%] ${
@@ -190,10 +219,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     } flex flex-col`}
                   >
                     <div className="flex items-baseline gap-1.5 mb-0.5">
-                      <span
-                        className="text-xs font-semibold"
-                        style={{ color: msg.senderColor }}
-                      >
+                      <span className="text-xs font-semibold text-zinc-200">
                         {msg.senderName}
                       </span>
                       <span className="text-[10px] font-mono tabular-nums text-zinc-500">
@@ -237,7 +263,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {/* 16px Mobile Chat Input (Zero Auto-Zoom) */}
           <form
             onSubmit={handleSubmitMessage}
-            className="p-2.5 sm:p-3 border-t border-white/[0.08] flex items-center gap-2 shrink-0 bg-[#12141D]"
+            className="p-2.5 sm:p-3 border-t border-white/[0.08] flex items-center gap-2 shrink-0 bg-[#11131B]"
           >
             <input
               type="text"
@@ -259,14 +285,14 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         </>
       ) : (
         /* ================================================================== */
-        /* TAB 2: ROOM MANAGEMENT, NATIVE SHARE, SMART TV QR & PARTICIPANTS   */
+        /* TAB 2: ROOM MANAGEMENT, VIEW MODE, CLOUD SYNC & PARTICIPANTS       */
         /* ================================================================== */
-        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-5 min-h-0">
+        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 min-h-0">
           {/* Room Invite & Smart TV Card */}
           <div className="p-4 rounded-2xl bg-[#090A0F] border border-white/[0.08] space-y-3">
             <div className="flex items-center justify-between text-xs">
               <span className="text-zinc-400">
-                {lang === 'es' ? 'Enlace corto' : 'Short link'}
+                {lang === 'es' ? 'Enlace de invitación' : 'Invite link'}
               </span>
               <span className="font-mono text-white font-semibold truncate max-w-[190px] select-all">
                 {inviteUrl.replace(/^https?:\/\//, '')}
@@ -307,7 +333,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   <QRCodeSVG value={tvUrl} size={144} />
                 </div>
                 <p className="text-xs text-zinc-400 leading-snug">
-                  Escanea este código o abre este enlace en tu Smart TV para proyectar la sala sincronizada a pantalla completa.
+                  Escanea este código en tu Smart TV para proyectar la sala sincronizada a pantalla completa.
                 </p>
                 <span className="text-[11px] font-mono text-zinc-500 break-all select-all">
                   {tvUrl}
@@ -316,84 +342,155 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             )}
           </div>
 
-          {/* Profile Customization */}
+          {/* Explicit Desktop / Mobile View Switcher */}
+          {onToggleViewMode && (
+            <div className="p-3.5 rounded-2xl bg-[#090A0F] border border-white/[0.08] flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-white">
+                  {lang === 'es' ? 'Formato de interfaz' : 'Interface layout'}
+                </div>
+                <div className="text-[11px] text-zinc-400">
+                  {effectiveView === 'desktop'
+                    ? lang === 'es'
+                      ? 'Modo Escritorio activo'
+                      : 'Desktop layout active'
+                    : lang === 'es'
+                    ? 'Modo Móvil activo'
+                    : 'Mobile layout active'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onToggleViewMode();
+                }}
+                className="min-h-[40px] px-3.5 rounded-xl bg-[#191C28] hover:bg-[#232838] border border-white/12 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+              >
+                {effectiveView === 'desktop' ? (
+                  <>
+                    <Smartphone className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    <span>{lang === 'es' ? 'Pasar a Móvil' : 'Switch to Mobile'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Monitor className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    <span>{lang === 'es' ? 'Pasar a Escritorio' : 'Switch to Desktop'}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
+
+          {/* Cloud Account Synchronization Card (Google Sign-In) */}
+          {onSignIn && onSignOut && (
+            <div className="p-4 rounded-2xl bg-[#090A0F] border border-white/[0.08] space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-xs font-semibold text-white min-w-0">
+                  <Cloud
+                    className={`w-4 h-4 shrink-0 ${
+                      authUser ? 'text-emerald-400' : 'text-[#38BDF8]'
+                    }`}
+                  />
+                  <span className="truncate">
+                    {authUser
+                      ? authUser.displayName || authUser.email || 'Cuenta sincronizada'
+                      : lang === 'es'
+                      ? 'Sincronización en la nube'
+                      : 'Cloud Account Sync'}
+                  </span>
+                </div>
+                {authUser && (
+                  <span className="text-[11px] text-emerald-400 shrink-0">
+                    {lang === 'es' ? 'Conectada' : 'Active'}
+                  </span>
+                )}
+              </div>
+
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                {authUser
+                  ? lang === 'es'
+                    ? 'Historial, segundo exacto de "Seguir viendo", series favoritas y canales favoritos sincronizados.'
+                    : 'Watch history, exact resume progress, favorite series, and favorite channels synced.'
+                  : lang === 'es'
+                  ? 'Inicia sesión con Google para mantener tu historial, minuto exacto y favoritos en cualquier dispositivo.'
+                  : 'Sign in with Google to sync watch history, resume points, and favorites across devices.'}
+              </p>
+
+              {!authLoading &&
+                (authUser ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onSignOut();
+                    }}
+                    className="w-full min-h-[42px] px-3 rounded-xl bg-[#191C28] hover:bg-rose-500/20 border border-white/10 text-xs font-semibold text-zinc-200 hover:text-rose-200 flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                    <span>{lang === 'es' ? 'Cerrar sesión' : 'Sign out'}</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      onSignIn();
+                    }}
+                    className="w-full min-h-[42px] px-3 rounded-xl bg-[#38BDF8]/15 hover:bg-[#38BDF8]/25 border border-[#38BDF8]/35 text-xs font-semibold text-[#38BDF8] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <LogIn className="w-3.5 h-3.5" />
+                    <span>
+                      {lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google'}
+                    </span>
+                  </button>
+                ))}
+            </div>
+          )}
+
+          {/* Clean Name-Only Customization */}
           <div>
             {!editingProfile ? (
               <button
                 type="button"
                 onClick={() => {
                   setEditName(currentUser.name);
-                  setEditAvatar(currentUser.avatar);
-                  setEditColor(currentUser.color);
                   setEditingProfile(true);
                 }}
-                className="w-full min-h-[48px] px-4 rounded-2xl bg-[#191C28] hover:bg-[#232838] border border-white/[0.08] text-xs sm:text-sm font-medium text-zinc-200 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                className="w-full min-h-[46px] px-4 rounded-2xl bg-[#191C28] hover:bg-[#232838] border border-white/[0.08] text-xs sm:text-sm font-medium text-zinc-200 flex items-center justify-center gap-2 cursor-pointer transition-colors"
               >
                 <Edit3 className="w-4 h-4 text-zinc-400" />
                 <span>
                   {lang === 'es'
-                    ? `Personalizar mi perfil (${currentUser.name})`
-                    : `Customize profile (${currentUser.name})`}
+                    ? `Cambiar mi nombre (${currentUser.name})`
+                    : `Change display name (${currentUser.name})`}
                 </span>
               </button>
             ) : (
               <form
                 onSubmit={handleSaveProfile}
-                className="p-4 rounded-2xl bg-[#090A0F] border border-white/10 space-y-3.5"
+                className="p-3.5 rounded-2xl bg-[#090A0F] border border-white/10 flex items-center gap-2"
               >
                 <input
                   type="text"
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
+                  placeholder={t.nicknamePlaceholder}
                   maxLength={24}
-                  className="w-full h-11 px-3.5 rounded-xl bg-[#12141D] border border-white/10 text-base sm:text-sm text-white outline-none"
+                  autoFocus
+                  className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#11131B] border border-white/12 focus:border-[#E11D48] text-base sm:text-xs text-white outline-none"
                 />
-                <div className="grid grid-cols-4 sm:grid-cols-8 gap-1.5">
-                  {AVATARS.map((av) => (
-                    <button
-                      key={av}
-                      type="button"
-                      onClick={() => setEditAvatar(av)}
-                      className={`h-11 rounded-xl flex items-center justify-center text-lg cursor-pointer ${
-                        editAvatar === av
-                          ? 'bg-white/20 border border-white/35'
-                          : 'bg-[#12141D] border border-white/[0.06]'
-                      }`}
-                    >
-                      {av}
-                    </button>
-                  ))}
-                </div>
-                <div className="flex items-center justify-between gap-2 pt-1">
-                  <div className="flex items-center gap-1">
-                    {COLORS.map((hex) => (
-                      <button
-                        key={hex}
-                        type="button"
-                        onClick={() => setEditColor(hex)}
-                        className="w-9 h-9 rounded-xl flex items-center justify-center cursor-pointer"
-                      >
-                        <span
-                          className={`w-6 h-6 rounded-full ${
-                            editColor === hex ? 'ring-2 ring-white scale-110' : 'opacity-75'
-                          }`}
-                          style={{ backgroundColor: hex }}
-                        />
-                      </button>
-                    ))}
-                  </div>
-                  <button
-                    type="submit"
-                    className="min-h-[40px] px-4 rounded-xl bg-[#E11D48] text-xs font-semibold text-white cursor-pointer"
-                  >
-                    {lang === 'es' ? 'Guardar' : 'Save'}
-                  </button>
-                </div>
+                <button
+                  type="submit"
+                  className="h-11 px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white shrink-0 cursor-pointer transition-colors"
+                >
+                  {lang === 'es' ? 'Guardar' : 'Save'}
+                </button>
               </form>
             )}
           </div>
 
-          {/* Connected Participants List (56px+ Touch Rows) */}
+          {/* Connected Participants List (Monogram Badges + 56px+ Touch Rows) */}
           <div className="space-y-2.5">
             <h4 className="text-xs font-medium text-zinc-400 px-0.5">
               {t.participants} ({participants.length})
@@ -402,6 +499,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               {participants.map((p) => {
                 const isHost = p.id === hostId;
                 const isSelf = p.id === currentUser.id;
+                const isTvParticipant = p.name.includes('(TV)') || p.avatar === '📺';
                 return (
                   <div
                     key={p.id}
@@ -409,10 +507,17 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div
-                        className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0"
-                        style={{ backgroundColor: `${p.color}22` }}
+                        className={`w-10 h-10 rounded-xl flex items-center justify-center font-display font-bold text-xs shrink-0 border ${
+                          isSelf
+                            ? 'bg-[#E11D48]/18 border-[#E11D48]/40 text-white'
+                            : 'bg-[#191C28] border-white/10 text-zinc-200'
+                        }`}
                       >
-                        {p.avatar}
+                        {isTvParticipant ? (
+                          <Tv className="w-4 h-4 text-[#38BDF8]" />
+                        ) : (
+                          getMonogramInitials(p.name)
+                        )}
                       </div>
                       <div className="min-w-0">
                         <div className="text-xs sm:text-sm font-semibold text-white truncate flex items-center gap-1.5">
