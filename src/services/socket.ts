@@ -1,71 +1,122 @@
-import { ChatMessage, FloatingReaction, Participant, VideoState } from '../types';
+import { Participant, VideoState } from '../types';
 
-type Listener = (event: { type: string; payload: any }) => void;
+export interface SocketEvent {
+  type: string;
+  payload: any;
+}
+
+type Listener = (event: SocketEvent) => void;
 
 class SocketService {
   private ws: WebSocket | null = null;
   private listeners: Set<Listener> = new Set();
-  private roomId: string = '';
+  private roomId = '';
+  private roomName = '';
   private user: Participant | null = null;
-  private isConnected: boolean = false;
-  private reconnectAttempts: number = 0;
+  private reconnectAttempts = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private intentionalClose = false;
+  public latencyMs = 24;
 
-  connect(roomId: string, user: Participant) {
-    this.roomId = roomId;
+  connect(roomId: string, user: Participant, roomName?: string) {
+    this.intentionalClose = false;
+    this.roomId = roomId.trim().toLowerCase();
+    this.roomName = roomName || `Sala ${this.roomId.toUpperCase()}`;
     this.user = user;
 
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
+
     if (this.ws) {
+      this.ws.onclose = null;
       this.ws.close();
+      this.ws = null;
     }
 
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/ws`;
 
     try {
-      this.ws = new WebSocket(wsUrl);
+      const socket = new WebSocket(wsUrl);
+      this.ws = socket;
 
-      this.ws.onopen = () => {
-        this.isConnected = true;
+      socket.onopen = () => {
         this.reconnectAttempts = 0;
-        this.send('JOIN_ROOM', { roomId, user });
+        this.send('JOIN_ROOM', {
+          roomId: this.roomId,
+          roomName: this.roomName,
+          user: this.user,
+        });
+        this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: true } });
+        this.startHeartbeat();
       };
 
-      this.ws.onmessage = (event) => {
+      socket.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data);
+          const message = JSON.parse(event.data) as SocketEvent;
+          if (message.type === 'PONG' && message.payload?.clientTs) {
+            this.latencyMs = Math.max(4, Date.now() - Number(message.payload.clientTs));
+            this.notifyListeners({ type: 'LATENCY_UPDATED', payload: { latencyMs: this.latencyMs } });
+            return;
+          }
           this.notifyListeners(message);
         } catch (err) {
           console.error('Error parsing WS message:', err);
         }
       };
 
-      this.ws.onclose = () => {
-        this.isConnected = false;
-        // Attempt automatic reconnection if disconnected unexpectedly
-        if (this.reconnectAttempts < 5) {
-          this.reconnectAttempts++;
-          setTimeout(() => {
+      socket.onclose = () => {
+        this.stopHeartbeat();
+        this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: false } });
+        if (!this.intentionalClose && this.reconnectAttempts < 8) {
+          this.reconnectAttempts += 1;
+          const delay = Math.min(6000, 1000 * this.reconnectAttempts);
+          this.reconnectTimer = setTimeout(() => {
             if (this.roomId && this.user) {
-              this.connect(this.roomId, this.user);
+              this.connect(this.roomId, this.user, this.roomName);
             }
-          }, 1500 * this.reconnectAttempts);
+          }, delay);
         }
       };
 
-      this.ws.onerror = (err) => {
-        console.warn('WebSocket error:', err);
+      socket.onerror = () => {
+        // Handled by onclose reconnection
       };
     } catch (err) {
-      console.error('Failed to create WebSocket:', err);
+      console.error('Failed to open WebSocket:', err);
+    }
+  }
+
+  private startHeartbeat() {
+    this.stopHeartbeat();
+    this.send('PING', { clientTs: Date.now() });
+    this.pingTimer = setInterval(() => {
+      this.send('PING', { clientTs: Date.now() });
+    }, 6000);
+  }
+
+  private stopHeartbeat() {
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
     }
   }
 
   disconnect() {
+    this.intentionalClose = true;
+    this.stopHeartbeat();
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.ws) {
+      this.ws.onclose = null;
       this.ws.close();
       this.ws = null;
     }
-    this.isConnected = false;
   }
 
   subscribe(listener: Listener) {
@@ -75,32 +126,26 @@ class SocketService {
     };
   }
 
-  private notifyListeners(data: { type: string; payload: any }) {
-    this.listeners.forEach((listener) => listener(data));
+  private notifyListeners(event: SocketEvent) {
+    this.listeners.forEach((listener) => listener(event));
   }
 
-  private send(type: string, payload: any) {
+  private send(type: string, payload: unknown) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, payload }));
     }
   }
 
-  syncVideoState(action: 'play' | 'pause' | 'seek' | 'change_url', state: VideoState, userName: string) {
+  syncVideoState(
+    action: 'play' | 'pause' | 'seek' | 'change_url',
+    videoState: VideoState,
+    updatedBy: string
+  ) {
     this.send('SYNC_VIDEO_STATE', {
       roomId: this.roomId,
       action,
-      videoUrl: state.url,
-      videoTitle: state.title,
-      sourceType: state.sourceType,
-      currentTime: state.currentTime,
-      isPlaying: state.isPlaying,
-      updatedBy: userName,
-      poster: state.poster,
-      overview: state.overview,
-      releaseYear: state.releaseYear,
-      originalPortalUrl: state.originalPortalUrl,
-      altEmbeds: state.altEmbeds,
-      trailerUrl: state.trailerUrl,
+      videoState,
+      updatedBy,
     });
   }
 
@@ -127,25 +172,66 @@ class SocketService {
     });
   }
 
-  updateProfile(userName: string, userAvatar: string, userColor: string) {
+  updateProfile(userId: string, userName: string, userAvatar: string, userColor: string) {
+    if (this.user && this.user.id === userId) {
+      this.user = {
+        ...this.user,
+        name: userName,
+        avatar: userAvatar,
+        color: userColor,
+      };
+    }
     this.send('UPDATE_PROFILE', {
       roomId: this.roomId,
+      userId,
       userName,
       userAvatar,
       userColor,
     });
   }
 
-  startRemoteBrowser(url: string) {
-    this.send('START_REMOTE_BROWSER', { roomId: this.roomId, url });
+  startCloudBrowser(url: string, updatedBy: string) {
+    this.send('CLOUD_BROWSER_START', {
+      roomId: this.roomId,
+      url,
+      updatedBy,
+    });
   }
 
-  sendRemoteBrowserInput(input: any) {
-    this.send('REMOTE_BROWSER_INPUT', { roomId: this.roomId, input });
+  sendCloudBrowserInput(
+    input:
+      | { type: 'click'; x: number; y: number }
+      | { type: 'scroll'; deltaY: number }
+      | { type: 'type'; text: string }
+      | { type: 'key'; key: string }
+      | { type: 'navigate'; url: string }
+      | { type: 'back' }
+      | { type: 'reload' }
+  ) {
+    this.send('CLOUD_BROWSER_INPUT', {
+      roomId: this.roomId,
+      input,
+    });
   }
 
-  stopRemoteBrowser() {
-    this.send('STOP_REMOTE_BROWSER', { roomId: this.roomId });
+  stopCloudBrowser() {
+    this.send('CLOUD_BROWSER_STOP', {
+      roomId: this.roomId,
+    });
+  }
+
+  addToQueue(item: unknown) {
+    this.send('QUEUE_ADD', {
+      roomId: this.roomId,
+      item,
+    });
+  }
+
+  removeFromQueue(itemId: string) {
+    this.send('QUEUE_REMOVE', {
+      roomId: this.roomId,
+      itemId,
+    });
   }
 }
 

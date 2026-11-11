@@ -73,3 +73,46 @@ export function playCinemaSound(type: 'popcorn' | 'reaction' | 'join' | 'sync' |
     }
   } catch {}
 }
+
+/**
+ * Synthesizes a Netflix-inspired kinematic "TA-DUM" theater bass impact + crystalline fifth bloom
+ */
+export function playNaimcineIntroSound() {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+
+    // Hit 1: Deep punchy theater timpani ("TA")
+    const sub1 = ctx.createOscillator();
+    const g1 = ctx.createGain();
+    sub1.type = 'triangle';
+    sub1.frequency.setValueAtTime(110, now);
+    sub1.frequency.exponentialRampToValueAtTime(55, now + 0.18);
+    g1.gain.setValueAtTime(0.22, now);
+    g1.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+    sub1.connect(g1);
+    g1.connect(ctx.destination);
+    sub1.start(now);
+    sub1.stop(now + 0.23);
+
+    // Hit 2: Resonant chord bloom ("DUMMMM") at +0.22s (D2 + A2 + F#3 + D4)
+    const freqs = [73.42, 110.0, 185.0, 293.66];
+    freqs.forEach((f, idx) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = idx === 0 ? 'sine' : 'triangle';
+      osc.frequency.setValueAtTime(f * 0.99, now + 0.22);
+      osc.frequency.exponentialRampToValueAtTime(f, now + 0.34);
+      const peak = idx === 0 ? 0.24 : 0.09 / idx;
+      g.gain.setValueAtTime(0.0001, now + 0.21);
+      g.gain.linearRampToValueAtTime(peak, now + 0.27);
+      g.gain.exponentialRampToValueAtTime(0.0008, now + 1.85);
+      osc.connect(g);
+      g.connect(ctx.destination);
+      osc.start(now + 0.21);
+      osc.stop(now + 1.9);
+    });
+  } catch {}
+}
+

@@ -1,476 +1,1204 @@
-import React, { useState, useEffect } from 'react';
-import { Header } from './components/Header';
-import { VideoPlayerContainer } from './components/VideoPlayerContainer';
-import { VirtualChromeBrowser } from './components/VirtualChromeBrowser';
-import { ScreenShareContainer } from './components/ScreenShareContainer';
-import { HandsomeChat } from './components/HandsomeChat';
-import { InviteModal } from './components/InviteModal';
-import { ParticipantsModal } from './components/ParticipantsModal';
-import { UserProfileModal } from './components/UserProfileModal';
-import { HealthMonitorModal } from './components/HealthMonitorModal';
-import { RoomJoinScreen } from './components/RoomJoinScreen';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Film,
+  Trophy,
+  Youtube,
+  MessageSquare,
+  Users,
+  Share2,
+  Check,
+  LogOut,
+  PanelRightClose,
+  PanelRightOpen,
+} from 'lucide-react';
+import {
+  AppLanguage,
+  CatalogMovie,
+  ChatMessage,
+  CloudBrowserState,
+  FloatingReaction,
+  Participant,
+  RoomQueueItem,
+  SportsMatch,
+  StreamTrack,
+  TvEpisodeItem,
+  TvSeriesDetails,
+  VideoState,
+  YouTubeSearchItem,
+} from './types';
+import { UI_COPY } from './utils/i18n';
+import {
+  addRecentRoom,
+  getRecentRooms,
+  getStoredProfile,
+  saveStoredProfile,
+  StoredProfile,
+} from './utils/storage';
 import { socketService } from './services/socket';
-import { SendToTvModal } from './components/SendToTvModal';
-import { ChatMessage, FloatingReaction, Participant, VideoSourceType, VideoState } from './types';
-import { parseVideoUrl } from './utils/videoParser';
-import { ChevronDown } from 'lucide-react';
-import { Language, TRANSLATIONS } from './utils/i18n';
+import { playCinemaSound, triggerHaptic } from './utils/haptics';
+import { NaimcineIntro } from './components/NaimcineIntro';
+import { LobbyScreen } from './components/LobbyScreen';
+import { NativeCinemaPlayer } from './components/NativeCinemaPlayer';
+import { CatalogSection, MediaCatalogHub } from './components/MediaCatalogHub';
+import { PartySidebar } from './components/PartySidebar';
+import naimLogo from './assets/images/naimcine_brand_logo_1794356559353.jpg';
 
-export default function App() {
-  const [joinedRoom, setJoinedRoom] = useState(false);
-  const [roomId, setRoomId] = useState<string>('');
+const INITIAL_VIDEO_STATE: VideoState = {
+  mode: 'idle',
+  url: '',
+  rawSourceUrl: '',
+  title: 'NAIMCINE · Elige película, serie, partido o YouTube',
+  subtitle: 'Proyección sincronizada en alta definición sin anuncios',
+  currentTime: 0,
+  isPlaying: false,
+  isLive: false,
+  tracks: [],
+  activeTrackIndex: 0,
+  lastUpdated: Date.now(),
+};
+
+type MobileNavTab = 'movies' | 'sports' | 'youtube' | 'chat' | 'room';
+
+export function App() {
+  const [lang, setLang] = useState<AppLanguage>('es');
+  const [profile, setProfile] = useState<StoredProfile>(() => getStoredProfile());
+  const [recentRooms, setRecentRooms] = useState(() => getRecentRooms());
+
+  const initialParams =
+    typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const initialUrlRoom = initialParams?.get('room')?.trim().toLowerCase() || '';
+  const isTvMode = initialParams?.get('tv') === '1';
+
+  // Show Netflix-inspired NAIMCINE Intro on launch (except Smart TV receiver mode)
+  const [showIntro, setShowIntro] = useState<boolean>(() => !isTvMode);
+  const [introWithSound, setIntroWithSound] = useState<boolean>(false);
+  const [headerLogoFailed, setHeaderLogoFailed] = useState<boolean>(false);
+
+  const [roomId, setRoomId] = useState<string>(initialUrlRoom);
+  const [roomName, setRoomName] = useState<string>(
+    initialUrlRoom ? `Sala ${initialUrlRoom.toUpperCase()}` : ''
+  );
+  const [inRoom, setInRoom] = useState<boolean>(Boolean(initialUrlRoom));
+
+  // Authoritative Room State
   const [hostId, setHostId] = useState<string>('');
-  const [roomName, setRoomName] = useState<string>('Sala de Cine 🍿');
-  const [language, setLanguage] = useState<Language>('es');
-  const t = TRANSLATIONS[language];
-
-  // Check URL query parameters for invitation links
-  const queryParams = new URLSearchParams(window.location.search);
-  const initialRoomFromUrl = queryParams.get('room') || '';
-
-  const [currentUser, setCurrentUser] = useState<Participant>({
-    id: `user-${Math.random().toString(36).substring(2, 8)}`,
-    name: '',
-    avatar: '🍿',
-    color: '#f43f5e',
-    isHost: false,
-    joinedAt: Date.now(),
-  });
-
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [reactions, setReactions] = useState<FloatingReaction[]>([]);
+  const [roomQueue, setRoomQueue] = useState<RoomQueueItem[]>([]);
+  const [videoState, setVideoState] = useState<VideoState>(INITIAL_VIDEO_STATE);
+  const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
+  const [cloudFrame, setCloudFrame] = useState<string | null>(null);
+  const [cloudState, setCloudState] = useState<CloudBrowserState | null>(null);
 
-  const [videoState, setVideoState] = useState<VideoState>({
-    url: 'https://movidy.pw/',
-    title: 'Movidy - Cine y Series',
-    sourceType: 'iframe',
-    currentTime: 0,
-    isPlaying: false,
-    lastUpdated: Date.now(),
-  });
+  // Navigation & Extraction State
+  const [catalogSection, setCatalogSection] = useState<CatalogSection>('movies');
+  const [mobileTab, setMobileTab] = useState<MobileNavTab>('movies');
+  const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [copiedHeaderInvite, setCopiedHeaderInvite] = useState<boolean>(false);
 
-  // Modals state
-  const [showInviteModal, setShowInviteModal] = useState(false);
-  const [showParticipantsModal, setShowParticipantsModal] = useState(false);
-  const [showProfileModal, setShowProfileModal] = useState(false);
-  const [showHealthMonitor, setShowHealthMonitor] = useState(false);
-  const [showTvModal, setShowTvModal] = useState(false);
-  const isTvScreenMode = queryParams.get('tv') === '1';
-  const [latencyMs, setLatencyMs] = useState(24);
+  const [isExtracting, setIsExtracting] = useState<boolean>(false);
+  const [extractionLabel, setExtractionLabel] = useState<string>('');
+  const [extractionError, setExtractionError] = useState<string | null>(null);
+  const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
 
-  // Auto-connect when opened in Smart TV mode
+  const mobileTabRef = useRef<MobileNavTab>(mobileTab);
+  mobileTabRef.current = mobileTab;
+  const mainScrollRef = useRef<HTMLDivElement | null>(null);
+
+  const t = UI_COPY[lang];
+
+  const currentUser: Participant = {
+    id: profile.id,
+    name: isTvMode ? `${profile.name} (TV)` : profile.name,
+    avatar: isTvMode ? '📺' : profile.avatar,
+    color: profile.color,
+    isHost: hostId === profile.id,
+    joinedAt: Date.now(),
+  };
+
   useEffect(() => {
-    if (isTvScreenMode && initialRoomFromUrl && !joinedRoom) {
-      const tvUser = {
-        id: `tv-${Math.random().toString(36).substring(2, 7)}`,
-        name: '📺 Smart TV Pantalla',
-        avatar: '📺',
-        color: '#3b82f6',
-        isHost: false,
-        joinedAt: Date.now(),
-      };
-      setCurrentUser(tvUser);
-      setRoomId(initialRoomFromUrl);
-      setJoinedRoom(true);
-      socketService.connect(initialRoomFromUrl, tvUser);
+    if (!inRoom || !roomId) return;
+
+    const userPayload: Participant = {
+      id: profile.id,
+      name: isTvMode ? `${profile.name} (TV)` : profile.name,
+      avatar: isTvMode ? '📺' : profile.avatar,
+      color: profile.color,
+      isHost: false,
+      joinedAt: Date.now(),
+    };
+
+    socketService.connect(roomId, userPayload, roomName || `Sala ${roomId.toUpperCase()}`);
+    addRecentRoom({ id: roomId, name: roomName || `Sala ${roomId.toUpperCase()}` });
+    setRecentRooms(getRecentRooms());
+
+    if (typeof window !== 'undefined') {
+      const nextUrl = new URL(window.location.href);
+      nextUrl.searchParams.set('room', roomId);
+      window.history.replaceState({}, '', nextUrl.toString());
     }
-  }, [isTvScreenMode, initialRoomFromUrl, joinedRoom]);
 
-  // Monitor latency periodically via WebSocket round-trip
-  useEffect(() => {
-    if (!joinedRoom) return;
-    const interval = setInterval(() => {
-      const start = performance.now();
-      fetch('/api/rooms/' + encodeURIComponent(roomId))
-        .then(() => {
-          const roundTrip = Math.round(performance.now() - start);
-          setLatencyMs(roundTrip);
-        })
-        .catch(() => {});
-    }, 4000);
+    const unsubscribe = socketService.subscribe((event) => {
+      const { type, payload } = event;
 
-    return () => clearInterval(interval);
-  }, [joinedRoom, roomId]);
-
-  // Subscribe to real-time events once connected
-  useEffect(() => {
-    if (!joinedRoom || !roomId) return;
-
-    const unsubscribe = socketService.subscribe(({ type, payload }) => {
       if (type === 'ROOM_STATE') {
-        setHostId(payload.hostId);
-        setRoomName(payload.name || `Sala ${roomId}`);
+        setRoomName(payload.name || `Sala ${roomId.toUpperCase()}`);
+        setHostId(payload.hostId || '');
         setParticipants(payload.participants || []);
+        setMessages(payload.messages || []);
+        setRoomQueue(payload.queue || []);
         if (payload.videoState) {
           setVideoState(payload.videoState);
-          // If the room is already in Virtual Browser/iframe mode, switch invited user immediately!
-          if (payload.videoState.sourceType === 'iframe' || payload.videoState.url?.includes('vidsrc') || payload.videoState.url?.includes('bingetrix')) {
-            setIsVirtualBrowser(true);
-          }
-        }
-        if (payload.messages) {
-          setMessages(payload.messages);
-        }
-
-        // Update current user's host status if set by server
-        const meInRoom = payload.participants?.find((p: Participant) => p.id === currentUser.id);
-        if (meInRoom) {
-          setCurrentUser((prev) => ({ ...prev, isHost: meInRoom.isHost }));
         }
       } else if (type === 'PARTICIPANTS_UPDATED') {
         setParticipants(payload.participants || []);
         if (payload.hostId) setHostId(payload.hostId);
         if (payload.message) {
-          setMessages((prev) => [...prev, payload.message]);
-        }
-
-        const meInRoom = payload.participants?.find((p: Participant) => p.id === currentUser.id);
-        if (meInRoom) {
-          setCurrentUser((prev) => ({ ...prev, isHost: meInRoom.isHost }));
+          setMessages((prev) => [...prev.slice(-149), payload.message]);
+          playCinemaSound('join');
         }
       } else if (type === 'VIDEO_STATE_UPDATED') {
-        setVideoState(payload.videoState);
-        if (payload.videoState?.sourceType === 'iframe' || payload.videoState?.url?.includes('vidsrc') || payload.videoState?.url?.includes('bingetrix')) {
-          setIsVirtualBrowser(true);
+        if (payload.videoState) {
+          setVideoState(payload.videoState);
+          if (payload.videoState.mode !== 'cloud') {
+            setCloudFrame(null);
+            setCloudState(null);
+          }
         }
-        if (payload.messages) {
-          setMessages(payload.messages);
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message]);
+        }
+      } else if (type === 'QUEUE_UPDATED') {
+        setRoomQueue(payload.queue || []);
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message]);
         }
       } else if (type === 'NEW_CHAT_MESSAGE') {
-        setMessages((prev) => [...prev, payload]);
+        setMessages((prev) => [...prev.slice(-149), payload]);
+        if (mobileTabRef.current !== 'chat' && payload.senderId !== profile.id) {
+          setUnreadChatCount((c) => c + 1);
+        }
       } else if (type === 'FLOATING_REACTION') {
-        setReactions((prev) => [...prev, payload]);
-        // Remove reaction after floating animation finishes (2.2s)
+        const reaction = payload as FloatingReaction;
+        setFloatingReactions((prev) => [...prev.slice(-18), reaction]);
+        playCinemaSound('reaction');
         setTimeout(() => {
-          setReactions((prev) => prev.filter((r) => r.id !== payload.id));
-        }, 2200);
+          setFloatingReactions((prev) => prev.filter((r) => r.id !== reaction.id));
+        }, 2800);
       } else if (type === 'HOST_TRANSFERRED') {
         setHostId(payload.hostId);
-        setParticipants(payload.participants);
+        setParticipants(payload.participants || []);
         if (payload.message) {
-          setMessages((prev) => [...prev, payload.message]);
+          setMessages((prev) => [...prev.slice(-149), payload.message]);
         }
-        setCurrentUser((prev) => ({ ...prev, isHost: payload.hostId === prev.id }));
-      } else if (type === 'WEBRTC_SIGNAL') {
-        if (payload?.signalData?.type === 'screen_share_started') {
-          setIsScreenSharing(true);
-        }
+      } else if (type === 'CLOUD_BROWSER_FRAME') {
+        setCloudFrame(payload.image);
+        setCloudState({
+          active: true,
+          url: payload.url,
+          title: payload.title,
+          isLoading: payload.isLoading,
+          detectedStreamUrl: payload.detectedStreamUrl,
+        });
       }
     });
 
     return () => {
       unsubscribe();
+      socketService.disconnect();
     };
-  }, [joinedRoom, roomId, currentUser.id]);
+  }, [inRoom, roomId]);
 
-  const handleJoinRoom = (targetRoomId: string, userMeta: { name: string; avatar: string; color: string }, lang: Language) => {
-    const updatedUser = {
-      ...currentUser,
-      name: userMeta.name,
-      avatar: userMeta.avatar,
-      color: userMeta.color,
-    };
-    setLanguage(lang);
-    setCurrentUser(updatedUser);
+  const scrollDesktopToPlayer = () => {
+    mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleEnterRoom = (
+    targetRoomId: string,
+    nextProfile: StoredProfile,
+    customName?: string
+  ) => {
+    saveStoredProfile(nextProfile);
+    setProfile(nextProfile);
     setRoomId(targetRoomId);
-    setJoinedRoom(true);
-
-    // Update browser URL query param without full page reload
-    const newUrl = `${window.location.pathname}?room=${targetRoomId}`;
-    window.history.replaceState({ path: newUrl }, '', newUrl);
-
-    // Connect to WebSocket server & fallback
-    socketService.connect(targetRoomId, updatedUser);
-  };
-
-  // Video State Handler
-  const handleVideoPlaybackChange = (action: 'play' | 'pause' | 'seek', time: number, isPlaying: boolean) => {
-    const newVideoState: VideoState = {
-      ...videoState,
-      currentTime: time,
-      isPlaying,
-      lastUpdated: Date.now(),
-      updatedBy: currentUser.name,
-    };
-    setVideoState(newVideoState);
-    socketService.syncVideoState(action, newVideoState, currentUser.name);
-  };
-
-  const [isVirtualBrowser, setIsVirtualBrowser] = useState(true);
-  const [isScreenSharing, setIsScreenSharing] = useState(false);
-
-  // Handle URL change with movie resolver and virtual browser proxy support
-  const handleUrlChange = async (newUrl: string, title?: string, forceVirtualBrowser?: boolean) => {
-    let finalUrl = newUrl;
-    let finalTitle = title || 'Película / Vídeo';
-    let poster = '';
-    let overview = '';
-    let releaseYear = '';
-    let originalPortalUrl = '';
-    let altEmbeds: string[] = [];
-    let trailerUrl = '';
-    let determinedSourceType: VideoSourceType = forceVirtualBrowser ? 'iframe' : 'direct';
-
-    // If user explicitly picked Virtual Browser or it's a web portal
-    if (forceVirtualBrowser || /bingetrix\.[a-z]+\/(?:watch|movie|tv)\/\d+/i.test(newUrl)) {
-      determinedSourceType = 'iframe';
-      originalPortalUrl = newUrl;
-      finalTitle = 'Bingetrix - Resident Evil (2026)';
-
-      try {
-        const res = await fetch(`/api/resolve-movie?url=${encodeURIComponent(newUrl)}`);
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          if (data && data.success) {
-            finalTitle = `${data.title} ${data.releaseYear ? `(${data.releaseYear})` : ''}`;
-            poster = data.poster || '';
-            overview = data.overview || '';
-            releaseYear = data.releaseYear || '';
-            altEmbeds = data.streamEmbeds || [];
-            trailerUrl = data.trailerUrl || '';
-          }
-        }
-      } catch (err) {
-        console.error('Error resolving movie URL:', err);
-      }
-    } else {
-      const parsed = parseVideoUrl(finalUrl);
-      determinedSourceType = parsed.type;
-    }
-
-    const newVideoState: VideoState = {
-      url: finalUrl,
-      title: finalTitle,
-      sourceType: determinedSourceType,
-      currentTime: 0,
-      isPlaying: true,
-      lastUpdated: Date.now(),
-      updatedBy: currentUser.name,
-      poster,
-      overview,
-      releaseYear,
-      originalPortalUrl,
-      altEmbeds,
-      trailerUrl,
-    };
-
-    setVideoState(newVideoState);
-    socketService.syncVideoState('change_url', newVideoState, currentUser.name);
-  };
-
-  // Send Chat Message
-  const handleSendMessage = (text: string) => {
-    socketService.sendChatMessage(currentUser, text);
-  };
-
-  // Send Reaction
-  const handleSendReaction = (emoji: string) => {
-    socketService.sendReaction(currentUser, emoji);
-  };
-
-  // Host transfer
-  const handleTransferHost = (newHostId: string) => {
-    socketService.transferHost(newHostId);
-    setShowParticipantsModal(false);
-  };
-
-  // User Profile save
-  const handleSaveProfile = (name: string, avatar: string, color: string) => {
-    const updatedUser = { ...currentUser, name, avatar, color };
-    setCurrentUser(updatedUser);
+    setRoomName(customName || `Sala ${targetRoomId.toUpperCase()}`);
+    setInRoom(true);
+    setIntroWithSound(true);
+    setShowIntro(true);
   };
 
   const handleLeaveRoom = () => {
+    triggerHaptic('light');
     socketService.disconnect();
-    setJoinedRoom(false);
+    setInRoom(false);
     setRoomId('');
-    const cleanUrl = window.location.pathname;
-    window.history.replaceState({ path: cleanUrl }, '', cleanUrl);
+    setVideoState(INITIAL_VIDEO_STATE);
+    setCloudFrame(null);
+    setCloudState(null);
+    if (typeof window !== 'undefined') {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete('room');
+      cleanUrl.searchParams.delete('tv');
+      window.history.replaceState({}, '', cleanUrl.toString());
+    }
   };
 
-  if (!joinedRoom) {
+  const handleSyncPlayerAction = useCallback(
+    (action: 'play' | 'pause' | 'seek' | 'change_url', patch: Partial<VideoState>) => {
+      setVideoState((prev) => {
+        const updated: VideoState = {
+          ...prev,
+          ...patch,
+          lastUpdated: Date.now(),
+          updatedBy: profile.name,
+        };
+        socketService.syncVideoState(action, updated, profile.name);
+        return updated;
+      });
+    },
+    [profile.name]
+  );
+
+  // ============================================================================
+  // STREAM EXTRACTION HANDLERS (MOVIES, SERIES, SPORTS, YOUTUBE, CUSTOM)
+  // ============================================================================
+  const handlePlayMovie = async (movie: CatalogMovie, preferLang: 'ES' | 'EN') => {
+    scrollDesktopToPlayer();
+    setIsExtracting(true);
+    setLoadingItemId(movie.id);
+    setExtractionError(null);
+    setExtractionLabel(`${movie.title} · Preparando HLS HD...`);
+
+    try {
+      const params = new URLSearchParams({
+        mediaType: 'movie',
+        tmdbId: movie.tmdbId ? String(movie.tmdbId) : '',
+        url: movie.bingetrixUrl || movie.movidyUrl || '',
+        preferLang,
+        title: movie.title,
+      });
+      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const data = await res.json();
+
+      if (!res.ok || !data?.success || !data?.streamUrl) {
+        setExtractionError(
+          data?.error || 'No se pudo cargar esta película en este momento.'
+        );
+        return;
+      }
+
+      const tracks: StreamTrack[] = data.tracks || [];
+      const activeIdx = Math.max(
+        0,
+        tracks.findIndex((tr) => tr.resolvedStreamUrl === data.streamUrl)
+      );
+
+      const nextState: VideoState = {
+        mode: data.mode || 'hls',
+        url: data.streamUrl,
+        rawSourceUrl: movie.bingetrixUrl || movie.movidyUrl || movie.id,
+        title: movie.title,
+        subtitle: `${movie.year || 'HD'} · ${tracks[activeIdx]?.label || preferLang}`,
+        poster: movie.poster,
+        backdrop: movie.backdrop,
+        currentTime: 0,
+        isPlaying: true,
+        isLive: false,
+        tracks,
+        activeTrackIndex: activeIdx,
+        seriesMeta: undefined,
+        lastUpdated: Date.now(),
+        updatedBy: profile.name,
+      };
+
+      setVideoState(nextState);
+      socketService.syncVideoState('change_url', nextState, profile.name);
+      playCinemaSound('play');
+    } catch {
+      setExtractionError('Error de red al conectar con el motor NAIMCINE.');
+    } finally {
+      setIsExtracting(false);
+      setLoadingItemId(null);
+    }
+  };
+
+  const handlePlaySeriesEpisode = async (
+    series: TvSeriesDetails,
+    episode: TvEpisodeItem,
+    preferLang: 'ES' | 'EN'
+  ) => {
+    const epLoadId = `tv-${series.tmdbId}-${episode.seasonNumber}-${episode.episodeNumber}`;
+    scrollDesktopToPlayer();
+    setIsExtracting(true);
+    setLoadingItemId(epLoadId);
+    setExtractionError(null);
+    setExtractionLabel(
+      `${series.title} (${episode.seasonNumber}x${String(episode.episodeNumber).padStart(2, '0')}) · Preparando HD...`
+    );
+
+    try {
+      const params = new URLSearchParams({
+        mediaType: 'tv',
+        tmdbId: String(series.tmdbId),
+        season: String(episode.seasonNumber),
+        episode: String(episode.episodeNumber),
+        preferLang,
+        title: series.title,
+      });
+      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const data = await res.json();
+
+      if (!res.ok || !data?.success || !data?.streamUrl) {
+        setExtractionError(
+          data?.error || 'Este episodio aún no tiene señal directa disponible.'
+        );
+        return;
+      }
+
+      const tracks: StreamTrack[] = data.tracks || [];
+      const activeIdx = Math.max(
+        0,
+        tracks.findIndex((tr) => tr.resolvedStreamUrl === data.streamUrl)
+      );
+
+      const currentSeasonSummary = series.seasons.find(
+        (s) => s.seasonNumber === episode.seasonNumber
+      );
+
+      const nextState: VideoState = {
+        mode: data.mode || 'hls',
+        url: data.streamUrl,
+        rawSourceUrl: epLoadId,
+        title: `${series.title} · ${episode.seasonNumber}x${String(episode.episodeNumber).padStart(2, '0')}`,
+        subtitle: `${episode.title} · ${tracks[activeIdx]?.label || preferLang}`,
+        poster: series.poster,
+        backdrop: episode.still || series.backdrop,
+        currentTime: 0,
+        isPlaying: true,
+        isLive: false,
+        tracks,
+        activeTrackIndex: activeIdx,
+        seriesMeta: {
+          tmdbId: series.tmdbId,
+          seriesTitle: series.title,
+          season: episode.seasonNumber,
+          episode: episode.episodeNumber,
+          episodeTitle: episode.title,
+          totalEpisodesInSeason:
+            currentSeasonSummary?.episodeCount || series.episodes.length,
+          totalSeasons: series.seasons.length,
+          poster: series.poster,
+          backdrop: series.backdrop,
+        },
+        lastUpdated: Date.now(),
+        updatedBy: profile.name,
+      };
+
+      setVideoState(nextState);
+      socketService.syncVideoState('change_url', nextState, profile.name);
+      playCinemaSound('play');
+    } catch {
+      setExtractionError('Error al conectar con el episodio seleccionado.');
+    } finally {
+      setIsExtracting(false);
+      setLoadingItemId(null);
+    }
+  };
+
+  const handleNextEpisode = async () => {
+    const meta = videoState.seriesMeta;
+    if (!meta) return;
+
+    let nextSeason = meta.season;
+    let nextEp = meta.episode + 1;
+    if (meta.totalEpisodesInSeason && nextEp > meta.totalEpisodesInSeason) {
+      if (!meta.totalSeasons || meta.season < meta.totalSeasons) {
+        nextSeason = meta.season + 1;
+        nextEp = 1;
+      } else {
+        return;
+      }
+    }
+
+    const activeTrack = videoState.tracks[videoState.activeTrackIndex];
+    const preferLang: 'ES' | 'EN' = activeTrack?.lang === 'EN' ? 'EN' : 'ES';
+
+    setIsExtracting(true);
+    setExtractionError(null);
+    setExtractionLabel(
+      `${meta.seriesTitle} (${nextSeason}x${String(nextEp).padStart(2, '0')}) · Siguiente episodio...`
+    );
+
+    try {
+      const params = new URLSearchParams({
+        mediaType: 'tv',
+        tmdbId: String(meta.tmdbId),
+        season: String(nextSeason),
+        episode: String(nextEp),
+        preferLang,
+        title: meta.seriesTitle,
+      });
+      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const data = await res.json();
+      if (!res.ok || !data?.success || !data?.streamUrl) {
+        setExtractionError('No hay más episodios disponibles en esta temporada.');
+        return;
+      }
+
+      const tracks: StreamTrack[] = data.tracks || [];
+      const activeIdx = Math.max(
+        0,
+        tracks.findIndex((tr) => tr.resolvedStreamUrl === data.streamUrl)
+      );
+
+      const nextState: VideoState = {
+        mode: data.mode || 'hls',
+        url: data.streamUrl,
+        rawSourceUrl: `tv-${meta.tmdbId}-${nextSeason}-${nextEp}`,
+        title: `${meta.seriesTitle} · ${nextSeason}x${String(nextEp).padStart(2, '0')}`,
+        subtitle: tracks[activeIdx]?.label || preferLang,
+        poster: meta.poster,
+        backdrop: meta.backdrop,
+        currentTime: 0,
+        isPlaying: true,
+        isLive: false,
+        tracks,
+        activeTrackIndex: activeIdx,
+        seriesMeta: {
+          ...meta,
+          season: nextSeason,
+          episode: nextEp,
+        },
+        lastUpdated: Date.now(),
+        updatedBy: profile.name,
+      };
+
+      setVideoState(nextState);
+      socketService.syncVideoState('change_url', nextState, profile.name);
+      playCinemaSound('play');
+    } catch {
+      setExtractionError('Error al cargar el siguiente episodio.');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const handlePlaySportsMatch = async (match: SportsMatch, channelIndex: number) => {
+    const channel = match.channels[channelIndex] || match.channels[0];
+    if (!channel) return;
+
+    scrollDesktopToPlayer();
+    setIsExtracting(true);
+    setLoadingItemId(`${match.id}-${channelIndex}`);
+    setExtractionError(null);
+    setExtractionLabel(`${match.title} · Conectando ${channel.label}...`);
+
+    try {
+      const params = new URLSearchParams({
+        url: channel.sourceUrl,
+        resolverType: 'sports_channel',
+        title: match.title,
+      });
+      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const data = await res.json();
+
+      if (!res.ok || !data?.success || !data?.streamUrl) {
+        if (channelIndex + 1 < match.channels.length) {
+          await handlePlaySportsMatch(match, channelIndex + 1);
+          return;
+        }
+        setExtractionError(
+          data?.error || 'La señal de este canal no está emitiendo ahora mismo.'
+        );
+        return;
+      }
+
+      const enrichedChannels = match.channels.map((c, idx) =>
+        idx === channelIndex ? { ...c, resolvedStreamUrl: data.streamUrl } : c
+      );
+
+      const nextState: VideoState = {
+        mode: data.mode || 'hls',
+        url: data.streamUrl,
+        rawSourceUrl: channel.sourceUrl,
+        title: match.title,
+        subtitle: `${match.competition} · ${channel.label}`,
+        currentTime: 0,
+        isPlaying: true,
+        isLive: true,
+        tracks: enrichedChannels,
+        activeTrackIndex: channelIndex,
+        seriesMeta: undefined,
+        lastUpdated: Date.now(),
+        updatedBy: profile.name,
+      };
+
+      setVideoState(nextState);
+      socketService.syncVideoState('change_url', nextState, profile.name);
+      playCinemaSound('play');
+    } catch {
+      setExtractionError('No se pudo conectar con la señal en directo.');
+    } finally {
+      setIsExtracting(false);
+      setLoadingItemId(null);
+    }
+  };
+
+  const handlePlayYouTubeVideo = (item: YouTubeSearchItem) => {
+    scrollDesktopToPlayer();
+    setExtractionError(null);
+    const nextState: VideoState = {
+      mode: 'youtube',
+      url: item.videoId,
+      rawSourceUrl: item.url,
+      title: item.title,
+      subtitle: `YouTube · ${item.channel}`,
+      poster: item.thumbnail,
+      backdrop: item.thumbnail,
+      currentTime: 0,
+      isPlaying: true,
+      isLive: item.duration === 'LIVE',
+      tracks: [],
+      activeTrackIndex: 0,
+      seriesMeta: undefined,
+      lastUpdated: Date.now(),
+      updatedBy: profile.name,
+    };
+    setVideoState(nextState);
+    socketService.syncVideoState('change_url', nextState, profile.name);
+    playCinemaSound('play');
+  };
+
+  const handleSelectTrack = async (trackIndex: number, resumeTimeSec: number) => {
+    const targetTrack = videoState.tracks[trackIndex];
+    if (!targetTrack) return;
+
+    const resumeAt = videoState.isLive ? 0 : resumeTimeSec;
+
+    if (targetTrack.resolvedStreamUrl) {
+      const instantState: VideoState = {
+        ...videoState,
+        url: targetTrack.resolvedStreamUrl,
+        rawSourceUrl: targetTrack.sourceUrl,
+        subtitle: targetTrack.label,
+        currentTime: resumeAt,
+        isPlaying: true,
+        activeTrackIndex: trackIndex,
+        lastUpdated: Date.now(),
+        updatedBy: profile.name,
+      };
+      setVideoState(instantState);
+      socketService.syncVideoState('change_url', instantState, profile.name);
+      return;
+    }
+
+    setIsExtracting(true);
+    setExtractionError(null);
+    setExtractionLabel(`Cambiando a ${targetTrack.label}...`);
+
+    try {
+      const params = new URLSearchParams({
+        url: targetTrack.sourceUrl,
+        resolverType: targetTrack.resolverType,
+        preferLang: targetTrack.lang === 'EN' ? 'EN' : 'ES',
+        title: videoState.title,
+      });
+      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const data = await res.json();
+
+      if (!res.ok || !data?.success || !data?.streamUrl) {
+        setExtractionError(`La pista "${targetTrack.label}" no está disponible.`);
+        return;
+      }
+
+      const updatedTracks = videoState.tracks.map((tr, idx) =>
+        idx === trackIndex ? { ...tr, resolvedStreamUrl: data.streamUrl } : tr
+      );
+
+      const nextState: VideoState = {
+        ...videoState,
+        mode: data.mode || 'hls',
+        url: data.streamUrl,
+        rawSourceUrl: targetTrack.sourceUrl,
+        subtitle: targetTrack.label,
+        currentTime: resumeAt,
+        isPlaying: true,
+        tracks: updatedTracks,
+        activeTrackIndex: trackIndex,
+        lastUpdated: Date.now(),
+        updatedBy: profile.name,
+      };
+
+      setVideoState(nextState);
+      socketService.syncVideoState('change_url', nextState, profile.name);
+    } catch {
+      setExtractionError('Error al cambiar de pista.');
+    } finally {
+      setIsExtracting(false);
+    }
+  };
+
+  const handlePlayCustomUrl = async (rawUrl: string) => {
+    scrollDesktopToPlayer();
+    setIsExtracting(true);
+    setLoadingItemId('custom-url');
+    setExtractionError(null);
+    setExtractionLabel('Analizando enlace y extrayendo flujo limpio...');
+
+    try {
+      const params = new URLSearchParams({ url: rawUrl });
+      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const data = await res.json();
+
+      if (res.ok && data?.success && data?.streamUrl) {
+        const nextState: VideoState = {
+          mode: data.mode || 'hls',
+          url: data.streamUrl,
+          rawSourceUrl: rawUrl,
+          title: data.title || 'Reproducción Directa HD',
+          subtitle:
+            data.mode === 'youtube'
+              ? 'YouTube Sincronizado'
+              : 'Flujo Nativo Sin Anuncios',
+          currentTime: 0,
+          isPlaying: true,
+          isLive: false,
+          tracks: data.tracks || [],
+          activeTrackIndex: 0,
+          seriesMeta: undefined,
+          lastUpdated: Date.now(),
+          updatedBy: profile.name,
+        };
+        setVideoState(nextState);
+        socketService.syncVideoState('change_url', nextState, profile.name);
+        playCinemaSound('play');
+      } else {
+        socketService.startCloudBrowser(rawUrl, profile.name);
+      }
+    } catch {
+      socketService.startCloudBrowser(rawUrl, profile.name);
+    } finally {
+      setIsExtracting(false);
+      setLoadingItemId(null);
+    }
+  };
+
+  const handleAddToQueue = (item: Omit<RoomQueueItem, 'id' | 'addedBy'>) => {
+    const newItem: RoomQueueItem = {
+      ...item,
+      id: `q-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      addedBy: profile.name,
+    };
+    socketService.addToQueue(newItem);
+  };
+
+  const handlePlayQueueItem = (qItem: RoomQueueItem) => {
+    socketService.removeFromQueue(qItem.id);
+    if (qItem.kind === 'youtube' && qItem.youtubeId) {
+      handlePlayYouTubeVideo({
+        id: qItem.youtubeId,
+        videoId: qItem.youtubeId,
+        title: qItem.title,
+        channel: qItem.addedBy,
+        duration: 'HD',
+        views: '',
+        thumbnail: qItem.poster || '',
+        url: qItem.url || `https://youtube.com/watch?v=${qItem.youtubeId}`,
+      });
+    } else if (qItem.kind === 'movie') {
+      handlePlayMovie(
+        {
+          id: qItem.id,
+          tmdbId: qItem.tmdbId,
+          title: qItem.title,
+          year: 'HD',
+          rating: '',
+          overview: '',
+          poster: qItem.poster || '',
+          backdrop: qItem.poster || '',
+          bingetrixUrl: qItem.url,
+          languages: [],
+        },
+        qItem.preferLang || 'ES'
+      );
+    } else if (qItem.url) {
+      handlePlayCustomUrl(qItem.url);
+    }
+  };
+
+  const handleOpenCloudBrowser = (url: string) => {
+    scrollDesktopToPlayer();
+    setExtractionError(null);
+    socketService.startCloudBrowser(url, profile.name);
+  };
+
+  const handlePromoteCloudStreamToNative = (proxiedStreamUrl: string) => {
+    triggerHaptic('success');
+    socketService.stopCloudBrowser();
+    const isMp4 = proxiedStreamUrl.includes('/api/ts-proxy');
+    const nextState: VideoState = {
+      mode: isMp4 ? 'direct' : 'hls',
+      url: proxiedStreamUrl,
+      rawSourceUrl: cloudState?.url || proxiedStreamUrl,
+      title: cloudState?.title || 'Stream Capturado HD',
+      subtitle: 'Reproducción nativa extraída del Cloud Browser',
+      currentTime: 0,
+      isPlaying: true,
+      isLive: false,
+      tracks: [],
+      activeTrackIndex: 0,
+      seriesMeta: undefined,
+      lastUpdated: Date.now(),
+      updatedBy: profile.name,
+    };
+    setVideoState(nextState);
+    socketService.syncVideoState('change_url', nextState, profile.name);
+  };
+
+  const handleShareOrCopyHeaderInvite = async () => {
+    triggerHaptic('success');
+    const inviteUrl = `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`;
+    if (typeof navigator !== 'undefined' && navigator.share) {
+      try {
+        await navigator.share({
+          title: `${roomName} · NAIMCINE`,
+          text: 'Entra a mi sala NAIMCINE para ver películas, series, fútbol o YouTube juntos:',
+          url: inviteUrl,
+        });
+        return;
+      } catch {
+        // fallback to clipboard
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(inviteUrl);
+      setCopiedHeaderInvite(true);
+      setTimeout(() => setCopiedHeaderInvite(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleUpdateProfile = (nextName: string, nextAvatar: string, nextColor: string) => {
+    const updated: StoredProfile = {
+      id: profile.id,
+      name: nextName,
+      avatar: nextAvatar,
+      color: nextColor,
+    };
+    saveStoredProfile(updated);
+    setProfile(updated);
+    socketService.updateProfile(profile.id, nextName, nextAvatar, nextColor);
+  };
+
+  // ============================================================================
+  // RENDER 1: LOBBY SCREEN (+ OPTIONAL KINEMATIC NAIMCINE INTRO)
+  // ============================================================================
+  if (!inRoom) {
     return (
-      <RoomJoinScreen
-        initialRoomId={initialRoomFromUrl}
-        onJoinRoom={handleJoinRoom}
-      />
+      <>
+        {showIntro && (
+          <NaimcineIntro
+            withSound={introWithSound}
+            onComplete={() => setShowIntro(false)}
+          />
+        )}
+        <LobbyScreen
+          initialProfile={profile}
+          recentRooms={recentRooms}
+          lang={lang}
+          onChangeLang={setLang}
+          onReplayIntro={() => {
+            setIntroWithSound(true);
+            setShowIntro(true);
+          }}
+          onEnterRoom={handleEnterRoom}
+        />
+      </>
     );
   }
 
+  // ============================================================================
+  // RENDER 2: SMART TV RECEIVER MODE (?room=...&tv=1)
+  // ============================================================================
+  if (isTvMode) {
+    return (
+      <div className="w-screen h-dvh bg-black overflow-hidden">
+        <NativeCinemaPlayer
+          videoState={videoState}
+          lang={lang}
+          userName={currentUser.name}
+          isExtracting={isExtracting}
+          extractionLabel={extractionLabel}
+          extractionError={extractionError}
+          cloudFrame={cloudFrame}
+          cloudState={cloudState}
+          floatingReactions={floatingReactions}
+          onSyncAction={handleSyncPlayerAction}
+          onSelectTrack={handleSelectTrack}
+          onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
+          onNextEpisode={handleNextEpisode}
+          isTvMode
+        />
+      </div>
+    );
+  }
+
+  const isPlayerActive = videoState.mode !== 'idle' || isExtracting;
+
+  // ============================================================================
+  // RENDER 3: UNIFIED SINGLE-PLAYER MOBILE-FIRST + 1440PX DESKTOP WORKSPACE
+  // ============================================================================
   return (
-    <div className="h-full flex flex-col bg-slate-950 text-slate-100 overflow-hidden font-sans">
-      {/* Top Bar Header */}
-      <Header
-        roomName={roomName}
-        roomId={roomId}
-        participants={participants}
-        currentUser={currentUser}
-        latencyMs={latencyMs}
-        language={language}
-        isVirtualBrowser={isVirtualBrowser}
-        isScreenSharing={isScreenSharing}
-        onToggleVirtualBrowser={(enabled) => {
-          setIsVirtualBrowser(enabled);
-          if (enabled && videoState.sourceType !== 'iframe') {
-            handleUrlChange(
-              videoState.url.includes('bingetrix') ? videoState.url : 'https://movidy.pw/',
-              'Navegador Virtual',
-              true
-            );
-          }
-        }}
-        onToggleScreenShare={(enabled) => setIsScreenSharing(enabled)}
-        onOpenInvite={() => setShowInviteModal(true)}
-        onOpenTv={() => setShowTvModal(true)}
-        onOpenParticipants={() => setShowParticipantsModal(true)}
-        onOpenProfile={() => setShowProfileModal(true)}
-        onLeaveRoom={handleLeaveRoom}
-        onOpenHealthMonitor={() => setShowHealthMonitor(true)}
-      />
+    <div className="h-dvh w-full bg-[#090A0F] text-[#F4F5F8] flex flex-col overflow-hidden pt-safe">
+      {showIntro && (
+        <NaimcineIntro
+          withSound={introWithSound}
+          onComplete={() => setShowIntro(false)}
+        />
+      )}
 
-      {/* Main Content Area */}
-      {isTvScreenMode ? (
-        <div className="flex-1 w-full h-full bg-black relative flex items-center justify-center overflow-hidden">
-          <div className="absolute top-3 left-4 z-20 pointer-events-none flex items-center gap-2 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/10 text-xs text-white/80">
-            <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
-            <span className="font-bold">{t.tv} Mode</span>
-            <span className="text-white/40 font-mono">| {roomName}</span>
-          </div>
-
-          {videoState.sourceType === 'iframe' || isVirtualBrowser ? (
-            <iframe
-              src={
-                /vidsrc|autoembed|2embed|movidy|\/embed\//i.test(videoState.url)
-                  ? videoState.url
-                  : `/api/proxy-web?url=${encodeURIComponent(videoState.url)}&roomId=${encodeURIComponent(roomId)}`
-              }
-              title="TV Cinema Screen"
-              sandbox="allow-scripts allow-same-origin allow-forms allow-presentation"
-              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-              allowFullScreen
-              className="w-full h-full border-0 bg-black"
-            />
-          ) : (
-            <VideoPlayerContainer
-              videoState={videoState}
-              isHost={false}
-              userName={currentUser.name}
-              userColor={currentUser.color}
-              reactions={reactions}
-              onStateChange={handleVideoPlaybackChange}
-              onSendReaction={handleSendReaction}
-            />
-          )}
-        </div>
-      ) : (
-        <div className="flex-1 relative flex flex-col min-h-0 overflow-hidden">
-          <div className="w-full h-full flex flex-col bg-black overflow-hidden">
-            {isScreenSharing ? (
-              <ScreenShareContainer
-                isHost={currentUser.isHost}
-                roomId={roomId}
-                currentUserId={currentUser.id}
-                onStopScreenShare={() => setIsScreenSharing(false)}
-              />
-            ) : isVirtualBrowser || videoState.sourceType === 'iframe' ? (
-              <VirtualChromeBrowser
-                currentUrl={videoState.url}
-                videoState={videoState}
-                isHost={currentUser.isHost}
-                roomId={roomId}
-                language={language}
-                onNavigate={(navUrl, navTitle) => {
-                  handleUrlChange(navUrl, navTitle || 'Navegador Virtual Sincronizado', true);
-                }}
-                onPlaybackChange={handleVideoPlaybackChange}
-                onSendReaction={handleSendReaction}
+      {/* Strict 3-Zone Top Bar (52px Mobile / 60px Desktop) */}
+      <header className="h-[52px] lg:h-[60px] px-3 sm:px-6 bg-[#090A0F]/95 backdrop-blur-md border-b border-white/[0.08] flex items-center justify-between gap-4 shrink-0 z-30">
+        {/* Zone 1: Custom NAIMCINE Brand Emblem & Room Name */}
+        <div className="flex items-center gap-2.5 min-w-0 shrink-0">
+          <button
+            type="button"
+            onClick={() => {
+              setIntroWithSound(true);
+              setShowIntro(true);
+            }}
+            title="NAIMCINE"
+            className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden bg-[#12141D] border border-white/15 shadow-md shadow-[#E11D48]/25 flex items-center justify-center shrink-0 cursor-pointer"
+          >
+            {!headerLogoFailed ? (
+              <img
+                src={naimLogo}
+                alt="NAIMCINE"
+                onError={() => setHeaderLogoFailed(true)}
+                className="w-full h-full object-cover scale-110"
               />
             ) : (
-              <VideoPlayerContainer
-                videoState={videoState}
-                isHost={currentUser.isHost}
-                userName={currentUser.name}
-                userColor={currentUser.color}
-                reactions={reactions}
-                onStateChange={handleVideoPlaybackChange}
-                onSendReaction={handleSendReaction}
-              />
+              <span className="font-display font-bold text-sm text-[#E11D48]">N</span>
             )}
+          </button>
+          <div className="flex flex-col min-w-0">
+            <span className="font-display font-bold text-xs sm:text-sm tracking-wider text-white leading-tight truncate">
+              NAIM<span className="text-[#E11D48]">CINE</span>
+              <span className="text-zinc-500 font-normal mx-1.5 hidden sm:inline">·</span>
+              <span className="font-semibold text-zinc-200 tracking-normal hidden sm:inline">
+                {roomName || `Sala ${roomId.toUpperCase()}`}
+              </span>
+            </span>
+            <span className="text-[10px] text-zinc-400 sm:hidden truncate max-w-[130px]">
+              {roomName || `Sala ${roomId.toUpperCase()}`}
+            </span>
+          </div>
+        </div>
+
+        {/* Zone 2: Clean Single-Line Text Navigation Links (Desktop lg+) */}
+        <nav
+          className="hidden lg:flex items-center gap-6 text-sm font-medium"
+          aria-label="Catálogo NAIMCINE"
+        >
+          {(
+            [
+              { id: 'movies', label: t.tabMovies },
+              { id: 'vose', label: t.tabVose },
+              { id: 'series', label: t.tabSeries },
+              { id: 'sports', label: t.tabSports },
+              { id: 'youtube', label: t.tabYoutube },
+              { id: 'direct', label: `${t.tabDirect}${roomQueue.length ? ` (${roomQueue.length})` : ''}` },
+            ] as const
+          ).map((navItem) => {
+            const active = catalogSection === navItem.id;
+            return (
+              <button
+                key={navItem.id}
+                type="button"
+                onClick={() => setCatalogSection(navItem.id)}
+                className={`h-[60px] flex items-center border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  active
+                    ? 'border-[#E11D48] text-white font-semibold'
+                    : 'border-transparent text-zinc-400 hover:text-white'
+                }`}
+              >
+                {navItem.label}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Zone 3: Primary Invite CTA + Essential Room Controls */}
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={handleShareOrCopyHeaderInvite}
+            className="min-h-[40px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-95 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all"
+          >
+            {copiedHeaderInvite ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                <span>{t.copied}</span>
+              </>
+            ) : (
+              <>
+                <Share2 className="w-3.5 h-3.5" />
+                <span>{t.invite}</span>
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setSidebarOpen((v) => !v)}
+            className="hidden lg:flex w-10 h-10 rounded-xl bg-[#12141D] hover:bg-[#191C28] border border-white/[0.08] items-center justify-center text-zinc-300 cursor-pointer transition-colors"
+            title={sidebarOpen ? 'Modo Teatro' : 'Mostrar Chat'}
+            aria-label="Alternar panel lateral"
+          >
+            {sidebarOpen ? (
+              <PanelRightClose className="w-4 h-4" />
+            ) : (
+              <PanelRightOpen className="w-4 h-4" />
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={handleLeaveRoom}
+            className="w-10 h-10 sm:w-auto sm:px-3 rounded-xl bg-[#12141D] hover:bg-[#191C28] border border-white/[0.08] text-xs font-medium text-zinc-300 flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+            title={t.leaveRoom}
+            aria-label={t.leaveRoom}
+          >
+            <LogOut className="w-4 h-4" />
+            <span className="hidden sm:inline">{t.leaveRoom}</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Main Responsive Workspace (Single Mounted Player Instance!) */}
+      <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden">
+        <div
+          ref={mainScrollRef}
+          className="flex-1 min-h-0 flex flex-col overflow-hidden lg:overflow-y-auto"
+        >
+          {/* SINGLE NATIVE CINEMA PLAYER INSTANCE */}
+          <div
+            className={`shrink-0 w-full ${
+              isPlayerActive ? 'block border-b border-white/[0.08] lg:border-none' : 'hidden lg:block'
+            } lg:max-w-[1200px] lg:mx-auto lg:px-6 lg:pt-5`}
+          >
+            <NativeCinemaPlayer
+              videoState={videoState}
+              lang={lang}
+              userName={currentUser.name}
+              isExtracting={isExtracting}
+              extractionLabel={extractionLabel}
+              extractionError={extractionError}
+              cloudFrame={cloudFrame}
+              cloudState={cloudState}
+              floatingReactions={floatingReactions}
+              onSyncAction={handleSyncPlayerAction}
+              onSelectTrack={handleSelectTrack}
+              onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
+              onNextEpisode={handleNextEpisode}
+              onOpenCatalogSection={(sec) => {
+                setCatalogSection(sec);
+                if (sec === 'movies' || sec === 'series') setMobileTab('movies');
+                else if (sec === 'sports') setMobileTab('sports');
+                else if (sec === 'youtube') setMobileTab('youtube');
+              }}
+            />
           </div>
 
-          <HandsomeChat
-            messages={messages}
-            currentUser={currentUser}
-            language={language}
-            onSendMessage={handleSendMessage}
-          />
+          {/* Mobile Chat / Room View */}
+          <div
+            className={`lg:hidden flex-1 min-h-0 ${
+              mobileTab === 'chat' || mobileTab === 'room' ? 'flex flex-col' : 'hidden'
+            }`}
+          >
+            <PartySidebar
+              roomId={roomId}
+              currentUser={currentUser}
+              hostId={hostId}
+              participants={participants}
+              messages={messages}
+              lang={lang}
+              initialView={mobileTab === 'room' ? 'room' : 'chat'}
+              hideInternalTabs
+              onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
+              onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
+              onTransferHost={(newId) => socketService.transferHost(newId)}
+              onUpdateProfile={handleUpdateProfile}
+            />
+          </div>
+
+          {/* Scrollable Catalog Hub */}
+          <div
+            className={`flex-1 min-h-0 overflow-y-auto overscroll-contain lg:overflow-visible px-3.5 sm:px-6 py-4 sm:py-6 ${
+              mobileTab === 'chat' || mobileTab === 'room' ? 'hidden lg:block' : 'block'
+            }`}
+          >
+            <div className="max-w-[1200px] mx-auto space-y-4 pb-6">
+              {extractionError && !isPlayerActive && (
+                <div className="lg:hidden p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-200 flex items-center justify-between gap-2">
+                  <span>{extractionError}</span>
+                  <button
+                    type="button"
+                    onClick={() => setExtractionError(null)}
+                    className="text-rose-300 font-semibold px-2 py-1 cursor-pointer"
+                  >
+                    OK
+                  </button>
+                </div>
+              )}
+
+              <MediaCatalogHub
+                activeSection={catalogSection}
+                onChangeSection={(sec) => {
+                  setCatalogSection(sec);
+                  if (sec === 'movies' || sec === 'vose' || sec === 'series') {
+                    setMobileTab('movies');
+                  } else if (sec === 'sports') {
+                    setMobileTab('sports');
+                  } else if (sec === 'youtube' || sec === 'direct') {
+                    setMobileTab('youtube');
+                  }
+                }}
+                lang={lang}
+                userName={currentUser.name}
+                activeVideoRawUrl={videoState.rawSourceUrl}
+                loadingItemId={loadingItemId}
+                roomQueue={roomQueue}
+                onPlayMovie={handlePlayMovie}
+                onPlaySeriesEpisode={handlePlaySeriesEpisode}
+                onPlaySportsMatch={handlePlaySportsMatch}
+                onPlayYouTubeVideo={handlePlayYouTubeVideo}
+                onPlayCustomUrl={handlePlayCustomUrl}
+                onOpenCloudBrowser={handleOpenCloudBrowser}
+                onAddToQueue={handleAddToQueue}
+                onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+                onPlayQueueItem={handlePlayQueueItem}
+              />
+            </div>
+          </div>
         </div>
-      )}
 
-      {/* Modals */}
-      {showTvModal && (
-        <SendToTvModal
-          isOpen={showTvModal}
-          onClose={() => setShowTvModal(false)}
-          roomId={roomId}
-          roomName={roomName}
-          currentVideoUrl={videoState.url}
-          currentVideoTitle={videoState.title}
-        />
-      )}
+        {/* Desktop Right Party Sidebar */}
+        {sidebarOpen && (
+          <div className="hidden lg:flex w-[350px] xl:w-[376px] shrink-0 h-full">
+            <PartySidebar
+              roomId={roomId}
+              currentUser={currentUser}
+              hostId={hostId}
+              participants={participants}
+              messages={messages}
+              lang={lang}
+              onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
+              onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
+              onTransferHost={(newId) => socketService.transferHost(newId)}
+              onUpdateProfile={handleUpdateProfile}
+            />
+          </div>
+        )}
+      </div>
 
-      {showInviteModal && (
-        <InviteModal
-          roomId={roomId}
-          roomName={roomName}
-          language={language}
-          onClose={() => setShowInviteModal(false)}
-        />
-      )}
-
-      {showParticipantsModal && (
-        <ParticipantsModal
-          participants={participants}
-          currentUser={currentUser}
-          hostId={hostId}
-          language={language}
-          onTransferHost={handleTransferHost}
-          onClose={() => setShowParticipantsModal(false)}
-        />
-      )}
-
-      {showProfileModal && (
-        <UserProfileModal
-          currentUser={currentUser}
-          language={language}
-          onSave={handleSaveProfile}
-          onClose={() => setShowProfileModal(false)}
-        />
-      )}
-
-      {showHealthMonitor && (
-        <HealthMonitorModal
-          latencyMs={latencyMs}
-          videoState={videoState}
-          isHost={currentUser.isHost}
-          participantCount={participants.length}
-          language={language}
-          onForceResync={() => {
-            // Force re-sync with latest video state from server
-            fetch('/api/rooms/' + encodeURIComponent(roomId))
-              .then((r) => r.json())
-              .then((room) => {
-                if (room?.videoState) {
-                  setVideoState({ ...room.videoState, lastUpdated: Date.now() });
+      {/* Fixed Ergonomic Mobile Thumb-Zone Bottom Tab Bar (5 Tabs <=15% sticky budget) */}
+      <nav
+        className="lg:hidden shrink-0 bg-[#12141D]/95 backdrop-blur-md border-t border-white/[0.08] px-1 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] grid grid-cols-5 z-30"
+        aria-label="Navegación móvil NAIMCINE"
+      >
+        {(
+          [
+            {
+              id: 'movies',
+              label: lang === 'es' ? 'Cine · Series' : 'Cinema · TV',
+              icon: Film,
+              onSelect: () => {
+                setMobileTab('movies');
+                if (
+                  catalogSection !== 'movies' &&
+                  catalogSection !== 'vose' &&
+                  catalogSection !== 'series'
+                ) {
+                  setCatalogSection('movies');
                 }
-              })
-              .catch(() => {});
-          }}
-          onClose={() => setShowHealthMonitor(false)}
-        />
-      )}
+              },
+            },
+            {
+              id: 'sports',
+              label: lang === 'es' ? 'Fútbol' : 'Sports',
+              icon: Trophy,
+              onSelect: () => {
+                setMobileTab('sports');
+                setCatalogSection('sports');
+              },
+            },
+            {
+              id: 'youtube',
+              label: 'YouTube',
+              icon: Youtube,
+              badge: roomQueue.length || undefined,
+              onSelect: () => {
+                setMobileTab('youtube');
+                setCatalogSection('youtube');
+              },
+            },
+            {
+              id: 'chat',
+              label: t.tabChat,
+              icon: MessageSquare,
+              badge: unreadChatCount || undefined,
+              onSelect: () => {
+                setMobileTab('chat');
+                setUnreadChatCount(0);
+              },
+            },
+            {
+              id: 'room',
+              label: `${t.tabRoom} (${participants.length})`,
+              icon: Users,
+              onSelect: () => {
+                setMobileTab('room');
+              },
+            },
+          ] as const
+        ).map((item) => {
+          const Icon = item.icon;
+          const active = mobileTab === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                item.onSelect();
+              }}
+              className={`min-h-[50px] rounded-xl flex flex-col items-center justify-center gap-1 relative transition-colors cursor-pointer ${
+                active ? 'text-[#FB7185]' : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              {active && (
+                <span className="absolute top-0 w-6 h-0.5 rounded-full bg-[#E11D48]" />
+              )}
+              <div className="relative">
+                <Icon className="w-[21px] h-[21px]" />
+                {'badge' in item && item.badge ? (
+                  <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-[#E11D48] text-[10px] font-bold text-white flex items-center justify-center tabular-nums">
+                    {item.badge > 9 ? '9+' : item.badge}
+                  </span>
+                ) : null}
+              </div>
+              <span className="text-[10px] font-medium tracking-tight whitespace-nowrap">
+                {item.label}
+              </span>
+            </button>
+          );
+        })}
+      </nav>
     </div>
   );
 }
+
+export default App;

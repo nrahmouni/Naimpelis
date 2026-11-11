@@ -1,145 +1,175 @@
-export type Language = 'es' | 'en' | 'zh';
+import { AppLanguage } from '../types';
 
-export const TRANSLATIONS = {
+export const UI_COPY: Record<
+  AppLanguage,
+  {
+    appTagline: string;
+    heroHeadline: string;
+    heroDescription: string;
+    nicknameLabel: string;
+    nicknamePlaceholder: string;
+    avatarLabel: string;
+    accentLabel: string;
+    createRoomBtn: string;
+    joinRoomLabel: string;
+    roomCodePlaceholder: string;
+    joinBtn: string;
+    recentRooms: string;
+    tabMovies: string;
+    tabVose: string;
+    tabSeries: string;
+    tabSports: string;
+    tabYoutube: string;
+    tabDirect: string;
+    tabChat: string;
+    tabRoom: string;
+    searchMoviesPlaceholder: string;
+    searchBingetrixPlaceholder: string;
+    searchSeriesPlaceholder: string;
+    searchSportsPlaceholder: string;
+    searchYoutubePlaceholder: string;
+    unmuteAudio: string;
+    liveNow: string;
+    syncRoom: string;
+    invite: string;
+    smartTv: string;
+    leaveRoom: string;
+    chatPlaceholder: string;
+    send: string;
+    participants: string;
+    hostLabel: string;
+    makeHost: string;
+    you: string;
+    copyLink: string;
+    copied: string;
+    extractingTitle: string;
+    extractingSub: string;
+    standbyTitle: string;
+    standbySub: string;
+    directTitle: string;
+    directSub: string;
+    playNativeBtn: string;
+    openCloudBtn: string;
+    switchNativeHd: string;
+    allSports: string;
+    soccer: string;
+    motor: string;
+    basketball: string;
+    tennis: string;
+  }
+> = {
   es: {
-    welcome: 'Configura tu perfil',
-    welcomeSub: 'Cómo te verán los demás en la sala',
-    namePlaceholder: 'Introduce tu nombre...',
-    nameRequired: '⚠️ Obligatorio: Pon tu nombre o pulsa el botón de la derecha',
-    avatarLabel: 'Tu Avatar',
-    avatarSub: 'Personalizable',
-    createRoom: 'Crear Sala Privada',
-    joinRoom: 'O únete a una',
-    roomIdPlaceholder: 'ID de la sala...',
-    enterButton: 'Entrar',
-    movidy: 'Movidy ES',
-    english: 'English VO',
-    sports: 'Deportes',
-    liveChat: 'Chat en Vivo',
-    startChat: 'Comienza la charla',
-    writeSomething: 'Escribe algo...',
+    appTagline: 'NAIMCINE · Películas, Series, Fútbol y YouTube con tus Amigos',
+    heroHeadline: 'Ver películas, series y fútbol en directo con tus amigos, sin anuncios.',
+    heroDescription:
+      'Catálogo completo en Español (Castellano y Latino) + Bingetrix 1080p en Inglés, todas las series por temporadas, fútbol en vivo y YouTube sincronizado en tiempo real.',
+    nicknameLabel: 'Tu nombre en la sala',
+    nicknamePlaceholder: 'Ej. Naim, Carlos, Marta...',
+    avatarLabel: 'Avatar',
+    accentLabel: 'Acento',
+    createRoomBtn: 'Entrar a NAIMCINE · Crear Sala',
+    joinRoomLabel: 'Unirse con código de sala',
+    roomCodePlaceholder: 'Ej. noche-naim',
+    joinBtn: 'Entrar',
+    recentRooms: 'Salas recientes',
+    tabMovies: 'Películas',
+    tabVose: 'Bingetrix EN',
+    tabSeries: 'Series TV',
+    tabSports: 'Fútbol · Vivo',
+    tabYoutube: 'YouTube',
+    tabDirect: 'Cola · Enlace',
+    tabChat: 'Chat',
+    tabRoom: 'Sala',
+    searchMoviesPlaceholder: 'Buscar cualquier película en Español, Latino o Inglés...',
+    searchBingetrixPlaceholder: 'Buscar entre +500.000 películas en Bingetrix (Inglés 1080p)...',
+    searchSeriesPlaceholder: 'Buscar cualquier serie (Breaking Bad, Stranger Things, La Casa de Papel...)',
+    searchSportsPlaceholder: 'Buscar partido, LaLiga, Champions, F1 o canal...',
+    searchYoutubePlaceholder: 'Buscar vídeos, música, resúmenes o canales en YouTube...',
+    unmuteAudio: 'Activar sonido',
+    liveNow: 'EN DIRECTO',
+    syncRoom: 'Sincronizar',
     invite: 'Invitar',
-    tv: 'Tele',
-    participants: 'Usuarios',
-    host: 'Host',
-    room: 'Sala',
-    syncNotice: 'Navegación Sincronizada',
-    searchPlaceholder: 'Buscar en el catálogo...',
-    streamingHD: 'HD Stream',
-    loadingCatalog: 'Sincronizando Cartelera...',
-    reloadGame: 'RECARGAR PARTIDO',
-    randomName: 'Nombre aleatorio',
-    premiumCinema: 'Streaming Cooperativo en Alta Definición',
-    inviteTitle: 'Invitación a la Sala',
-    copy: 'Copiar',
-    copied: 'Copiado',
-    share: 'Compartir',
-    makeHost: 'Hacer Host',
-    saveChanges: 'Guardar Cambios',
-    profileTitle: 'Tu Perfil en la Sala',
-    nameLabel: 'Nombre / Apodo',
-    colorLabel: 'Color de Usuario',
+    smartTv: 'Smart TV',
+    leaveRoom: 'Salir',
+    chatPlaceholder: 'Escribe un mensaje a tus amigos...',
+    send: 'Enviar',
+    participants: 'Amigos en sala',
+    hostLabel: 'Anfitrión',
+    makeHost: 'Ceder control',
     you: 'Tú',
-    healthTitle: 'Monitor de Salud',
-    latency: 'Latencia',
-    resync: 'Forzar Sincronización',
-    close: 'Cerrar',
-    sendToTvTitle: 'Enviar a Smart TV',
-    tvInstructions: 'Abre este enlace en el navegador de tu TV:',
-    scanning: 'Escanea el código QR'
+    copyLink: 'Copiar invitación',
+    copied: 'Enlace copiado',
+    extractingTitle: 'Preparando proyección HD sin anuncios...',
+    extractingSub: 'Conectando pistas de audio y sincronizando toda la sala NAIMCINE',
+    standbyTitle: 'NAIMCINE listo para proyectar',
+    standbySub: 'Elige una película, serie por episodios, partido en vivo o vídeo de YouTube abajo.',
+    directTitle: 'Enlace Universal y Cloud Browser Sin Publicidad',
+    directSub:
+      'Pega cualquier enlace de YouTube, archivo .m3u8 / .mp4 o cualquier página web para extraer el vídeo limpio o navegar sin ventanas emergentes.',
+    playNativeBtn: 'Reproducir Sin Anuncios',
+    openCloudBtn: 'Abrir en Cloud Browser',
+    switchNativeHd: 'Pasar a Reproductor Nativo HD',
+    allSports: 'Todos',
+    soccer: 'Fútbol',
+    motor: 'F1 · Motor',
+    basketball: 'Baloncesto',
+    tennis: 'Tenis',
   },
   en: {
-    welcome: 'Setup Your Profile',
-    welcomeSub: 'How others will see you in the room',
-    namePlaceholder: 'Enter your name...',
-    nameRequired: '⚠️ Required: Enter your name or click the right button',
-    avatarLabel: 'Your Avatar',
-    avatarSub: 'Customizable',
-    createRoom: 'Create Private Room',
-    joinRoom: 'Or join one',
-    roomIdPlaceholder: 'Room ID...',
-    enterButton: 'Join',
-    movidy: 'Movies ES',
-    english: 'English VO',
-    sports: 'Sports',
-    liveChat: 'Live Chat',
-    startChat: 'Start chatting',
-    writeSomething: 'Write something...',
+    appTagline: 'NAIMCINE · Watch Movies, Series, Live Football & YouTube Together',
+    heroHeadline: 'Watch movies, TV series and live football with your friends, ad-free.',
+    heroDescription:
+      'Complete Bingetrix 1080p English catalog + Spanish/Latino dubs, full TV series with seasons & episodes, live sports channels, and synchronized YouTube watch parties.',
+    nicknameLabel: 'Your display name',
+    nicknamePlaceholder: 'e.g. Naim, Alex, Sofia...',
+    avatarLabel: 'Avatar',
+    accentLabel: 'Accent',
+    createRoomBtn: 'Enter NAIMCINE · Create Room',
+    joinRoomLabel: 'Join with room code',
+    roomCodePlaceholder: 'e.g. movie-night',
+    joinBtn: 'Join',
+    recentRooms: 'Recent rooms',
+    tabMovies: 'Movies',
+    tabVose: 'Bingetrix EN',
+    tabSeries: 'TV Series',
+    tabSports: 'Live Sports',
+    tabYoutube: 'YouTube',
+    tabDirect: 'Queue · Link',
+    tabChat: 'Chat',
+    tabRoom: 'Room',
+    searchMoviesPlaceholder: 'Search any movie in English, Spanish, or Latino...',
+    searchBingetrixPlaceholder: 'Search 500,000+ movies on Bingetrix (English 1080p)...',
+    searchSeriesPlaceholder: 'Search any TV series (Breaking Bad, Severance, Game of Thrones...)',
+    searchSportsPlaceholder: 'Search match, Champions League, F1, or channel...',
+    searchYoutubePlaceholder: 'Search YouTube videos, music, highlights, or channels...',
+    unmuteAudio: 'Tap to unmute',
+    liveNow: 'LIVE',
+    syncRoom: 'Resync',
     invite: 'Invite',
-    tv: 'TV',
-    participants: 'Users',
-    host: 'Host',
-    room: 'Room',
-    syncNotice: 'Synced Navigation',
-    searchPlaceholder: 'Search catalog...',
-    streamingHD: 'HD Stream',
-    loadingCatalog: 'Syncing Billboard...',
-    reloadGame: 'RELOAD GAME',
-    randomName: 'Random name',
-    premiumCinema: 'Cooperative High Definition Streaming',
-    inviteTitle: 'Room Invitation',
-    copy: 'Copy',
-    copied: 'Copied',
-    share: 'Share',
-    makeHost: 'Make Host',
-    saveChanges: 'Save Changes',
-    profileTitle: 'Your Room Profile',
-    nameLabel: 'Name / Nickname',
-    colorLabel: 'User Color',
+    smartTv: 'Smart TV',
+    leaveRoom: 'Leave',
+    chatPlaceholder: 'Message your friends...',
+    send: 'Send',
+    participants: 'Friends in room',
+    hostLabel: 'Host',
+    makeHost: 'Make host',
     you: 'You',
-    healthTitle: 'Health Monitor',
-    latency: 'Latency',
-    resync: 'Force Resync',
-    close: 'Close',
-    sendToTvTitle: 'Send to Smart TV',
-    tvInstructions: 'Open this link in your TV browser:',
-    scanning: 'Scan the QR code'
+    copyLink: 'Copy invite link',
+    copied: 'Link copied',
+    extractingTitle: 'Preparing clean HD screening...',
+    extractingSub: 'Extracting ad-free HLS stream and syncing your NAIMCINE room',
+    standbyTitle: 'NAIMCINE ready to screen',
+    standbySub: 'Pick any movie, TV series episode, live match, or YouTube video below.',
+    directTitle: 'Universal Stream Decompiler & Cloud Browser',
+    directSub:
+      'Paste any YouTube, .m3u8 / .mp4, or web URL to extract clean native video or browse inside a server-isolated session with zero popups.',
+    playNativeBtn: 'Play Ad-Free Native',
+    openCloudBtn: 'Open in Cloud Browser',
+    switchNativeHd: 'Switch to Native HD Player',
+    allSports: 'All',
+    soccer: 'Football',
+    motor: 'F1 · Motor',
+    basketball: 'Basketball',
+    tennis: 'Tennis',
   },
-  zh: {
-    welcome: '设置您的个人资料',
-    welcomeSub: '其他人在房间里如何看到你',
-    namePlaceholder: '输入你的名字...',
-    nameRequired: '⚠️ 必填：输入你的名字或点击右侧按钮',
-    avatarLabel: '你的头像',
-    avatarSub: '可自定义',
-    createRoom: '创建私人房间',
-    joinRoom: '或加入一个',
-    roomIdPlaceholder: '房间 ID...',
-    enterButton: '加入',
-    movidy: '西班牙语电影',
-    english: '英语电影',
-    sports: '体育',
-    liveChat: '实时聊天',
-    startChat: '开始聊天',
-    writeSomething: '写点什么...',
-    invite: '邀请',
-    tv: '电视',
-    participants: '用户',
-    host: '房主',
-    room: '房间',
-    syncNotice: '同步导航',
-    searchPlaceholder: '搜索目录...',
-    streamingHD: '高清流',
-    loadingCatalog: '正在同步...',
-    reloadGame: '重新加载游戏',
-    randomName: '随机名称',
-    premiumCinema: '合作高清流媒体',
-    inviteTitle: '房间邀请',
-    copy: '复制',
-    copied: '已复制',
-    share: '分享',
-    makeHost: '设为房主',
-    saveChanges: '保存更改',
-    profileTitle: '您的房间资料',
-    nameLabel: '姓名/昵称',
-    colorLabel: '用户颜色',
-    you: '你',
-    healthTitle: '健康监测',
-    latency: '延迟',
-    resync: '强制同步',
-    close: '关闭',
-    sendToTvTitle: '发送到智能电视',
-    tvInstructions: '在电视浏览器中打开此链接：',
-    scanning: '扫描二维码'
-  }
 };
