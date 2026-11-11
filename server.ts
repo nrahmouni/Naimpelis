@@ -1,5 +1,6 @@
 import dns from 'dns';
 import crypto from 'crypto';
+import fs from 'fs';
 import http2 from 'http2';
 import zlib from 'zlib';
 import { execFile, spawn } from 'child_process';
@@ -125,6 +126,11 @@ interface ExtractedStreamResult {
   youtubeId?: string;
   title?: string;
   tracks?: TrackRecord[];
+  requestedLang?: string;
+  resolvedLang?: string;
+  resolvedLabel?: string;
+  languageFallbackUsed?: boolean;
+  availableLanguages?: string[];
   expiresAt: number;
 }
 
@@ -711,7 +717,7 @@ async function extractBingetrixEnglishTracks(opts: {
 }
 
 // ============================================================================
-// SUBSYSTEM 1C: LEGACY NUPLOAD DECODER (FALLBACK FOR DIRECT NUPLOAD LINKS)
+// SUBSYSTEM 1C: MOVIDY SPANISH STREAM & CATALOG ENGINE (movidy.pw + nupload.my)
 // ============================================================================
 async function decodeNuploadToHls(embedUrlOrB64: string): Promise<{ rawM3u8: string; proxyUrl: string } | null> {
   try {
@@ -729,7 +735,7 @@ async function decodeNuploadToHls(embedUrlOrB64: string): Promise<{ rawM3u8: str
         Referer: 'https://movidy.pw/',
         'User-Agent': CHROME_UA,
       },
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(5500),
     });
 
     if (!res.ok) return null;
@@ -760,6 +766,122 @@ async function decodeNuploadToHls(embedUrlOrB64: string): Promise<{ rawM3u8: str
       rawM3u8,
       proxyUrl: buildHlsProxyUrl(rawM3u8, embedOrigin),
     };
+  } catch {
+    return null;
+  }
+}
+
+async function extractMovidyPageTracks(movidyVerUrl: string): Promise<TrackRecord[]> {
+  try {
+    const cleanUrl = movidyVerUrl.trim();
+    if (!cleanUrl.includes('movidy.pw/ver/')) return [];
+
+    let html = '';
+    try {
+      const res = await fetch(cleanUrl, {
+        headers: {
+          'User-Agent': CHROME_UA,
+          Referer: 'https://movidy.pw/pelis/',
+        },
+        signal: AbortSignal.timeout(5000),
+      });
+      if (res.ok) {
+        html = await res.text();
+      }
+    } catch {
+      const fb = await curlGetText(cleanUrl, { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' }, 5).catch(() => ({ text: '' }));
+      html = fb.text;
+    }
+
+    if (!html) return [];
+
+    const slug =
+      cleanUrl
+        .split('/ver/')[1]
+        ?.replace(/\//g, '')
+        .replace(/[^a-zA-Z0-9_-]/g, '') || 'movidy';
+
+    const trackRegex =
+      /<li[^>]*class="[^"]*play-url[^"]*"[^>]*data-url="([^"]+)"[^>]*>[\s\S]*?<span>([^<]+)<\/span>\s*<\/li>/gi;
+    const rawTracks: TrackRecord[] = [];
+    let match: RegExpExecArray | null;
+
+    while ((match = trackRegex.exec(html)) !== null) {
+      const dataUrl = String(match[1] || '').trim();
+      const rawLangText = String(match[2] || '').trim();
+      if (!dataUrl) continue;
+
+      let lang: 'ES' | 'LAT' | 'VOSE' = 'ES';
+      let label = 'Castellano HD (Movidy)';
+
+      if (/castellano|espa[ñn]ol|espa[ñn]a/i.test(rawLangText) && !/latino/i.test(rawLangText)) {
+        lang = 'ES';
+        label = 'Castellano HD · Movidy';
+      } else if (/latino/i.test(rawLangText)) {
+        lang = 'LAT';
+        label = 'Español Latino HD · Movidy';
+      } else if (/subtitulado|vose|original/i.test(rawLangText)) {
+        lang = 'VOSE';
+        label = 'Subtitulado VOSE · Movidy';
+      } else {
+        lang = 'ES';
+        label = `${rawLangText} HD · Movidy`;
+      }
+
+      rawTracks.push({
+        id: `movidy-${slug}-${lang.toLowerCase()}-${rawTracks.length + 1}`,
+        label,
+        lang,
+        quality: 'HD HLS',
+        sourceUrl: dataUrl,
+        resolverType: 'movidy_embed',
+      });
+    }
+
+    const langOrder: Record<string, number> = { ES: 1, LAT: 2, VOSE: 3 };
+    return rawTracks.sort((a, b) => (langOrder[a.lang] || 9) - (langOrder[b.lang] || 9));
+  } catch (err) {
+    console.warn('extractMovidyPageTracks error:', err);
+    return [];
+  }
+}
+
+function normalizeTitleForMatch(raw: string): string {
+  return String(raw || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+async function findMovidyUrlByTitle(title: string): Promise<string | null> {
+  try {
+    const clean = title.replace(/\s*\([^)]*\)/g, '').trim();
+    if (!clean || clean.length < 2) return null;
+    const searchUrl = `https://movidy.pw/?s=${encodeURIComponent(clean)}`;
+    const res = await fetch(searchUrl, {
+      headers: { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
+      signal: AbortSignal.timeout(3800),
+    });
+    if (!res.ok) return null;
+    const html = await res.text();
+
+    const itemRe =
+      /<li>\s*<a\s+href="(https:\/\/movidy\.pw\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>/gi;
+    const normTarget = normalizeTitleForMatch(clean);
+    let firstCandidate: string | null = null;
+    let m: RegExpExecArray | null;
+
+    while ((m = itemRe.exec(html)) !== null) {
+      const url = m[1];
+      const itemTitle = normalizeTitleForMatch(m[2]);
+      if (!firstCandidate) firstCandidate = url;
+      if (itemTitle === normTarget || itemTitle.includes(normTarget) || normTarget.includes(itemTitle)) {
+        return url;
+      }
+    }
+    return null;
   } catch {
     return null;
   }
@@ -1032,9 +1154,82 @@ async function sniffStreamWithHeadless(
 // ============================================================================
 const app = express();
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ server: httpServer, path: '/ws' });
+const wss = new WebSocketServer({ noServer: true });
+
+httpServer.on('upgrade', (req, socket, head) => {
+  const pathname = (req.url || '').split('?')[0];
+  if (pathname === '/ws') {
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      wss.emit('connection', ws, req);
+    });
+  }
+});
 
 app.use(express.json());
+
+// Serve ES5 UMD Hls.js locally for Samsung Tizen / LG webOS Smart TVs (zero external CDN dependency)
+app.get('/vendor/hls.min.js', (_req, res) => {
+  const hlsPath = path.resolve(__dirname, 'node_modules', 'hls.js', 'dist', 'hls.min.js');
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.sendFile(hlsPath);
+});
+
+// Digital Asset Links for Android Trusted Web Activity (100% fullscreen native APK without URL bar)
+app.get('/.well-known/assetlinks.json', (_req, res) => {
+  const pubPath = path.resolve(__dirname, 'public', '.well-known', 'assetlinks.json');
+  const distPath = path.resolve(__dirname, 'dist', '.well-known', 'assetlinks.json');
+  const target = fs.existsSync(pubPath) ? pubPath : distPath;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(target);
+});
+
+// Direct Ready-to-Install Signed Android APK Download
+app.get(['/NAIM-CINE.apk', '/naimcine.apk', '/api/download/apk'], (_req, res) => {
+  const pubApk = path.resolve(__dirname, 'public', 'NAIM-CINE.apk');
+  const distApk = path.resolve(__dirname, 'dist', 'NAIM-CINE.apk');
+  const target = fs.existsSync(pubApk) ? pubApk : distApk;
+  if (!fs.existsSync(target)) {
+    return res.status(404).json({ error: 'APK file not found' });
+  }
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', 'attachment; filename="NAIM-CINE.apk"');
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.sendFile(target);
+});
+
+// Serve Zero-Dependency Pure ES5 + Classic CSS Smart TV Receiver (/tv) directly
+// Works on 100% of Samsung Tizen, LG webOS, Bravia, Viera, VIDAA & Fire TV browsers!
+function sendSmartTvReceiverHtml(res: express.Response) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  const publicPath = path.resolve(__dirname, 'public', 'tv-receiver.html');
+  const distPath = path.resolve(__dirname, 'dist', 'tv-receiver.html');
+  const target = fs.existsSync(publicPath) ? publicPath : distPath;
+  res.sendFile(target);
+}
+
+app.get(['/tv', '/tv/'], (_req, res) => {
+  sendSmartTvReceiverHtml(res);
+});
+
+// Auto-redirect Smart TV browsers (Samsung Tizen, LG webOS, etc.) opening "/" straight to "/tv"
+app.get('/', (req, res, next) => {
+  if (req.query.web === '1' || req.query.room) {
+    return next();
+  }
+  const ua = String(req.headers['user-agent'] || '');
+  if (
+    /SMART-TV|SmartTV|Tizen|Web0S|WebOS|NetCast|BRAVIA|Viera|VIDAA|HbbTV|AFTB|AFTT|AFTM|GoogleTV/i.test(
+      ua
+    )
+  ) {
+    return res.redirect(302, '/tv');
+  }
+  return next();
+});
 
 // ============================================================================
 // SUBSYSTEM 3: AUTHORITATIVE REAL-TIME ROOM, QUEUE & CLOUD BROWSER ENGINE
@@ -1067,8 +1262,24 @@ interface RoomRecord {
     activeTrackIndex: number;
     seriesMeta?: any;
     lastUpdated: number;
-    updatedBy?: string;
+  updatedBy?: string;
   };
+  pinCode?: string;
+  hostOnlyControl: boolean;
+  activePoll: {
+    id: string;
+    question: string;
+    createdBy: string;
+    createdAt: number;
+    endsAt: number;
+    isClosed: boolean;
+    winnerOptionId?: string;
+    options: {
+      id: string;
+      item: any;
+      voterIds: string[];
+    }[];
+  } | null;
   queue: any[];
   participants: {
     id: string;
@@ -1079,11 +1290,201 @@ interface RoomRecord {
     joinedAt: number;
   }[];
   messages: any[];
+  lastTvRemoteCommand?: {
+    seq: number;
+    command: string;
+    senderName: string;
+    ts: number;
+  };
   createdAt: number;
 }
 
+const ROOMS_SNAPSHOT_PATH = '/tmp/naimcine-rooms-v1.json';
 const rooms = new Map<string, RoomRecord>();
 const cloudSessions = new Map<string, CloudRoomSession>();
+const roomPollTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
+interface TvPairingSession {
+  code: string;
+  ws?: WebSocket | null;
+  createdAt: number;
+  expiresAt: number;
+  pairedPayload?: {
+    roomId: string;
+    roomName: string;
+    tvAuthToken: string;
+    claimedBy: string;
+  };
+}
+
+const tvPairingSessions = new Map<string, TvPairingSession>();
+const tvSocketToCode = new Map<WebSocket, string>();
+const tvHttpHeartbeats = new Map<string, number>();
+const tvAuthTokens = new Map<string, { roomId: string; expiresAt: number }>();
+
+function loadPersistedRoomsFromDisk() {
+  try {
+    if (!fs.existsSync(ROOMS_SNAPSHOT_PATH)) return;
+    const raw = fs.readFileSync(ROOMS_SNAPSHOT_PATH, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return;
+    for (const item of parsed.slice(0, 120)) {
+      if (item && typeof item.id === 'string') {
+        rooms.set(item.id, {
+          ...item,
+          participants: [],
+          activePoll: null,
+        });
+      }
+    }
+  } catch {
+    // ignore corrupted snapshot
+  }
+}
+
+let persistDiskTimer: ReturnType<typeof setTimeout> | null = null;
+function schedulePersistRoomsToDisk() {
+  if (persistDiskTimer) return;
+  persistDiskTimer = setTimeout(() => {
+    persistDiskTimer = null;
+    try {
+      const serializable = Array.from(rooms.values())
+        .slice(-100)
+        .map((r) => ({
+          id: r.id,
+          name: r.name,
+          hostId: r.hostId,
+          pinCode: r.pinCode,
+          hostOnlyControl: r.hostOnlyControl,
+          videoState:
+            r.videoState.mode === 'cloud'
+              ? {
+                  ...r.videoState,
+                  mode: 'idle' as const,
+                  url: '',
+                  isPlaying: false,
+                }
+              : r.videoState,
+          queue: (r.queue || []).slice(0, 20),
+          messages: (r.messages || []).slice(-60),
+          createdAt: r.createdAt,
+        }));
+      fs.writeFileSync(ROOMS_SNAPSHOT_PATH, JSON.stringify(serializable), 'utf8');
+    } catch {
+      // ignore disk write error
+    }
+  }, 1500);
+}
+
+loadPersistedRoomsFromDisk();
+
+function generateTvPairingCode(): string {
+  const now = Date.now();
+  for (const [k, session] of tvPairingSessions.entries()) {
+    if (session.expiresAt <= now) {
+      tvPairingSessions.delete(k);
+      if (session.ws) tvSocketToCode.delete(session.ws);
+    }
+  }
+  for (let attempt = 0; attempt < 40; attempt++) {
+    const num = Math.floor(1000 + Math.random() * 9000);
+    const code = String(num);
+    if (!tvPairingSessions.has(code)) return code;
+  }
+  return String(Math.floor(1000 + Math.random() * 9000));
+}
+
+function claimTvPairingCodeCore(params: {
+  rawCode: string;
+  targetRoomId: string;
+  roomNameHint?: string;
+  claimedByRaw?: string;
+}):
+  | { ok: true; code: string; roomId: string; roomName: string; tvAuthToken: string }
+  | { ok: false; error: string } {
+  const code = String(params.rawCode || '')
+    .replace(/\D/g, '')
+    .slice(0, 4);
+  const targetRoomId = String(params.targetRoomId || '')
+    .trim()
+    .toLowerCase();
+
+  if (code.length !== 4 || !targetRoomId) {
+    return {
+      ok: false,
+      error: 'Código de 4 dígitos no válido.',
+    };
+  }
+
+  const session = tvPairingSessions.get(code);
+  if (!session || session.expiresAt <= Date.now()) {
+    if (session) {
+      tvPairingSessions.delete(code);
+      if (session.ws) tvSocketToCode.delete(session.ws);
+    }
+    return {
+      ok: false,
+      error:
+        'Código no encontrado o caducado. Revisa los 4 números que aparecen en tu Smart TV.',
+    };
+  }
+
+  const { room } = getOrCreateRoom(targetRoomId, params.roomNameHint);
+  const tvAuthToken = crypto.randomBytes(16).toString('hex');
+  tvAuthTokens.set(tvAuthToken, {
+    roomId: targetRoomId,
+    expiresAt: Date.now() + 2 * 60 * 60 * 1000,
+  });
+
+  const claimedBy = String(params.claimedByRaw || 'Móvil')
+    .trim()
+    .slice(0, 32);
+
+  session.pairedPayload = {
+    roomId: targetRoomId,
+    roomName: room.name,
+    tvAuthToken,
+    claimedBy,
+  };
+  // Keep paired payload alive for 90s so HTTP-polling Samsung TVs read it reliably
+  session.expiresAt = Date.now() + 90 * 1000;
+
+  if (session.ws && session.ws.readyState === WebSocket.OPEN) {
+    try {
+      session.ws.send(
+        JSON.stringify({
+          type: 'TV_PAIRED_REDIRECT',
+          payload: {
+            roomId: targetRoomId,
+            roomName: room.name,
+            tvAuthToken,
+            claimedBy,
+            pairedBy: claimedBy,
+          },
+        })
+      );
+    } catch {
+      // HTTP polling fallback on TV will pick up session.pairedPayload
+    }
+  }
+
+  return {
+    ok: true,
+    code,
+    roomId: targetRoomId,
+    roomName: room.name,
+    tvAuthToken,
+  };
+}
+
+function serializeRoomForClient(room: RoomRecord) {
+  const { pinCode, ...safeRoom } = room;
+  return {
+    ...safeRoom,
+    hasPin: Boolean(pinCode),
+    videoState: computeAuthoritativeVideoState(room),
+  };
+}
 
 interface ClientMeta {
   ws: WebSocket;
@@ -1094,14 +1495,65 @@ interface ClientMeta {
 
 const clients = new Map<WebSocket, ClientMeta>();
 
-function getOrCreateRoom(roomId: string, roomName?: string): RoomRecord {
+function finalizeRoomPoll(roomId: string, expectedPollId: string) {
+  const timer = roomPollTimers.get(roomId);
+  if (timer) {
+    clearTimeout(timer);
+    roomPollTimers.delete(roomId);
+  }
+  const room = rooms.get(roomId);
+  if (!room || !room.activePoll || room.activePoll.id !== expectedPollId || room.activePoll.isClosed) {
+    return;
+  }
+
+  room.activePoll.isClosed = true;
+  let bestOpt = room.activePoll.options[0];
+  for (const opt of room.activePoll.options) {
+    if (opt.voterIds.length > (bestOpt?.voterIds.length || 0)) {
+      bestOpt = opt;
+    }
+  }
+  room.activePoll.winnerOptionId = bestOpt?.id;
+
+  const totalVotes = room.activePoll.options.reduce((acc, o) => acc + o.voterIds.length, 0);
+  const sysMsg = {
+    id: `poll-win-${Date.now()}`,
+    senderId: 'system',
+    senderName: 'NAIMCINE',
+    senderAvatar: '🏆',
+    senderColor: '#f59e0b',
+    text: bestOpt
+      ? `Votación cerrada (${totalVotes} voto${totalVotes === 1 ? '' : 's'}): ganó "${bestOpt.item?.title || 'Opción'}"`
+      : 'Votación finalizada',
+    timestamp: Date.now(),
+    isSystem: true,
+    systemType: 'poll',
+  };
+  room.messages.push(sysMsg);
+  if (room.messages.length > 150) room.messages.shift();
+
+  broadcastToRoom(roomId, {
+    type: 'POLL_UPDATED',
+    payload: {
+      poll: room.activePoll,
+      winnerItem: bestOpt?.item || null,
+      justFinished: true,
+      message: sysMsg,
+    },
+  });
+}
+
+function getOrCreateRoom(roomId: string, roomName?: string): { room: RoomRecord; isFresh: boolean } {
   const existing = rooms.get(roomId);
-  if (existing) return existing;
+  if (existing) return { room: existing, isFresh: false };
 
   const created: RoomRecord = {
     id: roomId,
     name: roomName || `Sala ${roomId.toUpperCase()}`,
     hostId: '',
+    pinCode: undefined,
+    hostOnlyControl: false,
+    activePoll: null,
     videoState: {
       mode: 'idle',
       url: '',
@@ -1133,7 +1585,8 @@ function getOrCreateRoom(roomId: string, roomName?: string): RoomRecord {
   };
 
   rooms.set(roomId, created);
-  return created;
+  schedulePersistRoomsToDisk();
+  return { room: created, isFresh: true };
 }
 
 function computeAuthoritativeVideoState(room: RoomRecord) {
@@ -1270,6 +1723,45 @@ wss.on('connection', (ws) => {
         return;
       }
 
+      if (type === 'TV_REGISTER_PAIRING') {
+        const requestedExisting = String(payload?.existingCode || '')
+          .replace(/\D/g, '')
+          .slice(0, 4);
+        const now = Date.now();
+        const existingSession =
+          requestedExisting.length === 4 ? tvPairingSessions.get(requestedExisting) : undefined;
+
+        let code: string;
+        let expiresAt: number;
+
+        if (existingSession && existingSession.expiresAt > now && !existingSession.pairedPayload) {
+          code = existingSession.code;
+          expiresAt = existingSession.expiresAt;
+          existingSession.ws = ws;
+          tvSocketToCode.set(ws, code);
+        } else {
+          const prevCode = tvSocketToCode.get(ws);
+          if (prevCode) {
+            const prevSession = tvPairingSessions.get(prevCode);
+            if (prevSession && !prevSession.pairedPayload) {
+              tvPairingSessions.delete(prevCode);
+            }
+          }
+          code = generateTvPairingCode();
+          expiresAt = now + 15 * 60 * 1000;
+          tvPairingSessions.set(code, { code, ws, createdAt: now, expiresAt });
+          tvSocketToCode.set(ws, code);
+        }
+
+        ws.send(
+          JSON.stringify({
+            type: 'TV_PAIRING_READY',
+            payload: { code, expiresAt },
+          })
+        );
+        return;
+      }
+
       if (type === 'JOIN_ROOM') {
         const roomId = String(payload?.roomId || 'sala-naim').trim().toLowerCase();
         const userObj = payload?.user || {};
@@ -1278,7 +1770,55 @@ wss.on('connection', (ws) => {
         const userAvatar = String(userObj.avatar || payload?.userAvatar || '🍿');
         const userColor = String(userObj.color || payload?.userColor || '#e11d48');
 
-        const room = getOrCreateRoom(roomId, payload?.roomName);
+        const { room, isFresh } = getOrCreateRoom(roomId, payload?.roomName);
+
+        // Hydrate permanent cloud room blueprint when owner re-opens an empty/fresh room
+        const bp = payload?.restoredBlueprint;
+        if (bp && typeof bp === 'object' && (isFresh || room.participants.length === 0)) {
+          if (typeof bp.roomName === 'string' && bp.roomName.trim()) {
+            room.name = bp.roomName.trim().slice(0, 60);
+          }
+          if (typeof bp.hostOnlyControl === 'boolean') {
+            room.hostOnlyControl = bp.hostOnlyControl;
+          }
+          if (typeof bp.pinCode === 'string' && /^[0-9]{4}$/.test(bp.pinCode)) {
+            room.pinCode = bp.pinCode;
+          }
+          if (Array.isArray(bp.queueItems) && room.queue.length === 0) {
+            room.queue = bp.queueItems.slice(0, 12);
+          }
+          room.hostId = userId;
+          schedulePersistRoomsToDisk();
+        }
+
+        // Validate Private Room 4-digit PIN (unless caller is existing host or paired Smart TV token)
+        if (room.pinCode) {
+          const incomingPin = typeof payload?.pin === 'string' ? payload.pin.trim() : '';
+          const incomingTvToken =
+            typeof payload?.tvAuthToken === 'string' ? payload.tvAuthToken.trim() : '';
+          let validTvToken = false;
+          if (incomingTvToken) {
+            const tokenEntry = tvAuthTokens.get(incomingTvToken);
+            if (tokenEntry && tokenEntry.roomId === roomId && tokenEntry.expiresAt > Date.now()) {
+              validTvToken = true;
+            }
+          }
+
+          const isReturningHost = Boolean(room.hostId && room.hostId === userId);
+          if (!isReturningHost && !validTvToken && incomingPin !== room.pinCode) {
+            ws.send(
+              JSON.stringify({
+                type: 'ROOM_PIN_REQUIRED',
+                payload: {
+                  roomId,
+                  roomName: room.name,
+                  invalidAttempt: Boolean(incomingPin),
+                },
+              })
+            );
+            return;
+          }
+        }
 
         if (!room.hostId || !room.participants.some((p) => p.id === room.hostId)) {
           room.hostId = userId;
@@ -1316,13 +1856,12 @@ wss.on('connection', (ws) => {
           if (room.messages.length > 150) room.messages.shift();
         }
 
+        schedulePersistRoomsToDisk();
+
         ws.send(
           JSON.stringify({
             type: 'ROOM_STATE',
-            payload: {
-              ...room,
-              videoState: computeAuthoritativeVideoState(room),
-            },
+            payload: serializeRoomForClient(room),
           })
         );
 
@@ -1342,6 +1881,26 @@ wss.on('connection', (ws) => {
         const { roomId, action, videoState: incomingState, updatedBy } = payload || {};
         const room = rooms.get(roomId);
         if (!room || !incomingState) return;
+
+        const senderMeta = clients.get(ws);
+        if (
+          room.hostOnlyControl &&
+          room.hostId &&
+          senderMeta?.userId &&
+          senderMeta.userId !== room.hostId
+        ) {
+          const hostMember = room.participants.find((p) => p.id === room.hostId);
+          ws.send(
+            JSON.stringify({
+              type: 'HOST_LOCK_REJECTED',
+              payload: {
+                videoState: computeAuthoritativeVideoState(room),
+                hostName: hostMember?.name || 'el anfitrión',
+              },
+            })
+          );
+          return;
+        }
 
         room.videoState = {
           ...room.videoState,
@@ -1371,6 +1930,8 @@ wss.on('connection', (ws) => {
           if (room.messages.length > 150) room.messages.shift();
         }
 
+        schedulePersistRoomsToDisk();
+
         broadcastToRoom(
           roomId,
           {
@@ -1399,6 +1960,7 @@ wss.on('connection', (ws) => {
           isSystem: true,
         };
         room.messages.push(sysMsg);
+        schedulePersistRoomsToDisk();
         broadcastToRoom(roomId, {
           type: 'QUEUE_UPDATED',
           payload: { queue: room.queue, message: sysMsg },
@@ -1408,6 +1970,7 @@ wss.on('connection', (ws) => {
         const room = rooms.get(roomId);
         if (!room || !itemId) return;
         room.queue = room.queue.filter((q) => q.id !== itemId);
+        schedulePersistRoomsToDisk();
         broadcastToRoom(roomId, {
           type: 'QUEUE_UPDATED',
           payload: { queue: room.queue },
@@ -1501,6 +2064,26 @@ wss.on('connection', (ws) => {
         const room = rooms.get(roomId);
         if (!room || !url) return;
 
+        const senderMeta = clients.get(ws);
+        if (
+          room.hostOnlyControl &&
+          room.hostId &&
+          senderMeta?.userId &&
+          senderMeta.userId !== room.hostId
+        ) {
+          const hostMember = room.participants.find((p) => p.id === room.hostId);
+          ws.send(
+            JSON.stringify({
+              type: 'HOST_LOCK_REJECTED',
+              payload: {
+                videoState: computeAuthoritativeVideoState(room),
+                hostName: hostMember?.name || 'el anfitrión',
+              },
+            })
+          );
+          return;
+        }
+
         room.videoState = {
           mode: 'cloud',
           url,
@@ -1549,6 +2132,240 @@ wss.on('connection', (ws) => {
       } else if (type === 'CLOUD_BROWSER_STOP') {
         const { roomId } = payload || {};
         await stopCloudSession(roomId);
+      } else if (type === 'SET_HOST_LOCK') {
+        const { roomId, hostOnlyControl } = payload || {};
+        const room = rooms.get(roomId);
+        const senderMeta = clients.get(ws);
+        if (!room || !senderMeta?.userId || senderMeta.userId !== room.hostId) return;
+
+        room.hostOnlyControl = Boolean(hostOnlyControl);
+        const sysMsg = {
+          id: `lock-${Date.now()}`,
+          senderId: 'system',
+          senderName: 'NAIMCINE',
+          senderAvatar: room.hostOnlyControl ? '🔒' : '🔓',
+          senderColor: '#f59e0b',
+          text: room.hostOnlyControl
+            ? `${senderMeta.userName || 'El anfitrión'} activó el Modo Cineasta (solo el anfitrión controla el reproductor)`
+            : `${senderMeta.userName || 'El anfitrión'} permitió control compartido en la sala`,
+          timestamp: Date.now(),
+          isSystem: true,
+          systemType: 'lock',
+        };
+        room.messages.push(sysMsg);
+        if (room.messages.length > 150) room.messages.shift();
+
+        broadcastToRoom(roomId, {
+          type: 'HOST_LOCK_UPDATED',
+          payload: {
+            hostOnlyControl: room.hostOnlyControl,
+            message: sysMsg,
+          },
+        });
+      } else if (type === 'POLL_START') {
+        const { roomId, question, options, durationSec } = payload || {};
+        const room = rooms.get(roomId);
+        const senderMeta = clients.get(ws);
+        if (!room || !Array.isArray(options) || options.length < 2) return;
+        if (room.hostOnlyControl && room.hostId && senderMeta?.userId !== room.hostId) return;
+
+        const existingTimer = roomPollTimers.get(roomId);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+          roomPollTimers.delete(roomId);
+        }
+
+        const clampedSec = Math.max(12, Math.min(90, Number(durationSec) || 25));
+        const now = Date.now();
+        const pollId = `poll-${now}-${Math.random().toString(36).slice(2, 6)}`;
+        room.activePoll = {
+          id: pollId,
+          question: String(question || '¿Qué vemos ahora en la sala?').slice(0, 80),
+          createdBy: senderMeta?.userName || 'Anfitrión',
+          createdAt: now,
+          endsAt: now + clampedSec * 1000,
+          isClosed: false,
+          options: options.slice(0, 5).map((item: any, idx: number) => ({
+            id: `opt-${idx + 1}`,
+            item,
+            voterIds: [],
+          })),
+        };
+
+        const sysMsg = {
+          id: `poll-start-${now}`,
+          senderId: 'system',
+          senderName: 'NAIMCINE',
+          senderAvatar: '🗳️',
+          senderColor: '#38bdf8',
+          text: `${room.activePoll.createdBy} inició una votación en vivo (${clampedSec}s)`,
+          timestamp: now,
+          isSystem: true,
+          systemType: 'poll',
+        };
+        room.messages.push(sysMsg);
+        if (room.messages.length > 150) room.messages.shift();
+
+        const t = setTimeout(() => {
+          finalizeRoomPoll(roomId, pollId);
+        }, clampedSec * 1000);
+        roomPollTimers.set(roomId, t);
+
+        broadcastToRoom(roomId, {
+          type: 'POLL_UPDATED',
+          payload: {
+            poll: room.activePoll,
+            justFinished: false,
+            message: sysMsg,
+          },
+        });
+      } else if (type === 'POLL_VOTE') {
+        const { roomId, pollId, optionId } = payload || {};
+        const room = rooms.get(roomId);
+        const senderMeta = clients.get(ws);
+        if (
+          !room ||
+          !room.activePoll ||
+          room.activePoll.id !== pollId ||
+          room.activePoll.isClosed ||
+          !senderMeta?.userId
+        ) {
+          return;
+        }
+
+        const voterId = senderMeta.userId;
+        for (const opt of room.activePoll.options) {
+          opt.voterIds = opt.voterIds.filter((id) => id !== voterId);
+          if (opt.id === optionId) {
+            opt.voterIds.push(voterId);
+          }
+        }
+
+        broadcastToRoom(roomId, {
+          type: 'POLL_UPDATED',
+          payload: {
+            poll: room.activePoll,
+            justFinished: false,
+          },
+        });
+      } else if (type === 'POLL_CLOSE') {
+        const { roomId, pollId } = payload || {};
+        const room = rooms.get(roomId);
+        const senderMeta = clients.get(ws);
+        if (!room || !room.activePoll || room.activePoll.id !== pollId) return;
+        if (room.hostId && senderMeta?.userId && senderMeta.userId !== room.hostId) return;
+        finalizeRoomPoll(roomId, pollId);
+      } else if (type === 'SET_ROOM_PIN') {
+        const { roomId, pinCode } = payload || {};
+        const room = rooms.get(roomId);
+        const senderMeta = clients.get(ws);
+        if (!room || !senderMeta?.userId || senderMeta.userId !== room.hostId) return;
+
+        const cleanPin = typeof pinCode === 'string' ? pinCode.trim() : '';
+        if (cleanPin && !/^[0-9]{4}$/.test(cleanPin)) return;
+
+        room.pinCode = cleanPin || undefined;
+        schedulePersistRoomsToDisk();
+
+        const sysMsg = {
+          id: `pin-${Date.now()}`,
+          senderId: 'system',
+          senderName: 'NAIMCINE',
+          senderAvatar: room.pinCode ? '🔐' : '🔓',
+          senderColor: '#f59e0b',
+          text: room.pinCode
+            ? `${senderMeta.userName || 'El anfitrión'} protegió la sala con un PIN privado de 4 dígitos`
+            : `${senderMeta.userName || 'El anfitrión'} quitó el PIN de la sala (acceso libre con enlace)`,
+          timestamp: Date.now(),
+          isSystem: true,
+          systemType: 'lock',
+        };
+        room.messages.push(sysMsg);
+        if (room.messages.length > 150) room.messages.shift();
+
+        broadcastToRoom(roomId, {
+          type: 'ROOM_PIN_UPDATED',
+          payload: {
+            hasPin: Boolean(room.pinCode),
+            message: sysMsg,
+          },
+        });
+      } else if (type === 'RENAME_ROOM') {
+        const { roomId, roomName } = payload || {};
+        const room = rooms.get(roomId);
+        const senderMeta = clients.get(ws);
+        if (!room || !senderMeta?.userId || senderMeta.userId !== room.hostId) return;
+        const cleanName = typeof roomName === 'string' ? roomName.trim().slice(0, 60) : '';
+        if (!cleanName) return;
+
+        room.name = cleanName;
+        schedulePersistRoomsToDisk();
+
+        broadcastToRoom(roomId, {
+          type: 'ROOM_RENAMED',
+          payload: {
+            roomName: room.name,
+          },
+        });
+      } else if (type === 'TV_CLAIM_CODE') {
+        const result = claimTvPairingCodeCore({
+          rawCode: payload?.code,
+          targetRoomId: payload?.roomId,
+          roomNameHint: payload?.roomName,
+          claimedByRaw: payload?.claimedBy,
+        });
+
+        if (!result.ok) {
+          ws.send(
+            JSON.stringify({
+              type: 'TV_CLAIM_RESULT',
+              payload: {
+                success: false,
+                error: result.error,
+              },
+            })
+          );
+          return;
+        }
+
+        ws.send(
+          JSON.stringify({
+            type: 'TV_CLAIM_RESULT',
+            payload: {
+              success: true,
+              code: result.code,
+              roomId: result.roomId,
+            },
+          })
+        );
+      } else if (type === 'TV_REMOTE_COMMAND') {
+        const { roomId, command, senderName } = payload || {};
+        const room = rooms.get(String(roomId || '').toLowerCase());
+        const senderMeta = clients.get(ws);
+        if (!room || !command) return;
+        if (
+          room.hostOnlyControl &&
+          room.hostId &&
+          senderMeta?.userId &&
+          senderMeta.userId !== room.hostId
+        ) {
+          return;
+        }
+        const resolvedSender = senderName || senderMeta?.userName || 'Mando móvil';
+        room.lastTvRemoteCommand = {
+          seq: (room.lastTvRemoteCommand?.seq || 0) + 1,
+          command: String(command),
+          senderName: String(resolvedSender),
+          ts: Date.now(),
+        };
+        broadcastToRoom(room.id, {
+          type: 'TV_REMOTE_COMMAND',
+          payload: {
+            command,
+            senderName: resolvedSender,
+            seq: room.lastTvRemoteCommand.seq,
+          },
+        });
       }
     } catch (err) {
       console.error('WS message handling error:', err);
@@ -1556,6 +2373,15 @@ wss.on('connection', (ws) => {
   });
 
   ws.on('close', async () => {
+    const pairedCode = tvSocketToCode.get(ws);
+    if (pairedCode) {
+      const sess = tvPairingSessions.get(pairedCode);
+      if (sess) {
+        sess.ws = null;
+      }
+      tvSocketToCode.delete(ws);
+    }
+
     const meta = clients.get(ws);
     clients.delete(ws);
     if (!meta?.roomId || !meta?.userId) return;
@@ -1564,6 +2390,7 @@ wss.on('connection', (ws) => {
     if (!room) return;
 
     room.participants = room.participants.filter((p) => p.id !== meta.userId);
+    schedulePersistRoomsToDisk();
     if (room.participants.length === 0) {
       await stopCloudSession(meta.roomId);
       return;
@@ -1586,6 +2413,7 @@ wss.on('connection', (ws) => {
       systemType: 'leave',
     };
     room.messages.push(leaveMsg);
+    schedulePersistRoomsToDisk();
 
     broadcastToRoom(meta.roomId, {
       type: 'PARTICIPANTS_UPDATED',
@@ -1632,10 +2460,44 @@ app.options(['/api/hls-proxy', '/api/ts-proxy'], (_req, res) => {
   res.status(204).end();
 });
 
+const tlsFallbackHosts = new Set<string>();
+const vodHlsManifestCache = new Map<string, { manifest: string; ts: number }>();
+
+function shouldBypassNodeFetch(urlStr: string): boolean {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase();
+    if (tlsFallbackHosts.has(host)) return true;
+    if (host.endsWith('.ibra.lat') || host === 'ibra.lat') return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+function markHostNeedsCurlFallback(urlStr: string): void {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase();
+    if (host) tlsFallbackHosts.add(host);
+  } catch {
+    // ignore
+  }
+}
+
 app.get('/api/hls-proxy', async (req, res) => {
   const targetUrl = String(req.query.url || '');
   const referer = String(req.query.referer || '');
   if (!targetUrl) return res.status(400).send('Missing url');
+
+  const cachedVod = vodHlsManifestCache.get(targetUrl);
+  if (cachedVod && Date.now() - cachedVod.ts < 2 * 60 * 60 * 1000) {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    return res.send(cachedVod.manifest);
+  }
 
   try {
     const headers: Record<string, string> = {
@@ -1654,27 +2516,39 @@ app.get('/api/hls-proxy', async (req, res) => {
     let baseUrl = targetUrl;
     let manifestText = '';
 
-    try {
-      const upstream = await fetch(targetUrl, {
-        headers,
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!upstream.ok) {
-        throw new Error(`HTTP ${upstream.status}`);
-      }
-      baseUrl = upstream.url || targetUrl;
-      manifestText = await upstream.text();
-    } catch {
-      const fallback = await curlGetText(targetUrl, headers, 8);
+    if (shouldBypassNodeFetch(targetUrl)) {
+      const fallback = await curlGetText(targetUrl, headers, 7);
       if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
         return res.status(502).send('Upstream HLS error');
       }
       baseUrl = fallback.effectiveUrl || targetUrl;
       manifestText = fallback.text;
+    } else {
+      try {
+        const upstream = await fetch(targetUrl, {
+          headers,
+          signal: AbortSignal.timeout(3000),
+        });
+        if (!upstream.ok) {
+          throw new Error(`HTTP ${upstream.status}`);
+        }
+        baseUrl = upstream.url || targetUrl;
+        manifestText = await upstream.text();
+        if (!manifestText.includes('#EXTM3U')) {
+          throw new Error('Not M3U8');
+        }
+      } catch {
+        markHostNeedsCurlFallback(targetUrl);
+        const fallback = await curlGetText(targetUrl, headers, 7);
+        if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
+          return res.status(502).send('Upstream HLS error');
+        }
+        baseUrl = fallback.effectiveUrl || targetUrl;
+        manifestText = fallback.text;
+      }
     }
 
     const effectiveReferer = referer || new URL(baseUrl).origin + '/';
-
     const lines = manifestText.split(/\r?\n/);
     let nextLineIsVariantPlaylist = false;
 
@@ -1719,13 +2593,26 @@ app.get('/api/hls-proxy', async (req, res) => {
       }
     });
 
+    const finalManifest = rewritten.join('\n');
+    if (
+      manifestText.includes('#EXT-X-ENDLIST') ||
+      manifestText.includes('#EXT-X-STREAM-INF') ||
+      targetUrl.includes('ibra.lat')
+    ) {
+      if (vodHlsManifestCache.size > 300) {
+        const oldestKey = vodHlsManifestCache.keys().next().value;
+        if (oldestKey) vodHlsManifestCache.delete(oldestKey);
+      }
+      vodHlsManifestCache.set(targetUrl, { manifest: finalManifest, ts: Date.now() });
+    }
+
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
     res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-    res.send(rewritten.join('\n'));
+    res.send(finalManifest);
   } catch (err) {
     console.error('HLS proxy error:', err);
     res.status(502).send('HLS proxy fetch failed');
@@ -1754,11 +2641,15 @@ app.get('/api/ts-proxy', async (req, res) => {
   }
 
   try {
+    if (shouldBypassNodeFetch(targetUrl)) {
+      throw new Error('Use fast curl/h2 fallback');
+    }
     const upstream = await fetch(targetUrl, {
       headers,
-      signal: AbortSignal.timeout(12000),
+      signal: AbortSignal.timeout(3500),
     });
     if (!upstream.ok || !upstream.body) {
+      markHostNeedsCurlFallback(targetUrl);
       throw new Error(`TS upstream ${upstream.status}`);
     }
 
@@ -1790,6 +2681,7 @@ app.get('/api/ts-proxy', async (req, res) => {
     req.on('close', () => nodeStream.destroy());
     nodeStream.pipe(res);
   } catch {
+    markHostNeedsCurlFallback(targetUrl);
     if (res.headersSent) return res.end();
     try {
       const buf = await curlGetBuffer(targetUrl, headers, 18);
@@ -1828,6 +2720,105 @@ const MOVIE_GENRE_MAP: Record<string, number> = {
 
 const movieCatalogCache = new Map<string, { movies: any[]; hasMore: boolean; ts: number }>();
 
+const MOVIDY_GENRE_SLUGS: Record<string, string> = {
+  action: 'accion',
+  scifi: 'ciencia-ficcion',
+  horror: 'terror',
+  comedy: 'comedia',
+  animation: 'animacion',
+  thriller: 'suspense',
+  adventure: 'aventura',
+  drama: 'drama',
+};
+
+async function scrapeMovidyCatalog(opts: {
+  category: string;
+  page: number;
+  query: string;
+}): Promise<{ movies: any[]; hasMore: boolean }> {
+  try {
+    const { category, page, query } = opts;
+    let targetUrl = 'https://movidy.pw/pelis/';
+
+    if (query) {
+      targetUrl = `https://movidy.pw/?s=${encodeURIComponent(query)}`;
+    } else if (MOVIDY_GENRE_SLUGS[category]) {
+      const slug = MOVIDY_GENRE_SLUGS[category];
+      targetUrl =
+        page > 1
+          ? `https://movidy.pw/genero/${slug}/page/${page}`
+          : `https://movidy.pw/genero/${slug}/`;
+    } else {
+      targetUrl = page > 1 ? `https://movidy.pw/pelis/page/${page}` : 'https://movidy.pw/pelis/';
+    }
+
+    let html = '';
+    try {
+      const res = await fetch(targetUrl, {
+        headers: { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
+        signal: AbortSignal.timeout(4500),
+      });
+      if (res.ok) {
+        html = await res.text();
+      }
+    } catch {
+      const fb = await curlGetText(
+        targetUrl,
+        { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
+        5
+      ).catch(() => ({ text: '' }));
+      html = fb.text;
+    }
+
+    if (!html) return { movies: [], hasMore: false };
+
+    const itemRe =
+      /<li>\s*<a\s+href="(https:\/\/movidy\.pw\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>\s*<img[^>]+data-src="([^"]+)"/gi;
+    const movies: any[] = [];
+    let m: RegExpExecArray | null;
+
+    while ((m = itemRe.exec(html)) !== null) {
+      const movidyUrl = String(m[1] || '').trim();
+      const rawTitle = String(m[2] || '').trim();
+      const rawPoster = String(m[3] || '').trim();
+      if (!movidyUrl || !rawTitle) continue;
+
+      const absPoster = rawPoster.startsWith('//')
+        ? `https:${rawPoster}`
+        : rawPoster.startsWith('http')
+        ? rawPoster
+        : `https://movidy.pw${rawPoster}`;
+      const proxiedPoster = `/api/img-proxy?url=${encodeURIComponent(absPoster)}`;
+      const slug =
+        movidyUrl
+          .split('/ver/')[1]
+          ?.replace(/\//g, '')
+          .replace(/[^a-zA-Z0-9_-]/g, '') || `${movies.length}`;
+
+      movies.push({
+        id: `movidy-${slug}`,
+        mediaType: 'movie',
+        title: rawTitle,
+        originalTitle: rawTitle,
+        year: 'HD',
+        rating: '',
+        overview:
+          'Disponible en reproducción directa HLS sin anuncios en Español (Castellano, Latino y VOSE vía Movidy + Embed69).',
+        poster: proxiedPoster,
+        backdrop: proxiedPoster,
+        movidyUrl,
+        languages: ['Castellano', 'Latino', 'VOSE'],
+      });
+    }
+
+    const hasNextPage = html.includes(`/page/${page + 1}`);
+    return { movies, hasMore: hasNextPage && movies.length > 0 };
+  } catch (err) {
+    console.warn('scrapeMovidyCatalog error:', err);
+    return { movies: [], hasMore: false };
+  }
+}
+
 async function fetchTmdbMovieCatalog(opts: {
   lang: 'es-ES' | 'en-US';
   category: string;
@@ -1851,7 +2842,7 @@ async function fetchTmdbMovieCatalog(opts: {
   } else if (category === 'now_playing') {
     endpoint = `https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   } else if (MOVIE_GENRE_MAP[category]) {
-    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=popularity.desc&with_genres=${MOVIE_GENRE_MAP[category]}&page=${page}&include_adult=false`;
+    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=popularity.desc&vote_count.gte=25&with_genres=${MOVIE_GENRE_MAP[category]}&page=${page}&include_adult=false`;
   } else {
     endpoint = `https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   }
@@ -1865,8 +2856,21 @@ async function fetchTmdbMovieCatalog(opts: {
   const totalPages = Number(json?.total_pages || 1);
 
   const isEn = lang === 'en-US';
+  const todayIso = new Date().toISOString().slice(0, 10);
   const movies = results
-    .filter((m) => m && m.id && (m.poster_path || m.backdrop_path))
+    .filter((m) => {
+      if (!m || !m.id || (!m.poster_path && !m.backdrop_path)) return false;
+      // Exclude unreleased movies or low-vote titles so listed movies have real streams
+      if (!query) {
+        if (Number(m.vote_count || 0) < 45 || Number(m.vote_average || 0) <= 0) {
+          return false;
+        }
+        if (m.release_date && String(m.release_date) > todayIso) {
+          return false;
+        }
+      }
+      return true;
+    })
     .map((m) => ({
       id: `${isEn ? 'bingetrix' : 'es'}-movie-${m.id}`,
       tmdbId: m.id,
@@ -1901,13 +2905,78 @@ app.get('/api/catalog/movies', async (req, res) => {
     const category = String(req.query.category || 'trending').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const data = await fetchTmdbMovieCatalog({
-      lang: 'es-ES',
-      category,
-      page,
-      query,
+    const mergedCacheKey = `merged-es-v2|${category}|${page}|${query}`;
+    const cachedMerged = movieCatalogCache.get(mergedCacheKey);
+    if (cachedMerged && Date.now() - cachedMerged.ts < 5 * 60 * 1000) {
+      return res.json({
+        success: true,
+        movies: cachedMerged.movies,
+        hasMore: cachedMerged.hasMore,
+        page,
+      });
+    }
+
+    const [movidyData, tmdbData] = await Promise.all([
+      scrapeMovidyCatalog({ category, page, query }),
+      fetchTmdbMovieCatalog({ lang: 'es-ES', category, page, query }),
+    ]);
+
+    const tmdbByNormTitle = new Map<string, any>();
+    for (const tm of tmdbData.movies) {
+      const kTitle = normalizeTitleForMatch(tm.title);
+      const kOrig = normalizeTitleForMatch(tm.originalTitle || '');
+      if (kTitle && !tmdbByNormTitle.has(kTitle)) tmdbByNormTitle.set(kTitle, tm);
+      if (kOrig && !tmdbByNormTitle.has(kOrig)) tmdbByNormTitle.set(kOrig, tm);
+    }
+
+    const seenNormTitles = new Set<string>();
+    const combinedMovies: any[] = [];
+
+    // 1. Place Movidy Spanish catalog movies FIRST so every top Spanish movie has guaranteed Castellano / Latino / VOSE streams
+    for (const mv of movidyData.movies) {
+      const k = normalizeTitleForMatch(mv.title);
+      if (k && seenNormTitles.has(k)) continue;
+      if (k) seenNormTitles.add(k);
+
+      const matchedTmdb = k ? tmdbByNormTitle.get(k) : undefined;
+      if (matchedTmdb) {
+        const kOrig = normalizeTitleForMatch(matchedTmdb.originalTitle || '');
+        if (kOrig) seenNormTitles.add(kOrig);
+        combinedMovies.push({
+          ...matchedTmdb,
+          id: mv.id,
+          title: mv.title,
+          poster: mv.poster || matchedTmdb.poster,
+          backdrop: matchedTmdb.backdrop || mv.poster,
+          movidyUrl: mv.movidyUrl,
+          bingetrixUrl: matchedTmdb.bingetrixUrl,
+          languages: ['Castellano', 'Latino', 'VOSE', 'EN'],
+        });
+      } else {
+        combinedMovies.push(mv);
+      }
+    }
+
+    // 2. Append verified released TMDB Spanish movies (backed by Embed69 + Movidy search + Bingetrix)
+    for (const tm of tmdbData.movies) {
+      const kTitle = normalizeTitleForMatch(tm.title);
+      const kOrig = normalizeTitleForMatch(tm.originalTitle || '');
+      if ((kTitle && seenNormTitles.has(kTitle)) || (kOrig && seenNormTitles.has(kOrig))) {
+        continue;
+      }
+      if (kTitle) seenNormTitles.add(kTitle);
+      if (kOrig) seenNormTitles.add(kOrig);
+      combinedMovies.push(tm);
+    }
+
+    const hasMore = Boolean(movidyData.hasMore || tmdbData.hasMore);
+    movieCatalogCache.set(mergedCacheKey, {
+      movies: combinedMovies,
+      hasMore,
+      ts: Date.now(),
     });
-    res.json({ success: true, movies: data.movies, hasMore: data.hasMore, page });
+
+    res.json({ success: true, movies: combinedMovies, hasMore, page });
   } catch (err) {
     console.error('Spanish movies catalog error:', err);
     res.status(500).json({ success: false, movies: [], hasMore: false });
@@ -2438,6 +3507,7 @@ async function resolveTmdbIdByTitle(title: string, mediaType: 'movie' | 'tv'): P
 
 app.get('/api/extract/stream', async (req, res) => {
   const rawInput = String(req.query.url || '').trim();
+  const movidyUrlParam = String(req.query.movidyUrl || '').trim();
   const resolverType = String(req.query.resolverType || '').trim();
   const preferLang = String(req.query.preferLang || 'ES').toUpperCase();
   const titleHint = String(req.query.title || '').trim();
@@ -2446,11 +3516,11 @@ app.get('/api/extract/stream', async (req, res) => {
   const seasonParam = parseInt(String(req.query.season || '0'), 10) || undefined;
   const episodeParam = parseInt(String(req.query.episode || '0'), 10) || undefined;
 
-  if (!rawInput && !titleHint && !tmdbIdParam) {
+  if (!rawInput && !movidyUrlParam && !titleHint && !tmdbIdParam) {
     return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
   }
 
-  const cacheKey = `${mediaTypeParam}|${tmdbIdParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${rawInput}|${titleHint}`;
+  const cacheKey = `${mediaTypeParam}|${tmdbIdParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${rawInput}|${movidyUrlParam}|${titleHint}`;
   const cached = extractionCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return res.json(cached);
@@ -2468,14 +3538,19 @@ app.get('/api/extract/stream', async (req, res) => {
         mode: 'hls',
         streamUrl: unpacked.proxyUrl,
         rawStreamUrl: unpacked.rawM3u8,
+        requestedLang: preferLang,
+        resolvedLang: preferLang,
         expiresAt: Date.now() + 12 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
       return res.json(result);
     }
 
-    // CASE 1B: Legacy Movidy base64 track (`nupload.my`)
-    if (resolverType === 'movidy_embed' || rawInput.includes('nupload.')) {
+    // CASE 1B: Direct Movidy base64 track (`nupload.my`)
+    if (
+      (resolverType === 'movidy_embed' || rawInput.includes('nupload.')) &&
+      !rawInput.includes('movidy.pw/ver/')
+    ) {
       const decoded = await decodeNuploadToHls(rawInput);
       if (decoded) {
         const result: ExtractedStreamResult = {
@@ -2483,11 +3558,17 @@ app.get('/api/extract/stream', async (req, res) => {
           mode: 'hls',
           streamUrl: decoded.proxyUrl,
           rawStreamUrl: decoded.rawM3u8,
+          requestedLang: preferLang,
+          resolvedLang: preferLang,
           expiresAt: Date.now() + 15 * 60 * 1000,
         };
         extractionCache.set(cacheKey, result);
         return res.json(result);
       }
+      return res.status(404).json({
+        success: false,
+        error: 'El servidor de esta pista Movidy no está activo ahora mismo.',
+      });
     }
 
     // CASE 2: YouTube URL
@@ -2532,10 +3613,11 @@ app.get('/api/extract/stream', async (req, res) => {
       return res.json(result);
     }
 
-    // CASE 4: UNIFIED MOVIE & TV SERIES MULTI-ENGINE (EMBED69 ES/LAT/VOSE + BINGETRIX EN 1080P)
+    // CASE 4: UNIFIED MOVIE & TV SERIES MULTI-ENGINE (MOVIDY ES/LAT/VOSE + EMBED69 ES/LAT/VOSE + BINGETRIX EN 1080P)
     const bingetrixTvMatch = rawInput.match(/bingetrix\.[a-z]+\/watch\/tv\/(\d+)\/(\d+)\/(\d+)/i);
     const bingetrixMovieMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch|movie)\/(\d+)/i);
-    const isMovidyLink = rawInput.includes('movidy.pw/ver/');
+    const isMovidyLink =
+      rawInput.includes('movidy.pw/ver/') || movidyUrlParam.includes('movidy.pw/ver/');
 
     const isCatalogMediaRequest =
       mediaTypeParam === 'movie' ||
@@ -2563,66 +3645,145 @@ app.get('/api/extract/stream', async (req, res) => {
         (bingetrixTvMatch ? bingetrixTvMatch[1] : null) ||
         (bingetrixMovieMatch ? bingetrixMovieMatch[1] : null);
 
+      let effectiveMovidyUrl = movidyUrlParam.includes('movidy.pw/ver/')
+        ? movidyUrlParam
+        : rawInput.includes('movidy.pw/ver/')
+        ? rawInput
+        : '';
+
       if (!resolvedTmdbId && titleHint) {
         resolvedTmdbId = await resolveTmdbIdByTitle(titleHint, effectiveMediaType);
       }
 
-      if (!resolvedTmdbId && isMovidyLink) {
-        const slug = rawInput.split('/ver/')[1]?.replace(/\//g, '').replace(/-/g, ' ') || '';
+      if (!resolvedTmdbId && effectiveMovidyUrl) {
+        const slug =
+          effectiveMovidyUrl.split('/ver/')[1]?.replace(/\//g, '').replace(/-/g, ' ') || '';
         if (slug) {
           resolvedTmdbId = await resolveTmdbIdByTitle(slug, 'movie');
         }
       }
 
-      if (resolvedTmdbId) {
-        const [esTracks, enTracks] = await Promise.all([
-          extractEmbed69SpanishTracks({
-            tmdbId: resolvedTmdbId,
-            mediaType: effectiveMediaType,
-            season: effectiveSeason,
-            episode: effectiveEpisode,
-          }),
-          extractBingetrixEnglishTracks({
-            tmdbId: resolvedTmdbId,
-            mediaType: effectiveMediaType,
-            season: effectiveSeason,
-            episode: effectiveEpisode,
-          }),
-        ]);
+      if (effectiveMediaType === 'movie' && !effectiveMovidyUrl && titleHint) {
+        effectiveMovidyUrl = (await findMovidyUrlByTitle(titleHint)) || '';
+      }
 
-        const orderedTracks: TrackRecord[] =
-          preferLang === 'EN' ? [...enTracks, ...esTracks] : [...esTracks, ...enTracks];
+      const [movidyTracks, esTracks, enTracks] = await Promise.all([
+        effectiveMediaType === 'movie' && effectiveMovidyUrl
+          ? extractMovidyPageTracks(effectiveMovidyUrl)
+          : Promise.resolve([]),
+        resolvedTmdbId
+          ? extractEmbed69SpanishTracks({
+              tmdbId: resolvedTmdbId,
+              mediaType: effectiveMediaType,
+              season: effectiveSeason,
+              episode: effectiveEpisode,
+            })
+          : Promise.resolve([]),
+        resolvedTmdbId
+          ? extractBingetrixEnglishTracks({
+              tmdbId: resolvedTmdbId,
+              mediaType: effectiveMediaType,
+              season: effectiveSeason,
+              episode: effectiveEpisode,
+            })
+          : Promise.resolve([]),
+      ]);
 
-        // Resolve the first available track that produces a valid proxied HLS stream!
-        let primaryStreamUrl = '';
-        for (let i = 0; i < orderedTracks.length; i++) {
-          const candidate = orderedTracks[i];
-          if (candidate.resolvedStreamUrl) {
-            primaryStreamUrl = candidate.resolvedStreamUrl;
+      // Combine all discovered tracks and sort by requested language priority
+      const allDiscovered: TrackRecord[] = [...movidyTracks, ...esTracks, ...enTracks];
+
+      const getLangScore = (trackLang: string): number => {
+        const tl = String(trackLang || '').toUpperCase();
+        if (preferLang === 'EN') {
+          if (tl === 'EN') return 1;
+          if (tl === 'VOSE') return 2;
+          if (tl === 'ES') return 3;
+          if (tl === 'LAT') return 4;
+          return 5;
+        }
+        if (preferLang === 'LAT') {
+          if (tl === 'LAT') return 1;
+          if (tl === 'ES') return 2;
+          if (tl === 'VOSE') return 3;
+          if (tl === 'EN') return 4;
+          return 5;
+        }
+        if (preferLang === 'VOSE') {
+          if (tl === 'VOSE') return 1;
+          if (tl === 'EN') return 2;
+          if (tl === 'ES') return 3;
+          if (tl === 'LAT') return 4;
+          return 5;
+        }
+        // Default preferLang === 'ES' (Castellano first, then Latino, then VOSE, then EN)
+        if (tl === 'ES') return 1;
+        if (tl === 'LAT') return 2;
+        if (tl === 'VOSE') return 3;
+        if (tl === 'EN') return 4;
+        return 5;
+      };
+
+      const orderedTracks: TrackRecord[] = [...allDiscovered].sort(
+        (a, b) => getLangScore(a.lang) - getLangScore(b.lang)
+      );
+
+      // Resolve the first available track that produces a valid proxied HLS stream
+      let primaryStreamUrl = '';
+      let resolvedTrack: TrackRecord | null = null;
+
+      for (let i = 0; i < orderedTracks.length; i++) {
+        const candidate = orderedTracks[i];
+        if (candidate.resolvedStreamUrl) {
+          primaryStreamUrl = candidate.resolvedStreamUrl;
+          resolvedTrack = candidate;
+          break;
+        }
+        if (candidate.resolverType === 'movidy_embed') {
+          const decoded = await decodeNuploadToHls(candidate.sourceUrl);
+          if (decoded) {
+            orderedTracks[i] = { ...candidate, resolvedStreamUrl: decoded.proxyUrl };
+            primaryStreamUrl = decoded.proxyUrl;
+            resolvedTrack = orderedTracks[i];
             break;
           }
-          if (candidate.resolverType === 'vidhide_hls') {
-            const unpacked = await unpackVidhideToHls(candidate.sourceUrl);
-            if (unpacked) {
-              orderedTracks[i] = { ...candidate, resolvedStreamUrl: unpacked.proxyUrl };
-              primaryStreamUrl = unpacked.proxyUrl;
-              break;
-            }
+        } else if (candidate.resolverType === 'vidhide_hls') {
+          const unpacked = await unpackVidhideToHls(candidate.sourceUrl);
+          if (unpacked) {
+            orderedTracks[i] = { ...candidate, resolvedStreamUrl: unpacked.proxyUrl };
+            primaryStreamUrl = unpacked.proxyUrl;
+            resolvedTrack = orderedTracks[i];
+            break;
           }
         }
+      }
 
-        if (primaryStreamUrl) {
-          const result: ExtractedStreamResult = {
-            success: true,
-            mode: 'hls',
-            streamUrl: primaryStreamUrl,
-            title: titleHint || 'NAIMCINE HD',
-            tracks: orderedTracks,
-            expiresAt: Date.now() + 8 * 60 * 1000,
-          };
-          extractionCache.set(cacheKey, result);
-          return res.json(result);
-        }
+      if (primaryStreamUrl) {
+        const resolvedLang = String(resolvedTrack?.lang || preferLang).toUpperCase();
+        const resolvedLabel = resolvedTrack?.label || preferLang;
+        const availableLanguages = Array.from(
+          new Set(orderedTracks.map((t) => String(t.lang || '').toUpperCase()).filter(Boolean))
+        );
+        const languageFallbackUsed =
+          (preferLang === 'ES' && resolvedLang !== 'ES') ||
+          (preferLang === 'LAT' && resolvedLang !== 'LAT') ||
+          (preferLang === 'VOSE' && resolvedLang !== 'VOSE') ||
+          (preferLang === 'EN' && resolvedLang !== 'EN');
+
+        const result: ExtractedStreamResult = {
+          success: true,
+          mode: 'hls',
+          streamUrl: primaryStreamUrl,
+          title: titleHint || 'NAIMCINE HD',
+          tracks: orderedTracks,
+          requestedLang: preferLang,
+          resolvedLang,
+          resolvedLabel,
+          languageFallbackUsed,
+          availableLanguages,
+          expiresAt: Date.now() + 8 * 60 * 1000,
+        };
+        extractionCache.set(cacheKey, result);
+        return res.json(result);
       }
     }
 
@@ -2666,10 +3827,480 @@ app.get('/api/extract/stream', async (req, res) => {
   }
 });
 
+// ============================================================================
+// REST API: RICH MEDIA DETAILS (4K TRAILER, CAST, RUNTIME, SIMILAR)
+// ============================================================================
+const richDetailsCache = new Map<string, { details: any; ts: number }>();
+
+app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
+  try {
+    const mediaType = req.params.mediaType === 'tv' ? 'tv' : 'movie';
+    const cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
+    if (!cleanId) return res.status(400).json({ success: false });
+
+    const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
+    const cacheKey = `${mediaType}|${cleanId}|${langParam}`;
+    const cached = richDetailsCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 10 * 60 * 1000) {
+      return res.json({ success: true, details: cached.details });
+    }
+
+    const url = `https://api.themoviedb.org/3/${mediaType}/${cleanId}?api_key=${TMDB_API_KEY}&language=${langParam}&append_to_response=videos,credits,recommendations`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return res.status(404).json({ success: false });
+    const data: any = await r.json();
+
+    let allVideos: any[] = Array.isArray(data?.videos?.results) ? data.videos.results : [];
+    if (allVideos.length === 0 && langParam !== 'en-US') {
+      const enVideosRes = await fetch(
+        `https://api.themoviedb.org/3/${mediaType}/${cleanId}/videos?api_key=${TMDB_API_KEY}&language=en-US`,
+        { signal: AbortSignal.timeout(3500) }
+      ).catch(() => null);
+      if (enVideosRes?.ok) {
+        const enJson: any = await enVideosRes.json();
+        allVideos = Array.isArray(enJson?.results) ? enJson.results : [];
+      }
+    }
+
+    const ytVideos = allVideos.filter((v) => v && v.site === 'YouTube' && v.key);
+    const officialTrailer =
+      ytVideos.find((v) => v.type === 'Trailer' && v.official) ||
+      ytVideos.find((v) => v.type === 'Trailer') ||
+      ytVideos.find((v) => v.type === 'Teaser') ||
+      ytVideos[0];
+
+    const rawCast: any[] = Array.isArray(data?.credits?.cast) ? data.credits.cast : [];
+    const rawCrew: any[] = Array.isArray(data?.credits?.crew) ? data.credits.crew : [];
+    const director =
+      mediaType === 'movie'
+        ? rawCrew.find((c) => c.job === 'Director')?.name
+        : Array.isArray(data?.created_by) && data.created_by[0]?.name
+        ? data.created_by[0].name
+        : undefined;
+
+    const runtimeMin =
+      mediaType === 'movie'
+        ? Number(data?.runtime || 0)
+        : Number(data?.episode_run_time?.[0] || 0);
+    const runtimeText =
+      mediaType === 'tv'
+        ? `${Number(data?.number_of_seasons || 1)} temp · ${Number(data?.number_of_episodes || 0)} eps`
+        : runtimeMin > 0
+        ? `${Math.floor(runtimeMin / 60)}h ${runtimeMin % 60}m`
+        : undefined;
+
+    const recs: any[] = Array.isArray(data?.recommendations?.results)
+      ? data.recommendations.results
+      : [];
+
+    const details = {
+      tmdbId: Number(cleanId),
+      mediaType,
+      title: data.title || data.name || data.original_title || data.original_name || 'Título',
+      originalTitle: data.original_title || data.original_name || '',
+      tagline: data.tagline || undefined,
+      year: String(data.release_date || data.first_air_date || '').split('-')[0] || 'HD',
+      rating: data.vote_average ? Number(data.vote_average).toFixed(1) : '',
+      runtimeText,
+      genres: (Array.isArray(data?.genres) ? data.genres : [])
+        .map((g: any) => g?.name)
+        .filter(Boolean)
+        .slice(0, 4),
+      overview: data.overview || '',
+      poster: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : '',
+      backdrop: data.backdrop_path ? `https://image.tmdb.org/t/p/w1280${data.backdrop_path}` : '',
+      trailerKey: officialTrailer?.key || undefined,
+      directorOrCreator: director,
+      cast: rawCast.slice(0, 10).map((c) => ({
+        id: c.id,
+        name: c.name || '',
+        character: c.character || '',
+        photo: c.profile_path ? `https://image.tmdb.org/t/p/w185${c.profile_path}` : undefined,
+      })),
+      similar: recs
+        .filter((item) => item && item.id && (item.poster_path || item.backdrop_path))
+        .slice(0, 8)
+        .map((item) => ({
+          id: `${mediaType}-${item.id}`,
+          tmdbId: item.id,
+          mediaType,
+          title: item.title || item.name || 'Título',
+          originalTitle: item.original_title || item.original_name || '',
+          year: String(item.release_date || item.first_air_date || '').split('-')[0] || 'HD',
+          rating: item.vote_average ? Number(item.vote_average).toFixed(1) : '',
+          overview: item.overview || '',
+          poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : '',
+          backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` : '',
+          bingetrixUrl: mediaType === 'movie' ? `https://bingetrix.sc/watch/${item.id}` : undefined,
+          languages: ['ES / LAT', 'EN 1080p'],
+        })),
+    };
+
+    richDetailsCache.set(cacheKey, { details, ts: Date.now() });
+    res.json({ success: true, details });
+  } catch (err) {
+    console.warn('Rich details error:', err);
+    res.status(500).json({ success: false });
+  }
+});
+
+// ============================================================================
+// REST API: CLOUD SUBTITLES SEARCH & PROXY (SPANISH + ENGLISH .SRT/.VTT)
+// ============================================================================
+const subtitleSearchCache = new Map<string, { tracks: any[]; ts: number }>();
+
+app.get('/api/subtitles/search', async (req, res) => {
+  try {
+    const tmdbId = String(req.query.tmdbId || '').replace(/\D/g, '');
+    if (!tmdbId) return res.json({ success: true, tracks: [] });
+    const season = parseInt(String(req.query.season || '0'), 10) || 0;
+    const episode = parseInt(String(req.query.episode || '0'), 10) || 0;
+
+    const cacheKey = `${tmdbId}|${season}|${episode}`;
+    const cached = subtitleSearchCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
+      return res.json({ success: true, tracks: cached.tracks });
+    }
+
+    const qs = new URLSearchParams({ id: tmdbId });
+    if (season > 0 && episode > 0) {
+      qs.set('season', String(season));
+      qs.set('episode', String(episode));
+    }
+
+    const subRes = await fetch(`https://sub.wyzie.ru/search?${qs.toString()}`, {
+      headers: { 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!subRes.ok) return res.json({ success: true, tracks: [] });
+
+    const rawList: any[] = await subRes.json();
+    if (!Array.isArray(rawList)) return res.json({ success: true, tracks: [] });
+
+    const prioritized = rawList
+      .filter((s) => s?.url && /^(es|spa|en|eng)/i.test(String(s.language || '')))
+      .slice(0, 10)
+      .map((s, idx) => {
+        const code = String(s.language || '').toLowerCase();
+        const isEs = code.startsWith('es') || code.startsWith('spa');
+        return {
+          id: `sub-${tmdbId}-${idx}-${code}`,
+          label: `${isEs ? 'Español' : 'English'}${s.display ? ` · ${s.display}` : ''} #${idx + 1}`,
+          lang: isEs ? 'ES' : 'EN',
+          url: `/api/subtitles/proxy?url=${encodeURIComponent(s.url)}`,
+        };
+      });
+
+    subtitleSearchCache.set(cacheKey, { tracks: prioritized, ts: Date.now() });
+    res.json({ success: true, tracks: prioritized });
+  } catch {
+    res.json({ success: true, tracks: [] });
+  }
+});
+
+app.get('/api/subtitles/proxy', async (req, res) => {
+  const rawUrl = String(req.query.url || '');
+  if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return res.status(400).send('');
+  try {
+    const r = await fetch(rawUrl, {
+      headers: { 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(5500),
+    });
+    if (!r.ok) return res.status(404).send('');
+    const txt = await r.text();
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.send(txt);
+  } catch {
+    res.status(502).send('');
+  }
+});
+
+// ============================================================================
+// REST API: REAL-TIME LIVE FOOTBALL & SPORTS SCOREBOARDS (ESPN PUBLIC JSON)
+// ============================================================================
+let liveScoresCache: { matches: any[]; ts: number } | null = null;
+
+app.get('/api/sports/scores', async (_req, res) => {
+  if (liveScoresCache && Date.now() - liveScoresCache.ts < 45 * 1000) {
+    return res.json({ success: true, scores: liveScoresCache.matches });
+  }
+
+  const feeds: { url: string; league: string; sport: 'soccer' | 'basketball' }[] = [
+    {
+      url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/esp.1/scoreboard',
+      league: 'LaLiga',
+      sport: 'soccer',
+    },
+    {
+      url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/uefa.champions/scoreboard',
+      league: 'Champions',
+      sport: 'soccer',
+    },
+    {
+      url: 'https://site.api.espn.com/apis/site/v2/sports/soccer/eng.1/scoreboard',
+      league: 'Premier',
+      sport: 'soccer',
+    },
+    {
+      url: 'https://site.api.espn.com/apis/site/v2/sports/basketball/nba/scoreboard',
+      league: 'NBA',
+      sport: 'basketball',
+    },
+  ];
+
+  try {
+    const responses = await Promise.all(
+      feeds.map((f) =>
+        fetch(f.url, { signal: AbortSignal.timeout(4000) })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((json) => ({ feed: f, json }))
+          .catch(() => ({ feed: f, json: null }))
+      )
+    );
+
+    const parsed: any[] = [];
+    for (const { feed, json } of responses) {
+      const events: any[] = Array.isArray(json?.events) ? json.events : [];
+      for (const ev of events.slice(0, 6)) {
+        const comp = ev?.competitions?.[0];
+        const competitors: any[] = Array.isArray(comp?.competitors) ? comp.competitors : [];
+        const home = competitors.find((c) => c.homeAway === 'home') || competitors[0];
+        const away = competitors.find((c) => c.homeAway === 'away') || competitors[1];
+        if (!home || !away) continue;
+
+        const stateStr = String(ev?.status?.type?.state || '');
+        const isLive = stateStr === 'in';
+        const shortDetail =
+          ev?.status?.type?.shortDetail || ev?.status?.displayClock || (isLive ? 'EN JUEGO' : '');
+
+        parsed.push({
+          id: `${feed.league}-${ev.id}`,
+          league: feed.league,
+          sport: feed.sport,
+          homeTeam: home.team?.shortDisplayName || home.team?.displayName || 'Local',
+          awayTeam: away.team?.shortDisplayName || away.team?.displayName || 'Visitante',
+          homeScore: stateStr === 'pre' ? '-' : String(home.score ?? '0'),
+          awayScore: stateStr === 'pre' ? '-' : String(away.score ?? '0'),
+          homeLogo: home.team?.logo || undefined,
+          awayLogo: away.team?.logo || undefined,
+          statusText: shortDetail,
+          isLive,
+        });
+      }
+    }
+
+    parsed.sort((a, b) => Number(b.isLive) - Number(a.isLive));
+    liveScoresCache = { matches: parsed.slice(0, 18), ts: Date.now() };
+    res.json({ success: true, scores: liveScoresCache.matches });
+  } catch {
+    res.json({ success: true, scores: [] });
+  }
+});
+
+// ============================================================================
+// SMART TV (SAMSUNG TIZEN / LG WEBOS / ANDROID TV) HTTP PAIRING & SYNC FALLBACK
+// Works 100% reliably even when TV browsers or routers block WebSockets!
+// ============================================================================
+app.post('/api/tv/register', (req, res) => {
+  const forceNew = Boolean(req.body?.forceNew);
+  const existingCode = String(req.body?.existingCode || '')
+    .replace(/\D/g, '')
+    .slice(0, 4);
+  const now = Date.now();
+
+  if (!forceNew && existingCode.length === 4) {
+    const existing = tvPairingSessions.get(existingCode);
+    if (existing && existing.expiresAt > now && !existing.pairedPayload) {
+      existing.expiresAt = now + 15 * 60 * 1000;
+      return res.json({
+        success: true,
+        code: existing.code,
+        expiresAt: existing.expiresAt,
+      });
+    }
+  }
+
+  const code = generateTvPairingCode();
+  const expiresAt = now + 15 * 60 * 1000;
+  tvPairingSessions.set(code, {
+    code,
+    ws: null,
+    createdAt: now,
+    expiresAt,
+  });
+
+  return res.json({
+    success: true,
+    code,
+    expiresAt,
+  });
+});
+
+app.get('/api/tv/poll/:code', (req, res) => {
+  const code = String(req.params.code || '')
+    .replace(/\D/g, '')
+    .slice(0, 4);
+  const session = tvPairingSessions.get(code);
+  if (!session || session.expiresAt <= Date.now()) {
+    return res.json({ success: false, expired: true, paired: false });
+  }
+  if (session.pairedPayload) {
+    return res.json({
+      success: true,
+      paired: true,
+      ...session.pairedPayload,
+    });
+  }
+  return res.json({
+    success: true,
+    paired: false,
+    expiresAt: session.expiresAt,
+  });
+});
+
+app.post('/api/tv/claim', (req, res) => {
+  const result = claimTvPairingCodeCore({
+    rawCode: req.body?.code,
+    targetRoomId: req.body?.roomId,
+    roomNameHint: req.body?.roomName,
+    claimedByRaw: req.body?.claimedBy,
+  });
+
+  if (!result.ok) {
+    return res.status(400).json({
+      success: false,
+      error: result.error,
+    });
+  }
+
+  return res.json({
+    success: true,
+    code: result.code,
+    roomId: result.roomId,
+    roomName: result.roomName,
+  });
+});
+
+app.post('/api/tv/remote', (req, res) => {
+  const roomId = String(req.body?.roomId || '')
+    .trim()
+    .toLowerCase();
+  const command = String(req.body?.command || '').trim();
+  const senderName = String(req.body?.senderName || 'Mando móvil')
+    .trim()
+    .slice(0, 32);
+  const userId = String(req.body?.userId || '').trim();
+
+  const room = rooms.get(roomId);
+  if (!room || !command) {
+    return res.status(404).json({ success: false, error: 'Sala no encontrada' });
+  }
+  if (room.hostOnlyControl && room.hostId && userId && userId !== room.hostId) {
+    return res.status(403).json({ success: false, error: 'Solo el anfitrión controla la sala' });
+  }
+
+  room.lastTvRemoteCommand = {
+    seq: (room.lastTvRemoteCommand?.seq || 0) + 1,
+    command,
+    senderName,
+    ts: Date.now(),
+  };
+
+  broadcastToRoom(room.id, {
+    type: 'TV_REMOTE_COMMAND',
+    payload: {
+      command,
+      senderName,
+      seq: room.lastTvRemoteCommand.seq,
+    },
+  });
+
+  return res.json({ success: true, seq: room.lastTvRemoteCommand.seq });
+});
+
 app.get('/api/rooms/:roomId', (req, res) => {
-  const room = rooms.get(req.params.roomId.toLowerCase());
-  if (!room) return res.status(404).json({ error: 'Room not found' });
-  res.json({ ...room, videoState: computeAuthoritativeVideoState(room) });
+  const roomId = String(req.params.roomId || '').toLowerCase();
+  const { room } = getOrCreateRoom(roomId);
+
+  if (room.pinCode) {
+    const incomingPin = typeof req.query.pin === 'string' ? req.query.pin.trim() : '';
+    const incomingTvToken =
+      typeof req.query.tvAuthToken === 'string' ? req.query.tvAuthToken.trim() : '';
+    let validTvToken = false;
+    if (incomingTvToken) {
+      const tokenEntry = tvAuthTokens.get(incomingTvToken);
+      if (tokenEntry && tokenEntry.roomId === roomId && tokenEntry.expiresAt > Date.now()) {
+        validTvToken = true;
+      }
+    }
+    if (!validTvToken && incomingPin !== room.pinCode) {
+      return res.status(403).json({
+        error: 'PIN required',
+        hasPin: true,
+        roomName: room.name,
+      });
+    }
+  }
+
+  // Register HTTP-polling Smart TV presence so mobile UI shows "✓ Smart TV conectada"
+  if (req.query.tv === '1') {
+    const tvId =
+      typeof req.query.tvId === 'string' && req.query.tvId.trim()
+        ? req.query.tvId.trim().slice(0, 40)
+        : `tv-http-${roomId}`;
+    const tvNameRaw =
+      typeof req.query.tvName === 'string' && req.query.tvName.trim()
+        ? req.query.tvName.trim().slice(0, 28)
+        : 'Samsung Smart TV';
+    const tvDisplayName = tvNameRaw.includes('(TV)') ? tvNameRaw : `${tvNameRaw} (TV)`;
+    tvHttpHeartbeats.set(`${roomId}:${tvId}`, Date.now());
+
+    const exists = room.participants.some((p) => p.id === tvId);
+    if (!exists) {
+      room.participants.push({
+        id: tvId,
+        name: tvDisplayName,
+        avatar: '📺',
+        color: '#E11D48',
+        isHost: false,
+        joinedAt: Date.now(),
+      });
+      broadcastToRoom(roomId, {
+        type: 'PARTICIPANTS_UPDATED',
+        payload: {
+          participants: room.participants,
+          hostId: room.hostId,
+        },
+      });
+    }
+  }
+
+  // Prune stale HTTP TV heartbeats (>12s idle)
+  const now = Date.now();
+  let pruned = false;
+  for (const [key, lastSeen] of tvHttpHeartbeats.entries()) {
+    if (now - lastSeen > 12000) {
+      tvHttpHeartbeats.delete(key);
+      const [rId, pId] = key.split(':');
+      if (rId === roomId && pId) {
+        const before = room.participants.length;
+        room.participants = room.participants.filter((p) => p.id !== pId);
+        if (room.participants.length !== before) pruned = true;
+      }
+    }
+  }
+  if (pruned) {
+    broadcastToRoom(roomId, {
+      type: 'PARTICIPANTS_UPDATED',
+      payload: {
+        participants: room.participants,
+        hostId: room.hostId,
+      },
+    });
+  }
+
+  res.json(serializeRoomForClient(room));
 });
 
 // ============================================================================
@@ -2681,14 +4312,22 @@ async function startServer() {
 
   if (!isProd) {
     const { createServer: createViteServer } = await import('vite');
+    const hmrEnabled = process.env.DISABLE_HMR !== 'true';
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: process.env.DISABLE_HMR !== 'true' },
+      server: {
+        middlewareMode: true,
+        hmr: hmrEnabled,
+        ws: { server: httpServer },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
   } else {
     app.use(express.static(path.resolve(__dirname, 'dist')));
-    app.get('*', (_req, res) => {
+    app.get('*', (req, res) => {
+      if (req.path === '/tv' || req.path === '/tv/') {
+        return sendSmartTvReceiverHtml(res);
+      }
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   }

@@ -13,22 +13,29 @@ import {
   PanelRightOpen,
   Play,
   Square,
-  Plus,
-  Sun,
-  User as UserIcon,
+  Lock,
+  Tv,
+  ListVideo,
 } from 'lucide-react';
 import {
   AppLanguage,
   CatalogMovie,
   ChatMessage,
   CloudBrowserState,
+  CloudSavedRoom,
   FavoriteChannelItem,
   FloatingReaction,
+  LanguageNoticePopup,
   Participant,
+  PollProposalItem,
+  RestoredRoomBlueprint,
+  RoomPollState,
   RoomQueueItem,
+  SecondaryStreamState,
   SportsMatch,
   StreamTrack,
   TvEpisodeItem,
+  TvRemoteCommandType,
   TvSeriesDetails,
   VideoState,
   WatchHistoryItem,
@@ -61,6 +68,7 @@ import {
 import {
   clearCloudWatchHistoryItems,
   deleteCloudFavoriteById,
+  deleteCloudSavedRoom,
   deleteCloudWatchHistoryItem,
   ensureCloudUserProfile,
   migrateLocalStateToCloud,
@@ -72,6 +80,7 @@ import {
   updateCloudWatchProgressOnly,
   upsertCloudCatalogFavorite,
   upsertCloudChannelFavorite,
+  upsertCloudSavedRoom,
   upsertCloudWatchHistory,
 } from './services/userCloudSync';
 import { socketService } from './services/socket';
@@ -91,17 +100,16 @@ import {
   ProfileHubTab,
   UserProfileHubModal,
 } from './components/UserProfileHubModal';
-import {
-  OfflineIndicator,
-  PWAInstallButton,
-  PWAInstallNotification,
-} from './components/PWAInstallPrompt';
+import { OfflineIndicator } from './components/PWAInstallPrompt';
 import { NaimcineIntro } from './components/NaimcineIntro';
 import { LobbyScreen } from './components/LobbyScreen';
 import { GuestWelcomePopup } from './components/GuestWelcomePopup';
 import { NativeCinemaPlayer } from './components/NativeCinemaPlayer';
 import { CatalogSection, MediaCatalogHub } from './components/MediaCatalogHub';
 import { PartySidebar } from './components/PartySidebar';
+import { TvReceiverPairingScreen } from './components/TvReceiverPairingScreen';
+import { RoomPinPromptModal } from './components/RoomPinPromptModal';
+import { SmartTvQuickModal } from './components/SmartTvQuickModal';
 
 const INITIAL_VIDEO_STATE: VideoState = {
   mode: 'idle',
@@ -118,15 +126,29 @@ const INITIAL_VIDEO_STATE: VideoState = {
 };
 
 const CINEMA_MODE_SESSION_KEY = 'naim_cinema_mode_session';
+const SAVED_ROOMS_CACHE_KEY = 'naim_cached_saved_rooms_v1';
+const ROOM_PINS_SESSION_KEY = 'naim_room_pins_session_v1';
 
-function formatBannerClock(sec?: number): string {
-  if (!sec || !Number.isFinite(sec) || sec <= 0) return '00:00';
-  const total = Math.floor(sec);
-  const hrs = Math.floor(total / 3600);
-  const mins = Math.floor((total % 3600) / 60);
-  const secs = total % 60;
-  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
-  return hrs > 0 ? `${hrs}:${pad(mins)}:${pad(secs)}` : `${pad(mins)}:${pad(secs)}`;
+function loadCachedSavedRooms(): CloudSavedRoom[] {
+  try {
+    const raw = localStorage.getItem(SAVED_ROOMS_CACHE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function loadSessionRoomPins(): Record<string, string> {
+  try {
+    const raw = sessionStorage.getItem(ROOM_PINS_SESSION_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
 }
 
 type MobileNavTab = 'movies' | 'sports' | 'youtube' | 'chat' | 'room';
@@ -161,7 +183,30 @@ export function App() {
 
   const initialRoute = parseRoomFromWindow();
   const initialUrlRoom = initialRoute.roomId;
-  const isTvMode = initialRoute.isTvMode;
+  const [isTvMode, setIsTvMode] = useState<boolean>(initialRoute.isTvMode);
+  const [isTvPairLobby, setIsTvPairLobby] = useState<boolean>(
+    initialRoute.isTvPairLobby
+  );
+  const [tvAuthToken, setTvAuthToken] = useState<string>('');
+
+  // Permanent Cloud Rooms & Private 4-Digit Room PIN State
+  const [savedRooms, setSavedRooms] = useState<CloudSavedRoom[]>(() =>
+    loadCachedSavedRooms()
+  );
+  const [roomHasPin, setRoomHasPin] = useState<boolean>(false);
+  const [sessionPinMap, setSessionPinMap] = useState<Record<string, string>>(() =>
+    loadSessionRoomPins()
+  );
+  const [pinPromptState, setPinPromptState] = useState<{
+    open: boolean;
+    roomName: string;
+    invalidAttempt: boolean;
+  }>({ open: false, roomName: '', invalidAttempt: false });
+  const [tvClaimStatus, setTvClaimStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [smartTvModalOpen, setSmartTvModalOpen] = useState<boolean>(false);
 
   const [showIntro, setShowIntro] = useState<boolean>(false);
   const [introWithSound, setIntroWithSound] = useState<boolean>(false);
@@ -205,10 +250,14 @@ export function App() {
 
   // Authoritative Room State
   const [hostId, setHostId] = useState<string>('');
+  const [hostOnlyControl, setHostOnlyControl] = useState<boolean>(false);
+  const [activePoll, setActivePoll] = useState<RoomPollState | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [roomQueue, setRoomQueue] = useState<RoomQueueItem[]>([]);
   const [videoState, setVideoState] = useState<VideoState>(INITIAL_VIDEO_STATE);
+  const [secondaryStream, setSecondaryStream] = useState<SecondaryStreamState | null>(null);
+  const [lockNoticeToast, setLockNoticeToast] = useState<string | null>(null);
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
   const [cloudFrame, setCloudFrame] = useState<string | null>(null);
   const [cloudState, setCloudState] = useState<CloudBrowserState | null>(null);
@@ -216,6 +265,8 @@ export function App() {
   // Navigation & Extraction State
   const [catalogSection, setCatalogSection] = useState<CatalogSection>('movies');
   const [mobileTab, setMobileTab] = useState<MobileNavTab>('movies');
+  const [openQueueTrigger, setOpenQueueTrigger] = useState<number>(0);
+  const [queueAddedNotice, setQueueAddedNotice] = useState<string | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
   const [copiedHeaderInvite, setCopiedHeaderInvite] = useState<boolean>(false);
@@ -224,11 +275,58 @@ export function App() {
   const [extractionLabel, setExtractionLabel] = useState<string>('');
   const [extractionError, setExtractionError] = useState<string | null>(null);
   const [loadingItemId, setLoadingItemId] = useState<string | null>(null);
+  const [languageNotice, setLanguageNotice] = useState<LanguageNoticePopup | null>(null);
+  const [floatingChatOpen, setFloatingChatOpen] = useState<boolean>(false);
+  const [visualViewportHeight, setVisualViewportHeight] = useState<number | null>(null);
+  const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = useState<boolean>(false);
+  const langNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const showLanguageNotice = useCallback(
+    (popup: Omit<LanguageNoticePopup, 'id'>) => {
+      if (langNoticeTimerRef.current) clearTimeout(langNoticeTimerRef.current);
+      setLanguageNotice({
+        ...popup,
+        id: `ln-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      });
+      langNoticeTimerRef.current = setTimeout(() => {
+        setLanguageNotice(null);
+      }, 5200);
+    },
+    []
+  );
+
+  // Detect mobile virtual keyboard via visualViewport so video + chat stay visible above the keyboard
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const handleViewportChange = () => {
+      const fullH = window.innerHeight || document.documentElement.clientHeight || 800;
+      const currentH = Math.round(vv.height);
+      const keyboardLikelyOpen = fullH - currentH > 135 && fullH < 1024;
+      setIsMobileKeyboardOpen(keyboardLikelyOpen);
+      setVisualViewportHeight(keyboardLikelyOpen ? currentH : null);
+    };
+    vv.addEventListener('resize', handleViewportChange);
+    vv.addEventListener('scroll', handleViewportChange);
+    return () => {
+      vv.removeEventListener('resize', handleViewportChange);
+      vv.removeEventListener('scroll', handleViewportChange);
+    };
+  }, []);
 
   const mobileTabRef = useRef<MobileNavTab>(mobileTab);
   mobileTabRef.current = mobileTab;
   const inRoomRef = useRef<boolean>(inRoom);
   inRoomRef.current = inRoom;
+  const hostIdRef = useRef<string>(hostId);
+  hostIdRef.current = hostId;
+  const roomQueueRef = useRef<RoomQueueItem[]>(roomQueue);
+  roomQueueRef.current = roomQueue;
+  const videoStateUrlRef = useRef<string>(videoState.url);
+  videoStateUrlRef.current = videoState.url;
+  const handlePlayQueueItemRef = useRef<(item: RoomQueueItem) => void>(() => {});
+  const lockToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const queueToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const manualLobbyStayRef = useRef<boolean>(false);
   const hadActivePlaybackRef = useRef<boolean>(false);
 
@@ -237,6 +335,32 @@ export function App() {
   const lastCloudProgressSyncRef = useRef<number>(0);
   const watchHistoryRef = useRef<WatchHistoryItem[]>(watchHistory);
   watchHistoryRef.current = watchHistory;
+  const isTvPairLobbyRef = useRef<boolean>(isTvPairLobby);
+  isTvPairLobbyRef.current = isTvPairLobby;
+  const savedRoomsRef = useRef<CloudSavedRoom[]>(savedRooms);
+  savedRoomsRef.current = savedRooms;
+  const sessionPinMapRef = useRef<Record<string, string>>(sessionPinMap);
+  sessionPinMapRef.current = sessionPinMap;
+  const tvClaimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const rememberSessionPin = useCallback((targetCode: string, pinCode: string) => {
+    const cleanCode = targetCode.trim().toLowerCase();
+    if (!cleanCode) return;
+    setSessionPinMap((prev) => {
+      const next = { ...prev };
+      if (pinCode && /^[0-9]{4}$/.test(pinCode)) {
+        next[cleanCode] = pinCode;
+      } else {
+        delete next[cleanCode];
+      }
+      try {
+        sessionStorage.setItem(ROOM_PINS_SESSION_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
 
   const t = UI_COPY[lang];
 
@@ -248,6 +372,23 @@ export function App() {
     isHost: hostId === profile.id,
     joinedAt: Date.now(),
   };
+
+  const canControlRoom = !hostOnlyControl || currentUser.isHost;
+
+  const showHostLockNotice = useCallback(
+    (hostDisplayName?: string) => {
+      if (lockToastTimerRef.current) clearTimeout(lockToastTimerRef.current);
+      const msg =
+        lang === 'es'
+          ? `Modo Cineasta activo · Solo ${hostDisplayName || 'el anfitrión'} controla el reproductor`
+          : `Director Mode active · Only ${hostDisplayName || 'the host'} controls playback`;
+      setLockNoticeToast(msg);
+      lockToastTimerRef.current = setTimeout(() => {
+        setLockNoticeToast(null);
+      }, 3200);
+    },
+    [lang]
+  );
 
   // Track playback session lifecycle so Modo Cine persists throughout the active session
   // and resets cleanly when playback completely stops.
@@ -284,6 +425,12 @@ export function App() {
 
       if (!user || !user.emailVerified) {
         setAuthLoading(false);
+        setSavedRooms([]);
+        try {
+          localStorage.removeItem(SAVED_ROOMS_CACHE_KEY);
+        } catch {
+          // ignore
+        }
         return;
       }
 
@@ -307,16 +454,28 @@ export function App() {
 
       if (!active) return;
 
-      // When logged in, skip the initial landing page and enter last/personal room directly!
-      if (!inRoomRef.current && !manualLobbyStayRef.current) {
-        const savedRooms = getRecentRooms();
-        const lastRoom = savedRooms[0];
-        const targetCode = lastRoom?.id || generateShortRoomCode(4);
+      // When logged in (and not in /tv receiver pairing lobby), skip initial landing page and enter permanent or last room directly!
+      if (
+        !inRoomRef.current &&
+        !manualLobbyStayRef.current &&
+        !isTvPairLobbyRef.current
+      ) {
+        const cachedCloudRooms = loadCachedSavedRooms();
+        const recentLocalRooms = getRecentRooms();
+        const primaryCloudRoom = cachedCloudRooms[0];
+        const lastLocalRoom = recentLocalRooms[0];
+        const targetCode =
+          primaryCloudRoom?.roomCode ||
+          lastLocalRoom?.id ||
+          generateShortRoomCode(4);
         const firstName =
           resolvedProfile.name?.split(' ')[0] ||
           user.displayName?.split(' ')[0] ||
           'Cine';
-        const targetRoomTitle = lastRoom?.name || `Sala de ${firstName}`;
+        const targetRoomTitle =
+          primaryCloudRoom?.roomName ||
+          lastLocalRoom?.name ||
+          `Sala de ${firstName}`;
         setShowIntro(false);
         setRoomId(targetCode);
         setRoomName(targetRoomTitle);
@@ -333,6 +492,23 @@ export function App() {
           saveWatchlist(cloudWatchlist);
           setFavoriteChannels(cloudChannels);
           saveFavoriteChannels(cloudChannels);
+        },
+        onSavedRooms: (cloudRooms) => {
+          setSavedRooms(cloudRooms);
+          try {
+            localStorage.setItem(
+              SAVED_ROOMS_CACHE_KEY,
+              JSON.stringify(cloudRooms)
+            );
+          } catch {
+            // ignore
+          }
+          // Hydrate session PIN map for any permanent PIN-protected rooms owned by user
+          cloudRooms.forEach((cr) => {
+            if (cr.hasPin && cr.pinCode) {
+              rememberSessionPin(cr.roomCode, cr.pinCode);
+            }
+          });
         },
       });
 
@@ -351,7 +527,7 @@ export function App() {
       if (detachCloudListeners) detachCloudListeners();
       if (migrationTimer) clearTimeout(migrationTimer);
     };
-  }, []);
+  }, [rememberSessionPin]);
 
   const handleGoogleSignIn = async () => {
     manualLobbyStayRef.current = false;
@@ -359,6 +535,12 @@ export function App() {
   };
 
   const handleGoogleSignOut = async () => {
+    setSavedRooms([]);
+    try {
+      localStorage.removeItem(SAVED_ROOMS_CACHE_KEY);
+    } catch {
+      // ignore
+    }
     await signOutGoogleAccount();
   };
 
@@ -491,6 +673,23 @@ export function App() {
   useEffect(() => {
     if (!inRoom || !roomId) return;
 
+    const cleanCode = roomId.trim().toLowerCase();
+    const matchedSaved = savedRoomsRef.current.find(
+      (r) => r.roomCode.toLowerCase() === cleanCode
+    );
+    const knownPin =
+      sessionPinMapRef.current[cleanCode] ||
+      (matchedSaved?.hasPin ? matchedSaved.pinCode : undefined);
+
+    const restoredBlueprint: RestoredRoomBlueprint | undefined = matchedSaved
+      ? {
+          roomName: matchedSaved.roomName,
+          hostOnlyControl: matchedSaved.hostOnlyControl,
+          pinCode: matchedSaved.hasPin ? matchedSaved.pinCode : undefined,
+          queueItems: matchedSaved.queueItems,
+        }
+      : undefined;
+
     const userPayload: Participant = {
       id: profile.id,
       name: isTvMode ? `${profile.name} (TV)` : profile.name,
@@ -500,8 +699,15 @@ export function App() {
       joinedAt: Date.now(),
     };
 
-    socketService.connect(roomId, userPayload, roomName || `Sala ${roomId.toUpperCase()}`);
-    addRecentRoom({ id: roomId, name: roomName || `Sala ${roomId.toUpperCase()}` });
+    const resolvedInitialName =
+      matchedSaved?.roomName || roomName || `Sala ${roomId.toUpperCase()}`;
+
+    socketService.connect(roomId, userPayload, resolvedInitialName, {
+      pin: knownPin,
+      tvAuthToken: tvAuthToken || undefined,
+      restoredBlueprint,
+    });
+    addRecentRoom({ id: roomId, name: resolvedInitialName });
     setRecentRooms(getRecentRooms());
 
     if (typeof window !== 'undefined') {
@@ -515,15 +721,70 @@ export function App() {
       const { type, payload } = event;
 
       if (type === 'ROOM_STATE') {
-        setRoomName(payload.name || `Sala ${roomId.toUpperCase()}`);
+        const nextRoomTitle = payload.name || `Sala ${roomId.toUpperCase()}`;
+        setRoomName(nextRoomTitle);
         setHostId(payload.hostId || '');
+        setHostOnlyControl(Boolean(payload.hostOnlyControl));
+        setRoomHasPin(Boolean(payload.hasPin));
+        setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
+        setActivePoll(payload.activePoll || null);
         setParticipants(payload.participants || []);
         setMessages(payload.messages || []);
         setRoomQueue(payload.queue || []);
+        addRecentRoom({ id: roomId, name: nextRoomTitle });
+        setRecentRooms(getRecentRooms());
         if (payload.videoState) {
           setVideoState(payload.videoState);
           recordStateInWatchHistory(payload.videoState);
         }
+      } else if (type === 'ROOM_PIN_REQUIRED') {
+        setPinPromptState({
+          open: true,
+          roomName: payload?.roomName || `Sala ${roomId.toUpperCase()}`,
+          invalidAttempt: Boolean(payload?.invalidAttempt),
+        });
+      } else if (type === 'ROOM_PIN_UPDATED') {
+        const nextHasPin = Boolean(payload?.hasPin);
+        setRoomHasPin(nextHasPin);
+        if (!nextHasPin) {
+          rememberSessionPin(roomId, '');
+        }
+        if (payload?.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message]);
+        }
+      } else if (type === 'ROOM_RENAMED') {
+        if (payload?.roomName) {
+          setRoomName(payload.roomName);
+          addRecentRoom({ id: roomId, name: payload.roomName });
+          setRecentRooms(getRecentRooms());
+        }
+        if (payload?.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message]);
+        }
+      } else if (type === 'TV_CLAIM_RESULT') {
+        if (tvClaimTimerRef.current) clearTimeout(tvClaimTimerRef.current);
+        if (payload?.success) {
+          playCinemaSound('join');
+          setTvClaimStatus({
+            type: 'success',
+            message:
+              lang === 'es'
+                ? '✓ Smart TV vinculada y proyectando en esta sala'
+                : '✓ Smart TV paired and projecting in this room',
+          });
+        } else {
+          setTvClaimStatus({
+            type: 'error',
+            message:
+              payload?.error ||
+              (lang === 'es'
+                ? 'Código de TV no encontrado o caducado.'
+                : 'TV code not found or expired.'),
+          });
+        }
+        tvClaimTimerRef.current = setTimeout(() => {
+          setTvClaimStatus(null);
+        }, 5000);
       } else if (type === 'PARTICIPANTS_UPDATED') {
         setParticipants(payload.participants || []);
         if (payload.hostId) setHostId(payload.hostId);
@@ -533,6 +794,8 @@ export function App() {
         }
       } else if (type === 'VIDEO_STATE_UPDATED') {
         if (payload.videoState) {
+          const prevUrl = videoStateUrlRef.current;
+          videoStateUrlRef.current = payload.videoState.url;
           setVideoState((prev) => {
             if (
               payload.videoState.url &&
@@ -543,7 +806,9 @@ export function App() {
             }
             return payload.videoState;
           });
-          recordStateInWatchHistory(payload.videoState);
+          if (payload.videoState.url && payload.videoState.url !== prevUrl) {
+            recordStateInWatchHistory(payload.videoState);
+          }
           if (payload.videoState.mode !== 'cloud') {
             setCloudFrame(null);
             setCloudState(null);
@@ -575,6 +840,50 @@ export function App() {
         if (payload.message) {
           setMessages((prev) => [...prev.slice(-149), payload.message]);
         }
+      } else if (type === 'HOST_LOCK_UPDATED') {
+        setHostOnlyControl(Boolean(payload.hostOnlyControl));
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message]);
+        }
+      } else if (type === 'HOST_LOCK_REJECTED') {
+        if (payload?.videoState) {
+          setVideoState(payload.videoState);
+        }
+        showHostLockNotice(payload?.hostName);
+      } else if (type === 'POLL_UPDATED') {
+        setActivePoll(payload.poll || null);
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message]);
+          if (mobileTabRef.current !== 'chat') {
+            setUnreadChatCount((c) => c + 1);
+          }
+        }
+        if (payload.justFinished) {
+          playCinemaSound('reaction');
+          if (payload.winnerItem && hostIdRef.current === profile.id) {
+            const winnerProposal = payload.winnerItem as PollProposalItem;
+            const matchedInQueue = roomQueueRef.current.find(
+              (q) =>
+                q.title === winnerProposal.title &&
+                (q.tmdbId === winnerProposal.tmdbId ||
+                  q.youtubeId === winnerProposal.youtubeId ||
+                  q.url === winnerProposal.url)
+            );
+            handlePlayQueueItemRef.current({
+              ...winnerProposal,
+              id: matchedInQueue?.id || `poll-win-${Date.now()}`,
+              addedBy: profile.name,
+            });
+          }
+          const finishedPollId = payload.poll?.id;
+          if (finishedPollId) {
+            setTimeout(() => {
+              setActivePoll((curr) =>
+                curr && curr.id === finishedPollId && curr.isClosed ? null : curr
+              );
+            }, 14000);
+          }
+        }
       } else if (type === 'CLOUD_BROWSER_FRAME') {
         setCloudFrame(payload.image);
         setCloudState({
@@ -591,7 +900,17 @@ export function App() {
       unsubscribe();
       socketService.disconnect();
     };
-  }, [inRoom, roomId, recordStateInWatchHistory]);
+  }, [
+    inRoom,
+    roomId,
+    isTvMode,
+    tvAuthToken,
+    lang,
+    profile.id,
+    recordStateInWatchHistory,
+    rememberSessionPin,
+    showHostLockNotice,
+  ]);
 
   const scrollDesktopToPlayer = () => {
     setIsPlayerClosedLocally(false);
@@ -624,10 +943,11 @@ export function App() {
     triggerHaptic('light');
     setIsPlayerMinimized(false);
     setCinemaModePersist(false);
+    setSecondaryStream(null);
     if (videoState.mode === 'cloud') {
       socketService.stopCloudBrowser();
     }
-    if (participants.length <= 1) {
+    if (participants.length <= 1 && canControlRoom) {
       const idleNext: VideoState = {
         ...INITIAL_VIDEO_STATE,
         lastUpdated: Date.now(),
@@ -642,10 +962,16 @@ export function App() {
   };
 
   const handleStopRoomPlaybackForEveryone = () => {
+    if (!canControlRoom) {
+      const hostName = participants.find((p) => p.id === hostId)?.name;
+      showHostLockNotice(hostName);
+      return;
+    }
     triggerHaptic('medium');
     setIsPlayerMinimized(false);
     setIsPlayerClosedLocally(false);
     setCinemaModePersist(false);
+    setSecondaryStream(null);
     const idleNext: VideoState = {
       ...INITIAL_VIDEO_STATE,
       lastUpdated: Date.now(),
@@ -668,6 +994,14 @@ export function App() {
     setShowGuestPopup(false);
     setIsPlayerMinimized(false);
     setIsPlayerClosedLocally(false);
+    setSecondaryStream(null);
+    if (typeof window !== 'undefined' && window.location.pathname === '/') {
+      window.history.pushState(
+        { naimInRoom: true },
+        '',
+        `/${encodeURIComponent(targetRoomId)}`
+      );
+    }
     setRoomId(targetRoomId);
     setRoomName(customName || `Sala ${targetRoomId.toUpperCase()}`);
     setInRoom(true);
@@ -677,9 +1011,17 @@ export function App() {
 
   const handleSwitchActiveRoom = (targetRoomId: string, customName?: string) => {
     manualLobbyStayRef.current = false;
+    setIsTvPairLobby(false);
+    setIsTvMode(false);
+    setTvAuthToken('');
+    setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
     setIsPlayerMinimized(false);
     setIsPlayerClosedLocally(false);
     setCinemaModePersist(false);
+    setSecondaryStream(null);
+    setActivePoll(null);
+    setHostOnlyControl(false);
+    setRoomHasPin(false);
     setVideoState(INITIAL_VIDEO_STATE);
     setCloudFrame(null);
     setCloudState(null);
@@ -699,10 +1041,18 @@ export function App() {
     manualLobbyStayRef.current = true;
     socketService.disconnect();
     setInRoom(false);
+    setIsTvMode(false);
+    setIsTvPairLobby(false);
+    setTvAuthToken('');
+    setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
     setShowGuestPopup(false);
     setIsPlayerMinimized(false);
     setIsPlayerClosedLocally(false);
     setCinemaModePersist(false);
+    setSecondaryStream(null);
+    setActivePoll(null);
+    setHostOnlyControl(false);
+    setRoomHasPin(false);
     setRoomId('');
     setVideoState(INITIAL_VIDEO_STATE);
     setCloudFrame(null);
@@ -712,8 +1062,42 @@ export function App() {
     }
   };
 
+  useEffect(() => {
+    const onPopState = () => {
+      const parsed = parseRoomFromWindow();
+      if (!parsed.roomId && !parsed.isTvPairLobby && inRoomRef.current) {
+        manualLobbyStayRef.current = true;
+        socketService.disconnect();
+        setInRoom(false);
+        setIsTvMode(false);
+        setIsTvPairLobby(false);
+        setTvAuthToken('');
+        setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
+        setShowGuestPopup(false);
+        setIsPlayerMinimized(false);
+        setIsPlayerClosedLocally(false);
+        setCinemaModePersist(false);
+        setSecondaryStream(null);
+        setActivePoll(null);
+        setHostOnlyControl(false);
+        setRoomHasPin(false);
+        setRoomId('');
+        setVideoState(INITIAL_VIDEO_STATE);
+        setCloudFrame(null);
+        setCloudState(null);
+      }
+    };
+    window.addEventListener('popstate', onPopState);
+    return () => window.removeEventListener('popstate', onPopState);
+  }, []);
+
   const handleSyncPlayerAction = useCallback(
     (action: 'play' | 'pause' | 'seek' | 'change_url', patch: Partial<VideoState>) => {
+      if (!canControlRoom) {
+        const hostName = participants.find((p) => p.id === hostId)?.name;
+        showHostLockNotice(hostName);
+        return;
+      }
       setVideoState((prev) => {
         const updated: VideoState = {
           ...prev,
@@ -725,7 +1109,7 @@ export function App() {
         return updated;
       });
     },
-    [profile.name]
+    [canControlRoom, participants, hostId, showHostLockNotice, profile.name]
   );
 
   // ============================================================================
@@ -736,6 +1120,10 @@ export function App() {
     preferLang: 'ES' | 'EN',
     startAtOverrideSec?: number
   ) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     const histId = sanitizeItemKey(
       movie.tmdbId ? `movie-${movie.tmdbId}` : `movie-${movie.id}`
     );
@@ -759,6 +1147,7 @@ export function App() {
         mediaType: 'movie',
         tmdbId: movie.tmdbId ? String(movie.tmdbId) : '',
         url: movie.bingetrixUrl || movie.movidyUrl || '',
+        movidyUrl: movie.movidyUrl || '',
         preferLang,
         title: movie.title,
       });
@@ -766,9 +1155,17 @@ export function App() {
       const data = await res.json();
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        setExtractionError(
-          data?.error || 'No se pudo cargar esta película en este momento.'
-        );
+        const errMsg =
+          data?.error || 'No se pudo cargar esta película en este momento.';
+        setExtractionError(errMsg);
+        showLanguageNotice({
+          type: 'error',
+          title:
+            preferLang === 'ES'
+              ? '⚠️ Película no disponible en Español ahora mismo'
+              : '⚠️ Señal no disponible para esta película',
+          subtitle: errMsg,
+        });
         return;
       }
 
@@ -777,6 +1174,28 @@ export function App() {
         0,
         tracks.findIndex((tr) => tr.resolvedStreamUrl === data.streamUrl)
       );
+      const activeTrack = tracks[activeIdx];
+      const activeLabel =
+        activeTrack?.label || data.resolvedLabel || (preferLang === 'ES' ? 'Español HD' : 'VOSE / Inglés HD');
+
+      if (data.languageFallbackUsed) {
+        const requestedText =
+          preferLang === 'ES' ? 'Español (Castellano / Latino)' : 'Inglés / VOSE';
+        showLanguageNotice({
+          type: 'warning',
+          title: `⚠️ Idioma ${requestedText} no disponible en esta película`,
+          subtitle: `Reproduciendo automáticamente en: ${activeLabel}`,
+        });
+      } else {
+        showLanguageNotice({
+          type: 'success',
+          title: `🔊 Idioma activo: ${activeLabel}`,
+          subtitle:
+            tracks.length > 1
+              ? `${tracks.length} opciones de idioma disponibles en la barra del reproductor`
+              : `${movie.title} · Señal HD lista`,
+        });
+      }
 
       activeHistoryIdRef.current = histId;
 
@@ -785,7 +1204,7 @@ export function App() {
         url: data.streamUrl,
         rawSourceUrl: movie.bingetrixUrl || movie.movidyUrl || movie.id,
         title: movie.title,
-        subtitle: `${movie.year || 'HD'} · ${tracks[activeIdx]?.label || preferLang}`,
+        subtitle: `${movie.year || 'HD'} · ${activeLabel}`,
         poster: movie.poster,
         backdrop: movie.backdrop,
         currentTime: resumeAtSec,
@@ -803,7 +1222,7 @@ export function App() {
         mediaType: 'movie',
         tmdbId: movie.tmdbId,
         title: movie.title,
-        subtitle: `${movie.year || 'HD'} · ${tracks[activeIdx]?.label || preferLang}`,
+        subtitle: `${movie.year || 'HD'} · ${activeLabel}`,
         poster: movie.poster,
         backdrop: movie.backdrop || movie.poster,
         year: movie.year,
@@ -815,6 +1234,7 @@ export function App() {
       setWatchHistory(list);
       upsertCloudWatchHistory(item).catch(() => {});
 
+      videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
@@ -832,6 +1252,10 @@ export function App() {
     preferLang: 'ES' | 'EN',
     startAtOverrideSec?: number
   ) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     const epLoadId = sanitizeItemKey(
       `tv-${series.tmdbId}-${episode.seasonNumber}-${episode.episodeNumber}`
     );
@@ -875,6 +1299,24 @@ export function App() {
         0,
         tracks.findIndex((tr) => tr.resolvedStreamUrl === data.streamUrl)
       );
+      const activeEpLabel =
+        tracks[activeIdx]?.label || data.resolvedLabel || preferLang;
+
+      if (data.languageFallbackUsed) {
+        showLanguageNotice({
+          type: 'warning',
+          title: `⚠️ Idioma ${preferLang === 'ES' ? 'Español' : 'Inglés / VOSE'} no disponible en este episodio`,
+          subtitle: `Reproduciendo en: ${activeEpLabel}`,
+        });
+      } else {
+        showLanguageNotice({
+          type: 'success',
+          title: `🔊 Idioma activo: ${activeEpLabel}`,
+          subtitle: `${series.title} · ${episode.seasonNumber}x${String(
+            episode.episodeNumber
+          ).padStart(2, '0')}`,
+        });
+      }
 
       const currentSeasonSummary = series.seasons.find(
         (s) => s.seasonNumber === episode.seasonNumber
@@ -934,6 +1376,7 @@ export function App() {
       setWatchHistory(list);
       upsertCloudWatchHistory(item).catch(() => {});
 
+      videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
@@ -949,6 +1392,10 @@ export function App() {
     item: WatchHistoryItem,
     forceRestart = false
   ) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     const resumeAtSec = forceRestart ? 0 : Math.floor(item.resumeTimeSec || 0);
 
     if (item.mediaType === 'tv' && item.tmdbId && item.season && item.episode) {
@@ -1023,6 +1470,7 @@ export function App() {
         setWatchHistory(list);
         upsertCloudWatchHistory(updatedHist).catch(() => {});
 
+        videoStateUrlRef.current = nextState.url;
         setVideoState(nextState);
         socketService.syncVideoState('change_url', nextState, profile.name);
         playCinemaSound('play');
@@ -1184,6 +1632,7 @@ export function App() {
       setWatchHistory(list);
       upsertCloudWatchHistory(item).catch(() => {});
 
+      videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
@@ -1195,6 +1644,10 @@ export function App() {
   };
 
   const handlePlaySportsMatch = async (match: SportsMatch, channelIndex: number) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     const channel = match.channels[channelIndex] || match.channels[0];
     if (!channel) return;
 
@@ -1256,6 +1709,10 @@ export function App() {
   };
 
   const handlePlayFavoriteChannel = async (favCh: FavoriteChannelItem) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     scrollDesktopToPlayer();
     setIsExtracting(true);
     setLoadingItemId(`favch-${favCh.favId}`);
@@ -1315,6 +1772,10 @@ export function App() {
   };
 
   const handlePlayYouTubeVideo = (item: YouTubeSearchItem) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     scrollDesktopToPlayer();
     setExtractionError(null);
     activeHistoryIdRef.current = null;
@@ -1360,12 +1821,27 @@ export function App() {
       };
       setVideoState(instantState);
       socketService.syncVideoState('change_url', instantState, profile.name);
+      showLanguageNotice({
+        type: 'success',
+        title: `✓ Idioma cambiado a: ${targetTrack.label}`,
+        subtitle:
+          resumeAt > 3
+            ? `Sincronizado en el segundo exacto (${Math.floor(resumeAt / 60)}:${String(
+                Math.floor(resumeAt % 60)
+              ).padStart(2, '0')})`
+            : 'Reproduciendo señal HD sincronizada',
+      });
       return;
     }
 
     setIsExtracting(true);
     setExtractionError(null);
-    setExtractionLabel(`Cambiando a ${targetTrack.label}...`);
+    setExtractionLabel(`Cambiando idioma a ${targetTrack.label}...`);
+    showLanguageNotice({
+      type: 'success',
+      title: `⏳ Cargando idioma: ${targetTrack.label}...`,
+      subtitle: 'Conectando servidor de audio HD...',
+    });
 
     try {
       const params = new URLSearchParams({
@@ -1378,7 +1854,14 @@ export function App() {
       const data = await res.json();
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        setExtractionError(`La pista "${targetTrack.label}" no está disponible.`);
+        const msg = `El idioma "${targetTrack.label}" no está disponible en este servidor.`;
+        setExtractionError(msg);
+        showLanguageNotice({
+          type: 'error',
+          title: `⚠️ Idioma no disponible: ${targetTrack.label}`,
+          subtitle:
+            'Prueba otra pista de idioma desde el botón Idioma / Audio del reproductor.',
+        });
         return;
       }
 
@@ -1402,14 +1885,28 @@ export function App() {
 
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
+      showLanguageNotice({
+        type: 'success',
+        title: `✓ Idioma cambiado a: ${targetTrack.label}`,
+        subtitle: 'Audio actualizado correctamente en la sala',
+      });
     } catch {
-      setExtractionError('Error al cambiar de pista.');
+      setExtractionError('Error al cambiar de idioma.');
+      showLanguageNotice({
+        type: 'error',
+        title: `⚠️ Error al cambiar a ${targetTrack.label}`,
+        subtitle: 'No se pudo conectar con el servidor de este idioma.',
+      });
     } finally {
       setIsExtracting(false);
     }
   };
 
   const handlePlayCustomUrl = async (rawUrl: string) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     scrollDesktopToPlayer();
     setIsExtracting(true);
     setLoadingItemId('custom-url');
@@ -1461,9 +1958,29 @@ export function App() {
       addedBy: profile.name,
     };
     socketService.addToQueue(newItem);
+    if (queueToastTimerRef.current) clearTimeout(queueToastTimerRef.current);
+    setQueueAddedNotice(item.title);
+    queueToastTimerRef.current = setTimeout(() => {
+      setQueueAddedNotice(null);
+    }, 3600);
+  };
+
+  const handleOpenRoomQueueView = () => {
+    setQueueAddedNotice(null);
+    if (isDesktopLayout) {
+      setSidebarOpen(true);
+      setOpenQueueTrigger((n) => n + 1);
+    } else {
+      setMobileTab('chat');
+      setOpenQueueTrigger((n) => n + 1);
+    }
   };
 
   const handlePlayQueueItem = (qItem: RoomQueueItem) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     socketService.removeFromQueue(qItem.id);
     if (qItem.kind === 'youtube' && qItem.youtubeId) {
       handlePlayYouTubeVideo({
@@ -1476,6 +1993,25 @@ export function App() {
         thumbnail: qItem.poster || '',
         url: qItem.url || `https://youtube.com/watch?v=${qItem.youtubeId}`,
       });
+    } else if (qItem.kind === 'tv' && qItem.tmdbId) {
+      const season = qItem.season || 1;
+      const episode = qItem.episode || 1;
+      handleReplayHistoryItem(
+        {
+          id: sanitizeItemKey(`tv-${qItem.tmdbId}-${season}-${episode}`),
+          mediaType: 'tv',
+          tmdbId: qItem.tmdbId,
+          title: qItem.title,
+          subtitle: qItem.subtitle || `${season}x${String(episode).padStart(2, '0')}`,
+          poster: qItem.poster || '',
+          backdrop: qItem.poster || '',
+          season,
+          episode,
+          preferLang: qItem.preferLang || 'ES',
+          watchedAt: Date.now(),
+        },
+        true
+      );
     } else if (qItem.kind === 'movie') {
       handlePlayMovie(
         {
@@ -1496,8 +2032,443 @@ export function App() {
       handlePlayCustomUrl(qItem.url);
     }
   };
+  handlePlayQueueItemRef.current = handlePlayQueueItem;
+
+  // ============================================================================
+  // MULTI-VIEW DUAL-MATCH & ROOM POLL / HOST LOCK HANDLERS
+  // ============================================================================
+  const handlePlaySecondaryChannel = async (opts: {
+    sourceUrl: string;
+    title: string;
+    subtitle?: string;
+  }) => {
+    // If no primary stream is active yet, open directly on the main screen
+    if (videoState.mode === 'idle' && canControlRoom) {
+      await handlePlaySportsMatch(
+        {
+          id: `mv-init-${Date.now()}`,
+          time: 'EN VIVO',
+          sport: 'soccer',
+          isLive: true,
+          competition: opts.subtitle || 'Multicanal HD',
+          title: opts.title,
+          channels: [
+            {
+              id: 'mv-ch-0',
+              label: opts.title,
+              lang: 'ES',
+              sourceUrl: opts.sourceUrl,
+              resolverType: 'sports_channel',
+            },
+          ],
+        },
+        0
+      );
+      return;
+    }
+
+    scrollDesktopToPlayer();
+    setLoadingItemId(`mv-${opts.sourceUrl}`);
+    setExtractionError(null);
+
+    try {
+      const params = new URLSearchParams({
+        url: opts.sourceUrl,
+        resolverType: 'sports_channel',
+        title: opts.title,
+      });
+      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const data = await res.json();
+
+      if (!res.ok || !data?.success || !data?.streamUrl) {
+        setExtractionError(
+          data?.error || 'Esta señal secundaria no está emitiendo en este momento.'
+        );
+        return;
+      }
+
+      setSecondaryStream((prev) => ({
+        url: data.streamUrl,
+        rawSourceUrl: opts.sourceUrl,
+        title: opts.title,
+        subtitle: opts.subtitle,
+        mode: data.mode === 'direct' ? 'direct' : 'hls',
+        layout: prev?.layout || 'corner',
+      }));
+      playCinemaSound('play');
+    } catch {
+      setExtractionError('Error al conectar la 2ª pantalla Multiview.');
+    } finally {
+      setLoadingItemId(null);
+    }
+  };
+
+  const handleSwapSecondaryStream = () => {
+    if (!secondaryStream) return;
+    triggerHaptic('medium');
+
+    const prevMain = videoState;
+    const prevSec = secondaryStream;
+
+    const promotedMain: VideoState = {
+      mode: prevSec.mode,
+      url: prevSec.url,
+      rawSourceUrl: prevSec.rawSourceUrl,
+      title: prevSec.title,
+      subtitle: prevSec.subtitle || 'Multiview · Señal Principal',
+      currentTime: 0,
+      isPlaying: true,
+      isLive: true,
+      tracks: [],
+      activeTrackIndex: 0,
+      seriesMeta: undefined,
+      lastUpdated: Date.now(),
+      updatedBy: profile.name,
+    };
+
+    if (prevMain.mode === 'hls' || prevMain.mode === 'direct') {
+      setSecondaryStream({
+        url: prevMain.url,
+        rawSourceUrl: prevMain.rawSourceUrl,
+        title: prevMain.title,
+        subtitle: prevMain.subtitle,
+        mode: prevMain.mode,
+        layout: prevSec.layout,
+      });
+    } else {
+      setSecondaryStream(null);
+    }
+
+    setVideoState(promotedMain);
+    if (canControlRoom) {
+      socketService.syncVideoState('change_url', promotedMain, profile.name);
+    }
+  };
+
+  const handleToggleSecondaryLayout = () => {
+    triggerHaptic('light');
+    setSecondaryStream((prev) =>
+      prev
+        ? {
+            ...prev,
+            layout: prev.layout === 'split' ? 'corner' : 'split',
+          }
+        : null
+    );
+  };
+
+  const handleCloseSecondaryStream = () => {
+    triggerHaptic('light');
+    setSecondaryStream(null);
+  };
+
+  const handleToggleHostLock = (nextLocked: boolean) => {
+    triggerHaptic('light');
+    socketService.setHostLock(nextLocked);
+  };
+
+  const handleStartPollFromQueue = () => {
+    if (roomQueue.length < 2) return;
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
+    triggerHaptic('success');
+    const proposals: PollProposalItem[] = roomQueue
+      .slice(0, 4)
+      .map(({ id: _id, addedBy: _addedBy, ...proposal }) => proposal);
+    socketService.startPoll(
+      lang === 'es' ? '¿Qué vemos ahora en la sala?' : 'What should we watch next?',
+      proposals,
+      25
+    );
+    if (!isDesktopLayout) {
+      setMobileTab('chat');
+      setUnreadChatCount(0);
+    } else {
+      setSidebarOpen(true);
+    }
+  };
+
+  const handleVotePoll = (pollId: string, optionId: string) => {
+    socketService.votePoll(pollId, optionId);
+  };
+
+  const handleClosePoll = (pollId: string) => {
+    socketService.closePoll(pollId);
+  };
+
+  // ============================================================================
+  // PERMANENT CLOUD ROOMS, PRIVATE 4-DIGIT PIN & SMART TV REMOTE HANDLERS
+  // ============================================================================
+  const normalizedRoomCode = roomId.trim().toLowerCase();
+  const currentSavedRoom = savedRooms.find(
+    (r) => r.roomCode.toLowerCase() === normalizedRoomCode
+  );
+  const isCurrentRoomPermanent = Boolean(currentSavedRoom);
+  const currentHostPin =
+    sessionPinMap[normalizedRoomCode] ||
+    (currentSavedRoom?.hasPin ? currentSavedRoom.pinCode : undefined);
+
+  // Keep Firestore permanent room blueprint automatically synced whenever room settings or queue change
+  useEffect(() => {
+    if (
+      !authUser ||
+      !authUser.emailVerified ||
+      !inRoom ||
+      !normalizedRoomCode ||
+      !isCurrentRoomPermanent ||
+      !currentUser.isHost
+    ) {
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      upsertCloudSavedRoom({
+        roomCode: normalizedRoomCode,
+        roomName: roomName || `Sala ${normalizedRoomCode.toUpperCase()}`,
+        hasPin: roomHasPin,
+        pinCode: roomHasPin ? currentHostPin : undefined,
+        hostOnlyControl,
+        lastActiveTitle:
+          videoState.mode !== 'idle' ? videoState.title : currentSavedRoom?.lastActiveTitle,
+        queueItems: roomQueue,
+      }).catch(() => {});
+    }, 1100);
+
+    return () => clearTimeout(timer);
+  }, [
+    authUser,
+    inRoom,
+    normalizedRoomCode,
+    isCurrentRoomPermanent,
+    currentUser.isHost,
+    roomName,
+    roomHasPin,
+    currentHostPin,
+    hostOnlyControl,
+    videoState.mode,
+    videoState.title,
+    roomQueue,
+    currentSavedRoom?.lastActiveTitle,
+  ]);
+
+  const handleTogglePermanentRoom = async () => {
+    if (!authUser || !authUser.emailVerified || !normalizedRoomCode) return;
+    if (isCurrentRoomPermanent) {
+      await deleteCloudSavedRoom(normalizedRoomCode);
+    } else {
+      await upsertCloudSavedRoom({
+        roomCode: normalizedRoomCode,
+        roomName: roomName || `Sala ${normalizedRoomCode.toUpperCase()}`,
+        hasPin: roomHasPin,
+        pinCode: roomHasPin ? currentHostPin : undefined,
+        hostOnlyControl,
+        lastActiveTitle: videoState.mode !== 'idle' ? videoState.title : undefined,
+        queueItems: roomQueue,
+      });
+    }
+  };
+
+  const handleDeleteSavedRoom = async (targetRoomCode: string) => {
+    await deleteCloudSavedRoom(targetRoomCode);
+  };
+
+  const handleSetRoomPin = (nextPinCode: string) => {
+    if (!currentUser.isHost) return;
+    const trimmed = nextPinCode.trim();
+    if (trimmed === '') {
+      rememberSessionPin(roomId, '');
+      setRoomHasPin(false);
+      socketService.setRoomPin('');
+    } else if (/^[0-9]{4}$/.test(trimmed)) {
+      rememberSessionPin(roomId, trimmed);
+      setRoomHasPin(true);
+      socketService.setRoomPin(trimmed);
+    }
+  };
+
+  const handleSubmitGuestPin = (enteredPin: string) => {
+    rememberSessionPin(roomId, enteredPin);
+    socketService.submitRoomPin(enteredPin);
+  };
+
+  const handleRenameRoom = (nextName: string) => {
+    if (!currentUser.isHost) return;
+    const clean = nextName.trim().slice(0, 60);
+    if (!clean) return;
+    setRoomName(clean);
+    socketService.renameRoom(clean);
+  };
+
+  const lastTvRemoteSeqRef = useRef<number>(0);
+
+  // HTTP Polling Sync Fallback when running in Smart TV Mode (Samsung Tizen / LG webOS)
+  // Guarantees room playback + remote control work 100% even if TV browser blocks WebSockets
+  useEffect(() => {
+    if (!inRoom || !isTvMode || !roomId) return;
+    let cancelled = false;
+
+    const pollRoomForTv = async () => {
+      if (cancelled || socketService.isConnected()) return;
+      try {
+        const params = new URLSearchParams({
+          tv: '1',
+          tvId: `${profile.id}-tv`,
+          tvName: profile.name || 'Samsung Smart TV',
+        });
+        if (tvAuthToken) params.set('tvAuthToken', tvAuthToken);
+        const savedPin = sessionPinMap[roomId.toLowerCase()];
+        if (savedPin) params.set('pin', savedPin);
+
+        const res = await fetch(
+          `/api/rooms/${encodeURIComponent(roomId)}?${params.toString()}`
+        );
+        if (res.status === 403) {
+          const errData = await res.json().catch(() => ({}));
+          if (!cancelled && errData?.hasPin) {
+            setPinPromptState({
+              open: true,
+              roomName: errData.roomName || `Sala ${roomId.toUpperCase()}`,
+              invalidAttempt: false,
+            });
+          }
+          return;
+        }
+        if (!res.ok) return;
+        const data = await res.json();
+        if (cancelled) return;
+
+        if (data?.name) setRoomName(data.name);
+        if (Array.isArray(data?.participants)) setParticipants(data.participants);
+
+        if (data?.videoState) {
+          setVideoState((prev) => {
+            const next = data.videoState as VideoState;
+            const urlChanged = next.url !== prev.url || next.mode !== prev.mode;
+            const playChanged = next.isPlaying !== prev.isPlaying;
+            const trackChanged = next.activeTrackIndex !== prev.activeTrackIndex;
+            const timeDrift =
+              !next.isLive && Math.abs((next.currentTime || 0) - (prev.currentTime || 0)) > 3.2;
+
+            if (urlChanged || playChanged || trackChanged || timeDrift) {
+              return next;
+            }
+            return prev;
+          });
+        }
+
+        if (
+          data?.lastTvRemoteCommand &&
+          typeof data.lastTvRemoteCommand.seq === 'number' &&
+          data.lastTvRemoteCommand.seq > lastTvRemoteSeqRef.current
+        ) {
+          const isInitialSync = lastTvRemoteSeqRef.current === 0;
+          lastTvRemoteSeqRef.current = data.lastTvRemoteCommand.seq;
+          if (!isInitialSync && Date.now() - Number(data.lastTvRemoteCommand.ts || 0) < 8000) {
+            socketService.emitLocal({
+              type: 'TV_REMOTE_COMMAND',
+              payload: data.lastTvRemoteCommand,
+            });
+          }
+        }
+      } catch {
+        // ignore transient network error
+      }
+    };
+
+    pollRoomForTv();
+    const interval = setInterval(pollRoomForTv, 2200);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, [inRoom, isTvMode, roomId, profile.id, profile.name, tvAuthToken, sessionPinMap]);
+
+  const handleClaimTvCode = async (fourDigitCode: string) => {
+    setTvClaimStatus(null);
+    if (tvClaimTimerRef.current) clearTimeout(tvClaimTimerRef.current);
+
+    try {
+      const res = await fetch('/api/tv/claim', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: fourDigitCode,
+          roomId,
+          roomName: roomName || `Sala ${roomId.toUpperCase()}`,
+          claimedBy: profile.name,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success) {
+        playCinemaSound('join');
+        setTvClaimStatus({
+          type: 'success',
+          message:
+            lang === 'es'
+              ? '✓ Smart TV vinculada y proyectando en esta sala'
+              : '✓ Smart TV paired and projecting in this room',
+        });
+      } else {
+        setTvClaimStatus({
+          type: 'error',
+          message:
+            data?.error ||
+            (lang === 'es'
+              ? 'Código de TV no encontrado o caducado.'
+              : 'TV code not found or expired.'),
+        });
+      }
+      tvClaimTimerRef.current = setTimeout(() => {
+        setTvClaimStatus(null);
+      }, 5000);
+    } catch {
+      // Fallback to WebSocket claim if fetch failed
+      socketService.claimTvPairingCode(
+        fourDigitCode,
+        roomName || `Sala ${roomId.toUpperCase()}`,
+        profile.name
+      );
+    }
+  };
+
+  const handleRemoteTogglePlay = () => {
+    if (videoState.mode === 'idle') return;
+    const nextPlaying = !videoState.isPlaying;
+    handleSyncPlayerAction(nextPlaying ? 'play' : 'pause', {
+      isPlaying: nextPlaying,
+    });
+  };
+
+  const handleRemoteSeekDelta = (deltaSec: number) => {
+    if (videoState.mode === 'idle' || videoState.isLive) return;
+    const targetSec = Math.max(0, (videoState.currentTime || 0) + deltaSec);
+    handleSyncPlayerAction('seek', { currentTime: targetSec });
+  };
+
+  const handleSendTvRemoteCommand = (cmd: TvRemoteCommandType) => {
+    if (socketService.isConnected()) {
+      socketService.sendTvRemoteCommand(cmd, profile.name);
+    } else {
+      fetch('/api/tv/remote', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          roomId,
+          command: cmd,
+          senderName: profile.name,
+          userId: profile.id,
+        }),
+      }).catch(() => {});
+    }
+  };
 
   const handleOpenCloudBrowser = (url: string) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     scrollDesktopToPlayer();
     setExtractionError(null);
     socketService.startCloudBrowser(url, profile.name);
@@ -1587,6 +2558,32 @@ export function App() {
   };
 
   // ============================================================================
+  // RENDER 0: SMART TV 4-DIGIT PAIRING LOBBY (/tv)
+  // ============================================================================
+  if (isTvPairLobby) {
+    return (
+      <TvReceiverPairingScreen
+        lang={lang}
+        onPaired={({ roomId: pairedCode, roomName: pairedTitle, tvAuthToken: token }) => {
+          manualLobbyStayRef.current = false;
+          setTvAuthToken(token);
+          setIsTvPairLobby(false);
+          setIsTvMode(true);
+          setRoomId(pairedCode);
+          setRoomName(pairedTitle || `Sala ${pairedCode.toUpperCase()}`);
+          setInRoom(true);
+        }}
+        onExitTvLobby={() => {
+          setIsTvPairLobby(false);
+          if (typeof window !== 'undefined') {
+            window.history.replaceState({}, '', '/');
+          }
+        }}
+      />
+    );
+  }
+
+  // ============================================================================
   // RENDER 1: LOBBY SCREEN (SHOWN FOR GUESTS WHO HAVEN'T ENTERED A ROOM YET)
   // ============================================================================
   if (!inRoom) {
@@ -1615,17 +2612,33 @@ export function App() {
             setShowIntro(true);
           }}
           onEnterRoom={handleEnterRoom}
+          onOpenTvPairLobby={() => {
+            if (typeof window !== 'undefined') {
+              window.location.href = '/tv';
+            } else {
+              setIsTvPairLobby(true);
+            }
+          }}
         />
       </>
     );
   }
 
   // ============================================================================
-  // RENDER 2: SMART TV RECEIVER MODE (?room=...&tv=1)
+  // RENDER 2: SMART TV RECEIVER MODE (?tv=1 OR PAIRED FROM /tv)
   // ============================================================================
   if (isTvMode) {
     return (
       <div className="w-full h-full bg-black overflow-hidden">
+        <RoomPinPromptModal
+          isOpen={pinPromptState.open}
+          roomName={pinPromptState.roomName}
+          roomCode={roomId}
+          invalidAttempt={pinPromptState.invalidAttempt}
+          lang={lang}
+          onSubmitPin={handleSubmitGuestPin}
+          onLeaveProtectedRoom={handleLeaveRoom}
+        />
         <NativeCinemaPlayer
           videoState={videoState}
           lang={lang}
@@ -1633,6 +2646,8 @@ export function App() {
           isExtracting={isExtracting}
           extractionLabel={extractionLabel}
           extractionError={extractionError}
+          languageNotice={languageNotice}
+          onDismissLanguageNotice={() => setLanguageNotice(null)}
           cloudFrame={cloudFrame}
           cloudState={cloudState}
           floatingReactions={floatingReactions}
@@ -1640,6 +2655,17 @@ export function App() {
           onSelectTrack={handleSelectTrack}
           onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
           onNextEpisode={handleNextEpisode}
+          roomCode={roomId}
+          onExitTvMode={() => {
+            socketService.disconnect();
+            setInRoom(false);
+            setIsTvMode(false);
+            setTvAuthToken('');
+            setIsTvPairLobby(true);
+            if (typeof window !== 'undefined') {
+              window.history.replaceState({}, '', '/tv');
+            }
+          }}
           isTvMode
         />
       </div>
@@ -1653,22 +2679,45 @@ export function App() {
     (effectiveVideoState.mode !== 'idle' || isExtracting) && !isPlayerClosedLocally;
   const isDockedMini = isPlayerMinimized && isPlayerActive;
   const showCinemaOverlay = isCinemaMode && isPlayerActive && !isDockedMini;
-  const latestHistoryEntry = watchHistory[0] || null;
+  const hasConnectedSmartTv = participants.some(
+    (p) => p.name.includes('(TV)') || p.avatar === '📺'
+  );
+
+  const handleSwitchThisDeviceToTvLobby = () => {
+    socketService.disconnect();
+    if (typeof window !== 'undefined') {
+      window.location.href = '/tv';
+      return;
+    }
+    setInRoom(false);
+    setIsTvMode(false);
+    setTvAuthToken('');
+    setIsTvPairLobby(true);
+  };
+
+  const isMobileChatWithKeyboard =
+    !isDesktopLayout && isMobileKeyboardOpen && (mobileTab === 'chat' || floatingChatOpen);
 
   // ============================================================================
   // RENDER 3: UNIFIED WORKSPACE (DESKTOP OR USER-SELECTED MOBILE VIEW)
   // ============================================================================
   return (
-    <div className="h-full w-full max-w-[100vw] bg-[#06070B] text-[#F4F5F8] overflow-hidden">
+    <div
+      style={
+        !isDesktopLayout && visualViewportHeight
+          ? { height: `${visualViewportHeight}px` }
+          : undefined
+      }
+      className="h-full w-full max-w-[100vw] bg-[#050507] text-[#F5F5F7] overflow-hidden"
+    >
       <div
         className={`h-full w-full flex flex-col overflow-hidden pt-safe animate-room-warp ${
           isFramedMobileOnPc
-            ? 'max-w-[430px] mx-auto bg-[#090A0F] border-x border-white/[0.1] shadow-[0_0_90px_rgba(0,0,0,0.92)]'
-            : 'bg-[#090A0F]'
+            ? 'max-w-[27rem] mx-auto bg-[#050507] border-x border-white/[0.08] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
+            : 'bg-[#050507]'
         }`}
       >
         <OfflineIndicator lang={lang} />
-        <PWAInstallNotification lang={lang} />
 
         {showIntro && (
           <NaimcineIntro
@@ -1678,7 +2727,46 @@ export function App() {
           />
         )}
 
-        {/* Dedicated Mi Perfil Hub (History, Resume, Favorite Movies/Series, Favorite Channels & Room Switcher) */}
+        {/* Private Room 4-Digit PIN Unlock Gate */}
+        <RoomPinPromptModal
+          isOpen={pinPromptState.open}
+          roomName={pinPromptState.roomName}
+          roomCode={roomId}
+          invalidAttempt={pinPromptState.invalidAttempt}
+          lang={lang}
+          onSubmitPin={handleSubmitGuestPin}
+          onLeaveProtectedRoom={handleLeaveRoom}
+        />
+
+        {/* Quick 1-Tap Smart TV Pairing & Mobile Remote Modal (Samsung / LG / AirPlay / Cast) */}
+        <SmartTvQuickModal
+          isOpen={smartTvModalOpen}
+          onClose={() => setSmartTvModalOpen(false)}
+          lang={lang}
+          roomId={roomId}
+          hasConnectedSmartTv={hasConnectedSmartTv}
+          onClaimTvCode={handleClaimTvCode}
+          tvClaimStatus={tvClaimStatus}
+          isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
+          onRemoteTogglePlay={handleRemoteTogglePlay}
+          onRemoteSeekDelta={handleRemoteSeekDelta}
+          onSendTvRemoteCommand={handleSendTvRemoteCommand}
+          onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
+          onTriggerAirPlayPicker={() => {
+            const v = document.querySelector('video') as any;
+            if (v?.webkitShowPlaybackTargetPicker) {
+              try {
+                v.webkitShowPlaybackTargetPicker();
+                return true;
+              } catch {
+                return false;
+              }
+            }
+            return false;
+          }}
+        />
+
+        {/* Dedicated Mi Perfil Hub (History, Resume, Favorite Movies/Series, Favorite Channels & Permanent Rooms) */}
         <UserProfileHubModal
           isOpen={profileHubOpen}
           initialTab={profileHubTab}
@@ -1709,10 +2797,15 @@ export function App() {
           onRemoveFavoriteChannel={(ch) => handleToggleChannelFavorite(ch)}
           onCreateNewRoom={handleCreateFreshRoom}
           onSwitchRoom={handleSwitchActiveRoom}
+          savedRooms={savedRooms}
+          isCurrentRoomPermanent={isCurrentRoomPermanent}
+          onToggleCurrentRoomPermanent={handleTogglePermanentRoom}
+          onDeleteSavedRoom={handleDeleteSavedRoom}
+          onLeaveRoom={handleLeaveRoom}
         />
 
         {/* Non-intrusive Guest Welcome Card when entering via invite link */}
-        {showGuestPopup && !showIntro && !authUser && (
+        {showGuestPopup && !showIntro && !authUser && !pinPromptState.open && (
           <GuestWelcomePopup
             currentName={profile.name}
             currentAvatar={profile.avatar}
@@ -1728,43 +2821,34 @@ export function App() {
         {/* MODO CINE DARK OPACITY OVERLAY (bg-black/80 OVER ENTIRE APP)       */}
         {/* ================================================================== */}
         {showCinemaOverlay && (
-          <>
-            <div
-              aria-hidden="true"
-              className="fixed inset-0 bg-black/80 z-40 pointer-events-none transition-opacity duration-300"
-            />
-            <button
-              type="button"
-              onClick={handleToggleCinemaMode}
-              className="fixed top-3 right-3 sm:top-4 sm:right-5 z-50 min-h-[38px] px-3.5 rounded-xl bg-[#11131B]/95 hover:bg-[#191C28] border border-amber-400/40 text-xs font-semibold text-amber-200 flex items-center gap-2 shadow-2xl cursor-pointer transition-all"
-              title={
-                lang === 'es' ? 'Salir de Modo Cine (Esc)' : 'Exit Cinema Mode (Esc)'
-              }
-            >
-              <Sun className="w-3.5 h-3.5 text-amber-300" />
-              <span>{lang === 'es' ? 'Salir de Modo Cine' : 'Lights On'}</span>
-            </button>
-          </>
+          <div
+            aria-hidden="true"
+            className="fixed inset-0 bg-black/80 z-40 pointer-events-none transition-opacity duration-300"
+          />
         )}
 
-        {/* Top Bar (z-30 so Modo Cine z-40 dims it cleanly) */}
+        {/* Top Bar (z-30 so Modo Cine z-40 dims it cleanly; auto-hides on mobile when keyboard is open in chat so video + chat fit) */}
         <header
           className={`${
-            isDesktopLayout ? 'h-[60px] px-6' : 'h-[54px] px-3'
-          } bg-[#090A0F]/95 backdrop-blur-md border-b border-white/[0.08] flex items-center justify-between gap-2 sm:gap-3 shrink-0 z-30`}
+            isMobileChatWithKeyboard
+              ? 'hidden'
+              : isDesktopLayout
+              ? 'h-14 px-6 flex'
+              : 'h-13 px-3 flex'
+          } glass-bar border-b border-white/[0.07] items-center justify-between gap-2 shrink-0 z-30`}
         >
-          {/* Zone 1: Brand Emblem & Active Room */}
-          <div className="flex items-center gap-2.5 min-w-0">
+          {/* Zone 1: Brand Emblem & Active Room Selector */}
+          <div className="flex items-center gap-2 min-w-0">
             <button
               type="button"
               onClick={() => {
                 setIntroWithSound(true);
                 setShowIntro(true);
               }}
-              title="NAIM CINE"
-              className="shrink-0 cursor-pointer rounded-xl overflow-hidden shadow-[0_0_20px_rgba(225,29,72,0.2)]"
+              title={lang === 'es' ? 'Ver Intro NC Cinema' : 'Play NC Cinema Intro'}
+              className="shrink-0 cursor-pointer rounded-xl overflow-hidden shadow-[0_0_22px_rgba(229,9,20,0.32)] hover:scale-105 active:scale-95 transition-transform"
             >
-              <NaimBrandLogo size={34} />
+              <NaimBrandLogo size={36} />
             </button>
             <button
               type="button"
@@ -1775,30 +2859,41 @@ export function App() {
               className="flex flex-col min-w-0 text-left cursor-pointer group"
               title={
                 lang === 'es'
-                  ? 'Cambiar de sala o crear sala nueva'
-                  : 'Switch or create room'
+                  ? 'Cambiar de sala, crear nueva o salir'
+                  : 'Switch room, create new, or leave'
               }
             >
-              <span className="font-display font-bold text-xs sm:text-sm tracking-[0.12em] text-white leading-tight truncate">
-                NAIM <span className="text-[#E11D48]">CINE</span>
+              <span className="font-display font-bold text-xs tracking-[0.1em] text-white leading-tight truncate flex items-center gap-1">
+                <span>
+                  NAIM <span className="text-[#E11D48]">CINE</span>
+                </span>
                 {isDesktopLayout && (
                   <>
-                    <span className="text-zinc-500 font-normal mx-1.5">·</span>
-                    <span className="font-semibold text-zinc-200 tracking-normal group-hover:text-white transition-colors">
+                    <span className="text-zinc-600 font-normal mx-1">·</span>
+                    <span className="font-semibold text-zinc-200 tracking-normal group-hover:text-white transition-colors truncate max-w-44">
                       {roomName || `Sala ${roomId.toUpperCase()}`}
                     </span>
                   </>
                 )}
+                {roomHasPin && (
+                  <Lock
+                    className="w-3 h-3 text-[#E11D48] shrink-0 ml-0.5"
+                    aria-label="Sala con PIN privado"
+                  />
+                )}
               </span>
               {!isDesktopLayout && (
-                <span className="text-[10px] text-zinc-400 truncate max-w-[110px] font-mono">
-                  #{roomId}
+                <span className="text-[0.65rem] text-zinc-400 truncate max-w-[8.5rem] flex items-center gap-1">
+                  <span className="truncate">
+                    {roomName || `Sala #${roomId.toUpperCase()}`}
+                  </span>
+                  <span className="text-zinc-500">▾</span>
                 </span>
               )}
             </button>
           </div>
 
-          {/* Zone 2: Clean Single-Line Text Navigation Links (Desktop Mode) */}
+          {/* Zone 2: Clean Direct Navigation Links (Desktop Mode) */}
           {isDesktopLayout && (
             <nav
               className="flex items-center gap-6 text-sm font-medium overflow-x-auto no-scrollbar"
@@ -1806,52 +2901,121 @@ export function App() {
             >
               {(
                 [
-                  { id: 'movies', label: t.tabMovies },
-                  { id: 'vose', label: t.tabVose },
-                  { id: 'series', label: t.tabSeries },
-                  { id: 'sports', label: t.tabSports },
-                  { id: 'youtube', label: t.tabYoutube },
+                  {
+                    id: 'movies',
+                    label: lang === 'es' ? 'Películas' : 'Movies',
+                    isActive: catalogSection === 'movies' || catalogSection === 'vose',
+                    onClick: () => setCatalogSection('movies'),
+                  },
+                  {
+                    id: 'series',
+                    label: t.tabSeries,
+                    isActive: catalogSection === 'series',
+                    onClick: () => setCatalogSection('series'),
+                  },
+                  {
+                    id: 'sports',
+                    label: t.tabSports,
+                    isActive: catalogSection === 'sports',
+                    onClick: () => setCatalogSection('sports'),
+                  },
+                  {
+                    id: 'youtube',
+                    label: t.tabYoutube,
+                    isActive: catalogSection === 'youtube',
+                    onClick: () => setCatalogSection('youtube'),
+                  },
                   {
                     id: 'direct',
-                    label: `${t.tabDirect}${
-                      roomQueue.length ? ` (${roomQueue.length})` : ''
-                    }`,
+                    label: t.tabDirect,
+                    badge: roomQueue.length || undefined,
+                    isActive: catalogSection === 'direct',
+                    onClick: () => setCatalogSection('direct'),
                   },
                 ] as const
-              ).map((navItem) => {
-                const active = catalogSection === navItem.id;
-                return (
-                  <button
-                    key={navItem.id}
-                    type="button"
-                    onClick={() => setCatalogSection(navItem.id)}
-                    className={`h-[60px] flex items-center border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                      active
-                        ? 'border-[#E11D48] text-white font-semibold'
-                        : 'border-transparent text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    {navItem.label}
-                  </button>
-                );
-              })}
+              ).map((navItem) => (
+                <button
+                  key={navItem.id}
+                  type="button"
+                  onClick={navItem.onClick}
+                  className={`h-[58px] flex items-center gap-1.5 border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    navItem.isActive
+                      ? 'border-[#E11D48] text-white font-semibold'
+                      : 'border-transparent text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <span>{navItem.label}</span>
+                  {'badge' in navItem && navItem.badge ? (
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#E11D48] text-[10px] font-bold text-white flex items-center justify-center tabular-nums">
+                      {navItem.badge > 9 ? '9+' : navItem.badge}
+                    </span>
+                  ) : null}
+                </button>
+              ))}
             </nav>
           )}
 
-          {/* Zone 3: View Mode Toggle + Mi Perfil Hub + Invite + Controls */}
+          {/* Zone 3: Spacious Ergonomic Right Actions (3 clean buttons on Mobile, full bar on PC) */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <ViewModeSwitchButton
-              effectiveView={effectiveView}
-              onToggle={toggleViewMode}
-              lang={lang}
-              compact
-            />
+            {isDesktopLayout && (
+              <ViewModeSwitchButton
+                effectiveView={effectiveView}
+                onToggle={toggleViewMode}
+                lang={lang}
+                compact
+              />
+            )}
+
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setSmartTvModalOpen(true);
+              }}
+              title={
+                lang === 'es'
+                  ? 'Conectar Samsung TV / Smart TV y Mando'
+                  : 'Connect Samsung TV / Smart TV & Remote'
+              }
+              className={`min-h-11 min-w-11 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all relative ${
+                hasConnectedSmartTv
+                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/45 text-emerald-200'
+                  : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.1] text-zinc-200'
+              }`}
+            >
+              <Tv className="w-4 h-4 text-zinc-100 shrink-0" />
+              <span className={isDesktopLayout ? 'inline' : 'hidden'}>
+                Smart TV
+              </span>
+              {hasConnectedSmartTv && (
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={handleShareOrCopyHeaderInvite}
+              className="min-h-11 px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#F43F5E] active:scale-95 text-xs font-semibold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_8px_22px_rgba(225,29,72,0.32)]"
+            >
+              {copiedHeaderInvite ? (
+                <>
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{t.copied}</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4 shrink-0" />
+                  <span>{t.invite}</span>
+                </>
+              )}
+            </button>
 
             <CloudAccountButton
               user={authUser}
               authLoading={authLoading}
               displayName={profile.name}
               lang={lang}
+              isDesktop={isDesktopLayout}
               onSignIn={handleGoogleSignIn}
               onSignOut={handleGoogleSignOut}
               onOpenProfileHub={() => {
@@ -1861,54 +3025,39 @@ export function App() {
               compact
             />
 
-            <PWAInstallButton lang={lang} compact />
-
-            <button
-              type="button"
-              onClick={handleShareOrCopyHeaderInvite}
-              className="min-h-[40px] px-2.5 sm:px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-95 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-md shadow-[#E11D48]/25"
-            >
-              {copiedHeaderInvite ? (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>{t.copied}</span>
-                </>
-              ) : (
-                <>
-                  <Share2 className="w-3.5 h-3.5" />
-                  <span className={isDesktopLayout ? 'inline' : 'hidden sm:inline'}>
-                    {t.invite}
-                  </span>
-                </>
-              )}
-            </button>
-
             {isDesktopLayout && (
-              <button
-                type="button"
-                onClick={() => setSidebarOpen((v) => !v)}
-                className="w-10 h-10 rounded-xl bg-[#12141D] hover:bg-[#191C28] border border-white/[0.08] flex items-center justify-center text-zinc-300 cursor-pointer transition-colors"
-                title={sidebarOpen ? 'Ocultar chat lateral' : 'Mostrar chat lateral'}
-                aria-label="Alternar panel lateral"
-              >
-                {sidebarOpen ? (
-                  <PanelRightClose className="w-4 h-4" />
-                ) : (
-                  <PanelRightOpen className="w-4 h-4" />
-                )}
-              </button>
-            )}
+              <>
+                <button
+                  type="button"
+                  onClick={() => setSidebarOpen((v) => !v)}
+                  className="w-11 h-11 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-zinc-300 cursor-pointer active:scale-95 transition-all relative"
+                  title={sidebarOpen ? 'Ocultar panel lateral' : 'Mostrar panel lateral'}
+                  aria-label="Alternar panel lateral"
+                >
+                  {sidebarOpen ? (
+                    <PanelRightClose className="w-4 h-4" />
+                  ) : (
+                    <PanelRightOpen className="w-4 h-4" />
+                  )}
+                  {!sidebarOpen && roomQueue.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-[#E11D48] text-[10px] font-bold text-white flex items-center justify-center tabular-nums">
+                      {roomQueue.length > 9 ? '9+' : roomQueue.length}
+                    </span>
+                  )}
+                </button>
 
-            <button
-              type="button"
-              onClick={handleLeaveRoom}
-              className="w-9 h-10 sm:w-auto sm:px-3 rounded-xl bg-[#12141D] hover:bg-[#191C28] border border-white/[0.08] text-xs font-medium text-zinc-300 flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-              title={t.leaveRoom}
-              aria-label={t.leaveRoom}
-            >
-              <LogOut className="w-4 h-4" />
-              {isDesktopLayout && <span>{t.leaveRoom}</span>}
-            </button>
+                <button
+                  type="button"
+                  onClick={handleLeaveRoom}
+                  className="min-h-11 px-3.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-medium text-zinc-300 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                  title={t.leaveRoom}
+                  aria-label={t.leaveRoom}
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>{t.leaveRoom}</span>
+                </button>
+              </>
+            )}
           </div>
         </header>
 
@@ -1924,34 +3073,28 @@ export function App() {
               isDesktopLayout ? 'overflow-y-auto' : 'overflow-hidden'
             }`}
           >
-            {/* SINGLE NATIVE CINEMA PLAYER INSTANCE (z-50 IN MODO CINE SO VIDEO STANDS ABOVE bg-black/80!) */}
+            {/* SINGLE NATIVE CINEMA PLAYER INSTANCE (ONLY THE 16:9 VIDEO STAGE INSIDE HAS z-50 IN MODO CINE) */}
             <div
               className={
                 isDockedMini
                   ? `fixed ${
-                      isDesktopLayout ? 'bottom-5 right-5 w-[340px]' : 'bottom-[66px] right-3 w-[256px]'
+                      isDesktopLayout ? 'bottom-5 right-5 w-84' : 'bottom-20 right-3 w-64'
                     } z-40 transition-all duration-200`
                   : `shrink-0 w-full min-w-0 ${
-                      showCinemaOverlay ? 'relative z-50' : ''
-                    } ${
                       isPlayerActive
                         ? isDesktopLayout
-                          ? 'block max-w-[1200px] mx-auto px-6 pt-5'
+                          ? 'block max-w-7xl mx-auto px-6 pt-5'
                           : 'block border-b border-white/[0.08]'
                         : isDesktopLayout
-                        ? 'block max-w-[1200px] mx-auto px-6 pt-5'
+                        ? 'block max-w-7xl mx-auto px-6 pt-5'
                         : 'hidden'
                     }`
               }
             >
               <div
                 className={
-                  isDockedMini
+                  isDockedMini || showCinemaOverlay
                     ? ''
-                    : showCinemaOverlay
-                    ? isDesktopLayout
-                      ? 'rounded-2xl ring-1 ring-white/20 shadow-[0_28px_110px_rgba(0,0,0,0.98)]'
-                      : 'ring-1 ring-white/15 shadow-[0_24px_90px_rgba(0,0,0,0.95)]'
                     : isDesktopLayout
                     ? 'rounded-3xl shadow-[0_20px_70px_rgba(225,29,72,0.1)]'
                     : ''
@@ -1964,6 +3107,8 @@ export function App() {
                   isExtracting={isExtracting}
                   extractionLabel={extractionLabel}
                   extractionError={extractionError}
+                  languageNotice={languageNotice}
+                  onDismissLanguageNotice={() => setLanguageNotice(null)}
                   cloudFrame={cloudFrame}
                   cloudState={cloudState}
                   floatingReactions={floatingReactions}
@@ -1974,6 +3119,11 @@ export function App() {
                   onProgressUpdate={handlePlayerProgressUpdate}
                   isCinemaMode={isCinemaMode}
                   onToggleCinemaMode={handleToggleCinemaMode}
+                  secondaryStream={secondaryStream}
+                  onSwapSecondaryStream={handleSwapSecondaryStream}
+                  onToggleSecondaryLayout={handleToggleSecondaryLayout}
+                  onCloseSecondaryStream={handleCloseSecondaryStream}
+                  canControlRoom={canControlRoom}
                   isMinimized={isDockedMini}
                   onToggleMinimize={() => {
                     setIsPlayerMinimized((prev) => {
@@ -1987,6 +3137,18 @@ export function App() {
                     });
                   }}
                   onClosePlayer={handleClosePlayer}
+                  onOpenSmartTvModal={() => setSmartTvModalOpen(true)}
+                  hasConnectedSmartTv={hasConnectedSmartTv}
+                  onSendTvRemoteCommand={handleSendTvRemoteCommand}
+                  messages={messages}
+                  currentUserId={currentUser.id}
+                  onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
+                  onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
+                  floatingChatOpen={floatingChatOpen}
+                  onToggleFloatingChat={() => setFloatingChatOpen((v) => !v)}
+                  compactVideoForMobileKeyboard={
+                    !isDesktopLayout && isMobileKeyboardOpen && mobileTab === 'chat'
+                  }
                   onOpenCatalogSection={(sec) => {
                     setCatalogSection(sec);
                     if (sec === 'movies' || sec === 'series') setMobileTab('movies');
@@ -1997,7 +3159,37 @@ export function App() {
               </div>
             </div>
 
-            {/* Mobile Chat / Room View */}
+            {/* Host Lock Non-Intrusive Toast */}
+            {lockNoticeToast && (
+              <div className="fixed top-[68px] left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-2xl bg-[#141722]/95 backdrop-blur-md border border-amber-500/40 text-amber-200 text-xs font-semibold shadow-2xl flex items-center gap-2 pointer-events-none animate-fade-in">
+                <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <span>{lockNoticeToast}</span>
+              </div>
+            )}
+
+            {/* Added-to-Queue Instant Confirmation Toast with 1-Tap "Ver Cola" */}
+            {queueAddedNotice && (
+              <div className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[60] w-[calc(100%-24px)] max-w-[400px] px-3.5 py-2.5 rounded-2xl bg-[#101015]/95 backdrop-blur-xl border border-white/15 text-white text-xs shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex items-center justify-between gap-2.5 animate-fade-in">
+                <div className="flex items-center gap-2 min-w-0">
+                  <ListVideo className="w-4 h-4 text-[#E11D48] shrink-0" />
+                  <span className="truncate font-medium">
+                    {lang === 'es' ? 'En la cola:' : 'Queued:'}{' '}
+                    <strong className="text-white">{queueAddedNotice}</strong>
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleOpenRoomQueueView}
+                  className="min-h-[34px] px-3 rounded-xl bg-[#E11D48] hover:bg-[#F43F5E] text-[11px] font-semibold text-white whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+                >
+                  {lang === 'es'
+                    ? `Ver Cola (${roomQueue.length})`
+                    : `View Queue (${roomQueue.length})`}
+                </button>
+              </div>
+            )}
+
+            {/* Mobile Chat / Queue / Room View with Floating Segmented Control */}
             {!isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room') && (
               <div className="flex-1 min-h-0 min-w-0 flex flex-col">
                 <PartySidebar
@@ -2013,12 +3205,54 @@ export function App() {
                   authLoading={authLoading}
                   onSignIn={handleGoogleSignIn}
                   onSignOut={handleGoogleSignOut}
-                  initialView={mobileTab === 'room' ? 'room' : 'chat'}
-                  hideInternalTabs
+                  hostOnlyControl={hostOnlyControl}
+                  onToggleHostLock={handleToggleHostLock}
+                  roomName={roomName}
+                  onRenameRoom={handleRenameRoom}
+                  hasPin={roomHasPin}
+                  currentHostPin={currentHostPin}
+                  onSetRoomPin={handleSetRoomPin}
+                  isCurrentRoomPermanent={isCurrentRoomPermanent}
+                  onTogglePermanentRoom={handleTogglePermanentRoom}
+                  onClaimTvCode={handleClaimTvCode}
+                  tvClaimStatus={tvClaimStatus}
+                  isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
+                  onRemoteTogglePlay={handleRemoteTogglePlay}
+                  onRemoteSeekDelta={handleRemoteSeekDelta}
+                  onSendTvRemoteCommand={handleSendTvRemoteCommand}
+                  onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
+                  activePoll={activePoll}
+                  roomQueue={roomQueue}
+                  onPlayQueueItem={handlePlayQueueItem}
+                  onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+                  onPlayCustomUrl={handlePlayCustomUrl}
+                  onOpenCloudBrowser={handleOpenCloudBrowser}
+                  onStartPollFromQueue={handleStartPollFromQueue}
+                  onVotePoll={handleVotePoll}
+                  onClosePoll={handleClosePoll}
+                  initialView={
+                    mobileTab === 'room'
+                      ? 'room'
+                      : unreadChatCount === 0 && roomQueue.length > 0
+                      ? 'queue'
+                      : 'chat'
+                  }
+                  openQueueTrigger={openQueueTrigger}
+                  isKeyboardOpen={isMobileKeyboardOpen}
+                  onOpenFloatingChatOnVideo={
+                    isPlayerActive
+                      ? () => {
+                          setFloatingChatOpen(true);
+                          setMobileTab('movies');
+                          mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                        }
+                      : undefined
+                  }
                   onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
                   onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
                   onTransferHost={(newId) => socketService.transferHost(newId)}
                   onUpdateProfile={handleUpdateProfile}
+                  onLeaveRoom={handleLeaveRoom}
                 />
               </div>
             )}
@@ -2035,104 +3269,12 @@ export function App() {
                   : 'block'
               }`}
             >
-              <div className="w-full min-w-0 max-w-[1200px] mx-auto space-y-4 pb-6">
-                {/* Instant "Continue Where You Left Off + Room / Profile Quick Bar" when idle */}
-                {!isPlayerActive && latestHistoryEntry && (
-                  <div className="p-3.5 sm:p-4 rounded-2xl bg-[#11131B] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
-                    <div className="flex items-center gap-3 min-w-0">
-                      {latestHistoryEntry.poster ? (
-                        <img
-                          src={latestHistoryEntry.poster}
-                          alt={latestHistoryEntry.title}
-                          referrerPolicy="no-referrer"
-                          className="w-11 h-16 rounded-xl object-cover border border-white/10 shrink-0"
-                        />
-                      ) : null}
-                      <div className="min-w-0">
-                        <div className="text-[11px] font-medium text-[#FB7185]">
-                          {lang === 'es'
-                            ? 'Seguir donde lo dejaste'
-                            : 'Pick up where you left off'}
-                        </div>
-                        <div className="font-display font-bold text-sm sm:text-base text-white truncate">
-                          {latestHistoryEntry.title}
-                        </div>
-                        <div className="text-xs text-zinc-400 truncate">
-                          {latestHistoryEntry.subtitle}
-                          {latestHistoryEntry.resumeTimeSec &&
-                          latestHistoryEntry.resumeTimeSec > 5
-                            ? ` · ${formatBannerClock(latestHistoryEntry.resumeTimeSec)}`
-                            : ''}
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('success');
-                          handleReplayHistoryItem(latestHistoryEntry, false);
-                        }}
-                        className="min-h-[40px] px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
-                      >
-                        <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>
-                          {latestHistoryEntry.resumeTimeSec &&
-                          latestHistoryEntry.resumeTimeSec > 5
-                            ? lang === 'es'
-                              ? `Seguir en ${formatBannerClock(
-                                  latestHistoryEntry.resumeTimeSec
-                                )}`
-                              : `Resume ${formatBannerClock(
-                                  latestHistoryEntry.resumeTimeSec
-                                )}`
-                            : lang === 'es'
-                            ? 'Continuar viendo'
-                            : 'Continue watching'}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setProfileHubTab('history');
-                          setProfileHubOpen(true);
-                        }}
-                        className="min-h-[40px] px-3 rounded-xl bg-[#191C28] hover:bg-[#232838] border border-white/10 text-xs font-medium text-zinc-200 flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
-                      >
-                        <UserIcon className="w-3.5 h-3.5 text-[#38BDF8]" />
-                        <span>{lang === 'es' ? 'Mi Perfil' : 'My Profile'}</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          handleCreateFreshRoom();
-                        }}
-                        title={
-                          lang === 'es'
-                            ? 'Crear otra sala nueva'
-                            : 'Create a fresh room'
-                        }
-                        className="min-h-[40px] px-3 rounded-xl bg-[#191C28] hover:bg-[#232838] border border-white/10 text-xs font-medium text-zinc-200 flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors"
-                      >
-                        <Plus className="w-3.5 h-3.5 text-zinc-400" />
-                        <span className="hidden sm:inline">
-                          {lang === 'es' ? 'Otra sala' : 'New room'}
-                        </span>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
+              <div className="w-full min-w-0 max-w-7xl mx-auto space-y-4 pb-6">
                 {/* If user closed their local player while friends are still watching in room */}
                 {isPlayerClosedLocally && videoState.mode !== 'idle' && (
-                  <div className="p-3.5 rounded-2xl bg-[#11131B] border border-white/12 flex flex-wrap items-center justify-between gap-3">
+                  <div className="p-3.5 rounded-2xl bg-[#0D0D12] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-[11px] font-medium text-[#38BDF8]">
+                      <div className="text-[11px] font-medium text-[#E11D48]">
                         {lang === 'es' ? 'Reproduciendo en la sala' : 'Playing in room'}
                       </div>
                       <div className="text-xs sm:text-sm font-semibold text-white truncate">
@@ -2146,7 +3288,7 @@ export function App() {
                           setIsPlayerClosedLocally(false);
                           setIsPlayerMinimized(false);
                         }}
-                        className="min-h-[38px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
+                        className="min-h-11 px-4 rounded-xl bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
                         <span>{lang === 'es' ? 'Volver a abrir' : 'Reopen'}</span>
@@ -2154,7 +3296,7 @@ export function App() {
                       <button
                         type="button"
                         onClick={handleStopRoomPlaybackForEveryone}
-                        className="min-h-[38px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/12 text-xs font-medium text-zinc-300 flex items-center gap-1.5 cursor-pointer"
+                        className="min-h-11 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/12 text-xs font-medium text-zinc-300 flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                       >
                         <Square className="w-3 h-3 fill-current" />
                         <span>{lang === 'es' ? 'Detener sala' : 'Stop room'}</span>
@@ -2164,12 +3306,12 @@ export function App() {
                 )}
 
                 {extractionError && !isPlayerActive && (
-                  <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-200 flex items-center justify-between gap-2">
+                  <div className="p-3.5 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-200 flex items-center justify-between gap-2 animate-fade-in">
                     <span>{extractionError}</span>
                     <button
                       type="button"
                       onClick={() => setExtractionError(null)}
-                      className="text-rose-300 font-semibold px-2 py-1 cursor-pointer"
+                      className="min-h-9 px-3 rounded-xl bg-rose-500/20 text-rose-200 font-semibold cursor-pointer"
                     >
                       OK
                     </button>
@@ -2179,12 +3321,17 @@ export function App() {
                 <MediaCatalogHub
                   activeSection={catalogSection}
                   onChangeSection={(sec) => {
+                    if (!isDesktopLayout && sec === 'direct') {
+                      setMobileTab('chat');
+                      setOpenQueueTrigger((n) => n + 1);
+                      return;
+                    }
                     setCatalogSection(sec);
                     if (sec === 'movies' || sec === 'vose' || sec === 'series') {
                       setMobileTab('movies');
                     } else if (sec === 'sports') {
                       setMobileTab('sports');
-                    } else if (sec === 'youtube' || sec === 'direct') {
+                    } else if (sec === 'youtube') {
                       setMobileTab('youtube');
                     }
                   }}
@@ -2211,6 +3358,8 @@ export function App() {
                   onAddToQueue={handleAddToQueue}
                   onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
                   onPlayQueueItem={handlePlayQueueItem}
+                  onStartPollFromQueue={handleStartPollFromQueue}
+                  onPlaySecondaryChannel={handlePlaySecondaryChannel}
                 />
               </div>
             </div>
@@ -2232,109 +3381,151 @@ export function App() {
                 authLoading={authLoading}
                 onSignIn={handleGoogleSignIn}
                 onSignOut={handleGoogleSignOut}
+                hostOnlyControl={hostOnlyControl}
+                onToggleHostLock={handleToggleHostLock}
+                roomName={roomName}
+                onRenameRoom={handleRenameRoom}
+                hasPin={roomHasPin}
+                currentHostPin={currentHostPin}
+                onSetRoomPin={handleSetRoomPin}
+                isCurrentRoomPermanent={isCurrentRoomPermanent}
+                onTogglePermanentRoom={handleTogglePermanentRoom}
+                onClaimTvCode={handleClaimTvCode}
+                tvClaimStatus={tvClaimStatus}
+                isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
+                onRemoteTogglePlay={handleRemoteTogglePlay}
+                onRemoteSeekDelta={handleRemoteSeekDelta}
+                onSendTvRemoteCommand={handleSendTvRemoteCommand}
+                onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
+                activePoll={activePoll}
+                roomQueue={roomQueue}
+                onPlayQueueItem={handlePlayQueueItem}
+                onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+                onPlayCustomUrl={handlePlayCustomUrl}
+                onOpenCloudBrowser={handleOpenCloudBrowser}
+                onStartPollFromQueue={handleStartPollFromQueue}
+                onVotePoll={handleVotePoll}
+                onClosePoll={handleClosePoll}
+                openQueueTrigger={openQueueTrigger}
                 onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
                 onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
                 onTransferHost={(newId) => socketService.transferHost(newId)}
                 onUpdateProfile={handleUpdateProfile}
+                onLeaveRoom={handleLeaveRoom}
               />
             </div>
           )}
         </div>
 
-        {/* Fixed Ergonomic Mobile Bottom Tab Bar (Shown whenever Mobile View is active) */}
-        {!isDesktopLayout && (
-          <nav
-            className="shrink-0 bg-[#11131B]/95 backdrop-blur-md border-t border-white/[0.08] px-1 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] grid grid-cols-5 z-30"
-            aria-label="Navegación móvil NAIM CINE"
-          >
-            {(
-              [
-                {
-                  id: 'movies',
-                  label: lang === 'es' ? 'Cine · Series' : 'Cinema · TV',
-                  icon: Film,
-                  onSelect: () => {
-                    setMobileTab('movies');
-                    if (
-                      catalogSection !== 'movies' &&
-                      catalogSection !== 'vose' &&
-                      catalogSection !== 'series'
-                    ) {
-                      setCatalogSection('movies');
-                    }
+        {/* Floating Glass Bottom Navigation Island (separated from content, backdrop-blur, outline icons, >=48px touch targets) */}
+        {!isDesktopLayout && !isMobileChatWithKeyboard && (
+          <div className="shrink-0 px-3 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#050507] via-[#050507]/90 to-transparent z-30">
+            <nav
+              className="rounded-3xl bg-[#0B0B12]/85 backdrop-blur-2xl border border-white/[0.12] shadow-[0_18px_45px_rgba(0,0,0,0.85)] p-1 grid grid-cols-5 gap-1"
+              aria-label="Navegación móvil NAIM CINE"
+            >
+              {(
+                [
+                  {
+                    id: 'movies',
+                    label: lang === 'es' ? 'Cine · TV' : 'Cinema',
+                    icon: Film,
+                    onSelect: () => {
+                      setMobileTab('movies');
+                      if (
+                        catalogSection !== 'movies' &&
+                        catalogSection !== 'vose' &&
+                        catalogSection !== 'series'
+                      ) {
+                        setCatalogSection('movies');
+                      }
+                    },
                   },
-                },
-                {
-                  id: 'sports',
-                  label: lang === 'es' ? 'Fútbol' : 'Sports',
-                  icon: Trophy,
-                  onSelect: () => {
-                    setMobileTab('sports');
-                    setCatalogSection('sports');
+                  {
+                    id: 'sports',
+                    label: lang === 'es' ? 'Fútbol' : 'Sports',
+                    icon: Trophy,
+                    onSelect: () => {
+                      setMobileTab('sports');
+                      setCatalogSection('sports');
+                    },
                   },
-                },
-                {
-                  id: 'youtube',
-                  label: 'YouTube',
-                  icon: Youtube,
-                  badge: roomQueue.length || undefined,
-                  onSelect: () => {
-                    setMobileTab('youtube');
-                    setCatalogSection('youtube');
+                  {
+                    id: 'youtube',
+                    label: 'YouTube',
+                    icon: Youtube,
+                    onSelect: () => {
+                      setMobileTab('youtube');
+                      setCatalogSection('youtube');
+                    },
                   },
-                },
-                {
-                  id: 'chat',
-                  label: t.tabChat,
-                  icon: MessageSquare,
-                  badge: unreadChatCount || undefined,
-                  onSelect: () => {
-                    setMobileTab('chat');
-                    setUnreadChatCount(0);
+                  {
+                    id: 'chat',
+                    label: lang === 'es' ? 'Chat · Cola' : 'Chat',
+                    icon: MessageSquare,
+                    badge: (unreadChatCount + roomQueue.length) || undefined,
+                    onSelect: () => {
+                      if (unreadChatCount === 0 && roomQueue.length > 0) {
+                        setOpenQueueTrigger((n) => n + 1);
+                      }
+                      setMobileTab('chat');
+                      setUnreadChatCount(0);
+                    },
                   },
-                },
-                {
-                  id: 'room',
-                  label: `${t.tabRoom} (${participants.length})`,
-                  icon: Users,
-                  onSelect: () => {
-                    setMobileTab('room');
+                  {
+                    id: 'room',
+                    label: `${t.tabRoom} (${participants.length})`,
+                    icon: Users,
+                    onSelect: () => {
+                      setMobileTab('room');
+                    },
                   },
-                },
-              ] as const
-            ).map((item) => {
-              const Icon = item.icon;
-              const active = mobileTab === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    item.onSelect();
-                  }}
-                  className={`min-h-[50px] rounded-xl flex flex-col items-center justify-center gap-1 relative transition-colors cursor-pointer ${
-                    active ? 'text-[#FB7185]' : 'text-zinc-400 hover:text-zinc-200'
-                  }`}
-                >
-                  {active && (
-                    <span className="absolute top-0 w-6 h-0.5 rounded-full bg-[#E11D48]" />
-                  )}
-                  <div className="relative">
-                    <Icon className="w-[21px] h-[21px]" />
-                    {'badge' in item && item.badge ? (
-                      <span className="absolute -top-1.5 -right-2.5 min-w-[16px] h-4 px-1 rounded-full bg-[#E11D48] text-[10px] font-bold text-white flex items-center justify-center tabular-nums">
-                        {item.badge > 9 ? '9+' : item.badge}
-                      </span>
-                    ) : null}
-                  </div>
-                  <span className="text-[10px] font-medium tracking-tight whitespace-nowrap">
-                    {item.label}
-                  </span>
-                </button>
-              );
-            })}
-          </nav>
+                ] as const
+              ).map((item) => {
+                const Icon = item.icon;
+                const active = mobileTab === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      item.onSelect();
+                    }}
+                    className={`min-h-[48px] rounded-2xl flex flex-col items-center justify-center gap-0.5 relative active:scale-95 transition-all cursor-pointer ${
+                      active
+                        ? 'bg-white/[0.09] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.12)]'
+                        : 'text-zinc-400 hover:text-zinc-200'
+                    }`}
+                  >
+                    {active && (
+                      <span className="absolute top-1 w-4 h-0.5 rounded-full bg-[#E11D48]" />
+                    )}
+                    <div className="relative mt-0.5">
+                      <Icon
+                        className={`w-[19px] h-[19px] ${
+                          active ? 'text-[#FB7185]' : 'text-zinc-400'
+                        }`}
+                        strokeWidth={1.8}
+                      />
+                      {'badge' in item && item.badge ? (
+                        <span className="absolute -top-1.5 -right-2.5 min-w-4 h-4 px-1 rounded-full bg-[#E11D48] text-[0.6rem] font-bold text-white flex items-center justify-center tabular-nums shadow-sm">
+                          {item.badge > 9 ? '9+' : item.badge}
+                        </span>
+                      ) : null}
+                    </div>
+                    <span
+                      className={`text-[0.62rem] tracking-tight whitespace-nowrap ${
+                        active ? 'font-semibold text-white' : 'font-medium text-zinc-400'
+                      }`}
+                    >
+                      {item.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
         )}
       </div>
     </div>

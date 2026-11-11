@@ -1,8 +1,74 @@
 <svg width="512" height="512" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect width="100" height="100" rx="22" fill="#090A0F" />
-  <rect x="1.5" y="1.5" width="97" height="97" rx="20.5" stroke="#FFFFFF" stroke-opacity="0.14" stroke-width="1.5" />
-  <path d="M21 43.5 L34.5 63.5 V80 H21 V43.5 Z" fill="#F8FAFC" />
-  <path d="M65.5 20 H79 V56.5 L65.5 36.5 V20 Z" fill="#F8FAFC" />
-  <path d="M21 20 H38.5 L79 80 H61.5 L21 20 Z" fill="#E11D48" />
-  <path d="M46.8 44.2 L56.2 50 L46.8 55.8 V44.2 Z" fill="#FFFFFF" />
+  <defs>
+    <linearGradient id="bg" x1="10" y1="6" x2="90" y2="94" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#111116" />
+      <stop offset="38%" stop-color="#060609" />
+      <stop offset="100%" stop-color="#020204" />
+    </linearGradient>
+    <linearGradient id="rim" x1="0" y1="0" x2="100" y2="100" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.34" />
+      <stop offset="45%" stop-color="#27272A" stop-opacity="0.4" />
+      <stop offset="100%" stop-color="#E50914" stop-opacity="0.68" />
+    </linearGradient>
+    <radialGradient id="glow" cx="50" cy="52" r="46" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E50914" stop-opacity="0.28" />
+      <stop offset="58%" stop-color="#990610" stop-opacity="0.09" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="npillar" x1="18" y1="21" x2="18" y2="79" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#B80710" />
+      <stop offset="48%" stop-color="#7D050C" />
+      <stop offset="100%" stop-color="#A90610" />
+    </linearGradient>
+    <linearGradient id="ndiag" x1="14" y1="21" x2="48" y2="77" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF2A38" />
+      <stop offset="28%" stop-color="#E50914" />
+      <stop offset="72%" stop-color="#D80813" />
+      <stop offset="100%" stop-color="#FF1F2E" />
+    </linearGradient>
+    <linearGradient id="clower" x1="56" y1="45" x2="87" y2="78" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#83050D" />
+      <stop offset="52%" stop-color="#B50710" />
+      <stop offset="100%" stop-color="#DF0914" />
+    </linearGradient>
+    <linearGradient id="cupper" x1="86" y1="22" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FF3341" />
+      <stop offset="42%" stop-color="#E50914" />
+      <stop offset="88%" stop-color="#C90812" />
+      <stop offset="100%" stop-color="#9E060F" />
+    </linearGradient>
+    <linearGradient id="horizon" x1="15" y1="85" x2="85" y2="85" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#E50914" stop-opacity="0" />
+      <stop offset="50%" stop-color="#FF6B75" stop-opacity="0.95" />
+      <stop offset="100%" stop-color="#E50914" stop-opacity="0" />
+    </linearGradient>
+    <filter id="fold" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="2.4" stdDeviation="2.1" flood-color="#000000" flood-opacity="0.88" />
+    </filter>
+    <clipPath id="nclip">
+      <path d="M 13 21 H 23 V 78.1 L 13 79 Z" />
+      <path d="M 39 21 H 49 V 77.0 L 39 77.3 Z" />
+      <path d="M 13 21 H 23.4 L 49 77.0 L 38.6 77.3 Z" />
+    </clipPath>
+    <clipPath id="cclip">
+      <path d="M 87.5 34.0 C 84.8 24.8, 79.8 20.8, 73.2 20.8 C 62.4 20.8, 55.5 32.8, 55.5 49.8 C 55.5 66.8, 62.4 78.8, 73.2 78.8 C 79.8 78.8, 84.8 74.8, 87.5 65.6 L 78.2 62.4 C 77.0 66.5, 75.4 68.8, 73.4 68.8 C 68.4 68.8, 65.7 61.0, 65.7 49.8 C 65.7 38.6, 68.4 30.8, 73.4 30.8 C 75.4 30.8, 77.0 33.1, 78.2 37.2 Z" />
+    </clipPath>
+  </defs>
+  <rect width="100" height="100" rx="22" fill="url(#bg)" />
+  <rect x="2" y="2" width="96" height="96" rx="20" fill="url(#glow)" />
+  <rect x="1.1" y="1.1" width="97.8" height="97.8" rx="20.9" stroke="url(#rim)" stroke-width="1.4" />
+  <g clip-path="url(#nclip)">
+    <path d="M 13 21 H 23 V 78.1 L 13 79 Z" fill="url(#npillar)" />
+    <path d="M 39 21 H 49 V 77.0 L 39 77.3 Z" fill="url(#npillar)" />
+    <g filter="url(#fold)">
+      <path d="M 13 21 H 23.4 L 49 77.0 L 38.6 77.3 Z" fill="url(#ndiag)" />
+    </g>
+  </g>
+  <g clip-path="url(#cclip)">
+    <path d="M 87.5 34.0 C 84.8 24.8, 79.8 20.8, 73.2 20.8 C 62.4 20.8, 55.5 32.8, 55.5 49.8 C 55.5 66.8, 62.4 78.8, 73.2 78.8 C 79.8 78.8, 84.8 74.8, 87.5 65.6 L 78.2 62.4 C 77.0 66.5, 75.4 68.8, 73.4 68.8 C 68.4 68.8, 65.7 61.0, 65.7 49.8 C 65.7 38.6, 68.4 30.8, 73.4 30.8 C 75.4 30.8, 77.0 33.1, 78.2 37.2 Z" fill="url(#clower)" />
+    <g filter="url(#fold)">
+      <path d="M 53 19 H 90 V 42 L 67 47 L 53 60 Z" fill="url(#cupper)" />
+    </g>
+  </g>
+  <path d="M 15 84.8 Q 50 82.2 85 84.8" stroke="url(#horizon)" stroke-width="1.35" stroke-linecap="round" />
 </svg>

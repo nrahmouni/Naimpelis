@@ -1,28 +1,56 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   Send,
   Users,
   MessageSquare,
-  Crown,
   Share2,
-  Tv,
   Check,
+  Shield,
   Edit3,
-  Cloud,
-  LogIn,
+  Crown,
+  Lock,
+  Unlock,
+  ListVideo,
+  BarChart2,
+  Trash2,
+  Play,
+  Bookmark,
+  KeyRound,
+  Tv,
+  QrCode,
+  SlidersHorizontal,
+  Smile,
+  X,
+  Link2,
+  Globe,
+  Maximize2,
   LogOut,
-  Monitor,
-  Smartphone,
+  UserCheck,
 } from 'lucide-react';
-import { User } from 'firebase/auth';
-import { QRCodeSVG } from 'qrcode.react';
-import { AppLanguage, ChatMessage, Participant } from '../types';
+import {
+  ChatMessage,
+  Participant,
+  RoomQueueItem,
+  RoomPollState,
+  AppLanguage,
+  TvRemoteCommandType,
+} from '../types';
 import { UI_COPY } from '../utils/i18n';
-import { triggerHaptic } from '../utils/haptics';
 import { buildShortInviteUrl } from '../utils/shortLink';
-import { EffectiveViewMode, getMonogramInitials } from './MobileViewportGuard';
-
-const QUICK_REACTIONS = ['🔥', '😂', '⚽', '🍿', '🤯', '👏', '❤️'];
+import {
+  EffectiveViewMode,
+  ViewModeSwitchButton,
+} from './MobileViewportGuard';
+import {
+  PrimaryButton,
+  SecondaryButton,
+  IconButton,
+  StandardInput,
+  BottomSheet,
+  SegmentedControl,
+  EmptyStateCard,
+  HapticTvRemote,
+} from './ui/DesignSystem';
 
 interface PartySidebarProps {
   roomId: string;
@@ -31,19 +59,50 @@ interface PartySidebarProps {
   participants: Participant[];
   messages: ChatMessage[];
   lang: AppLanguage;
-  effectiveView?: EffectiveViewMode;
-  onToggleViewMode?: () => void;
-  authUser?: User | null;
+  effectiveView: EffectiveViewMode;
+  onToggleViewMode: () => void;
+  authUser?: any;
   authLoading?: boolean;
-  onSignIn?: () => Promise<void>;
-  onSignOut?: () => Promise<void>;
-  initialView?: 'chat' | 'room';
+  onSignIn?: () => void;
+  onSignOut?: () => void;
+  hostOnlyControl: boolean;
+  onToggleHostLock: (nextLocked: boolean) => void;
+  roomName: string;
+  onRenameRoom: (nextName: string) => void;
+  hasPin: boolean;
+  currentHostPin?: string;
+  onSetRoomPin: (nextPinCode: string) => void;
+  isCurrentRoomPermanent: boolean;
+  onTogglePermanentRoom: () => void;
+  onClaimTvCode: (fourDigitCode: string) => void | Promise<void>;
+  tvClaimStatus?: { type: 'success' | 'error'; message: string } | null;
+  isRoomPlaying: boolean;
+  onRemoteTogglePlay: () => void;
+  onRemoteSeekDelta: (deltaSec: number) => void;
+  onSendTvRemoteCommand: (cmd: TvRemoteCommandType) => void;
+  onSwitchThisDeviceToTvLobby: () => void;
+  activePoll: RoomPollState | null;
+  roomQueue: RoomQueueItem[];
+  onPlayQueueItem: (item: RoomQueueItem) => void;
+  onRemoveFromQueue: (id: string) => void;
+  onPlayCustomUrl: (rawUrl: string) => void;
+  onOpenCloudBrowser: (url: string) => void;
+  onStartPollFromQueue: () => void;
+  onVotePoll: (pollId: string, optionId: string) => void;
+  onClosePoll: (pollId: string) => void;
+  initialView?: 'chat' | 'queue' | 'room';
+  openQueueTrigger?: number;
   hideInternalTabs?: boolean;
+  isKeyboardOpen?: boolean;
+  onOpenFloatingChatOnVideo?: () => void;
   onSendMessage: (text: string) => void;
   onSendReaction: (emoji: string) => void;
   onTransferHost: (newHostId: string) => void;
-  onUpdateProfile: (name: string, avatar: string, color: string) => void;
+  onUpdateProfile: (nextName: string, nextAvatar: string, nextColor: string) => void;
+  onLeaveRoom: () => void;
 }
+
+const QUICK_REACTIONS = ['🔥', '😂', '❤️', '👏', '😱', '⚽', '🍿', '🎉'];
 
 export const PartySidebar: React.FC<PartySidebarProps> = ({
   roomId,
@@ -52,260 +111,543 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   participants,
   messages,
   lang,
-  effectiveView = 'desktop',
+  effectiveView,
   onToggleViewMode,
-  authUser,
-  authLoading,
-  onSignIn,
-  onSignOut,
+  hostOnlyControl,
+  onToggleHostLock,
+  roomName,
+  onRenameRoom,
+  hasPin,
+  currentHostPin,
+  onSetRoomPin,
+  isCurrentRoomPermanent,
+  onTogglePermanentRoom,
+  onClaimTvCode,
+  tvClaimStatus,
+  onRemoteTogglePlay,
+  onRemoteSeekDelta,
+  onSendTvRemoteCommand,
+  activePoll,
+  roomQueue,
+  onPlayQueueItem,
+  onRemoveFromQueue,
+  onPlayCustomUrl,
+  onOpenCloudBrowser,
+  onStartPollFromQueue,
+  onVotePoll,
+  onClosePoll,
   initialView = 'chat',
+  openQueueTrigger,
   hideInternalTabs = false,
+  onOpenFloatingChatOnVideo,
   onSendMessage,
   onSendReaction,
   onTransferHost,
   onUpdateProfile,
+  onLeaveRoom,
 }) => {
   const t = UI_COPY[lang];
-  const [activeTab, setActiveTab] = useState<'chat' | 'room'>(initialView);
-  const [draft, setDraft] = useState('');
-  const [copiedInvite, setCopiedInvite] = useState(false);
-  const [showTvQr, setShowTvQr] = useState(false);
-  const [editingProfile, setEditingProfile] = useState(false);
-  const [editName, setEditName] = useState(currentUser.name);
+  const isHost = currentUser.isHost || currentUser.id === hostId;
+  const [activeTab, setActiveTab] = useState<'chat' | 'queue' | 'room'>(initialView);
+  const [inputText, setInputText] = useState('');
+  const [copiedLink, setCopiedLink] = useState(false);
+  const [roomNameDraft, setRoomNameDraft] = useState(roomName);
+  const [pinDraft, setPinDraft] = useState(currentHostPin || '');
+  const [tvCodeInput, setTvCodeInput] = useState('');
+  const [customUrlInput, setCustomUrlInput] = useState('');
+  const [profileNameDraft, setProfileNameDraft] = useState(currentUser.name);
+  const [showFloatingReactions, setShowFloatingReactions] = useState(true);
+  const [pairedCodeLabel, setPairedCodeLabel] = useState<string | null>(null);
+  const [forceShowRemote, setForceShowRemote] = useState(false);
 
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  // Progressive Disclosure Bottom Sheets
+  const [showUrlLoaderSheet, setShowUrlLoaderSheet] = useState(false);
+  const [showRoomSettingsSheet, setShowRoomSettingsSheet] = useState(false);
+  const [showTvRemoteSheet, setShowTvRemoteSheet] = useState(false);
+  const [showQrInviteSheet, setShowQrInviteSheet] = useState(false);
+
+  const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setActiveTab(initialView);
   }, [initialView]);
 
   useEffect(() => {
-    if (activeTab === 'chat') {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (openQueueTrigger && openQueueTrigger > 0) {
+      setActiveTab('queue');
     }
+  }, [openQueueTrigger]);
+
+  useEffect(() => {
+    setRoomNameDraft(roomName);
+  }, [roomName]);
+
+  useEffect(() => {
+    setProfileNameDraft(currentUser.name);
+  }, [currentUser.name]);
+
+  useEffect(() => {
+    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, activeTab]);
 
-  const inviteUrl = buildShortInviteUrl(roomId, false);
-  const tvUrl = buildShortInviteUrl(roomId, true);
+  const handleSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim()) return;
+    onSendMessage(inputText.trim());
+    setInputText('');
+  };
 
-  const handleShareOrCopyInvite = async () => {
-    triggerHaptic('success');
+  const inviteUrl = buildShortInviteUrl(roomId, false);
+  const hasConnectedSmartTv =
+    participants.some((p) => p.name.includes('(TV)') || p.avatar === '📺') ||
+    Boolean(pairedCodeLabel) ||
+    forceShowRemote;
+
+  const handleShareInvite = async () => {
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
-          title: `Sala #${roomId.toUpperCase()} · NAIM CINE`,
-          text: 'Entra directo a mi sala NAIM CINE:',
+          title: `${roomName} — NAIM CINE`,
+          text: `Únete a nuestra sala en directo (${roomName}):`,
           url: inviteUrl,
         });
         return;
       } catch {
-        // user cancelled share sheet or unsupported -> fallback to clipboard
+        // Fallback to clipboard
       }
     }
     try {
       await navigator.clipboard.writeText(inviteUrl);
-      setCopiedInvite(true);
-      setTimeout(() => setCopiedInvite(false), 2200);
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
     } catch {
       // ignore
     }
   };
 
-  const handleSubmitMessage = (e: React.FormEvent) => {
-    e.preventDefault();
-    const trimmed = draft.trim();
-    if (!trimmed) return;
-    triggerHaptic('light');
-    onSendMessage(trimmed);
-    setDraft('');
+  const handleMapTvCommand = (
+    action:
+      | 'toggle_play'
+      | 'seek_delta'
+      | 'toggle_mute'
+      | 'volume_delta'
+      | 'set_volume'
+      | 'force_sync'
+      | 'toggle_fullscreen'
+      | 'cycle_aspect'
+      | 'toggle_ambilight',
+    value?: number
+  ) => {
+    if (action === 'toggle_play') {
+      onRemoteTogglePlay();
+    } else if (action === 'seek_delta') {
+      onRemoteSeekDelta(value || 10);
+    } else if (action === 'toggle_mute') {
+      onSendTvRemoteCommand('toggle_mute');
+    } else if (action === 'volume_delta') {
+      onSendTvRemoteCommand((value || 0) >= 0 ? 'vol_up' : 'vol_down');
+    } else if (action === 'set_volume') {
+      onSendTvRemoteCommand((value || 50) >= 50 ? 'vol_up' : 'vol_down');
+    } else if (action === 'force_sync') {
+      onSendTvRemoteCommand('reload_tv');
+    } else if (action === 'toggle_fullscreen') {
+      onSendTvRemoteCommand('toggle_fullscreen');
+    } else if (action === 'cycle_aspect') {
+      onSendTvRemoteCommand('toggle_aspect');
+    } else if (action === 'toggle_ambilight') {
+      onSendTvRemoteCommand('toggle_ambilight');
+    }
   };
 
-  const handleSaveProfile = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editName.trim()) return;
-    triggerHaptic('success');
-    onUpdateProfile(
-      editName.trim().slice(0, 24),
-      currentUser.avatar || '🎬',
-      currentUser.color || '#E11D48'
-    );
-    setEditingProfile(false);
+  const formatTime = (ts: number) => {
+    const d = new Date(ts);
+    return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const isCurrentUserHost = currentUser.id === hostId;
+  const getInitials = (name: string) => {
+    const clean = (name || 'U').trim();
+    const parts = clean.split(/\s+/);
+    if (parts.length >= 2) {
+      return `${parts[0][0]}${parts[1][0]}`.toUpperCase();
+    }
+    return clean.slice(0, 2).toUpperCase();
+  };
+
+  const totalVotes =
+    activePoll?.options.reduce((acc, o) => acc + o.voterIds.length, 0) || 0;
 
   return (
-    <aside className="flex flex-col h-full w-full bg-[#11131B] border-l border-white/[0.08] select-none">
-      {/* Desktop Sidebar Segmented Header */}
+    <aside className="w-full h-full flex flex-col bg-[#08080C] border-l border-white/[0.06] select-none overflow-hidden relative">
+      {/* ==================================================================== */}
+      {/* FLOATING MINIMALIST SEGMENTED CONTROL HEADER                         */}
+      {/* ==================================================================== */}
       {!hideInternalTabs && (
-        <div className="p-2.5 border-b border-white/[0.08] flex items-center gap-1.5 shrink-0">
-          <button
-            type="button"
-            onClick={() => setActiveTab('chat')}
-            className={`flex-1 min-h-[40px] px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'chat'
-                ? 'bg-[#191C28] text-white border border-white/10'
-                : 'text-zinc-400 hover:text-white'
-            }`}
+        <div className="px-3 pt-2.5 pb-2 border-b border-white/[0.06] flex items-center gap-2 shrink-0 bg-[#08080C]/90 backdrop-blur-xl z-20">
+          <SegmentedControl
+            className="flex-1"
+            value={activeTab}
+            onChange={setActiveTab}
+            options={[
+              {
+                id: 'chat',
+                label: t.tabChat,
+                icon: <MessageSquare className="w-3.5 h-3.5" />,
+              },
+              {
+                id: 'queue',
+                label: lang === 'es' ? 'Cola' : 'Queue',
+                icon: <ListVideo className="w-3.5 h-3.5" />,
+                badge: roomQueue.length,
+              },
+              {
+                id: 'room',
+                label: t.tabRoom,
+                icon: <Users className="w-3.5 h-3.5" />,
+                badge: participants.length,
+              },
+            ]}
+          />
+
+          {onOpenFloatingChatOnVideo && (
+            <IconButton
+              onClick={onOpenFloatingChatOnVideo}
+              variant="glass"
+              title="Superponer chat flotante sobre el vídeo"
+              aria-label="Chat flotante sobre el vídeo"
+            >
+              <Maximize2 className="w-4 h-4 text-[#FB7185]" />
+            </IconButton>
+          )}
+
+          <IconButton
+            onClick={handleShareInvite}
+            variant={copiedLink ? 'crimson' : 'glass'}
+            title={t.invite}
+            aria-label={t.invite}
           >
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>{t.tabChat}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('room')}
-            className={`flex-1 min-h-[40px] px-3 rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap cursor-pointer ${
-              activeTab === 'room'
-                ? 'bg-[#191C28] text-white border border-white/10'
-                : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            <Users className="w-3.5 h-3.5" />
-            <span>
-              {t.participants} ({participants.length})
-            </span>
-          </button>
+            {copiedLink ? (
+              <Check className="w-4 h-4 text-white" />
+            ) : (
+              <Share2 className="w-4 h-4" />
+            )}
+          </IconButton>
         </div>
       )}
 
-      {/* ================================================================== */}
-      {/* TAB 1: REAL-TIME CHAT & REACTIONS                                  */}
-      {/* ================================================================== */}
-      {activeTab === 'chat' ? (
-        <>
-          <div className="flex-1 overflow-y-auto overscroll-contain p-3.5 sm:p-4 space-y-3 min-h-0">
-            {messages.length === 0 && (
-              <div className="py-10 text-center text-xs text-zinc-500">
-                {lang === 'es'
-                  ? 'La sala está lista. Comparte el enlace para comentar juntos en vivo.'
-                  : 'Room is ready. Share your link to chat together live.'}
+      {/* ==================================================================== */}
+      {/* TAB 1: BORDERLESS CHAT + FLOATING REACTION PILL                      */}
+      {/* ==================================================================== */}
+      {activeTab === 'chat' && (
+        <div className="flex-1 flex flex-col min-h-0 relative">
+          {/* Active Poll Banner (if open) */}
+          {activePoll && !activePoll.isClosed && (
+            <div className="mx-3 mt-2.5 p-3.5 rounded-2xl bg-[#12121A]/95 border border-[#E11D48]/35 space-y-2.5 shrink-0 shadow-lg">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#FB7185]">
+                  <BarChart2 className="w-3.5 h-3.5" />
+                  <span>Encuesta en Vivo</span>
+                </div>
+                {isHost && (
+                  <button
+                    type="button"
+                    onClick={() => onClosePoll(activePoll.id)}
+                    className="text-[11px] text-zinc-400 hover:text-white cursor-pointer"
+                  >
+                    Cerrar
+                  </button>
+                )}
               </div>
-            )}
-            {messages.map((msg) => {
-              if (msg.isSystem) {
+              <p className="text-xs font-bold text-white">{activePoll.question}</p>
+              <div className="space-y-1.5">
+                {activePoll.options.map((opt) => {
+                  const votes = opt.voterIds.length;
+                  const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
+                  const voted = opt.voterIds.includes(currentUser.id);
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => onVotePoll(activePoll.id, opt.id)}
+                      className={`w-full relative overflow-hidden rounded-xl border px-3 py-2 text-left transition-all cursor-pointer ${
+                        voted
+                          ? 'border-[#E11D48]/60 bg-[#E11D48]/15'
+                          : 'border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <div
+                        className="absolute inset-y-0 left-0 bg-[#E11D48]/20 transition-all duration-300"
+                        style={{ width: `${pct}%` }}
+                      />
+                      <div className="relative flex items-center justify-between gap-2 text-xs">
+                        <span className="font-semibold text-white truncate">
+                          {opt.item.title}
+                        </span>
+                        <span className="text-[10px] font-mono text-zinc-300 shrink-0">
+                          {pct}% ({votes})
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Borderless Chat Stream */}
+          <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-3 custom-scrollbar pb-16">
+            {messages.length === 0 ? (
+              <EmptyStateCard
+                icon={<MessageSquare className="w-6 h-6" />}
+                title={lang === 'es' ? 'El chat está tranquilo' : 'Chat is quiet'}
+                description="Saluda al grupo o lanza una reacción en vivo mientras veis la sala."
+              />
+            ) : (
+              messages.map((msg) => {
+                if (msg.isSystem) {
+                  return (
+                    <div key={msg.id} className="flex justify-center py-0.5">
+                      <span className="text-[11px] text-zinc-500 text-center leading-snug px-2">
+                        {msg.text}
+                      </span>
+                    </div>
+                  );
+                }
+
                 return (
                   <div
                     key={msg.id}
-                    className="py-1.5 px-3 rounded-xl bg-white/[0.03] text-[11px] text-zinc-400 text-center"
+                    className="flex items-start gap-2.5 group animate-fade-in"
                   >
-                    {msg.text}
+                    {/* Clean User Avatar Badge */}
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5 shadow-sm border border-white/15"
+                      style={{
+                        backgroundColor: msg.senderColor || '#E11D48',
+                      }}
+                    >
+                      {msg.senderAvatar && msg.senderAvatar.length <= 2
+                        ? msg.senderAvatar
+                        : getInitials(msg.senderName)}
+                    </div>
+
+                    {/* Borderless Message Content */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-baseline gap-2">
+                        <span
+                          className="text-xs font-bold truncate"
+                          style={{ color: msg.senderColor || '#FB7185' }}
+                        >
+                          {msg.senderName}
+                        </span>
+                        <span className="text-[10px] font-mono text-zinc-600 shrink-0">
+                          {formatTime(msg.timestamp)}
+                        </span>
+                      </div>
+                      <p className="text-sm text-zinc-100 leading-relaxed break-words select-text mt-0.5">
+                        {msg.text}
+                      </p>
+                    </div>
                   </div>
                 );
-              }
+              })
+            )}
+            <div ref={chatEndRef} />
+          </div>
 
-              const isMe = msg.senderId === currentUser.id;
-              const timeStr = new Date(msg.timestamp).toLocaleTimeString([], {
-                hour: '2-digit',
-                minute: '2-digit',
-              });
-
-              return (
-                <div
-                  key={msg.id}
-                  className={`flex items-start gap-2.5 ${isMe ? 'flex-row-reverse' : ''}`}
+          {/* FLOATING REACTION PILL (Hovering above the chat input) */}
+          {showFloatingReactions && (
+            <div className="absolute left-3 right-3 bottom-[68px] z-20 flex justify-center pointer-events-none animate-fade-in">
+              <div className="pointer-events-auto inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#12121A]/85 backdrop-blur-2xl border border-white/[0.12] shadow-[0_12px_32px_rgba(0,0,0,0.75)] max-w-full overflow-x-auto no-scrollbar">
+                {QUICK_REACTIONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => onSendReaction(emoji)}
+                    className="w-9 h-9 rounded-full hover:bg-white/[0.12] active:scale-125 transition-all flex items-center justify-center text-base shrink-0 cursor-pointer"
+                    title={`Enviar ${emoji}`}
+                  >
+                    {emoji}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setShowFloatingReactions(false)}
+                  className="w-7 h-7 rounded-full hover:bg-white/10 text-zinc-500 hover:text-zinc-300 flex items-center justify-center shrink-0 cursor-pointer ml-0.5"
+                  title="Ocultar barra de emojis"
+                  aria-label="Ocultar emojis"
                 >
-                  <div
-                    className={`w-8 h-8 rounded-xl flex items-center justify-center font-display font-bold text-[11px] shrink-0 border ${
-                      isMe
-                        ? 'bg-[#E11D48]/18 border-[#E11D48]/40 text-white'
-                        : 'bg-[#191C28] border-white/10 text-zinc-200'
-                    }`}
-                  >
-                    {getMonogramInitials(msg.senderName)}
-                  </div>
-                  <div
-                    className={`max-w-[78%] ${
-                      isMe ? 'items-end' : 'items-start'
-                    } flex flex-col`}
-                  >
-                    <div className="flex items-baseline gap-1.5 mb-0.5">
-                      <span className="text-xs font-semibold text-zinc-200">
-                        {msg.senderName}
-                      </span>
-                      <span className="text-[10px] font-mono tabular-nums text-zinc-500">
-                        {timeStr}
-                      </span>
-                    </div>
-                    <div
-                      className={`px-3.5 py-2 rounded-2xl text-xs sm:text-sm leading-relaxed break-words select-text ${
-                        isMe
-                          ? 'bg-[#E11D48] text-white rounded-tr-sm'
-                          : 'bg-[#191C28] text-zinc-100 border border-white/[0.06] rounded-tl-sm'
-                      }`}
-                    >
-                      {msg.text}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-            <div ref={messagesEndRef} />
-          </div>
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
-          {/* Touch-Ergonomic Floating Reaction Bar (>=44px buttons) */}
-          <div className="px-2.5 py-1.5 border-t border-white/[0.06] flex items-center justify-between gap-1 shrink-0">
-            {QUICK_REACTIONS.map((emoji) => (
-              <button
-                key={emoji}
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  onSendReaction(emoji);
-                }}
-                className="w-11 h-11 rounded-xl hover:bg-white/[0.08] active:scale-90 flex items-center justify-center text-lg transition-transform cursor-pointer"
-                aria-label={`Enviar reacción ${emoji}`}
-              >
-                {emoji}
-              </button>
-            ))}
-          </div>
-
-          {/* 16px Mobile Chat Input (Zero Auto-Zoom) */}
+          {/* Chat Input Bar */}
           <form
-            onSubmit={handleSubmitMessage}
-            className="p-2.5 sm:p-3 border-t border-white/[0.08] flex items-center gap-2 shrink-0 bg-[#11131B]"
+            onSubmit={handleSend}
+            className="p-2.5 border-t border-white/[0.07] bg-[#0B0B10]/95 backdrop-blur-xl flex items-center gap-2 shrink-0 z-20"
           >
-            <input
+            {!showFloatingReactions && (
+              <IconButton
+                type="button"
+                onClick={() => setShowFloatingReactions(true)}
+                variant="ghost"
+                title="Mostrar reacciones"
+                aria-label="Mostrar reacciones"
+              >
+                <Smile className="w-5 h-5 text-zinc-400" />
+              </IconButton>
+            )}
+
+            <StandardInput
               type="text"
-              value={draft}
-              onChange={(e) => setDraft(e.target.value)}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
               placeholder={t.chatPlaceholder}
-              maxLength={350}
-              className="flex-1 min-w-0 h-11 px-4 rounded-2xl bg-[#090A0F] border border-white/10 focus:border-white/35 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
+              rightElement={
+                <button
+                  type="submit"
+                  disabled={!inputText.trim()}
+                  aria-label="Enviar mensaje"
+                  className="w-9 h-9 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-30 text-white flex items-center justify-center transition-all active:scale-90 cursor-pointer"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              }
             />
-            <button
-              type="submit"
-              disabled={!draft.trim()}
-              className="w-11 h-11 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-95 disabled:opacity-40 flex items-center justify-center text-white shrink-0 cursor-pointer disabled:cursor-not-allowed transition-all"
-              aria-label={t.send}
-            >
-              <Send className="w-4 h-4" />
-            </button>
           </form>
-        </>
-      ) : (
-        /* ================================================================== */
-        /* TAB 2: ROOM MANAGEMENT, VIEW MODE, CLOUD SYNC & PARTICIPANTS       */
-        /* ================================================================== */
-        <div className="flex-1 overflow-y-auto overscroll-contain p-4 space-y-4 min-h-0">
-          {/* Room Invite & Smart TV Card */}
-          <div className="p-4 rounded-2xl bg-[#090A0F] border border-white/[0.08] space-y-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-zinc-400">
-                {lang === 'es' ? 'Enlace de invitación' : 'Invite link'}
-              </span>
-              <span className="font-mono text-white font-semibold truncate max-w-[190px] select-all">
-                {inviteUrl.replace(/^https?:\/\//, '')}
-              </span>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* TAB 2: QUEUE & POLLS (Progressive Disclosure)                        */}
+      {/* ==================================================================== */}
+      {activeTab === 'queue' && (
+        <div className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar">
+          {/* Action Header */}
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h4 className="text-sm font-bold text-white">
+                {lang === 'es' ? 'Cola de Reproducción' : 'Playback Queue'}
+              </h4>
+              <p className="text-[11px] text-zinc-400">
+                {roomQueue.length} {roomQueue.length === 1 ? 'vídeo en lista' : 'vídeos en lista'}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {roomQueue.length >= 2 && (
+                <SecondaryButton onClick={onStartPollFromQueue}>
+                  <BarChart2 className="w-4 h-4 text-[#E11D48]" />
+                  <span>Votar Cola</span>
+                </SecondaryButton>
+              )}
+
+              <SecondaryButton onClick={() => setShowUrlLoaderSheet(true)}>
+                <Link2 className="w-4 h-4 text-sky-400" />
+                <span>Enlace</span>
+              </SecondaryButton>
+            </div>
+          </div>
+
+          {roomQueue.length === 0 ? (
+            <EmptyStateCard
+              icon={<ListVideo className="w-6 h-6" />}
+              title={lang === 'es' ? 'La cola está vacía' : 'Queue is empty'}
+              description="Añade películas, episodios o vídeos desde el catálogo con el botón + Cola, o abre un enlace directo."
+              actionLabel="Pegar Enlace / Cloud Browser"
+              onAction={() => setShowUrlLoaderSheet(true)}
+            />
+          ) : (
+            <div className="space-y-2.5">
+              {roomQueue.map((item, idx) => (
+                <div
+                  key={item.id}
+                  className="group relative overflow-hidden rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.07] p-2.5 flex items-center gap-3 transition-all"
+                >
+                  <div className="relative w-20 aspect-video rounded-xl overflow-hidden bg-black shrink-0">
+                    {item.poster ? (
+                      <img
+                        src={item.poster}
+                        alt={item.title}
+                        className="w-full h-full object-cover"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-xs font-mono text-zinc-500">
+                        #{idx + 1}
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 to-transparent flex items-end p-1.5">
+                      <span className="text-[9px] font-mono font-bold text-white">
+                        #{idx + 1}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 min-w-0">
+                    <div className="text-xs font-bold text-white truncate">
+                      {item.title}
+                    </div>
+                    <div className="text-[11px] text-zinc-400 truncate mt-0.5">
+                      Añadido por {item.addedBy}
+                    </div>
+                  </div>
+
+                  {(!hostOnlyControl || isHost) && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <IconButton
+                        onClick={() => onPlayQueueItem(item)}
+                        variant="crimson"
+                        title="Reproducir ahora"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                      </IconButton>
+                      <IconButton
+                        onClick={() => onRemoveFromQueue(item.id)}
+                        variant="ghost"
+                        title="Quitar de la cola"
+                      >
+                        <Trash2 className="w-4 h-4 text-zinc-400 hover:text-rose-400" />
+                      </IconButton>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ==================================================================== */}
+      {/* TAB 3: ROOM & PARTICIPANTS (Clean View + Bottom Sheets for Tools)    */}
+      {/* ==================================================================== */}
+      {activeTab === 'room' && (
+        <div className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar">
+          {/* Primary Action Card: Room Info + 3 Clean Actions */}
+          <div className="p-4 rounded-3xl bg-white/[0.03] border border-white/[0.08] space-y-3.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h4 className="text-sm font-bold text-white truncate">{roomName}</h4>
+                  {hasPin && <KeyRound className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                </div>
+                <p className="text-xs text-zinc-400 font-mono mt-0.5">
+                  Código: <span className="text-white font-bold">{roomId}</span>
+                </p>
+              </div>
+
+              <IconButton
+                onClick={() => setShowRoomSettingsSheet(true)}
+                title="Ajustes de Sala"
+                aria-label="Ajustes de Sala"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+              </IconButton>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
-              <button
-                type="button"
-                onClick={handleShareOrCopyInvite}
-                className="min-h-[46px] px-3 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.98] text-xs font-semibold text-white flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-all"
-              >
-                {copiedInvite ? (
+            <div className="grid grid-cols-2 gap-2">
+              <PrimaryButton onClick={handleShareInvite} fullWidth>
+                {copiedLink ? (
                   <>
                     <Check className="w-4 h-4" />
                     <span>{t.copied}</span>
@@ -316,246 +658,420 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     <span>{t.invite}</span>
                   </>
                 )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowTvQr((v) => !v)}
-                className="min-h-[46px] px-3 rounded-xl bg-[#191C28] hover:bg-[#232838] active:scale-[0.98] border border-white/10 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-all"
-              >
-                <Tv className="w-4 h-4 text-sky-400" />
-                <span>{t.smartTv}</span>
-              </button>
-            </div>
+              </PrimaryButton>
 
-            {showTvQr && tvUrl && (
-              <div className="pt-3 border-t border-white/[0.08] flex flex-col items-center text-center gap-2.5">
-                <div className="p-3 bg-white rounded-2xl">
-                  <QRCodeSVG value={tvUrl} size={144} />
-                </div>
-                <p className="text-xs text-zinc-400 leading-snug">
-                  Escanea este código en tu Smart TV para proyectar la sala sincronizada a pantalla completa.
-                </p>
-                <span className="text-[11px] font-mono text-zinc-500 break-all select-all">
-                  {tvUrl}
-                </span>
-              </div>
-            )}
+              <SecondaryButton
+                onClick={() => setShowTvRemoteSheet(true)}
+                active={hasConnectedSmartTv}
+                fullWidth
+              >
+                <Tv className="w-4 h-4 text-[#E11D48]" />
+                <span>{hasConnectedSmartTv ? 'Mando TV Activo' : 'Mando TV'}</span>
+              </SecondaryButton>
+            </div>
           </div>
 
-          {/* Explicit Desktop / Mobile View Switcher */}
-          {onToggleViewMode && (
-            <div className="p-3.5 rounded-2xl bg-[#090A0F] border border-white/[0.08] flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-xs font-semibold text-white">
-                  {lang === 'es' ? 'Formato de interfaz' : 'Interface layout'}
-                </div>
-                <div className="text-[11px] text-zinc-400">
-                  {effectiveView === 'desktop'
-                    ? lang === 'es'
-                      ? 'Modo Escritorio activo'
-                      : 'Desktop layout active'
-                    : lang === 'es'
-                    ? 'Modo Móvil activo'
-                    : 'Mobile layout active'}
-                </div>
-              </div>
+          {/* Participants List */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                {t.participants} ({participants.length})
+              </span>
               <button
                 type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  onToggleViewMode();
-                }}
-                className="min-h-[40px] px-3.5 rounded-xl bg-[#191C28] hover:bg-[#232838] border border-white/12 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                onClick={() => setShowQrInviteSheet(true)}
+                className="text-xs font-semibold text-[#FB7185] hover:underline flex items-center gap-1 cursor-pointer"
               >
-                {effectiveView === 'desktop' ? (
-                  <>
-                    <Smartphone className="w-3.5 h-3.5 text-[#38BDF8]" />
-                    <span>{lang === 'es' ? 'Pasar a Móvil' : 'Switch to Mobile'}</span>
-                  </>
-                ) : (
-                  <>
-                    <Monitor className="w-3.5 h-3.5 text-[#38BDF8]" />
-                    <span>{lang === 'es' ? 'Pasar a Escritorio' : 'Switch to Desktop'}</span>
-                  </>
-                )}
+                <QrCode className="w-3.5 h-3.5" />
+                <span>Ver QR</span>
               </button>
             </div>
-          )}
 
-          {/* Cloud Account Synchronization Card (Google Sign-In) */}
-          {onSignIn && onSignOut && (
-            <div className="p-4 rounded-2xl bg-[#090A0F] border border-white/[0.08] space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 text-xs font-semibold text-white min-w-0">
-                  <Cloud
-                    className={`w-4 h-4 shrink-0 ${
-                      authUser ? 'text-emerald-400' : 'text-[#38BDF8]'
-                    }`}
-                  />
-                  <span className="truncate">
-                    {authUser
-                      ? authUser.displayName || authUser.email || 'Cuenta sincronizada'
-                      : lang === 'es'
-                      ? 'Sincronización en la nube'
-                      : 'Cloud Account Sync'}
-                  </span>
-                </div>
-                {authUser && (
-                  <span className="text-[11px] text-emerald-400 shrink-0">
-                    {lang === 'es' ? 'Conectada' : 'Active'}
-                  </span>
-                )}
-              </div>
-
-              <p className="text-[11px] text-zinc-400 leading-relaxed">
-                {authUser
-                  ? lang === 'es'
-                    ? 'Historial, segundo exacto de "Seguir viendo", series favoritas y canales favoritos sincronizados.'
-                    : 'Watch history, exact resume progress, favorite series, and favorite channels synced.'
-                  : lang === 'es'
-                  ? 'Inicia sesión con Google para mantener tu historial, minuto exacto y favoritos en cualquier dispositivo.'
-                  : 'Sign in with Google to sync watch history, resume points, and favorites across devices.'}
-              </p>
-
-              {!authLoading &&
-                (authUser ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      onSignOut();
-                    }}
-                    className="w-full min-h-[42px] px-3 rounded-xl bg-[#191C28] hover:bg-rose-500/20 border border-white/10 text-xs font-semibold text-zinc-200 hover:text-rose-200 flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <LogOut className="w-3.5 h-3.5" />
-                    <span>{lang === 'es' ? 'Cerrar sesión' : 'Sign out'}</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      onSignIn();
-                    }}
-                    className="w-full min-h-[42px] px-3 rounded-xl bg-[#38BDF8]/15 hover:bg-[#38BDF8]/25 border border-[#38BDF8]/35 text-xs font-semibold text-[#38BDF8] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <LogIn className="w-3.5 h-3.5" />
-                    <span>
-                      {lang === 'es' ? 'Iniciar sesión con Google' : 'Sign in with Google'}
-                    </span>
-                  </button>
-                ))}
-            </div>
-          )}
-
-          {/* Clean Name-Only Customization */}
-          <div>
-            {!editingProfile ? (
-              <button
-                type="button"
-                onClick={() => {
-                  setEditName(currentUser.name);
-                  setEditingProfile(true);
-                }}
-                className="w-full min-h-[46px] px-4 rounded-2xl bg-[#191C28] hover:bg-[#232838] border border-white/[0.08] text-xs sm:text-sm font-medium text-zinc-200 flex items-center justify-center gap-2 cursor-pointer transition-colors"
-              >
-                <Edit3 className="w-4 h-4 text-zinc-400" />
-                <span>
-                  {lang === 'es'
-                    ? `Cambiar mi nombre (${currentUser.name})`
-                    : `Change display name (${currentUser.name})`}
-                </span>
-              </button>
-            ) : (
-              <form
-                onSubmit={handleSaveProfile}
-                className="p-3.5 rounded-2xl bg-[#090A0F] border border-white/10 flex items-center gap-2"
-              >
-                <input
-                  type="text"
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  placeholder={t.nicknamePlaceholder}
-                  maxLength={24}
-                  autoFocus
-                  className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#11131B] border border-white/12 focus:border-[#E11D48] text-base sm:text-xs text-white outline-none"
-                />
-                <button
-                  type="submit"
-                  className="h-11 px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white shrink-0 cursor-pointer transition-colors"
-                >
-                  {lang === 'es' ? 'Guardar' : 'Save'}
-                </button>
-              </form>
-            )}
-          </div>
-
-          {/* Connected Participants List (Monogram Badges + 56px+ Touch Rows) */}
-          <div className="space-y-2.5">
-            <h4 className="text-xs font-medium text-zinc-400 px-0.5">
-              {t.participants} ({participants.length})
-            </h4>
             <div className="space-y-2">
-              {participants.map((p) => {
-                const isHost = p.id === hostId;
-                const isSelf = p.id === currentUser.id;
-                const isTvParticipant = p.name.includes('(TV)') || p.avatar === '📺';
-                return (
-                  <div
-                    key={p.id}
-                    className="min-h-[56px] p-3 rounded-2xl bg-[#090A0F] border border-white/[0.07] flex items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <div
-                        className={`w-10 h-10 rounded-xl flex items-center justify-center font-display font-bold text-xs shrink-0 border ${
-                          isSelf
-                            ? 'bg-[#E11D48]/18 border-[#E11D48]/40 text-white'
-                            : 'bg-[#191C28] border-white/10 text-zinc-200'
-                        }`}
-                      >
-                        {isTvParticipant ? (
-                          <Tv className="w-4 h-4 text-[#38BDF8]" />
-                        ) : (
-                          getMonogramInitials(p.name)
-                        )}
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-xs sm:text-sm font-semibold text-white truncate flex items-center gap-1.5">
-                          <span className="truncate">{p.name}</span>
-                          {isSelf && (
-                            <span className="text-[11px] text-zinc-400 font-normal">
-                              ({t.you})
-                            </span>
-                          )}
-                        </div>
-                        {isHost && (
-                          <div className="text-[11px] text-amber-400 flex items-center gap-1 mt-0.5">
-                            <Crown className="w-3 h-3" />
-                            <span>{t.hostLabel}</span>
-                          </div>
-                        )}
-                      </div>
+              {participants.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06]"
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white border border-white/15 shrink-0"
+                      style={{ backgroundColor: p.color || '#E11D48' }}
+                    >
+                      {p.avatar && p.avatar.length <= 2 ? p.avatar : getInitials(p.name)}
                     </div>
-
-                    {isCurrentUserHost && !isSelf && (
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-sm font-bold text-white truncate">
+                          {p.name}
+                        </span>
+                        {p.id === currentUser.id && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 font-semibold">
+                            {t.you}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        Sincronizado
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {p.isHost || p.id === hostId ? (
+                      <span className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold flex items-center gap-1">
+                        <Crown className="w-3 h-3" />
+                        {t.hostLabel}
+                      </span>
+                    ) : isHost ? (
                       <button
                         type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          onTransferHost(p.id);
-                        }}
-                        className="min-h-[40px] px-3 rounded-xl bg-[#191C28] hover:bg-[#232838] text-xs font-medium text-zinc-200 whitespace-nowrap shrink-0 cursor-pointer"
+                        onClick={() => onTransferHost(p.id)}
+                        className="min-h-9 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[10px] font-semibold text-zinc-300 cursor-pointer"
+                        title={t.makeHost}
                       >
                         {t.makeHost}
                       </button>
-                    )}
+                    ) : null}
                   </div>
-                );
-              })}
+                </div>
+              ))}
             </div>
+          </div>
+
+          <div className="pt-2">
+            <SecondaryButton onClick={onLeaveRoom} fullWidth>
+              <LogOut className="w-4 h-4 text-rose-400" />
+              <span>{t.leaveRoom}</span>
+            </SecondaryButton>
           </div>
         </div>
       )}
+
+      {/* ==================================================================== */}
+      {/* BOTTOM SHEET 1: DIRECT LINK / CLOUD BROWSER                          */}
+      {/* ==================================================================== */}
+      <BottomSheet
+        isOpen={showUrlLoaderSheet}
+        onClose={() => setShowUrlLoaderSheet(false)}
+        title="Enlace Directo o Cloud Browser"
+        subtitle="Reproduce archivos .m3u8 / .mp4 o navega sin anuncios"
+        icon={<Link2 className="w-5 h-5" />}
+      >
+        <div className="space-y-3">
+          <StandardInput
+            type="url"
+            value={customUrlInput}
+            onChange={(e) => setCustomUrlInput(e.target.value)}
+            placeholder="https://ejemplo.com/stream.m3u8 o web..."
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <PrimaryButton
+              disabled={!customUrlInput.trim()}
+              onClick={() => {
+                if (!customUrlInput.trim()) return;
+                onPlayCustomUrl(customUrlInput.trim());
+                setCustomUrlInput('');
+                setShowUrlLoaderSheet(false);
+              }}
+              fullWidth
+            >
+              <Play className="w-4 h-4 fill-current" />
+              <span>{t.playNativeBtn}</span>
+            </PrimaryButton>
+            <SecondaryButton
+              disabled={!customUrlInput.trim()}
+              onClick={() => {
+                if (!customUrlInput.trim()) return;
+                onOpenCloudBrowser(customUrlInput.trim());
+                setCustomUrlInput('');
+                setShowUrlLoaderSheet(false);
+              }}
+              fullWidth
+            >
+              <Globe className="w-4 h-4 text-sky-400" />
+              <span>{t.openCloudBtn}</span>
+            </SecondaryButton>
+          </div>
+        </div>
+      </BottomSheet>
+
+      {/* ==================================================================== */}
+      {/* BOTTOM SHEET 2: SMART TV HAPTIC REMOTE / PAIRING                     */}
+      {/* ==================================================================== */}
+      <BottomSheet
+        isOpen={showTvRemoteSheet}
+        onClose={() => setShowTvRemoteSheet(false)}
+        title={hasConnectedSmartTv ? 'Mando Haptic Touch TV' : 'Vincular Smart TV'}
+        subtitle={
+          hasConnectedSmartTv
+            ? `Control táctil en tiempo real · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : 'Sala Activa'}`
+            : 'Introduce los 4 dígitos que aparecen en /tv'
+        }
+        icon={<Tv className="w-5 h-5" />}
+      >
+        {tvClaimStatus && (
+          <div
+            className={`p-3 rounded-2xl border text-xs font-semibold ${
+              tvClaimStatus.type === 'success'
+                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200'
+                : 'bg-rose-500/15 border-rose-500/35 text-rose-200'
+            }`}
+          >
+            {tvClaimStatus.message}
+          </div>
+        )}
+
+        {hasConnectedSmartTv ? (
+          <div className="space-y-3">
+            <HapticTvRemote
+              pairedTvCode={pairedCodeLabel || 'ACTIVA'}
+              onCommand={handleMapTvCommand}
+              onDisconnect={() => {
+                onSendTvRemoteCommand('disconnect_tv');
+                setPairedCodeLabel(null);
+                setForceShowRemote(false);
+              }}
+            />
+            <SecondaryButton
+              onClick={() => {
+                setForceShowRemote(false);
+                setPairedCodeLabel(null);
+              }}
+              fullWidth
+            >
+              Vincular otro televisor con código
+            </SecondaryButton>
+          </div>
+        ) : (
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const clean = tvCodeInput.replace(/\D/g, '').slice(0, 4);
+              if (clean.length === 4) {
+                await onClaimTvCode(clean);
+                setPairedCodeLabel(clean);
+                setTvCodeInput('');
+              }
+            }}
+            className="space-y-4 text-center"
+          >
+            <p className="text-xs text-zinc-400">
+              Abre <span className="text-white font-mono">{window.location.origin}/tv</span> en tu televisor e introduce el código de 4 dígitos:
+            </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              maxLength={4}
+              value={tvCodeInput}
+              onChange={(e) =>
+                setTvCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))
+              }
+              placeholder="0000"
+              className="w-full h-16 rounded-2xl bg-black/75 border-2 border-white/15 focus:border-[#E11D48] text-center font-mono text-3xl font-bold tracking-[0.4em] text-white focus:outline-none"
+            />
+            <PrimaryButton
+              type="submit"
+              disabled={tvCodeInput.length !== 4}
+              fullWidth
+              size="lg"
+            >
+              <Tv className="w-4 h-4" />
+              <span>Conectar Smart TV</span>
+            </PrimaryButton>
+            <SecondaryButton
+              type="button"
+              onClick={() => setForceShowRemote(true)}
+              fullWidth
+            >
+              Abrir Mando Haptic Touch directamente
+            </SecondaryButton>
+          </form>
+        )}
+      </BottomSheet>
+
+      {/* ==================================================================== */}
+      {/* BOTTOM SHEET 3: QR INVITE                                            */}
+      {/* ==================================================================== */}
+      <BottomSheet
+        isOpen={showQrInviteSheet}
+        onClose={() => setShowQrInviteSheet(false)}
+        title="Código QR de Invitación"
+        subtitle={roomName}
+        icon={<QrCode className="w-5 h-5" />}
+      >
+        <div className="flex flex-col items-center gap-4 py-2">
+          <div className="p-3 rounded-3xl bg-white shadow-xl">
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
+                inviteUrl
+              )}`}
+              alt="QR Sala"
+              className="w-44 h-44 rounded-xl"
+            />
+          </div>
+          <p className="text-xs text-zinc-400 text-center max-w-xs">
+            Escanea con la cámara del móvil para entrar directamente a esta sala.
+          </p>
+          <PrimaryButton onClick={handleShareInvite} fullWidth>
+            <Share2 className="w-4 h-4" />
+            <span>Compartir enlace corto</span>
+          </PrimaryButton>
+        </div>
+      </BottomSheet>
+
+      {/* ==================================================================== */}
+      {/* BOTTOM SHEET 4: PROGRESSIVE DISCLOSURE ROOM SETTINGS                 */}
+      {/* ==================================================================== */}
+      <BottomSheet
+        isOpen={showRoomSettingsSheet}
+        onClose={() => setShowRoomSettingsSheet(false)}
+        title="Ajustes y Seguridad de Sala"
+        subtitle="Personaliza tu nombre, permisos, PIN y preferencias"
+        icon={<Shield className="w-5 h-5" />}
+      >
+        {/* 0. User Display Name */}
+        <div className="space-y-2">
+          <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+            <UserCheck className="w-3.5 h-3.5 text-[#E11D48]" />
+            <span>Tu nombre en la sala</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <StandardInput
+              type="text"
+              value={profileNameDraft}
+              onChange={(e) => setProfileNameDraft(e.target.value)}
+            />
+            <PrimaryButton
+              onClick={() => {
+                if (profileNameDraft.trim()) {
+                  onUpdateProfile(
+                    profileNameDraft.trim(),
+                    currentUser.avatar,
+                    currentUser.color
+                  );
+                }
+              }}
+            >
+              Guardar
+            </PrimaryButton>
+          </div>
+        </div>
+
+        {/* 1. Rename Room */}
+        {isHost && (
+          <div className="space-y-2 pt-2 border-t border-white/[0.07]">
+            <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+              <Edit3 className="w-3.5 h-3.5 text-[#E11D48]" />
+              <span>Nombre de la sala</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <StandardInput
+                type="text"
+                value={roomNameDraft}
+                onChange={(e) => setRoomNameDraft(e.target.value)}
+              />
+              <PrimaryButton
+                onClick={() => {
+                  if (roomNameDraft.trim()) {
+                    onRenameRoom(roomNameDraft.trim());
+                  }
+                }}
+              >
+                Guardar
+              </PrimaryButton>
+            </div>
+          </div>
+        )}
+
+        {/* 2. Toggles: Host Lock & Permanent Room */}
+        <div className="space-y-2 pt-2 border-t border-white/[0.07]">
+          <SecondaryButton
+            onClick={() => onToggleHostLock(!hostOnlyControl)}
+            disabled={!isHost}
+            active={hostOnlyControl}
+            fullWidth
+            className="!justify-between"
+          >
+            <span className="flex items-center gap-2">
+              {hostOnlyControl ? (
+                <Lock className="w-4 h-4 text-amber-400" />
+              ) : (
+                <Unlock className="w-4 h-4 text-emerald-400" />
+              )}
+              <span>Modo Anfitrión (Solo Host controla el vídeo)</span>
+            </span>
+            <span className="text-xs font-mono uppercase">
+              {hostOnlyControl ? 'ACTIVO' : 'LIBRE'}
+            </span>
+          </SecondaryButton>
+
+          <SecondaryButton
+            onClick={onTogglePermanentRoom}
+            disabled={!isHost}
+            active={isCurrentRoomPermanent}
+            fullWidth
+            className="!justify-between"
+          >
+            <span className="flex items-center gap-2">
+              <Bookmark className="w-4 h-4 text-[#FB7185]" />
+              <span>Sala Permanente 24/7</span>
+            </span>
+            <span className="text-xs font-mono uppercase">
+              {isCurrentRoomPermanent ? 'GUARDADA' : 'TEMPORAL'}
+            </span>
+          </SecondaryButton>
+        </div>
+
+        {/* 3. Room 4-Digit PIN */}
+        {isHost && (
+          <div className="space-y-2 pt-2 border-t border-white/[0.07]">
+            <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
+              <span>PIN de 4 dígitos {hasPin ? '(Activo)' : '(Opcional)'}</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <StandardInput
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={pinDraft}
+                onChange={(e) =>
+                  setPinDraft(e.target.value.replace(/\D/g, '').slice(0, 4))
+                }
+                placeholder={hasPin ? 'Cambiar PIN (4 dígitos)' : 'Ej. 1234'}
+              />
+              <PrimaryButton
+                disabled={pinDraft.length !== 4}
+                onClick={() => {
+                  if (pinDraft.length === 4) {
+                    onSetRoomPin(pinDraft);
+                    setPinDraft('');
+                  }
+                }}
+              >
+                Activar
+              </PrimaryButton>
+              {hasPin && (
+                <SecondaryButton onClick={() => onSetRoomPin('')}>
+                  Quitar
+                </SecondaryButton>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* 4. View Mode Switcher */}
+        <div className="pt-2 border-t border-white/[0.07] flex items-center justify-between">
+          <span className="text-xs text-zinc-400">Formato de pantalla</span>
+          <ViewModeSwitchButton
+            effectiveView={effectiveView}
+            onToggle={onToggleViewMode}
+            lang={lang}
+          />
+        </div>
+      </BottomSheet>
     </aside>
   );
 };

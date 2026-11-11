@@ -7,6 +7,7 @@ import {
 import {
   collection,
   deleteDoc,
+  deleteField,
   doc,
   getDoc,
   limit,
@@ -27,7 +28,9 @@ import {
 } from '../firebase';
 import {
   CatalogMovie,
+  CloudSavedRoom,
   FavoriteChannelItem,
+  RoomQueueItem,
   WatchHistoryItem,
 } from '../types';
 import {
@@ -42,6 +45,14 @@ import {
 function clampString(val: unknown, maxLen: number, fallback = ''): string {
   if (typeof val !== 'string') return fallback;
   const trimmed = val.trim();
+  if (!trimmed) return fallback;
+  return trimmed.slice(0, maxLen);
+}
+
+function optionalClampedString(val: unknown, maxLen: number): string | undefined {
+  if (typeof val !== 'string') return undefined;
+  const trimmed = val.trim();
+  if (!trimmed) return undefined;
   return trimmed.slice(0, maxLen);
 }
 
@@ -82,9 +93,40 @@ function toMillis(ts: unknown, fallback = Date.now()): number {
   return fallback;
 }
 
+function isNotFoundError(error: unknown): boolean {
+  const msg = error instanceof Error ? error.message : String(error);
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? String((error as { code?: string }).code)
+      : '';
+  return (
+    code === 'not-found' ||
+    msg.includes('No document to update') ||
+    msg.includes('not-found')
+  );
+}
+
 // Track which composite document IDs are confirmed to exist in Firestore
 const knownHistoryDocIds = new Set<string>();
 const knownFavoriteDocIds = new Set<string>();
+const knownSavedRoomDocIds = new Set<string>();
+
+// Per-document write queue to eliminate concurrent create/update race conditions
+const pendingDocQueues = new Map<string, Promise<void>>();
+
+function enqueueDocWrite(docPath: string, task: () => Promise<void>): Promise<void> {
+  const previous = pendingDocQueues.get(docPath) ?? Promise.resolve();
+  const next = previous
+    .catch(() => {})
+    .then(task)
+    .finally(() => {
+      if (pendingDocQueues.get(docPath) === next) {
+        pendingDocQueues.delete(docPath);
+      }
+    });
+  pendingDocQueues.set(docPath, next);
+  return next;
+}
 
 export function buildHistoryDocId(uid: string, rawItemId: string): string {
   return `${uid}_${sanitizeItemKey(rawItemId)}`;
@@ -92,6 +134,15 @@ export function buildHistoryDocId(uid: string, rawItemId: string): string {
 
 export function buildFavoriteDocId(uid: string, rawFavId: string): string {
   return `${uid}_${sanitizeItemKey(rawFavId)}`;
+}
+
+export function buildSavedRoomDocId(uid: string, rawRoomCode: string): string {
+  const cleanCode = rawRoomCode
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 32);
+  return `${uid}_${cleanCode}`;
 }
 
 // ============================================================================
@@ -119,6 +170,8 @@ export async function signInWithGoogleAccount(): Promise<User | null> {
 export async function signOutGoogleAccount(): Promise<void> {
   knownHistoryDocIds.clear();
   knownFavoriteDocIds.clear();
+  knownSavedRoomDocIds.clear();
+  pendingDocQueues.clear();
   await signOut(auth);
 }
 
@@ -129,6 +182,8 @@ export function subscribeAuthState(
     if (!user) {
       knownHistoryDocIds.clear();
       knownFavoriteDocIds.clear();
+      knownSavedRoomDocIds.clear();
+      pendingDocQueues.clear();
     }
     onChange(user);
   });
@@ -163,7 +218,7 @@ export async function ensureCloudUserProfile(
   );
   const avatar = clampString(localProfile.avatar || '🍿', 16, '🍿');
   const color = sanitizeHexColor(localProfile.color);
-  const photoURL = user.photoURL ? clampString(user.photoURL, 600) : undefined;
+  const photoURL = optionalClampedString(user.photoURL, 600);
 
   if (snap && snap.exists()) {
     const data = snap.data();
@@ -218,16 +273,15 @@ export async function updateCloudUserProfile(
     color: sanitizeHexColor(profile.color),
     updatedAt: serverTimestamp(),
   };
-  if (user.photoURL) {
-    updatePayload.photoURL = clampString(user.photoURL, 600);
+  const photoURL = optionalClampedString(user.photoURL, 600);
+  if (photoURL) {
+    updatePayload.photoURL = photoURL;
   }
 
   try {
     await updateDoc(profileRef, updatePayload);
   } catch (error) {
-    // If profile wasn't created yet, create it cleanly
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes('No document to update') || msg.includes('not-found')) {
+    if (isNotFoundError(error)) {
       await ensureCloudUserProfile(user, profile);
       return;
     }
@@ -242,18 +296,21 @@ function buildWatchHistoryFields(uid: string, item: WatchHistoryItem) {
   const itemId = sanitizeItemKey(item.id);
   const mediaType = item.mediaType === 'tv' ? 'tv' : 'movie';
   const preferLang = item.preferLang === 'EN' ? 'EN' : 'ES';
+  const safePoster = clampString(item.poster, 600, '/icon.svg');
+  const safeBackdrop = clampString(
+    item.backdrop || item.poster,
+    600,
+    safePoster || '/icon.svg'
+  );
+
   const base: Record<string, unknown> = {
     uid,
     itemId,
     mediaType,
     title: clampString(item.title, 200, 'NAIM CINE'),
-    subtitle: clampString(item.subtitle || 'HD', 240, 'HD'),
-    poster: clampString(item.poster || '/icon.svg', 600, '/icon.svg'),
-    backdrop: clampString(
-      item.backdrop || item.poster || '/icon.svg',
-      600,
-      '/icon.svg'
-    ),
+    subtitle: clampString(item.subtitle, 240, 'HD'),
+    poster: safePoster,
+    backdrop: safeBackdrop,
     preferLang,
     resumeTimeSec: Math.floor(clampNumber(item.resumeTimeSec ?? 0, 0, 86400, 0)),
     durationSec: Math.floor(clampNumber(item.durationSec ?? 0, 0, 86400, 0)),
@@ -261,7 +318,9 @@ function buildWatchHistoryFields(uid: string, item: WatchHistoryItem) {
 
   const tmdbId = clampOptionalPositiveInt(item.tmdbId, 1, 999999999);
   if (tmdbId !== undefined) base.tmdbId = tmdbId;
-  if (item.year) base.year = clampString(item.year, 16);
+
+  const year = optionalClampedString(item.year, 16);
+  if (year) base.year = year;
 
   const season = clampOptionalPositiveInt(item.season, 1, 200);
   if (season !== undefined) base.season = season;
@@ -269,9 +328,14 @@ function buildWatchHistoryFields(uid: string, item: WatchHistoryItem) {
   const episode = clampOptionalPositiveInt(item.episode, 1, 5000);
   if (episode !== undefined) base.episode = episode;
 
-  if (item.episodeTitle) base.episodeTitle = clampString(item.episodeTitle, 200);
-  if (item.bingetrixUrl) base.bingetrixUrl = clampString(item.bingetrixUrl, 600);
-  if (item.movidyUrl) base.movidyUrl = clampString(item.movidyUrl, 600);
+  const episodeTitle = optionalClampedString(item.episodeTitle, 200);
+  if (episodeTitle) base.episodeTitle = episodeTitle;
+
+  const bingetrixUrl = optionalClampedString(item.bingetrixUrl, 600);
+  if (bingetrixUrl) base.bingetrixUrl = bingetrixUrl;
+
+  const movidyUrl = optionalClampedString(item.movidyUrl, 600);
+  if (movidyUrl) base.movidyUrl = movidyUrl;
 
   return { itemId, base };
 }
@@ -293,40 +357,66 @@ export async function upsertCloudWatchHistory(
   delete mutableFields.mediaType;
   mutableFields.updatedAt = serverTimestamp();
 
-  if (knownHistoryDocIds.has(docId)) {
-    try {
-      await updateDoc(docRef, mutableFields);
-      return;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (!msg.includes('No document to update') && !msg.includes('not-found')) {
-        handleFirestoreError(error, OperationType.UPDATE, path);
+  return enqueueDocWrite(path, async () => {
+    if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+
+    if (knownHistoryDocIds.has(docId)) {
+      try {
+        await updateDoc(docRef, mutableFields);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownHistoryDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
       }
     }
-  }
 
-  // Check existence first if unknown so we never overwrite immutable createdAt
-  try {
-    const existingSnap = await getDoc(docRef);
-    if (existingSnap.exists()) {
-      knownHistoryDocIds.add(docId);
-      await updateDoc(docRef, mutableFields);
-      return;
+    let existsOnServer = false;
+    try {
+      const existingSnap = await getDoc(docRef);
+      existsOnServer = existingSnap.exists();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
     }
-  } catch {
-    // Doc doesn't exist yet -> proceed to create
-  }
 
-  try {
-    await setDoc(docRef, {
-      ...base,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    knownHistoryDocIds.add(docId);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+    if (existsOnServer) {
+      knownHistoryDocIds.add(docId);
+      try {
+        await updateDoc(docRef, mutableFields);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownHistoryDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    try {
+      await setDoc(docRef, {
+        ...base,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      knownHistoryDocIds.add(docId);
+    } catch (createError) {
+      // Handle multi-device simultaneous create race (e.g. Mobile + PC in same room)
+      try {
+        const retrySnap = await getDoc(docRef);
+        if (retrySnap.exists()) {
+          knownHistoryDocIds.add(docId);
+          await updateDoc(docRef, mutableFields);
+          return;
+        }
+      } catch {
+        // Fall through and report original createError
+      }
+      handleFirestoreError(createError, OperationType.CREATE, path);
+    }
+  });
 }
 
 export async function updateCloudWatchProgressOnly(
@@ -349,20 +439,22 @@ export async function updateCloudWatchProgressOnly(
   const path = `watchHistory/${docId}`;
   const docRef = doc(db, 'watchHistory', docId);
 
-  try {
-    await updateDoc(docRef, {
-      resumeTimeSec: finalResume,
-      durationSec: safeDuration,
-      updatedAt: serverTimestamp(),
-    });
-  } catch (error) {
-    const msg = error instanceof Error ? error.message : String(error);
-    if (msg.includes('No document to update') || msg.includes('not-found')) {
-      knownHistoryDocIds.delete(docId);
-      return;
+  return enqueueDocWrite(path, async () => {
+    if (!knownHistoryDocIds.has(docId)) return;
+    try {
+      await updateDoc(docRef, {
+        resumeTimeSec: finalResume,
+        durationSec: safeDuration,
+        updatedAt: serverTimestamp(),
+      });
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        knownHistoryDocIds.delete(docId);
+        return;
+      }
+      handleFirestoreError(error, OperationType.UPDATE, path);
     }
-    handleFirestoreError(error, OperationType.UPDATE, path);
-  }
+  });
 }
 
 export async function deleteCloudWatchHistoryItem(rawItemId: string): Promise<void> {
@@ -373,12 +465,14 @@ export async function deleteCloudWatchHistoryItem(rawItemId: string): Promise<vo
   const docId = `${user.uid}_${itemId}`;
   const path = `watchHistory/${docId}`;
 
-  try {
-    await deleteDoc(doc(db, 'watchHistory', docId));
-    knownHistoryDocIds.delete(docId);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
-  }
+  return enqueueDocWrite(path, async () => {
+    try {
+      await deleteDoc(doc(db, 'watchHistory', docId));
+      knownHistoryDocIds.delete(docId);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  });
 }
 
 export async function clearCloudWatchHistoryItems(
@@ -388,16 +482,7 @@ export async function clearCloudWatchHistoryItems(
   if (!user || !user.emailVerified) return;
 
   await Promise.all(
-    items.map(async (item) => {
-      const docId = `${user.uid}_${sanitizeItemKey(item.id)}`;
-      const path = `watchHistory/${docId}`;
-      try {
-        await deleteDoc(doc(db, 'watchHistory', docId));
-        knownHistoryDocIds.delete(docId);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.DELETE, path);
-      }
-    })
+    items.map((item) => deleteCloudWatchHistoryItem(item.id))
   );
 }
 
@@ -421,54 +506,87 @@ export async function upsertCloudCatalogFavorite(
     favId,
     kind,
     title: clampString(item.title, 200, 'Favorito'),
-    subtitle: clampString(item.year || (kind === 'series' ? 'Serie TV' : 'HD'), 240, 'HD'),
-    poster: clampString(item.poster || '/icon.svg', 600, '/icon.svg'),
+    subtitle: clampString(
+      item.year || (kind === 'series' ? 'Serie TV' : 'HD'),
+      240,
+      'HD'
+    ),
+    poster: clampString(item.poster, 600, '/icon.svg'),
   };
 
   const tmdbId = clampOptionalPositiveInt(item.tmdbId, 1, 999999999);
   if (tmdbId !== undefined) base.tmdbId = tmdbId;
-  if (item.backdrop) base.backdrop = clampString(item.backdrop, 600);
-  if (item.year) base.year = clampString(item.year, 16);
-  if (item.rating) base.rating = clampString(item.rating, 16);
+  const backdrop = optionalClampedString(item.backdrop, 600);
+  if (backdrop) base.backdrop = backdrop;
+  const year = optionalClampedString(item.year, 16);
+  if (year) base.year = year;
+  const rating = optionalClampedString(item.rating, 16);
+  if (rating) base.rating = rating;
 
   const mutable: Record<string, unknown> = { ...base, updatedAt: serverTimestamp() };
   delete mutable.uid;
   delete mutable.favId;
   delete mutable.kind;
 
-  if (knownFavoriteDocIds.has(docId)) {
-    try {
-      await updateDoc(docRef, mutable);
-      return;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (!msg.includes('No document to update') && !msg.includes('not-found')) {
-        handleFirestoreError(error, OperationType.UPDATE, path);
+  return enqueueDocWrite(path, async () => {
+    if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+
+    if (knownFavoriteDocIds.has(docId)) {
+      try {
+        await updateDoc(docRef, mutable);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownFavoriteDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
       }
     }
-  }
 
-  try {
-    const existingSnap = await getDoc(docRef);
-    if (existingSnap.exists()) {
-      knownFavoriteDocIds.add(docId);
-      await updateDoc(docRef, mutable);
-      return;
+    let existsOnServer = false;
+    try {
+      const existingSnap = await getDoc(docRef);
+      existsOnServer = existingSnap.exists();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
     }
-  } catch {
-    // proceed to create
-  }
 
-  try {
-    await setDoc(docRef, {
-      ...base,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    knownFavoriteDocIds.add(docId);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+    if (existsOnServer) {
+      knownFavoriteDocIds.add(docId);
+      try {
+        await updateDoc(docRef, mutable);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownFavoriteDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    try {
+      await setDoc(docRef, {
+        ...base,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      knownFavoriteDocIds.add(docId);
+    } catch (createError) {
+      try {
+        const retrySnap = await getDoc(docRef);
+        if (retrySnap.exists()) {
+          knownFavoriteDocIds.add(docId);
+          await updateDoc(docRef, mutable);
+          return;
+        }
+      } catch {
+        // Fall through
+      }
+      handleFirestoreError(createError, OperationType.CREATE, path);
+    }
+  });
 }
 
 export async function upsertCloudChannelFavorite(
@@ -497,10 +615,10 @@ export async function upsertCloudChannelFavorite(
     kind: 'channel',
     title: clampString(ch.title, 200, ch.channelLabel || 'Canal en Directo'),
     subtitle: clampString(ch.competition || '24/7 Directo', 240, 'Directo'),
-    poster: clampString(ch.poster || '/icon.svg', 600, '/icon.svg'),
-    channelUrl: clampString(ch.channelUrl, 600),
+    poster: clampString(ch.poster, 600, '/icon.svg'),
+    channelUrl: clampString(ch.channelUrl, 600, '/icon.svg'),
     channelLabel: clampString(ch.channelLabel, 120, 'Señal HD'),
-    competition: clampString(ch.competition || 'Deportes', 120, 'Deportes'),
+    competition: clampString(ch.competition, 120, 'Deportes'),
     sport: validSport,
   };
 
@@ -509,39 +627,65 @@ export async function upsertCloudChannelFavorite(
   delete mutable.favId;
   delete mutable.kind;
 
-  if (knownFavoriteDocIds.has(docId)) {
-    try {
-      await updateDoc(docRef, mutable);
-      return;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      if (!msg.includes('No document to update') && !msg.includes('not-found')) {
-        handleFirestoreError(error, OperationType.UPDATE, path);
+  return enqueueDocWrite(path, async () => {
+    if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+
+    if (knownFavoriteDocIds.has(docId)) {
+      try {
+        await updateDoc(docRef, mutable);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownFavoriteDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
       }
     }
-  }
 
-  try {
-    const existingSnap = await getDoc(docRef);
-    if (existingSnap.exists()) {
-      knownFavoriteDocIds.add(docId);
-      await updateDoc(docRef, mutable);
-      return;
+    let existsOnServer = false;
+    try {
+      const existingSnap = await getDoc(docRef);
+      existsOnServer = existingSnap.exists();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
     }
-  } catch {
-    // proceed to create
-  }
 
-  try {
-    await setDoc(docRef, {
-      ...base,
-      createdAt: serverTimestamp(),
-      updatedAt: serverTimestamp(),
-    });
-    knownFavoriteDocIds.add(docId);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
-  }
+    if (existsOnServer) {
+      knownFavoriteDocIds.add(docId);
+      try {
+        await updateDoc(docRef, mutable);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownFavoriteDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    try {
+      await setDoc(docRef, {
+        ...base,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      knownFavoriteDocIds.add(docId);
+    } catch (createError) {
+      try {
+        const retrySnap = await getDoc(docRef);
+        if (retrySnap.exists()) {
+          knownFavoriteDocIds.add(docId);
+          await updateDoc(docRef, mutable);
+          return;
+        }
+      } catch {
+        // Fall through
+      }
+      handleFirestoreError(createError, OperationType.CREATE, path);
+    }
+  });
 }
 
 export async function deleteCloudFavoriteById(rawFavId: string): Promise<void> {
@@ -552,12 +696,197 @@ export async function deleteCloudFavoriteById(rawFavId: string): Promise<void> {
   const docId = `${user.uid}_${favId}`;
   const path = `favorites/${docId}`;
 
-  try {
-    await deleteDoc(doc(db, 'favorites', docId));
-    knownFavoriteDocIds.delete(docId);
-  } catch (error) {
-    handleFirestoreError(error, OperationType.DELETE, path);
+  return enqueueDocWrite(path, async () => {
+    try {
+      await deleteDoc(doc(db, 'favorites', docId));
+      knownFavoriteDocIds.delete(docId);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  });
+}
+
+// ============================================================================
+// PERMANENT CLOUD ROOMS SYNC (/savedRooms/{savedRoomId})
+// ============================================================================
+function sanitizePersistedQueue(items: RoomQueueItem[]): Record<string, unknown>[] {
+  if (!Array.isArray(items)) return [];
+  return items.slice(0, 12).map((q, idx) => {
+    const validKind =
+      q.kind === 'tv' || q.kind === 'youtube' || q.kind === 'direct'
+        ? q.kind
+        : 'movie';
+    const entry: Record<string, unknown> = {
+      id: clampString(q.id, 64, `q-${idx + 1}`),
+      kind: validKind,
+      title: clampString(q.title, 200, 'Título en cola'),
+      subtitle: clampString(q.subtitle, 200, 'HD'),
+      addedBy: clampString(q.addedBy, 40, 'Anfitrión'),
+    };
+    const poster = optionalClampedString(q.poster, 600);
+    if (poster) entry.poster = poster;
+    const tmdbId = clampOptionalPositiveInt(q.tmdbId, 1, 999999999);
+    if (tmdbId !== undefined) entry.tmdbId = tmdbId;
+    const season = clampOptionalPositiveInt(q.season, 1, 200);
+    if (season !== undefined) entry.season = season;
+    const episode = clampOptionalPositiveInt(q.episode, 1, 5000);
+    if (episode !== undefined) entry.episode = episode;
+    const youtubeId = optionalClampedString(q.youtubeId, 32);
+    if (youtubeId) entry.youtubeId = youtubeId;
+    const url = optionalClampedString(q.url, 600);
+    if (url) entry.url = url;
+    if (q.preferLang === 'ES' || q.preferLang === 'EN') {
+      entry.preferLang = q.preferLang;
+    }
+    return entry;
+  });
+}
+
+export async function upsertCloudSavedRoom(params: {
+  roomCode: string;
+  roomName: string;
+  hasPin: boolean;
+  pinCode?: string;
+  hostOnlyControl: boolean;
+  lastActiveTitle?: string;
+  queueItems: RoomQueueItem[];
+}): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const cleanCode = params.roomCode
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 32);
+  if (cleanCode.length < 2) return;
+
+  const validPin =
+    params.hasPin && typeof params.pinCode === 'string' && /^[0-9]{4}$/.test(params.pinCode)
+      ? params.pinCode
+      : undefined;
+  const effectiveHasPin = Boolean(validPin);
+
+  const docId = `${user.uid}_${cleanCode}`;
+  const path = `savedRooms/${docId}`;
+  const docRef = doc(db, 'savedRooms', docId);
+
+  const safeRoomName = clampString(
+    params.roomName,
+    60,
+    `Sala ${cleanCode.toUpperCase()}`
+  );
+  const safeQueue = sanitizePersistedQueue(params.queueItems);
+  const safeLastTitle = optionalClampedString(params.lastActiveTitle, 200);
+
+  const updatePayload: Record<string, unknown> = {
+    roomName: safeRoomName,
+    hasPin: effectiveHasPin,
+    pinCode: effectiveHasPin ? validPin : deleteField(),
+    hostOnlyControl: Boolean(params.hostOnlyControl),
+    queueItems: safeQueue,
+    updatedAt: serverTimestamp(),
+  };
+  if (safeLastTitle) {
+    updatePayload.lastActiveTitle = safeLastTitle;
   }
+
+  return enqueueDocWrite(path, async () => {
+    if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+
+    if (knownSavedRoomDocIds.has(docId)) {
+      try {
+        await updateDoc(docRef, updatePayload);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownSavedRoomDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    let existsOnServer = false;
+    try {
+      const existingSnap = await getDoc(docRef);
+      existsOnServer = existingSnap.exists();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+
+    if (existsOnServer) {
+      knownSavedRoomDocIds.add(docId);
+      try {
+        await updateDoc(docRef, updatePayload);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownSavedRoomDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    const createPayload: Record<string, unknown> = {
+      uid: user.uid,
+      roomCode: cleanCode,
+      roomName: safeRoomName,
+      hasPin: effectiveHasPin,
+      hostOnlyControl: Boolean(params.hostOnlyControl),
+      queueItems: safeQueue,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+    if (effectiveHasPin && validPin) {
+      createPayload.pinCode = validPin;
+    }
+    if (safeLastTitle) {
+      createPayload.lastActiveTitle = safeLastTitle;
+    }
+
+    try {
+      await setDoc(docRef, createPayload);
+      knownSavedRoomDocIds.add(docId);
+    } catch (createError) {
+      try {
+        const retrySnap = await getDoc(docRef);
+        if (retrySnap.exists()) {
+          knownSavedRoomDocIds.add(docId);
+          await updateDoc(docRef, updatePayload);
+          return;
+        }
+      } catch {
+        // Fall through
+      }
+      handleFirestoreError(createError, OperationType.CREATE, path);
+    }
+  });
+}
+
+export async function deleteCloudSavedRoom(rawRoomCode: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const cleanCode = rawRoomCode
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]/g, '')
+    .slice(0, 32);
+  if (cleanCode.length < 2) return;
+
+  const docId = `${user.uid}_${cleanCode}`;
+  const path = `savedRooms/${docId}`;
+
+  return enqueueDocWrite(path, async () => {
+    try {
+      await deleteDoc(doc(db, 'savedRooms', docId));
+      knownSavedRoomDocIds.delete(docId);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  });
 }
 
 // ============================================================================
@@ -571,6 +900,7 @@ export function subscribeUserCloudCollections(
       watchlist: CatalogMovie[],
       channels: FavoriteChannelItem[]
     ) => void;
+    onSavedRooms?: (rooms: CloudSavedRoom[]) => void;
   }
 ): () => void {
   const historyQuery = query(
@@ -582,6 +912,11 @@ export function subscribeUserCloudCollections(
     collection(db, 'favorites'),
     where('uid', '==', uid),
     limit(100)
+  );
+  const savedRoomsQuery = query(
+    collection(db, 'savedRooms'),
+    where('uid', '==', uid),
+    limit(30)
   );
 
   const unsubHistory = onSnapshot(
@@ -685,9 +1020,60 @@ export function subscribeUserCloudCollections(
     }
   );
 
+  const unsubSavedRooms = onSnapshot(
+    savedRoomsQuery,
+    (snapshot) => {
+      knownSavedRoomDocIds.clear();
+      const roomsList: CloudSavedRoom[] = [];
+      snapshot.forEach((docSnap) => {
+        knownSavedRoomDocIds.add(docSnap.id);
+        const d = docSnap.data();
+        const rawQueue = Array.isArray(d.queueItems) ? d.queueItems : [];
+        const parsedQueue: RoomQueueItem[] = rawQueue
+          .filter((q: any) => q && typeof q === 'object' && q.title)
+          .map((q: any, idx: number) => ({
+            id: String(q.id || `q-${idx}`),
+            kind:
+              q.kind === 'tv' || q.kind === 'youtube' || q.kind === 'direct'
+                ? q.kind
+                : 'movie',
+            title: String(q.title || ''),
+            subtitle: String(q.subtitle || 'HD'),
+            poster: q.poster ? String(q.poster) : undefined,
+            tmdbId: typeof q.tmdbId === 'number' ? q.tmdbId : undefined,
+            season: typeof q.season === 'number' ? q.season : undefined,
+            episode: typeof q.episode === 'number' ? q.episode : undefined,
+            youtubeId: q.youtubeId ? String(q.youtubeId) : undefined,
+            url: q.url ? String(q.url) : undefined,
+            preferLang: q.preferLang === 'EN' ? 'EN' : 'ES',
+            addedBy: String(q.addedBy || 'Anfitrión'),
+          }));
+
+        roomsList.push({
+          roomCode: String(d.roomCode || ''),
+          roomName: String(d.roomName || `Sala ${String(d.roomCode || '').toUpperCase()}`),
+          hasPin: Boolean(d.hasPin && d.pinCode),
+          pinCode:
+            d.hasPin && typeof d.pinCode === 'string' ? d.pinCode : undefined,
+          hostOnlyControl: Boolean(d.hostOnlyControl),
+          lastActiveTitle: d.lastActiveTitle ? String(d.lastActiveTitle) : undefined,
+          queueItems: parsedQueue,
+          updatedAt: toMillis(d.updatedAt || d.createdAt),
+        });
+      });
+
+      roomsList.sort((a, b) => b.updatedAt - a.updatedAt);
+      callbacks.onSavedRooms?.(roomsList);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'savedRooms');
+    }
+  );
+
   return () => {
     unsubHistory();
     unsubFavorites();
+    unsubSavedRooms();
   };
 }
 

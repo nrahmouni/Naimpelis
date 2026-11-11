@@ -27,22 +27,41 @@ import {
   Youtube,
   Moon,
   Sun,
+  SlidersHorizontal,
+  Subtitles,
+  Upload,
+  Check,
+  MessageSquare,
+  Send,
+  Globe,
 } from 'lucide-react';
 import {
   AppLanguage,
+  ChatMessage,
   CloudBrowserState,
   FloatingReaction,
+  LanguageNoticePopup,
+  SecondaryStreamState,
+  SubtitleTrackItem,
+  TvRemoteCommandType,
   VideoState,
 } from '../types';
 import { UI_COPY } from '../utils/i18n';
 import { socketService } from '../services/socket';
 import { triggerHaptic } from '../utils/haptics';
+import {
+  findActiveSubtitleText,
+  ParsedSubtitleCue,
+  parseSubtitleText,
+} from '../utils/subtitles';
+import { SecondaryHlsStage } from './SecondaryHlsStage';
 
 declare global {
   interface Window {
     YT?: any;
     onYouTubeIframeAPIReady?: () => void;
     __onGCastApiAvailable?: (isAvailable: boolean) => void;
+    __naimCastApiReady?: boolean;
     cast?: any;
     chrome?: any;
   }
@@ -81,10 +100,29 @@ interface NativeCinemaPlayerProps {
   onProgressUpdate?: (currentTimeSec: number, durationSec: number) => void;
   isCinemaMode?: boolean;
   onToggleCinemaMode?: () => void;
+  secondaryStream?: SecondaryStreamState | null;
+  onSwapSecondaryStream?: () => void;
+  onToggleSecondaryLayout?: () => void;
+  onCloseSecondaryStream?: () => void;
+  canControlRoom?: boolean;
   isMinimized?: boolean;
   onToggleMinimize?: () => void;
   onClosePlayer?: () => void;
   isTvMode?: boolean;
+  roomCode?: string;
+  onExitTvMode?: () => void;
+  onOpenSmartTvModal?: () => void;
+  hasConnectedSmartTv?: boolean;
+  onSendTvRemoteCommand?: (cmd: TvRemoteCommandType) => void;
+  languageNotice?: LanguageNoticePopup | null;
+  onDismissLanguageNotice?: () => void;
+  messages?: ChatMessage[];
+  currentUserId?: string;
+  onSendMessage?: (text: string) => void;
+  onSendReaction?: (emoji: string) => void;
+  floatingChatOpen?: boolean;
+  onToggleFloatingChat?: () => void;
+  compactVideoForMobileKeyboard?: boolean;
 }
 
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
@@ -104,14 +142,34 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onProgressUpdate,
   isCinemaMode = false,
   onToggleCinemaMode,
+  secondaryStream = null,
+  onSwapSecondaryStream,
+  onToggleSecondaryLayout,
+  onCloseSecondaryStream,
+  canControlRoom = true,
   isMinimized = false,
   onToggleMinimize,
   onClosePlayer,
   isTvMode = false,
+  roomCode,
+  onExitTvMode,
+  onOpenSmartTvModal,
+  hasConnectedSmartTv = false,
+  onSendTvRemoteCommand,
+  languageNotice = null,
+  onDismissLanguageNotice,
+  messages = [],
+  currentUserId = '',
+  onSendMessage,
+  onSendReaction,
+  floatingChatOpen = false,
+  onToggleFloatingChat,
+  compactVideoForMobileKeyboard = false,
 }) => {
   const t = UI_COPY[lang];
   const stageWrapperRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const castBridgeVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const ytPlayerRef = useRef<any>(null);
   const ytContainerId = useRef(`yt-stage-${Math.random().toString(36).slice(2, 8)}`);
@@ -128,7 +186,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [isBuffering, setIsBuffering] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [tvAspectMode, setTvAspectMode] = useState<'contain' | 'cover' | 'fill'>('contain');
   const [isInPiP, setIsInPiP] = useState(false);
+  const [isHorizontalFullscreen, setIsHorizontalFullscreen] = useState(false);
+  const [forceLandscapeRotation, setForceLandscapeRotation] = useState(true);
+  const [isPortraitViewport, setIsPortraitViewport] = useState<boolean>(() =>
+    typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : true
+  );
   const [showControls, setShowControls] = useState(true);
   const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number }[]>(
     []
@@ -143,12 +207,88 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [castDeviceName, setCastDeviceName] = useState<string>('');
   const [playerToast, setPlayerToast] = useState<string | null>(null);
 
+  // Local Language Popup State & Floating Chat State
+  const [localLangPopup, setLocalLangPopup] = useState<LanguageNoticePopup | null>(null);
+  const langPopupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [floatingChatDraft, setFloatingChatDraft] = useState('');
+  const [recentIncomingChatBubble, setRecentIncomingChatBubble] = useState<ChatMessage | null>(
+    null
+  );
+  const lastSeenMsgIdRef = useRef<string>('');
+  const floatingChatEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Cinema Pro Engine: Ambilight, Vocal Boost (Web Audio Compressor), Playback Speed & Subtitles
+  const [showProMenu, setShowProMenu] = useState<boolean>(false);
+  const [ambilightEnabled, setAmbilightEnabled] = useState<boolean>(true);
+  const [vocalBoostEnabled, setVocalBoostEnabled] = useState<boolean>(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
+  const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrackItem[]>([]);
+  const [activeSubId, setActiveSubId] = useState<string>('off');
+  const [parsedCues, setParsedCues] = useState<ParsedSubtitleCue[]>([]);
+  const [subtitleOffsetSec, setSubtitleOffsetSec] = useState<number>(0);
+  const [subtitleSize, setSubtitleSize] = useState<'sm' | 'md' | 'lg'>('md');
+  const subtitleFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Auto-Next Episode Countdown State
+  const [autoNextCountdown, setAutoNextCountdown] = useState<number | null>(null);
+  const [autoNextCancelledForUrl, setAutoNextCancelledForUrl] = useState<string>('');
+  const autoNextTriggeredUrlRef = useRef<string>('');
+
+  // Web Audio API Nodes Ref (created once per <video> element)
+  const audioGraphRef = useRef<{
+    ctx: AudioContext;
+    source: MediaElementAudioSourceNode;
+    speechFilter: BiquadFilterNode;
+    compressor: DynamicsCompressorNode;
+    makeupGain: GainNode;
+  } | null>(null);
+
   const showTransientToast = useCallback((msg: string) => {
     setPlayerToast(msg);
     setTimeout(() => {
       setPlayerToast((cur) => (cur === msg ? null : cur));
     }, 3400);
   }, []);
+
+  const triggerLocalLanguagePopup = useCallback(
+    (popup: Omit<LanguageNoticePopup, 'id'>) => {
+      if (langPopupTimerRef.current) clearTimeout(langPopupTimerRef.current);
+      const nextPopup: LanguageNoticePopup = {
+        ...popup,
+        id: `lp-${Date.now()}`,
+      };
+      setLocalLangPopup(nextPopup);
+      langPopupTimerRef.current = setTimeout(() => {
+        setLocalLangPopup(null);
+      }, 4800);
+    },
+    []
+  );
+
+  // Show incoming chat bubble on video when floatingChatOpen is false
+  useEffect(() => {
+    if (!messages || messages.length === 0) return;
+    const latest = messages[messages.length - 1];
+    if (!latest || latest.id === lastSeenMsgIdRef.current) return;
+    lastSeenMsgIdRef.current = latest.id;
+    if (latest.isSystem || latest.senderId === currentUserId) return;
+    if (!floatingChatOpen && videoState.mode !== 'idle') {
+      setRecentIncomingChatBubble(latest);
+      const timer = setTimeout(() => {
+        setRecentIncomingChatBubble((cur) => (cur?.id === latest.id ? null : cur));
+      }, 6000);
+      return () => clearTimeout(timer);
+    }
+  }, [messages, currentUserId, floatingChatOpen, videoState.mode]);
+
+  useEffect(() => {
+    if (floatingChatOpen) {
+      setRecentIncomingChatBubble(null);
+      setTimeout(() => {
+        floatingChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 60);
+    }
+  }, [floatingChatOpen, messages.length]);
 
   const scheduleHideControls = useCallback(() => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
@@ -159,7 +299,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       ) {
         setShowControls(false);
       }
-    }, 3400);
+    }, 3000);
   }, [videoState.isPlaying, videoState.mode]);
 
   const revealControls = useCallback(() => {
@@ -168,12 +308,134 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   }, [scheduleHideControls]);
 
   useEffect(() => {
-    const onFsChange = () => {
-      setIsFullscreen(Boolean(document.fullscreenElement));
+    const updateViewportOrientation = () => {
+      setIsPortraitViewport(window.innerHeight > window.innerWidth);
     };
+    const onFsChange = () => {
+      const activeFs = Boolean(document.fullscreenElement);
+      setIsFullscreen(activeFs);
+      if (!activeFs) {
+        setIsHorizontalFullscreen(false);
+        try {
+          (window.screen?.orientation as any)?.unlock?.();
+        } catch {
+          // ignore
+        }
+      }
+      updateViewportOrientation();
+    };
+    window.addEventListener('resize', updateViewportOrientation);
+    window.addEventListener('orientationchange', updateViewportOrientation);
     document.addEventListener('fullscreenchange', onFsChange);
-    return () => document.removeEventListener('fullscreenchange', onFsChange);
+    return () => {
+      window.removeEventListener('resize', updateViewportOrientation);
+      window.removeEventListener('orientationchange', updateViewportOrientation);
+      document.removeEventListener('fullscreenchange', onFsChange);
+    };
   }, []);
+
+  // Listen for Mobile Remote Control commands when running as a Smart TV Receiver
+  useEffect(() => {
+    if (!isTvMode) return;
+    const unsub = socketService.subscribe((event) => {
+      if (event.type !== 'TV_REMOTE_COMMAND') return;
+      const cmd = event.payload?.command;
+      if (cmd === 'vol_up' || cmd === 'vol_down') {
+        setVolume((prev) => {
+          const delta = cmd === 'vol_up' ? 0.15 : -0.15;
+          const nextVol = Math.max(0, Math.min(1, Number((prev + delta).toFixed(2))));
+          if (videoRef.current) {
+            videoRef.current.volume = nextVol;
+            if (nextVol > 0) videoRef.current.muted = false;
+          }
+          try {
+            if (ytPlayerRef.current?.setVolume) {
+              ytPlayerRef.current.setVolume(Math.round(nextVol * 100));
+              if (nextVol > 0 && ytPlayerRef.current?.unMute) {
+                ytPlayerRef.current.unMute();
+              }
+            }
+          } catch {
+            // ignore
+          }
+          if (nextVol > 0) setIsMuted(false);
+          showTransientToast(`🔊 Volumen TV · ${Math.round(nextVol * 100)}%`);
+          return nextVol;
+        });
+      } else if (cmd === 'toggle_mute') {
+        setIsMuted((prev) => {
+          const nextMuted = !prev;
+          if (videoRef.current) {
+            videoRef.current.muted = nextMuted;
+          }
+          try {
+            if (nextMuted) ytPlayerRef.current?.mute?.();
+            else ytPlayerRef.current?.unMute?.();
+          } catch {
+            // ignore
+          }
+          showTransientToast(
+            nextMuted ? '🔇 Televisor silenciado' : '🔊 Sonido TV activado'
+          );
+          return nextMuted;
+        });
+      } else if (cmd === 'toggle_fullscreen') {
+        const container = stageWrapperRef.current || document.documentElement;
+        const video = videoRef.current as any;
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+          showTransientToast('Saliendo de pantalla completa');
+        } else if (container?.requestFullscreen) {
+          container
+            .requestFullscreen()
+            .then(() => showTransientToast('✓ Pantalla Completa activada'))
+            .catch(() => {
+              if (video?.webkitEnterFullscreen) {
+                try {
+                  video.webkitEnterFullscreen();
+                  return;
+                } catch {
+                  // ignore
+                }
+              }
+              showTransientToast('Pulsa Pantalla Completa en la TV para ocultar la barra');
+            });
+        }
+      } else if (cmd === 'toggle_aspect') {
+        setTvAspectMode((prev) => {
+          const next = prev === 'contain' ? 'cover' : prev === 'cover' ? 'fill' : 'contain';
+          showTransientToast(
+            next === 'cover'
+              ? 'Formato TV · Pantalla Rellena sin bordes negros'
+              : next === 'fill'
+              ? 'Formato TV · Estirado 16:9 completo'
+              : 'Formato TV · Original sin recorte'
+          );
+          return next;
+        });
+      } else if (cmd === 'toggle_hud') {
+        setShowControls((prev) => !prev);
+      } else if (cmd === 'reload_tv') {
+        if (hlsRef.current) hlsRef.current.startLoad();
+        else if (videoRef.current && videoState.url) {
+          videoRef.current.load();
+          videoRef.current.play().catch(() => {});
+        }
+        showTransientToast('Resincronizando señal HD en TV...');
+      } else if (cmd === 'toggle_ambilight') {
+        setAmbilightEnabled((prev) => {
+          const next = !prev;
+          showTransientToast(
+            next ? '✨ Ambilight TV activado' : 'Ambilight TV desactivado'
+          );
+          return next;
+        });
+      } else if (cmd === 'disconnect_tv') {
+        onExitTvMode?.();
+      }
+    });
+    return () => unsub();
+  }, [isTvMode, onExitTvMode, showTransientToast, videoState.url]);
 
   // Keyboard shortcuts for Modo Cine (T / Escape) when player is active
   useEffect(() => {
@@ -198,6 +460,289 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isTvMode, videoState.mode, isCinemaMode, onToggleCinemaMode]);
+
+  // ============================================================================
+  // CINEMA PRO 1: REAL-TIME AMBILIGHT HALO SAMPLER (ZERO REACT RE-RENDERS)
+  // ============================================================================
+  useEffect(() => {
+    const stageEl = stageWrapperRef.current;
+    if (!stageEl) return;
+
+    const shouldGlow =
+      ambilightEnabled &&
+      !isMinimized &&
+      !isTvMode &&
+      localPlaying &&
+      (videoState.mode === 'hls' || videoState.mode === 'direct');
+
+    if (!shouldGlow) {
+      stageEl.style.boxShadow = '';
+      return;
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = 12;
+    canvas.height = 8;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return;
+
+    const sampleFrame = () => {
+      const video = videoRef.current;
+      if (!video || video.paused || video.readyState < 2 || !stageWrapperRef.current) return;
+      try {
+        ctx.drawImage(video, 0, 0, 12, 8);
+        const data = ctx.getImageData(0, 0, 12, 8).data;
+        let rL = 0, gL = 0, bL = 0, nL = 0;
+        let rR = 0, gR = 0, bR = 0, nR = 0;
+        for (let y = 0; y < 8; y++) {
+          for (let x = 0; x < 12; x++) {
+            const idx = (y * 12 + x) * 4;
+            const r = data[idx];
+            const g = data[idx + 1];
+            const b = data[idx + 2];
+            if (x < 6) {
+              rL += r; gL += g; bL += b; nL++;
+            } else {
+              rR += r; gR += g; bR += b; nR++;
+            }
+          }
+        }
+        const boost = (v: number) => Math.min(255, Math.max(24, Math.round(v * 1.22)));
+        const leftRgb = `${boost(rL / nL)}, ${boost(gL / nL)}, ${boost(bL / nL)}`;
+        const rightRgb = `${boost(rR / nR)}, ${boost(gR / nR)}, ${boost(bR / nR)}`;
+        const alpha = isCinemaMode ? 0.62 : 0.42;
+        stageWrapperRef.current.style.boxShadow = `-28px 0 85px -10px rgba(${leftRgb}, ${alpha}), 28px 0 85px -10px rgba(${rightRgb}, ${alpha}), 0 18px 95px -12px rgba(${leftRgb}, ${alpha * 0.8})`;
+      } catch {
+        // ignore if frame unavailable
+      }
+    };
+
+    sampleFrame();
+    const timer = setInterval(sampleFrame, 240);
+    return () => {
+      clearInterval(timer);
+      if (stageWrapperRef.current) {
+        stageWrapperRef.current.style.boxShadow = '';
+      }
+    };
+  }, [ambilightEnabled, isMinimized, isTvMode, localPlaying, videoState.mode, isCinemaMode]);
+
+  // ============================================================================
+  // CINEMA PRO 2: WEB AUDIO VOCAL BOOST / NIGHT COMPRESSOR
+  // ============================================================================
+  const toggleVocalBoost = useCallback(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    const next = !vocalBoostEnabled;
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtx) return;
+
+      if (!audioGraphRef.current) {
+        const ctx = new AudioCtx();
+        const source = ctx.createMediaElementSource(video);
+        const speechFilter = ctx.createBiquadFilter();
+        speechFilter.type = 'peaking';
+        speechFilter.frequency.value = 2400;
+        speechFilter.Q.value = 1.0;
+        speechFilter.gain.value = 4.5;
+
+        const compressor = ctx.createDynamicsCompressor();
+        compressor.threshold.value = -28;
+        compressor.knee.value = 24;
+        compressor.ratio.value = 6;
+        compressor.attack.value = 0.005;
+        compressor.release.value = 0.22;
+
+        const makeupGain = ctx.createGain();
+        makeupGain.gain.value = 1.45;
+
+        audioGraphRef.current = { ctx, source, speechFilter, compressor, makeupGain };
+      }
+
+      const g = audioGraphRef.current;
+      if (g.ctx.state === 'suspended') {
+        g.ctx.resume().catch(() => {});
+      }
+      g.source.disconnect();
+      g.speechFilter.disconnect();
+      g.compressor.disconnect();
+      g.makeupGain.disconnect();
+
+      if (next) {
+        g.source.connect(g.speechFilter);
+        g.speechFilter.connect(g.compressor);
+        g.compressor.connect(g.makeupGain);
+        g.makeupGain.connect(g.ctx.destination);
+      } else {
+        g.source.connect(g.ctx.destination);
+      }
+
+      setVocalBoostEnabled(next);
+      showTransientToast(
+        next
+          ? lang === 'es'
+            ? 'Realce de Voces y Modo Noche activado'
+            : 'Vocal Boost & Night Mode enabled'
+          : lang === 'es'
+          ? 'Audio original restaurado'
+          : 'Original audio restored'
+      );
+    } catch {
+      setVocalBoostEnabled(false);
+    }
+  }, [vocalBoostEnabled, lang, showTransientToast]);
+
+  // Apply playback speed to HTML5 video & YouTube
+  const handleSelectSpeed = (rate: number) => {
+    setPlaybackSpeed(rate);
+    if (videoRef.current) {
+      videoRef.current.playbackRate = rate;
+    }
+    if (ytPlayerRef.current?.setPlaybackRate) {
+      try {
+        ytPlayerRef.current.setPlaybackRate(rate);
+      } catch {
+        // ignore
+      }
+    }
+  };
+
+  // ============================================================================
+  // CINEMA PRO 3: AUTOMATIC CLOUD SUBTITLES + .SRT / .VTT UPLOAD
+  // ============================================================================
+  useEffect(() => {
+    setActiveSubId('off');
+    setParsedCues([]);
+    setSubtitleOffsetSec(0);
+    setShowProMenu(false);
+
+    if (videoState.mode !== 'hls' && videoState.mode !== 'direct') {
+      setSubtitleTracks([]);
+      return;
+    }
+
+    let detectedTmdbId = videoState.seriesMeta?.tmdbId;
+    if (!detectedTmdbId && videoState.rawSourceUrl) {
+      const m = videoState.rawSourceUrl.match(/(?:watch|movie|-)\/?(\d{2,9})(?:$|\/)/i);
+      if (m) detectedTmdbId = Number(m[1]);
+    }
+    if (!detectedTmdbId) {
+      setSubtitleTracks([]);
+      return;
+    }
+
+    let cancelled = false;
+    const qs = new URLSearchParams({ tmdbId: String(detectedTmdbId) });
+    if (videoState.seriesMeta?.season && videoState.seriesMeta?.episode) {
+      qs.set('season', String(videoState.seriesMeta.season));
+      qs.set('episode', String(videoState.seriesMeta.episode));
+    }
+
+    fetch(`/api/subtitles/search?${qs.toString()}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (!cancelled && Array.isArray(data?.tracks)) {
+          setSubtitleTracks(data.tracks);
+        }
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [videoState.url, videoState.mode, videoState.rawSourceUrl, videoState.seriesMeta?.tmdbId, videoState.seriesMeta?.season, videoState.seriesMeta?.episode]);
+
+  const handleSelectSubtitleTrack = async (trackId: string) => {
+    setActiveSubId(trackId);
+    if (trackId === 'off') {
+      setParsedCues([]);
+      return;
+    }
+    const found = subtitleTracks.find((s) => s.id === trackId);
+    if (!found) return;
+    if (found.rawContent) {
+      setParsedCues(parseSubtitleText(found.rawContent));
+      return;
+    }
+    if (found.url) {
+      try {
+        const res = await fetch(found.url);
+        const text = await res.text();
+        setParsedCues(parseSubtitleText(text));
+      } catch {
+        showTransientToast(
+          lang === 'es' ? 'No se pudo cargar este subtítulo' : 'Failed to load subtitle'
+        );
+      }
+    }
+  };
+
+  const handleUploadLocalSubtitle = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const content = String(reader.result || '');
+      const cues = parseSubtitleText(content);
+      const customId = `local-${Date.now()}`;
+      const newTrack: SubtitleTrackItem = {
+        id: customId,
+        label: file.name.slice(0, 26),
+        lang: 'LOCAL',
+        rawContent: content,
+      };
+      setSubtitleTracks((prev) => [newTrack, ...prev]);
+      setActiveSubId(customId);
+      setParsedCues(cues);
+      showTransientToast(
+        lang === 'es'
+          ? `Subtítulos cargados (${cues.length} líneas)`
+          : `Subtitles loaded (${cues.length} cues)`
+      );
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // ============================================================================
+  // CINEMA PRO 4: AUTO-NEXT EPISODE COUNTDOWN FOR TV SERIES
+  // ============================================================================
+  useEffect(() => {
+    if (
+      !videoState.seriesMeta ||
+      !onNextEpisode ||
+      videoState.isLive ||
+      !canControlRoom ||
+      !duration ||
+      duration < 90 ||
+      autoNextCancelledForUrl === videoState.url
+    ) {
+      setAutoNextCountdown(null);
+      return;
+    }
+
+    const remaining = duration - currentTime;
+    if (remaining <= 10 && remaining > 0.4) {
+      const secLeft = Math.max(1, Math.ceil(remaining));
+      setAutoNextCountdown(secLeft);
+    } else if (remaining <= 0.4 && autoNextTriggeredUrlRef.current !== videoState.url) {
+      autoNextTriggeredUrlRef.current = videoState.url;
+      setAutoNextCountdown(null);
+      onNextEpisode();
+    } else {
+      setAutoNextCountdown(null);
+    }
+  }, [
+    currentTime,
+    duration,
+    videoState.seriesMeta,
+    videoState.isLive,
+    videoState.url,
+    canControlRoom,
+    autoNextCancelledForUrl,
+    onNextEpisode,
+  ]);
 
   // ============================================================================
   // SCREEN WAKE LOCK (Prevents phone/tablet screen from sleeping mid-movie/match)
@@ -366,10 +911,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           ? window.chrome.cast.media.StreamType.LIVE
           : window.chrome.cast.media.StreamType.BUFFERED;
 
-        if (videoState.mode === 'hls' && window.chrome.cast.media.HlsSegmentFormat) {
-          mediaInfo.hlsSegmentFormat = window.chrome.cast.media.HlsSegmentFormat.TS;
-        }
-
         const metadata = new window.chrome.cast.media.GenericMediaMetadata();
         metadata.title = videoState.title || 'NAIM CINE';
         metadata.subtitle = videoState.subtitle || 'Proyección Directa';
@@ -393,12 +934,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         const friendlyName = session.getCastDevice?.()?.friendlyName || 'Chromecast TV';
         setCastDeviceName(friendlyName);
         setIsCastingToTv(true);
-        showTransientToast(`Reproduciendo en ${friendlyName}`);
+        showTransientToast(`✓ Transmitiendo en ${friendlyName}`);
       } catch {
         showTransientToast(
           lang === 'es'
-            ? 'Conectado al televisor, sincronizando señal...'
-            : 'Connected to TV, syncing stream...'
+            ? '✓ Conectado al televisor, sincronizando señal...'
+            : '✓ Connected to TV, syncing stream...'
         );
       }
     },
@@ -455,14 +996,111 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       }
     };
 
-    if (window.cast?.framework && window.chrome?.cast) {
+    if ((window.cast?.framework && window.chrome?.cast) || window.__naimCastApiReady) {
       initCastFramework();
-    } else {
-      window.__onGCastApiAvailable = (isAvailable: boolean) => {
-        if (isAvailable) initCastFramework();
-      };
     }
+    const onCastReady = () => initCastFramework();
+    window.addEventListener('naim-cast-api-ready', onCastReady);
+    const prevCallback = window.__onGCastApiAvailable;
+    window.__onGCastApiAvailable = (isAvailable: boolean) => {
+      if (typeof prevCallback === 'function') prevCallback(isAvailable);
+      if (isAvailable) initCastFramework();
+    };
+    return () => {
+      window.removeEventListener('naim-cast-api-ready', onCastReady);
+    };
   }, []);
+
+  // Listen to native W3C RemotePlayback & Apple AirPlay 2 state on both video elements
+  useEffect(() => {
+    const bridgeVid = castBridgeVideoRef.current as any;
+    const mainVid = videoRef.current as any;
+
+    const onRemoteConnect = () => {
+      setIsCastingToTv(true);
+      setCastDeviceName('Smart TV (Cast Directo)');
+      if (mainVid) {
+        mainVid.muted = true;
+        setIsMuted(true);
+      }
+      if (bridgeVid) {
+        try {
+          if (!videoState.isLive && mainVid?.currentTime > 1) {
+            bridgeVid.currentTime = mainVid.currentTime;
+          }
+          bridgeVid.muted = false;
+          bridgeVid.play?.().catch(() => {});
+        } catch {
+          // ignore
+        }
+      }
+      showTransientToast('✓ Transmitiendo directamente en tu Smart TV');
+    };
+
+    const onRemoteDisconnect = () => {
+      setIsCastingToTv(false);
+      setCastDeviceName('');
+      if (bridgeVid) {
+        try {
+          bridgeVid.pause?.();
+        } catch {
+          // ignore
+        }
+      }
+      if (mainVid) {
+        mainVid.muted = false;
+        setIsMuted(false);
+      }
+    };
+
+    const onWebkitWirelessChange = (e: Event) => {
+      const target = e.currentTarget as any;
+      if (target?.webkitCurrentPlaybackTargetIsWireless) {
+        setIsCastingToTv(true);
+        setCastDeviceName('AirPlay TV');
+        showTransientToast('✓ Transmitiendo por AirPlay 2 en tu TV');
+      } else {
+        setIsCastingToTv(false);
+        setCastDeviceName('');
+      }
+    };
+
+    try {
+      bridgeVid?.remote?.addEventListener?.('connect', onRemoteConnect);
+      bridgeVid?.remote?.addEventListener?.('disconnect', onRemoteDisconnect);
+      mainVid?.remote?.addEventListener?.('connect', onRemoteConnect);
+      mainVid?.remote?.addEventListener?.('disconnect', onRemoteDisconnect);
+      bridgeVid?.addEventListener?.(
+        'webkitcurrentplaybacktargetiswirelesschanged',
+        onWebkitWirelessChange
+      );
+      mainVid?.addEventListener?.(
+        'webkitcurrentplaybacktargetiswirelesschanged',
+        onWebkitWirelessChange
+      );
+    } catch {
+      // ignore
+    }
+
+    return () => {
+      try {
+        bridgeVid?.remote?.removeEventListener?.('connect', onRemoteConnect);
+        bridgeVid?.remote?.removeEventListener?.('disconnect', onRemoteDisconnect);
+        mainVid?.remote?.removeEventListener?.('connect', onRemoteConnect);
+        mainVid?.remote?.removeEventListener?.('disconnect', onRemoteDisconnect);
+        bridgeVid?.removeEventListener?.(
+          'webkitcurrentplaybacktargetiswirelesschanged',
+          onWebkitWirelessChange
+        );
+        mainVid?.removeEventListener?.(
+          'webkitcurrentplaybacktargetiswirelesschanged',
+          onWebkitWirelessChange
+        );
+      } catch {
+        // ignore
+      }
+    };
+  }, [videoState.isLive, showTransientToast]);
 
   // Auto-update Chromecast media when switching movies/channels while already connected
   useEffect(() => {
@@ -473,63 +1111,155 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     }
   }, [isCastingToTv, castSdkReady, videoState.url, videoState.mode, loadStreamIntoCastSession]);
 
-  const handleDirectCastToTv = async (e: React.MouseEvent) => {
-    e.stopPropagation();
-    triggerHaptic('medium');
-    const video = videoRef.current as any;
+  const handleDirectCastToTv = useCallback(
+    async (e?: React.MouseEvent | Event) => {
+      if (e && 'stopPropagation' in e && typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+      }
+      triggerHaptic('medium');
+      const mainVideo = videoRef.current as any;
+      const bridgeVideo = castBridgeVideoRef.current as any;
+      const hasNativeStream =
+        (videoState.mode === 'hls' || videoState.mode === 'direct') && Boolean(videoState.url);
 
-    // Path 1: Official Google Chromecast SDK (Android Chrome & Desktop Chrome)
-    if (castSdkReady && window.cast?.framework) {
-      try {
-        const context = window.cast.framework.CastContext.getInstance();
-        const existingSession = context.getCurrentSession();
-        if (existingSession && isCastingToTv) {
-          existingSession.endSession(true);
-          setIsCastingToTv(false);
-          setCastDeviceName('');
-          showTransientToast(
-            lang === 'es' ? 'Transmisión Chromecast finalizada' : 'Chromecast disconnected'
-          );
-          return;
+      // Path 1: Native Apple AirPlay 2 Picker (iOS / iPadOS / macOS Safari -> Samsung Smart TV / Apple TV / LG!)
+      if (hasNativeStream) {
+        if (bridgeVideo?.webkitShowPlaybackTargetPicker) {
+          try {
+            if (!videoState.isLive && mainVideo?.currentTime > 1) {
+              bridgeVideo.currentTime = mainVideo.currentTime;
+            }
+            bridgeVideo.webkitShowPlaybackTargetPicker();
+            showTransientToast('Selecciona tu televisor en el menú AirPlay');
+            return;
+          } catch {
+            // fallback to mainVideo
+          }
         }
-        await context.requestSession();
-        const session = context.getCurrentSession();
-        if (session) {
-          await loadStreamIntoCastSession(session);
-          return;
+        if (mainVideo?.webkitShowPlaybackTargetPicker) {
+          try {
+            mainVideo.webkitShowPlaybackTargetPicker();
+            showTransientToast('Selecciona tu televisor en el menú AirPlay');
+            return;
+          } catch {
+            // continue to Cast / RemotePlayback
+          }
         }
-      } catch (err: any) {
-        if (err === 'cancel') return;
       }
-    }
 
-    // Path 2: Native Apple AirPlay Picker (iOS / iPadOS / macOS Safari)
-    if (video?.webkitShowPlaybackTargetPicker) {
-      try {
-        video.webkitShowPlaybackTargetPicker();
+      // Path 2: Official Google Chromecast SDK (Always request session on demand so Chrome scans for TVs!)
+      if (window.cast?.framework && window.chrome?.cast) {
+        try {
+          const context = window.cast.framework.CastContext.getInstance();
+          const existingSession = context.getCurrentSession();
+          if (existingSession && isCastingToTv) {
+            existingSession.endSession(true);
+            setIsCastingToTv(false);
+            setCastDeviceName('');
+            showTransientToast(
+              lang === 'es' ? 'Transmisión Chromecast finalizada' : 'Chromecast disconnected'
+            );
+            return;
+          }
+
+          await context.requestSession();
+          const session = context.getCurrentSession();
+          if (session) {
+            if (hasNativeStream) {
+              await loadStreamIntoCastSession(session);
+            } else {
+              const friendlyName =
+                session.getCastDevice?.()?.friendlyName || 'Chromecast TV';
+              setCastDeviceName(friendlyName);
+              setIsCastingToTv(true);
+              showTransientToast(`✓ Conectado a ${friendlyName}`);
+            }
+            return;
+          }
+        } catch (err: any) {
+          if (err === 'cancel' || err?.code === 'cancel') return;
+          // If inside mobile browser where CastContext delegates to W3C RemotePlayback, continue to Path 3
+        }
+      }
+
+      // Path 3: W3C HTML5 RemotePlayback API using Direct HTTP Bridge Video (Bypasses Hls.js blob: restriction!)
+      if (hasNativeStream) {
+        if (bridgeVideo?.remote?.prompt) {
+          try {
+            await bridgeVideo.remote.prompt();
+            if (!videoState.isLive && mainVideo?.currentTime > 1) {
+              bridgeVideo.currentTime = mainVideo.currentTime;
+            }
+            bridgeVideo.muted = false;
+            await bridgeVideo.play().catch(() => {});
+            if (mainVideo) {
+              mainVideo.muted = true;
+              setIsMuted(true);
+            }
+            setIsCastingToTv(true);
+            setCastDeviceName('Smart TV (Cast Directo)');
+            showTransientToast('✓ Transmitiendo directamente en tu TV');
+            return;
+          } catch (err: any) {
+            if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
+              return;
+            }
+          }
+        }
+
+        if (mainVideo?.remote?.prompt) {
+          try {
+            await mainVideo.remote.prompt();
+            setIsCastingToTv(true);
+            setCastDeviceName('Smart TV (Cast Directo)');
+            showTransientToast('✓ Transmitiendo directamente en tu TV');
+            return;
+          } catch (err: any) {
+            if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
+              return;
+            }
+          }
+        }
+      }
+
+      // Path 4: Universal Smart TV Hub (4-Digit Code / AirPlay / Smart View instructions)
+      if (onOpenSmartTvModal) {
+        showTransientToast(
+          hasNativeStream
+            ? 'Abriendo centro de envío directo y Smart TV...'
+            : 'Elige una película o conecta tu TV con 4 dígitos'
+        );
+        onOpenSmartTvModal();
         return;
-      } catch {
-        // fallback
       }
-    }
 
-    // Path 3: W3C HTML5 RemotePlayback API (Android / Mobile Browsers)
-    if (video?.remote?.prompt) {
-      try {
-        await video.remote.prompt();
-        setIsCastingToTv(true);
-        return;
-      } catch {
-        // fallback
-      }
-    }
+      showTransientToast(
+        lang === 'es'
+          ? 'Usa el botón Smart TV arriba para conectar tu TV con 4 dígitos o AirPlay'
+          : 'Use the Smart TV button above to pair your TV with 4 digits or AirPlay'
+      );
+    },
+    [
+      videoState.mode,
+      videoState.url,
+      videoState.isLive,
+      isCastingToTv,
+      lang,
+      loadStreamIntoCastSession,
+      onOpenSmartTvModal,
+      showTransientToast,
+    ]
+  );
 
-    showTransientToast(
-      lang === 'es'
-        ? 'Abre NAIM CINE en Chrome (Chromecast) o Safari (AirPlay) en la misma Wi-Fi que tu TV'
-        : 'Open in Chrome (Chromecast) or Safari (AirPlay) on the same Wi-Fi as your TV'
-    );
-  };
+  useEffect(() => {
+    const onGlobalDirectCast = (ev: Event) => {
+      handleDirectCastToTv(ev);
+    };
+    window.addEventListener('naim-trigger-direct-cast', onGlobalDirectCast);
+    return () => {
+      window.removeEventListener('naim-trigger-direct-cast', onGlobalDirectCast);
+    };
+  }, [handleDirectCastToTv]);
 
   useEffect(() => {
     if (cloudState?.url) {
@@ -890,28 +1620,60 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     const video = videoRef.current;
     if (!video || (videoState.mode !== 'hls' && videoState.mode !== 'direct')) return;
 
-    if (video.paused) {
+    if (video.paused || !localPlaying) {
       video.play().catch(() => {});
       setLocalPlaying(true);
-      onSyncAction('play', { isPlaying: true, currentTime: video.currentTime || 0 });
+      onSyncAction('play', {
+        isPlaying: true,
+        currentTime: video.currentTime || currentTime || 0,
+      });
     } else {
       video.pause();
       setLocalPlaying(false);
-      onSyncAction('pause', { isPlaying: false, currentTime: video.currentTime || 0 });
+      onSyncAction('pause', {
+        isPlaying: false,
+        currentTime: video.currentTime || currentTime || 0,
+      });
     }
   };
 
   const handleSeekRelative = (deltaSec: number, e?: React.MouseEvent) => {
     e?.stopPropagation();
-    const video = videoRef.current;
-    if (!video || videoState.isLive) return;
+    if (videoState.isLive) return;
     triggerHaptic('light');
     revealControls();
-    const target = Math.max(
-      0,
-      Math.min(duration || Infinity, (video.currentTime || 0) + deltaSec)
-    );
-    video.currentTime = target;
+
+    const side: 'left' | 'right' = deltaSec < 0 ? 'left' : 'right';
+    setSeekRipple(side);
+    setTimeout(() => setSeekRipple(null), 550);
+
+    if (videoState.mode === 'youtube' && ytPlayerRef.current?.seekTo) {
+      const baseTime = ytPlayerRef.current.getCurrentTime?.() || currentTime || 0;
+      const target = Math.max(0, baseTime + deltaSec);
+      ytPlayerRef.current.seekTo(target, true);
+      setCurrentTime(target);
+      onSyncAction('seek', { currentTime: target, isPlaying: localPlaying });
+      return;
+    }
+
+    const video = videoRef.current;
+    if (!video) return;
+    const baseTime =
+      Number.isFinite(video.currentTime) && video.currentTime > 0
+        ? video.currentTime
+        : currentTime || videoState.currentTime || 0;
+    const maxDur =
+      Number.isFinite(video.duration) && video.duration > 0
+        ? video.duration
+        : duration > 0
+        ? duration
+        : Infinity;
+    const target = Math.max(0, Math.min(maxDur, baseTime + deltaSec));
+    try {
+      video.currentTime = target;
+    } catch {
+      // ignore if media not yet seekable
+    }
     setCurrentTime(target);
     onSyncAction('seek', { currentTime: target, isPlaying: !video.paused });
   };
@@ -988,19 +1750,89 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const handleToggleFullscreen = async (e?: React.MouseEvent) => {
     e?.stopPropagation();
     triggerHaptic('light');
+    revealControls();
     const container = stageWrapperRef.current;
     const video = videoRef.current as any;
-    try {
+
+    const currentlyFull = Boolean(document.fullscreenElement) || isHorizontalFullscreen;
+    if (currentlyFull) {
+      setIsHorizontalFullscreen(false);
+      setIsFullscreen(false);
+      try {
+        (window.screen?.orientation as any)?.unlock?.();
+      } catch {
+        // ignore
+      }
       if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      } else if (container?.requestFullscreen) {
+        try {
+          await document.exitFullscreen();
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
+
+    // Enter Horizontal (Landscape) Fullscreen automatically
+    setForceLandscapeRotation(true);
+    setIsHorizontalFullscreen(true);
+    setIsFullscreen(true);
+
+    try {
+      if (container?.requestFullscreen) {
         await container.requestFullscreen();
       } else if (video?.webkitEnterFullscreen) {
         video.webkitEnterFullscreen();
       }
     } catch {
+      // Fallback: CSS Horizontal Fullscreen Stage is already active via isHorizontalFullscreen
+    }
+
+    try {
+      if ((window.screen?.orientation as any)?.lock) {
+        await (window.screen.orientation as any).lock('landscape');
+      }
+    } catch {
+      // When OS portrait lock or browser blocks native lock, our CSS 90deg landscape stage handles it automatically
+    }
+
+    showTransientToast(
+      lang === 'es'
+        ? 'Pantalla completa horizontal activada'
+        : 'Landscape fullscreen enabled'
+    );
+  };
+
+  const handleToggleLandscapeRotation = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    triggerHaptic('medium');
+    revealControls();
+
+    if (!isHorizontalFullscreen && !isFullscreen) {
+      await handleToggleFullscreen(e);
+      return;
+    }
+
+    const nextForce = !forceLandscapeRotation;
+    setForceLandscapeRotation(nextForce);
+    try {
+      if (nextForce && (window.screen?.orientation as any)?.lock) {
+        await (window.screen.orientation as any).lock('landscape');
+      } else if (!nextForce && (window.screen?.orientation as any)?.unlock) {
+        (window.screen.orientation as any).unlock();
+      }
+    } catch {
       // ignore
     }
+    showTransientToast(
+      nextForce
+        ? lang === 'es'
+          ? 'Vista horizontal (16:9) activada'
+          : 'Horizontal view enabled'
+        : lang === 'es'
+        ? 'Vista vertical activada'
+        : 'Vertical view enabled'
+    );
   };
 
   /**
@@ -1089,25 +1921,122 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const hasTracks = Boolean(videoState.tracks && videoState.tracks.length > 0);
   const canUseNativePiPOrCast =
     videoState.mode === 'hls' || videoState.mode === 'direct';
+  const activeLanguagePopup = localLangPopup || languageNotice;
+  const activeTrackObj = videoState.tracks?.[videoState.activeTrackIndex];
+  const activeTrackLangCode = String(activeTrackObj?.lang || '').toUpperCase();
+
+  const handleQuickLanguageSwitch = (targetLangCode: 'ES' | 'LAT' | 'VOSE' | 'EN') => {
+    triggerHaptic('light');
+    const langDisplayNames: Record<'ES' | 'LAT' | 'VOSE' | 'EN', string> = {
+      ES: 'Castellano (España)',
+      LAT: 'Español Latino',
+      VOSE: 'Subtitulado (VOSE)',
+      EN: 'Inglés Original (EN)',
+    };
+    const requestedName = langDisplayNames[targetLangCode];
+
+    const matchingIdx = (videoState.tracks || []).findIndex(
+      (tr) => String(tr.lang || '').toUpperCase() === targetLangCode
+    );
+
+    if (matchingIdx === -1) {
+      const availableLabels = Array.from(
+        new Set((videoState.tracks || []).map((tr) => tr.label).filter(Boolean))
+      );
+      triggerLocalLanguagePopup({
+        type: 'warning',
+        title: `Idioma no disponible: ${requestedName}`,
+        subtitle:
+          availableLabels.length > 0
+            ? `Este título solo está disponible en: ${availableLabels.join(' · ')}`
+            : 'No hay pistas alternativas disponibles para este contenido.',
+      });
+      return;
+    }
+
+    const targetTrack = videoState.tracks[matchingIdx];
+    if (matchingIdx === videoState.activeTrackIndex) {
+      triggerLocalLanguagePopup({
+        type: 'success',
+        title: `Reproduciendo en: ${targetTrack.label}`,
+        subtitle: 'Este idioma ya se encuentra activo en el reproductor.',
+      });
+      return;
+    }
+
+    triggerLocalLanguagePopup({
+      type: 'success',
+      title: `Cambiando idioma a: ${targetTrack.label}`,
+      subtitle: 'Sincronizando señal de audio HD en la sala...',
+    });
+    onSelectTrack(matchingIdx, currentTime);
+  };
+
+  const handleFloatingChatSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = floatingChatDraft.trim();
+    if (!clean || !onSendMessage) return;
+    triggerHaptic('light');
+    onSendMessage(clean);
+    setFloatingChatDraft('');
+  };
 
   return (
     <section
-      className={`w-full overflow-hidden bg-black ${
+      className={`w-full ${
         isTvMode
-          ? 'h-dvh'
+          ? 'h-screen h-full overflow-hidden bg-black'
           : isMinimized
-            ? 'rounded-2xl border border-white/20 shadow-[0_24px_70px_rgba(0,0,0,0.9)]'
-            : 'lg:rounded-2xl lg:border lg:border-white/[0.08] lg:shadow-2xl lg:shadow-black/60'
+            ? 'overflow-hidden bg-black rounded-2xl border border-white/20 shadow-[0_24px_70px_rgba(0,0,0,0.9)]'
+            : isCinemaMode
+              ? 'bg-transparent'
+              : 'overflow-hidden bg-black lg:rounded-2xl lg:border lg:border-white/[0.08] lg:shadow-2xl lg:shadow-black/60'
       }`}
     >
       {/* ==================================================================== */}
-      {/* 16:9 VIDEO STAGE                                                     */}
+      {/* 16:9 VIDEO STAGE (Supports True 90deg Horizontal Mobile Fullscreen)  */}
       {/* ==================================================================== */}
       <div
         ref={stageWrapperRef}
         onMouseMove={revealControls}
-        className={`relative w-full bg-black overflow-hidden select-none ${
-          isTvMode ? 'h-full' : 'aspect-video'
+        style={
+          !isMinimized &&
+          (isFullscreen || isHorizontalFullscreen) &&
+          forceLandscapeRotation &&
+          isPortraitViewport
+            ? {
+                position: 'fixed',
+                top: '50%',
+                left: '50%',
+                width: '100dvh',
+                height: '100dvw',
+                maxWidth: '100dvh',
+                maxHeight: '100dvw',
+                transform: 'translate(-50%, -50%) rotate(90deg)',
+                zIndex: 250,
+                borderRadius: 0,
+              }
+            : !isMinimized && (isFullscreen || isHorizontalFullscreen)
+            ? {
+                position: 'fixed',
+                inset: 0,
+                width: '100dvw',
+                height: '100dvh',
+                zIndex: 250,
+                borderRadius: 0,
+              }
+            : undefined
+        }
+        className={`relative w-full bg-black overflow-hidden select-none transition-all duration-300 ${
+          isTvMode || isFullscreen || isHorizontalFullscreen
+            ? 'h-full'
+            : compactVideoForMobileKeyboard
+            ? 'h-[122px] sm:aspect-video'
+            : 'aspect-video'
+        } ${
+          isCinemaMode && !isMinimized && !isTvMode
+            ? 'z-50 lg:rounded-2xl ring-1 ring-white/15 shadow-[0_24px_90px_rgba(0,0,0,0.96)]'
+            : ''
         }`}
       >
         {/* Floating Reactions Layer (Hidden when docked in tiny miniplayer) */}
@@ -1139,10 +2068,196 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           </div>
         )}
 
+        {/* Prominent On-Screen Language Switch / Unavailable Language Popup */}
+        {activeLanguagePopup && !isMinimized && (
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              setLocalLangPopup(null);
+              onDismissLanguageNotice?.();
+            }}
+            className={`pointer-events-auto absolute top-12 sm:top-14 left-1/2 -translate-x-1/2 z-45 w-[92%] max-w-[430px] px-3.5 py-2.5 rounded-2xl backdrop-blur-xl border shadow-[0_20px_50px_rgba(0,0,0,0.92)] flex items-start justify-between gap-2.5 cursor-pointer transition-all ${
+              activeLanguagePopup.type === 'warning' || activeLanguagePopup.type === 'error'
+                ? 'bg-[#19110B]/95 border-amber-400/55 text-amber-100'
+                : 'bg-[#0B1412]/95 border-emerald-400/50 text-emerald-50'
+            }`}
+          >
+            <div className="flex items-start gap-2.5 min-w-0">
+              <div
+                className={`w-7 h-7 rounded-xl flex items-center justify-center shrink-0 mt-0.5 ${
+                  activeLanguagePopup.type === 'warning' || activeLanguagePopup.type === 'error'
+                    ? 'bg-amber-500/25 text-amber-300'
+                    : 'bg-emerald-500/25 text-emerald-300'
+                }`}
+              >
+                {activeLanguagePopup.type === 'warning' || activeLanguagePopup.type === 'error' ? (
+                  <AlertCircle className="w-4 h-4" />
+                ) : (
+                  <Check className="w-4 h-4" />
+                )}
+              </div>
+              <div className="min-w-0 text-left">
+                <div className="font-display font-bold text-xs sm:text-sm text-white leading-snug">
+                  {activeLanguagePopup.title}
+                </div>
+                {activeLanguagePopup.subtitle && (
+                  <div className="text-[11px] text-zinc-200/90 leading-snug mt-0.5">
+                    {activeLanguagePopup.subtitle}
+                  </div>
+                )}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setLocalLangPopup(null);
+                onDismissLanguageNotice?.();
+              }}
+              className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
+              aria-label="Cerrar aviso de idioma"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Transient Player Toast (Chromecast / PiP feedback) */}
         {playerToast && !isMinimized && (
           <div className="pointer-events-none absolute top-14 left-1/2 -translate-x-1/2 z-40 px-3.5 py-2 rounded-xl bg-[#12141D]/95 border border-white/15 text-xs font-medium text-white shadow-xl text-center max-w-[90%]">
             {playerToast}
+          </div>
+        )}
+
+        {/* Incoming Live Chat Message Pill (Bottom-Left over Video when Floating Chat is closed) */}
+        {recentIncomingChatBubble && !floatingChatOpen && !isMinimized && !isTvMode && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setRecentIncomingChatBubble(null);
+              onToggleFloatingChat?.();
+            }}
+            className="pointer-events-auto absolute bottom-14 left-3 z-35 max-w-[78%] sm:max-w-[320px] px-3 py-2 rounded-2xl bg-black/80 hover:bg-black/90 backdrop-blur-md border border-white/20 shadow-2xl flex items-center gap-2 text-left cursor-pointer"
+          >
+            <MessageSquare className="w-3.5 h-3.5 text-[#FB7185] shrink-0" />
+            <div className="min-w-0 text-xs">
+              <span className="font-bold text-[#FB7185] mr-1.5">
+                {recentIncomingChatBubble.senderName}:
+              </span>
+              <span className="text-white truncate">{recentIncomingChatBubble.text}</span>
+            </div>
+          </button>
+        )}
+
+        {/* FLOATING LIVE CHAT OVERLAY DRAWER ON VIDEO (`Chat Flotante`) */}
+        {floatingChatOpen && !isMinimized && !isTvMode && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="pointer-events-auto absolute inset-y-2 right-2 z-45 w-[86%] max-w-[310px] sm:w-[320px] rounded-2xl bg-[#08090E]/84 backdrop-blur-xl border border-white/18 shadow-[0_24px_70px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
+          >
+            <div className="px-3 py-2 border-b border-white/10 bg-black/45 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <MessageSquare className="w-3.5 h-3.5 text-[#FB7185] shrink-0" />
+                <span className="font-display font-bold text-xs text-white truncate">
+                  {lang === 'es' ? 'Chat Flotante en Vivo' : 'Floating Live Chat'}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => onToggleFloatingChat?.()}
+                className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-zinc-200 cursor-pointer"
+                aria-label="Cerrar Chat Flotante"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto overscroll-contain p-2.5 space-y-2 min-h-0">
+              {messages.length === 0 ? (
+                <div className="py-6 text-center text-[11px] text-zinc-400">
+                  {lang === 'es'
+                    ? 'Comenta la película aquí sin perder de vista el vídeo.'
+                    : 'Chat here without losing sight of the video.'}
+                </div>
+              ) : (
+                messages.slice(-30).map((msg) => {
+                  if (msg.isSystem) {
+                    return (
+                      <div
+                        key={msg.id}
+                        className="py-1 px-2 rounded-lg bg-white/[0.05] text-[10px] text-zinc-300 text-center"
+                      >
+                        {msg.text}
+                      </div>
+                    );
+                  }
+                  const isMe = msg.senderId === currentUserId;
+                  return (
+                    <div
+                      key={msg.id}
+                      className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                    >
+                      <span className="text-[10px] font-semibold text-zinc-300 mb-0.5 px-1">
+                        {msg.senderName}
+                      </span>
+                      <div
+                        className={`max-w-[88%] px-2.5 py-1.5 rounded-xl text-xs leading-snug break-words ${
+                          isMe
+                            ? 'bg-[#E11D48]/90 text-white rounded-tr-xs'
+                            : 'bg-black/70 text-zinc-100 border border-white/12 rounded-tl-xs'
+                        }`}
+                      >
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+              <div ref={floatingChatEndRef} />
+            </div>
+
+            {onSendReaction && (
+              <div className="px-2 py-1 border-t border-white/10 bg-black/40 flex items-center justify-around shrink-0">
+                {['🔥', '😂', '⚽', '🍿', '👏', '❤️'].map((em) => (
+                  <button
+                    key={em}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onSendReaction(em);
+                    }}
+                    className="w-7 h-7 rounded-lg hover:bg-white/15 flex items-center justify-center text-sm cursor-pointer"
+                  >
+                    {em}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {onSendMessage && (
+              <form
+                onSubmit={handleFloatingChatSubmit}
+                className="p-2 border-t border-white/10 bg-black/60 flex items-center gap-1.5 shrink-0"
+              >
+                <input
+                  type="text"
+                  value={floatingChatDraft}
+                  onChange={(e) => setFloatingChatDraft(e.target.value)}
+                  placeholder={lang === 'es' ? 'Escribe sin ocultar el vídeo...' : 'Type message...'}
+                  maxLength={300}
+                  className="flex-1 min-w-0 h-9 px-3 rounded-xl bg-black/75 border border-white/15 focus:border-white/40 text-base sm:text-xs text-white placeholder:text-zinc-400 outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={!floatingChatDraft.trim()}
+                  className="w-9 h-9 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-35 flex items-center justify-center text-white shrink-0 cursor-pointer"
+                  aria-label="Enviar mensaje"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </form>
+            )}
           </div>
         )}
 
@@ -1161,122 +2276,156 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           </div>
         )}
 
-        {/* Top Bar Inside Player: Title + Minimize + Close Controls */}
+        {/* Top Bar Inside Player: Title + Floating Chat + El Menú Mágico + Close */}
         {!isMinimized && videoState.mode !== 'idle' && videoState.mode !== 'cloud' && (
           <div
-            className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-2.5 sm:px-4 pt-2.5 pb-8 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-start justify-between gap-2 transition-opacity duration-200 ${
+            className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-3 sm:px-5 pt-3 pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent flex items-start justify-between gap-3 transition-opacity duration-300 ${
               showControls || !localPlaying ? 'opacity-100' : 'opacity-0'
             }`}
           >
-            <div className="min-w-0 pt-0.5 pl-1">
-              <h2 className="font-display font-semibold text-xs sm:text-base text-white truncate">
+            <div className="min-w-0 pt-1">
+              <h2 className="font-display font-bold text-sm sm:text-base text-white truncate drop-shadow">
                 {videoState.title}
               </h2>
               {videoState.subtitle && (
-                <p className="text-[11px] sm:text-xs text-zinc-300 truncate">
+                <p className="text-[11px] sm:text-xs text-zinc-300 truncate mt-0.5">
                   {videoState.subtitle}
                 </p>
               )}
             </div>
 
-            <div className="pointer-events-auto flex items-center gap-1.5 shrink-0">
-              {/* In Fullscreen / TV Mode, keep track switcher accessible at top right */}
-              {(isFullscreen || isTvMode) && hasTracks && (
-                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-[48vw] bg-black/70 backdrop-blur-md p-1 rounded-xl border border-white/15">
-                  {videoState.tracks.map((track, idx) => (
-                    <button
-                      key={track.id || idx}
-                      type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        triggerHaptic('light');
-                        onSelectTrack(idx, currentTime);
-                      }}
-                      className={`min-h-[34px] px-2.5 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer ${
-                        idx === videoState.activeTrackIndex
-                          ? 'bg-[#E11D48] text-white'
-                          : 'text-zinc-200 hover:bg-white/10'
-                      }`}
-                    >
-                      {track.label}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Modo Cine Switch in Top Player Bar */}
-              {!isTvMode && !isFullscreen && onToggleCinemaMode && (
+            <div className="pointer-events-auto flex items-center gap-2 shrink-0">
+              {/* 1. 1-TAP DIRECT CAST TO TV BUTTON (Always accessible in top-right of player!) */}
+              {!isTvMode && (
                 <button
                   type="button"
-                  role="switch"
-                  aria-checked={isCinemaMode}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    triggerHaptic('light');
-                    onToggleCinemaMode();
-                  }}
-                  title={
-                    lang === 'es'
-                      ? 'Modo Cine: oscurecer el resto de la pantalla (T)'
-                      : 'Cinema Mode: dim surrounding app (T)'
-                  }
-                  aria-label="Modo Cine"
-                  className={`h-9 px-2.5 rounded-xl backdrop-blur-md border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-all ${
-                    isCinemaMode
-                      ? 'bg-amber-400/20 hover:bg-amber-400/30 border-amber-400/50 text-amber-200'
-                      : 'bg-black/65 hover:bg-black/85 border-white/15 text-zinc-100'
+                  onClick={handleDirectCastToTv}
+                  title="Enviar señal directa a TV (Chromecast / AirPlay 2 / Smart TV)"
+                  aria-label="Cast Directo a TV"
+                  className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                    isCastingToTv || hasConnectedSmartTv
+                      ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-100 shadow-[0_8px_20px_rgba(16,185,129,0.35)]'
+                      : 'bg-black/65 hover:bg-[#E11D48] border-white/20 text-white'
                   }`}
                 >
-                  {isCinemaMode ? (
-                    <Sun className="w-3.5 h-3.5 text-amber-300" />
+                  <Cast className="w-4 h-4 shrink-0" />
+                  <span>{isCastingToTv ? 'En TV' : 'Cast'}</span>
+                </button>
+              )}
+
+              {/* 2. Floating Chat Toggle (44x44px Touch Target) */}
+              {!isTvMode && onToggleFloatingChat && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerHaptic('light');
+                    onToggleFloatingChat();
+                  }}
+                  title="Chat Flotante sobre el vídeo"
+                  aria-label="Chat Flotante"
+                  className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                    floatingChatOpen
+                      ? 'bg-[#E11D48] border-[#E11D48] text-white shadow-[0_8px_20px_rgba(225,29,72,0.35)]'
+                      : 'bg-black/60 hover:bg-black/80 border-white/15 text-zinc-100'
+                  }`}
+                >
+                  <MessageSquare className="w-4 h-4 shrink-0" />
+                  <span className="hidden sm:inline">Chat</span>
+                </button>
+              )}
+
+              {/* 3. EL MENÚ MÁGICO (Subtítulos, Modo Cine, PiP, Cast, Audio y Cinema Pro) */}
+              {!isTvMode && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerHaptic('medium');
+                    setShowProMenu(true);
+                  }}
+                  title="Menú Mágico: Subtítulos, Modo Cine, PiP, Cast e Idioma"
+                  aria-label="Abrir Menú Mágico"
+                  className={`min-h-[44px] min-w-[44px] px-3.5 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                    showProMenu ||
+                    isCinemaMode ||
+                    isInPiP ||
+                    isCastingToTv ||
+                    vocalBoostEnabled ||
+                    activeSubId !== 'off'
+                      ? 'bg-[#E11D48]/25 border-[#E11D48]/60 text-white shadow-[0_0_20px_rgba(225,29,72,0.3)]'
+                      : 'bg-black/60 hover:bg-black/80 border-white/15 text-white'
+                  }`}
+                >
+                  <Sparkles className="w-4 h-4 text-[#FB7185] shrink-0" />
+                  <span className="hidden sm:inline">Menú Mágico</span>
+                </button>
+              )}
+
+              {/* Accessible Fullscreen & Exit buttons when playing in TV Receiver Mode */}
+              {isTvMode && (
+                <button
+                  type="button"
+                  onClick={handleToggleFullscreen}
+                  className="min-h-[44px] px-4 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
+                >
+                  {isFullscreen ? (
+                    <>
+                      <Minimize className="w-4 h-4" />
+                      <span>Salir Pantalla Completa</span>
+                    </>
                   ) : (
-                    <Moon className="w-3.5 h-3.5 text-amber-300" />
+                    <>
+                      <Maximize className="w-4 h-4" />
+                      <span>Pantalla Completa</span>
+                    </>
                   )}
-                  <span className="hidden sm:inline">
-                    {lang === 'es' ? 'Modo Cine' : 'Cinema Mode'}
-                  </span>
                 </button>
               )}
 
-              {/* Minimize Player while browsing catalog */}
-              {!isTvMode && !isFullscreen && onToggleMinimize && (
+              {isTvMode && onExitTvMode && (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.stopPropagation();
-                    triggerHaptic('light');
-                    onToggleMinimize();
+                    onExitTvMode();
                   }}
-                  title={
-                    lang === 'es'
-                      ? 'Minimizar reproductor para seguir buscando'
-                      : 'Minimize player while browsing'
-                  }
-                  aria-label="Minimizar reproductor"
-                  className="h-9 px-2.5 rounded-xl bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/15 text-xs font-medium text-zinc-100 flex items-center gap-1.5 cursor-pointer transition-colors"
+                  className="min-h-[44px] px-3.5 rounded-2xl bg-black/75 hover:bg-rose-600/90 border border-white/15 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
                 >
-                  <Minimize2 className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">
-                    {lang === 'es' ? 'Minimizar' : 'Minimize'}
-                  </span>
+                  <ArrowLeft className="w-4 h-4" />
+                  <span>Salir TV</span>
                 </button>
               )}
 
-              {/* Close Player */}
-              {!isTvMode && !isFullscreen && onClosePlayer && (
+              {/* 3. Exit Fullscreen or Close Player (44x44px Touch Target) */}
+              {!isTvMode && (isFullscreen || isHorizontalFullscreen) ? (
                 <button
                   type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    triggerHaptic('light');
-                    onClosePlayer();
-                  }}
-                  title={lang === 'es' ? 'Cerrar reproductor' : 'Close player'}
-                  aria-label="Cerrar reproductor"
-                  className="w-9 h-9 rounded-xl bg-black/65 hover:bg-rose-600/90 backdrop-blur-md border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer transition-colors"
+                  onClick={handleToggleFullscreen}
+                  title="Salir de pantalla completa"
+                  aria-label="Salir de pantalla completa"
+                  className="min-h-[44px] px-3.5 rounded-2xl bg-black/70 hover:bg-rose-600/90 backdrop-blur-xl border border-white/20 text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                 >
-                  <X className="w-4 h-4" />
+                  <Minimize className="w-4 h-4" />
+                  <span>Salir</span>
                 </button>
+              ) : (
+                !isTvMode &&
+                onClosePlayer && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('light');
+                      onClosePlayer();
+                    }}
+                    title="Cerrar reproductor"
+                    aria-label="Cerrar reproductor"
+                    className="min-h-[44px] min-w-[44px] rounded-2xl bg-black/60 hover:bg-rose-600/90 backdrop-blur-xl border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )
               )}
             </div>
           </div>
@@ -1287,15 +2436,73 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* ================================================================== */}
         {videoState.mode === 'idle' && !isExtracting && !isMinimized && (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-5 sm:p-8 text-center bg-gradient-to-b from-[#12141D] to-[#090A0F]">
+            {isTvMode && (
+              <div className="mb-4 px-4 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-xs sm:text-sm font-semibold text-emerald-300 flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>
+                  {lang === 'es'
+                    ? `Smart TV conectada · Sala ${(roomCode || '').toUpperCase()}`
+                    : `Smart TV connected · Room ${(roomCode || '').toUpperCase()}`}
+                </span>
+              </div>
+            )}
             <div className="w-12 h-12 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center mb-3">
               <Tv className="w-6 h-6 text-[#FB7185]" />
             </div>
-            <h3 className="font-display font-semibold text-base sm:text-xl text-white text-balance">
-              {t.standbyTitle}
+            <h3 className="font-display font-semibold text-base sm:text-2xl text-white text-balance">
+              {isTvMode
+                ? lang === 'es'
+                  ? 'Televisor listo para proyectar en 1080p'
+                  : 'TV ready to project in 1080p'
+                : t.standbyTitle}
             </h3>
-            <p className="text-xs sm:text-sm text-zinc-400 max-w-md mt-1">
-              {t.standbySub}
+            <p className="text-xs sm:text-base text-zinc-400 max-w-lg mt-1.5">
+              {isTvMode
+                ? lang === 'es'
+                  ? 'Elige una película, serie, canal deportivo o vídeo de YouTube desde tu móvil y empezará aquí automáticamente.'
+                  : 'Pick any movie, series, live match, or YouTube video on your phone and it will play here automatically.'
+                : t.standbySub}
             </p>
+            {isTvMode && (
+              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+                <button
+                  type="button"
+                  onClick={handleToggleFullscreen}
+                  className="min-h-[46px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-colors shadow-[0_12px_30px_rgba(225,29,72,0.35)]"
+                >
+                  {isFullscreen ? (
+                    <>
+                      <Minimize className="w-4 h-4" />
+                      <span>{lang === 'es' ? 'Salir Pantalla Completa' : 'Exit Fullscreen'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Maximize className="w-4 h-4" />
+                      <span>
+                        {lang === 'es'
+                          ? 'Poner TV en Pantalla Completa'
+                          : 'Enter TV Fullscreen'}
+                      </span>
+                    </>
+                  )}
+                </button>
+
+                {onExitTvMode && (
+                  <button
+                    type="button"
+                    onClick={onExitTvMode}
+                    className="min-h-[46px] px-5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 text-xs sm:text-sm font-semibold text-zinc-200 flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Cambiar código o salir de Modo TV'
+                        : 'Switch code or exit TV Mode'}
+                    </span>
+                  </button>
+                )}
+              </div>
+            )}
 
             {extractionError && (
               <div className="mt-3 px-3.5 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-200 max-w-md flex items-center gap-2">
@@ -1344,102 +2551,272 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         )}
 
         {/* ================================================================== */}
-        {/* NATIVE HTML5 + HLS VIDEO ELEMENT (WITH AIRPLAY & REMOTE CAST)      */}
+        {/* NATIVE HTML5 + HLS VIDEO ELEMENT + OPTIONAL MULTI-VIEW 2ND MATCH   */}
         {/* ================================================================== */}
-        <video
-          ref={videoRef}
-          playsInline
-          x-webkit-airplay="allow"
-          onClick={handleVideoSurfaceTap}
-          onTimeUpdate={(e) => {
-            const ct = e.currentTarget.currentTime;
-            const dur = e.currentTarget.duration || 0;
-            setCurrentTime(ct);
-            if (
-              onProgressUpdate &&
-              !videoState.isLive &&
-              ct > 4 &&
-              Date.now() - lastProgressEmitRef.current > 5000
-            ) {
-              lastProgressEmitRef.current = Date.now();
-              onProgressUpdate(ct, dur);
-            }
-          }}
-          onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
-          onWaiting={() => setIsBuffering(true)}
-          onPlaying={() => {
-            setIsBuffering(false);
-            setLocalPlaying(true);
-            setStreamError(null);
-          }}
-          onPause={(e) => {
-            setLocalPlaying(false);
-            if (
-              onProgressUpdate &&
-              !videoState.isLive &&
-              e.currentTarget.currentTime > 4
-            ) {
-              lastProgressEmitRef.current = Date.now();
-              onProgressUpdate(
-                e.currentTarget.currentTime,
-                e.currentTarget.duration || 0
-              );
-            }
-          }}
-          onVolumeChange={(e) => {
-            setIsMuted(e.currentTarget.muted || e.currentTarget.volume === 0);
-            setVolume(e.currentTarget.volume);
-          }}
-          className={`w-full h-full object-contain bg-black cursor-pointer ${
-            videoState.mode === 'hls' || videoState.mode === 'direct' ? 'block' : 'hidden'
+        <div
+          className={`w-full h-full ${
+            videoState.mode === 'hls' || videoState.mode === 'direct'
+              ? secondaryStream && !isMinimized
+                ? 'flex items-stretch'
+                : 'block'
+              : 'hidden'
           }`}
+        >
+          <video
+            ref={videoRef}
+            playsInline
+            x-webkit-airplay="allow"
+            onClick={handleVideoSurfaceTap}
+            onLoadedMetadata={(e) => {
+              if (playbackSpeed !== 1) {
+                e.currentTarget.playbackRate = playbackSpeed;
+              }
+            }}
+            onEnded={() => {
+              if (
+                videoState.seriesMeta &&
+                onNextEpisode &&
+                canControlRoom &&
+                autoNextCancelledForUrl !== videoState.url &&
+                autoNextTriggeredUrlRef.current !== videoState.url
+              ) {
+                autoNextTriggeredUrlRef.current = videoState.url;
+                setAutoNextCountdown(null);
+                onNextEpisode();
+              }
+            }}
+            onTimeUpdate={(e) => {
+              const ct = e.currentTarget.currentTime;
+              const dur = e.currentTarget.duration || 0;
+              setCurrentTime(ct);
+              if (
+                onProgressUpdate &&
+                !videoState.isLive &&
+                ct > 4 &&
+                Date.now() - lastProgressEmitRef.current > 5000
+              ) {
+                lastProgressEmitRef.current = Date.now();
+                onProgressUpdate(ct, dur);
+              }
+            }}
+            onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
+            onWaiting={() => setIsBuffering(true)}
+            onPlaying={() => {
+              setIsBuffering(false);
+              setLocalPlaying(true);
+              setStreamError(null);
+            }}
+            onPause={(e) => {
+              setLocalPlaying(false);
+              if (
+                onProgressUpdate &&
+                !videoState.isLive &&
+                e.currentTarget.currentTime > 4
+              ) {
+                lastProgressEmitRef.current = Date.now();
+                onProgressUpdate(
+                  e.currentTarget.currentTime,
+                  e.currentTarget.duration || 0
+                );
+              }
+            }}
+            onVolumeChange={(e) => {
+              setIsMuted(e.currentTarget.muted || e.currentTarget.volume === 0);
+              setVolume(e.currentTarget.volume);
+            }}
+            className={`${
+              secondaryStream && !isMinimized && secondaryStream.layout === 'split'
+                ? 'w-1/2'
+                : 'w-full'
+            } h-full ${
+              tvAspectMode === 'cover'
+                ? 'object-cover'
+                : tvAspectMode === 'fill'
+                ? 'object-fill'
+                : 'object-contain'
+            } bg-black cursor-pointer`}
+          />
+
+          {/* Hidden Direct HTTP Video Bridge for W3C RemotePlayback & AirPlay 2 (only populated on Cast tap) */}
+          <video
+            ref={castBridgeVideoRef}
+            preload="none"
+            playsInline
+            muted
+            x-webkit-airplay="allow"
+            className="sr-only pointer-events-none w-0 h-0 opacity-0"
+          />
+
+          {secondaryStream &&
+            !isMinimized &&
+            secondaryStream.layout === 'split' &&
+            onSwapSecondaryStream &&
+            onToggleSecondaryLayout &&
+            onCloseSecondaryStream && (
+              <SecondaryHlsStage
+                secondaryStream={secondaryStream}
+                lang={lang}
+                onSwapWithPrimary={onSwapSecondaryStream}
+                onToggleLayout={onToggleSecondaryLayout}
+                onCloseSecondary={onCloseSecondaryStream}
+              />
+            )}
+        </div>
+
+        {/* Corner Multi-View Secondary Live Match Overlay */}
+        {secondaryStream &&
+          !isMinimized &&
+          secondaryStream.layout === 'corner' &&
+          (videoState.mode === 'hls' || videoState.mode === 'direct') &&
+          onSwapSecondaryStream &&
+          onToggleSecondaryLayout &&
+          onCloseSecondaryStream && (
+            <SecondaryHlsStage
+              secondaryStream={secondaryStream}
+              lang={lang}
+              onSwapWithPrimary={onSwapSecondaryStream}
+              onToggleLayout={onToggleSecondaryLayout}
+              onCloseSecondary={onCloseSecondaryStream}
+            />
+          )}
+
+        {/* Custom Synchronized Subtitles Cue Overlay Inside 16:9 Stage */}
+        {!isMinimized &&
+          activeSubId !== 'off' &&
+          parsedCues.length > 0 &&
+          (() => {
+            const cueText = findActiveSubtitleText(
+              parsedCues,
+              currentTime,
+              subtitleOffsetSec
+            );
+            if (!cueText) return null;
+            const sizeClass =
+              subtitleSize === 'sm'
+                ? 'text-xs sm:text-sm'
+                : subtitleSize === 'lg'
+                ? 'text-base sm:text-2xl'
+                : 'text-sm sm:text-lg';
+            return (
+              <div
+                className={`pointer-events-none absolute inset-x-4 z-25 flex justify-center transition-all duration-150 ${
+                  showControls || !localPlaying ? 'bottom-16 sm:bottom-20' : 'bottom-4 sm:bottom-7'
+                }`}
+              >
+                <div
+                  className={`max-w-[88%] px-3 py-1 rounded-lg bg-black/75 text-white font-medium text-center whitespace-pre-line leading-snug shadow-lg ${sizeClass}`}
+                >
+                  {cueText}
+                </div>
+              </div>
+            );
+          })()}
+
+        {/* Netflix-Style Auto-Next Episode Countdown Card */}
+        {!isMinimized && autoNextCountdown !== null && onNextEpisode && (
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="absolute bottom-16 right-3 sm:bottom-20 sm:right-5 z-35 p-3 rounded-2xl bg-[#10121A]/95 border border-white/20 shadow-2xl flex items-center gap-2.5 backdrop-blur-md"
+          >
+            <div className="min-w-0">
+              <div className="text-[10px] font-semibold text-[#FB7185]">
+                {lang === 'es' ? 'Fin del capítulo' : 'Up next'}
+              </div>
+              <div className="text-xs font-bold text-white whitespace-nowrap">
+                {lang === 'es'
+                  ? `Siguiente episodio en ${autoNextCountdown}s…`
+                  : `Next episode in ${autoNextCountdown}s…`}
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('success');
+                autoNextTriggeredUrlRef.current = videoState.url;
+                setAutoNextCountdown(null);
+                onNextEpisode();
+              }}
+              className="min-h-[34px] px-3 rounded-xl bg-white hover:bg-zinc-200 text-[#090A0F] text-xs font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer"
+            >
+              <SkipForward className="w-3.5 h-3.5 fill-current" />
+              <span>{lang === 'es' ? 'Ver ya' : 'Play now'}</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setAutoNextCancelledForUrl(videoState.url);
+                setAutoNextCountdown(null);
+              }}
+              className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 flex items-center justify-center cursor-pointer"
+              aria-label="Cancelar auto-reproducción"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Hidden File Input for Local .SRT / .VTT Subtitles */}
+        <input
+          ref={subtitleFileInputRef}
+          type="file"
+          accept=".srt,.vtt,text/plain"
+          onChange={handleUploadLocalSubtitle}
+          className="hidden"
         />
 
-        {/* Tactile Center Touch Controls Overlay (Expanded Mode Only) */}
+        {/* Tactile Center Touch Controls Overlay (Elevated z-35 so Top/Bottom bars never block taps) */}
         {!isMinimized &&
           (videoState.mode === 'hls' || videoState.mode === 'direct') &&
           !isExtracting &&
           !streamError && (
             <div
-              onClick={handleVideoSurfaceTap}
-              className={`absolute inset-0 z-20 flex items-center justify-center gap-6 sm:gap-9 transition-opacity duration-150 ${
-                showControls || !localPlaying
-                  ? 'opacity-100'
-                  : 'opacity-0 pointer-events-none'
+              className={`pointer-events-none absolute inset-0 z-35 flex items-center justify-center gap-6 sm:gap-10 transition-opacity duration-150 ${
+                showControls || !localPlaying ? 'opacity-100' : 'opacity-0'
               }`}
             >
               {!videoState.isLive && (
                 <button
                   type="button"
+                  disabled={!showControls && localPlaying}
                   onClick={(e) => handleSeekRelative(-10, e)}
                   aria-label="Retroceder 10 segundos"
-                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/55 hover:bg-black/75 backdrop-blur-md border border-white/15 flex items-center justify-center text-white active:scale-90 transition-transform cursor-pointer"
+                  className={` relative z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/25 flex flex-col items-center justify-center text-white shadow-xl active:scale-90 transition-all cursor-pointer ${
+                    showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+                  }`}
                 >
-                  <RotateCcw className="w-5 h-5" />
+                  <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
+                  <span className="text-[9px] font-bold tracking-tighter -mt-0.5">-10s</span>
                 </button>
               )}
 
               <button
                 type="button"
-                onClick={handleTogglePlay}
+                disabled={!showControls && localPlaying}
+                onClick={(e) => handleTogglePlay(e)}
                 aria-label={localPlaying ? 'Pausar' : 'Reproducir'}
-                className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-black/65 hover:bg-[#E11D48] backdrop-blur-md border border-white/20 flex items-center justify-center text-white shadow-2xl active:scale-90 transition-all cursor-pointer"
+                className={`relative z-40 w-15 h-15 sm:w-18 sm:h-18 rounded-full bg-black/70 hover:bg-[#E11D48] backdrop-blur-md border border-white/25 flex items-center justify-center text-white shadow-2xl active:scale-90 transition-all cursor-pointer ${
+                  showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+                }`}
               >
                 {localPlaying ? (
-                  <Pause className="w-6 h-6 sm:w-7 sm:h-7 fill-current" />
+                  <Pause className="w-7 h-7 sm:w-8 sm:h-8 fill-current" />
                 ) : (
-                  <Play className="w-6 h-6 sm:w-7 sm:h-7 fill-current ml-0.5" />
+                  <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current ml-0.5" />
                 )}
               </button>
 
               {!videoState.isLive && (
                 <button
                   type="button"
+                  disabled={!showControls && localPlaying}
                   onClick={(e) => handleSeekRelative(10, e)}
                   aria-label="Avanzar 10 segundos"
-                  className="w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-black/55 hover:bg-black/75 backdrop-blur-md border border-white/15 flex items-center justify-center text-white active:scale-90 transition-transform cursor-pointer"
+                  className={`relative z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/25 flex flex-col items-center justify-center text-white shadow-xl active:scale-90 transition-all cursor-pointer ${
+                    showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+                  }`}
                 >
-                  <RotateCw className="w-5 h-5" />
+                  <RotateCw className="w-5 h-5 sm:w-6 sm:h-6" />
+                  <span className="text-[9px] font-bold tracking-tighter -mt-0.5">+10s</span>
                 </button>
               )}
             </div>
@@ -1552,6 +2929,26 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   <span className="sm:hidden">HD</span>
                 </button>
               )}
+              {!isTvMode && onToggleCinemaMode && (
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={isCinemaMode}
+                  onClick={onToggleCinemaMode}
+                  className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 cursor-pointer border transition-colors ${
+                    isCinemaMode
+                      ? 'bg-amber-400/25 border-amber-400/55 text-amber-200'
+                      : 'bg-[#191C28] hover:bg-[#232738] border-white/10 text-zinc-200'
+                  }`}
+                  aria-label="Modo Cine"
+                >
+                  {isCinemaMode ? (
+                    <Sun className="w-4 h-4 text-amber-300" />
+                  ) : (
+                    <Moon className="w-4 h-4 text-amber-300" />
+                  )}
+                </button>
+              )}
               {onClosePlayer && (
                 <button
                   type="button"
@@ -1641,20 +3038,22 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         )}
 
         {/* ================================================================== */}
-        {/* BOTTOM TRANSPORT BAR (TOUCH ERGONOMIC + CHROMECAST + MOBILE PIP)   */}
+        {/* ZERO-OVERLAP BOTTOM TRANSPORT BAR (3s Inactivity Auto-Hide)        */}
         {/* ================================================================== */}
         {!isMinimized && (videoState.mode === 'hls' || videoState.mode === 'direct') && (
           <div
-            onClick={(e) => e.stopPropagation()}
-            className={`absolute bottom-0 inset-x-0 z-30 px-2 sm:px-4 pb-1.5 sm:pb-2.5 pt-8 bg-gradient-to-t from-black/95 via-black/65 to-transparent transition-opacity duration-200 ${
-              showControls || !localPlaying
-                ? 'opacity-100'
-                : 'opacity-0 pointer-events-none'
+            className={`pointer-events-none absolute bottom-0 inset-x-0 z-30 px-2.5 sm:px-5 pb-2 sm:pb-3 pt-4 bg-gradient-to-t from-black/95 via-black/75 to-transparent transition-opacity duration-300 ${
+              showControls || !localPlaying ? 'opacity-100' : 'opacity-0'
             }`}
           >
-            {/* Touch-Expanded VOD Scrubber */}
+            {/* Protected Legible Timeline Scrubber */}
             {!videoState.isLive && duration > 0 && (
-              <div className="h-6 flex items-center px-1">
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className={`h-6 flex items-center px-1 mb-0.5 ${
+                  showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+                }`}
+              >
                 <input
                   type="range"
                   min={0}
@@ -1668,13 +3067,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               </div>
             )}
 
-            <div className="flex items-center justify-between gap-1">
-              {/* Left Transport Cluster */}
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className={`flex items-center justify-between gap-1.5 ${
+                showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+              }`}
+            >
+              {/* Left Cluster: Play/Pause + Mute/Volume + Timecode */}
               <div className="flex items-center gap-0.5 sm:gap-1 min-w-0">
                 <button
                   type="button"
                   onClick={handleTogglePlay}
-                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-white transition-colors cursor-pointer shrink-0"
+                  className="min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer shrink-0"
                   aria-label={localPlaying ? 'Pausar' : 'Reproducir'}
                 >
                   {localPlaying ? (
@@ -1688,7 +3092,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   <button
                     type="button"
                     onClick={handleToggleMute}
-                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-white cursor-pointer"
+                    className="min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
                     aria-label="Silenciar"
                   >
                     {isMuted || volume === 0 ? (
@@ -1710,131 +3114,96 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </div>
 
                 {videoState.isLive ? (
-                  <div className="flex items-center gap-1.5 pl-1 text-xs font-semibold text-white whitespace-nowrap">
+                  <div className="flex items-center gap-1.5 pl-1 text-[11px] sm:text-xs font-bold text-white whitespace-nowrap">
                     <span className="w-2 h-2 rounded-full bg-[#E11D48] animate-pulse" />
                     <span>{t.liveNow}</span>
                   </div>
                 ) : (
-                  <div className="text-[11px] sm:text-xs font-mono tabular-nums text-zinc-200 pl-0.5 whitespace-nowrap">
-                    {formatTimecode(currentTime)}{' '}
-                    <span className="text-zinc-500">/</span> {formatTimecode(duration)}
+                  <div className="text-[11px] sm:text-xs font-mono tabular-nums text-zinc-200 pl-0.5 whitespace-nowrap truncate">
+                    {formatTimecode(currentTime)}
+                    <span className="text-zinc-500 mx-0.5">/</span>
+                    {formatTimecode(duration)}
                   </div>
                 )}
               </div>
 
-              {/* Right Utility Cluster: Quality + Reload + Chromecast + Mobile/Desktop PiP + Fullscreen */}
-              <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-                {qualityLevels.length > 1 && (
-                  <select
-                    value={selectedQuality}
-                    onChange={(e) => handleChangeQuality(Number(e.target.value))}
-                    aria-label="Calidad de vídeo"
-                    className="hidden sm:block h-9 px-2 rounded-lg bg-black/70 border border-white/15 text-xs font-mono text-zinc-200 outline-none cursor-pointer"
-                  >
-                    <option value={-1}>Auto</option>
-                    {qualityLevels.map((q) => (
-                      <option key={q.index} value={q.index}>
-                        {q.height}p
-                      </option>
-                    ))}
-                  </select>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleForceReloadStream}
-                  className="hidden sm:flex w-10 h-10 sm:w-11 sm:h-11 rounded-xl hover:bg-white/12 items-center justify-center text-zinc-200 cursor-pointer"
-                  title={t.syncRoom}
-                  aria-label="Resincronizar señal"
-                >
-                  <RefreshCw className="w-4 h-4" />
-                </button>
-
-                {/* MODO CINE FOCUS BUTTON IN TRANSPORT BAR */}
-                {!isTvMode && !isFullscreen && onToggleCinemaMode && (
+              {/* Right Cluster: Audio Badge + Direct Cast + Rotate Horizontal + Magic Menu + Fullscreen */}
+              <div className="flex items-center gap-1 shrink-0">
+                {!videoState.isLive && (
                   <button
                     type="button"
-                    role="switch"
-                    aria-checked={isCinemaMode}
                     onClick={(e) => {
                       e.stopPropagation();
                       triggerHaptic('light');
-                      onToggleCinemaMode();
+                      setShowProMenu(true);
                     }}
-                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
-                      isCinemaMode
-                        ? 'bg-amber-400 text-[#090A0F]'
-                        : 'hover:bg-white/12 text-zinc-100'
-                    }`}
-                    title={
-                      lang === 'es'
-                        ? isCinemaMode
-                          ? 'Desactivar Modo Cine'
-                          : 'Activar Modo Cine (oscurecer fondo)'
-                        : isCinemaMode
-                        ? 'Disable Cinema Mode'
-                        : 'Enable Cinema Mode'
-                    }
-                    aria-label="Modo Cine"
+                    className="min-h-[38px] px-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-[11px] font-bold text-white flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
+                    title="Cambiar idioma, subtítulos o servidor"
                   >
-                    {isCinemaMode ? (
-                      <Sun className="w-4 h-4" />
-                    ) : (
-                      <Moon className="w-4 h-4" />
-                    )}
+                    <Globe className="w-3.5 h-3.5 text-[#FB7185]" />
+                    <span>{activeTrackLangCode || 'ES'}</span>
                   </button>
                 )}
 
-                {/* DIRECT CHROMECAST / AIRPLAY TO TV BUTTON */}
                 {!isTvMode && (
                   <button
                     type="button"
                     onClick={handleDirectCastToTv}
-                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
-                      isCastingToTv
-                        ? 'bg-[#38BDF8] text-[#090A0F]'
-                        : 'hover:bg-white/12 text-zinc-100'
+                    className={`min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+                      isCastingToTv || hasConnectedSmartTv
+                        ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/50'
+                        : 'hover:bg-white/12 text-white'
                     }`}
-                    title={
-                      lang === 'es'
-                        ? 'Enviar vídeo directo a la TV (Chromecast / AirPlay)'
-                        : 'Cast video directly to TV (Chromecast / AirPlay)'
-                    }
-                    aria-label="Chromecast directo a TV"
+                    title="Cast Directo a TV (Chromecast / AirPlay 2 / Smart TV)"
+                    aria-label="Cast Directo a TV"
                   >
                     <Cast className="w-4 h-4" />
                   </button>
                 )}
 
-                {/* FLOATING OVERLAY ON PHONE / DESKTOP (PICTURE-IN-PICTURE) — VISIBLE ON MOBILE TOO! */}
                 {!isTvMode && (
                   <button
                     type="button"
-                    onClick={handleTogglePiP}
-                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
-                      isInPiP
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('light');
+                      setShowProMenu(true);
+                    }}
+                    className={`min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+                      showProMenu || vocalBoostEnabled || activeSubId !== 'off' || playbackSpeed !== 1
                         ? 'bg-[#E11D48] text-white'
                         : 'hover:bg-white/12 text-zinc-100'
                     }`}
-                    title={
-                      lang === 'es'
-                        ? 'Superponer vídeo encima de otra pantalla (PiP)'
-                        : 'Float video on top of phone screen (PiP)'
-                    }
-                    aria-label="Superponer pantalla flotante"
+                    title="El Menú Mágico (Subtítulos, Modo Cine, PiP, Cast y Audio)"
+                    aria-label="Abrir Menú Mágico"
                   >
-                    <PictureInPicture2 className="w-4 h-4" />
+                    <SlidersHorizontal className="w-4 h-4" />
                   </button>
                 )}
+
+                {/* Dedicated 1-Tap Horizontal Rotation Toggle on Mobile/Fullscreen */}
+                <button
+                  type="button"
+                  onClick={handleToggleLandscapeRotation}
+                  className={`min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+                    (isFullscreen || isHorizontalFullscreen) && forceLandscapeRotation
+                      ? 'bg-[#E11D48]/25 text-[#FB7185] border border-[#E11D48]/50'
+                      : 'hover:bg-white/12 text-white'
+                  }`}
+                  title="Girar pantalla en horizontal (16:9)"
+                  aria-label="Girar en horizontal"
+                >
+                  <RotateCw className="w-4 h-4" />
+                </button>
 
                 <button
                   type="button"
                   onClick={handleToggleFullscreen}
-                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-white cursor-pointer"
-                  title="Pantalla completa"
+                  className="min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
+                  title="Pantalla completa horizontal"
                   aria-label="Pantalla completa"
                 >
-                  {isFullscreen ? (
+                  {isFullscreen || isHorizontalFullscreen ? (
                     <Minimize className="w-4 h-4" />
                   ) : (
                     <Maximize className="w-4 h-4" />
@@ -1850,7 +3219,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       {/* FLOATING DOCKED MINI-PLAYER CONTROL STRIP (WHEN MINIMIZED)           */}
       {/* ==================================================================== */}
       {isMinimized && (
-        <div className="bg-[#12141D] border-t border-white/10 px-2.5 py-2 flex items-center justify-between gap-2">
+        <div className="bg-[#0D0D12] border-t border-white/[0.08] px-3 py-2 flex items-center justify-between gap-2">
           <button
             type="button"
             onClick={onToggleMinimize}
@@ -1864,35 +3233,19 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             </div>
           </button>
 
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             {(canUseNativePiPOrCast || videoState.mode === 'youtube') && (
               <button
                 type="button"
                 onClick={handleTogglePlay}
-                className="w-8 h-8 rounded-lg bg-white/[0.08] hover:bg-white/15 flex items-center justify-center text-white cursor-pointer"
+                className="w-9 h-9 rounded-xl bg-white/[0.08] hover:bg-white/15 flex items-center justify-center text-white cursor-pointer"
                 aria-label={localPlaying ? 'Pausar' : 'Reproducir'}
               >
                 {localPlaying ? (
-                  <Pause className="w-3.5 h-3.5 fill-current" />
+                  <Pause className="w-4 h-4 fill-current" />
                 ) : (
-                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <Play className="w-4 h-4 fill-current" />
                 )}
-              </button>
-            )}
-
-            {canUseNativePiPOrCast && (
-              <button
-                type="button"
-                onClick={handleTogglePiP}
-                className="w-8 h-8 rounded-lg bg-white/[0.08] hover:bg-white/15 flex items-center justify-center text-zinc-200 cursor-pointer"
-                title={
-                  lang === 'es'
-                    ? 'Superponer sobre el teléfono (PiP)'
-                    : 'Float over phone screen (PiP)'
-                }
-                aria-label="Pantalla flotante"
-              >
-                <PictureInPicture2 className="w-3.5 h-3.5" />
               </button>
             )}
 
@@ -1900,11 +3253,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               <button
                 type="button"
                 onClick={onToggleMinimize}
-                className="w-8 h-8 rounded-lg bg-[#E11D48] hover:bg-[#BE123C] flex items-center justify-center text-white cursor-pointer"
+                className="w-9 h-9 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] flex items-center justify-center text-white cursor-pointer"
                 title={lang === 'es' ? 'Ampliar reproductor' : 'Expand player'}
                 aria-label="Ampliar reproductor"
               >
-                <Maximize2 className="w-3.5 h-3.5" />
+                <Maximize2 className="w-4 h-4" />
               </button>
             )}
 
@@ -1912,11 +3265,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               <button
                 type="button"
                 onClick={onClosePlayer}
-                className="w-8 h-8 rounded-lg bg-white/[0.08] hover:bg-rose-600 flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer"
+                className="w-9 h-9 rounded-xl bg-white/[0.08] hover:bg-rose-600 flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer"
                 title={lang === 'es' ? 'Cerrar reproductor' : 'Close player'}
                 aria-label="Cerrar reproductor"
               >
-                <X className="w-3.5 h-3.5" />
+                <X className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -1924,108 +3277,62 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* DEDICATED THUMB-FRIENDLY TRACK / MODO CINE / CAST STRIP BELOW VIDEO  */}
+      {/* SLEEK BELOW-VIDEO STRIP: QUICK AUDIO PILLS + MENÚ MÁGICO TRIGGER     */}
       {/* ==================================================================== */}
       {!isTvMode &&
         !isMinimized &&
+        !compactVideoForMobileKeyboard &&
         videoState.mode !== 'idle' &&
-        videoState.mode !== 'cloud' &&
-        (hasTracks || videoState.seriesMeta || canUseNativePiPOrCast || onToggleCinemaMode) && (
-          <div className="bg-[#11131B] border-t border-white/[0.08] px-3 sm:px-4 py-2 flex items-center justify-between gap-2.5">
-            <div className="hidden sm:flex items-center gap-2 text-xs text-zinc-400 shrink-0">
-              <Radio className="w-3.5 h-3.5 text-[#FB7185]" />
-              <span>{videoState.isLive ? 'Señales en vivo:' : 'Sala de proyección:'}</span>
+        videoState.mode !== 'cloud' && (
+          <div className="bg-[#08080C] border-t border-white/[0.06] px-3 sm:px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+            {/* Left: Fluid Language Pills (Castellano / Latino / VOSE / EN) */}
+            <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+              {!videoState.isLive && (videoState.mode === 'hls' || videoState.mode === 'direct') ? (
+                <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08]">
+                  {(
+                    [
+                      { code: 'ES', short: '🇪🇸 ES', title: 'Castellano (España)' },
+                      { code: 'LAT', short: '🇲🇽 LAT', title: 'Español Latino' },
+                      { code: 'VOSE', short: '💬 VOSE', title: 'Subtitulado VOSE' },
+                      { code: 'EN', short: '🇬🇧 EN', title: 'Inglés Original' },
+                    ] as const
+                  ).map((langBtn) => {
+                    const isCurrentLang = activeTrackLangCode === langBtn.code;
+                    const isAvailable = (videoState.tracks || []).some(
+                      (tr) => String(tr.lang || '').toUpperCase() === langBtn.code
+                    );
+                    return (
+                      <button
+                        key={langBtn.code}
+                        type="button"
+                        onClick={() => handleQuickLanguageSwitch(langBtn.code)}
+                        title={langBtn.title}
+                        className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all ${
+                          isCurrentLang
+                            ? 'bg-[#E11D48] text-white shadow-sm'
+                            : isAvailable
+                            ? 'text-zinc-200 hover:bg-white/10'
+                            : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05]'
+                        }`}
+                      >
+                        <span>{langBtn.short}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
+                  <Radio className="w-3.5 h-3.5 text-[#E11D48]" />
+                  <span className="truncate max-w-[180px]">
+                    {videoState.tracks[videoState.activeTrackIndex]?.label ||
+                      (videoState.isLive ? 'Señal en directo' : 'Proyección activa')}
+                  </span>
+                </div>
+              )}
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 sm:justify-end">
-              {videoState.tracks.map((track, idx) => {
-                const active = idx === videoState.activeTrackIndex;
-                return (
-                  <button
-                    key={track.id || idx}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      onSelectTrack(idx, currentTime);
-                    }}
-                    className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                      active
-                        ? 'bg-[#E11D48] text-white shadow-sm shadow-[#E11D48]/30'
-                        : 'bg-[#191C28] hover:bg-[#232838] text-zinc-300 border border-white/[0.07]'
-                    }`}
-                  >
-                    {track.label}
-                  </button>
-                );
-              })}
-
-              {/* MODO CINE TOGGLE SWITCH */}
-              {onToggleCinemaMode && (
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={isCinemaMode}
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onToggleCinemaMode();
-                  }}
-                  className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all border ${
-                    isCinemaMode
-                      ? 'bg-amber-400/18 border-amber-400/50 text-amber-200 shadow-[0_0_20px_rgba(251,191,36,0.18)]'
-                      : 'bg-[#191C28] hover:bg-[#232838] text-zinc-200 border-white/[0.07]'
-                  }`}
-                >
-                  <Moon className="w-3.5 h-3.5 text-amber-300 shrink-0" />
-                  <span>{lang === 'es' ? 'Modo Cine' : 'Cinema Mode'}</span>
-                  <span
-                    aria-hidden="true"
-                    className={`w-7 h-4 rounded-full p-0.5 flex items-center transition-colors ${
-                      isCinemaMode ? 'bg-amber-400 justify-end' : 'bg-white/15 justify-start'
-                    }`}
-                  >
-                    <span
-                      className={`w-3 h-3 rounded-full ${
-                        isCinemaMode ? 'bg-[#090A0F]' : 'bg-zinc-300'
-                      }`}
-                    />
-                  </span>
-                </button>
-              )}
-
-              {canUseNativePiPOrCast && (
-                <>
-                  <button
-                    type="button"
-                    onClick={handleTogglePiP}
-                    className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                      isInPiP
-                        ? 'bg-[#E11D48] text-white'
-                        : 'bg-[#191C28] hover:bg-[#232838] text-zinc-200 border border-white/[0.07]'
-                    }`}
-                  >
-                    <PictureInPicture2 className="w-3.5 h-3.5 text-[#FB7185]" />
-                    <span>{lang === 'es' ? 'Flotante' : 'Floating PiP'}</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleDirectCastToTv}
-                    className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                      isCastingToTv
-                        ? 'bg-[#38BDF8] text-[#090A0F]'
-                        : 'bg-[#191C28] hover:bg-[#232838] text-zinc-200 border border-white/[0.07]'
-                    }`}
-                  >
-                    <Cast className="w-3.5 h-3.5 text-[#38BDF8]" />
-                    <span>
-                      {isCastingToTv
-                        ? castDeviceName || 'TV Conectada'
-                        : 'Chromecast'}
-                    </span>
-                  </button>
-                </>
-              )}
-
+            {/* Right: Clean Actions (Siguiente + Cast Directo + Chat Flotante + Opciones) */}
+            <div className="flex items-center gap-2 shrink-0">
               {videoState.seriesMeta && onNextEpisode && (
                 <button
                   type="button"
@@ -2033,17 +3340,409 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     triggerHaptic('success');
                     onNextEpisode();
                   }}
-                  className="min-h-[38px] px-3.5 rounded-xl bg-white text-[#090A0F] hover:bg-zinc-200 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  className="min-h-[38px] px-3.5 rounded-2xl bg-white text-[#050507] hover:bg-zinc-200 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
                 >
                   <SkipForward className="w-3.5 h-3.5 fill-current" />
-                  <span>
-                    {lang === 'es' ? 'Siguiente episodio' : 'Next episode'}
-                  </span>
+                  <span>Siguiente</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={handleDirectCastToTv}
+                className={`min-h-[38px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+                  isCastingToTv || hasConnectedSmartTv
+                    ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50'
+                    : 'bg-[#E11D48]/15 hover:bg-[#E11D48]/25 text-[#FB7185] border-[#E11D48]/35'
+                }`}
+                title="Enviar vídeo directamente a tu TV (Chromecast / AirPlay 2 / Smart TV)"
+              >
+                <Cast className="w-3.5 h-3.5 shrink-0" />
+                <span>{isCastingToTv ? 'Transmitiendo' : 'Cast TV'}</span>
+              </button>
+
+              {onToggleFloatingChat && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onToggleFloatingChat();
+                  }}
+                  className={`min-h-[38px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+                    floatingChatOpen
+                      ? 'bg-[#E11D48] text-white border-[#E11D48]'
+                      : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-200 border-white/[0.09]'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5 shrink-0" />
+                  <span>Chat Flotante</span>
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  setShowProMenu(true);
+                }}
+                className="min-h-[38px] px-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#E11D48]" />
+                <span>Opciones</span>
+              </button>
             </div>
           </div>
         )}
+
+      {/* ==================================================================== */}
+      {/* EL MENÚ MÁGICO (UNIFIED PROGRESSIVE DISCLOSURE BOTTOM SHEET)         */}
+      {/* ==================================================================== */}
+      {showProMenu && (
+        <div
+          className="fixed inset-0 z-[195] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
+          onClick={() => setShowProMenu(false)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-lg rounded-t-[28px] sm:rounded-[28px] bg-[#0B0B11]/95 backdrop-blur-2xl border-t sm:border border-white/[0.12] shadow-[0_-20px_70px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col max-h-[86dvh] animate-sheet-up"
+          >
+            <div className="pt-2.5 pb-1 flex justify-center sm:hidden">
+              <div className="w-10 h-1.5 rounded-full bg-white/20" />
+            </div>
+
+            {/* Header */}
+            <div className="px-5 py-3.5 border-b border-white/[0.08] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-[#E11D48]/15 border border-[#E11D48]/30 flex items-center justify-center text-[#E11D48]">
+                  <Sparkles className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-white tracking-tight">
+                    El Menú Mágico
+                  </h3>
+                  <p className="text-xs text-zinc-400">
+                    Idioma, Subtítulos, Modo Cine, PiP y Cast Directo
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProMenu(false)}
+                className="min-h-[44px] min-w-[44px] rounded-2xl hover:bg-white/10 flex items-center justify-center text-zinc-300 cursor-pointer"
+                aria-label="Cerrar Menú Mágico"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Sheet Body */}
+            <div className="p-5 overflow-y-auto custom-scrollbar space-y-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
+              {/* 1. Primary Action Grid: Cast Directo, Mando TV, Modo Cine, PiP */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    setShowProMenu(false);
+                    handleDirectCastToTv(e);
+                  }}
+                  className={`min-h-[68px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                    isCastingToTv
+                      ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                      : 'bg-[#E11D48]/15 hover:bg-[#E11D48]/25 border-[#E11D48]/40 text-white'
+                  }`}
+                >
+                  <Cast className="w-5 h-5 text-[#FB7185]" />
+                  <span>{isCastingToTv ? 'Cast Activo' : 'Cast Directo'}</span>
+                </button>
+
+                {onOpenSmartTvModal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowProMenu(false);
+                      onOpenSmartTvModal();
+                    }}
+                    className={`min-h-[68px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                      hasConnectedSmartTv
+                        ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                        : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
+                    }`}
+                  >
+                    <Tv className="w-5 h-5 text-emerald-400" />
+                    <span>{hasConnectedSmartTv ? 'Mando TV' : 'Código 4 Dígitos'}</span>
+                  </button>
+                )}
+
+                {onToggleCinemaMode && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onToggleCinemaMode();
+                    }}
+                    className={`min-h-[68px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                      isCinemaMode
+                        ? 'bg-amber-400/20 border-amber-400/50 text-amber-200'
+                        : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
+                    }`}
+                  >
+                    {isCinemaMode ? (
+                      <Sun className="w-5 h-5 text-amber-300" />
+                    ) : (
+                      <Moon className="w-5 h-5 text-amber-300" />
+                    )}
+                    <span>Modo Cine</span>
+                  </button>
+                )}
+
+                {canUseNativePiPOrCast && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      handleTogglePiP(e);
+                      setShowProMenu(false);
+                    }}
+                    className={`min-h-[68px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                      isInPiP
+                        ? 'bg-[#E11D48]/25 border-[#E11D48]/60 text-white'
+                        : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
+                    }`}
+                  >
+                    <PictureInPicture2 className="w-5 h-5 text-sky-400" />
+                    <span>PiP Flotante</span>
+                  </button>
+                )}
+              </div>
+
+              {/* 2. Audio / Language & Server Selector */}
+              {(videoState.tracks.length > 0 || !videoState.isLive) && (
+                <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
+                  <div className="text-xs font-bold text-white flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-[#E11D48]" />
+                    <span>Idioma de Audio y Servidor</span>
+                  </div>
+
+                  {!videoState.isLive && (
+                    <div className="grid grid-cols-4 gap-2">
+                      {(
+                        [
+                          { code: 'ES', label: '🇪🇸 Español' },
+                          { code: 'LAT', label: '🇲🇽 Latino' },
+                          { code: 'VOSE', label: '💬 VOSE' },
+                          { code: 'EN', label: '🇬🇧 Inglés' },
+                        ] as const
+                      ).map((lBtn) => {
+                        const isCurrent = activeTrackLangCode === lBtn.code;
+                        return (
+                          <button
+                            key={lBtn.code}
+                            type="button"
+                            onClick={() => {
+                              handleQuickLanguageSwitch(lBtn.code);
+                              setShowProMenu(false);
+                            }}
+                            className={`min-h-[42px] px-2 rounded-xl text-xs font-bold cursor-pointer transition-all border ${
+                              isCurrent
+                                ? 'bg-[#E11D48] border-[#E11D48] text-white'
+                                : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.08] text-zinc-200'
+                            }`}
+                          >
+                            {lBtn.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {videoState.tracks.length > 1 && (
+                    <select
+                      aria-label="Seleccionar servidor o canal"
+                      value={videoState.activeTrackIndex}
+                      onChange={(e) => {
+                        const nextIdx = Number(e.target.value);
+                        const chosen = videoState.tracks[nextIdx];
+                        if (chosen) {
+                          triggerLocalLanguagePopup({
+                            type: 'success',
+                            title: `Cambiando a: ${chosen.label}`,
+                            subtitle: 'Sincronizando señal de audio HD...',
+                          });
+                        }
+                        onSelectTrack(nextIdx, currentTime);
+                        setShowProMenu(false);
+                      }}
+                      className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/60 border border-white/15 text-xs font-semibold text-white outline-none cursor-pointer"
+                    >
+                      {videoState.tracks.map((track, idx) => (
+                        <option key={track.id || idx} value={idx} className="bg-[#0B0B11]">
+                          {track.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </div>
+              )}
+
+              {/* 3. Subtitles (.SRT / .VTT + Offset + Font Size) */}
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-white flex items-center gap-2">
+                    <Subtitles className="w-4 h-4 text-sky-400" />
+                    <span>Subtítulos Sincronizados</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => subtitleFileInputRef.current?.click()}
+                    className="min-h-[36px] px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-xs font-bold text-sky-300 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>Subir .SRT / .VTT</span>
+                  </button>
+                </div>
+
+                <select
+                  value={activeSubId}
+                  onChange={(e) => handleSelectSubtitleTrack(e.target.value)}
+                  className="w-full min-h-[44px] px-3.5 rounded-xl bg-black/60 border border-white/15 text-xs font-semibold text-white outline-none cursor-pointer"
+                >
+                  <option value="off">Subtítulos desactivados</option>
+                  {subtitleTracks.map((st) => (
+                    <option key={st.id} value={st.id}>
+                      {st.label}
+                    </option>
+                  ))}
+                </select>
+
+                {activeSubId !== 'off' && (
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSubtitleOffsetSec((s) => Number((s - 0.5).toFixed(1)))
+                        }
+                        className="min-h-[38px] px-3 rounded-xl bg-white/10 hover:bg-white/20 font-mono text-xs text-white cursor-pointer"
+                      >
+                        -0.5s
+                      </button>
+                      <span className="font-mono text-xs text-sky-300 min-w-[48px] text-center">
+                        {subtitleOffsetSec >= 0
+                          ? `+${subtitleOffsetSec}s`
+                          : `${subtitleOffsetSec}s`}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setSubtitleOffsetSec((s) => Number((s + 0.5).toFixed(1)))
+                        }
+                        className="min-h-[38px] px-3 rounded-xl bg-white/10 hover:bg-white/20 font-mono text-xs text-white cursor-pointer"
+                      >
+                        +0.5s
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-1">
+                      {(['sm', 'md', 'lg'] as const).map((sz) => (
+                        <button
+                          key={sz}
+                          type="button"
+                          onClick={() => setSubtitleSize(sz)}
+                          className={`min-h-[38px] min-w-[38px] rounded-xl text-xs font-bold uppercase cursor-pointer ${
+                            subtitleSize === sz
+                              ? 'bg-[#E11D48] text-white'
+                              : 'bg-white/10 text-zinc-300'
+                          }`}
+                        >
+                          {sz === 'sm' ? 'S' : sz === 'md' ? 'M' : 'L'}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* 4. Cinema Pro Enhancements (Vocal Boost, Ambilight, Quality & Speed) */}
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
+                <div className="grid grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={toggleVocalBoost}
+                    className={`min-h-[48px] px-3 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer ${
+                      vocalBoostEnabled
+                        ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                        : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+                    }`}
+                  >
+                    <span>Realce de Voces</span>
+                    <span className="font-mono text-[10px]">
+                      {vocalBoostEnabled ? 'ON' : 'OFF'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAmbilightEnabled((v) => !v)}
+                    className={`min-h-[48px] px-3 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer ${
+                      ambilightEnabled
+                        ? 'bg-[#E11D48]/20 border-[#E11D48]/50 text-white'
+                        : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+                    }`}
+                  >
+                    <span>Ambilight Halo</span>
+                    <span className="font-mono text-[10px]">
+                      {ambilightEnabled ? 'ON' : 'OFF'}
+                    </span>
+                  </button>
+                </div>
+
+                {!videoState.isLive && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-xs font-semibold text-zinc-400">
+                      Velocidad de reproducción
+                    </span>
+                    <div className="grid grid-cols-5 gap-1.5">
+                      {[0.75, 1, 1.25, 1.5, 2].map((spd) => (
+                        <button
+                          key={spd}
+                          type="button"
+                          onClick={() => handleSelectSpeed(spd)}
+                          className={`min-h-[38px] rounded-xl font-mono text-xs font-bold cursor-pointer ${
+                            playbackSpeed === spd
+                              ? 'bg-[#E11D48] text-white'
+                              : 'bg-white/[0.06] hover:bg-white/15 text-zinc-300'
+                          }`}
+                        >
+                          {spd}x
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {qualityLevels.length > 1 && (
+                  <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs font-semibold text-zinc-400">
+                      Calidad de vídeo
+                    </span>
+                    <select
+                      value={selectedQuality}
+                      onChange={(e) => handleChangeQuality(Number(e.target.value))}
+                      className="min-h-[38px] px-3 rounded-xl bg-black/60 border border-white/15 text-xs font-mono text-white outline-none cursor-pointer"
+                    >
+                      <option value={-1}>Automática (HD)</option>
+                      {qualityLevels.map((q) => (
+                        <option key={q.index} value={q.index}>
+                          {q.height}p
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </section>
   );
 };

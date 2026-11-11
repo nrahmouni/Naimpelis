@@ -46,10 +46,21 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          skipWaiting: true,
+          clientsClaim: true,
+          cleanupOutdatedCaches: true,
           maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
+          globIgnores: ['**/tv-receiver.html', '**/*.apk'],
           navigateFallback: '/index.html',
-          navigateFallbackDenylist: [/^\/api\//, /^\/ws/],
+          navigateFallbackDenylist: [
+            /^\/api\//,
+            /^\/ws/,
+            /^\/tv(\/|$)/,
+            /^\/vendor\//,
+            /^\/\.well-known\//,
+            /\.apk(\?|$)/i,
+          ],
           runtimeCaching: [
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -82,11 +93,13 @@ export default defineConfig(() => {
           ],
         },
         devOptions: {
-          enabled: true,
-          type: 'module',
+          enabled: false,
         },
       }),
     ],
+    build: {
+      target: 'es2019',
+    },
     resolve: {
       alias: {
         '@': import.meta.dirname,

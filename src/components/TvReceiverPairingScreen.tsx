@@ -1,0 +1,562 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  Tv,
+  Smartphone,
+  Volume2,
+  Check,
+  RefreshCw,
+  Wifi,
+  ArrowLeft,
+  ArrowRight,
+  Maximize,
+  Minimize,
+} from 'lucide-react';
+import { AppLanguage } from '../types';
+import { NaimBrandLogo } from './NaimBrandLogo';
+import {
+  extractRoomCodeFromInput,
+  getDisplayAppHost,
+  getDisplayTvPairingLabel,
+} from '../utils/shortLink';
+
+interface TvReceiverPairingScreenProps {
+  lang: AppLanguage;
+  onPaired: (params: {
+    roomId: string;
+    roomName: string;
+    tvAuthToken: string;
+  }) => void;
+  onExitTvLobby: () => void;
+}
+
+export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = ({
+  lang,
+  onPaired,
+  onExitTvLobby,
+}) => {
+  const [pairingCode, setPairingCode] = useState<string>('');
+  const [connected, setConnected] = useState<boolean>(false);
+  const [audioUnlocked, setAudioUnlocked] = useState<boolean>(false);
+  const [pairedByBanner, setPairedByBanner] = useState<string | null>(null);
+  const [directRoomDraft, setDirectRoomDraft] = useState<string>('');
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+
+  useEffect(() => {
+    const onFs = () => {
+      const doc = document as Document & { webkitFullscreenElement?: Element };
+      setIsFullscreen(Boolean(doc.fullscreenElement || doc.webkitFullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', onFs);
+    document.addEventListener('webkitfullscreenchange', onFs);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFs);
+      document.removeEventListener('webkitfullscreenchange', onFs);
+    };
+  }, []);
+
+  const toggleTvBrowserFullscreen = () => {
+    unlockTvAudioGesture();
+    const doc = document as Document & {
+      webkitFullscreenElement?: Element;
+      webkitExitFullscreen?: () => Promise<void>;
+    };
+    const root = document.documentElement as HTMLElement & {
+      webkitRequestFullscreen?: () => Promise<void>;
+    };
+    if (doc.fullscreenElement || doc.webkitFullscreenElement) {
+      if (doc.exitFullscreen) doc.exitFullscreen().catch(() => {});
+      else if (doc.webkitExitFullscreen) doc.webkitExitFullscreen();
+      return;
+    }
+    if (root.requestFullscreen) root.requestFullscreen().catch(() => {});
+    else if (root.webkitRequestFullscreen) root.webkitRequestFullscreen();
+  };
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const codeRef = useRef<string>('');
+  const hasPairedRef = useRef<boolean>(false);
+
+  const liveTvLabel = getDisplayTvPairingLabel();
+  const liveHostLabel = getDisplayAppHost();
+
+  const completePairingOnce = useCallback(
+    (params: {
+      roomId: string;
+      roomName?: string;
+      claimedBy?: string;
+      tvAuthToken?: string;
+    }) => {
+      if (hasPairedRef.current) return;
+      hasPairedRef.current = true;
+      const cleanRoomId = String(params.roomId).trim().toLowerCase();
+      const resolvedTitle =
+        params.roomName || `Sala ${cleanRoomId.toUpperCase()}`;
+
+      setPairedByBanner(
+        lang === 'es'
+          ? `✓ Vinculada por ${params.claimedBy || 'tu móvil'} · Entrando a ${resolvedTitle}...`
+          : `✓ Paired by ${params.claimedBy || 'your phone'} · Entering ${resolvedTitle}...`
+      );
+
+      setTimeout(() => {
+        onPaired({
+          roomId: cleanRoomId,
+          roomName: resolvedTitle,
+          tvAuthToken: String(params.tvAuthToken || ''),
+        });
+      }, 450);
+    },
+    [lang, onPaired]
+  );
+
+  const registerViaHttp = useCallback(async (forceNew = false) => {
+    try {
+      const res = await fetch('/api/tv/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          forceNew,
+          existingCode: forceNew ? '' : codeRef.current,
+        }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.success && data?.code) {
+        const nextCode = String(data.code);
+        codeRef.current = nextCode;
+        setPairingCode(nextCode);
+        setConnected(true);
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(
+            JSON.stringify({
+              type: 'TV_REGISTER_PAIRING',
+              payload: { existingCode: nextCode },
+            })
+          );
+        }
+      }
+    } catch {
+      // WebSocket or next poll cycle will retry
+    }
+  }, []);
+
+  const unlockTvAudioGesture = () => {
+    try {
+      const Ctx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext })
+          .webkitAudioContext;
+      if (Ctx) {
+        const ctx = new Ctx();
+        ctx.resume().catch(() => {});
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        gain.gain.value = 0.001;
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.05);
+      }
+      setAudioUnlocked(true);
+    } catch {
+      setAudioUnlocked(true);
+    }
+  };
+
+  const requestFreshCode = useCallback(() => {
+    hasPairedRef.current = false;
+    registerViaHttp(true);
+  }, [registerViaHttp]);
+
+  useEffect(() => {
+    let active = true;
+    let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+    let httpPollTimer: ReturnType<typeof setInterval> | null = null;
+    let refreshCodeTimer: ReturnType<typeof setInterval> | null = null;
+
+    // 1. Immediate HTTP registration (<150ms on Samsung Tizen even if WS is blocked!)
+    registerViaHttp(false);
+
+    // 2. WebSocket real-time channel (instant push when available)
+    const connectPairingSocket = () => {
+      if (!active) return;
+      try {
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
+        const socket = new WebSocket(wsUrl);
+        wsRef.current = socket;
+
+        socket.onopen = () => {
+          if (!active) return;
+          setConnected(true);
+          socket.send(
+            JSON.stringify({
+              type: 'TV_REGISTER_PAIRING',
+              payload: { existingCode: codeRef.current },
+            })
+          );
+        };
+
+        socket.onmessage = (ev) => {
+          if (!active) return;
+          try {
+            const msg = JSON.parse(ev.data);
+            if (
+              (msg.type === 'TV_PAIRING_READY' || msg.type === 'TV_PAIRING_CODE') &&
+              msg.payload?.code
+            ) {
+              const nextCode = String(msg.payload.code);
+              codeRef.current = nextCode;
+              setPairingCode(nextCode);
+              setConnected(true);
+            } else if (msg.type === 'TV_PAIRED_REDIRECT' && msg.payload?.roomId) {
+              const { roomId, roomName, claimedBy, pairedBy, tvAuthToken } = msg.payload;
+              completePairingOnce({
+                roomId: String(roomId),
+                roomName: roomName ? String(roomName) : undefined,
+                claimedBy: String(claimedBy || pairedBy || 'tu móvil'),
+                tvAuthToken: String(tvAuthToken || ''),
+              });
+            }
+          } catch {
+            // ignore malformed messages
+          }
+        };
+
+        socket.onclose = () => {
+          if (!active) return;
+          reconnectTimer = setTimeout(connectPairingSocket, 2500);
+        };
+      } catch {
+        // Fallback HTTP polling continues uninterrupted on older Smart TV browsers
+      }
+    };
+
+    connectPairingSocket();
+
+    // 3. Resilient HTTP Polling Fallback every 2s for Samsung Tizen / LG webOS browsers
+    httpPollTimer = setInterval(async () => {
+      if (!active || hasPairedRef.current) return;
+      const currentCode = codeRef.current;
+      if (!currentCode) {
+        await registerViaHttp(false);
+        return;
+      }
+      try {
+        const res = await fetch(`/api/tv/poll/${encodeURIComponent(currentCode)}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!active || hasPairedRef.current) return;
+
+        if (data?.paired && data?.roomId) {
+          completePairingOnce({
+            roomId: String(data.roomId),
+            roomName: data.roomName ? String(data.roomName) : undefined,
+            claimedBy: String(data.claimedBy || 'tu móvil'),
+            tvAuthToken: String(data.tvAuthToken || ''),
+          });
+        } else if (data?.expired) {
+          await registerViaHttp(true);
+        } else if (data?.success) {
+          setConnected(true);
+        }
+      } catch {
+        // transient offline
+      }
+    }, 2000);
+
+    // 4. Auto-refresh before 15-min expiry so TV can wait on standby indefinitely
+    refreshCodeTimer = setInterval(() => {
+      if (!hasPairedRef.current) {
+        registerViaHttp(true);
+      }
+    }, 12 * 60 * 1000);
+
+    return () => {
+      active = false;
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      if (httpPollTimer) clearInterval(httpPollTimer);
+      if (refreshCodeTimer) clearInterval(refreshCodeTimer);
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        try {
+          wsRef.current.close();
+        } catch {
+          // ignore
+        }
+        wsRef.current = null;
+      }
+    };
+  }, [completePairingOnce, registerViaHttp]);
+
+  const handleDirectRoomEnter = (e: React.FormEvent) => {
+    e.preventDefault();
+    const parsed = extractRoomCodeFromInput(directRoomDraft);
+    if (!parsed) return;
+    unlockTvAudioGesture();
+    completePairingOnce({
+      roomId: parsed,
+      roomName: `Sala ${parsed.toUpperCase()}`,
+      claimedBy: 'Mando TV',
+      tvAuthToken: '',
+    });
+  };
+
+  const digits = pairingCode ? pairingCode.split('') : ['•', '•', '•', '•'];
+
+  return (
+    <div className="min-h-screen w-full bg-[#050507] text-[#F5F5F7] flex flex-col justify-between p-5 sm:p-10 lg:p-12 relative overflow-x-hidden select-none">
+      {/* Ambient Salon Cinema Lighting */}
+      <div className="pointer-events-none fixed -top-48 left-1/2 -translate-x-1/2 w-[780px] h-[360px] rounded-full bg-[#E11D48]/14 blur-[150px]" />
+
+      {/* Top TV Header */}
+      <header className="relative z-10 flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3.5">
+          <NaimBrandLogo size={46} />
+          <div>
+            <div className="font-display font-bold text-lg sm:text-2xl tracking-[0.14em] text-white">
+              NAIM <span className="text-[#E11D48]">CINE</span>{' '}
+              <span className="text-zinc-300 font-semibold text-sm sm:text-base tracking-normal ml-1">
+                Smart TV
+              </span>
+            </div>
+            <div className="text-xs sm:text-sm text-zinc-400">
+              {liveTvLabel} ·{' '}
+              {lang === 'es'
+                ? 'Receptor compatible con Samsung Tizen, LG webOS y Android TV'
+                : 'Compatible with Samsung Tizen, LG webOS & Android TV'}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <div
+            className={`px-3.5 py-2 rounded-2xl border text-xs sm:text-sm font-medium flex items-center gap-2 ${
+              connected || pairingCode
+                ? 'bg-emerald-500/12 border-emerald-400/35 text-emerald-300'
+                : 'bg-amber-500/12 border-amber-400/35 text-amber-300'
+            }`}
+          >
+            <Wifi className="w-4 h-4" />
+            <span>
+              {connected || pairingCode
+                ? lang === 'es'
+                  ? 'TV lista esperando tu móvil'
+                  : 'TV ready for your phone'
+                : lang === 'es'
+                ? 'Conectando...'
+                : 'Connecting...'}
+            </span>
+          </div>
+
+          <button
+            type="button"
+            onClick={toggleTvBrowserFullscreen}
+            className="min-h-[44px] px-4 rounded-2xl bg-[#E11D48]/20 hover:bg-[#E11D48] border border-[#E11D48] text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-colors"
+          >
+            {isFullscreen ? (
+              <>
+                <Minimize className="w-4 h-4" />
+                <span>{lang === 'es' ? 'Salir Pantalla Completa' : 'Exit Fullscreen'}</span>
+              </>
+            ) : (
+              <>
+                <Maximize className="w-4 h-4" />
+                <span>{lang === 'es' ? 'Pantalla Completa' : 'Fullscreen'}</span>
+              </>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={onExitTvLobby}
+            className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs sm:text-sm font-semibold text-zinc-200 flex items-center gap-2 cursor-pointer transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            <span>{lang === 'es' ? 'Salir de Modo TV' : 'Exit TV Mode'}</span>
+          </button>
+        </div>
+      </header>
+
+      {/* Center 10-Foot Giant 4-Digit Code Display */}
+      <main className="relative z-10 my-auto py-6 max-w-4xl mx-auto w-full flex flex-col items-center text-center space-y-7">
+        <div className="space-y-2.5 max-w-2xl">
+          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-zinc-300 tracking-wide uppercase">
+            <Tv className="w-4 h-4 text-[#E11D48]" />
+            <span>
+              {lang === 'es'
+                ? 'Código de vinculación rápida para Samsung TV / Smart TV'
+                : 'Quick pairing code for Samsung TV / Smart TV'}
+            </span>
+          </div>
+          <h1 className="font-display font-bold text-2xl sm:text-4xl lg:text-5xl text-white tracking-tight">
+            {lang === 'es'
+              ? 'Introduce estos 4 números en tu móvil'
+              : 'Enter these 4 digits on your phone'}
+          </h1>
+          <p className="text-sm sm:text-lg text-zinc-400 leading-relaxed">
+            {lang === 'es'
+              ? 'En tu móvil entra a tu sala de NAIM CINE, toca el botón 📺 Smart TV (o Cast en el vídeo) y escribe este código:'
+              : 'On your phone, open your NAIM CINE room, tap the 📺 Smart TV button, and enter this code:'}
+          </p>
+        </div>
+
+        {/* 4 Giant Illuminated Cinema Digit Tiles */}
+        <div className="flex items-center justify-center gap-3 sm:gap-6">
+          {digits.map((digit, index) => (
+            <div
+              key={index}
+              className="w-20 h-28 sm:w-28 sm:h-36 lg:w-36 lg:h-44 rounded-3xl bg-[#0E0E13] border border-white/15 shadow-[0_24px_80px_rgba(0,0,0,0.9),0_0_40px_rgba(225,29,72,0.14)] flex items-center justify-center font-mono font-bold text-5xl sm:text-7xl lg:text-8xl text-white"
+            >
+              {digit}
+            </div>
+          ))}
+        </div>
+
+        {pairedByBanner ? (
+          <div className="px-6 py-4 rounded-2xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 font-display font-bold text-base sm:text-xl animate-pulse">
+            {pairedByBanner}
+          </div>
+        ) : (
+          <div className="w-full max-w-2xl space-y-4">
+            <div className="flex flex-wrap items-center justify-center gap-3">
+              <button
+                type="button"
+                onClick={unlockTvAudioGesture}
+                className={`min-h-[52px] px-6 rounded-2xl border font-semibold text-sm sm:text-base flex items-center gap-2.5 cursor-pointer transition-all ${
+                  audioUnlocked
+                    ? 'bg-emerald-500/18 border-emerald-400/45 text-emerald-200'
+                    : 'bg-[#E11D48] hover:bg-[#BE123C] border-[#E11D48] text-white shadow-[0_12px_36px_rgba(225,29,72,0.38)]'
+                }`}
+              >
+                {audioUnlocked ? (
+                  <>
+                    <Check className="w-5 h-5" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Sonido de TV activado y listo'
+                        : 'TV Audio Enabled & Ready'}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-5 h-5" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Pulsa OK aquí con el mando de la TV para activar sonido'
+                        : 'Press OK once with TV remote to enable sound'}
+                    </span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={toggleTvBrowserFullscreen}
+                className="min-h-[52px] px-5 rounded-2xl bg-white text-[#050507] hover:bg-zinc-200 text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                {isFullscreen ? (
+                  <>
+                    <Minimize className="w-4 h-4" />
+                    <span>{lang === 'es' ? 'Salir Pantalla Completa' : 'Exit Fullscreen'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Maximize className="w-4 h-4 text-[#E11D48]" />
+                    <span>{lang === 'es' ? 'Pantalla Completa TV' : 'TV Fullscreen'}</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={requestFreshCode}
+                className="min-h-[52px] px-5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-sm font-semibold text-zinc-200 flex items-center gap-2 cursor-pointer transition-colors"
+              >
+                <RefreshCw className="w-4 h-4 text-zinc-300" />
+                <span>{lang === 'es' ? 'Nuevo código' : 'New code'}</span>
+              </button>
+            </div>
+
+            {/* Direct Room Entry on TV (Zero Phone Required Fallback!) */}
+            <form
+              onSubmit={handleDirectRoomEnter}
+              className="mx-auto max-w-lg p-3 rounded-2xl bg-[#0B0B10] border border-white/[0.09] flex flex-col sm:flex-row items-center gap-2.5"
+            >
+              <span className="text-xs text-zinc-400 shrink-0 px-1">
+                {lang === 'es'
+                  ? '¿O entrar directo con código de sala?'
+                  : 'Or enter room code directly:'}
+              </span>
+              <div className="flex items-center gap-2 w-full sm:flex-1">
+                <input
+                  type="text"
+                  value={directRoomDraft}
+                  onChange={(e) => setDirectRoomDraft(e.target.value)}
+                  placeholder={lang === 'es' ? 'Ej: k8x4' : 'e.g. k8x4'}
+                  maxLength={24}
+                  className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#050507] border border-white/12 focus:border-[#E11D48] text-center font-mono font-bold text-sm uppercase text-white placeholder:text-zinc-600 outline-none"
+                />
+                <button
+                  type="submit"
+                  disabled={!directRoomDraft.trim()}
+                  className="h-11 px-4 rounded-xl bg-white text-[#050507] hover:bg-zinc-200 disabled:opacity-35 text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                >
+                  <span>{lang === 'es' ? 'Entrar' : 'Join'}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+      </main>
+
+      {/* Bottom Step-by-Step Salon Guide */}
+      <footer className="relative z-10 max-w-4xl mx-auto w-full grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
+        <div className="p-4 rounded-2xl bg-[#0E0E13] border border-white/[0.08] flex items-start gap-3">
+          <div className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center font-mono font-bold text-xs text-white shrink-0">
+            1
+          </div>
+          <div className="text-xs sm:text-sm text-zinc-300 min-w-0">
+            <strong className="text-white block mb-0.5">
+              {lang === 'es' ? 'Abre tu sala en el móvil' : 'Open room on phone'}
+            </strong>
+            <span className="break-all">
+              {lang === 'es'
+                ? `Entra en ${liveHostLabel || 'NAIM CINE'} desde tu teléfono.`
+                : `Open ${liveHostLabel || 'NAIM CINE'} on your smartphone.`}
+            </span>
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#0E0E13] border border-white/[0.08] flex items-start gap-3">
+          <div className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center font-mono font-bold text-xs text-white shrink-0">
+            2
+          </div>
+          <div className="text-xs sm:text-sm text-zinc-300">
+            <strong className="text-white block mb-0.5">
+              {lang === 'es' ? 'Pulsa 📺 Smart TV o Cast' : 'Tap 📺 Smart TV or Cast'}
+            </strong>
+            {lang === 'es'
+              ? 'Arriba en la barra o dentro del reproductor → escribe estos 4 números.'
+              : 'In the top bar or inside the video player → enter these 4 digits.'}
+          </div>
+        </div>
+
+        <div className="p-4 rounded-2xl bg-[#0E0E13] border border-white/[0.08] flex items-start gap-3">
+          <div className="w-8 h-8 rounded-xl bg-[#E11D48]/15 border border-[#E11D48]/35 flex items-center justify-center shrink-0">
+            <Smartphone className="w-4 h-4 text-[#FB7185]" />
+          </div>
+          <div className="text-xs sm:text-sm text-zinc-300">
+            <strong className="text-white block mb-0.5">
+              {lang === 'es' ? 'Mando en tu teléfono' : 'Phone becomes remote'}
+            </strong>
+            {lang === 'es'
+              ? 'Controla Play, Pausa, Volumen y Ambilight desde el sofá.'
+              : 'Control Play, Pause, Volume & Ambilight from your couch.'}
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+};

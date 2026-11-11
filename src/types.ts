@@ -62,6 +62,23 @@ export interface VideoState {
   updatedBy?: string;
 }
 
+export interface SecondaryStreamState {
+  url: string;
+  rawSourceUrl: string;
+  title: string;
+  subtitle?: string;
+  mode: 'hls' | 'direct';
+  layout: 'corner' | 'split';
+}
+
+export interface SubtitleTrackItem {
+  id: string;
+  label: string;
+  lang: string;
+  url?: string;
+  rawContent?: string;
+}
+
 export interface CatalogMovie {
   id: string;
   tmdbId?: number;
@@ -76,6 +93,32 @@ export interface CatalogMovie {
   movidyUrl?: string;
   bingetrixUrl?: string;
   languages: string[];
+}
+
+export interface CastMemberItem {
+  id: number;
+  name: string;
+  character: string;
+  photo?: string;
+}
+
+export interface MediaRichDetails {
+  tmdbId: number;
+  mediaType: 'movie' | 'tv';
+  title: string;
+  originalTitle: string;
+  tagline?: string;
+  year: string;
+  rating: string;
+  runtimeText?: string;
+  genres: string[];
+  overview: string;
+  poster: string;
+  backdrop: string;
+  trailerKey?: string;
+  directorOrCreator?: string;
+  cast: CastMemberItem[];
+  similar: CatalogMovie[];
 }
 
 export interface TvSeasonSummary {
@@ -137,6 +180,39 @@ export interface RoomQueueItem {
   addedBy: string;
 }
 
+export type PollProposalItem = Omit<RoomQueueItem, 'id' | 'addedBy'>;
+
+export interface RoomPollOption {
+  id: string;
+  item: PollProposalItem;
+  voterIds: string[];
+}
+
+export interface RoomPollState {
+  id: string;
+  question: string;
+  createdBy: string;
+  createdAt: number;
+  endsAt: number;
+  isClosed: boolean;
+  winnerOptionId?: string;
+  options: RoomPollOption[];
+}
+
+export interface LiveScoreMatch {
+  id: string;
+  league: string;
+  sport: 'soccer' | 'motor' | 'basketball';
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: string;
+  awayScore: string;
+  homeLogo?: string;
+  awayLogo?: string;
+  statusText: string;
+  isLive: boolean;
+}
+
 export interface SportsMatch {
   id: string;
   title: string;
@@ -168,7 +244,16 @@ export interface ChatMessage {
   text: string;
   timestamp: number;
   isSystem?: boolean;
-  systemType?: 'join' | 'leave' | 'video_change' | 'play' | 'pause' | 'seek' | 'host_change';
+  systemType?:
+    | 'join'
+    | 'leave'
+    | 'video_change'
+    | 'play'
+    | 'pause'
+    | 'seek'
+    | 'host_change'
+    | 'poll'
+    | 'lock';
 }
 
 export interface FloatingReaction {
@@ -208,10 +293,49 @@ export interface WatchHistoryItem {
   watchedAt: number;
 }
 
+export interface CloudSavedRoom {
+  roomCode: string;
+  roomName: string;
+  hasPin: boolean;
+  pinCode?: string;
+  hostOnlyControl: boolean;
+  lastActiveTitle?: string;
+  queueItems: RoomQueueItem[];
+  updatedAt: number;
+}
+
+export interface RestoredRoomBlueprint {
+  roomName: string;
+  hostOnlyControl: boolean;
+  pinCode?: string;
+  queueItems: RoomQueueItem[];
+}
+
+export type TvRemoteCommandType =
+  | 'vol_up'
+  | 'vol_down'
+  | 'toggle_mute'
+  | 'toggle_fullscreen'
+  | 'toggle_aspect'
+  | 'toggle_hud'
+  | 'reload_tv'
+  | 'toggle_ambilight'
+  | 'disconnect_tv';
+
+export interface LanguageNoticePopup {
+  id: string;
+  type: 'success' | 'warning' | 'error';
+  title: string;
+  subtitle?: string;
+}
+
 export interface RoomData {
   id: string;
   name: string;
   hostId: string;
+  hasPin?: boolean;
+  hostOnlyControl?: boolean;
+  activePoll?: RoomPollState | null;
   videoState: VideoState;
   queue?: RoomQueueItem[];
   cloudState?: CloudBrowserState;
@@ -219,3 +343,4 @@ export interface RoomData {
   messages: ChatMessage[];
   createdAt: number;
 }
+

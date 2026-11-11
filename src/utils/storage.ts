@@ -41,7 +41,7 @@ export function sanitizeItemKey(raw: string): string {
     .replace(/[^a-zA-Z0-9_-]/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
-    .slice(0, 96);
+    .slice(0, 80);
   return cleaned || 'item-1';
 }
 

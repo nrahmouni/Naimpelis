@@ -11,6 +11,7 @@ interface CloudAccountButtonProps {
   lang: AppLanguage;
   displayName?: string;
   compact?: boolean;
+  isDesktop?: boolean;
   onSignIn: () => Promise<void>;
   onSignOut: () => Promise<void>;
   onOpenProfileHub?: () => void;
@@ -22,6 +23,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
   lang,
   displayName,
   compact = false,
+  isDesktop = false,
   onSignIn,
   onOpenProfileHub,
 }) => {
@@ -45,7 +47,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
 
   if (authLoading) {
     return (
-      <div className="h-10 px-3 rounded-xl bg-[#12141D] border border-white/10 flex items-center justify-center text-zinc-400 shrink-0">
+      <div className="h-10 px-3 rounded-xl bg-white/[0.05] border border-white/[0.08] flex items-center justify-center text-zinc-400 shrink-0">
         <Loader2 className="w-4 h-4 animate-spin" />
       </div>
     );
@@ -57,7 +59,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
       displayName ||
       user?.displayName?.split(' ')[0] ||
       user?.email?.split('@')[0] ||
-      (lang === 'es' ? 'Mi Perfil' : 'Profile');
+      (lang === 'es' ? 'Perfil' : 'Profile');
 
     return (
       <button
@@ -66,15 +68,13 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
           triggerHaptic('light');
           onOpenProfileHub();
         }}
-        className={`min-h-[40px] ${
-          compact ? 'px-2.5 sm:px-3' : 'px-3.5'
-        } rounded-xl bg-[#12141D] hover:bg-[#191C28] active:scale-95 border ${
-          user ? 'border-emerald-500/35' : 'border-white/15'
-        } text-xs font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
+        className={`min-h-10 ${
+          compact && !isDesktop ? 'px-2.5' : 'px-3'
+        } rounded-xl bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/[0.09] text-xs font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
         title={
           lang === 'es'
-            ? 'Abrir Mi Perfil (Historial, Favoritos y Salas)'
-            : 'Open My Profile (History, Favorites & Rooms)'
+            ? 'Abrir Mi Perfil (Historial, Favoritos, Salas y Vista)'
+            : 'Open My Profile (History, Favorites, Rooms & View)'
         }
       >
         {user?.photoURL && !imgBroken ? (
@@ -83,17 +83,23 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
             alt={shortName}
             referrerPolicy="no-referrer"
             onError={() => setImgBroken(true)}
-            className="w-6 h-6 rounded-full object-cover shrink-0"
+            className="w-6 h-6 rounded-full object-cover shrink-0 ring-1 ring-white/20"
           />
         ) : (
-          <span className="w-6 h-6 rounded-lg bg-[#E11D48]/20 border border-[#E11D48]/40 text-white flex items-center justify-center text-[10px] font-display font-bold shrink-0">
+          <span className="w-6 h-6 rounded-full bg-[#E11D48]/20 border border-[#E11D48]/45 text-white flex items-center justify-center text-[0.65rem] font-display font-bold shrink-0">
             {displayName ? getMonogramInitials(displayName) : <UserIcon className="w-3.5 h-3.5" />}
           </span>
         )}
-        <span className={compact ? 'hidden sm:inline max-w-[96px] truncate' : 'inline'}>
-          {lang === 'es' ? 'Mi Perfil' : 'Profile'}
+        <span className={compact && !isDesktop ? 'hidden' : 'inline max-w-24 truncate'}>
+          {lang === 'es' ? 'Perfil' : 'Profile'}
         </span>
-        {user && <Cloud className="w-3.5 h-3.5 text-emerald-400 shrink-0 hidden md:block" />}
+        {user && (
+          <span
+            className={`w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ${
+              compact && !isDesktop ? 'hidden' : 'block'
+            }`}
+          />
+        )}
       </button>
     );
   }
@@ -105,22 +111,22 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
         type="button"
         disabled={busy}
         onClick={handleLoginClick}
-        className={`min-h-[40px] ${
-          compact ? 'px-2.5 sm:px-3.5' : 'px-3.5'
-        } rounded-xl bg-[#12141D] hover:bg-[#191C28] active:scale-95 border border-white/15 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
+        className={`min-h-10 ${
+          compact && !isDesktop ? 'px-2.5' : 'px-3.5'
+        } rounded-xl bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/[0.09] text-xs font-semibold text-zinc-100 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
         title={
           lang === 'es'
-            ? 'Iniciar sesión con Google y entrar directo'
-            : 'Sign in with Google and enter directly'
+            ? 'Iniciar sesión con Google y sincronizar en la nube'
+            : 'Sign in with Google and sync to cloud'
         }
       >
         {busy ? (
-          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#38BDF8]" />
+          <Loader2 className="w-4 h-4 animate-spin text-white" />
         ) : (
-          <LogIn className="w-3.5 h-3.5 text-[#38BDF8]" />
+          <LogIn className="w-4 h-4 text-zinc-300" />
         )}
-        <span className={compact ? 'hidden sm:inline' : 'inline'}>
-          {lang === 'es' ? 'Iniciar sesión' : 'Sign in'}
+        <span className={compact && !isDesktop ? 'hidden' : 'inline'}>
+          {lang === 'es' ? 'Acceder' : 'Sign in'}
         </span>
       </button>
     );
@@ -129,18 +135,18 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
   const shortName =
     user.displayName?.split(' ')[0] ||
     user.email?.split('@')[0] ||
-    (lang === 'es' ? 'Mi Cuenta' : 'Account');
+    (lang === 'es' ? 'Cuenta' : 'Account');
 
   return (
     <button
       type="button"
       onClick={handleLoginClick}
-      className="min-h-[40px] px-2.5 sm:px-3 rounded-xl bg-[#12141D] hover:bg-[#191C28] border border-emerald-500/35 text-xs font-semibold text-white flex items-center gap-2 cursor-pointer transition-colors"
+      className="min-h-10 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
     >
-      <span className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-[11px] font-bold shrink-0">
+      <span className="w-6 h-6 rounded-full bg-[#E11D48]/20 border border-[#E11D48]/40 text-white flex items-center justify-center text-xs font-bold shrink-0">
         {shortName.slice(0, 1).toUpperCase()}
       </span>
-      <span className="hidden md:inline max-w-[96px] truncate">{shortName}</span>
+      {isDesktop && <span className="max-w-24 truncate">{shortName}</span>}
       <Cloud className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
     </button>
   );

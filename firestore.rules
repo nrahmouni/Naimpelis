@@ -21,7 +21,12 @@ service cloud.firestore {
     }
 
     function isValidId(id) {
-      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+      return id is string && id.size() >= 1 && id.size() <= 160 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwnCompositeDocId(docId) {
+      return docId.size() > request.auth.uid.size() + 1 &&
+        docId.matches('^' + request.auth.uid + '_[a-zA-Z0-9_\\-]+$');
     }
 
     function incoming() {
@@ -30,11 +35,6 @@ service cloud.firestore {
 
     function existing() {
       return resource.data;
-    }
-
-    function hasOwnerProfile() {
-      return exists(/databases/$(database)/documents/userProfiles/$(request.auth.uid)) ||
-        existsAfter(/databases/$(database)/documents/userProfiles/$(request.auth.uid));
     }
 
     // =========================================================================
@@ -93,14 +93,14 @@ service cloud.firestore {
         data.uid == request.auth.uid &&
         data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 96 && data.itemId.matches('^[a-zA-Z0-9_\\-]+$') &&
         data.mediaType is string && data.mediaType.size() <= 10 && (data.mediaType == 'movie' || data.mediaType == 'tv') &&
-        (!('tmdbId' in data) || (data.tmdbId is int && data.tmdbId > 0 && data.tmdbId <= 999999999)) &&
+        (!('tmdbId' in data) || (data.tmdbId is number && data.tmdbId >= 1 && data.tmdbId <= 999999999)) &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
         data.subtitle is string && data.subtitle.size() <= 240 &&
         data.poster is string && data.poster.size() <= 600 &&
         data.backdrop is string && data.backdrop.size() <= 600 &&
         (!('year' in data) || (data.year is string && data.year.size() <= 16)) &&
-        (!('season' in data) || (data.season is int && data.season >= 1 && data.season <= 200)) &&
-        (!('episode' in data) || (data.episode is int && data.episode >= 1 && data.episode <= 5000)) &&
+        (!('season' in data) || (data.season is number && data.season >= 1 && data.season <= 200)) &&
+        (!('episode' in data) || (data.episode is number && data.episode >= 1 && data.episode <= 5000)) &&
         (!('episodeTitle' in data) || (data.episodeTitle is string && data.episodeTitle.size() <= 200)) &&
         data.preferLang is string && data.preferLang.size() == 2 && (data.preferLang == 'ES' || data.preferLang == 'EN') &&
         (!('bingetrixUrl' in data) || (data.bingetrixUrl is string && data.bingetrixUrl.size() <= 600)) &&
@@ -145,7 +145,7 @@ service cloud.firestore {
         data.uid == request.auth.uid &&
         data.favId is string && data.favId.size() >= 1 && data.favId.size() <= 96 && data.favId.matches('^[a-zA-Z0-9_\\-]+$') &&
         data.kind is string && data.kind.size() <= 12 && (data.kind == 'movie' || data.kind == 'series' || data.kind == 'channel') &&
-        (!('tmdbId' in data) || (data.tmdbId is int && data.tmdbId > 0 && data.tmdbId <= 999999999)) &&
+        (!('tmdbId' in data) || (data.tmdbId is number && data.tmdbId >= 1 && data.tmdbId <= 999999999)) &&
         data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
         data.subtitle is string && data.subtitle.size() <= 240 &&
         data.poster is string && data.poster.size() <= 600 &&
@@ -163,6 +163,54 @@ service cloud.firestore {
           data.sport == 'tennis' ||
           data.sport == 'other'
         ))) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidSavedRoom(data) {
+      return data.keys().hasAll([
+          'uid',
+          'roomCode',
+          'roomName',
+          'hasPin',
+          'hostOnlyControl',
+          'queueItems',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'roomCode',
+          'roomName',
+          'hasPin',
+          'pinCode',
+          'hostOnlyControl',
+          'lastActiveTitle',
+          'queueItems',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == request.auth.uid &&
+        data.roomCode is string && data.roomCode.size() >= 2 && data.roomCode.size() <= 32 && data.roomCode.matches('^[a-z0-9_\\-]+$') &&
+        data.roomName is string && data.roomName.size() >= 1 && data.roomName.size() <= 60 &&
+        data.hasPin is bool &&
+        (
+          (data.hasPin == true && ('pinCode' in data) && data.pinCode is string && data.pinCode.size() == 4 && data.pinCode.matches('^[0-9]{4}$')) ||
+          (data.hasPin == false && !('pinCode' in data))
+        ) &&
+        data.hostOnlyControl is bool &&
+        (!('lastActiveTitle' in data) || (data.lastActiveTitle is string && data.lastActiveTitle.size() <= 200)) &&
+        data.queueItems is list && data.queueItems.size() <= 12 &&
+        (
+          data.queueItems.size() == 0 ||
+          (
+            data.queueItems[0] is map &&
+            data.queueItems[0].keys().hasAll(['id', 'kind', 'title', 'subtitle']) &&
+            data.queueItems[0].title is string &&
+            data.queueItems[0].title.size() <= 200
+          )
+        ) &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
     }
@@ -209,8 +257,10 @@ service cloud.firestore {
     match /watchHistory/{historyId} {
       allow get: if isVerified() &&
         isValidId(historyId) &&
-        existing().uid == request.auth.uid &&
-        historyId == request.auth.uid + '_' + existing().itemId;
+        (
+          (resource == null && isOwnCompositeDocId(historyId)) ||
+          (resource != null && existing().uid == request.auth.uid && historyId == request.auth.uid + '_' + existing().itemId)
+        );
 
       allow list: if isVerified() &&
         existing().uid == request.auth.uid;
@@ -220,8 +270,7 @@ service cloud.firestore {
         isValidWatchHistoryItem(incoming()) &&
         historyId == request.auth.uid + '_' + incoming().itemId &&
         incoming().createdAt == request.time &&
-        incoming().updatedAt == request.time &&
-        hasOwnerProfile();
+        incoming().updatedAt == request.time;
 
       allow update: if isVerified() &&
         isValidId(historyId) &&
@@ -262,16 +311,20 @@ service cloud.firestore {
 
       allow delete: if isVerified() &&
         isValidId(historyId) &&
-        existing().uid == request.auth.uid &&
-        historyId == request.auth.uid + '_' + existing().itemId;
+        (
+          (resource == null && isOwnCompositeDocId(historyId)) ||
+          (resource != null && existing().uid == request.auth.uid && historyId == request.auth.uid + '_' + existing().itemId)
+        );
     }
 
     // Favorites: owner-only movies, TV series, and live sports channels with anti-squatting ID binding
     match /favorites/{favoriteId} {
       allow get: if isVerified() &&
         isValidId(favoriteId) &&
-        existing().uid == request.auth.uid &&
-        favoriteId == request.auth.uid + '_' + existing().favId;
+        (
+          (resource == null && isOwnCompositeDocId(favoriteId)) ||
+          (resource != null && existing().uid == request.auth.uid && favoriteId == request.auth.uid + '_' + existing().favId)
+        );
 
       allow list: if isVerified() &&
         existing().uid == request.auth.uid;
@@ -281,8 +334,7 @@ service cloud.firestore {
         isValidFavoriteItem(incoming()) &&
         favoriteId == request.auth.uid + '_' + incoming().favId &&
         incoming().createdAt == request.time &&
-        incoming().updatedAt == request.time &&
-        hasOwnerProfile();
+        incoming().updatedAt == request.time;
 
       allow update: if isVerified() &&
         isValidId(favoriteId) &&
@@ -315,8 +367,59 @@ service cloud.firestore {
 
       allow delete: if isVerified() &&
         isValidId(favoriteId) &&
+        (
+          (resource == null && isOwnCompositeDocId(favoriteId)) ||
+          (resource != null && existing().uid == request.auth.uid && favoriteId == request.auth.uid + '_' + existing().favId)
+        );
+    }
+
+    // Saved Permanent Rooms: strictly owner-only cloud rooms with optional 4-digit PIN & persisted queue
+    match /savedRooms/{savedRoomId} {
+      allow get: if isVerified() &&
+        isValidId(savedRoomId) &&
+        (
+          (resource == null && isOwnCompositeDocId(savedRoomId)) ||
+          (resource != null && existing().uid == request.auth.uid && savedRoomId == request.auth.uid + '_' + existing().roomCode)
+        );
+
+      allow list: if isVerified() &&
+        existing().uid == request.auth.uid;
+
+      allow create: if isVerified() &&
+        isValidId(savedRoomId) &&
+        isValidSavedRoom(incoming()) &&
+        savedRoomId == request.auth.uid + '_' + incoming().roomCode &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerified() &&
+        isValidId(savedRoomId) &&
+        isValidSavedRoom(incoming()) &&
         existing().uid == request.auth.uid &&
-        favoriteId == request.auth.uid + '_' + existing().favId;
+        savedRoomId == request.auth.uid + '_' + existing().roomCode &&
+        incoming().uid == existing().uid &&
+        incoming().roomCode == existing().roomCode &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action: SyncPermanentRoomState (name, PIN lock, host-lock, queue, lastActiveTitle)
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'roomName',
+            'hasPin',
+            'pinCode',
+            'hostOnlyControl',
+            'lastActiveTitle',
+            'queueItems',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() &&
+        isValidId(savedRoomId) &&
+        (
+          (resource == null && isOwnCompositeDocId(savedRoomId)) ||
+          (resource != null && existing().uid == request.auth.uid && savedRoomId == request.auth.uid + '_' + existing().roomCode)
+        );
     }
   }
 }

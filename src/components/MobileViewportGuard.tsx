@@ -6,7 +6,7 @@ import { triggerHaptic } from '../utils/haptics';
 export type ViewPreference = 'auto' | 'mobile' | 'desktop';
 export type EffectiveViewMode = 'mobile' | 'desktop';
 
-const VIEW_PREF_STORAGE_KEY = 'naim_view_preference_v3';
+const VIEW_PREF_STORAGE_KEY = 'naim_view_preference_v4';
 
 export function getMonogramInitials(rawName: string): string {
   const cleaned = (rawName || '')
@@ -31,54 +31,97 @@ function readStoredViewPreference(): ViewPreference {
   return 'auto';
 }
 
+function detectCoarseTouchDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (window.matchMedia?.('(pointer: coarse)').matches) return true;
+    if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) {
+      // Distinguish pure phones/tablets with no fine mouse hover
+      if (window.matchMedia?.('(hover: none)').matches) return true;
+    }
+  } catch {
+    // ignore
+  }
+  return false;
+}
+
 export function useViewLayoutMode() {
   const [viewPreference, setViewPreferenceState] = useState<ViewPreference>(() =>
     readStoredViewPreference()
   );
-  const [windowWidth, setWindowWidth] = useState<number>(() =>
-    typeof window !== 'undefined' ? window.innerWidth : 1280
-  );
+  const [viewportSize, setViewportSize] = useState<{ width: number; height: number }>(() => ({
+    width: typeof window !== 'undefined' ? window.innerWidth : 1280,
+    height: typeof window !== 'undefined' ? window.innerHeight : 800,
+  }));
 
   useEffect(() => {
-    const onResize = () => {
-      setWindowWidth(window.innerWidth);
+    const syncDimensions = () => {
+      setViewportSize({
+        width: window.innerWidth,
+        height: window.innerHeight,
+      });
     };
-    window.addEventListener('resize', onResize);
-    window.addEventListener('orientationchange', onResize);
+    syncDimensions();
+    window.addEventListener('resize', syncDimensions);
+    window.addEventListener('orientationchange', syncDimensions);
+    window.visualViewport?.addEventListener('resize', syncDimensions);
     return () => {
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('orientationchange', onResize);
+      window.removeEventListener('resize', syncDimensions);
+      window.removeEventListener('orientationchange', syncDimensions);
+      window.visualViewport?.removeEventListener('resize', syncDimensions);
     };
   }, []);
 
-  // Natural responsive mode — NEVER forces mobile automatically
-  const naturalMode: EffectiveViewMode = windowWidth >= 1024 ? 'desktop' : 'mobile';
+  const windowWidth = viewportSize.width;
+  const windowHeight = viewportSize.height;
+  const isCoarseTouch = detectCoarseTouchDevice();
+
+  // Detect smartphones where Chrome Android's "Sitio para ordenador / Desktop site"
+  // forced a ~980px desktop layout viewport onto a tall portrait phone screen (aspect >= 1.5)
+  const isPhoneForcedDesktopViewport =
+    isCoarseTouch &&
+    windowWidth >= 680 &&
+    windowHeight / Math.max(windowWidth, 1) >= 1.5 &&
+    viewPreference !== 'desktop';
+
+  const naturalMode: EffectiveViewMode =
+    !isPhoneForcedDesktopViewport && windowWidth >= 1024 ? 'desktop' : 'mobile';
+
   const effectiveView: EffectiveViewMode =
     viewPreference === 'auto' ? naturalMode : viewPreference;
 
   useEffect(() => {
     try {
-      // Ensure any legacy zoom property is always cleared
-      document.documentElement.style.removeProperty('zoom');
+      const root = document.documentElement;
+      root.style.removeProperty('zoom');
       const vp = document.getElementById('naim-viewport');
-      if (!vp) return;
 
       if (viewPreference === 'desktop' && (window.screen?.width || 1280) < 1024) {
         // User on a small screen explicitly requested Desktop View
-        vp.setAttribute(
+        root.style.removeProperty('font-size');
+        vp?.setAttribute(
           'content',
           'width=1280, initial-scale=0.32, minimum-scale=0.2, maximum-scale=5.0, viewport-fit=cover'
         );
       } else {
-        vp.setAttribute(
+        vp?.setAttribute(
           'content',
           'width=device-width, initial-scale=1.0, viewport-fit=cover'
         );
+
+        // If Chrome Android "Sitio para ordenador" still forces a ~980px viewport on a portrait phone,
+        // scale root rem proportionally so 980px === ~24.5rem (100% native full-bleed mobile sizing)
+        if (isPhoneForcedDesktopViewport) {
+          const scale = Math.min(2.65, Math.max(1.75, windowWidth / 392));
+          root.style.fontSize = `${Math.round(16 * scale)}px`;
+        } else {
+          root.style.removeProperty('font-size');
+        }
       }
     } catch {
       // ignore
     }
-  }, [viewPreference]);
+  }, [viewPreference, isPhoneForcedDesktopViewport, windowWidth]);
 
   const setViewPreference = useCallback((next: ViewPreference) => {
     setViewPreferenceState(next);
@@ -90,19 +133,29 @@ export function useViewLayoutMode() {
   }, []);
 
   const toggleViewMode = useCallback(() => {
-    const next: ViewPreference = effectiveView === 'desktop' ? 'mobile' : 'desktop';
-    setViewPreference(next);
-  }, [effectiveView, setViewPreference]);
+    if (effectiveView === 'desktop') {
+      // On touch devices return to natural full-bleed mobile ('auto'); on PC switch to 'mobile' preview
+      setViewPreference(isCoarseTouch ? 'auto' : 'mobile');
+    } else {
+      setViewPreference('desktop');
+    }
+  }, [effectiveView, isCoarseTouch, setViewPreference]);
 
-  // When on a wide desktop screen and user manually chooses "Mobile View",
-  // render a centered 430px mobile app frame with mobile navigation.
-  const isFramedMobileOnPc = effectiveView === 'mobile' && windowWidth >= 640;
+  // ONLY render the 430px centered mobile preview frame when the user is on a real
+  // non-touch landscape PC monitor (>=1024px) and explicitly toggled "Vista móvil".
+  // NEVER activate automatically on phones, tablets, foldables, or Chrome Desktop-Site mode.
+  const isFramedMobileOnPc =
+    viewPreference === 'mobile' &&
+    !isCoarseTouch &&
+    windowWidth >= 1024 &&
+    windowWidth > windowHeight;
 
   return {
     viewPreference,
     effectiveView,
     isDesktopLayout: effectiveView === 'desktop',
     isFramedMobileOnPc,
+    isPhoneForcedDesktopViewport,
     setViewPreference,
     toggleViewMode,
   };
@@ -148,22 +201,22 @@ export const ViewModeSwitchButton: React.FC<ViewModeSwitchButtonProps> = ({
           ? 'Ver en modo escritorio'
           : 'Switch to desktop view'
       }
-      className={`min-h-[40px] ${
-        compact ? 'px-2.5 sm:px-3' : 'px-3.5'
-      } rounded-xl bg-[#12141D] hover:bg-[#191C28] active:scale-95 border border-white/12 text-xs font-medium text-zinc-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
+      className={`min-h-10 ${
+        compact ? 'px-2.5' : 'px-3.5'
+      } rounded-xl bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/[0.08] text-xs font-medium text-zinc-200 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
     >
       {switchToMobile ? (
         <>
-          <Smartphone className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
-          <span className={compact ? 'hidden md:inline' : 'inline'}>
-            {lang === 'es' ? 'Modo móvil' : 'Mobile view'}
+          <Smartphone className="w-4 h-4 text-zinc-300 shrink-0" />
+          <span className={compact ? 'hidden xl:inline' : 'inline'}>
+            {lang === 'es' ? 'Vista móvil' : 'Mobile view'}
           </span>
         </>
       ) : (
         <>
-          <Monitor className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
-          <span className={compact ? 'hidden sm:inline' : 'inline'}>
-            {lang === 'es' ? 'Modo PC' : 'Desktop view'}
+          <Monitor className="w-4 h-4 text-zinc-300 shrink-0" />
+          <span className={compact ? 'hidden xl:inline' : 'inline'}>
+            {lang === 'es' ? 'Vista PC' : 'Desktop view'}
           </span>
         </>
       )}

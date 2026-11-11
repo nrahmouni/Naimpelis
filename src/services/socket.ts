@@ -1,8 +1,19 @@
-import { Participant, VideoState } from '../types';
+import {
+  Participant,
+  RestoredRoomBlueprint,
+  TvRemoteCommandType,
+  VideoState,
+} from '../types';
 
 export interface SocketEvent {
   type: string;
   payload: any;
+}
+
+export interface ConnectRoomOptions {
+  pin?: string;
+  tvAuthToken?: string;
+  restoredBlueprint?: RestoredRoomBlueprint;
 }
 
 type Listener = (event: SocketEvent) => void;
@@ -13,17 +24,26 @@ class SocketService {
   private roomId = '';
   private roomName = '';
   private user: Participant | null = null;
+  private connectOptions: ConnectRoomOptions = {};
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private intentionalClose = false;
   public latencyMs = 24;
 
-  connect(roomId: string, user: Participant, roomName?: string) {
+  connect(
+    roomId: string,
+    user: Participant,
+    roomName?: string,
+    options?: ConnectRoomOptions
+  ) {
     this.intentionalClose = false;
     this.roomId = roomId.trim().toLowerCase();
     this.roomName = roomName || `Sala ${this.roomId.toUpperCase()}`;
     this.user = user;
+    if (options) {
+      this.connectOptions = options;
+    }
 
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -49,6 +69,9 @@ class SocketService {
           roomId: this.roomId,
           roomName: this.roomName,
           user: this.user,
+          pin: this.connectOptions.pin,
+          tvAuthToken: this.connectOptions.tvAuthToken,
+          restoredBlueprint: this.connectOptions.restoredBlueprint,
         });
         this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: true } });
         this.startHeartbeat();
@@ -71,12 +94,12 @@ class SocketService {
       socket.onclose = () => {
         this.stopHeartbeat();
         this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: false } });
-        if (!this.intentionalClose && this.reconnectAttempts < 8) {
+        if (!this.intentionalClose) {
           this.reconnectAttempts += 1;
-          const delay = Math.min(6000, 1000 * this.reconnectAttempts);
+          const delay = Math.min(7000, 1000 * Math.min(this.reconnectAttempts, 7));
           this.reconnectTimer = setTimeout(() => {
             if (this.roomId && this.user) {
-              this.connect(this.roomId, this.user, this.roomName);
+              this.connect(this.roomId, this.user, this.roomName, this.connectOptions);
             }
           }, delay);
         }
@@ -124,6 +147,14 @@ class SocketService {
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  isConnected(): boolean {
+    return Boolean(this.ws && this.ws.readyState === WebSocket.OPEN);
+  }
+
+  emitLocal(event: SocketEvent) {
+    this.notifyListeners(event);
   }
 
   private notifyListeners(event: SocketEvent) {
@@ -231,6 +262,88 @@ class SocketService {
     this.send('QUEUE_REMOVE', {
       roomId: this.roomId,
       itemId,
+    });
+  }
+
+  setHostLock(hostOnlyControl: boolean) {
+    this.send('SET_HOST_LOCK', {
+      roomId: this.roomId,
+      hostOnlyControl,
+    });
+  }
+
+  startPoll(question: string, options: unknown[], durationSec = 25) {
+    this.send('POLL_START', {
+      roomId: this.roomId,
+      question,
+      options,
+      durationSec,
+    });
+  }
+
+  votePoll(pollId: string, optionId: string) {
+    this.send('POLL_VOTE', {
+      roomId: this.roomId,
+      pollId,
+      optionId,
+    });
+  }
+
+  closePoll(pollId: string) {
+    this.send('POLL_CLOSE', {
+      roomId: this.roomId,
+      pollId,
+    });
+  }
+
+  submitRoomPin(pin: string) {
+    this.connectOptions = { ...this.connectOptions, pin };
+    if (this.ws && this.ws.readyState === WebSocket.OPEN && this.user) {
+      this.send('JOIN_ROOM', {
+        roomId: this.roomId,
+        roomName: this.roomName,
+        user: this.user,
+        pin,
+      });
+    } else if (this.roomId && this.user) {
+      this.connect(this.roomId, this.user, this.roomName, this.connectOptions);
+    }
+  }
+
+  setRoomPin(pinCode: string) {
+    if (pinCode && /^[0-9]{4}$/.test(pinCode)) {
+      this.connectOptions = { ...this.connectOptions, pin: pinCode };
+    }
+    this.send('SET_ROOM_PIN', {
+      roomId: this.roomId,
+      pinCode,
+    });
+  }
+
+  renameRoom(roomName: string) {
+    const trimmed = roomName.trim().slice(0, 60);
+    if (!trimmed) return;
+    this.roomName = trimmed;
+    this.send('RENAME_ROOM', {
+      roomId: this.roomId,
+      roomName: trimmed,
+    });
+  }
+
+  claimTvPairingCode(code: string, roomName: string, claimedBy: string) {
+    this.send('TV_CLAIM_CODE', {
+      code: code.trim(),
+      roomId: this.roomId,
+      roomName,
+      claimedBy,
+    });
+  }
+
+  sendTvRemoteCommand(command: TvRemoteCommandType, senderName: string) {
+    this.send('TV_REMOTE_COMMAND', {
+      roomId: this.roomId,
+      command,
+      senderName,
     });
   }
 }

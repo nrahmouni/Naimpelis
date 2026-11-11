@@ -1,0 +1,1957 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NAIMCINE Smart TV — Receptor 1080p</title>
+    <link rel="icon" type="image/svg+xml" href="/icon.svg" />
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        background-color: #050507;
+        color: #f5f5f7;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        overflow: hidden;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      button,
+      input {
+        font-family: inherit;
+      }
+      button:focus,
+      input:focus {
+        outline: 3px solid #e11d48 !important;
+        outline-offset: 2px;
+      }
+
+      /* Ambient Cinema Glow */
+      .ambient-glow {
+        position: fixed;
+        top: -180px;
+        left: 50%;
+        width: 760px;
+        height: 360px;
+        margin-left: -380px;
+        border-radius: 999px;
+        background: radial-gradient(circle, rgba(225, 29, 72, 0.22) 0%, rgba(5, 5, 7, 0) 70%);
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      /* Pairing View */
+      #pairing-screen {
+        position: relative;
+        z-index: 2;
+        width: 100%;
+        height: 100%;
+        display: -webkit-flex;
+        display: flex;
+        -webkit-flex-direction: column;
+        flex-direction: column;
+        -webkit-justify-content: space-between;
+        justify-content: space-between;
+        padding: 28px 42px;
+      }
+
+      .tv-header {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: space-between;
+        justify-content: space-between;
+      }
+      .brand-row {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+      }
+      .brand-logo-box {
+        width: 50px;
+        height: 50px;
+        border-radius: 14px;
+        background: #0b0b10;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+        margin-right: 14px;
+        box-shadow: 0 8px 28px rgba(225, 29, 72, 0.25);
+      }
+      .brand-title {
+        font-size: 24px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        color: #ffffff;
+      }
+      .brand-title .accent {
+        color: #e11d48;
+      }
+      .brand-title .tag {
+        font-size: 15px;
+        font-weight: 600;
+        letter-spacing: 0;
+        color: #a1a1aa;
+        margin-left: 8px;
+      }
+      .brand-sub {
+        font-size: 13px;
+        color: #a1a1aa;
+        margin-top: 2px;
+      }
+
+      .status-row {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+      }
+      .status-badge {
+        padding: 9px 16px;
+        border-radius: 14px;
+        font-size: 14px;
+        font-weight: 600;
+        background: rgba(16, 185, 129, 0.14);
+        border: 1px solid rgba(52, 211, 153, 0.4);
+        color: #6ee7b7;
+        margin-right: 12px;
+      }
+      .status-badge.connecting {
+        background: rgba(245, 158, 11, 0.14);
+        border-color: rgba(251, 191, 36, 0.4);
+        color: #fcd34d;
+      }
+
+      .tv-btn {
+        height: 46px;
+        padding: 0 20px;
+        border-radius: 14px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.07);
+        color: #f4f4f5;
+        font-size: 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      .tv-btn:hover {
+        background: rgba(255, 255, 255, 0.14);
+      }
+      .tv-btn-primary {
+        height: 52px;
+        padding: 0 26px;
+        border-radius: 16px;
+        border: 1px solid #e11d48;
+        background: #e11d48;
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 800;
+        cursor: pointer;
+        box-shadow: 0 12px 32px rgba(225, 29, 72, 0.38);
+      }
+      .tv-btn-primary.unlocked {
+        background: rgba(16, 185, 129, 0.2);
+        border-color: rgba(52, 211, 153, 0.55);
+        color: #a7f3d0;
+        box-shadow: none;
+      }
+      .tv-btn-fullscreen {
+        height: 48px;
+        padding: 0 22px;
+        border-radius: 14px;
+        border: 2px solid #e11d48;
+        background: rgba(225, 29, 72, 0.2);
+        color: #ffffff;
+        font-size: 15px;
+        font-weight: 800;
+        cursor: pointer;
+        margin-right: 10px;
+      }
+      .tv-btn-fullscreen:hover {
+        background: #e11d48;
+      }
+      .tv-btn-fullscreen.active-fs {
+        border-color: rgba(52, 211, 153, 0.65);
+        background: rgba(16, 185, 129, 0.2);
+        color: #a7f3d0;
+      }
+
+      .center-stage {
+        max-width: 920px;
+        width: 100%;
+        margin: 0 auto;
+        text-align: center;
+      }
+      .eyebrow {
+        font-size: 13px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.14em;
+        color: #fb7185;
+        margin-bottom: 10px;
+      }
+      .main-heading {
+        font-size: 40px;
+        font-weight: 800;
+        color: #ffffff;
+        letter-spacing: -0.02em;
+        margin-bottom: 10px;
+      }
+      .sub-heading {
+        font-size: 17px;
+        color: #a1a1aa;
+        max-width: 680px;
+        margin: 0 auto 26px auto;
+        line-height: 1.45;
+      }
+
+      .digits-row {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-justify-content: center;
+        justify-content: center;
+        margin-bottom: 26px;
+      }
+      .digit-tile {
+        width: 118px;
+        height: 148px;
+        margin: 0 10px;
+        border-radius: 24px;
+        background: #0e0e14;
+        border: 2px solid rgba(255, 255, 255, 0.18);
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9), 0 0 36px rgba(225, 29, 72, 0.16);
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 76px;
+        font-weight: 800;
+        color: #ffffff;
+      }
+
+      .actions-row {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-justify-content: center;
+        justify-content: center;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-flex-wrap: wrap;
+        flex-wrap: wrap;
+        margin-bottom: 18px;
+      }
+      .actions-row > * {
+        margin: 6px 8px;
+      }
+
+      .direct-room-box {
+        max-width: 540px;
+        margin: 0 auto;
+        padding: 12px 16px;
+        border-radius: 18px;
+        background: #0b0b10;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: space-between;
+        justify-content: space-between;
+      }
+      .direct-room-label {
+        font-size: 13px;
+        color: #a1a1aa;
+        margin-right: 12px;
+        text-align: left;
+      }
+      .direct-room-input {
+        width: 150px;
+        height: 42px;
+        padding: 0 12px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: #050507;
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 700;
+        text-align: center;
+        text-transform: uppercase;
+        margin-right: 8px;
+      }
+      .direct-room-submit {
+        height: 42px;
+        padding: 0 18px;
+        border-radius: 12px;
+        border: none;
+        background: #ffffff;
+        color: #050507;
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .paired-banner {
+        display: none;
+        max-width: 640px;
+        margin: 0 auto 18px auto;
+        padding: 16px 24px;
+        border-radius: 18px;
+        background: rgba(16, 185, 129, 0.22);
+        border: 1px solid rgba(52, 211, 153, 0.55);
+        color: #d1fae5;
+        font-size: 20px;
+        font-weight: 800;
+      }
+
+      .steps-footer {
+        max-width: 980px;
+        width: 100%;
+        margin: 0 auto;
+        display: -webkit-flex;
+        display: flex;
+        -webkit-justify-content: space-between;
+        justify-content: space-between;
+      }
+      .step-card {
+        width: 32%;
+        padding: 14px 16px;
+        border-radius: 16px;
+        background: #0d0d13;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: flex-start;
+        align-items: flex-start;
+      }
+      .step-num {
+        width: 28px;
+        height: 28px;
+        border-radius: 9px;
+        background: rgba(225, 29, 72, 0.2);
+        border: 1px solid rgba(225, 29, 72, 0.45);
+        color: #fda4af;
+        font-size: 13px;
+        font-weight: 800;
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+        margin-right: 12px;
+        -webkit-flex-shrink: 0;
+        flex-shrink: 0;
+      }
+      .step-text {
+        font-size: 13px;
+        color: #a1a1aa;
+        line-height: 1.4;
+      }
+      .step-text strong {
+        display: block;
+        color: #ffffff;
+        font-size: 14px;
+        margin-bottom: 2px;
+      }
+
+      /* Fullscreen Player Receiver Screen */
+      #player-screen {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        width: 100%;
+        height: 100%;
+        background: #000000;
+        z-index: 10;
+      }
+
+      #tv-video {
+        width: 100%;
+        height: 100%;
+        background: #000000;
+        object-fit: contain;
+      }
+      #tv-video.aspect-cover {
+        object-fit: cover;
+      }
+      #tv-video.aspect-fill {
+        object-fit: fill;
+      }
+
+      #yt-wrap {
+        display: none;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: #000000;
+      }
+      #yt-player {
+        width: 100%;
+        height: 100%;
+      }
+
+      #standby-overlay {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: radial-gradient(circle at center, #11131d 0%, #050507 80%);
+        display: -webkit-flex;
+        display: flex;
+        -webkit-flex-direction: column;
+        flex-direction: column;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+        text-align: center;
+        padding: 32px;
+        z-index: 15;
+      }
+      .room-live-pill {
+        padding: 8px 18px;
+        border-radius: 12px;
+        background: rgba(16, 185, 129, 0.16);
+        border: 1px solid rgba(52, 211, 153, 0.45);
+        color: #6ee7b7;
+        font-size: 15px;
+        font-weight: 700;
+        margin-bottom: 18px;
+      }
+      .standby-title {
+        font-size: 34px;
+        font-weight: 800;
+        color: #ffffff;
+        margin-bottom: 10px;
+      }
+      .standby-sub {
+        font-size: 18px;
+        color: #a1a1aa;
+        max-width: 640px;
+        line-height: 1.5;
+        margin-bottom: 26px;
+      }
+
+      /* Top HUD inside active video */
+      #player-hud {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        padding: 22px 32px 48px 32px;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0.88) 0%, rgba(0, 0, 0, 0) 100%);
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: space-between;
+        justify-content: space-between;
+        z-index: 25;
+        transition: opacity 0.25s ease;
+      }
+      #player-hud.hidden-hud {
+        opacity: 0;
+        pointer-events: none;
+      }
+      .hud-meta-title {
+        font-size: 22px;
+        font-weight: 800;
+        color: #ffffff;
+      }
+      .hud-meta-sub {
+        font-size: 14px;
+        color: #d4d4d8;
+        margin-top: 3px;
+      }
+      .hud-controls {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+      }
+      .hud-controls > * {
+        margin-left: 10px;
+      }
+
+      /* Accessible Bottom Control Dock on TV */
+      #player-bottom-dock {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        padding: 36px 32px 24px 32px;
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 100%);
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+        -webkit-flex-wrap: wrap;
+        flex-wrap: wrap;
+        z-index: 26;
+        transition: opacity 0.25s ease;
+      }
+      #player-bottom-dock.hidden-hud {
+        opacity: 0;
+        pointer-events: none;
+      }
+      #player-bottom-dock > * {
+        margin: 5px 6px;
+      }
+
+      /* Always-Accessible Corner Fullscreen Button when not yet in browser Fullscreen */
+      #tv-corner-fs-btn {
+        position: fixed;
+        right: 24px;
+        bottom: 24px;
+        height: 52px;
+        padding: 0 22px;
+        border-radius: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.28);
+        background: rgba(14, 14, 20, 0.92);
+        color: #ffffff;
+        font-size: 15px;
+        font-weight: 800;
+        cursor: pointer;
+        box-shadow: 0 14px 40px rgba(0, 0, 0, 0.85);
+        z-index: 45;
+      }
+      #tv-corner-fs-btn:hover {
+        background: #e11d48;
+        border-color: #e11d48;
+      }
+      #tv-corner-fs-btn.hidden-corner {
+        display: none;
+      }
+
+      /* Bottom Toast & Remote Fullscreen Prompt */
+      #tv-toast {
+        display: none;
+        position: absolute;
+        top: 84px;
+        left: 50%;
+        -webkit-transform: translateX(-50%);
+        transform: translateX(-50%);
+        padding: 12px 22px;
+        border-radius: 14px;
+        background: rgba(15, 17, 25, 0.94);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 700;
+        z-index: 35;
+      }
+
+      #unmute-banner {
+        display: none;
+        position: absolute;
+        bottom: 98px;
+        left: 50%;
+        -webkit-transform: translateX(-50%);
+        transform: translateX(-50%);
+        z-index: 32;
+      }
+
+      #fs-prompt-banner {
+        display: none;
+        position: fixed;
+        bottom: 34px;
+        left: 50%;
+        -webkit-transform: translateX(-50%);
+        transform: translateX(-50%);
+        z-index: 50;
+      }
+
+      #reactions-layer {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 40px;
+        height: 220px;
+        pointer-events: none;
+        z-index: 28;
+        overflow: hidden;
+      }
+      .tv-reaction {
+        position: absolute;
+        bottom: 0;
+        font-size: 40px;
+        text-align: center;
+        transition: all 2.4s ease-out;
+      }
+      .tv-reaction span {
+        display: block;
+        font-size: 12px;
+        color: #ffffff;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 2px 8px;
+        border-radius: 6px;
+      }
+
+      @media (max-width: 900px) {
+        #pairing-screen {
+          padding: 18px 20px;
+          overflow-y: auto;
+        }
+        .main-heading {
+          font-size: 26px;
+        }
+        .digit-tile {
+          width: 72px;
+          height: 96px;
+          font-size: 46px;
+          margin: 0 5px;
+          border-radius: 16px;
+        }
+        .steps-footer {
+          -webkit-flex-direction: column;
+          flex-direction: column;
+        }
+        .step-card {
+          width: 100%;
+          margin-bottom: 8px;
+        }
+      }
+    </style>
+    <script src="/vendor/hls.min.js"></script>
+  </head>
+  <body>
+    <div class="ambient-glow"></div>
+
+    <!-- =================================================================== -->
+    <!-- SCREEN 1: 4-DIGIT SAMSUNG / LG / ANDROID SMART TV PAIRING           -->
+    <!-- =================================================================== -->
+    <div id="pairing-screen">
+      <div class="tv-header">
+        <div class="brand-row">
+          <div class="brand-logo-box">
+            <svg width="34" height="34" viewBox="0 0 64 64" fill="none">
+              <rect x="9" y="12" width="6.5" height="40" rx="1.5" fill="#B91C1C" />
+              <rect x="27.5" y="12" width="6.5" height="40" rx="1.5" fill="#B91C1C" />
+              <polygon points="9,12 15.5,12 34,52 27.5,52" fill="#EF4444" />
+              <path
+                d="M54 20.5C51.2 16.2 46.8 13.8 41.8 13.8C33.8 13.8 28.5 20.2 28.5 32C28.5 43.8 33.8 50.2 41.8 50.2C46.8 50.2 51.2 47.8 54 43.5L48.6 39.8C46.9 42.4 44.6 43.8 41.8 43.8C37.4 43.8 35.2 39.5 35.2 32C35.2 24.5 37.4 20.2 41.8 20.2C44.6 20.2 46.9 21.6 48.6 24.2L54 20.5Z"
+                fill="#FFFFFF"
+              />
+            </svg>
+          </div>
+          <div>
+            <div class="brand-title">
+              NAIM <span class="accent">CINE</span>
+              <span class="tag">Smart TV</span>
+            </div>
+            <div class="brand-sub" id="host-url-label">
+              Modo Receptor 1080p · Compatible con Samsung Tizen, LG webOS y Android TV
+            </div>
+          </div>
+        </div>
+
+        <div class="status-row">
+          <div id="conn-badge" class="status-badge connecting">Conectando con servidor...</div>
+          <button type="button" id="btn-header-fs" class="tv-btn-fullscreen" tabindex="0">
+            ⛶ Pantalla Completa
+          </button>
+          <button type="button" id="btn-web-mode" class="tv-btn" tabindex="0">
+            Ir a Portada Web
+          </button>
+        </div>
+      </div>
+
+      <div class="center-stage">
+        <div class="eyebrow">VINCULACIÓN RÁPIDA EN 5 SEGUNDOS</div>
+        <h1 class="main-heading">Introduce estos 4 números en tu móvil</h1>
+        <p class="sub-heading">
+          Abre tu sala de <strong>NAIM CINE</strong> en el teléfono, toca el botón
+          <strong>Smart TV</strong> (arriba o el icono Cast del vídeo) y escribe este código:
+        </p>
+
+        <div class="digits-row">
+          <div class="digit-tile" id="d0">•</div>
+          <div class="digit-tile" id="d1">•</div>
+          <div class="digit-tile" id="d2">•</div>
+          <div class="digit-tile" id="d3">•</div>
+        </div>
+
+        <div id="paired-banner" class="paired-banner"></div>
+
+        <div id="pairing-controls">
+          <div class="actions-row">
+            <button type="button" id="btn-unlock-audio" class="tv-btn-primary" tabindex="0">
+              🔊 Pulsa OK aquí para Sonido + Pantalla Completa
+            </button>
+            <button type="button" id="btn-pairing-fs" class="tv-btn-fullscreen" tabindex="0">
+              ⛶ Pantalla Completa TV
+            </button>
+            <button type="button" id="btn-new-code" class="tv-btn" tabindex="0">
+              Generar otro código
+            </button>
+          </div>
+
+          <form id="direct-room-form" class="direct-room-box">
+            <span class="direct-room-label">
+              ¿Prefieres entrar directo con el código de sala?
+            </span>
+            <div style="display: -webkit-flex; display: flex; -webkit-align-items: center; align-items: center;">
+              <input
+                type="text"
+                id="direct-room-input"
+                class="direct-room-input"
+                placeholder="EJ: K8X4"
+                maxlength="24"
+                tabindex="0"
+              />
+              <button type="submit" class="direct-room-submit" tabindex="0">
+                Entrar
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="steps-footer">
+        <div class="step-card">
+          <div class="step-num">1</div>
+          <div class="step-text">
+            <strong>Abre tu sala en el móvil</strong>
+            Entra en <span id="step-domain-label">naimcine.ai.studio</span> desde tu smartphone.
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">2</div>
+          <div class="step-text">
+            <strong>Pulsa el botón Smart TV</strong>
+            Arriba en la barra o en el botón Cast del vídeo y escribe los 4 dígitos.
+          </div>
+        </div>
+        <div class="step-card">
+          <div class="step-num">3</div>
+          <div class="step-text">
+            <strong>Tu móvil es el mando</strong>
+            Elige películas, series, fútbol o YouTube y controla Play, Pausa y Volumen.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- SCREEN 2: FULL-SCREEN 1080P SYNCHRONIZED SMART TV PLAYER            -->
+    <!-- =================================================================== -->
+    <div id="player-screen">
+      <video id="tv-video" playsinline webkit-playsinline preload="auto"></video>
+
+      <div id="yt-wrap">
+        <div id="yt-player"></div>
+      </div>
+
+      <div id="standby-overlay">
+        <div class="room-live-pill" id="standby-room-pill">✓ Smart TV Conectada</div>
+        <h2 class="standby-title">Televisor listo para proyectar en 1080p</h2>
+        <p class="standby-sub">
+          Elige cualquier película, serie, partido en directo o vídeo de YouTube desde tu móvil
+          y empezará aquí automáticamente. También puedes controlar la pantalla completa desde tu móvil o aquí abajo.
+        </p>
+        <div style="display: -webkit-flex; display: flex; -webkit-flex-wrap: wrap; flex-wrap: wrap; -webkit-justify-content: center; justify-content: center;">
+          <button type="button" id="btn-standby-fs" class="tv-btn-primary" tabindex="0" style="margin: 6px 8px;">
+            ⛶ Poner TV en Pantalla Completa
+          </button>
+          <button type="button" id="btn-standby-exit" class="tv-btn" tabindex="0" style="margin: 6px 8px;">
+            Cambiar código / Salir de la sala
+          </button>
+        </div>
+      </div>
+
+      <div id="player-hud">
+        <div>
+          <div class="hud-meta-title" id="hud-title">NAIM CINE Smart TV</div>
+          <div class="hud-meta-sub" id="hud-sub">Sincronizado en vivo</div>
+        </div>
+        <div class="hud-controls">
+          <button type="button" id="btn-hud-fs" class="tv-btn-fullscreen" tabindex="0">
+            ⛶ Pantalla Completa
+          </button>
+          <button type="button" id="btn-hud-aspect" class="tv-btn" tabindex="0">
+            ↔ Ajuste: Original
+          </button>
+          <button type="button" id="btn-hud-reload" class="tv-btn" tabindex="0">
+            Resincronizar
+          </button>
+          <button type="button" id="btn-hud-exit" class="tv-btn" tabindex="0">
+            Salir TV
+          </button>
+        </div>
+      </div>
+
+      <div id="player-bottom-dock">
+        <button type="button" id="btn-dock-rew" class="tv-btn" tabindex="0">
+          « -15s
+        </button>
+        <button type="button" id="btn-hud-playpause" class="tv-btn-primary" tabindex="0">
+          ⏯ Play / Pausa
+        </button>
+        <button type="button" id="btn-dock-ff" class="tv-btn" tabindex="0">
+          +15s »
+        </button>
+        <button type="button" id="btn-dock-voldown" class="tv-btn" tabindex="0">
+          🔉 Vol -
+        </button>
+        <button type="button" id="btn-dock-mute" class="tv-btn" tabindex="0">
+          🔇 Silenciar
+        </button>
+        <button type="button" id="btn-dock-volup" class="tv-btn" tabindex="0">
+          🔊 Vol +
+        </button>
+        <button type="button" id="btn-dock-aspect" class="tv-btn" tabindex="0">
+          ↔ Rellenar Bordes
+        </button>
+        <button type="button" id="btn-dock-fs" class="tv-btn-fullscreen" tabindex="0">
+          ⛶ Pantalla Completa
+        </button>
+      </div>
+
+      <div id="unmute-banner">
+        <button type="button" id="btn-unmute-now" class="tv-btn-primary" tabindex="0">
+          🔊 Pulsa OK en el mando para activar Sonido + Pantalla Completa
+        </button>
+      </div>
+
+      <div id="tv-toast"></div>
+      <div id="reactions-layer"></div>
+    </div>
+
+    <!-- Always-Accessible Corner Fullscreen Button (auto-hides once in Fullscreen) -->
+    <button type="button" id="tv-corner-fs-btn" tabindex="0">
+      ⛶ Pantalla Completa
+    </button>
+
+    <!-- 1-Key OK Fullscreen Prompt when triggered remotely from Mobile Phone -->
+    <div id="fs-prompt-banner">
+      <button type="button" id="btn-confirm-remote-fs" class="tv-btn-primary" tabindex="0">
+        ⛶ Pulsa OK en el mando de la TV para completar Pantalla Completa sin barra
+      </button>
+    </div>
+
+    <script>
+      (function () {
+        // 1. Immediately unregister any old PWA Service Workers on Samsung Tizen so /tv is never cached stale
+        try {
+          if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              for (var i = 0; i < regs.length; i++) {
+                regs[i].unregister();
+              }
+            });
+          }
+        } catch (e) {}
+
+        var hostLabel = window.location.host || 'naimcine.ai.studio';
+        var hostEl = document.getElementById('host-url-label');
+        var stepDomainEl = document.getElementById('step-domain-label');
+        if (hostEl) {
+          hostEl.textContent = hostLabel + '/tv · Receptor 1080p para Samsung TV, LG y Android TV';
+        }
+        if (stepDomainEl) {
+          stepDomainEl.textContent = hostLabel;
+        }
+
+        // State
+        var pairingCode = '';
+        var isPaired = false;
+        var currentRoomId = '';
+        var currentRoomName = '';
+        var tvAuthToken = '';
+        var tvDeviceId = 'tv-' + Math.floor(100000 + Math.random() * 900000);
+        var audioUnlocked = false;
+        var currentMode = 'idle';
+        var currentUrl = '';
+        var currentIsLive = false;
+        var currentVolume = 1;
+        var lastRemoteSeq = 0;
+        var hudTimer = null;
+
+        var pairingWs = null;
+        var roomWs = null;
+        var hlsInstance = null;
+        var ytPlayer = null;
+        var ytReady = false;
+        var pendingYtVideoId = '';
+        var pendingYtStart = 0;
+        var pendingYtPlay = true;
+
+        var pairingScreen = document.getElementById('pairing-screen');
+        var playerScreen = document.getElementById('player-screen');
+        var standbyOverlay = document.getElementById('standby-overlay');
+        var standbyRoomPill = document.getElementById('standby-room-pill');
+        var connBadge = document.getElementById('conn-badge');
+        var pairedBanner = document.getElementById('paired-banner');
+        var pairingControls = document.getElementById('pairing-controls');
+        var videoEl = document.getElementById('tv-video');
+        var ytWrap = document.getElementById('yt-wrap');
+        var hudEl = document.getElementById('player-hud');
+        var bottomDockEl = document.getElementById('player-bottom-dock');
+        var cornerFsBtn = document.getElementById('tv-corner-fs-btn');
+        var fsPromptBanner = document.getElementById('fs-prompt-banner');
+        var btnConfirmRemoteFs = document.getElementById('btn-confirm-remote-fs');
+        var hudTitle = document.getElementById('hud-title');
+        var hudSub = document.getElementById('hud-sub');
+        var toastEl = document.getElementById('tv-toast');
+        var unmuteBanner = document.getElementById('unmute-banner');
+        var reactionsLayer = document.getElementById('reactions-layer');
+        var toastTimer = null;
+        var fsPromptTimer = null;
+        var aspectModeIndex = 0; // 0 = contain, 1 = cover, 2 = fill
+        var immersiveMode = false;
+
+        function isBrowserInFullscreen() {
+          return Boolean(
+            document.fullscreenElement ||
+              document.webkitFullscreenElement ||
+              document.mozFullScreenElement ||
+              document.msFullscreenElement
+          );
+        }
+
+        function syncFullscreenButtons() {
+          var active = isBrowserInFullscreen();
+          var label = active ? '✓ Salir Pantalla Completa' : '⛶ Pantalla Completa';
+          var ids = ['btn-header-fs', 'btn-pairing-fs', 'btn-hud-fs', 'btn-dock-fs', 'btn-standby-fs'];
+          for (var i = 0; i < ids.length; i++) {
+            var b = document.getElementById(ids[i]);
+            if (b) {
+              b.textContent = label;
+              if (ids[i] !== 'btn-standby-fs') {
+                b.className = active ? 'tv-btn-fullscreen active-fs' : 'tv-btn-fullscreen';
+              }
+            }
+          }
+          if (cornerFsBtn) {
+            cornerFsBtn.className = active ? 'hidden-corner' : '';
+          }
+          if (active && fsPromptBanner) {
+            fsPromptBanner.style.display = 'none';
+          }
+        }
+
+        function requestTvFullscreen(fromRemote) {
+          try {
+            window.scrollTo(0, 1);
+          } catch (e) {}
+
+          var root = document.documentElement;
+          var active = isBrowserInFullscreen();
+
+          if (active && !fromRemote) {
+            try {
+              if (document.exitFullscreen) document.exitFullscreen();
+              else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+              else if (document.mozCancelFullScreen) document.mozCancelFullScreen();
+              else if (document.msExitFullscreen) document.msExitFullscreen();
+            } catch (e) {}
+            immersiveMode = false;
+            setTimeout(syncFullscreenButtons, 150);
+            showToast('Pantalla completa desactivada');
+            return;
+          }
+
+          if (fromRemote && active) {
+            try {
+              if (document.exitFullscreen) document.exitFullscreen();
+              else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+            } catch (e) {}
+            immersiveMode = false;
+            revealHud();
+            setTimeout(syncFullscreenButtons, 150);
+            showToast('Saliendo de pantalla completa');
+            return;
+          }
+
+          // Try standard + webkit Fullscreen on documentElement & video element
+          var req =
+            root.requestFullscreen ||
+            root.webkitRequestFullscreen ||
+            root.mozRequestFullScreen ||
+            root.msRequestFullscreen;
+
+          if (req) {
+            try {
+              var res = req.call(root);
+              if (res && res.then) {
+                res.then(
+                  function () {
+                    syncFullscreenButtons();
+                    hideHudImmediately();
+                    showToast('✓ Pantalla Completa activada');
+                  },
+                  function () {
+                    // Fallback: try video.webkitEnterFullscreen or show 1-key OK prompt on TV
+                    var vStarted = false;
+                    if (videoEl && currentMode !== 'idle' && videoEl.webkitEnterFullscreen) {
+                      try {
+                        videoEl.webkitEnterFullscreen();
+                        vStarted = true;
+                      } catch (e2) {}
+                    }
+                    if (!vStarted && fromRemote) {
+                      immersiveMode = !immersiveMode;
+                      if (immersiveMode) hideHudImmediately();
+                      else revealHud();
+                      showRemoteFullscreenOkPrompt();
+                    }
+                  }
+                );
+              }
+            } catch (err) {
+              if (fromRemote) showRemoteFullscreenOkPrompt();
+            }
+          } else if (videoEl && videoEl.webkitEnterFullscreen) {
+            try {
+              videoEl.webkitEnterFullscreen();
+            } catch (e) {}
+          }
+
+          setTimeout(function () {
+            syncFullscreenButtons();
+            if (fromRemote && !isBrowserInFullscreen()) {
+              immersiveMode = true;
+              hideHudImmediately();
+              showRemoteFullscreenOkPrompt();
+            }
+          }, 260);
+        }
+
+        function showRemoteFullscreenOkPrompt() {
+          if (!fsPromptBanner) return;
+          fsPromptBanner.style.display = 'block';
+          if (btnConfirmRemoteFs && btnConfirmRemoteFs.focus) {
+            btnConfirmRemoteFs.focus();
+          }
+          if (fsPromptTimer) clearTimeout(fsPromptTimer);
+          fsPromptTimer = setTimeout(function () {
+            fsPromptBanner.style.display = 'none';
+          }, 9000);
+        }
+
+        function cycleVideoAspect() {
+          aspectModeIndex = (aspectModeIndex + 1) % 3;
+          if (!videoEl) return;
+          var hudAspectBtn = document.getElementById('btn-hud-aspect');
+          var dockAspectBtn = document.getElementById('btn-dock-aspect');
+          if (aspectModeIndex === 0) {
+            videoEl.className = '';
+            if (hudAspectBtn) hudAspectBtn.textContent = '↔ Ajuste: Original';
+            if (dockAspectBtn) dockAspectBtn.textContent = '↔ Rellenar Bordes';
+            showToast('Formato TV · Original sin recorte');
+          } else if (aspectModeIndex === 1) {
+            videoEl.className = 'aspect-cover';
+            if (hudAspectBtn) hudAspectBtn.textContent = '↔ Ajuste: Rellenar';
+            if (dockAspectBtn) dockAspectBtn.textContent = '↔ Ajuste: Rellenar';
+            showToast('Formato TV · Pantalla Completa sin bordes negros');
+          } else {
+            videoEl.className = 'aspect-fill';
+            if (hudAspectBtn) hudAspectBtn.textContent = '↔ Ajuste: 16:9 Total';
+            if (dockAspectBtn) dockAspectBtn.textContent = '↔ Ajuste: Original';
+            showToast('Formato TV · Estirado 16:9 completo');
+          }
+        }
+
+        function hideHudImmediately() {
+          if (hudTimer) clearTimeout(hudTimer);
+          if (hudEl && currentMode !== 'idle') hudEl.className = 'hidden-hud';
+          if (bottomDockEl && currentMode !== 'idle') bottomDockEl.className = 'hidden-hud';
+        }
+
+        function showToast(text) {
+          if (!toastEl) return;
+          toastEl.textContent = text;
+          toastEl.style.display = 'block';
+          if (toastTimer) clearTimeout(toastTimer);
+          toastTimer = setTimeout(function () {
+            toastEl.style.display = 'none';
+          }, 3200);
+        }
+
+        function revealHud() {
+          if (hudEl) hudEl.className = '';
+          if (bottomDockEl) bottomDockEl.className = currentMode === 'idle' ? 'hidden-hud' : '';
+          if (hudTimer) clearTimeout(hudTimer);
+          hudTimer = setTimeout(function () {
+            if (currentMode !== 'idle') {
+              if (hudEl) hudEl.className = 'hidden-hud';
+              if (bottomDockEl) bottomDockEl.className = 'hidden-hud';
+            }
+          }, 4500);
+        }
+
+        function renderDigits(code) {
+          var chars = code && code.length === 4 ? code.split('') : ['•', '•', '•', '•'];
+          for (var i = 0; i < 4; i++) {
+            var tile = document.getElementById('d' + i);
+            if (tile) tile.textContent = chars[i];
+          }
+        }
+
+        function setServerReady(ready) {
+          if (!connBadge) return;
+          if (ready) {
+            connBadge.className = 'status-badge';
+            connBadge.textContent = '✓ TV lista esperando tu móvil';
+          } else {
+            connBadge.className = 'status-badge connecting';
+            connBadge.textContent = 'Conectando...';
+          }
+        }
+
+        function xhrJson(method, url, bodyObj, cb) {
+          try {
+            var xhr = new XMLHttpRequest();
+            xhr.open(method, url, true);
+            xhr.setRequestHeader('Accept', 'application/json');
+            if (bodyObj) {
+              xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
+            }
+            xhr.timeout = 8000;
+            xhr.onreadystatechange = function () {
+              if (xhr.readyState !== 4) return;
+              if (xhr.status >= 200 && xhr.status < 300) {
+                try {
+                  var parsed = JSON.parse(xhr.responseText);
+                  cb(null, parsed);
+                } catch (err) {
+                  cb(err, null);
+                }
+              } else {
+                cb(new Error('HTTP ' + xhr.status), null);
+              }
+            };
+            xhr.send(bodyObj ? JSON.stringify(bodyObj) : null);
+          } catch (err) {
+            cb(err, null);
+          }
+        }
+
+        function unlockAudio() {
+          try {
+            var AudioCtx = window.AudioContext || window.webkitAudioContext;
+            if (AudioCtx) {
+              var ctx = new AudioCtx();
+              if (ctx.resume) ctx.resume();
+              var osc = ctx.createOscillator();
+              var gain = ctx.createGain();
+              gain.gain.value = 0.001;
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              osc.start(0);
+              osc.stop(ctx.currentTime + 0.04);
+            }
+          } catch (e) {}
+
+          try {
+            if (videoEl) {
+              videoEl.muted = false;
+              videoEl.volume = currentVolume;
+              if (currentMode === 'hls' || currentMode === 'direct') {
+                var p = videoEl.play();
+                if (p && p.catch) p.catch(function () {});
+              }
+            }
+          } catch (e) {}
+
+          audioUnlocked = true;
+          unmuteBanner.style.display = 'none';
+          var btnAudio = document.getElementById('btn-unlock-audio');
+          if (btnAudio) {
+            btnAudio.className = 'tv-btn-primary unlocked';
+            btnAudio.textContent = '✓ Sonido de TV desbloqueado y listo';
+          }
+        }
+
+        // =====================================================================
+        // PAIRING ENGINE (HTTP REST PRIMARY + WEBSOCKET INSTANT PUSH)
+        // =====================================================================
+        function requestPairingCode(forceNew) {
+          xhrJson(
+            'POST',
+            '/api/tv/register',
+            { forceNew: Boolean(forceNew), existingCode: forceNew ? '' : pairingCode },
+            function (err, data) {
+              if (!err && data && data.success && data.code) {
+                pairingCode = String(data.code);
+                renderDigits(pairingCode);
+                setServerReady(true);
+                if (pairingWs && pairingWs.readyState === 1) {
+                  try {
+                    pairingWs.send(
+                      JSON.stringify({
+                        type: 'TV_REGISTER_PAIRING',
+                        payload: { existingCode: pairingCode },
+                      })
+                    );
+                  } catch (e) {}
+                }
+              }
+            }
+          );
+        }
+
+        function connectPairingWs() {
+          if (isPaired || !window.WebSocket) return;
+          try {
+            var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            var ws = new WebSocket(proto + '//' + window.location.host + '/ws');
+            pairingWs = ws;
+
+            ws.onopen = function () {
+              if (isPaired) return;
+              setServerReady(true);
+              ws.send(
+                JSON.stringify({
+                  type: 'TV_REGISTER_PAIRING',
+                  payload: { existingCode: pairingCode },
+                })
+              );
+            };
+
+            ws.onmessage = function (ev) {
+              if (isPaired) return;
+              try {
+                var msg = JSON.parse(ev.data);
+                if (
+                  (msg.type === 'TV_PAIRING_READY' || msg.type === 'TV_PAIRING_CODE') &&
+                  msg.payload &&
+                  msg.payload.code
+                ) {
+                  pairingCode = String(msg.payload.code);
+                  renderDigits(pairingCode);
+                  setServerReady(true);
+                } else if (msg.type === 'TV_PAIRED_REDIRECT' && msg.payload && msg.payload.roomId) {
+                  enterRoomReceiver(
+                    String(msg.payload.roomId),
+                    String(msg.payload.roomName || ''),
+                    String(msg.payload.tvAuthToken || ''),
+                    String(msg.payload.claimedBy || msg.payload.pairedBy || 'tu móvil')
+                  );
+                }
+              } catch (e) {}
+            };
+
+            ws.onclose = function () {
+              if (!isPaired) {
+                setTimeout(connectPairingWs, 3000);
+              }
+            };
+          } catch (e) {}
+        }
+
+        var pairingPollTimer = setInterval(function () {
+          if (isPaired) return;
+          if (!pairingCode) {
+            requestPairingCode(false);
+            return;
+          }
+          xhrJson('GET', '/api/tv/poll/' + encodeURIComponent(pairingCode), null, function (err, data) {
+            if (err || !data || isPaired) return;
+            if (data.paired && data.roomId) {
+              enterRoomReceiver(
+                String(data.roomId),
+                String(data.roomName || ''),
+                String(data.tvAuthToken || ''),
+                String(data.claimedBy || 'tu móvil')
+              );
+            } else if (data.expired) {
+              requestPairingCode(true);
+            } else if (data.success) {
+              setServerReady(true);
+            }
+          });
+        }, 1600);
+
+        // =====================================================================
+        // YOUTUBE IFRAME ENGINE (ON-DEMAND)
+        // =====================================================================
+        function ensureYouTubeApi(cb) {
+          if (window.YT && window.YT.Player) {
+            cb();
+            return;
+          }
+          window.onYouTubeIframeAPIReady = function () {
+            cb();
+          };
+          if (!document.getElementById('yt-api-script')) {
+            var tag = document.createElement('script');
+            tag.id = 'yt-api-script';
+            tag.src = 'https://www.youtube.com/iframe_api';
+            document.head.appendChild(tag);
+          }
+        }
+
+        function loadYouTubeVideo(videoId, startSec, shouldPlay) {
+          pendingYtVideoId = videoId;
+          pendingYtStart = Math.max(0, Math.floor(startSec || 0));
+          pendingYtPlay = Boolean(shouldPlay);
+
+          ensureYouTubeApi(function () {
+            if (ytPlayer && ytReady && ytPlayer.loadVideoById) {
+              ytPlayer.loadVideoById({
+                videoId: pendingYtVideoId,
+                startSeconds: pendingYtStart,
+              });
+              if (!pendingYtPlay && ytPlayer.pauseVideo) {
+                setTimeout(function () {
+                  ytPlayer.pauseVideo();
+                }, 400);
+              }
+              return;
+            }
+
+            ytReady = false;
+            ytPlayer = new window.YT.Player('yt-player', {
+              videoId: pendingYtVideoId,
+              playerVars: {
+                autoplay: 1,
+                controls: 1,
+                rel: 0,
+                playsinline: 1,
+                start: pendingYtStart,
+              },
+              events: {
+                onReady: function (ev) {
+                  ytReady = true;
+                  try {
+                    ev.target.setVolume(Math.round(currentVolume * 100));
+                    if (pendingYtPlay) ev.target.playVideo();
+                    else ev.target.pauseVideo();
+                  } catch (e) {}
+                },
+              },
+            });
+          });
+        }
+
+        // =====================================================================
+        // HLS / MP4 / YOUTUBE MEDIA ENGINE FOR SAMSUNG TIZEN & SMART TVS
+        // =====================================================================
+        function destroyHls() {
+          if (hlsInstance) {
+            try {
+              hlsInstance.destroy();
+            } catch (e) {}
+            hlsInstance = null;
+          }
+        }
+
+        function playVideoSafely(targetResumeSec, shouldPlay) {
+          if (targetResumeSec > 3) {
+            try {
+              if (Math.abs((videoEl.currentTime || 0) - targetResumeSec) > 2.5) {
+                videoEl.currentTime = targetResumeSec;
+              }
+            } catch (e) {}
+          }
+          if (!shouldPlay) {
+            try {
+              videoEl.pause();
+            } catch (e) {}
+            return;
+          }
+
+          videoEl.muted = false;
+          videoEl.volume = currentVolume;
+          var playPromise = videoEl.play();
+          if (playPromise && playPromise.then) {
+            playPromise.then(
+              function () {
+                unmuteBanner.style.display = 'none';
+              },
+              function () {
+                // Autoplay policy blocked unmuted sound -> play muted and show 1-click OK button!
+                videoEl.muted = true;
+                var p2 = videoEl.play();
+                if (p2 && p2.catch) p2.catch(function () {});
+                unmuteBanner.style.display = 'block';
+              }
+            );
+          }
+        }
+
+        function applyVideoState(vs, forceReload) {
+          if (!vs) return;
+          var nextMode = vs.mode || 'idle';
+          var nextUrl = vs.url || '';
+          var shouldPlay = Boolean(vs.isPlaying);
+          var isLive = Boolean(vs.isLive);
+          var targetSec = !isLive && vs.currentTime > 0 ? Number(vs.currentTime) : 0;
+
+          hudTitle.textContent = vs.title || 'NAIM CINE';
+          hudSub.textContent =
+            vs.subtitle || 'Sala ' + currentRoomId.toUpperCase() + ' · Proyección 1080p';
+
+          if (nextMode === 'idle' || !nextUrl) {
+            currentMode = 'idle';
+            currentUrl = '';
+            destroyHls();
+            try {
+              videoEl.pause();
+              videoEl.removeAttribute('src');
+              videoEl.load();
+            } catch (e) {}
+            if (ytPlayer && ytPlayer.stopVideo) {
+              try {
+                ytPlayer.stopVideo();
+              } catch (e) {}
+            }
+            ytWrap.style.display = 'none';
+            videoEl.style.display = 'none';
+            standbyOverlay.style.display = 'flex';
+            unmuteBanner.style.display = 'none';
+            return;
+          }
+
+          standbyOverlay.style.display = 'none';
+
+          // Same stream already loaded -> sync play/pause & currentTime drift only!
+          if (!forceReload && nextMode === currentMode && nextUrl === currentUrl) {
+            if (nextMode === 'hls' || nextMode === 'direct') {
+              if (!isLive && Math.abs((videoEl.currentTime || 0) - targetSec) > 3.5) {
+                try {
+                  videoEl.currentTime = targetSec;
+                } catch (e) {}
+              }
+              if (shouldPlay && videoEl.paused) {
+                playVideoSafely(0, true);
+              } else if (!shouldPlay && !videoEl.paused) {
+                videoEl.pause();
+              }
+            } else if (nextMode === 'youtube' && ytPlayer && ytReady) {
+              try {
+                var ytTime = ytPlayer.getCurrentTime ? ytPlayer.getCurrentTime() : 0;
+                if (!isLive && Math.abs(ytTime - targetSec) > 4) {
+                  ytPlayer.seekTo(targetSec, true);
+                }
+                var state = ytPlayer.getPlayerState ? ytPlayer.getPlayerState() : -1;
+                if (shouldPlay && state !== 1 && state !== 3) {
+                  ytPlayer.playVideo();
+                } else if (!shouldPlay && state === 1) {
+                  ytPlayer.pauseVideo();
+                }
+              } catch (e) {}
+            }
+            return;
+          }
+
+          // New Stream URL or Mode!
+          currentMode = nextMode;
+          currentUrl = nextUrl;
+          currentIsLive = isLive;
+          revealHud();
+
+          if (nextMode === 'youtube') {
+            destroyHls();
+            try {
+              videoEl.pause();
+              videoEl.removeAttribute('src');
+              videoEl.load();
+            } catch (e) {}
+            videoEl.style.display = 'none';
+            ytWrap.style.display = 'block';
+            loadYouTubeVideo(nextUrl, targetSec, shouldPlay);
+            return;
+          }
+
+          // HLS or Direct MP4
+          if (ytPlayer && ytPlayer.stopVideo) {
+            try {
+              ytPlayer.stopVideo();
+            } catch (e) {}
+          }
+          ytWrap.style.display = 'none';
+          videoEl.style.display = 'block';
+          destroyHls();
+
+          if (nextMode === 'direct') {
+            videoEl.src = nextUrl;
+            videoEl.onloadedmetadata = function () {
+              playVideoSafely(targetSec, shouldPlay);
+            };
+            return;
+          }
+
+          // HLS Mode: Prefer Hls.js MSE when supported, with automatic fallback to Samsung Tizen Native HLS!
+          if (window.Hls && window.Hls.isSupported()) {
+            var fallbackTriggered = false;
+            var hls = new window.Hls({
+              enableWorker: true,
+              lowLatencyMode: false,
+              backBufferLength: 30,
+              maxBufferLength: 30,
+            });
+            hlsInstance = hls;
+            hls.loadSource(nextUrl);
+            hls.attachMedia(videoEl);
+            hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
+              playVideoSafely(targetSec, shouldPlay);
+            });
+            hls.on(window.Hls.Events.ERROR, function (_ev, data) {
+              if (!data || !data.fatal) return;
+              if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+                hls.startLoad();
+              } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+                hls.recoverMediaError();
+              } else if (!fallbackTriggered) {
+                fallbackTriggered = true;
+                destroyHls();
+                videoEl.src = nextUrl;
+                videoEl.onloadedmetadata = function () {
+                  playVideoSafely(targetSec, shouldPlay);
+                };
+              }
+            });
+          } else {
+            // Native Hardware HLS (Safari / Older Samsung Tizen / Smart TVs)
+            videoEl.src = nextUrl;
+            videoEl.onloadedmetadata = function () {
+              playVideoSafely(targetSec, shouldPlay);
+            };
+          }
+        }
+
+        function handleRemoteCommand(cmd) {
+          if (cmd === 'vol_up' || cmd === 'vol_down') {
+            var delta = cmd === 'vol_up' ? 0.15 : -0.15;
+            currentVolume = Math.max(0, Math.min(1, Math.round((currentVolume + delta) * 100) / 100));
+            if (videoEl) {
+              videoEl.volume = currentVolume;
+              if (currentVolume > 0) videoEl.muted = false;
+            }
+            if (ytPlayer && ytPlayer.setVolume) {
+              try {
+                ytPlayer.setVolume(Math.round(currentVolume * 100));
+                if (currentVolume > 0 && ytPlayer.unMute) ytPlayer.unMute();
+              } catch (e) {}
+            }
+            showToast('🔊 Volumen TV · ' + Math.round(currentVolume * 100) + '%');
+          } else if (cmd === 'toggle_mute') {
+            if (videoEl) {
+              videoEl.muted = !videoEl.muted;
+              showToast(videoEl.muted ? '🔇 Televisor silenciado' : '🔊 Sonido activado');
+            }
+            if (ytPlayer) {
+              try {
+                if (ytPlayer.isMuted && ytPlayer.isMuted()) ytPlayer.unMute();
+                else if (ytPlayer.mute) ytPlayer.mute();
+              } catch (e) {}
+            }
+          } else if (cmd === 'toggle_fullscreen') {
+            requestTvFullscreen(true);
+          } else if (cmd === 'toggle_aspect') {
+            cycleVideoAspect();
+          } else if (cmd === 'toggle_hud') {
+            if (hudEl && hudEl.className === 'hidden-hud') {
+              revealHud();
+            } else {
+              hideHudImmediately();
+            }
+          } else if (cmd === 'reload_tv') {
+            if (currentMode !== 'idle' && currentUrl) {
+              applyVideoState(
+                {
+                  mode: currentMode,
+                  url: currentUrl,
+                  title: hudTitle.textContent,
+                  subtitle: hudSub.textContent,
+                  currentTime: videoEl.currentTime || 0,
+                  isPlaying: true,
+                  isLive: currentIsLive,
+                },
+                true
+              );
+              showToast('Resincronizando señal HD en TV...');
+            }
+          } else if (cmd === 'disconnect_tv') {
+            exitToPairingScreen();
+          }
+        }
+
+        function spawnReaction(emoji, sender) {
+          if (!reactionsLayer) return;
+          var el = document.createElement('div');
+          el.className = 'tv-reaction';
+          el.style.left = Math.floor(12 + Math.random() * 75) + '%';
+          el.innerHTML = emoji + '<span>' + (sender || '') + '</span>';
+          reactionsLayer.appendChild(el);
+          setTimeout(function () {
+            el.style.bottom = '170px';
+            el.style.opacity = '0';
+          }, 40);
+          setTimeout(function () {
+            if (el.parentNode) el.parentNode.removeChild(el);
+          }, 2500);
+        }
+
+        // =====================================================================
+        // ENTER ROOM RECEIVER MODE (WS + HTTP POLLING HYBRID)
+        // =====================================================================
+        var roomHttpTimer = null;
+
+        function enterRoomReceiver(roomId, roomName, token, claimedBy) {
+          if (isPaired && currentRoomId === roomId) return;
+          isPaired = true;
+          currentRoomId = roomId.toLowerCase();
+          currentRoomName = roomName || 'Sala ' + currentRoomId.toUpperCase();
+          tvAuthToken = token || '';
+
+          if (pairingWs) {
+            pairingWs.onclose = null;
+            try {
+              pairingWs.close();
+            } catch (e) {}
+            pairingWs = null;
+          }
+
+          if (pairedBanner) {
+            pairedBanner.style.display = 'block';
+            pairedBanner.textContent =
+              '✓ Vinculada con ' + (claimedBy || 'tu móvil') + ' · Entrando a ' + currentRoomName + '...';
+          }
+          if (pairingControls) pairingControls.style.display = 'none';
+
+          try {
+            window.history.replaceState({}, '', '/tv?room=' + encodeURIComponent(currentRoomId));
+          } catch (e) {}
+
+          setTimeout(function () {
+            pairingScreen.style.display = 'none';
+            playerScreen.style.display = 'block';
+            standbyRoomPill.textContent =
+              '✓ Smart TV Conectada · ' + currentRoomName + ' (' + currentRoomId.toUpperCase() + ')';
+            revealHud();
+            connectRoomWs();
+            pollRoomStateHttp();
+            if (roomHttpTimer) clearInterval(roomHttpTimer);
+            roomHttpTimer = setInterval(pollRoomStateHttp, 2200);
+          }, 400);
+        }
+
+        function connectRoomWs() {
+          if (!isPaired || !window.WebSocket) return;
+          try {
+            var proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            var ws = new WebSocket(proto + '//' + window.location.host + '/ws');
+            roomWs = ws;
+
+            ws.onopen = function () {
+              ws.send(
+                JSON.stringify({
+                  type: 'JOIN_ROOM',
+                  payload: {
+                    roomId: currentRoomId,
+                    roomName: currentRoomName,
+                    tvAuthToken: tvAuthToken,
+                    user: {
+                      id: tvDeviceId,
+                      name: 'Samsung Smart TV (TV)',
+                      avatar: '📺',
+                      color: '#E11D48',
+                    },
+                  },
+                })
+              );
+            };
+
+            ws.onmessage = function (ev) {
+              try {
+                var msg = JSON.parse(ev.data);
+                if (msg.type === 'ROOM_STATE' && msg.payload) {
+                  if (msg.payload.name) {
+                    currentRoomName = msg.payload.name;
+                    standbyRoomPill.textContent =
+                      '✓ Smart TV Conectada · ' + currentRoomName;
+                  }
+                  if (msg.payload.videoState) {
+                    applyVideoState(msg.payload.videoState, false);
+                  }
+                } else if (msg.type === 'VIDEO_STATE_UPDATED' && msg.payload && msg.payload.videoState) {
+                  applyVideoState(msg.payload.videoState, false);
+                } else if (msg.type === 'TV_REMOTE_COMMAND' && msg.payload) {
+                  if (msg.payload.seq) lastRemoteSeq = msg.payload.seq;
+                  handleRemoteCommand(msg.payload.command);
+                } else if (msg.type === 'NEW_REACTION' && msg.payload) {
+                  spawnReaction(msg.payload.emoji || '🔥', msg.payload.senderName || '');
+                }
+              } catch (e) {}
+            };
+
+            ws.onclose = function () {
+              if (isPaired) {
+                setTimeout(connectRoomWs, 3500);
+              }
+            };
+          } catch (e) {}
+        }
+
+        function pollRoomStateHttp() {
+          if (!isPaired || !currentRoomId) return;
+          var wsOpen = roomWs && roomWs.readyState === 1;
+          var q =
+            '/api/rooms/' +
+            encodeURIComponent(currentRoomId) +
+            '?tv=1&tvId=' +
+            encodeURIComponent(tvDeviceId) +
+            '&tvName=' +
+            encodeURIComponent('Samsung Smart TV') +
+            '&tvAuthToken=' +
+            encodeURIComponent(tvAuthToken);
+
+          xhrJson('GET', q, null, function (err, data) {
+            if (err || !data) return;
+            if (!wsOpen && data.videoState) {
+              applyVideoState(data.videoState, false);
+            }
+            if (
+              data.lastTvRemoteCommand &&
+              data.lastTvRemoteCommand.seq &&
+              data.lastTvRemoteCommand.seq > lastRemoteSeq
+            ) {
+              var isFirst = lastRemoteSeq === 0;
+              lastRemoteSeq = data.lastTvRemoteCommand.seq;
+              if (!isFirst) {
+                handleRemoteCommand(data.lastTvRemoteCommand.command);
+              }
+            }
+          });
+        }
+
+        function exitToPairingScreen() {
+          isPaired = false;
+          currentRoomId = '';
+          currentMode = 'idle';
+          currentUrl = '';
+          if (roomHttpTimer) {
+            clearInterval(roomHttpTimer);
+            roomHttpTimer = null;
+          }
+          if (roomWs) {
+            roomWs.onclose = null;
+            try {
+              roomWs.close();
+            } catch (e) {}
+            roomWs = null;
+          }
+          destroyHls();
+          try {
+            videoEl.pause();
+            videoEl.removeAttribute('src');
+            videoEl.load();
+          } catch (e) {}
+          if (ytPlayer && ytPlayer.stopVideo) {
+            try {
+              ytPlayer.stopVideo();
+            } catch (e) {}
+          }
+          playerScreen.style.display = 'none';
+          pairingScreen.style.display = 'flex';
+          if (pairedBanner) pairedBanner.style.display = 'none';
+          if (pairingControls) pairingControls.style.display = 'block';
+          try {
+            window.history.replaceState({}, '', '/tv');
+          } catch (e) {}
+          requestPairingCode(true);
+          connectPairingWs();
+        }
+
+        // =====================================================================
+        // BUTTONS & SAMSUNG TV REMOTE KEYBOARD / D-PAD HANDLERS
+        // =====================================================================
+        function unlockAudioAndFullscreen() {
+          unlockAudio();
+          if (!isBrowserInFullscreen()) {
+            requestTvFullscreen(false);
+          }
+        }
+
+        document.getElementById('btn-unlock-audio').onclick = unlockAudioAndFullscreen;
+        document.getElementById('btn-unmute-now').onclick = unlockAudioAndFullscreen;
+        document.getElementById('btn-header-fs').onclick = function () {
+          unlockAudio();
+          requestTvFullscreen(false);
+        };
+        document.getElementById('btn-pairing-fs').onclick = function () {
+          unlockAudio();
+          requestTvFullscreen(false);
+        };
+        document.getElementById('btn-standby-fs').onclick = function () {
+          unlockAudio();
+          requestTvFullscreen(false);
+        };
+        document.getElementById('btn-hud-fs').onclick = function () {
+          unlockAudio();
+          requestTvFullscreen(false);
+        };
+        document.getElementById('btn-dock-fs').onclick = function () {
+          unlockAudio();
+          requestTvFullscreen(false);
+        };
+        if (cornerFsBtn) {
+          cornerFsBtn.onclick = function () {
+            unlockAudio();
+            requestTvFullscreen(false);
+          };
+        }
+        if (btnConfirmRemoteFs) {
+          btnConfirmRemoteFs.onclick = function () {
+            if (fsPromptBanner) fsPromptBanner.style.display = 'none';
+            unlockAudio();
+            requestTvFullscreen(false);
+          };
+        }
+        document.getElementById('btn-hud-aspect').onclick = cycleVideoAspect;
+        document.getElementById('btn-dock-aspect').onclick = cycleVideoAspect;
+
+        document.getElementById('btn-dock-rew').onclick = function () {
+          if (!currentIsLive && (currentMode === 'hls' || currentMode === 'direct')) {
+            videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) - 15);
+            showToast('« -15s');
+          } else if (!currentIsLive && currentMode === 'youtube' && ytPlayer && ytPlayer.getCurrentTime) {
+            ytPlayer.seekTo(Math.max(0, ytPlayer.getCurrentTime() - 15), true);
+            showToast('« -15s');
+          }
+        };
+        document.getElementById('btn-dock-ff').onclick = function () {
+          if (!currentIsLive && (currentMode === 'hls' || currentMode === 'direct')) {
+            videoEl.currentTime = (videoEl.currentTime || 0) + 15;
+            showToast('+15s »');
+          } else if (!currentIsLive && currentMode === 'youtube' && ytPlayer && ytPlayer.getCurrentTime) {
+            ytPlayer.seekTo(ytPlayer.getCurrentTime() + 15, true);
+            showToast('+15s »');
+          }
+        };
+        document.getElementById('btn-dock-voldown').onclick = function () {
+          handleRemoteCommand('vol_down');
+        };
+        document.getElementById('btn-dock-volup').onclick = function () {
+          handleRemoteCommand('vol_up');
+        };
+        document.getElementById('btn-dock-mute').onclick = function () {
+          handleRemoteCommand('toggle_mute');
+        };
+
+        document.getElementById('btn-new-code').onclick = function () {
+          requestPairingCode(true);
+        };
+        document.getElementById('btn-web-mode').onclick = function () {
+          window.location.href = '/?web=1';
+        };
+        document.getElementById('btn-standby-exit').onclick = exitToPairingScreen;
+        document.getElementById('btn-hud-exit').onclick = exitToPairingScreen;
+        document.getElementById('btn-hud-reload').onclick = function () {
+          handleRemoteCommand('reload_tv');
+        };
+        document.getElementById('btn-hud-playpause').onclick = function () {
+          unlockAudio();
+          if (currentMode === 'hls' || currentMode === 'direct') {
+            if (videoEl.paused) videoEl.play();
+            else videoEl.pause();
+          } else if (currentMode === 'youtube' && ytPlayer) {
+            var st = ytPlayer.getPlayerState ? ytPlayer.getPlayerState() : -1;
+            if (st === 1) ytPlayer.pauseVideo();
+            else ytPlayer.playVideo();
+          }
+        };
+
+        document.getElementById('direct-room-form').onsubmit = function (e) {
+          if (e && e.preventDefault) e.preventDefault();
+          var raw = document.getElementById('direct-room-input').value || '';
+          var clean = raw.replace(/[^a-zA-Z0-9-_]/g, '').toLowerCase();
+          if (!clean) return false;
+          unlockAudioAndFullscreen();
+          enterRoomReceiver(clean, 'Sala ' + clean.toUpperCase(), '', 'Mando TV');
+          return false;
+        };
+
+        document.addEventListener('fullscreenchange', syncFullscreenButtons);
+        document.addEventListener('webkitfullscreenchange', syncFullscreenButtons);
+        document.addEventListener('mozfullscreenchange', syncFullscreenButtons);
+        document.addEventListener('MSFullscreenChange', syncFullscreenButtons);
+
+        document.addEventListener('mousemove', function () {
+          if (isPaired) revealHud();
+        });
+        document.addEventListener('click', function () {
+          if (isPaired) revealHud();
+        });
+
+        document.addEventListener('keydown', function (e) {
+          var code = e.keyCode || e.which;
+          var targetTag = e.target && e.target.tagName ? String(e.target.tagName).toUpperCase() : '';
+          if (targetTag === 'INPUT') return;
+
+          // Shortcut F (70), 0 (48), or Samsung Blue key (406) -> Toggle Fullscreen anywhere on TV!
+          if (code === 70 || code === 48 || code === 406) {
+            unlockAudio();
+            requestTvFullscreen(false);
+            return;
+          }
+          // Shortcut Z (90) or Samsung Yellow key (405) -> Toggle Aspect Ratio Zoom!
+          if (code === 90 || code === 405) {
+            cycleVideoAspect();
+            return;
+          }
+
+          if (!isPaired) return;
+          revealHud();
+          // Samsung TV Play (415) / Pause (19)
+          if (code === 415) {
+            if (videoEl.paused) videoEl.play();
+          } else if (code === 19) {
+            if (!videoEl.paused) videoEl.pause();
+          } else if (code === 412 && !currentIsLive) {
+            // Rewind
+            videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) - 10);
+          } else if (code === 417 && !currentIsLive) {
+            // FastForward
+            videoEl.currentTime = (videoEl.currentTime || 0) + 10;
+          } else if (code === 10009 || code === 27) {
+            // Samsung Tizen Return key (10009) or Escape (27)
+            if (isBrowserInFullscreen()) return;
+            exitToPairingScreen();
+          }
+        });
+
+        syncFullscreenButtons();
+
+        // Boot: Check if ?room=xxx was passed directly in URL!
+        var search = window.location.search || '';
+        var roomMatch = search.match(/[?&]room=([a-zA-Z0-9-_]+)/);
+        if (roomMatch && roomMatch[1]) {
+          enterRoomReceiver(roomMatch[1], 'Sala ' + roomMatch[1].toUpperCase(), '', 'Enlace directo');
+        } else {
+          requestPairingCode(false);
+          connectPairingWs();
+          setTimeout(function () {
+            var btn = document.getElementById('btn-unlock-audio');
+            if (btn && btn.focus) btn.focus();
+          }, 250);
+        }
+      })();
+    </script>
+  </body>
+</html>
