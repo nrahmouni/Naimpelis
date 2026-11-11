@@ -15,6 +15,7 @@ import {
   Trash2,
   ListVideo,
   Link2,
+  Clock,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -23,6 +24,7 @@ import {
   SportsMatch,
   TvEpisodeItem,
   TvSeriesDetails,
+  WatchHistoryItem,
   YouTubeSearchItem,
 } from '../types';
 import { UI_COPY } from '../utils/i18n';
@@ -84,12 +86,16 @@ interface MediaCatalogHubProps {
   activeVideoRawUrl: string;
   loadingItemId: string | null;
   roomQueue: RoomQueueItem[];
+  watchHistory: WatchHistoryItem[];
   onPlayMovie: (movie: CatalogMovie, preferLang: 'ES' | 'EN') => void;
   onPlaySeriesEpisode: (
     series: TvSeriesDetails,
     episode: TvEpisodeItem,
     preferLang: 'ES' | 'EN'
   ) => void;
+  onReplayHistoryItem: (item: WatchHistoryItem) => void;
+  onRemoveHistoryItem: (id: string) => void;
+  onClearHistory: () => void;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
   onPlayYouTubeVideo: (item: YouTubeSearchItem) => void;
   onPlayCustomUrl: (url: string) => void;
@@ -106,8 +112,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   activeVideoRawUrl,
   loadingItemId,
   roomQueue,
+  watchHistory,
   onPlayMovie,
   onPlaySeriesEpisode,
+  onReplayHistoryItem,
+  onRemoveHistoryItem,
+  onClearHistory,
   onPlaySportsMatch,
   onPlayYouTubeVideo,
   onPlayCustomUrl,
@@ -474,6 +484,135 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       )}
 
       {/* ================================================================== */}
+      {/* HISTORIAL DE VISUALIZACIÓN (LOCAL PERSISTENCE IN CINE · SERIES)    */}
+      {/* ================================================================== */}
+      {isCinemaFamily && !showWatchlistOnly && watchHistory.length > 0 && (
+        <section
+          aria-label={lang === 'es' ? 'Historial de visualización' : 'Watch history'}
+          className="rounded-2xl bg-[#12141D]/90 border border-white/[0.08] p-3.5 sm:p-4 space-y-3"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Clock className="w-4 h-4 text-[#FB7185] shrink-0" />
+              <h3 className="font-display font-semibold text-xs sm:text-sm text-white truncate">
+                {lang === 'es'
+                  ? 'Historial de visualización · Seguir viendo'
+                  : 'Watch History · Continue Watching'}
+              </h3>
+              <span className="text-[11px] text-zinc-500 font-mono tabular-nums">
+                ({watchHistory.length})
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onClearHistory();
+              }}
+              className="text-[11px] font-medium text-zinc-400 hover:text-rose-400 flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{lang === 'es' ? 'Limpiar' : 'Clear'}</span>
+            </button>
+          </div>
+
+          <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-0.5">
+            {watchHistory.map((hItem) => {
+              const isLoadingThis = loadingItemId === hItem.id;
+              const thumb = hItem.backdrop || hItem.poster;
+              const imgBroken = brokenPosters[`hist-${hItem.id}`];
+
+              return (
+                <div
+                  key={hItem.id}
+                  onClick={() => {
+                    if (loadingItemId) return;
+                    triggerHaptic('light');
+                    onReplayHistoryItem(hItem);
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !loadingItemId) {
+                      onReplayHistoryItem(hItem);
+                    }
+                  }}
+                  className="group relative w-[205px] sm:w-[225px] shrink-0 rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-[#E11D48]/60 transition-all flex flex-col cursor-pointer"
+                >
+                  <div className="relative aspect-[16/9] w-full bg-[#191C28] overflow-hidden">
+                    {!imgBroken && thumb ? (
+                      <img
+                        src={thumb}
+                        alt={hItem.title}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        onError={() =>
+                          setBrokenPosters((prev) => ({
+                            ...prev,
+                            [`hist-${hItem.id}`]: true,
+                          }))
+                        }
+                        className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-[#23142B] to-[#12141D]">
+                        {hItem.mediaType === 'tv' ? (
+                          <Tv className="w-6 h-6 text-zinc-500" />
+                        ) : (
+                          <Film className="w-6 h-6 text-zinc-500" />
+                        )}
+                      </div>
+                    )}
+
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent" />
+
+                    {/* Remove single history item */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerHaptic('light');
+                        onRemoveHistoryItem(hItem.id);
+                      }}
+                      aria-label="Quitar del historial"
+                      className="w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center absolute top-1.5 right-1.5 z-10 cursor-pointer transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+
+                    <div className="absolute bottom-2 left-2.5 right-2.5 flex items-center justify-between gap-2">
+                      <span className="text-[10px] font-semibold text-zinc-200 truncate">
+                        {hItem.mediaType === 'tv' && hItem.season && hItem.episode
+                          ? `Serie · ${hItem.season}x${String(hItem.episode).padStart(2, '0')}`
+                          : `Película · ${hItem.year || 'HD'}`}
+                      </span>
+                      <span className="w-7 h-7 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-md shrink-0">
+                        {isLoadingThis ? (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        ) : (
+                          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                        )}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 flex flex-col gap-0.5">
+                    <h4 className="font-display font-semibold text-xs text-white line-clamp-1">
+                      {hItem.title}
+                    </h4>
+                    <span className="text-[11px] text-zinc-400 line-clamp-1">
+                      {hItem.episodeTitle || hItem.subtitle || (hItem.preferLang === 'EN' ? 'English 1080p' : 'Español HD')}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* ================================================================== */}
       {/* SECTION 1 & 2: MOVIES (ESPAÑOL CAST/LAT + BINGETRIX EXPLORE EN)    */}
       {/* ================================================================== */}
       {(activeSection === 'movies' || activeSection === 'vose') && (
@@ -554,7 +693,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     {activeSection === 'vose'
                       ? 'Bingetrix Featured · 1080p'
                       : lang === 'es'
-                      ? 'Estreno Destacado NAIMCINE'
+                      ? 'Estreno Destacado NAIM CINE'
                       : 'Featured Screening'}
                   </span>
                   <span className="mx-1.5 text-zinc-600" aria-hidden="true">·</span>

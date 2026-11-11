@@ -13,6 +13,7 @@ import { QRCodeSVG } from 'qrcode.react';
 import { AppLanguage, ChatMessage, Participant } from '../types';
 import { UI_COPY } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
+import { buildShortInviteUrl } from '../utils/shortLink';
 
 const QUICK_REACTIONS = ['🔥', '😂', '⚽', '🍿', '🤯', '👏', '❤️'];
 const AVATARS = ['🍿', '🎬', '⚽', '🏎️', '🎧', '🦊', '🦁', '⚡'];
@@ -69,22 +70,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
     }
   }, [messages.length, activeTab]);
 
-  const inviteUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}`
-      : '';
-  const tvUrl =
-    typeof window !== 'undefined'
-      ? `${window.location.origin}${window.location.pathname}?room=${encodeURIComponent(roomId)}&tv=1`
-      : '';
+  const inviteUrl = buildShortInviteUrl(roomId, false);
+  const tvUrl = buildShortInviteUrl(roomId, true);
 
   const handleShareOrCopyInvite = async () => {
     triggerHaptic('success');
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
-          title: `Sala ${roomId.toUpperCase()} · Watch2Gether`,
-          text: 'Únete a mi sala sincronizada de cine y deportes en vivo:',
+          title: `Sala #${roomId.toUpperCase()} · NAIM CINE`,
+          text: 'Entra directo a mi sala NAIM CINE:',
           url: inviteUrl,
         });
         return;
@@ -271,9 +266,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           <div className="p-4 rounded-2xl bg-[#090A0F] border border-white/[0.08] space-y-3">
             <div className="flex items-center justify-between text-xs">
               <span className="text-zinc-400">
-                {lang === 'es' ? 'Código de sala' : 'Room code'}
+                {lang === 'es' ? 'Enlace corto' : 'Short link'}
               </span>
-              <span className="font-mono text-white font-semibold">#{roomId}</span>
+              <span className="font-mono text-white font-semibold truncate max-w-[190px] select-all">
+                {inviteUrl.replace(/^https?:\/\//, '')}
+              </span>
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">

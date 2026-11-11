@@ -177,6 +177,24 @@ export interface CloudBrowserState {
   detectedStreamUrl?: string;
 }
 
+export interface WatchHistoryItem {
+  id: string;
+  mediaType: 'movie' | 'tv';
+  tmdbId?: number;
+  title: string;
+  subtitle?: string;
+  poster: string;
+  backdrop?: string;
+  year?: string;
+  season?: number;
+  episode?: number;
+  episodeTitle?: string;
+  preferLang: 'ES' | 'EN';
+  bingetrixUrl?: string;
+  movidyUrl?: string;
+  watchedAt: number;
+}
+
 export interface RoomData {
   id: string;
   name: string;
@@ -188,3 +206,4 @@ export interface RoomData {
   messages: ChatMessage[];
   createdAt: number;
 }
+

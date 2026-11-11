@@ -7,6 +7,10 @@ import {
   VolumeX,
   Maximize,
   Minimize,
+  Minimize2,
+  Maximize2,
+  X,
+  Cast,
   RotateCcw,
   RotateCw,
   RefreshCw,
@@ -14,7 +18,6 @@ import {
   Tv,
   Film,
   Trophy,
-  Link2,
   ArrowLeft,
   Loader2,
   Sparkles,
@@ -37,6 +40,9 @@ declare global {
   interface Window {
     YT?: any;
     onYouTubeIframeAPIReady?: () => void;
+    __onGCastApiAvailable?: (isAvailable: boolean) => void;
+    cast?: any;
+    chrome?: any;
   }
 }
 
@@ -60,11 +66,19 @@ interface NativeCinemaPlayerProps {
   cloudFrame: string | null;
   cloudState: CloudBrowserState | null;
   floatingReactions: FloatingReaction[];
-  onSyncAction: (action: 'play' | 'pause' | 'seek' | 'change_url', patch: Partial<VideoState>) => void;
+  onSyncAction: (
+    action: 'play' | 'pause' | 'seek' | 'change_url',
+    patch: Partial<VideoState>
+  ) => void;
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
   onPromoteCloudStreamToNative: (proxiedStreamUrl: string) => void;
-  onOpenCatalogSection?: (section: 'movies' | 'series' | 'sports' | 'youtube' | 'direct') => void;
+  onOpenCatalogSection?: (
+    section: 'movies' | 'series' | 'sports' | 'youtube' | 'direct'
+  ) => void;
   onNextEpisode?: () => void;
+  isMinimized?: boolean;
+  onToggleMinimize?: () => void;
+  onClosePlayer?: () => void;
   isTvMode?: boolean;
 }
 
@@ -82,6 +96,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onPromoteCloudStreamToNative,
   onOpenCatalogSection,
   onNextEpisode,
+  isMinimized = false,
+  onToggleMinimize,
+  onClosePlayer,
   isTvMode = false,
 }) => {
   const t = UI_COPY[lang];
@@ -92,6 +109,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const ytContainerId = useRef(`yt-stage-${Math.random().toString(36).slice(2, 8)}`);
   const isApplyingRemoteRef = useRef(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTapRef = useRef<{ time: number; side: 'left' | 'right' } | null>(null);
 
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -101,15 +119,35 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [isBuffering, setIsBuffering] = useState(false);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isInPiP, setIsInPiP] = useState(false);
   const [showControls, setShowControls] = useState(true);
-  const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number }[]>([]);
+  const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number }[]>(
+    []
+  );
   const [selectedQuality, setSelectedQuality] = useState<number>(-1);
   const [cloudUrlInput, setCloudUrlInput] = useState('');
+  const [seekRipple, setSeekRipple] = useState<'left' | 'right' | null>(null);
+
+  // Google Chromecast & Wireless Cast State
+  const [castSdkReady, setCastSdkReady] = useState(false);
+  const [isCastingToTv, setIsCastingToTv] = useState(false);
+  const [castDeviceName, setCastDeviceName] = useState<string>('');
+  const [playerToast, setPlayerToast] = useState<string | null>(null);
+
+  const showTransientToast = useCallback((msg: string) => {
+    setPlayerToast(msg);
+    setTimeout(() => {
+      setPlayerToast((cur) => (cur === msg ? null : cur));
+    }, 3400);
+  }, []);
 
   const scheduleHideControls = useCallback(() => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     controlsTimeoutRef.current = setTimeout(() => {
-      if (videoState.isPlaying && (videoState.mode === 'hls' || videoState.mode === 'direct')) {
+      if (
+        videoState.isPlaying &&
+        (videoState.mode === 'hls' || videoState.mode === 'direct')
+      ) {
         setShowControls(false);
       }
     }, 3400);
@@ -127,6 +165,338 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     document.addEventListener('fullscreenchange', onFsChange);
     return () => document.removeEventListener('fullscreenchange', onFsChange);
   }, []);
+
+  // ============================================================================
+  // SCREEN WAKE LOCK (Prevents phone/tablet screen from sleeping mid-movie/match)
+  // ============================================================================
+  useEffect(() => {
+    let wakeLock: any = null;
+    const requestLock = async () => {
+      try {
+        if (localPlaying && 'wakeLock' in navigator) {
+          wakeLock = await (navigator as any).wakeLock.request('screen');
+        }
+      } catch {
+        // ignore unsupported or battery-saver restrictions
+      }
+    };
+    requestLock();
+
+    const onVisChange = () => {
+      if (document.visibilityState === 'visible' && localPlaying) {
+        requestLock();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisChange);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisChange);
+      wakeLock?.release?.().catch(() => {});
+    };
+  }, [localPlaying]);
+
+  // ============================================================================
+  // PICTURE-IN-PICTURE (SUPERPONER VÍDEO ENCIMA DEL TELÉFONO) + MEDIA SESSION
+  // ============================================================================
+  useEffect(() => {
+    const video = videoRef.current as any;
+    if (!video) return;
+
+    // Enable Android Chrome / PWA automatic PiP when swiping to phone home screen
+    try {
+      video.autoPictureInPicture = true;
+    } catch {
+      // ignore
+    }
+
+    const onEnterPiP = () => setIsInPiP(true);
+    const onLeavePiP = () => setIsInPiP(false);
+    const onWebkitModeChange = () => {
+      setIsInPiP(video.webkitPresentationMode === 'picture-in-picture');
+    };
+
+    video.addEventListener('enterpictureinpicture', onEnterPiP);
+    video.addEventListener('leavepictureinpicture', onLeavePiP);
+    video.addEventListener('webkitpresentationmodechanged', onWebkitModeChange);
+
+    return () => {
+      video.removeEventListener('enterpictureinpicture', onEnterPiP);
+      video.removeEventListener('leavepictureinpicture', onLeavePiP);
+      video.removeEventListener('webkitpresentationmodechanged', onWebkitModeChange);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+    if (videoState.mode === 'idle') {
+      navigator.mediaSession.metadata = null;
+      return;
+    }
+
+    try {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: videoState.title || 'NAIM CINE',
+        artist: videoState.subtitle || 'NAIM CINE Sala Sincronizada',
+        album: 'NAIM CINE',
+        artwork: videoState.poster
+          ? [{ src: videoState.poster, sizes: '512x512', type: 'image/jpeg' }]
+          : [{ src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' }],
+      });
+
+      navigator.mediaSession.setActionHandler('play', () => {
+        const v = videoRef.current;
+        if (v) {
+          v.play().catch(() => {});
+          onSyncAction('play', { isPlaying: true, currentTime: v.currentTime || 0 });
+        }
+      });
+      navigator.mediaSession.setActionHandler('pause', () => {
+        const v = videoRef.current;
+        if (v) {
+          v.pause();
+          onSyncAction('pause', { isPlaying: false, currentTime: v.currentTime || 0 });
+        }
+      });
+      if (!videoState.isLive) {
+        navigator.mediaSession.setActionHandler('seekbackward', () => {
+          const v = videoRef.current;
+          if (!v) return;
+          const next = Math.max(0, (v.currentTime || 0) - 10);
+          v.currentTime = next;
+          onSyncAction('seek', { currentTime: next, isPlaying: !v.paused });
+        });
+        navigator.mediaSession.setActionHandler('seekforward', () => {
+          const v = videoRef.current;
+          if (!v) return;
+          const next = (v.currentTime || 0) + 10;
+          v.currentTime = next;
+          onSyncAction('seek', { currentTime: next, isPlaying: !v.paused });
+        });
+      }
+      if (videoState.seriesMeta && onNextEpisode) {
+        navigator.mediaSession.setActionHandler('nexttrack', () => {
+          onNextEpisode();
+        });
+      }
+      // Chrome Android Auto-PiP handler
+      try {
+        (navigator.mediaSession as any).setActionHandler(
+          'enterpictureinpicture',
+          async () => {
+            const v = videoRef.current as any;
+            if (v?.requestPictureInPicture && !document.pictureInPictureElement) {
+              await v.requestPictureInPicture();
+            }
+          }
+        );
+      } catch {
+        // ignore if action unsupported in browser
+      }
+    } catch {
+      // ignore
+    }
+  }, [
+    videoState.mode,
+    videoState.title,
+    videoState.subtitle,
+    videoState.poster,
+    videoState.isLive,
+    videoState.seriesMeta,
+    onNextEpisode,
+    onSyncAction,
+  ]);
+
+  // ============================================================================
+  // DIRECT GOOGLE CHROMECAST + REMOTE PLAYBACK + AIRPLAY ENGINE
+  // ============================================================================
+  const loadStreamIntoCastSession = useCallback(
+    async (session: any) => {
+      if (
+        !session ||
+        !window.chrome?.cast?.media ||
+        (videoState.mode !== 'hls' && videoState.mode !== 'direct') ||
+        !videoState.url
+      ) {
+        return;
+      }
+
+      try {
+        const absoluteStreamUrl = new URL(videoState.url, window.location.origin).href;
+        const contentType =
+          videoState.mode === 'direct' ? 'video/mp4' : 'application/x-mpegurl';
+        const mediaInfo = new window.chrome.cast.media.MediaInfo(
+          absoluteStreamUrl,
+          contentType
+        );
+
+        mediaInfo.streamType = videoState.isLive
+          ? window.chrome.cast.media.StreamType.LIVE
+          : window.chrome.cast.media.StreamType.BUFFERED;
+
+        if (videoState.mode === 'hls' && window.chrome.cast.media.HlsSegmentFormat) {
+          mediaInfo.hlsSegmentFormat = window.chrome.cast.media.HlsSegmentFormat.TS;
+        }
+
+        const metadata = new window.chrome.cast.media.GenericMediaMetadata();
+        metadata.title = videoState.title || 'NAIM CINE';
+        metadata.subtitle = videoState.subtitle || 'Proyección Directa';
+        if (videoState.poster && /^https?:\/\//i.test(videoState.poster)) {
+          metadata.images = [new window.chrome.cast.Image(videoState.poster)];
+        }
+        mediaInfo.metadata = metadata;
+
+        const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
+        request.autoplay = true;
+        request.currentTime = videoState.isLive
+          ? 0
+          : Math.floor(videoRef.current?.currentTime || videoState.currentTime || 0);
+
+        await session.loadMedia(request);
+
+        if (videoRef.current) {
+          videoRef.current.muted = true;
+          setIsMuted(true);
+        }
+        const friendlyName = session.getCastDevice?.()?.friendlyName || 'Chromecast TV';
+        setCastDeviceName(friendlyName);
+        setIsCastingToTv(true);
+        showTransientToast(`Reproduciendo en ${friendlyName}`);
+      } catch {
+        showTransientToast(
+          lang === 'es'
+            ? 'Conectado al televisor, sincronizando señal...'
+            : 'Connected to TV, syncing stream...'
+        );
+      }
+    },
+    [
+      videoState.mode,
+      videoState.url,
+      videoState.isLive,
+      videoState.title,
+      videoState.subtitle,
+      videoState.poster,
+      videoState.currentTime,
+      lang,
+      showTransientToast,
+    ]
+  );
+
+  useEffect(() => {
+    const initCastFramework = () => {
+      if (!window.cast?.framework || !window.chrome?.cast) return;
+      try {
+        const context = window.cast.framework.CastContext.getInstance();
+        context.setOptions({
+          receiverApplicationId: window.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+          autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
+        });
+        setCastSdkReady(true);
+
+        context.addEventListener(
+          window.cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
+          (event: any) => {
+            const state = event.sessionState;
+            const SESSION_STARTED = window.cast.framework.SessionState.SESSION_STARTED;
+            const SESSION_RESUMED = window.cast.framework.SessionState.SESSION_RESUMED;
+            const SESSION_ENDED = window.cast.framework.SessionState.SESSION_ENDED;
+
+            if (state === SESSION_STARTED || state === SESSION_RESUMED) {
+              const session = context.getCurrentSession();
+              setCastDeviceName(
+                session?.getCastDevice?.()?.friendlyName || 'Chromecast TV'
+              );
+              setIsCastingToTv(true);
+            } else if (state === SESSION_ENDED) {
+              setIsCastingToTv(false);
+              setCastDeviceName('');
+              if (videoRef.current) {
+                videoRef.current.muted = false;
+                setIsMuted(false);
+              }
+            }
+          }
+        );
+      } catch {
+        // ignore if inside restricted sandbox
+      }
+    };
+
+    if (window.cast?.framework && window.chrome?.cast) {
+      initCastFramework();
+    } else {
+      window.__onGCastApiAvailable = (isAvailable: boolean) => {
+        if (isAvailable) initCastFramework();
+      };
+    }
+  }, []);
+
+  // Auto-update Chromecast media when switching movies/channels while already connected
+  useEffect(() => {
+    if (!isCastingToTv || !castSdkReady || !window.cast?.framework) return;
+    const session = window.cast.framework.CastContext.getInstance().getCurrentSession();
+    if (session && (videoState.mode === 'hls' || videoState.mode === 'direct') && videoState.url) {
+      loadStreamIntoCastSession(session);
+    }
+  }, [isCastingToTv, castSdkReady, videoState.url, videoState.mode, loadStreamIntoCastSession]);
+
+  const handleDirectCastToTv = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    triggerHaptic('medium');
+    const video = videoRef.current as any;
+
+    // Path 1: Official Google Chromecast SDK (Android Chrome & Desktop Chrome)
+    if (castSdkReady && window.cast?.framework) {
+      try {
+        const context = window.cast.framework.CastContext.getInstance();
+        const existingSession = context.getCurrentSession();
+        if (existingSession && isCastingToTv) {
+          existingSession.endSession(true);
+          setIsCastingToTv(false);
+          setCastDeviceName('');
+          showTransientToast(
+            lang === 'es' ? 'Transmisión Chromecast finalizada' : 'Chromecast disconnected'
+          );
+          return;
+        }
+        await context.requestSession();
+        const session = context.getCurrentSession();
+        if (session) {
+          await loadStreamIntoCastSession(session);
+          return;
+        }
+      } catch (err: any) {
+        if (err === 'cancel') return;
+      }
+    }
+
+    // Path 2: Native Apple AirPlay Picker (iOS / iPadOS / macOS Safari)
+    if (video?.webkitShowPlaybackTargetPicker) {
+      try {
+        video.webkitShowPlaybackTargetPicker();
+        return;
+      } catch {
+        // fallback
+      }
+    }
+
+    // Path 3: W3C HTML5 RemotePlayback API (Android / Mobile Browsers)
+    if (video?.remote?.prompt) {
+      try {
+        await video.remote.prompt();
+        setIsCastingToTv(true);
+        return;
+      } catch {
+        // fallback
+      }
+    }
+
+    showTransientToast(
+      lang === 'es'
+        ? 'Abre NAIM CINE en Chrome (Chromecast) o Safari (AirPlay) en la misma Wi-Fi que tu TV'
+        : 'Open in Chrome (Chromecast) or Safari (AirPlay) on the same Wi-Fi as your TV'
+    );
+  };
 
   useEffect(() => {
     if (cloudState?.url) {
@@ -179,13 +549,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       }
 
       try {
-        video.muted = false;
+        video.muted = isCastingToTv ? true : false;
         await video.play();
         if (cancelled) {
           video.pause();
           return;
         }
-        setIsMuted(false);
+        setIsMuted(video.muted);
         setLocalPlaying(true);
         scheduleHideControls();
       } catch {
@@ -325,7 +695,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     }, 350);
 
     return () => clearTimeout(timer);
-  }, [videoState.isPlaying, videoState.currentTime, videoState.lastUpdated, videoState.mode, videoState.url]);
+  }, [
+    videoState.isPlaying,
+    videoState.currentTime,
+    videoState.lastUpdated,
+    videoState.mode,
+    videoState.url,
+  ]);
 
   // ============================================================================
   // ENGINE 2: YOUTUBE OFFICIAL IFRAME API ENGINE
@@ -393,7 +769,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     if (window.YT?.Player) {
       mountYtPlayer();
     } else {
-      const existingScript = document.querySelector('script[src="https://www.youtube.com/iframe_api"]');
+      const existingScript = document.querySelector(
+        'script[src="https://www.youtube.com/iframe_api"]'
+      );
       if (!existingScript) {
         const tag = document.createElement('script');
         tag.src = 'https://www.youtube.com/iframe_api';
@@ -428,7 +806,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       isApplyingRemoteRef.current = false;
     }, 450);
     return () => clearTimeout(timer);
-  }, [videoState.isPlaying, videoState.currentTime, videoState.lastUpdated, videoState.mode]);
+  }, [
+    videoState.isPlaying,
+    videoState.currentTime,
+    videoState.lastUpdated,
+    videoState.mode,
+  ]);
 
   // ============================================================================
   // PLAYER INTERACTIONS
@@ -437,6 +820,27 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     e?.stopPropagation();
     triggerHaptic('light');
     revealControls();
+
+    if (videoState.mode === 'youtube' && ytPlayerRef.current) {
+      const state = ytPlayerRef.current.getPlayerState?.();
+      if (state === 1) {
+        ytPlayerRef.current.pauseVideo?.();
+        setLocalPlaying(false);
+        onSyncAction('pause', {
+          isPlaying: false,
+          currentTime: ytPlayerRef.current.getCurrentTime?.() || 0,
+        });
+      } else {
+        ytPlayerRef.current.playVideo?.();
+        setLocalPlaying(true);
+        onSyncAction('play', {
+          isPlaying: true,
+          currentTime: ytPlayerRef.current.getCurrentTime?.() || 0,
+        });
+      }
+      return;
+    }
+
     const video = videoRef.current;
     if (!video || (videoState.mode !== 'hls' && videoState.mode !== 'direct')) return;
 
@@ -451,32 +855,56 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     }
   };
 
-  const handleVideoSurfaceTap = () => {
+  const handleSeekRelative = (deltaSec: number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const video = videoRef.current;
+    if (!video || videoState.isLive) return;
+    triggerHaptic('light');
+    revealControls();
+    const target = Math.max(
+      0,
+      Math.min(duration || Infinity, (video.currentTime || 0) + deltaSec)
+    );
+    video.currentTime = target;
+    setCurrentTime(target);
+    onSyncAction('seek', { currentTime: target, isPlaying: !video.paused });
+  };
+
+  const handleVideoSurfaceTap = (e: React.MouseEvent<HTMLElement>) => {
+    if (isMinimized) {
+      onToggleMinimize?.();
+      return;
+    }
+
+    // Double-tap left/right side on VOD to skip -10s / +10s like Netflix/YouTube
+    if (!videoState.isLive && (videoState.mode === 'hls' || videoState.mode === 'direct')) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const relX = (e.clientX - rect.left) / Math.max(1, rect.width);
+      const side: 'left' | 'right' | null =
+        relX < 0.34 ? 'left' : relX > 0.66 ? 'right' : null;
+      const now = Date.now();
+      if (
+        side &&
+        lastTapRef.current &&
+        lastTapRef.current.side === side &&
+        now - lastTapRef.current.time < 310
+      ) {
+        lastTapRef.current = null;
+        handleSeekRelative(side === 'left' ? -10 : 10);
+        setSeekRipple(side);
+        setTimeout(() => setSeekRipple(null), 550);
+        return;
+      }
+      if (side) {
+        lastTapRef.current = { time: now, side };
+      }
+    }
+
     if (showControls) {
       setShowControls(false);
       if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     } else {
       revealControls();
-    }
-  };
-
-  const handleUnmuteNow = (e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    triggerHaptic('success');
-    const video = videoRef.current;
-    if (video) {
-      video.muted = false;
-      if (video.volume === 0) video.volume = 1;
-      setIsMuted(false);
-      setVolume(video.volume);
-      if (video.paused && videoState.isPlaying) {
-        video.play().catch(() => {});
-      }
-    }
-    if (ytPlayerRef.current?.unMute) {
-      ytPlayerRef.current.unMute();
-      ytPlayerRef.current.setVolume?.(100);
-      setIsMuted(false);
     }
   };
 
@@ -501,18 +929,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     video.volume = val;
     video.muted = val === 0;
     setIsMuted(val === 0);
-  };
-
-  const handleSeekRelative = (deltaSec: number, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    const video = videoRef.current;
-    if (!video || videoState.isLive) return;
-    triggerHaptic('light');
-    revealControls();
-    const target = Math.max(0, Math.min(duration || Infinity, (video.currentTime || 0) + deltaSec));
-    video.currentTime = target;
-    setCurrentTime(target);
-    onSyncAction('seek', { currentTime: target, isPlaying: !video.paused });
   };
 
   const handleScrub = (nextSec: number) => {
@@ -541,18 +957,48 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     }
   };
 
+  /**
+   * Superponer el vídeo encima de otra pantalla del teléfono (Android & iPhone PiP)
+   */
   const handleTogglePiP = async (e: React.MouseEvent) => {
     e.stopPropagation();
+    triggerHaptic('medium');
     const video = videoRef.current as any;
     if (!video) return;
+
     try {
+      // Standard W3C PiP (Android Chrome, Samsung, Edge, Desktop)
       if (document.pictureInPictureElement) {
         await document.exitPictureInPicture();
-      } else if (video.requestPictureInPicture) {
-        await video.requestPictureInPicture();
+        setIsInPiP(false);
+        return;
       }
+      if (video.requestPictureInPicture) {
+        await video.requestPictureInPicture();
+        setIsInPiP(true);
+        return;
+      }
+      // iOS Safari WebKit Presentation Mode PiP
+      if (video.webkitSupportsPresentationMode?.('picture-in-picture')) {
+        const nextMode =
+          video.webkitPresentationMode === 'picture-in-picture'
+            ? 'inline'
+            : 'picture-in-picture';
+        video.webkitSetPresentationMode(nextMode);
+        setIsInPiP(nextMode === 'picture-in-picture');
+        return;
+      }
+      showTransientToast(
+        lang === 'es'
+          ? 'Tu navegador actual no soporta ventana superpuesta en este formato'
+          : 'Floating window is not supported for this stream format'
+      );
     } catch {
-      // ignore
+      showTransientToast(
+        lang === 'es'
+          ? 'Inicia la reproducción un segundo antes de activar pantalla flotante'
+          : 'Play the video first to enable floating PiP window'
+      );
     }
   };
 
@@ -595,13 +1041,17 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   };
 
   const hasTracks = Boolean(videoState.tracks && videoState.tracks.length > 0);
+  const canUseNativePiPOrCast =
+    videoState.mode === 'hls' || videoState.mode === 'direct';
 
   return (
     <section
       className={`w-full overflow-hidden bg-black ${
         isTvMode
           ? 'h-dvh'
-          : 'lg:rounded-2xl lg:border lg:border-white/[0.08] lg:shadow-2xl lg:shadow-black/60'
+          : isMinimized
+            ? 'rounded-2xl border border-white/20 shadow-[0_24px_70px_rgba(0,0,0,0.9)]'
+            : 'lg:rounded-2xl lg:border lg:border-white/[0.08] lg:shadow-2xl lg:shadow-black/60'
       }`}
     >
       {/* ==================================================================== */}
@@ -614,30 +1064,65 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           isTvMode ? 'h-full' : 'aspect-video'
         }`}
       >
-        {/* Floating Reactions Layer */}
-        <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
-          {floatingReactions.map((r) => (
-            <div
-              key={r.id}
-              style={{ left: `${r.xOffset}%` }}
-              className="absolute bottom-10 animate-float-up flex flex-col items-center"
-            >
-              <span className="text-3xl drop-shadow-md">{r.emoji}</span>
-              <span className="text-[10px] font-medium text-white/90 bg-black/65 px-1.5 py-0.5 rounded mt-0.5 whitespace-nowrap">
-                {r.senderName}
-              </span>
-            </div>
-          ))}
-        </div>
+        {/* Floating Reactions Layer (Hidden when docked in tiny miniplayer) */}
+        {!isMinimized && (
+          <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
+            {floatingReactions.map((r) => (
+              <div
+                key={r.id}
+                style={{ left: `${r.xOffset}%` }}
+                className="absolute bottom-10 animate-float-up flex flex-col items-center"
+              >
+                <span className="text-3xl drop-shadow-md">{r.emoji}</span>
+                <span className="text-[10px] font-medium text-white/90 bg-black/65 px-1.5 py-0.5 rounded mt-0.5 whitespace-nowrap">
+                  {r.senderName}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
 
-        {/* Clean Title Scrim (Inside Fullscreen or Desktop Hover) */}
-        {videoState.mode !== 'idle' && videoState.mode !== 'cloud' && (
+        {/* Double-Tap Seek Visual Feedback */}
+        {seekRipple && !isMinimized && (
           <div
-            className={`pointer-events-none absolute top-0 inset-x-0 z-25 px-3.5 sm:px-5 pt-3 pb-8 bg-gradient-to-b from-black/80 via-black/35 to-transparent flex items-center justify-between gap-3 transition-opacity duration-200 ${
+            className={`pointer-events-none absolute inset-y-0 ${
+              seekRipple === 'left' ? 'left-0 rounded-r-full' : 'right-0 rounded-l-full'
+            } w-1/3 bg-white/15 backdrop-blur-[2px] z-30 flex items-center justify-center text-xs font-bold text-white`}
+          >
+            {seekRipple === 'left' ? '« -10s' : '+10s »'}
+          </div>
+        )}
+
+        {/* Transient Player Toast (Chromecast / PiP feedback) */}
+        {playerToast && !isMinimized && (
+          <div className="pointer-events-none absolute top-14 left-1/2 -translate-x-1/2 z-40 px-3.5 py-2 rounded-xl bg-[#12141D]/95 border border-white/15 text-xs font-medium text-white shadow-xl text-center max-w-[90%]">
+            {playerToast}
+          </div>
+        )}
+
+        {/* Active Chromecast Banner */}
+        {isCastingToTv && !isMinimized && (
+          <div className="pointer-events-none absolute inset-0 z-15 bg-[#090A0F]/85 flex flex-col items-center justify-center gap-2 p-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-[#38BDF8]/15 border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8]">
+              <Cast className="w-6 h-6" />
+            </div>
+            <p className="font-display font-bold text-sm sm:text-base text-white">
+              {lang === 'es'
+                ? `Transmitiendo en ${castDeviceName || 'tu TV'}`
+                : `Casting to ${castDeviceName || 'your TV'}`}
+            </p>
+            <p className="text-xs text-zinc-400">{videoState.title}</p>
+          </div>
+        )}
+
+        {/* Top Bar Inside Player: Title + Minimize + Close Controls */}
+        {!isMinimized && videoState.mode !== 'idle' && videoState.mode !== 'cloud' && (
+          <div
+            className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-2.5 sm:px-4 pt-2.5 pb-8 bg-gradient-to-b from-black/85 via-black/40 to-transparent flex items-start justify-between gap-2 transition-opacity duration-200 ${
               showControls || !localPlaying ? 'opacity-100' : 'opacity-0'
             }`}
           >
-            <div className="min-w-0">
+            <div className="min-w-0 pt-0.5 pl-1">
               <h2 className="font-display font-semibold text-xs sm:text-base text-white truncate">
                 {videoState.title}
               </h2>
@@ -648,36 +1133,79 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               )}
             </div>
 
-            {/* In Fullscreen / TV Mode, also keep track switcher accessible at top right */}
-            {(isFullscreen || isTvMode) && hasTracks && (
-              <div className="pointer-events-auto flex items-center gap-1 overflow-x-auto no-scrollbar max-w-[55%] bg-black/70 backdrop-blur-md p-1 rounded-xl border border-white/15">
-                {videoState.tracks.map((track, idx) => (
-                  <button
-                    key={track.id || idx}
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerHaptic('light');
-                      onSelectTrack(idx, currentTime);
-                    }}
-                    className={`min-h-[36px] px-3 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer ${
-                      idx === videoState.activeTrackIndex
-                        ? 'bg-[#E11D48] text-white'
-                        : 'text-zinc-200 hover:bg-white/10'
-                    }`}
-                  >
-                    {track.label}
-                  </button>
-                ))}
-              </div>
-            )}
+            <div className="pointer-events-auto flex items-center gap-1.5 shrink-0">
+              {/* In Fullscreen / TV Mode, keep track switcher accessible at top right */}
+              {(isFullscreen || isTvMode) && hasTracks && (
+                <div className="flex items-center gap-1 overflow-x-auto no-scrollbar max-w-[48vw] bg-black/70 backdrop-blur-md p-1 rounded-xl border border-white/15">
+                  {videoState.tracks.map((track, idx) => (
+                    <button
+                      key={track.id || idx}
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerHaptic('light');
+                        onSelectTrack(idx, currentTime);
+                      }}
+                      className={`min-h-[34px] px-2.5 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer ${
+                        idx === videoState.activeTrackIndex
+                          ? 'bg-[#E11D48] text-white'
+                          : 'text-zinc-200 hover:bg-white/10'
+                      }`}
+                    >
+                      {track.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Minimize Player while browsing catalog */}
+              {!isTvMode && !isFullscreen && onToggleMinimize && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerHaptic('light');
+                    onToggleMinimize();
+                  }}
+                  title={
+                    lang === 'es'
+                      ? 'Minimizar reproductor para seguir buscando'
+                      : 'Minimize player while browsing'
+                  }
+                  aria-label="Minimizar reproductor"
+                  className="h-9 px-2.5 rounded-xl bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/15 text-xs font-medium text-zinc-100 flex items-center gap-1.5 cursor-pointer transition-colors"
+                >
+                  <Minimize2 className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">
+                    {lang === 'es' ? 'Minimizar' : 'Minimize'}
+                  </span>
+                </button>
+              )}
+
+              {/* Close Player */}
+              {!isTvMode && !isFullscreen && onClosePlayer && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerHaptic('light');
+                    onClosePlayer();
+                  }}
+                  title={lang === 'es' ? 'Cerrar reproductor' : 'Close player'}
+                  aria-label="Cerrar reproductor"
+                  className="w-9 h-9 rounded-xl bg-black/65 hover:bg-rose-600/90 backdrop-blur-md border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
           </div>
         )}
 
         {/* ================================================================== */}
         {/* IDLE STANDBY STAGE                                                 */}
         {/* ================================================================== */}
-        {videoState.mode === 'idle' && !isExtracting && (
+        {videoState.mode === 'idle' && !isExtracting && !isMinimized && (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-5 sm:p-8 text-center bg-gradient-to-b from-[#12141D] to-[#090A0F]">
             <div className="w-12 h-12 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center mb-3">
               <Tv className="w-6 h-6 text-[#FB7185]" />
@@ -736,11 +1264,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         )}
 
         {/* ================================================================== */}
-        {/* NATIVE HTML5 + HLS VIDEO ELEMENT                                   */}
+        {/* NATIVE HTML5 + HLS VIDEO ELEMENT (WITH AIRPLAY & REMOTE CAST)      */}
         {/* ================================================================== */}
         <video
           ref={videoRef}
           playsInline
+          x-webkit-airplay="allow"
           onClick={handleVideoSurfaceTap}
           onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
           onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
@@ -755,13 +1284,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             setIsMuted(e.currentTarget.muted || e.currentTarget.volume === 0);
             setVolume(e.currentTarget.volume);
           }}
-          className={`w-full h-full object-contain bg-black ${
+          className={`w-full h-full object-contain bg-black cursor-pointer ${
             videoState.mode === 'hls' || videoState.mode === 'direct' ? 'block' : 'hidden'
           }`}
         />
 
-        {/* Tactile Center Touch Controls Overlay (Mobile & Desktop) */}
-        {(videoState.mode === 'hls' || videoState.mode === 'direct') &&
+        {/* Tactile Center Touch Controls Overlay (Expanded Mode Only) */}
+        {!isMinimized &&
+          (videoState.mode === 'hls' || videoState.mode === 'direct') &&
           !isExtracting &&
           !streamError && (
             <div
@@ -813,8 +1343,35 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* YOUTUBE STAGE                                                      */}
         {/* ================================================================== */}
         {videoState.mode === 'youtube' && (
-          <div className="w-full h-full bg-black">
+          <div className="relative w-full h-full bg-black">
             <div id={ytContainerId.current} className="w-full h-full" />
+            {/* Minimize & Close quick pill on YouTube stage */}
+            {!isMinimized && !isTvMode && (onToggleMinimize || onClosePlayer) && (
+              <div className="absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5">
+                {onToggleMinimize && (
+                  <button
+                    type="button"
+                    onClick={onToggleMinimize}
+                    className="h-9 px-2.5 rounded-xl bg-black/75 hover:bg-black border border-white/15 text-xs font-medium text-white flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">
+                      {lang === 'es' ? 'Minimizar' : 'Minimize'}
+                    </span>
+                  </button>
+                )}
+                {onClosePlayer && (
+                  <button
+                    type="button"
+                    onClick={onClosePlayer}
+                    aria-label="Cerrar reproductor"
+                    className="w-9 h-9 rounded-xl bg-black/75 hover:bg-rose-600 border border-white/15 flex items-center justify-center text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -830,7 +1387,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               <button
                 type="button"
                 onClick={() => socketService.sendCloudBrowserInput({ type: 'back' })}
-                className="w-10 h-10 rounded-xl bg-[#191C28] hover:bg-[#232738] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
+                className="w-9 h-9 rounded-xl bg-[#191C28] hover:bg-[#232738] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
                 aria-label="Atrás"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -838,7 +1395,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               <button
                 type="button"
                 onClick={() => socketService.sendCloudBrowserInput({ type: 'reload' })}
-                className="w-10 h-10 rounded-xl bg-[#191C28] hover:bg-[#232738] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
+                className="w-9 h-9 rounded-xl bg-[#191C28] hover:bg-[#232738] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
                 aria-label="Recargar"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -851,18 +1408,28 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   type="text"
                   value={cloudUrlInput}
                   onChange={(e) => setCloudUrlInput(e.target.value)}
-                  className="w-full h-10 px-3 rounded-xl bg-[#090A0F] border border-white/10 text-base sm:text-xs font-mono text-zinc-200 outline-none"
+                  className="w-full h-9 px-3 rounded-xl bg-[#090A0F] border border-white/10 text-base sm:text-xs font-mono text-zinc-200 outline-none"
                 />
               </form>
               {cloudState?.detectedStreamUrl && (
                 <button
                   type="button"
                   onClick={() => onPromoteCloudStreamToNative(cloudState.detectedStreamUrl!)}
-                  className="min-h-[40px] px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                  className="min-h-[36px] px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
                   <span className="hidden sm:inline">{t.switchNativeHd}</span>
-                  <span className="sm:hidden">HD Nativo</span>
+                  <span className="sm:hidden">HD</span>
+                </button>
+              )}
+              {onClosePlayer && (
+                <button
+                  type="button"
+                  onClick={onClosePlayer}
+                  className="w-9 h-9 rounded-xl bg-[#191C28] hover:bg-rose-600 flex items-center justify-center text-zinc-200 shrink-0 cursor-pointer"
+                  aria-label="Cerrar navegador"
+                >
+                  <X className="w-4 h-4" />
                 </button>
               )}
             </div>
@@ -887,28 +1454,31 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           </div>
         )}
 
-
         {/* ================================================================== */}
         {/* BUFFERING / EXTRACTION / ERROR OVERLAYS                            */}
         {/* ================================================================== */}
         {(isExtracting ||
           (isBuffering && (videoState.mode === 'hls' || videoState.mode === 'direct'))) && (
-          <div className="pointer-events-none absolute inset-0 z-25 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center p-5 text-center">
-            <Loader2 className="w-8 h-8 sm:w-9 sm:h-9 animate-spin text-[#E11D48] mb-2.5" />
-            <p className="font-display font-semibold text-xs sm:text-base text-white max-w-md">
-              {isExtracting
-                ? extractionLabel || t.extractingTitle
-                : 'Sincronizando señal HD...'}
-            </p>
-            {isExtracting && (
-              <p className="text-[11px] sm:text-xs text-zinc-300 mt-1 max-w-sm">
-                {t.extractingSub}
-              </p>
+          <div className="pointer-events-none absolute inset-0 z-25 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-center">
+            <Loader2 className="w-7 h-7 sm:w-9 sm:h-9 animate-spin text-[#E11D48] mb-2" />
+            {!isMinimized && (
+              <>
+                <p className="font-display font-semibold text-xs sm:text-base text-white max-w-md">
+                  {isExtracting
+                    ? extractionLabel || t.extractingTitle
+                    : 'Sincronizando señal HD...'}
+                </p>
+                {isExtracting && (
+                  <p className="text-[11px] sm:text-xs text-zinc-300 mt-1 max-w-sm">
+                    {t.extractingSub}
+                  </p>
+                )}
+              </>
             )}
           </div>
         )}
 
-        {streamError && !isExtracting && (
+        {streamError && !isExtracting && !isMinimized && (
           <div className="absolute inset-0 z-30 bg-black/85 flex flex-col items-center justify-center p-5 text-center gap-3">
             <AlertCircle className="w-8 h-8 text-amber-400" />
             <p className="text-xs sm:text-sm text-zinc-200 max-w-md">{streamError}</p>
@@ -941,12 +1511,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         )}
 
         {/* ================================================================== */}
-        {/* BOTTOM TRANSPORT BAR (TOUCH ERGONOMIC >=44PX TARGETS)              */}
+        {/* BOTTOM TRANSPORT BAR (TOUCH ERGONOMIC + CHROMECAST + MOBILE PIP)   */}
         {/* ================================================================== */}
-        {(videoState.mode === 'hls' || videoState.mode === 'direct') && (
+        {!isMinimized && (videoState.mode === 'hls' || videoState.mode === 'direct') && (
           <div
             onClick={(e) => e.stopPropagation()}
-            className={`absolute bottom-0 inset-x-0 z-30 px-2.5 sm:px-4 pb-1.5 sm:pb-2.5 pt-8 bg-gradient-to-t from-black/95 via-black/65 to-transparent transition-opacity duration-200 ${
+            className={`absolute bottom-0 inset-x-0 z-30 px-2 sm:px-4 pb-1.5 sm:pb-2.5 pt-8 bg-gradient-to-t from-black/95 via-black/65 to-transparent transition-opacity duration-200 ${
               showControls || !localPlaying
                 ? 'opacity-100'
                 : 'opacity-0 pointer-events-none'
@@ -970,11 +1540,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
             <div className="flex items-center justify-between gap-1">
               {/* Left Transport Cluster */}
-              <div className="flex items-center gap-0.5 sm:gap-1.5">
+              <div className="flex items-center gap-0.5 sm:gap-1 min-w-0">
                 <button
                   type="button"
                   onClick={handleTogglePlay}
-                  className="w-11 h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-white transition-colors cursor-pointer"
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-white transition-colors cursor-pointer shrink-0"
                   aria-label={localPlaying ? 'Pausar' : 'Reproducir'}
                 >
                   {localPlaying ? (
@@ -984,11 +1554,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   )}
                 </button>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0">
                   <button
                     type="button"
                     onClick={handleToggleMute}
-                    className="w-11 h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-white cursor-pointer"
+                    className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-white cursor-pointer"
                     aria-label="Silenciar"
                   >
                     {isMuted || volume === 0 ? (
@@ -1015,21 +1585,21 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     <span>{t.liveNow}</span>
                   </div>
                 ) : (
-                  <div className="text-xs font-mono tabular-nums text-zinc-200 pl-1 whitespace-nowrap">
+                  <div className="text-[11px] sm:text-xs font-mono tabular-nums text-zinc-200 pl-0.5 whitespace-nowrap">
                     {formatTimecode(currentTime)}{' '}
                     <span className="text-zinc-500">/</span> {formatTimecode(duration)}
                   </div>
                 )}
               </div>
 
-              {/* Right Utility Cluster */}
-              <div className="flex items-center gap-0.5 sm:gap-1">
+              {/* Right Utility Cluster: Quality + Reload + Chromecast + Mobile/Desktop PiP + Fullscreen */}
+              <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
                 {qualityLevels.length > 1 && (
                   <select
                     value={selectedQuality}
                     onChange={(e) => handleChangeQuality(Number(e.target.value))}
                     aria-label="Calidad de vídeo"
-                    className="h-9 px-2 rounded-lg bg-black/70 border border-white/15 text-xs font-mono text-zinc-200 outline-none cursor-pointer"
+                    className="hidden sm:block h-9 px-2 rounded-lg bg-black/70 border border-white/15 text-xs font-mono text-zinc-200 outline-none cursor-pointer"
                   >
                     <option value={-1}>Auto</option>
                     {qualityLevels.map((q) => (
@@ -1043,27 +1613,59 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 <button
                   type="button"
                   onClick={handleForceReloadStream}
-                  className="w-11 h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-zinc-200 cursor-pointer"
+                  className="hidden sm:flex w-10 h-10 sm:w-11 sm:h-11 rounded-xl hover:bg-white/12 items-center justify-center text-zinc-200 cursor-pointer"
                   title={t.syncRoom}
                   aria-label="Resincronizar señal"
                 >
                   <RefreshCw className="w-4 h-4" />
                 </button>
 
-                <button
-                  type="button"
-                  onClick={handleTogglePiP}
-                  className="hidden sm:flex w-11 h-11 rounded-xl hover:bg-white/12 items-center justify-center text-zinc-200 cursor-pointer"
-                  title="Picture in Picture"
-                  aria-label="Picture in Picture"
-                >
-                  <PictureInPicture2 className="w-4 h-4" />
-                </button>
+                {/* DIRECT CHROMECAST / AIRPLAY TO TV BUTTON */}
+                {!isTvMode && (
+                  <button
+                    type="button"
+                    onClick={handleDirectCastToTv}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
+                      isCastingToTv
+                        ? 'bg-[#38BDF8] text-[#090A0F]'
+                        : 'hover:bg-white/12 text-zinc-100'
+                    }`}
+                    title={
+                      lang === 'es'
+                        ? 'Enviar vídeo directo a la TV (Chromecast / AirPlay)'
+                        : 'Cast video directly to TV (Chromecast / AirPlay)'
+                    }
+                    aria-label="Chromecast directo a TV"
+                  >
+                    <Cast className="w-4 h-4" />
+                  </button>
+                )}
+
+                {/* FLOATING OVERLAY ON PHONE / DESKTOP (PICTURE-IN-PICTURE) — VISIBLE ON MOBILE TOO! */}
+                {!isTvMode && (
+                  <button
+                    type="button"
+                    onClick={handleTogglePiP}
+                    className={`w-10 h-10 sm:w-11 sm:h-11 rounded-xl flex items-center justify-center transition-colors cursor-pointer ${
+                      isInPiP
+                        ? 'bg-[#E11D48] text-white'
+                        : 'hover:bg-white/12 text-zinc-100'
+                    }`}
+                    title={
+                      lang === 'es'
+                        ? 'Superponer vídeo encima de otra pantalla (PiP)'
+                        : 'Float video on top of phone screen (PiP)'
+                    }
+                    aria-label="Superponer pantalla flotante"
+                  >
+                    <PictureInPicture2 className="w-4 h-4" />
+                  </button>
+                )}
 
                 <button
                   type="button"
                   onClick={handleToggleFullscreen}
-                  className="w-11 h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-white cursor-pointer"
+                  className="w-10 h-10 sm:w-11 sm:h-11 rounded-xl hover:bg-white/12 flex items-center justify-center text-white cursor-pointer"
                   title="Pantalla completa"
                   aria-label="Pantalla completa"
                 >
@@ -1080,55 +1682,169 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       </div>
 
       {/* ==================================================================== */}
-      {/* DEDICATED THUMB-FRIENDLY TRACK / SIGNAL SWITCHER STRIP BELOW VIDEO   */}
+      {/* FLOATING DOCKED MINI-PLAYER CONTROL STRIP (WHEN MINIMIZED)           */}
       {/* ==================================================================== */}
-      {!isTvMode && videoState.mode !== 'idle' && (hasTracks || videoState.seriesMeta) && (
-        <div className="bg-[#12141D] border-t border-white/[0.08] px-3 sm:px-4 py-2 flex items-center justify-between gap-2.5">
-          <div className="hidden sm:flex items-center gap-2 text-xs text-zinc-400 shrink-0">
-            <Radio className="w-3.5 h-3.5 text-[#FB7185]" />
-            <span>{videoState.isLive ? 'Señales en vivo:' : 'Idioma / Señal:'}</span>
-          </div>
+      {isMinimized && (
+        <div className="bg-[#12141D] border-t border-white/10 px-2.5 py-2 flex items-center justify-between gap-2">
+          <button
+            type="button"
+            onClick={onToggleMinimize}
+            className="min-w-0 flex-1 text-left cursor-pointer"
+          >
+            <div className="font-display font-semibold text-xs text-white truncate">
+              {videoState.title}
+            </div>
+            <div className="text-[10px] text-zinc-400 truncate">
+              {lang === 'es' ? 'Toca para ampliar' : 'Tap to expand'}
+            </div>
+          </button>
 
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 sm:justify-end">
-            {videoState.tracks.map((track, idx) => {
-              const active = idx === videoState.activeTrackIndex;
-              return (
-                <button
-                  key={track.id || idx}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onSelectTrack(idx, currentTime);
-                  }}
-                  className={`min-h-[40px] px-3.5 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                    active
-                      ? 'bg-[#E11D48] text-white shadow-sm shadow-[#E11D48]/30'
-                      : 'bg-[#191C28] hover:bg-[#232838] text-zinc-300 border border-white/[0.07]'
-                  }`}
-                >
-                  {track.label}
-                </button>
-              );
-            })}
-
-            {videoState.seriesMeta && onNextEpisode && (
+          <div className="flex items-center gap-1 shrink-0">
+            {(canUseNativePiPOrCast || videoState.mode === 'youtube') && (
               <button
                 type="button"
-                onClick={() => {
-                  triggerHaptic('success');
-                  onNextEpisode();
-                }}
-                className="min-h-[40px] px-3.5 rounded-xl bg-white text-[#090A0F] hover:bg-zinc-200 text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ml-1"
+                onClick={handleTogglePlay}
+                className="w-8 h-8 rounded-lg bg-white/[0.08] hover:bg-white/15 flex items-center justify-center text-white cursor-pointer"
+                aria-label={localPlaying ? 'Pausar' : 'Reproducir'}
               >
-                <SkipForward className="w-3.5 h-3.5 fill-current" />
-                <span>
-                  {lang === 'es' ? 'Siguiente Ep.' : 'Next Ep.'}
-                </span>
+                {localPlaying ? (
+                  <Pause className="w-3.5 h-3.5 fill-current" />
+                ) : (
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                )}
+              </button>
+            )}
+
+            {canUseNativePiPOrCast && (
+              <button
+                type="button"
+                onClick={handleTogglePiP}
+                className="w-8 h-8 rounded-lg bg-white/[0.08] hover:bg-white/15 flex items-center justify-center text-zinc-200 cursor-pointer"
+                title={
+                  lang === 'es'
+                    ? 'Superponer sobre el teléfono (PiP)'
+                    : 'Float over phone screen (PiP)'
+                }
+                aria-label="Pantalla flotante"
+              >
+                <PictureInPicture2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {onToggleMinimize && (
+              <button
+                type="button"
+                onClick={onToggleMinimize}
+                className="w-8 h-8 rounded-lg bg-[#E11D48] hover:bg-[#BE123C] flex items-center justify-center text-white cursor-pointer"
+                title={lang === 'es' ? 'Ampliar reproductor' : 'Expand player'}
+                aria-label="Ampliar reproductor"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {onClosePlayer && (
+              <button
+                type="button"
+                onClick={onClosePlayer}
+                className="w-8 h-8 rounded-lg bg-white/[0.08] hover:bg-rose-600 flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer"
+                title={lang === 'es' ? 'Cerrar reproductor' : 'Close player'}
+                aria-label="Cerrar reproductor"
+              >
+                <X className="w-3.5 h-3.5" />
               </button>
             )}
           </div>
         </div>
       )}
+
+      {/* ==================================================================== */}
+      {/* DEDICATED THUMB-FRIENDLY TRACK / SIGNAL / CAST STRIP BELOW VIDEO     */}
+      {/* ==================================================================== */}
+      {!isTvMode &&
+        !isMinimized &&
+        videoState.mode !== 'idle' &&
+        (hasTracks || videoState.seriesMeta || canUseNativePiPOrCast) && (
+          <div className="bg-[#12141D] border-t border-white/[0.08] px-3 sm:px-4 py-2 flex items-center justify-between gap-2.5">
+            <div className="hidden sm:flex items-center gap-2 text-xs text-zinc-400 shrink-0">
+              <Radio className="w-3.5 h-3.5 text-[#FB7185]" />
+              <span>{videoState.isLive ? 'Señales en vivo:' : 'Idioma / Acciones:'}</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 sm:justify-end">
+              {videoState.tracks.map((track, idx) => {
+                const active = idx === videoState.activeTrackIndex;
+                return (
+                  <button
+                    key={track.id || idx}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onSelectTrack(idx, currentTime);
+                    }}
+                    className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                      active
+                        ? 'bg-[#E11D48] text-white shadow-sm shadow-[#E11D48]/30'
+                        : 'bg-[#191C28] hover:bg-[#232838] text-zinc-300 border border-white/[0.07]'
+                    }`}
+                  >
+                    {track.label}
+                  </button>
+                );
+              })}
+
+              {canUseNativePiPOrCast && (
+                <>
+                  <button
+                    type="button"
+                    onClick={handleTogglePiP}
+                    className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      isInPiP
+                        ? 'bg-[#E11D48] text-white'
+                        : 'bg-[#191C28] hover:bg-[#232838] text-zinc-200 border border-white/[0.07]'
+                    }`}
+                  >
+                    <PictureInPicture2 className="w-3.5 h-3.5 text-[#FB7185]" />
+                    <span>{lang === 'es' ? 'Flotante' : 'Floating PiP'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleDirectCastToTv}
+                    className={`min-h-[38px] px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      isCastingToTv
+                        ? 'bg-[#38BDF8] text-[#090A0F]'
+                        : 'bg-[#191C28] hover:bg-[#232838] text-zinc-200 border border-white/[0.07]'
+                    }`}
+                  >
+                    <Cast className="w-3.5 h-3.5 text-[#38BDF8]" />
+                    <span>
+                      {isCastingToTv
+                        ? castDeviceName || 'TV Conectada'
+                        : 'Chromecast'}
+                    </span>
+                  </button>
+                </>
+              )}
+
+              {videoState.seriesMeta && onNextEpisode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('success');
+                    onNextEpisode();
+                  }}
+                  className="min-h-[38px] px-3.5 rounded-xl bg-white text-[#090A0F] hover:bg-zinc-200 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                >
+                  <SkipForward className="w-3.5 h-3.5 fill-current" />
+                  <span>
+                    {lang === 'es' ? 'Siguiente episodio' : 'Next episode'}
+                  </span>
+                </button>
+              )}
+            </div>
+          </div>
+        )}
     </section>
   );
 };

@@ -188,22 +188,142 @@ input[type='range'].cinema-range:active::-webkit-slider-thumb {
 }
 
 .animate-naim-emblem {
-  animation: naimEmblemPop 2.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: naimEmblemPop 2.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-naim-spectrum {
-  animation: naimSpectrumSweep 2.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: naimSpectrumSweep 2.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .animate-naim-wordmark {
-  animation: naimWordmarkTrack 2.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  animation: naimWordmarkTrack 2.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes roomWarpEnter {
+  0% {
+    opacity: 0;
+    transform: scale(1.03);
+    filter: brightness(1.35);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+
+.animate-room-warp {
+  animation: roomWarpEnter 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes subtlePulseGlow {
+  0%, 100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+.animate-pulse-glow {
+  animation: subtlePulseGlow 4s ease-in-out infinite;
+}
+
+.cyber-grid-bg {
+  background-image:
+    linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+  background-size: 44px 44px;
+}
+
+.futuristic-panel {
+  background: linear-gradient(180deg, rgba(20, 23, 34, 0.92) 0%, rgba(12, 14, 21, 0.96) 100%);
+  backdrop-filter: blur(18px);
+}
+
+/* Flat Architectural SVG Logo Intro Assembly */
+@keyframes logoPillarLeftIn {
+  0% {
+    opacity: 0;
+    transform: translateY(22px);
+  }
+  35%, 100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes logoPillarRightIn {
+  0% {
+    opacity: 0;
+    transform: translateY(-22px);
+  }
+  35%, 100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes logoBeamSweep {
+  0%, 12% {
+    opacity: 0;
+    transform: scale(0.75);
+    transform-origin: 50% 50%;
+  }
+  48%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    transform-origin: 50% 50%;
+  }
+}
+
+@keyframes logoPlaySnap {
+  0%, 36% {
+    opacity: 0;
+    transform: scale(0.3);
+    transform-origin: 50% 50%;
+  }
+  65% {
+    opacity: 1;
+    transform: scale(1.16);
+    transform-origin: 50% 50%;
+  }
+  82%, 100% {
+    opacity: 1;
+    transform: scale(1);
+    transform-origin: 50% 50%;
+  }
+}
+
+.logo-pillar-left {
+  animation: logoPillarLeftIn 1.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.logo-pillar-right {
+  animation: logoPillarRightIn 1.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.logo-beam-crimson {
+  animation: logoBeamSweep 1.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.logo-play-core {
+  animation: logoPlaySnap 1.45s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .animate-float-up,
   .animate-naim-emblem,
   .animate-naim-spectrum,
-  .animate-naim-wordmark {
+  .animate-naim-wordmark,
+  .animate-room-warp,
+  .animate-pulse-glow,
+  .logo-pillar-left,
+  .logo-pillar-right,
+  .logo-beam-crimson,
+  .logo-play-core {
     animation-duration: 0.01ms !important;
   }
 }
+
+

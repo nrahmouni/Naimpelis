@@ -1,5 +1,7 @@
 import dns from 'dns';
 import crypto from 'crypto';
+import http2 from 'http2';
+import zlib from 'zlib';
 import { execFile, spawn } from 'child_process';
 import express from 'express';
 import { createServer } from 'http';
@@ -318,13 +320,137 @@ async function extractEmbed69SpanishTracks(opts: {
 }
 
 // ============================================================================
-// SUBSYSTEM 1B: BINGETRIX ENGLISH 1080P WASM CHACHA20 DECOMPILER (MOVIE & TV)
+// SUBSYSTEM 1B: BINGETRIX ENGLISH 1080P WASM CHACHA20 DECOMPILER (PURE NODE H2)
 // ============================================================================
-function curlGetText(
+function h2GetRaw(
+  targetUrl: string,
+  headers: Record<string, string> = {},
+  maxTimeSec = 6,
+  redirectsLeft = 4
+): Promise<{ buf: Buffer; effectiveUrl: string; status: number }> {
+  return new Promise((resolve, reject) => {
+    let u: URL;
+    try {
+      u = new URL(targetUrl);
+    } catch (err) {
+      return reject(err);
+    }
+
+    if (u.protocol !== 'https:') {
+      fetch(targetUrl, {
+        headers,
+        signal: AbortSignal.timeout(maxTimeSec * 1000),
+      })
+        .then(async (r) => ({
+          buf: Buffer.from(await r.arrayBuffer()),
+          effectiveUrl: r.url || targetUrl,
+          status: r.status,
+        }))
+        .then(resolve)
+        .catch(reject);
+      return;
+    }
+
+    const client = http2.connect(u.origin, { rejectUnauthorized: false });
+    let settled = false;
+    const finishErr = (err: Error) => {
+      if (settled) return;
+      settled = true;
+      try {
+        client.close();
+      } catch {}
+      reject(err);
+    };
+
+    client.on('error', finishErr);
+
+    const reqHeaders: Record<string, string> = {
+      ':method': 'GET',
+      ':path': u.pathname + u.search,
+      ':scheme': 'https',
+      ':authority': u.host,
+      'user-agent': CHROME_UA,
+      'accept-encoding': 'gzip, deflate, br',
+    };
+    for (const [k, v] of Object.entries(headers)) {
+      if (v) reqHeaders[k.toLowerCase()] = v;
+    }
+
+    const req = client.request(reqHeaders);
+    let status = 0;
+    let locationHeader = '';
+    let contentEncoding = '';
+    const chunks: Buffer[] = [];
+
+    req.on('response', (resHeaders) => {
+      status = Number(resHeaders[':status'] || 0);
+      locationHeader = String(resHeaders['location'] || '');
+      contentEncoding = String(resHeaders['content-encoding'] || '').toLowerCase();
+    });
+
+    req.on('data', (chunk: Buffer) => {
+      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    });
+
+    const finalize = () => {
+      if (settled) return;
+      settled = true;
+      try {
+        client.close();
+      } catch {}
+
+      if ([301, 302, 303, 307, 308].includes(status) && locationHeader && redirectsLeft > 0) {
+        const nextUrl = new URL(locationHeader, targetUrl).href;
+        h2GetRaw(nextUrl, headers, maxTimeSec, redirectsLeft - 1).then(resolve).catch(reject);
+        return;
+      }
+
+      let rawBuf = Buffer.concat(chunks);
+      try {
+        if (contentEncoding.includes('br')) {
+          rawBuf = zlib.brotliDecompressSync(rawBuf);
+        } else if (contentEncoding.includes('gzip')) {
+          rawBuf = zlib.gunzipSync(rawBuf);
+        } else if (contentEncoding.includes('deflate')) {
+          rawBuf = zlib.inflateSync(rawBuf);
+        }
+      } catch {
+        // keep raw buffer if already decompressed
+      }
+
+      resolve({ buf: rawBuf, effectiveUrl: targetUrl, status });
+    };
+
+    req.on('end', finalize);
+    req.on('error', (err) => {
+      if (chunks.length > 0) finalize();
+      else finishErr(err);
+    });
+    req.setTimeout(maxTimeSec * 1000, () => {
+      try {
+        req.close();
+      } catch {}
+      if (chunks.length > 0) finalize();
+      else finishErr(new Error('HTTP/2 request timeout'));
+    });
+    req.end();
+  });
+}
+
+async function curlGetText(
   targetUrl: string,
   headers: Record<string, string> = {},
   maxTimeSec = 6
 ): Promise<{ text: string; effectiveUrl: string }> {
+  try {
+    const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+    if (h2.buf.length > 0 && h2.status < 400) {
+      return { text: h2.buf.toString('utf8'), effectiveUrl: h2.effectiveUrl };
+    }
+  } catch {
+    // fallback to curl if available
+  }
+
   return new Promise((resolve, reject) => {
     const args = [
       '-sS',
@@ -357,11 +483,20 @@ function curlGetText(
   });
 }
 
-function curlGetBuffer(
+async function curlGetBuffer(
   targetUrl: string,
   headers: Record<string, string> = {},
   maxTimeSec = 7
 ): Promise<Buffer> {
+  try {
+    const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+    if (h2.buf.length > 0 && h2.status < 400) {
+      return h2.buf;
+    }
+  } catch {
+    // fallback to curl if available
+  }
+
   return new Promise((resolve, reject) => {
     const args = ['-sS', '-L', '-k', '--max-time', String(maxTimeSec)];
     for (const [k, v] of Object.entries(headers)) {
@@ -631,20 +766,156 @@ async function decodeNuploadToHls(embedUrlOrB64: string): Promise<{ rawM3u8: str
 }
 
 // ============================================================================
-// SUBSYSTEM 2: FAST SPORTS & GENERIC STREAM SNIFFER (UNWRAP + HEADLESS CHROME)
+// SUBSYSTEM 2: PURE CRYPTO + HTTP LIVE SPORTS DECOMPILER (<350ms, ZERO CHROME)
 // ============================================================================
+function healUpstreamSportsDomain(rawUrl: string): string {
+  // Auto-heal rotated mirror hostnames (e.g. doc.tilinhd.lol -> dog.tilinhd.lol)
+  return rawUrl.replace(/\/\/doc\.tilinhd\.lol\b/gi, '//dog.tilinhd.lol');
+}
+
+function decodeSportsPlaystreamEconfig(econfig: string): any | null {
+  try {
+    const order = [2, 0, 3, 1];
+    const s1 = Buffer.from(econfig, 'base64').toString('binary');
+    const chunkLen = Math.ceil(s1.length / 4);
+    const chunks: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      chunks.push(s1.slice(i * chunkLen, (i + 1) * chunkLen));
+    }
+    const reordered: string[] = [];
+    for (let i = 0; i < 4; i++) {
+      const part = String(chunks[i] || '');
+      const cleanPart = part.slice(0, 3) + part.slice(4);
+      reordered[order[i]] = Buffer.from(cleanPart, 'base64').toString('binary');
+    }
+    const jsonText = Buffer.from(reordered.join(''), 'base64').toString('utf8');
+    return JSON.parse(jsonText);
+  } catch {
+    return null;
+  }
+}
+
+async function fetchSportsHtmlHop(url: string, referer: string): Promise<string> {
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Referer: referer,
+        'User-Agent': CHROME_UA,
+        Accept: 'text/html,application/xhtml+xml,*/*;q=0.9',
+      },
+      signal: AbortSignal.timeout(4500),
+    });
+    if (res.ok) return await res.text();
+  } catch {
+    // fallback to HTTP/2 helper
+  }
+  const fb = await curlGetText(url, { Referer: referer, 'User-Agent': CHROME_UA }, 5).catch(
+    () => ({ text: '', effectiveUrl: url })
+  );
+  return fb.text;
+}
+
+async function extractLiveSportsHlsDirect(
+  initialUrl: string
+): Promise<{ streamUrl: string; referer: string; isDirectMp4: boolean } | null> {
+  let currentUrl = healUpstreamSportsDomain(initialUrl);
+  let currentReferer = 'https://www.rojadirectv.live/';
+  try {
+    currentReferer = new URL(currentUrl).origin + '/';
+  } catch {
+    // keep default referer
+  }
+
+  for (let hop = 0; hop < 7; hop++) {
+    currentUrl = healUpstreamSportsDomain(currentUrl);
+    const html = await fetchSportsHtmlHop(currentUrl, currentReferer);
+    if (!html) break;
+
+    // 1. Playstream / TilinHD / Footunder `window._econfig` pure crypto decode!
+    const econfigMatch = html.match(/window\._econfig\s*=\s*['"]([^'"]+)['"]/);
+    if (econfigMatch && econfigMatch[1]) {
+      const cfg = decodeSportsPlaystreamEconfig(econfigMatch[1]);
+      const rawCandidate: string = cfg?.stream_url || cfg?.stream_url_nop2p || '';
+      if (rawCandidate) {
+        const origin = new URL(currentUrl).origin;
+        const proxiedViaPlaystream = rawCandidate.startsWith('http')
+          ? `${origin}/playstream.php?stream_tv=${Buffer.from(rawCandidate).toString('base64')}`
+          : new URL(rawCandidate, currentUrl).href;
+
+        // Verify the channel is actively broadcasting #EXTM3U right now
+        const checkM3u = await fetchSportsHtmlHop(proxiedViaPlaystream, currentUrl);
+        if (checkM3u.includes('#EXTM3U')) {
+          return {
+            streamUrl: proxiedViaPlaystream,
+            referer: currentUrl,
+            isDirectMp4: false,
+          };
+        }
+      }
+      return null;
+    }
+
+    // 2. Direct `.m3u8` in Clappr / JWPlayer / HLS.js config
+    const directM3u8Match = html.match(
+      /(?:source|file|src|streamUrl)\s*:\s*['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/i
+    );
+    if (directM3u8Match && directM3u8Match[1] && !isBlockedAdUrl(directM3u8Match[1])) {
+      return {
+        streamUrl: directM3u8Match[1],
+        referer: currentUrl,
+        isDirectMp4: false,
+      };
+    }
+
+    // 3. Base64 `atob('...')` or `encodedUrl = "..."` iframe hop
+    const b64Matches = [
+      ...html.matchAll(/(?:atob\(\s*['"]|encodedUrl\s*=\s*['"])([A-Za-z0-9+/=]{16,})['"]/g),
+    ];
+    let followedB64 = false;
+    for (const m of b64Matches) {
+      try {
+        const decoded = Buffer.from(m[1], 'base64').toString('utf8').trim();
+        if (
+          (decoded.startsWith('http') || decoded.startsWith('/')) &&
+          !isBlockedAdUrl(decoded)
+        ) {
+          const nextUrl = healUpstreamSportsDomain(new URL(decoded, currentUrl).href);
+          currentReferer = currentUrl;
+          currentUrl = nextUrl;
+          followedB64 = true;
+          break;
+        }
+      } catch {
+        // ignore invalid base64
+      }
+    }
+    if (followedB64) continue;
+
+    // 4. Static `<iframe src="...">` hop
+    const staticIframe = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
+    if (staticIframe && staticIframe[1] && !isBlockedAdUrl(staticIframe[1])) {
+      const nextUrl = healUpstreamSportsDomain(new URL(staticIframe[1], currentUrl).href);
+      if (nextUrl !== currentUrl) {
+        currentReferer = currentUrl;
+        currentUrl = nextUrl;
+        continue;
+      }
+    }
+
+    break;
+  }
+
+  return null;
+}
+
 async function unwrapNestedEmbedChain(initialUrl: string): Promise<{ targetUrl: string; referer: string }> {
-  let currentUrl = initialUrl;
-  let currentReferer = new URL(initialUrl).origin + '/';
+  let currentUrl = healUpstreamSportsDomain(initialUrl);
+  let currentReferer = new URL(currentUrl).origin + '/';
 
   for (let hop = 0; hop < 5; hop++) {
     try {
-      const res = await fetch(currentUrl, {
-        headers: { Referer: currentReferer, 'User-Agent': CHROME_UA },
-        signal: AbortSignal.timeout(4000),
-      });
-      if (!res.ok) break;
-      const html = await res.text();
+      const html = await fetchSportsHtmlHop(currentUrl, currentReferer);
+      if (!html) break;
 
       if (html.includes('_econfig') || html.includes('Clappr') || html.includes('jwplayer')) {
         return { targetUrl: currentUrl, referer: currentReferer };
@@ -652,7 +923,7 @@ async function unwrapNestedEmbedChain(initialUrl: string): Promise<{ targetUrl: 
 
       const staticIframe = html.match(/<iframe[^>]+src=["']([^"']+)["']/i);
       if (staticIframe && staticIframe[1] && !isBlockedAdUrl(staticIframe[1])) {
-        const nextUrl = new URL(staticIframe[1], currentUrl).href;
+        const nextUrl = healUpstreamSportsDomain(new URL(staticIframe[1], currentUrl).href);
         currentReferer = currentUrl;
         currentUrl = nextUrl;
         continue;
@@ -664,7 +935,7 @@ async function unwrapNestedEmbedChain(initialUrl: string): Promise<{ targetUrl: 
       if (atobMatch && atobMatch[1]) {
         const decoded = Buffer.from(atobMatch[1], 'base64').toString('utf8').trim();
         if (decoded.startsWith('http') || decoded.startsWith('/')) {
-          const nextUrl = new URL(decoded, currentUrl).href;
+          const nextUrl = healUpstreamSportsDomain(new URL(decoded, currentUrl).href);
           currentReferer = currentUrl;
           currentUrl = nextUrl;
           continue;
@@ -683,11 +954,12 @@ async function unwrapNestedEmbedChain(initialUrl: string): Promise<{ targetUrl: 
 async function sniffStreamWithHeadless(
   rawUrl: string
 ): Promise<{ streamUrl: string; referer: string; isDirectMp4: boolean } | null> {
-  const { targetUrl, referer } = await unwrapNestedEmbedChain(rawUrl);
-  const browser = await getSharedBrowser();
-  const page = await browser.newPage();
-
+  let page: Page | null = null;
   try {
+    const { targetUrl, referer } = await unwrapNestedEmbedChain(rawUrl);
+    const browser = await getSharedBrowser();
+    page = await browser.newPage();
+
     await page.setUserAgent(CHROME_UA);
     await page.setExtraHTTPHeaders({ Referer: referer });
     await page.setRequestInterception(true);
@@ -731,7 +1003,7 @@ async function sniffStreamWithHeadless(
     await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
 
     setTimeout(async () => {
-      if (!resolvedMedia && !page.isClosed()) {
+      if (!resolvedMedia && page && !page.isClosed()) {
         await page
           .evaluate(() => {
             const btn = document.querySelector<HTMLElement>(
@@ -743,13 +1015,15 @@ async function sniffStreamWithHeadless(
       }
     }, 900);
 
-    const timeoutPromise = new Promise<null>((res) => setTimeout(() => res(null), 6500));
+    const timeoutPromise = new Promise<null>((res) => setTimeout(() => res(null), 6000));
     return await Promise.race([mediaFoundPromise, timeoutPromise]);
   } catch (err) {
-    console.warn('Headless stream sniff error:', err);
+    console.warn('Headless stream sniff unavailable (safe fallback):', (err as Error)?.message);
     return null;
   } finally {
-    await page.close().catch(() => {});
+    if (page) {
+      await page.close().catch(() => {});
+    }
   }
 }
 
@@ -896,7 +1170,12 @@ async function startCloudSession(roomId: string, targetUrl: string) {
     normalizedUrl = 'https://' + normalizedUrl;
   }
 
-  const browser = await getSharedBrowser();
+  let browser: Browser;
+  try {
+    browser = await getSharedBrowser();
+  } catch {
+    return;
+  }
   const page = await browser.newPage();
   await page.setViewport({ width: 1280, height: 720 });
   await page.setUserAgent(CHROME_UA);
@@ -1345,6 +1624,14 @@ app.get('/api/img-proxy', async (req, res) => {
   }
 });
 
+app.options(['/api/hls-proxy', '/api/ts-proxy'], (_req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
+  res.status(204).end();
+});
+
 app.get('/api/hls-proxy', async (req, res) => {
   const targetUrl = String(req.query.url || '');
   const referer = String(req.query.referer || '');
@@ -1433,6 +1720,9 @@ app.get('/api/hls-proxy', async (req, res) => {
     });
 
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
     res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     res.send(rewritten.join('\n'));
@@ -1474,6 +1764,9 @@ app.get('/api/ts-proxy', async (req, res) => {
 
     res.status(upstream.status);
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
 
     const rawCt = (upstream.headers.get('content-type') || '').toLowerCase();
     const isDisguisedTsSegment =
@@ -1498,25 +1791,24 @@ app.get('/api/ts-proxy', async (req, res) => {
     nodeStream.pipe(res);
   } catch {
     if (res.headersSent) return res.end();
-    const args = ['-sS', '-L', '-k', '--max-time', '20'];
-    for (const [k, v] of Object.entries(headers)) {
-      if (v) args.push('-H', `${k}: ${v}`);
-    }
-    args.push(targetUrl);
-
-    res.status(req.headers.range ? 206 : 200);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Content-Type', 'video/mp2t');
-
-    const child = spawn('curl', args);
-    req.on('close', () => {
-      if (!child.killed) child.kill('SIGTERM');
-    });
-    child.stdout.pipe(res);
-    child.on('error', () => {
+    try {
+      const buf = await curlGetBuffer(targetUrl, headers, 18);
+      if (!buf || buf.length === 0) {
+        res.status(502).end();
+        return;
+      }
+      res.status(req.headers.range ? 206 : 200);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
+      res.setHeader('Content-Type', 'video/mp2t');
+      res.setHeader('Content-Length', String(buf.length));
+      res.end(buf);
+    } catch {
       if (!res.headersSent) res.status(502);
       res.end();
-    });
+    }
   }
 });
 
@@ -1892,7 +2184,7 @@ function getPermanent247SportsMatches() {
       channels: [
         {
           id: 'ch-laliga-1',
-          label: 'Movistar LaLiga',
+          label: 'Movistar LaLiga HD',
           lang: 'ES',
           quality: '1080p',
           sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
@@ -1900,18 +2192,18 @@ function getPermanent247SportsMatches() {
         },
         {
           id: 'ch-laliga-2',
-          label: 'DAZN LaLiga',
-          lang: 'ES',
+          label: 'Fútbol Directo 2',
+          lang: 'LAT',
           quality: '1080p',
-          sourceUrl: 'https://footunder.online/tvtodo/dazn-laliga.php',
+          sourceUrl: 'https://footunder.online/tvtodo/winsports.php',
           resolverType: 'sports_channel',
         },
         {
           id: 'ch-laliga-3',
-          label: 'ESPN Deportes',
-          lang: 'LAT',
-          quality: 'HD',
-          sourceUrl: 'https://footunder.online/tvtodo/espn-deportes.php',
+          label: 'DAZN LaLiga',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://footunder.online/tvtodo/dazn-laliga.php',
           resolverType: 'sports_channel',
         },
         {
@@ -1961,8 +2253,8 @@ function getPermanent247SportsMatches() {
     },
     {
       id: 'mux-champions',
-      title: 'UEFA Champions & Premier League · Señal Internacional',
-      competition: 'Fútbol Europeo',
+      title: 'UEFA Champions & Fútbol Internacional · Directo',
+      competition: 'Fútbol Europeo & Sudamericano',
       sport: 'soccer',
       time: 'EN DIRECTO',
       isLive: true,
@@ -1970,34 +2262,34 @@ function getPermanent247SportsMatches() {
       channels: [
         {
           id: 'ch-ucl-1',
-          label: 'TNT Sports HD',
-          lang: 'LAT',
+          label: 'Señal Fútbol 1 HD',
+          lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://footunder.online/tvtodo/tnt-sports.php',
+          sourceUrl: 'https://footunder.online/tvtodo/winsports.php',
           resolverType: 'sports_channel',
         },
         {
           id: 'ch-ucl-2',
+          label: 'Movistar Fútbol',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+          resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-ucl-3',
           label: 'ESPN Internacional',
           lang: 'LAT',
           quality: '1080p',
           sourceUrl: 'https://footunder.online/tvtodo/espn.php',
           resolverType: 'sports_channel',
         },
-        {
-          id: 'ch-ucl-3',
-          label: 'DAZN 1',
-          lang: 'ES',
-          quality: 'HD',
-          sourceUrl: 'https://footunder.online/tvtodo/dazn1.php',
-          resolverType: 'sports_channel',
-        },
       ],
     },
     {
       id: 'mux-nba-tennis',
-      title: 'NBA, Euroliga & ATP Tour · Polideportivo en Vivo',
-      competition: 'Baloncesto · Tenis',
+      title: 'NBA, Euroliga & Polideportivo · Arena 24/7',
+      competition: 'Baloncesto · Motor · Tenis',
       sport: 'basketball',
       time: 'EN DIRECTO',
       isLive: true,
@@ -2005,18 +2297,18 @@ function getPermanent247SportsMatches() {
       channels: [
         {
           id: 'ch-nba-1',
-          label: 'ESPN Arena',
-          lang: 'LAT',
+          label: 'Arena HD 1',
+          lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://footunder.online/tvtodo/espn.php',
+          sourceUrl: 'https://footunder.online/tvtodo/daznf1.php',
           resolverType: 'sports_channel',
         },
         {
           id: 'ch-nba-2',
-          label: 'ESPN Deportes',
-          lang: 'ES',
+          label: 'ESPN Arena',
+          lang: 'LAT',
           quality: '1080p',
-          sourceUrl: 'https://footunder.online/tvtodo/espn-deportes.php',
+          sourceUrl: 'https://footunder.online/tvtodo/espn.php',
           resolverType: 'sports_channel',
         },
         {
@@ -2334,10 +2626,11 @@ app.get('/api/extract/stream', async (req, res) => {
       }
     }
 
-    // CASE 5: Sports Channel (`footunder.online`, `tilinhd`, etc.) or Generic Video Webpage -> Headless Sniffer
+    // CASE 5: Live Sports Channel (`footunder.online`, `tilinhd`, etc.) -> Pure Crypto Direct (<350ms) + Safe Headless Fallback
     if (rawInput) {
       const fullTargetUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
-      const sniffed = await sniffStreamWithHeadless(fullTargetUrl);
+      const directSports = await extractLiveSportsHlsDirect(fullTargetUrl);
+      const sniffed = directSports || (await sniffStreamWithHeadless(fullTargetUrl));
 
       if (sniffed) {
         const proxiedUrl = sniffed.isDirectMp4
@@ -2350,7 +2643,7 @@ app.get('/api/extract/stream', async (req, res) => {
           streamUrl: proxiedUrl,
           rawStreamUrl: sniffed.streamUrl,
           referer: sniffed.referer,
-          expiresAt: Date.now() + 12 * 60 * 1000,
+          expiresAt: Date.now() + 10 * 60 * 1000,
         };
         extractionCache.set(cacheKey, result);
         return res.json(result);
