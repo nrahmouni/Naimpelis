@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import {
   AppLanguage,
+  CatalaEpisodeItem,
+  CatalaSeriesDetails,
   CatalogMovie,
   ChatMessage,
   CloudBrowserState,
@@ -2169,6 +2171,110 @@ export function App() {
     playCinemaSound('play');
   };
 
+  const handlePlayCatalaEpisode = async (
+    series: CatalaSeriesDetails,
+    episode: CatalaEpisodeItem
+  ) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
+
+    scrollDesktopToPlayer();
+    setExtractionError(null);
+    activeHistoryIdRef.current = null;
+
+    if (episode.sourceType === 'ccma_3cat' && episode.ccmaVideoId) {
+      setIsExtracting(true);
+      setLoadingItemId(episode.id);
+      setExtractionLabel(`${series.title} · Carregant senyal 3Cat en català...`);
+      try {
+        const res = await fetch(
+          `/api/extract/catala-3cat?vidId=${encodeURIComponent(episode.ccmaVideoId)}`
+        );
+        const data = await res.json();
+        if (!res.ok || !data?.success || !data?.streamUrl) {
+          setExtractionError('Aquest capítol de 3Cat no està disponible ara mateix.');
+          return;
+        }
+        if (data.mode === 'cloud') {
+          socketService.startCloudBrowser(data.streamUrl, profile.name);
+          return;
+        }
+        const nextState: VideoState = {
+          mode: 'direct',
+          url: data.streamUrl,
+          rawSourceUrl: episode.id,
+          title: `${series.title} · Cap. ${episode.detectedNumber || episode.episodeNumber}`,
+          subtitle: `${episode.title} · Català (SX3 / 3Cat)`,
+          poster: series.poster,
+          backdrop: series.backdrop || series.poster,
+          currentTime: 0,
+          isPlaying: true,
+          isLive: false,
+          tracks: data.tracks || [],
+          activeTrackIndex: 0,
+          seriesMeta: undefined,
+          lastUpdated: Date.now(),
+          updatedBy: profile.name,
+        };
+        videoStateUrlRef.current = nextState.url;
+        setVideoState(nextState);
+        socketService.syncVideoState('change_url', nextState, profile.name);
+        playCinemaSound('play');
+      } catch {
+        setExtractionError('Error en connectar amb el servidor de 3Cat.');
+      } finally {
+        setIsExtracting(false);
+        setLoadingItemId(null);
+      }
+      return;
+    }
+
+    if (!episode.streamUrl) {
+      setExtractionError('Capítol sense flux directe disponible.');
+      return;
+    }
+
+    const tracks: StreamTrack[] =
+      Array.isArray(episode.tracks) && episode.tracks.length > 0
+        ? episode.tracks
+        : [
+            {
+              id: `cat-direct-${episode.id}`,
+              label: 'Català HD · Directe',
+              lang: 'ES',
+              quality: 'HD',
+              sourceUrl: episode.streamUrl,
+              resolverType: 'direct_mp4',
+              resolvedStreamUrl: episode.streamUrl,
+            },
+          ];
+
+    const nextState: VideoState = {
+      mode: 'direct',
+      url: episode.streamUrl,
+      rawSourceUrl: episode.id,
+      title: `${series.title} · Cap. ${episode.episodeNumber}`,
+      subtitle: `${episode.title} · Àudio en Català`,
+      poster: series.poster,
+      backdrop: series.backdrop || series.poster,
+      currentTime: 0,
+      isPlaying: true,
+      isLive: false,
+      tracks,
+      activeTrackIndex: 0,
+      seriesMeta: undefined,
+      lastUpdated: Date.now(),
+      updatedBy: profile.name,
+    };
+
+    videoStateUrlRef.current = nextState.url;
+    setVideoState(nextState);
+    socketService.syncVideoState('change_url', nextState, profile.name);
+    playCinemaSound('play');
+  };
+
   const resolveTrackPlaybackMode = (
     track: StreamTrack,
     fallbackMode: PlaybackEngineMode
@@ -2183,6 +2289,11 @@ export function App() {
   const handleSelectTrack = async (trackIndex: number, resumeTimeSec: number) => {
     const targetTrack = videoState.tracks[trackIndex];
     if (!targetTrack) return;
+
+    if (targetTrack.resolverType === 'cloud_browser' && targetTrack.sourceUrl) {
+      socketService.startCloudBrowser(targetTrack.sourceUrl, profile.name);
+      return;
+    }
 
     const resumeAt = videoState.isLive ? 0 : resumeTimeSec;
 
@@ -3546,6 +3657,18 @@ export function App() {
                     onClick: () => setCatalogSection('series'),
                   },
                   {
+                    id: 'castellano',
+                    label: 'Castellano',
+                    isActive: catalogSection === 'castellano',
+                    onClick: () => setCatalogSection('castellano'),
+                  },
+                  {
+                    id: 'catala',
+                    label: 'Català',
+                    isActive: catalogSection === 'catala',
+                    onClick: () => setCatalogSection('catala'),
+                  },
+                  {
                     id: 'anime',
                     label: 'Anime',
                     isActive: catalogSection === 'anime',
@@ -3816,8 +3939,15 @@ export function App() {
                   }
                   onOpenCatalogSection={(sec) => {
                     setCatalogSection(sec);
-                    if (sec === 'movies' || sec === 'series' || sec === 'anime') setMobileTab('movies');
-                    else if (sec === 'tdt') setMobileTab('tdt');
+                    if (
+                      sec === 'movies' ||
+                      sec === 'series' ||
+                      sec === 'anime' ||
+                      sec === 'castellano' ||
+                      sec === 'catala'
+                    ) {
+                      setMobileTab('movies');
+                    } else if (sec === 'tdt') setMobileTab('tdt');
                     else if (sec === 'sports') setMobileTab('sports');
                     else if (sec === 'youtube') setMobileTab('youtube');
                   }}
@@ -4039,7 +4169,9 @@ export function App() {
                       sec === 'movies' ||
                       sec === 'vose' ||
                       sec === 'series' ||
-                      sec === 'anime'
+                      sec === 'anime' ||
+                      sec === 'castellano' ||
+                      sec === 'catala'
                     ) {
                       setMobileTab('movies');
                     } else if (sec === 'tdt') {
@@ -4064,6 +4196,7 @@ export function App() {
                   onPlayFavoriteChannel={handlePlayFavoriteChannel}
                   onPlayMovie={handlePlayMovie}
                   onPlaySeriesEpisode={handlePlaySeriesEpisode}
+                  onPlayCatalaEpisode={handlePlayCatalaEpisode}
                   onReplayHistoryItem={handleReplayHistoryItem}
                   onRemoveHistoryItem={handleRemoveHistoryItem}
                   onClearHistory={handleClearAllHistory}

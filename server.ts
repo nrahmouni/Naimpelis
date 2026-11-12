@@ -191,10 +191,45 @@ function unpackDeanEdwards(html: string): string | null {
 
 async function unpackVidhideToHls(embedUrl: string): Promise<{ rawM3u8: string; proxyUrl: string } | null> {
   try {
+    // 1. Fast Vidaraa / Vidara JSON Stream Unpacker (`vidaraa.cc`, `vidara.to`, `vidara.so` -> 1080p HLS in ~200ms)
+    if (/vidaraa?\.[a-z]+/i.test(embedUrl)) {
+      const u = new URL(embedUrl);
+      const segments = u.pathname.split('/').filter(Boolean);
+      const filecode = segments[segments.length - 1] || '';
+      if (filecode) {
+        const apiRes = await fetch(`${u.origin}/api/stream`, {
+          method: 'POST',
+          headers: {
+            'User-Agent': CHROME_UA,
+            'Content-Type': 'application/json',
+            Accept: 'application/json, text/plain, */*',
+            Origin: u.origin,
+            Referer: embedUrl,
+          },
+          body: JSON.stringify({ filecode, device: 'web', codecs: [] }),
+          signal: AbortSignal.timeout(4800),
+        });
+        if (apiRes.ok) {
+          const apiJson: any = await apiRes.json();
+          const rawM3u8 = String(apiJson?.streaming_url || apiJson?.file || '').trim();
+          if (rawM3u8 && /^https?:\/\//i.test(rawM3u8)) {
+            return {
+              rawM3u8,
+              proxyUrl: buildHlsProxyUrl(rawM3u8, `${u.origin}/`),
+            };
+          }
+        }
+      }
+    }
+
+    // 2. Standard Vidhide / Smoothpre / Earnvids / Streamwish Dean Edwards Unpacker
+    const refererOrigin = embedUrl.includes('gnulahd')
+      ? 'https://ww3.gnulahd.nu/'
+      : 'https://embed69.org/';
     const res = await fetch(embedUrl, {
       headers: {
         'User-Agent': CHROME_UA,
-        Referer: 'https://embed69.org/',
+        Referer: refererOrigin,
       },
       signal: AbortSignal.timeout(5500),
     });
@@ -922,6 +957,225 @@ async function extractAnimeAv1Tracks(opts: {
   }
 }
 
+// ============================================================================
+// SUBSYSTEM 1A-PLUS: GNULAHD + VIDARAA CASTELLANO (ESPAÑA) 1080P EXTRACTOR
+// Unlocks real Español de España (ES) tracks for From, Reina Roja, Fallout, HBO, Netflix, Prime & Movies
+// ============================================================================
+const GNULA_ORIGIN = 'https://ww3.gnulahd.nu';
+const gnulaSlugCache = new Map<string, { slug: string | null; ts: number }>();
+
+function gnrdXorUnpack(base64Payload: string): any {
+  const buf = Buffer.from(base64Payload, 'base64');
+  const key = [103, 78, 55, 100]; // 'gN7d'
+  const out = Buffer.alloc(buf.length);
+  for (let i = 0; i < buf.length; i++) {
+    out[i] = buf[i] ^ key[i & 3];
+  }
+  return JSON.parse(out.toString('utf8'));
+}
+
+async function resolveGnulaSlug(opts: {
+  titleHints: string[];
+  mediaType: 'movie' | 'tv';
+  yearHint?: string;
+}): Promise<string | null> {
+  const uniqueHints = Array.from(
+    new Set(
+      opts.titleHints
+        .map((h) => String(h || '').replace(/\s*\([^)]*\)/g, '').trim())
+        .filter((h) => h.length >= 2)
+    )
+  ).slice(0, 3);
+  if (uniqueHints.length === 0) return null;
+
+  const cacheKey = `${opts.mediaType}|${opts.yearHint || ''}|${uniqueHints
+    .map((h) => normalizeTitleForMatch(h))
+    .join('|')}`;
+  const cached = gnulaSlugCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 30 * 60 * 1000) {
+    return cached.slug;
+  }
+
+  const wantedType = opts.mediaType === 'tv' ? 'serie' : 'pelicula';
+
+  for (const hint of uniqueHints) {
+    try {
+      const searchUrl = `${GNULA_ORIGIN}/wp-json/gnrd/v1/search?q=${encodeURIComponent(hint)}`;
+      const res = await fetch(searchUrl, {
+        headers: {
+          'User-Agent': CHROME_UA,
+          Accept: 'application/json',
+          Referer: `${GNULA_ORIGIN}/`,
+        },
+        signal: AbortSignal.timeout(3600),
+      });
+      if (!res.ok) continue;
+      const json: any = await res.json();
+      const results: any[] = Array.isArray(json?.results) ? json.results : [];
+      if (results.length === 0) continue;
+
+      const normTargets = uniqueHints.map((h) => normalizeTitleForMatch(h)).filter(Boolean);
+      const typeFiltered = results.filter((r) => {
+        const rType = normalizeTitleForMatch(String(r?.type || ''));
+        return !rType || rType.includes(wantedType);
+      });
+      const pool = typeFiltered.length > 0 ? typeFiltered : results;
+
+      let chosen =
+        pool.find((r) => {
+          const rTitle = normalizeTitleForMatch(String(r?.title || ''));
+          const yearMatches =
+            !opts.yearHint || !r?.year || String(r.year).trim() === String(opts.yearHint).trim();
+          return normTargets.includes(rTitle) && yearMatches;
+        }) ||
+        pool.find((r) => normTargets.includes(normalizeTitleForMatch(String(r?.title || '')))) ||
+        pool.find((r) => {
+          const rTitle = normalizeTitleForMatch(String(r?.title || ''));
+          return normTargets.some(
+            (nt) => nt.length >= 4 && (rTitle.startsWith(nt) || nt.startsWith(rTitle))
+          );
+        });
+
+      if (chosen?.url) {
+        const m = String(chosen.url).match(/\/ver\/([^/?#]+)\/?/i);
+        if (m?.[1]) {
+          gnulaSlugCache.set(cacheKey, { slug: m[1], ts: Date.now() });
+          return m[1];
+        }
+      }
+    } catch {
+      // try next hint
+    }
+  }
+
+  gnulaSlugCache.set(cacheKey, { slug: null, ts: Date.now() });
+  return null;
+}
+
+async function extractGnulaCastellanoTracks(opts: {
+  titleHints: string[];
+  mediaType: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+  yearHint?: string;
+}): Promise<TrackRecord[]> {
+  try {
+    const slug = await resolveGnulaSlug({
+      titleHints: opts.titleHints,
+      mediaType: opts.mediaType,
+      yearHint: opts.yearHint,
+    });
+    if (!slug) return [];
+
+    const pageUrl =
+      opts.mediaType === 'tv'
+        ? `${GNULA_ORIGIN}/${slug}-${opts.season || 1}x${String(opts.episode || 1).padStart(
+            2,
+            '0'
+          )}/`
+        : `${GNULA_ORIGIN}/ver/${slug}/`;
+
+    const pageRes = await fetch(pageUrl, {
+      headers: {
+        'User-Agent': CHROME_UA,
+        Referer: `${GNULA_ORIGIN}/`,
+      },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!pageRes.ok) return [];
+    const html = await pageRes.text();
+
+    const pidMatch = html.match(/_gnrdPid\s*=\s*(\d+)/);
+    const tokMatch = html.match(/_gnrdTok\s*=\s*["']([^"']+)["']/);
+    if (!pidMatch?.[1] || !tokMatch?.[1]) return [];
+
+    const playerApiUrl = `${GNULA_ORIGIN}/wp-json/gnrd/v1/player?id=${
+      pidMatch[1]
+    }&t=${encodeURIComponent(tokMatch[1])}`;
+    const pRes = await fetch(playerApiUrl, {
+      headers: {
+        'User-Agent': CHROME_UA,
+        Accept: 'application/json',
+        Referer: pageUrl,
+      },
+      signal: AbortSignal.timeout(3800),
+    });
+    if (!pRes.ok) return [];
+    const pJson: any = await pRes.json();
+    if (!pJson?.p) return [];
+
+    const decoded = gnrdXorUnpack(String(pJson.p));
+    const langs: any[] = Array.isArray(decoded?.langs) ? decoded.langs : [];
+    if (langs.length === 0) return [];
+
+    const nativeTracks: TrackRecord[] = [];
+    const embedBackupTracks: TrackRecord[] = [];
+
+    langs.forEach((lObj, lIdx) => {
+      const rawLabel = String(lObj?.label || '').trim();
+      const rawFlag = String(lObj?.flag || '').toUpperCase();
+      let langCode: 'ES' | 'LAT' | 'VOSE' = 'LAT';
+      let displayLang = 'Español Latino';
+
+      if (rawFlag === 'ES' || /castellano|espa[ñn]a/i.test(rawLabel)) {
+        langCode = 'ES';
+        displayLang = 'Castellano (España)';
+      } else if (/subtitul|vose/i.test(rawLabel)) {
+        langCode = 'VOSE';
+        displayLang = 'VOSE (Sub Español)';
+      } else if (rawFlag === 'MX' || /latino/i.test(rawLabel)) {
+        langCode = 'LAT';
+        displayLang = 'Español Latino';
+      }
+
+      const servers: any[] = Array.isArray(lObj?.servers) ? lObj.servers : [];
+      servers.forEach((srv, sIdx) => {
+        const rawSrc = String(srv?.src || '').trim();
+        if (!rawSrc || !/^https?:\/\//i.test(rawSrc)) return;
+        const srvTitle = String(srv?.title || `Servidor ${sIdx + 1}`).trim();
+        const hostLow = rawSrc.toLowerCase();
+
+        if (
+          /vidaraa?\.[a-z]+|vidhide|smoothpre|earnvids|streamwish|filelions|hglink|hlswish|wishembed/i.test(
+            hostLow
+          )
+        ) {
+          nativeTracks.push({
+            id: `gnula-hls-${langCode}-${lIdx}-${sIdx}`,
+            label: `${displayLang} · 1080p`,
+            lang: langCode,
+            quality: '1080p',
+            sourceUrl: rawSrc,
+            resolverType: 'vidhide_hls',
+          });
+        } else if (/voe\.[a-z]+/i.test(hostLow)) {
+          nativeTracks.push({
+            id: `gnula-voe-${langCode}-${lIdx}-${sIdx}`,
+            label: `${displayLang} · VOE HD`,
+            lang: langCode,
+            quality: 'HD',
+            sourceUrl: rawSrc,
+            resolverType: 'embed_sniff',
+          });
+        } else if (/ok\.ru|byse|vidsonic|dood|netu/i.test(hostLow)) {
+          embedBackupTracks.push({
+            id: `gnula-emb-${langCode}-${lIdx}-${sIdx}`,
+            label: `${displayLang} · ${srvTitle} (Web)`,
+            lang: langCode,
+            quality: 'HD',
+            sourceUrl: rawSrc,
+            resolverType: 'web_embed',
+          });
+        }
+      });
+    });
+
+    return [...nativeTracks, ...embedBackupTracks];
+  } catch {
+    return [];
+  }
+}
+
 async function extractEmbed69SpanishTracks(opts: {
   tmdbId?: string | number;
   imdbId?: string | null;
@@ -941,6 +1195,7 @@ async function extractEmbed69SpanishTracks(opts: {
 
     const hints = [...(opts.titleHints || [])].filter(Boolean);
     let isLikelyAnime = false;
+    let yearHint = '';
 
     if (opts.tmdbId) {
       try {
@@ -956,6 +1211,8 @@ async function extractEmbed69SpanishTracks(opts: {
           const origName = String(
             tmJson?.original_name || tmJson?.original_title || ''
           ).trim();
+          const rawDate = String(tmJson?.first_air_date || tmJson?.release_date || '');
+          if (rawDate) yearHint = rawDate.split('-')[0] || '';
           if (esName) hints.push(esName);
           if (origName) hints.push(origName);
 
@@ -989,7 +1246,16 @@ async function extractEmbed69SpanishTracks(opts: {
       }
     }
 
-    const [directTracks, skTracks, animeTracks] = await Promise.all([
+    const [gnulaTracks, directTracks, skTracks, animeTracks] = await Promise.all([
+      hints.length > 0
+        ? extractGnulaCastellanoTracks({
+            titleHints: hints,
+            mediaType: opts.mediaType,
+            season: opts.season,
+            episode: opts.episode,
+            yearHint,
+          }).catch(() => [] as TrackRecord[])
+        : Promise.resolve([] as TrackRecord[]),
       imdbId
         ? fetchEmbed69HtmlWithMirrorAndAnubis(`${imdbId}${epSuffix}`)
             .then((html) => parseEmbed69OrMoeTracks(html, `${imdbId}${epSuffix}`))
@@ -1014,29 +1280,38 @@ async function extractEmbed69SpanishTracks(opts: {
     ]);
 
     const seenTrackKeys = new Set<string>();
-    const seenEmbedLangs = new Set<string>();
+    const countPerLang: Record<string, number> = {};
     const merged: TrackRecord[] = [];
 
-    for (const tr of [...directTracks, ...skTracks]) {
-      const code = String(tr.lang || '').toUpperCase();
-      if (code && !seenEmbedLangs.has(code)) {
-        seenEmbedLangs.add(code);
-        seenTrackKeys.add(`${code}:${tr.sourceUrl}`);
-        merged.push(tr);
-      }
-    }
+    // Prioritize native HLS extractors (`vidhide_hls` / `embed_sniff`) ahead of `web_embed` backups
+    const orderedCandidates = [
+      ...gnulaTracks.filter((t) => t.resolverType !== 'web_embed'),
+      ...directTracks,
+      ...skTracks,
+      ...animeTracks,
+      ...gnulaTracks.filter((t) => t.resolverType === 'web_embed'),
+    ];
 
-    for (const atr of animeTracks) {
-      const code = String(atr.lang || '').toUpperCase();
-      const key = `${code}:${atr.sourceUrl}`;
-      if (code && !seenTrackKeys.has(key)) {
-        seenTrackKeys.add(key);
-        merged.push(atr);
-      }
+    for (const tr of orderedCandidates) {
+      const code = String(tr.lang || '').toUpperCase();
+      if (!code) continue;
+      const key = `${code}:${tr.sourceUrl}`;
+      if (seenTrackKeys.has(key)) continue;
+      const currentCount = countPerLang[code] || 0;
+      if (currentCount >= 3) continue;
+      seenTrackKeys.add(key);
+      countPerLang[code] = currentCount + 1;
+      merged.push(tr);
     }
 
     const orderMap: Record<string, number> = { ES: 1, LAT: 2, VOSE: 3 };
-    return merged.sort((a, b) => (orderMap[a.lang] || 9) - (orderMap[b.lang] || 9));
+    const resolverRank = (rt: string) =>
+      rt === 'vidhide_hls' ? 1 : rt === 'movidy_embed' ? 2 : rt === 'embed_sniff' ? 3 : 4;
+    return merged.sort((a, b) => {
+      const langDiff = (orderMap[a.lang] || 9) - (orderMap[b.lang] || 9);
+      if (langDiff !== 0) return langDiff;
+      return resolverRank(a.resolverType) - resolverRank(b.resolverType);
+    });
   } catch (err) {
     console.warn('extractEmbed69SpanishTracks error:', err);
     return [];
@@ -7245,14 +7520,19 @@ app.get('/api/extract/stream', async (req, res) => {
       return res.json(result);
     }
 
-    if (/\.(mp4|webm)(\?|$)/i.test(rawInput)) {
+    if (resolverType === 'direct_mp4' || /\.(mp4|webm|mkv)(\?|$)/i.test(rawInput)) {
+      const isGlobalCorsCdn =
+        resolverType === 'direct_mp4' ||
+        /archive\.org\/download\/|3catvideos\.cat\//i.test(rawInput);
       const originRef = new URL(rawInput).origin + '/';
       const result: ExtractedStreamResult = {
         success: true,
         mode: 'direct',
-        streamUrl: buildTsProxyUrl(rawInput, originRef),
+        streamUrl: isGlobalCorsCdn ? rawInput : buildTsProxyUrl(rawInput, originRef),
         rawStreamUrl: rawInput,
-        expiresAt: Date.now() + 15 * 60 * 1000,
+        requestedLang: preferLang,
+        resolvedLang: preferLang,
+        expiresAt: Date.now() + 20 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
       return res.json(result);
@@ -7429,19 +7709,32 @@ app.get('/api/extract/stream', async (req, res) => {
         return 5;
       };
 
-      const orderedTracks: TrackRecord[] = [...allDiscovered].sort(
-        (a, b) => getLangScore(a.lang) - getLangScore(b.lang)
-      );
+      const resolverPriority = (rt: string): number => {
+        if (rt === 'vidhide_hls' || rt === 'movidy_embed' || rt === 'bingetrix_en') return 1;
+        if (rt === 'embed_sniff') return 2;
+        if (rt === 'web_embed') return 3;
+        return 4;
+      };
+
+      const orderedTracks: TrackRecord[] = [...allDiscovered].sort((a, b) => {
+        const lDiff = getLangScore(a.lang) - getLangScore(b.lang);
+        if (lDiff !== 0) return lDiff;
+        return resolverPriority(a.resolverType) - resolverPriority(b.resolverType);
+      });
 
       // Resolve the first available track that produces a valid proxied HLS stream,
       // and immediately prune any candidate that fails unpacking so dead tracks never reach the UI
       let primaryStreamUrl = '';
-      let primaryMode: 'hls' | 'direct' = 'hls';
+      let primaryMode: 'hls' | 'direct' | 'embed' = 'hls';
       let resolvedTrack: TrackRecord | null = null;
       const deadTrackIndices = new Set<number>();
 
+      // Pass 1: Prefer native `<video>` HLS / MP4 tracks (`vidhide_hls`, `movidy_embed`, `bingetrix_en`, `embed_sniff`)
       for (let i = 0; i < orderedTracks.length; i++) {
         const candidate = orderedTracks[i];
+        if (candidate.resolverType === 'web_embed') {
+          continue;
+        }
         if (candidate.resolvedStreamUrl) {
           primaryStreamUrl = candidate.resolvedStreamUrl;
           resolvedTrack = candidate;
@@ -7481,6 +7774,24 @@ app.get('/api/extract/stream', async (req, res) => {
           } else {
             deadTrackIndices.add(i);
           }
+        }
+      }
+
+      // Pass 2: If user explicitly requested Castellano ('ES') and no native ES HLS was available (or no native stream at all),
+      // check if a verified Castellano `web_embed` server (e.g. GnulaHD OK.ru / Byse Castellano) is available before falling back to LAT/EN!
+      if (!primaryStreamUrl || (preferLang === 'ES' && String(resolvedTrack?.lang || '').toUpperCase() !== 'ES')) {
+        const esWebIdx = orderedTracks.findIndex(
+          (t, idx) =>
+            !deadTrackIndices.has(idx) &&
+            t.resolverType === 'web_embed' &&
+            (preferLang === 'ES' ? String(t.lang || '').toUpperCase() === 'ES' : !primaryStreamUrl)
+        );
+        if (esWebIdx !== -1 && !primaryStreamUrl) {
+          const webCand = orderedTracks[esWebIdx];
+          orderedTracks[esWebIdx] = { ...webCand, resolvedStreamUrl: webCand.sourceUrl };
+          primaryStreamUrl = webCand.sourceUrl;
+          primaryMode = 'embed';
+          resolvedTrack = orderedTracks[esWebIdx];
         }
       }
 
@@ -8414,6 +8725,1550 @@ app.get('/api/rooms/:roomId', (req, res) => {
   }
 
   res.json(serializeRoomForClient(room));
+});
+
+// ============================================================================
+// REST API: DEDICATED "TODO EN CASTELLANO (ESPAÑA)" HUB (/api/catalog/castellano)
+// Curated + TMDB Spain (`watch_region=ES` & `with_origin_country=ES`) + GnulaHD/Movidy
+// ============================================================================
+const CURATED_CASTELLANO_SERIES_SEEDS: {
+  tmdbId: number;
+  providerId: string;
+  platform: string;
+}[] = [
+  { tmdbId: 124364, providerId: 'hbomax', platform: 'HBO Max' }, // From (¡pedida explícitamente!)
+  { tmdbId: 94997, providerId: 'hbomax', platform: 'HBO Max' }, // La Casa del Dragón
+  { tmdbId: 100088, providerId: 'hbomax', platform: 'HBO Max' }, // The Last of Us
+  { tmdbId: 205715, providerId: 'prime', platform: 'Prime Video' }, // Reina Roja
+  { tmdbId: 106379, providerId: 'prime', platform: 'Prime Video' }, // Fallout
+  { tmdbId: 71446, providerId: 'netflix', platform: 'Netflix' }, // La Casa de Papel
+  { tmdbId: 196890, providerId: 'netflix', platform: 'Netflix' }, // Berlín
+  { tmdbId: 40173, providerId: 'prime', platform: 'Prime Video' }, // La que se avecina
+  { tmdbId: 2361, providerId: 'netflix', platform: 'Netflix' }, // Aquí no hay quien viva
+  { tmdbId: 156933, providerId: 'netflix', platform: 'Netflix' }, // Entrevías
+  { tmdbId: 215720, providerId: 'netflix', platform: 'Netflix' }, // Machos Alfa
+  { tmdbId: 108296, providerId: 'movistar', platform: 'Movistar+' }, // Antidisturbios
+  { tmdbId: 106392, providerId: 'hbomax', platform: 'HBO Max' }, // 30 Monedas
+  { tmdbId: 259850, providerId: 'movistar', platform: 'Movistar+' }, // Querer
+  { tmdbId: 259915, providerId: 'movistar', platform: 'Movistar+' }, // Celeste
+  { tmdbId: 249980, providerId: 'netflix', platform: 'Netflix' }, // Clanes
+  { tmdbId: 210945, providerId: 'netflix', platform: 'Netflix' }, // El cuerpo en llamas
+  { tmdbId: 66732, providerId: 'netflix', platform: 'Netflix' }, // Stranger Things
+  { tmdbId: 76479, providerId: 'prime', platform: 'Prime Video' }, // The Boys
+  { tmdbId: 1399, providerId: 'hbomax', platform: 'HBO Max' }, // Juego de Tronos
+  { tmdbId: 95396, providerId: 'apple', platform: 'Apple TV+' }, // Severance (Separación)
+  { tmdbId: 125988, providerId: 'apple', platform: 'Apple TV+' }, // Silo
+  { tmdbId: 62099, providerId: 'hbomax', platform: 'RTVE / HBO' }, // El Ministerio del Tiempo
+  { tmdbId: 93405, providerId: 'netflix', platform: 'Netflix' }, // El juego del calamar
+];
+
+const CURATED_CASTELLANO_MOVIE_SEEDS: {
+  tmdbId: number;
+  providerId: string;
+  platform: string;
+}[] = [
+  { tmdbId: 906126, providerId: 'netflix', platform: 'Netflix' }, // La sociedad de la nieve
+  { tmdbId: 1154766, providerId: 'movistar', platform: 'Movistar+' }, // La infiltrada
+  { tmdbId: 1125510, providerId: 'netflix', platform: 'Netflix' }, // El hoyo 2
+  { tmdbId: 693134, providerId: 'hbomax', platform: 'HBO Max' }, // Dune: Parte Dos
+  { tmdbId: 558449, providerId: 'movistar', platform: 'Movistar+' }, // Gladiator II
+  { tmdbId: 533535, providerId: 'disney', platform: 'Disney+' }, // Deadpool y Lobezno
+  { tmdbId: 1022789, providerId: 'disney', platform: 'Disney+' }, // Del revés 2 (Inside Out 2)
+  { tmdbId: 762504, providerId: 'movistar', platform: 'Movistar+' }, // As bestas
+  { tmdbId: 1059264, providerId: 'movistar', platform: 'Movistar+' }, // CampeoneX
+  { tmdbId: 872585, providerId: 'skyshowtime', platform: 'SkyShowtime' }, // Oppenheimer
+  { tmdbId: 1184918, providerId: 'movistar', platform: 'Movistar+' }, // Robot salvaje
+  { tmdbId: 912649, providerId: 'movistar', platform: 'Movistar+' }, // Venom: El último baile
+];
+
+const castellanoSeedHydrationCache = new Map<string, { item: any; ts: number }>();
+const castellanoCatalogCache = new Map<string, { items: any[]; hasMore: boolean; ts: number }>();
+
+async function hydrateCastellanoSeed(
+  tmdbId: number,
+  mediaType: 'tv' | 'movie',
+  providerId: string,
+  platform: string
+): Promise<any | null> {
+  const key = `${mediaType}:${tmdbId}`;
+  const cached = castellanoSeedHydrationCache.get(key);
+  if (cached && Date.now() - cached.ts < 6 * 60 * 60 * 1000) {
+    return cached.item;
+  }
+  try {
+    const url =
+      mediaType === 'tv'
+        ? `https://api.themoviedb.org/3/tv/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`
+        : `https://api.themoviedb.org/3/movie/${tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(3500) });
+    if (!res.ok) return null;
+    const m: any = await res.json();
+    if (!m?.id || (!m.poster_path && !m.backdrop_path)) return null;
+
+    const item = {
+      id: `castellano-${mediaType}-${m.id}`,
+      tmdbId: m.id,
+      mediaType,
+      title: m.name || m.title || m.original_name || m.original_title || 'Título',
+      originalTitle: m.original_name || m.original_title || m.name || m.title || '',
+      year: String(m.first_air_date || m.release_date || '').split('-')[0] || 'HD',
+      rating: m.vote_average ? Number(m.vote_average).toFixed(1) : '',
+      overview:
+        m.overview ||
+        'Disponible en Castellano (Español de España) 1080p sin anuncios.',
+      poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : '',
+      backdrop: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : '',
+      bingetrixUrl:
+        mediaType === 'movie' ? `https://bingetrix.sc/watch/${m.id}` : undefined,
+      languages: ['Castellano', 'VOSE', 'EN'],
+      platform,
+      providerId,
+    };
+    castellanoSeedHydrationCache.set(key, { item, ts: Date.now() });
+    return item;
+  } catch {
+    return null;
+  }
+}
+
+app.get('/api/catalog/castellano', async (req, res) => {
+  try {
+    const kind = String(req.query.kind || 'all').toLowerCase(); // 'all' | 'series' | 'movies'
+    const provider = String(req.query.provider || 'all').toLowerCase();
+    const category = String(req.query.category || 'trending').toLowerCase();
+    const query = String(req.query.query || '').trim();
+    const page = Math.max(1, Math.min(50, parseInt(String(req.query.page || '1'), 10) || 1));
+
+    const cacheKey = `${kind}|${provider}|${category}|${page}|${query.toLowerCase()}`;
+    const cached = castellanoCatalogCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
+      return res.json({
+        success: true,
+        items: cached.items,
+        hasMore: cached.hasMore,
+        page,
+      });
+    }
+
+    const provCfg = STREAMING_PROVIDER_MAP[provider];
+    const items: any[] = [];
+    const seenKeys = new Set<string>();
+
+    const pushUnique = (entry: any) => {
+      if (!entry || (!entry.poster && !entry.backdrop)) return;
+      const k = `${entry.mediaType || 'movie'}:${entry.tmdbId || normalizeTitleForMatch(entry.title || '')}`;
+      if (seenKeys.has(k)) return;
+      seenKeys.add(k);
+      items.push({
+        ...entry,
+        languages: Array.from(new Set(['Castellano', ...(entry.languages || [])])),
+      });
+    };
+
+    // 1. On Page 1 with no search query (or matching provider), inject curated Castellano flagship titles first
+    if (page === 1 && !query && (category === 'trending' || category === 'popular')) {
+      const wantSeries = kind === 'all' || kind === 'series';
+      const wantMovies = kind === 'all' || kind === 'movies';
+
+      const seriesSeeds = wantSeries
+        ? CURATED_CASTELLANO_SERIES_SEEDS.filter(
+            (s) => provider === 'all' || s.providerId === provider
+          )
+        : [];
+      const movieSeeds = wantMovies
+        ? CURATED_CASTELLANO_MOVIE_SEEDS.filter(
+            (m) => provider === 'all' || m.providerId === provider
+          )
+        : [];
+
+      const [hydratedSeries, hydratedMovies] = await Promise.all([
+        Promise.all(
+          seriesSeeds.map((s) =>
+            hydrateCastellanoSeed(s.tmdbId, 'tv', s.providerId, s.platform)
+          )
+        ),
+        Promise.all(
+          movieSeeds.map((m) =>
+            hydrateCastellanoSeed(m.tmdbId, 'movie', m.providerId, m.platform)
+          )
+        ),
+      ]);
+
+      if (kind === 'series') {
+        hydratedSeries.forEach(pushUnique);
+      } else if (kind === 'movies') {
+        hydratedMovies.forEach(pushUnique);
+      } else {
+        const maxLen = Math.max(hydratedSeries.length, hydratedMovies.length);
+        for (let i = 0; i < maxLen; i++) {
+          if (hydratedSeries[i]) pushUnique(hydratedSeries[i]);
+          if (hydratedMovies[i]) pushUnique(hydratedMovies[i]);
+        }
+      }
+    }
+
+    // 2. Discover / Search Spain-distributed & Spanish-origin Series & Movies from TMDB (`es-ES`, `watch_region=ES`)
+    const todayIso = new Date().toISOString().split('T')[0];
+    const buildTmdbDiscoverUrl = (mType: 'tv' | 'movie') => {
+      if (query) {
+        return `https://api.themoviedb.org/3/search/${mType}?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(
+          query
+        )}&page=${page}&include_adult=false`;
+      }
+      const params = new URLSearchParams({
+        api_key: TMDB_API_KEY,
+        language: 'es-ES',
+        page: String(page),
+        include_adult: 'false',
+        watch_region: 'ES',
+        with_watch_monetization_types: 'flatrate|free|ads|rent|buy',
+      });
+      if (mType === 'movie') {
+        params.set('primary_release_date.lte', todayIso);
+      } else {
+        params.set('first_air_date.lte', todayIso);
+      }
+      if (provCfg) {
+        params.set('with_watch_providers', provCfg.id);
+      }
+      if (category === 'spanish_originals') {
+        params.set('with_origin_country', 'ES');
+        params.set('sort_by', 'popularity.desc');
+      } else if (category === 'top_rated') {
+        params.set('sort_by', 'vote_average.desc');
+        params.set('vote_count.gte', '200');
+      } else {
+        params.set('sort_by', 'popularity.desc');
+        params.set('vote_count.gte', '40');
+      }
+      const movieGenreMap: Record<string, string> = {
+        action: '28',
+        drama: '18',
+        thriller: '53',
+        comedy: '35',
+        scifi: '878',
+        horror: '27',
+      };
+      const tvGenreMap: Record<string, string> = {
+        action: '10759',
+        drama: '18',
+        thriller: '80,9648',
+        comedy: '35',
+        scifi: '10765',
+        horror: '9648',
+      };
+      const gVal = mType === 'tv' ? tvGenreMap[category] : movieGenreMap[category];
+      if (gVal) params.set('with_genres', gVal);
+
+      return `https://api.themoviedb.org/3/discover/${mType}?${params.toString()}`;
+    };
+
+    const [tvRes, movRes, movidyData] = await Promise.all([
+      kind === 'all' || kind === 'series'
+        ? fetch(buildTmdbDiscoverUrl('tv'), { signal: AbortSignal.timeout(4500) })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)
+        : Promise.resolve(null),
+      kind === 'all' || kind === 'movies'
+        ? fetch(buildTmdbDiscoverUrl('movie'), { signal: AbortSignal.timeout(4500) })
+            .then((r) => (r.ok ? r.json() : null))
+            .catch(() => null)
+        : Promise.resolve(null),
+      (kind === 'all' || kind === 'movies') && provider === 'all' && category !== 'spanish_originals'
+        ? scrapeMovidyCatalog({ category: 'trending', page, query }).catch(() => ({
+            movies: [],
+            hasMore: false,
+          }))
+        : Promise.resolve({ movies: [], hasMore: false }),
+    ]);
+
+    for (const mv of movidyData.movies.slice(0, 12)) {
+      pushUnique({
+        ...mv,
+        mediaType: 'movie',
+        languages: ['Castellano', 'Latino', 'VOSE'],
+      });
+    }
+
+    const mapTmdbEntry = (raw: any, mType: 'tv' | 'movie') => {
+      if (!raw?.id || (!raw.poster_path && !raw.backdrop_path)) return null;
+      return {
+        id: `castellano-${mType}-${raw.id}`,
+        tmdbId: raw.id,
+        mediaType: mType,
+        title: raw.name || raw.title || raw.original_name || raw.original_title || 'Título',
+        originalTitle: raw.original_name || raw.original_title || '',
+        year: String(raw.first_air_date || raw.release_date || '').split('-')[0] || 'HD',
+        rating: raw.vote_average ? Number(raw.vote_average).toFixed(1) : '',
+        overview:
+          raw.overview ||
+          'Disponible en Castellano (Español de España) y VO Subtitulado en 1080p.',
+        poster: raw.poster_path ? `https://image.tmdb.org/t/p/w500${raw.poster_path}` : '',
+        backdrop: raw.backdrop_path
+          ? `https://image.tmdb.org/t/p/w1280${raw.backdrop_path}`
+          : '',
+        bingetrixUrl: mType === 'movie' ? `https://bingetrix.sc/watch/${raw.id}` : undefined,
+        languages: ['Castellano', 'VOSE', 'EN'],
+        platform: provCfg?.label || (category === 'spanish_originals' ? 'España' : undefined),
+        providerId: provCfg ? provider : undefined,
+      };
+    };
+
+    const tvArr: any[] = Array.isArray(tvRes?.results) ? tvRes.results : [];
+    const movArr: any[] = Array.isArray(movRes?.results) ? movRes.results : [];
+    const maxDisc = Math.max(tvArr.length, movArr.length);
+    for (let i = 0; i < maxDisc; i++) {
+      if (tvArr[i]) pushUnique(mapTmdbEntry(tvArr[i], 'tv'));
+      if (movArr[i]) pushUnique(mapTmdbEntry(movArr[i], 'movie'));
+    }
+
+    const hasMore =
+      page < Math.max(Number(tvRes?.total_pages || 1), Number(movRes?.total_pages || 1));
+
+    castellanoCatalogCache.set(cacheKey, { items, hasMore, ts: Date.now() });
+    res.json({ success: true, items, hasMore, page });
+  } catch (err) {
+    console.error('Castellano catalog error:', err);
+    res.status(500).json({ success: false, items: [], hasMore: false });
+  }
+});
+
+// ============================================================================
+// REST API: "TOT L'ANIME EN CATALÀ EN UN SOL LLOC" (/api/catalog/catala)
+// Unifies Archive.org Catalan Anime Packs + 3Cat/SX3 Live & On-Demand in one place
+// ============================================================================
+interface CatalaPackSeasonDef {
+  seasonNumber: number;
+  name: string;
+  archiveId?: string;
+  ccmaProgramId?: string;
+}
+
+interface CatalaAnimeEntryDef {
+  id: string;
+  titleCat: string;
+  originalTitle: string;
+  tmdbId?: number;
+  tmdbType?: 'tv' | 'movie';
+  category: 'classics' | 'shonen' | 'movies';
+  eraTag: string;
+  episodeHint: string;
+  overviewCat: string;
+  fallbackPoster?: string;
+  seasons: CatalaPackSeasonDef[];
+}
+
+const CATALA_ANIME_REGISTRY: CatalaAnimeEntryDef[] = [
+  {
+    id: 'bola-de-drac',
+    titleCat: 'Bola de Drac',
+    originalTitle: 'Dragon Ball',
+    tmdbId: 12609,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'TV3 · Clàssic Complet',
+    episodeHint: '153 capítols en català',
+    overviewCat:
+      "Les aventures d'en Son Goku i la Bulma buscant les set Boles de Drac amb el doblatge històric en català de TV3.",
+    seasons: [{ seasonNumber: 1, name: 'Sèrie Completa (1–153)', archiveId: 'boladedrac-cat' }],
+  },
+  {
+    id: 'bola-de-drac-z',
+    titleCat: 'Bola de Drac Z',
+    originalTitle: 'Dragon Ball Z',
+    tmdbId: 12971,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'TV3 / 3XL · HD Català',
+    episodeHint: '291 capítols en català',
+    overviewCat:
+      'Totes les sagues dels Saiyans, Freezer, Cèl·lula i Majin Buu íntegres amb àudio en català i valencià.',
+    seasons: [
+      { seasonNumber: 1, name: 'Temporada 1 · Saiyans i Namek', archiveId: 'boladedracz-1' },
+      { seasonNumber: 2, name: 'Temporada 2 · Freezer i Androides', archiveId: 'boladedracz-2' },
+      {
+        seasonNumber: 3,
+        name: 'Temporada 3 · Cèl·lula i Majin Buu (1080p)',
+        archiveId: 'anime-en-valencia-bola-de-drac-z-hd-1080p-multi-214',
+      },
+    ],
+  },
+  {
+    id: 'bola-de-drac-gt',
+    titleCat: 'Bola de Drac GT',
+    originalTitle: 'Dragon Ball GT',
+    tmdbId: 12697,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'K3 / 3XL · Català',
+    episodeHint: '64 capítols en català',
+    overviewCat:
+      'El gran viatge espacial d’en Son Goku, la Pan i en Trunks contra Baby i els Dracs Malignes en català.',
+    seasons: [{ seasonNumber: 1, name: 'Sèrie Completa (1–64)', archiveId: 'bola-de-drac-gt' }],
+  },
+  {
+    id: 'bola-de-drac-super-sx3',
+    titleCat: 'Bola de Drac Súper',
+    originalTitle: 'Dragon Ball Super',
+    tmdbId: 62715,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'SX3 / 3Cat · Català',
+    episodeHint: '131 capítols en català',
+    overviewCat:
+      'La nova etapa oficial doblada en català pel SX3 (3Cat): el Torneig del Poder, Beerus, Goku Black i Ultra Instint.',
+    seasons: [{ seasonNumber: 1, name: 'SX3 Català (Capítols Oficials)', ccmaProgramId: '73476' }],
+  },
+  {
+    id: 'one-piece-sx3',
+    titleCat: 'One Piece (Català)',
+    originalTitle: 'One Piece',
+    tmdbId: 37854,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'SX3 / K3 · Català',
+    episodeHint: '+220 capítols en català',
+    overviewCat:
+      'En Monkey D. Ruffy i la tripulació del Barret de Palla en català (emissió oficial SX3 / 3Cat).',
+    seasons: [
+      { seasonNumber: 1, name: 'SX3 Català (Sagues en Emissió)', ccmaProgramId: '201374971' },
+    ],
+  },
+  {
+    id: 'dr-slump',
+    titleCat: 'Dr. Slump',
+    originalTitle: 'Dr. Slump Arale-chan',
+    tmdbId: 30723,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'TV3 · Mític Català',
+    episodeHint: '243 capítols en català',
+    overviewCat:
+      "L'Arale Norimaki, en Senbei i tota la Vila del Pingüí amb el llegendari doblatge català de TV3.",
+    seasons: [
+      { seasonNumber: 1, name: 'Pack 1 (Capítols 1–50)', archiveId: 'drslump-1' },
+      { seasonNumber: 2, name: 'Pack 2 (Capítols 51–100)', archiveId: 'drslump-2' },
+      { seasonNumber: 3, name: 'Pack 3 (Capítols 101–150)', archiveId: 'drslump-3' },
+      { seasonNumber: 4, name: 'Pack 4 (Capítols 151–200)', archiveId: 'dr-slump-4' },
+      { seasonNumber: 5, name: 'Pack 5 (Capítols 201–243)', archiveId: 'drslump-cat-5' },
+    ],
+  },
+  {
+    id: 'detectiu-conan',
+    titleCat: 'El Detectiu Conan',
+    originalTitle: 'Meitantei Conan',
+    tmdbId: 30983,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'K3 / Super3 / SX3',
+    episodeHint: '9 Temporades en català',
+    overviewCat:
+      'En Shinichi Kudo convertit en Conan Edogawa resolent els casos més complexos amb el mític doblatge català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Temporada 1',
+        archiveId: 'episodi-1-el-detectiu-mes-famos-daquest-segle_202607',
+      },
+      {
+        seasonNumber: 2,
+        name: 'Temporada 2',
+        archiveId: 'episodi-1-el-segrest-den-conan-edogawa',
+      },
+      { seasonNumber: 3, name: 'Temporada 3', archiveId: 'episodi-1-el-cas-del-segrest' },
+      {
+        seasonNumber: 4,
+        name: 'Temporada 9',
+        archiveId: 'episodi-14-el-petit-client-primera-part',
+      },
+      {
+        seasonNumber: 5,
+        name: 'Temporada 10',
+        archiveId: 'episodi-1-lobjectiu-es-en-kogoro-mouri',
+      },
+      {
+        seasonNumber: 6,
+        name: 'Temporada 11 · Impacte Negre',
+        archiveId: 'episodis-1-2-3-4-5-impacte-negre-a-labast-dels-bracos-de-la-organitzacio',
+      },
+      {
+        seasonNumber: 7,
+        name: 'Temporada 12',
+        archiveId: 'episodi-1-la-gran-operacio-de-1r-b',
+      },
+      {
+        seasonNumber: 8,
+        name: 'Temporada 13 · Vermell i Negre',
+        archiveId: 'episodi-1-el-xoc-entre-el-vermell-i-el-negre-lorigen',
+      },
+      {
+        seasonNumber: 9,
+        name: 'Temporada 14',
+        archiveId: 'episodi-1-shinichi-kudo-lassassi-primera-part',
+      },
+    ],
+  },
+  {
+    id: 'sakura-cacadora-cartes',
+    titleCat: 'Sakura, la caçadora de cartes',
+    originalTitle: 'Cardcaptor Sakura',
+    tmdbId: 46261,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'K3 / SX3 · Sèrie Completa',
+    episodeHint: '70 capítols en català',
+    overviewCat:
+      'La Sakura Kinomoto i en Keroberos reunint totes les cartes de Clow amb el doblatge íntegre en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Sèrie Completa (1–70)',
+        archiveId: 'sakura-la-cacadora-de-cartes-episodi-1-sakura-i-el-misterios-llibre-magic',
+      },
+    ],
+  },
+  {
+    id: 'guardians-de-la-nit',
+    titleCat: 'Guardians de la Nit (Kimetsu no Yaiba)',
+    originalTitle: 'Kimetsu no Yaiba',
+    tmdbId: 85937,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'SX3 · Doblatge Català HD',
+    episodeHint: 'Temporada 1 en català',
+    overviewCat:
+      'En Tanjiro Kamado i la Nezuko en la seva lluita contra els dimonis amb doblatge en català d’alta definició.',
+    seasons: [{ seasonNumber: 1, name: 'Temporada 1 (Català HD)', archiveId: 'episodi-1-crueltat' }],
+  },
+  {
+    id: 'death-note-cat',
+    titleCat: 'Death Note',
+    originalTitle: 'Death Note',
+    tmdbId: 13916,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'Canal 3XL · Complet',
+    episodeHint: '37 capítols en català',
+    overviewCat:
+      'El duel psicològic entre en Light Yagami (Kira) i L amb el doblatge oficial en català del mític Canal 3XL.',
+    seasons: [{ seasonNumber: 1, name: 'Sèrie Completa (1–37)', archiveId: 'Death-Note-cat' }],
+  },
+  {
+    id: 'evangelion-cat',
+    titleCat: 'Neon Genesis Evangelion',
+    originalTitle: 'Shinseiki Evangelion',
+    tmdbId: 890,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: '3XL · Obra Mestra',
+    episodeHint: '26 capítols en català',
+    overviewCat:
+      'En Shinji Ikari, la Rei Ayanami i l’Asuka pilotant els EVA a Tòquio-3 amb el doblatge clàssic en català.',
+    seasons: [{ seasonNumber: 1, name: 'Sèrie Completa (1–26)', archiveId: 'ngecat-21' }],
+  },
+  {
+    id: 'ranma-cat',
+    titleCat: 'Ranma ½',
+    originalTitle: 'Ranma ½',
+    tmdbId: 42501,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'TV3 / K3 · Complet',
+    episodeHint: '161 capítols en català',
+    overviewCat:
+      'Arts marcials, humor i les fonts maleïdes de Jusenkyo amb en Ranma Saotome i l’Akane Tendo en català.',
+    seasons: [{ seasonNumber: 1, name: 'Sèrie Completa (1–161)', archiveId: 'ranma161cat' }],
+  },
+  {
+    id: 'shin-chan-cat',
+    titleCat: 'Shin-chan',
+    originalTitle: 'Crayon Shin-chan',
+    tmdbId: 54041,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'K3 / 3XL · Català',
+    episodeHint: '458 capítols en català',
+    overviewCat:
+      'Les trapelleries d’en Shinnosuke Nohara, la Misae, l’Hiroshi i el Nevado amb el doblatge català més estimat.',
+    seasons: [
+      { seasonNumber: 1, name: 'Col·lecció Català (458 cap.)', archiveId: 'shin-chan-catala-japanese' },
+    ],
+  },
+  {
+    id: 'inuyasha-cat',
+    titleCat: 'Musculman (Kinnikuman)',
+    originalTitle: 'Kinnikuman',
+    tmdbId: 44213,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'TV3 / 33 · Clàssic',
+    episodeHint: '136 capítols en català',
+    overviewCat:
+      'El superheroi més esbojarrat del ring i l’all amb arròs amb el doblatge llegendari en català.',
+    seasons: [
+      { seasonNumber: 1, name: 'Sèrie Completa (136 cap.)', archiveId: 'musculman-audio-catala' },
+    ],
+  },
+  {
+    id: 'yu-yu-hakusho-cat',
+    titleCat: 'Yu Yu Hakusho · Els Defensors del Més Enllà',
+    originalTitle: 'Yu Yu Hakusho',
+    tmdbId: 30669,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'K3 / 3XL · Català',
+    episodeHint: 'Sagues completes en català',
+    overviewCat:
+      'En Yusuke Urameshi, en Kuwabara, en Kurama i en Hiei al Torneig Fosc amb el doblatge mític en català.',
+    seasons: [{ seasonNumber: 1, name: 'Episodis en Català', archiveId: 'yu-yu-hakusho-part-2' }],
+  },
+  {
+    id: 'trigun-cat',
+    titleCat: "Trigun '98",
+    originalTitle: 'Trigun',
+    tmdbId: 46896,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: '3XL · Sèrie Completa',
+    episodeHint: '26 capítols en català',
+    overviewCat:
+      'En Vash l’Estampida travessant el desert de Gunsmoke amb l’emblemàtic doblatge en català del 3XL.',
+    seasons: [{ seasonNumber: 1, name: 'Sèrie Completa (1–26)', archiveId: '05-el-puny-mortal' }],
+  },
+  {
+    id: 'bobobo-cat',
+    titleCat: 'Bo-Bobo',
+    originalTitle: 'Bobobo-bo Bo-bobo',
+    tmdbId: 34857,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'K3 · Humor Absurd',
+    episodeHint: 'Sèrie en català',
+    overviewCat:
+      'El combat pels cabells i l’humor més surrealista amb un dels doblatges catalans més recordats del K3.',
+    seasons: [{ seasonNumber: 1, name: 'Capítols en Català', archiveId: 'Bo-Bobo-cat' }],
+  },
+  {
+    id: 'flcl-cat',
+    titleCat: 'FLCL (Furi Kuri)',
+    originalTitle: 'FLCL',
+    tmdbId: 21437,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: '3XL · Gainax OVAs',
+    episodeHint: '6 OVAs completes en català',
+    overviewCat:
+      'La Haruko Haruhara, en Naota i la música de The Pillows en l’obra de culte de Gainax doblada al català.',
+    seasons: [{ seasonNumber: 1, name: 'OVAs Completes (1–6)', archiveId: 'flcl-cat' }],
+  },
+  {
+    id: 'conan-noi-del-futur',
+    titleCat: 'Conan, el noi del futur',
+    originalTitle: 'Mirai Shonen Conan',
+    tmdbId: 2004,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'Hayao Miyazaki · Català',
+    episodeHint: '26 capítols en català',
+    overviewCat:
+      'La primera gran sèrie dirigida per Hayao Miyazaki, amb en Conan i la Lana en un món postapocalíptic en català.',
+    seasons: [{ seasonNumber: 1, name: 'Sèrie Completa (1–26)', archiveId: 'conan-el-noi-del-futur' }],
+  },
+  {
+    id: 'capita-harlock-cat',
+    titleCat: 'El Capità Harlock',
+    originalTitle: 'Uchuu Kaizoku Captain Harlock',
+    tmdbId: 20420,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'TV3 · Leiji Matsumoto',
+    episodeHint: 'Sèrie clàssica en català',
+    overviewCat:
+      'El pirata espacial de l’Arcàdia lluitant per la llibertat de la Terra amb el doblatge clàssic català.',
+    seasons: [{ seasonNumber: 1, name: 'Sèrie en Català', archiveId: 'el-capita-harlock-cat' }],
+  },
+  {
+    id: 'lamu-urusei-yatsura',
+    titleCat: 'Lamu (Urusei Yatsura)',
+    originalTitle: 'Urusei Yatsura',
+    tmdbId: 34005,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'TV3 / 33 · Rumiko Takahashi',
+    episodeHint: 'Capítols en català',
+    overviewCat:
+      "L'extraterrestre Lamu i el malaurat Ataru Moroboshi en la comèdia clàssica de Rumiko Takahashi en català.",
+    seasons: [{ seasonNumber: 1, name: 'Episodis en Català', archiveId: 'urusei-yatsura-lamu' }],
+  },
+  {
+    id: 'corrector-yui-cat',
+    titleCat: 'Corrector Yui',
+    originalTitle: 'Corrector Yui',
+    tmdbId: 44903,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'K3 · Sèrie Completa',
+    episodeHint: '2 Temporades en català',
+    overviewCat:
+      'La Yui Kasuga viatjant per la xarxa ComNet per protegir el món digital amb el doblatge del K3.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Box 1 (Temporada 1)',
+        archiveId: 'corrector-yui-16-box-1-dvd-4-01-c-cat-jap-by-el-millor-anime',
+      },
+      {
+        seasonNumber: 2,
+        name: 'Box 2 (Temporada 2)',
+        archiveId: 'corrector-yui-33-box-2-dvd-2-02-c-cat-jap-by-el-millor-anime',
+      },
+    ],
+  },
+  {
+    id: 'magica-doremi-cat',
+    titleCat: 'La Màgica DoReMi',
+    originalTitle: 'Ojamajo Doremi',
+    tmdbId: 42705,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'K3 / Super3 · 1080p',
+    episodeHint: 'BDMV 1080p en català',
+    overviewCat:
+      'La Doremi, la Hazuki i l’Aiko convertides en aprenentes de bruixa en alta definició 1080p en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Edició 1080p Català',
+        archiveId: 'buscant-la-magica-doremi-bdmv-1080p-cat-jap-by-el-millor-anime',
+      },
+    ],
+  },
+  {
+    id: 'fushigi-yuugi-cat',
+    titleCat: 'Fushigi Yuugi · El Joc Misteriós',
+    originalTitle: 'Fushigi Yuugi',
+    tmdbId: 31687,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: '3XL / K3 · Català',
+    episodeHint: '52 capítols en català',
+    overviewCat:
+      'La Miaka i la Yui transportades a l’interior del llibre dels Quatre Déus amb doblatge en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Sèrie Completa',
+        archiveId: 'fushigi-yuugi-o-el-joc-misterios-01-dvd-raw-480cat-jap-by-taketokun-el-millor-anime',
+      },
+    ],
+  },
+  {
+    id: 'cinturo-negre-yawara',
+    titleCat: 'Cinturó Negre (Yawara!)',
+    originalTitle: 'Yawara! A Fashionable Judo Girl',
+    tmdbId: 42992,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'TV3 / Canal 9 · Judo',
+    episodeHint: '117 capítols',
+    overviewCat:
+      "L'obra de Naoki Urasawa sobre el talent prodigiós de la jove judoka Yawara Inokuma.",
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Sèrie Completa (117 cap.)',
+        archiveId: 'cinturo-negre-ginger-yawara-117-val-dvd-vhs-by-angelus-oriol-per-a-ficcioenvalencia',
+      },
+    ],
+  },
+  {
+    id: 'street-fighter-2-v',
+    titleCat: 'Street Fighter II V',
+    originalTitle: 'Street Fighter II V',
+    tmdbId: 19611,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: '3XL · Sèrie Completa',
+    episodeHint: '29 capítols en català',
+    overviewCat:
+      'En Ryu i en Ken recorrent el món per perfeccionar el seu estil de lluita contra Shadaloo i M. Bison en català.',
+    seasons: [
+      { seasonNumber: 1, name: 'Sèrie Completa', archiveId: 'street-fighter-2-audio-catala' },
+    ],
+  },
+  {
+    id: 'haikyu-sx3',
+    titleCat: 'Haikyu!! (Català)',
+    originalTitle: 'Haikyu!!',
+    tmdbId: 60863,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'SX3 · Voleibol HD',
+    episodeHint: 'Emissió SX3 en català',
+    overviewCat:
+      'En Shoyo Hinata i en Tobio Kageyama portant l’institut Karasuno al cim del voleibol japonès en català.',
+    seasons: [{ seasonNumber: 1, name: 'SX3 Català Oficial', ccmaProgramId: '64916' }],
+  },
+  // --- PEL·LÍCULES I ESPECIALS D'ANIME EN CATALÀ ---
+  {
+    id: 'bola-de-drac-especials',
+    titleCat: 'Bola de Drac · Pel·lícules i Especials',
+    originalTitle: 'Dragon Ball Movies',
+    tmdbId: 39100,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'Col·lecció Cinema · Català',
+    episodeHint: 'Pel·lícules i Especials TV',
+    overviewCat:
+      'Col·lecció de pel·lícules clàssiques i especials de televisió de Bola de Drac i Bola de Drac Z en català.',
+    seasons: [
+      { seasonNumber: 1, name: 'Pel·lícules i Especials', archiveId: 'bola-de-drac-especials' },
+    ],
+  },
+  {
+    id: 'conan-black-iron-submarine',
+    titleCat: 'Detectiu Conan: Black Iron Submarine',
+    originalTitle: 'Detective Conan: Black Iron Submarine',
+    tmdbId: 1056360,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'Cinema en Català · HD',
+    episodeHint: 'Pel·lícula en català',
+    overviewCat:
+      "En Conan i l'Ai Haibara s'enfronten a l'Organització dels Homes de Negre a la instal·lació submarina d'Interpol.",
+    seasons: [{ seasonNumber: 1, name: 'Pel·lícula Completa', archiveId: '1744246284468' }],
+  },
+  {
+    id: 'conan-million-dollar-pentagram',
+    titleCat: 'Detectiu Conan: The Million-dollar Pentagram',
+    originalTitle: 'Detective Conan: The Million-dollar Pentagram',
+    tmdbId: 1211483,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'Estrena en Català · HD',
+    episodeHint: 'Pel·lícula en català',
+    overviewCat:
+      'En Kaito Kid, en Heiji Hattori i en Conan Edogawa a Hakodate darrere el misteri de les espases japoneses.',
+    seasons: [{ seasonNumber: 1, name: 'Pel·lícula Completa', archiveId: '1766885273493_202602' }],
+  },
+  {
+    id: 'vull-menjar-me-el-teu-pancrees',
+    titleCat: 'Vull menjar-me el teu pàncrees',
+    originalTitle: 'Kimi no Suizou wo Tabetai',
+    tmdbId: 504253,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'Cinema Anime · Català',
+    episodeHint: 'Pel·lícula completa',
+    overviewCat:
+      'Una de les pel·lícules d’animació japonesa més emotives dels últims anys, íntegra doblada en català.',
+    seasons: [{ seasonNumber: 1, name: 'Pel·lícula Completa', archiveId: '20200427_20200427_1958' }],
+  },
+  {
+    id: 'tomba-de-les-lluernes-cat',
+    titleCat: 'La tomba de les lluernes (Studio Ghibli)',
+    originalTitle: 'Hotaru no Haka',
+    tmdbId: 12477,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'Studio Ghibli · Català',
+    episodeHint: 'Pel·lícula completa',
+    overviewCat:
+      "L'obra mestra d'Isao Takahata i Studio Ghibli amb doblatge en català.",
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Pel·lícula Completa',
+        archiveId: 'LaTumbaDeLasLuciernagasDVDripAC3EspCatJapwwwlokotorrentscom',
+      },
+    ],
+  },
+  {
+    id: 'ghost-in-the-shell-2-cat',
+    titleCat: 'Ghost in the Shell 2: Innocence',
+    originalTitle: 'Ghost in the Shell 2: Innocence',
+    tmdbId: 12244,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'Mamoru Oshii · Català',
+    episodeHint: 'Pel·lícula completa',
+    overviewCat:
+      'En Batou i en Togusa de la Secció 9 investigant ginoides rebels en el clàssic ciberpunk en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Pel·lícula Completa',
+        archiveId: 'ghost-in-the-shell-2-innocence-cat',
+      },
+    ],
+  },
+  {
+    id: 'alita-angel-combat-cat',
+    titleCat: 'Alita, Àngel de Combat (OVA 1993)',
+    originalTitle: 'Gunnm',
+    tmdbId: 37933,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: '3XL · Cyberpunk Català',
+    episodeHint: 'OVAs completes en català',
+    overviewCat:
+      'Les OVAs clàssiques de 1993 basades en el manga Gunnm amb el doblatge històric en català.',
+    seasons: [
+      { seasonNumber: 1, name: 'OVAs en Català', archiveId: 'alita-angel-de-combat-1993' },
+    ],
+  },
+  {
+    id: 'dr-slump-pelis-ovas',
+    titleCat: 'Dr. Slump · Pel·lícules i OVAs',
+    originalTitle: 'Dr. Slump Movies',
+    tmdbId: 30723,
+    tmdbType: 'tv',
+    category: 'movies',
+    eraTag: 'TV3 · Especials Català',
+    episodeHint: 'Col·lecció Pel·lícules',
+    overviewCat:
+      "Totes les pel·lícules i OVAs clàssiques del Dr. Slump i l'Arale doblades al català.",
+    seasons: [{ seasonNumber: 1, name: 'Pel·lícules i OVAs', archiveId: 'OVAS-PELIS-DR-SLUMP' }],
+  },
+  {
+    id: 'wicked-city-cat',
+    titleCat: 'La Ciutat Maldita (Wicked City · 1080p)',
+    originalTitle: 'Youjuu Toshi',
+    tmdbId: 20541,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'Yoshiaki Kawajiri · 1080p',
+    episodeHint: 'Blu-ray 1080p Català',
+    overviewCat:
+      'El clàssic fosc de Yoshiaki Kawajiri restaurat en Blu-ray 1080p amb àudio en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Blu-ray 1080p Català',
+        archiveId: 'wicked-city-1987-blu-ray-1440x-1080-cat',
+      },
+    ],
+  },
+  {
+    id: 'saint-seiya-santuari-cat',
+    titleCat: 'Saint Seiya: La Llegenda del Santuari',
+    originalTitle: 'Saint Seiya: Legend of Sanctuary',
+    tmdbId: 227707,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'Cavallers del Zodíac · Català',
+    episodeHint: 'Pel·lícula en català',
+    overviewCat:
+      'La batalla de les Dotze Cases del Santuari amb en Seiya i els Cavallers de Bronze en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Pel·lícula Completa',
+        archiveId: 'saint-seiya-la-llegenda-del-santuari',
+      },
+    ],
+  },
+];
+
+const CATALA_LIVE_CHANNELS: any[] = [
+  {
+    id: 'cat-sx3-live',
+    dial: 1,
+    name: 'SX3 / 33 · Anime i Infantil 24h',
+    shortMark: 'SX3',
+    brandTone: '#EC4899',
+    network: '3Cat Catalunya',
+    category: 'infantil_autonomicas',
+    quality: '1080p HD',
+    description: 'Emissió oficial en directe amb anime en català (One Piece, Conan, Sakura, Haikyu)',
+    channels: [
+      {
+        id: 'sx3-int-hls',
+        label: 'Senyal Internacional 3Cat HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-content/c33-super3-hls/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'sx3-24h-cat',
+        label: 'Senyal SX3 24h Exclusiu (Espanya)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://directes-tv-cat.3catdirectes.cat/live-content/super3-hls/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'cat-tv3-live',
+    dial: 2,
+    name: 'TV3 en Directe (3Cat)',
+    shortMark: 'TV3',
+    brandTone: '#E11D48',
+    network: '3Cat Catalunya',
+    category: 'infantil_autonomicas',
+    quality: '1080p HD',
+    description: 'Televisió de Catalunya en directe: sèries, cinema en català i TN',
+    channels: [
+      {
+        id: 'tv3-int-hls',
+        label: 'Senyal Internacional TV3 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://directes3-tv-int.3catdirectes.cat/live-content/tvi-hls/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'tv3-cat-hls',
+        label: 'Senyal Catalunya TV3 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://directes3-tv-cat.3catdirectes.cat/live-content/tv3-hls/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'cat-esport3-live',
+    dial: 3,
+    name: 'Esport3 en Directe',
+    shortMark: 'E3',
+    brandTone: '#F97316',
+    network: '3Cat Esports',
+    category: 'noticias_deportes',
+    quality: '1080p HD',
+    description: 'Esports i retransmissions en directe en català',
+    channels: [
+      {
+        id: 'esport3-int-hls',
+        label: 'Senyal Oficial Esport3 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-origin/esport3-hls/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'cat-324-live',
+    dial: 4,
+    name: '324 Notícies 24h',
+    shortMark: '324',
+    brandTone: '#EF4444',
+    network: '3Cat Informatius',
+    category: 'noticias_deportes',
+    quality: '1080p HD',
+    description: 'Informació contínua 24 hores en català',
+    channels: [
+      {
+        id: '324-int-hls',
+        label: 'Senyal Oficial 324 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-content/canal324-hls/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+];
+
+const catalaArtHydrationCache = new Map<
+  string,
+  { poster: string; backdrop: string; year: string; rating: string; ts: number }
+>();
+const archiveMetadataCache = new Map<string, { episodes: any[]; ts: number }>();
+
+async function hydrateCatalaArtwork(entry: CatalaAnimeEntryDef) {
+  const cached = catalaArtHydrationCache.get(entry.id);
+  if (cached && Date.now() - cached.ts < 12 * 60 * 60 * 1000) {
+    return cached;
+  }
+  let poster = entry.fallbackPoster || '';
+  let backdrop = '';
+  let year = 'CAT';
+  let rating = '';
+
+  if (entry.tmdbId && entry.tmdbType) {
+    try {
+      const res = await fetch(
+        `https://api.themoviedb.org/3/${entry.tmdbType}/${entry.tmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`,
+        { signal: AbortSignal.timeout(3200) }
+      );
+      if (res.ok) {
+        const m: any = await res.json();
+        if (m?.poster_path) poster = `https://image.tmdb.org/t/p/w500${m.poster_path}`;
+        if (m?.backdrop_path) backdrop = `https://image.tmdb.org/t/p/w1280${m.backdrop_path}`;
+        const d = String(m?.first_air_date || m?.release_date || '');
+        if (d) year = d.split('-')[0] || year;
+        if (m?.vote_average) rating = Number(m.vote_average).toFixed(1);
+      }
+    } catch {
+      // fallback to archive thumbnail if needed
+    }
+  }
+
+  if (!poster && entry.seasons[0]?.archiveId) {
+    poster = `https://archive.org/services/img/${entry.seasons[0].archiveId}`;
+  }
+
+  const art = { poster, backdrop: backdrop || poster, year, rating, ts: Date.now() };
+  catalaArtHydrationCache.set(entry.id, art);
+  return art;
+}
+
+async function fetchArchivePackEpisodes(archiveId: string, seasonNumber: number): Promise<any[]> {
+  const cacheKey = `${archiveId}:${seasonNumber}`;
+  const cached = archiveMetadataCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 60 * 60 * 1000) {
+    return cached.episodes;
+  }
+
+  try {
+    const res = await fetch(`https://archive.org/metadata/${encodeURIComponent(archiveId)}`, {
+      headers: { 'User-Agent': CHROME_UA, Accept: 'application/json' },
+      signal: AbortSignal.timeout(6500),
+    });
+    if (!res.ok) return [];
+    const meta: any = await res.json();
+    const files: any[] = Array.isArray(meta?.files) ? meta.files : [];
+
+    // Group `.ia.mp4` (H.264/AAC browser universal) and original `.mp4` by base stem
+    const byStem = new Map<
+      string,
+      { iaMp4?: any; origMp4?: any; mkvFile?: any; rawTitle?: string; thumb?: string }
+    >();
+
+    const thumbsByStem = new Map<string, string>();
+    for (const f of files) {
+      const name = String(f?.name || '');
+      if (/\.(jpg|jpeg|png)$/i.test(name) && !name.includes('__ia_thumb')) {
+        const stem = name.replace(/\.(thumbs\/.*|jpg|jpeg|png)$/i, '').trim();
+        if (stem) {
+          thumbsByStem.set(
+            stem,
+            `https://archive.org/download/${encodeURIComponent(archiveId)}/${encodeURIComponent(
+              name
+            )}`
+          );
+        }
+      }
+    }
+
+    for (const f of files) {
+      const name = String(f?.name || '');
+      if (!name || name.startsWith('__')) continue;
+      if (/\.ia\.mp4$/i.test(name)) {
+        const stem = name.replace(/\.ia\.mp4$/i, '');
+        const cur = byStem.get(stem) || {};
+        cur.iaMp4 = f;
+        if (f.title) cur.rawTitle = String(f.title);
+        byStem.set(stem, cur);
+      } else if (/\.mp4$/i.test(name)) {
+        const stem = name.replace(/\.mp4$/i, '');
+        const cur = byStem.get(stem) || {};
+        cur.origMp4 = f;
+        if (f.title) cur.rawTitle = String(f.title);
+        byStem.set(stem, cur);
+      }
+    }
+
+    const rawEntries = Array.from(byStem.entries()).filter(
+      ([, v]) => Boolean(v.iaMp4 || v.origMp4)
+    );
+
+    rawEntries.sort(([stemA], [stemB]) =>
+      stemA.localeCompare(stemB, 'ca', { numeric: true, sensitivity: 'base' })
+    );
+
+    const defaultThumb = `https://archive.org/services/img/${encodeURIComponent(archiveId)}`;
+
+    const episodes = rawEntries.map(([stem, val], idx) => {
+      const cleanName = stem
+        .replace(/^.*\//, '')
+        .replace(/[_]+/g, ' ')
+        .replace(/\b(BDMV|DVDrip|1080p|720p|480p|x264|h264|AC3|CAT-JAP|by\s+.*)\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+      const epNumMatch =
+        cleanName.match(/(?:episodi|cap[ií]tol|ep\.?|cap\.?)\s*0*(\d{1,4})/i) ||
+        cleanName.match(/(?:^|\s|-)0*(\d{1,3})(?:\s|-|\.)/);
+      const epNumber = idx + 1;
+      const displayTitle = val.rawTitle
+        ? String(val.rawTitle).trim()
+        : cleanName || `Capítol ${epNumber}`;
+
+      const iaUrl = val.iaMp4
+        ? `https://archive.org/download/${encodeURIComponent(archiveId)}/${nameToArchivePath(
+            val.iaMp4.name
+          )}`
+        : '';
+      const origUrl = val.origMp4
+        ? `https://archive.org/download/${encodeURIComponent(archiveId)}/${nameToArchivePath(
+            val.origMp4.name
+          )}`
+        : '';
+
+      // Prefer `.ia.mp4` first when present because Archive.org transcodes `.ia.mp4` to universal browser H.264 + AAC stereo,
+      // while keeping original `.mp4` as Track 2 ("Català Original Màxima Qualitat")!
+      const primaryUrl = iaUrl || origUrl;
+      const tracks: TrackRecord[] = [];
+      if (iaUrl) {
+        tracks.push({
+          id: `cat-ia-${seasonNumber}-${epNumber}`,
+          label: 'Català · Web HD (Compatible)',
+          lang: 'ES',
+          quality: 'HD',
+          sourceUrl: iaUrl,
+          resolverType: 'direct_mp4',
+          resolvedStreamUrl: iaUrl,
+        });
+      }
+      if (origUrl && origUrl !== iaUrl) {
+        tracks.push({
+          id: `cat-orig-${seasonNumber}-${epNumber}`,
+          label: 'Català · Màxima Qualitat Original',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: origUrl,
+          resolverType: 'direct_mp4',
+          resolvedStreamUrl: origUrl,
+        });
+      }
+
+      const lenSec = Number(val.origMp4?.length || val.iaMp4?.length || 0);
+      const runtimeMin = lenSec > 60 ? Math.round(lenSec / 60) : undefined;
+
+      return {
+        id: `cat-ep-${archiveId}-${epNumber}`,
+        episodeNumber: epNumber,
+        detectedNumber: epNumMatch?.[1] ? Number(epNumMatch[1]) : epNumber,
+        seasonNumber,
+        title: displayTitle,
+        overview: 'Àudio en català · Reproducció directa sense anuncis.',
+        still: thumbsByStem.get(stem) || defaultThumb,
+        runtime: runtimeMin,
+        streamUrl: primaryUrl,
+        sourceType: 'archive_mp4',
+        tracks,
+      };
+    });
+
+    archiveMetadataCache.set(cacheKey, { episodes, ts: Date.now() });
+    return episodes;
+  } catch (err) {
+    console.warn('Archive metadata error:', archiveId, err);
+    return [];
+  }
+}
+
+function nameToArchivePath(fileName: string): string {
+  return String(fileName || '')
+    .split('/')
+    .map((part) => encodeURIComponent(part))
+    .join('/');
+}
+
+async function fetchCcmaProgramEpisodes(programId: string, seasonNumber: number): Promise<any[]> {
+  const cacheKey = `ccma:${programId}:${seasonNumber}`;
+  const cached = archiveMetadataCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 20 * 60 * 1000) {
+    return cached.episodes;
+  }
+  try {
+    const apiUrl = `https://api.3cat.cat/videos?_format=json&origen=llistat&programatv_id=${encodeURIComponent(
+      programId
+    )}&tipus_contingut=PPD&items_pagina=100&pagina=1&ordre=capitol&perfil=pc`;
+    const res = await fetch(apiUrl, {
+      headers: { 'User-Agent': CHROME_UA, Accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!res.ok) return [];
+    const json: any = await res.json();
+    const rawItems = json?.resposta?.items?.item;
+    const list: any[] = Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [];
+
+    const episodes = list.map((it, idx) => {
+      const vidId = String(it?.id || '');
+      const capNum = Number(it?.capitol || idx + 1);
+      const title = String(it?.titol || `Capítol ${capNum}`).trim();
+      const synopsis = String(it?.entradeta || 'Emissió oficial SX3 / 3Cat en català.').trim();
+      const imgs: any[] = Array.isArray(it?.imatges?.imatge)
+        ? it.imatges.imatge
+        : it?.imatges?.imatge
+        ? [it.imatges.imatge]
+        : [];
+      const still = String(imgs[0]?.text || '');
+
+      return {
+        id: `3cat-${programId}-${vidId || idx}`,
+        episodeNumber: idx + 1,
+        detectedNumber: capNum,
+        seasonNumber,
+        title: capNum ? `Cap. ${capNum} · ${title}` : title,
+        overview: synopsis,
+        still,
+        ccmaVideoId: vidId,
+        sourceType: 'ccma_3cat',
+      };
+    });
+
+    archiveMetadataCache.set(cacheKey, { episodes, ts: Date.now() });
+    return episodes;
+  } catch {
+    return [];
+  }
+}
+
+app.get('/api/catalog/catala', async (req, res) => {
+  try {
+    const category = String(req.query.category || 'all').toLowerCase();
+    const query = String(req.query.query || '').trim();
+    const normQ = normalizeTitleForMatch(query);
+
+    let baseEntries = CATALA_ANIME_REGISTRY;
+    if (category === 'classics' || category === 'shonen' || category === 'movies') {
+      baseEntries = baseEntries.filter((e) => e.category === category);
+    }
+    if (normQ) {
+      baseEntries = baseEntries.filter((e) => {
+        const hay = normalizeTitleForMatch(
+          `${e.titleCat} ${e.originalTitle} ${e.overviewCat} ${e.eraTag}`
+        );
+        return hay.includes(normQ);
+      });
+    }
+
+    const hydratedItems = await Promise.all(
+      baseEntries.map(async (entry) => {
+        const art = await hydrateCatalaArtwork(entry);
+        return {
+          id: entry.id,
+          title: entry.titleCat,
+          originalTitle: entry.originalTitle,
+          tmdbId: entry.tmdbId,
+          mediaType: entry.tmdbType || 'tv',
+          category: entry.category,
+          eraTag: entry.eraTag,
+          episodeHint: entry.episodeHint,
+          year: art.year,
+          rating: art.rating,
+          overview: entry.overviewCat,
+          poster: art.poster,
+          backdrop: art.backdrop,
+          seasonCount: entry.seasons.length,
+        };
+      })
+    );
+
+    // Dynamic Live Archive.org Search when user types a custom anime title in Català!
+    let dynamicArchiveItems: any[] = [];
+    if (query.length >= 2) {
+      try {
+        const advQ = `(${query}) AND (catala OR català OR valencia OR 3xl OR super3) AND mediatype:(movies)`;
+        const advUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
+          advQ
+        )}&fl[]=identifier,title,description&sort[]=downloads+desc&rows=12&page=1&output=json`;
+        const advRes = await fetch(advUrl, { signal: AbortSignal.timeout(4200) });
+        if (advRes.ok) {
+          const advJson: any = await advRes.json();
+          const docs: any[] = Array.isArray(advJson?.response?.docs)
+            ? advJson.response.docs
+            : [];
+          const knownArchiveIds = new Set(
+            CATALA_ANIME_REGISTRY.flatMap((e) => e.seasons.map((s) => s.archiveId).filter(Boolean))
+          );
+          dynamicArchiveItems = docs
+            .filter((d) => d?.identifier && !knownArchiveIds.has(String(d.identifier)))
+            .map((d) => {
+              const ident = String(d.identifier);
+              const img = `https://archive.org/services/img/${encodeURIComponent(ident)}`;
+              return {
+                id: `arch-${ident}`,
+                title: String(d.title || ident),
+                originalTitle: ident,
+                mediaType: 'tv',
+                category: 'all',
+                eraTag: 'Arxiu Català',
+                episodeHint: ' Vídeo directe',
+                year: 'CAT',
+                rating: '',
+                overview:
+                  typeof d.description === 'string'
+                    ? d.description.replace(/<[^>]+>/g, '').slice(0, 220)
+                    : 'Contingut en català trobat a l’arxiu comunitari.',
+                poster: img,
+                backdrop: img,
+                seasonCount: 1,
+              };
+            });
+        }
+      } catch {
+        // ignore dynamic search timeout
+      }
+    }
+
+    res.json({
+      success: true,
+      items: [...hydratedItems, ...dynamicArchiveItems],
+      liveChannels: CATALA_LIVE_CHANNELS,
+      communityLinks: [
+        {
+          id: 'tg-animecatala',
+          label: 'Telegram @animecatala',
+          url: 'https://t.me/s/animecatala',
+          desc: 'Canal comunitari amb avisos i novetats en català',
+        },
+        {
+          id: 'fansubs-cat',
+          label: 'Anime Fansubs.cat',
+          url: 'https://anime.fansubs.cat/',
+          desc: 'Enciclopèdia i índex del doblatge i fansub en català',
+        },
+        {
+          id: 'sx3-portal',
+          label: 'SX3 / 3Cat Anime Oficial',
+          url: 'https://www.3cat.cat/tv3/sx3/',
+          desc: 'Portal públic oficial amb estrenes d’anime en català',
+        },
+      ],
+    });
+  } catch (err) {
+    console.error('Catala catalog error:', err);
+    res.status(500).json({ success: false, items: [], liveChannels: [] });
+  }
+});
+
+app.get('/api/catalog/catala/:itemId/episodes', async (req, res) => {
+  try {
+    const itemId = String(req.params.itemId || '').trim();
+    const requestedSeason = Math.max(1, parseInt(String(req.query.season || '1'), 10) || 1);
+
+    // Support dynamic `arch-<identifier>` items discovered via live search!
+    if (itemId.startsWith('arch-')) {
+      const archiveId = itemId.slice(5);
+      const episodes = await fetchArchivePackEpisodes(archiveId, 1);
+      const img = `https://archive.org/services/img/${encodeURIComponent(archiveId)}`;
+      return res.json({
+        success: true,
+        details: {
+          id: itemId,
+          title: archiveId.replace(/[-_]+/g, ' '),
+          eraTag: 'Arxiu Català',
+          overview: ' Reproducció directa en català sense anuncis.',
+          poster: img,
+          backdrop: img,
+          activeSeason: 1,
+          seasons: [{ seasonNumber: 1, name: 'Capítols i Vídeos', episodeCount: episodes.length }],
+          episodes,
+        },
+      });
+    }
+
+    const entry = CATALA_ANIME_REGISTRY.find((e) => e.id === itemId);
+    if (!entry) {
+      return res.status(404).json({ success: false, error: 'Anime en català no trobat.' });
+    }
+
+    const art = await hydrateCatalaArtwork(entry);
+    const chosenSeason =
+      entry.seasons.find((s) => s.seasonNumber === requestedSeason) || entry.seasons[0];
+
+    const episodes = chosenSeason.archiveId
+      ? await fetchArchivePackEpisodes(chosenSeason.archiveId, chosenSeason.seasonNumber)
+      : chosenSeason.ccmaProgramId
+      ? await fetchCcmaProgramEpisodes(chosenSeason.ccmaProgramId, chosenSeason.seasonNumber)
+      : [];
+
+    return res.json({
+      success: true,
+      details: {
+        id: entry.id,
+        title: entry.titleCat,
+        originalTitle: entry.originalTitle,
+        eraTag: entry.eraTag,
+        year: art.year,
+        rating: art.rating,
+        overview: entry.overviewCat,
+        poster: art.poster,
+        backdrop: art.backdrop,
+        activeSeason: chosenSeason.seasonNumber,
+        seasons: entry.seasons.map((s) => ({
+          seasonNumber: s.seasonNumber,
+          name: s.name,
+          episodeCount: s.seasonNumber === chosenSeason.seasonNumber ? episodes.length : 0,
+        })),
+        episodes,
+      },
+    });
+  } catch (err) {
+    console.error('Catala episodes error:', err);
+    res.status(500).json({ success: false });
+  }
+});
+
+app.get('/api/extract/catala-3cat', async (req, res) => {
+  try {
+    const vidId = String(req.query.vidId || '').replace(/\D/g, '');
+    if (!vidId) return res.status(400).json({ success: false });
+
+    const mediaApi = `https://dinamics.ccma.cat/pvideo/media.jsp?media=video&version=0s&idint=${vidId}&profile=pc`;
+    const mRes = await fetch(mediaApi, {
+      headers: { 'User-Agent': CHROME_UA, Accept: 'application/json' },
+      signal: AbortSignal.timeout(4500),
+    });
+    const officialWebUrl = `https://www.3cat.cat/3cat/video/${vidId}/`;
+
+    if (mRes.ok) {
+      const mJson: any = await mRes.json();
+      const urlsRaw = mJson?.media?.url;
+      const urlList: any[] = Array.isArray(urlsRaw) ? urlsRaw : urlsRaw ? [urlsRaw] : [];
+      const sorted = [...urlList].sort(
+        (a, b) =>
+          parseInt(String(b?.label || '0'), 10) - parseInt(String(a?.label || '0'), 10)
+      );
+      const bestUrl = String(sorted[0]?.file || '').trim();
+      if (bestUrl) {
+        const tracks: TrackRecord[] = sorted
+          .filter((u) => u?.file)
+          .map((u, idx) => ({
+            id: `3cat-mp4-${vidId}-${idx}`,
+            label: `Català Oficial 3Cat · ${u.label || 'HD'}`,
+            lang: 'ES',
+            quality: String(u.label || 'HD'),
+            sourceUrl: String(u.file),
+            resolverType: 'direct_mp4',
+            resolvedStreamUrl: String(u.file),
+          }));
+        tracks.push({
+          id: `3cat-cloud-${vidId}`,
+          label: 'Obrir al Cloud Browser (3Cat Oficial)',
+          lang: 'ES',
+          quality: 'HD',
+          sourceUrl: officialWebUrl,
+          resolverType: 'cloud_browser',
+        });
+        return res.json({
+          success: true,
+          mode: 'direct',
+          streamUrl: bestUrl,
+          tracks,
+          officialWebUrl,
+        });
+      }
+    }
+
+    return res.json({
+      success: true,
+      mode: 'cloud',
+      streamUrl: officialWebUrl,
+      tracks: [],
+      officialWebUrl,
+    });
+  } catch {
+    return res.status(500).json({ success: false });
+  }
 });
 
 // ============================================================================

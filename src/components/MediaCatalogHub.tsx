@@ -30,6 +30,10 @@ import {
 } from 'lucide-react';
 import {
   AppLanguage,
+  CatalaCatalogItem,
+  CatalaCommunityLink,
+  CatalaEpisodeItem,
+  CatalaSeriesDetails,
   CatalogMovie,
   FavoriteChannelItem,
   LiveScoreMatch,
@@ -71,6 +75,8 @@ export type CatalogSection =
   | 'movies'
   | 'vose'
   | 'series'
+  | 'castellano'
+  | 'catala'
   | 'anime'
   | 'tdt'
   | 'sports'
@@ -399,6 +405,7 @@ interface MediaCatalogHubProps {
     episode: TvEpisodeItem,
     preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN'
   ) => void;
+  onPlayCatalaEpisode: (series: CatalaSeriesDetails, episode: CatalaEpisodeItem) => void;
   onReplayHistoryItem: (item: WatchHistoryItem, forceRestart?: boolean) => void;
   onRemoveHistoryItem: (id: string) => void;
   onClearHistory: () => void;
@@ -436,6 +443,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onPlayFavoriteChannel,
   onPlayMovie,
   onPlaySeriesEpisode,
+  onPlayCatalaEpisode,
   onReplayHistoryItem,
   onRemoveHistoryItem,
   onClearHistory,
@@ -604,6 +612,54 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     }, 340);
     return () => clearTimeout(timer);
   }, [ytQuery]);
+
+  // Dedicated "Todo en Castellano (España)" Hub state
+  const [castellanoKind, setCastellanoKind] = useState<'all' | 'series' | 'movies'>('all');
+  const [castellanoProvider, setCastellanoProvider] = useState<StreamingProviderId>('all');
+  const [castellanoCategory, setCastellanoCategory] = useState<string>('trending');
+  const [castellanoQuery, setCastellanoQuery] = useState('');
+  const [debouncedCastellanoQuery, setDebouncedCastellanoQuery] = useState('');
+  const [castellanoPage, setCastellanoPage] = useState<number>(1);
+  const [hasMoreCastellano, setHasMoreCastellano] = useState<boolean>(false);
+  const [castellanoItems, setCastellanoItems] = useState<CatalogMovie[]>([]);
+  const [loadingCastellano, setLoadingCastellano] = useState<boolean>(false);
+  const [loadingMoreCastellano, setLoadingMoreCastellano] = useState<boolean>(false);
+
+  // Dedicated "Català · Tot l'Anime en un sol lloc" Hub state
+  const [catalaCategory, setCatalaCategory] = useState<
+    'all' | 'classics' | 'shonen' | 'movies' | 'live_tv'
+  >('all');
+  const [catalaQuery, setCatalaQuery] = useState('');
+  const [debouncedCatalaQuery, setDebouncedCatalaQuery] = useState('');
+  const [catalaItems, setCatalaItems] = useState<CatalaCatalogItem[]>([]);
+  const [catalaLiveChannels, setCatalaLiveChannels] = useState<SpanishTdtChannel[]>([]);
+  const [catalaCommunityLinks, setCatalaCommunityLinks] = useState<CatalaCommunityLink[]>([]);
+  const [loadingCatala, setLoadingCatala] = useState<boolean>(false);
+
+  // Catalan Episode Picker Modal state
+  const [selectedCatalaSeries, setSelectedCatalaSeries] = useState<CatalaSeriesDetails | null>(
+    null
+  );
+  const [loadingCatalaEpisodes, setLoadingCatalaEpisodes] = useState<boolean>(false);
+  const [catalaEpQuery, setCatalaEpQuery] = useState('');
+  const [catalaEpRangeStart, setCatalaEpRangeStart] = useState<number>(0);
+  const [catalaEpSortDesc, setCatalaEpSortDesc] = useState<boolean>(false);
+  const catalaEpScrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedCastellanoQuery(castellanoQuery.trim());
+      setCastellanoPage(1);
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [castellanoQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedCatalaQuery(catalaQuery.trim());
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [catalaQuery]);
 
   // Preload Live Channels once so Home search and instant entry to TDT/DAZN/Movistar+ are 0ms
   const fetchTdtCatalog = async () => {
@@ -1050,6 +1106,131 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       cancelled = true;
     };
   }, [activeSection, debouncedYtQuery]);
+
+  // Fetch "Todo en Castellano (España)" Catalog
+  useEffect(() => {
+    if (activeSection !== 'castellano') return;
+    let cancelled = false;
+    const isLoadMore = castellanoPage > 1;
+    if (isLoadMore) setLoadingMoreCastellano(true);
+    else setLoadingCastellano(true);
+
+    const params = new URLSearchParams({
+      kind: castellanoKind,
+      provider: castellanoProvider,
+      category: castellanoCategory,
+      page: String(castellanoPage),
+      query: debouncedCastellanoQuery,
+    });
+
+    fetch(`/api/catalog/castellano?${params.toString()}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const incoming: CatalogMovie[] = Array.isArray(data?.items) ? data.items : [];
+        setHasMoreCastellano(Boolean(data?.hasMore));
+        if (isLoadMore) {
+          setCastellanoItems((prev) => {
+            const existing = new Set(prev.map((p) => p.id));
+            return [...prev, ...incoming.filter((x) => !existing.has(x.id))];
+          });
+        } else {
+          setCastellanoItems(incoming);
+        }
+      })
+      .catch(() => {
+        if (!cancelled && !isLoadMore) setCastellanoItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingCastellano(false);
+          setLoadingMoreCastellano(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSection,
+    castellanoKind,
+    castellanoProvider,
+    castellanoCategory,
+    castellanoPage,
+    debouncedCastellanoQuery,
+  ]);
+
+  // Fetch "Català · Tot l'Anime en un sol lloc" Catalog
+  useEffect(() => {
+    if (activeSection !== 'catala') return;
+    let cancelled = false;
+    setLoadingCatala(true);
+
+    const params = new URLSearchParams({
+      category: catalaCategory === 'live_tv' ? 'all' : catalaCategory,
+      query: debouncedCatalaQuery,
+    });
+
+    fetch(`/api/catalog/catala?${params.toString()}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data?.items)) setCatalaItems(data.items);
+        if (Array.isArray(data?.liveChannels)) setCatalaLiveChannels(data.liveChannels);
+        if (Array.isArray(data?.communityLinks)) setCatalaCommunityLinks(data.communityLinks);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalaItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCatala(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, catalaCategory, debouncedCatalaQuery]);
+
+  const openCatalaSeriesDetails = async (item: CatalaCatalogItem, seasonNum = 1) => {
+    setCatalaEpQuery('');
+    setCatalaEpRangeStart(0);
+    setCatalaEpSortDesc(false);
+    setLoadingCatalaEpisodes(true);
+
+    // Optimistic instant shell so modal opens in 0ms
+    setSelectedCatalaSeries((prev) =>
+      prev && prev.id === item.id
+        ? { ...prev, activeSeason: seasonNum }
+        : {
+            id: item.id,
+            title: item.title,
+            originalTitle: item.originalTitle,
+            eraTag: item.eraTag,
+            year: item.year,
+            rating: item.rating,
+            overview: item.overview,
+            poster: item.poster,
+            backdrop: item.backdrop || item.poster,
+            activeSeason: seasonNum,
+            seasons: [{ seasonNumber: seasonNum, name: `Temporada ${seasonNum}`, episodeCount: 0 }],
+            episodes: [],
+          }
+    );
+
+    try {
+      const res = await fetch(
+        `/api/catalog/catala/${encodeURIComponent(item.id)}/episodes?season=${seasonNum}`
+      );
+      const data = await res.json();
+      if (res.ok && data?.success && data?.details) {
+        setSelectedCatalaSeries(data.details);
+      }
+    } catch {
+      // keep shell
+    } finally {
+      setLoadingCatalaEpisodes(false);
+    }
+  };
 
   // Navigation Helper Actions from the Big Launcher Grid
   const goToHomeGrid = () => {
@@ -1529,6 +1710,341 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         onAddToQueue={onAddToQueue}
         onSelectSimilar={(sim) => setPreviewItem(sim)}
       />
+
+      {/* ================================================================== */}
+      {/* CATALÀ ANIME EPISODE PICKER MODAL (Z-65)                           */}
+      {/* ================================================================== */}
+      {selectedCatalaSeries &&
+        (() => {
+          const CAT_CHUNK = 50;
+          const allCatEps = selectedCatalaSeries.episodes || [];
+          const orderedCatEps = catalaEpSortDesc ? [...allCatEps].reverse() : allCatEps;
+          const trimmedCatQ = catalaEpQuery.trim();
+          const numCatTarget = /^\d+$/.test(trimmedCatQ) ? parseInt(trimmedCatQ, 10) : null;
+          const lowCatQ = trimmedCatQ.toLowerCase();
+
+          const filteredCatEps = trimmedCatQ
+            ? numCatTarget !== null
+              ? [
+                  ...orderedCatEps.filter((ep) => ep.episodeNumber === numCatTarget),
+                  ...orderedCatEps.filter(
+                    (ep) =>
+                      ep.episodeNumber !== numCatTarget &&
+                      (String(ep.episodeNumber).includes(trimmedCatQ) ||
+                        ep.title.toLowerCase().includes(lowCatQ))
+                  ),
+                ]
+              : orderedCatEps.filter(
+                  (ep) =>
+                    ep.title.toLowerCase().includes(lowCatQ) ||
+                    String(ep.episodeNumber).includes(lowCatQ)
+                )
+            : orderedCatEps;
+
+          const totalCatChunks = Math.ceil(orderedCatEps.length / CAT_CHUNK);
+          const safeCatStart =
+            catalaEpRangeStart < orderedCatEps.length ? catalaEpRangeStart : 0;
+          const visibleCatEps = trimmedCatQ
+            ? filteredCatEps.slice(0, 80)
+            : orderedCatEps.length > CAT_CHUNK
+            ? orderedCatEps.slice(safeCatStart, safeCatStart + CAT_CHUNK)
+            : orderedCatEps;
+
+          return (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={selectedCatalaSeries.title}
+              onClick={() => setSelectedCatalaSeries(null)}
+              className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="w-full sm:max-w-[940px] max-h-[93dvh] sm:max-h-[89dvh] rounded-t-3xl sm:rounded-3xl bg-[#090A10] border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden"
+              >
+                <div className="sm:hidden pt-2 flex justify-center shrink-0">
+                  <div className="w-10 h-1.5 rounded-full bg-white/25" />
+                </div>
+
+                {/* Header */}
+                <div className="relative px-3.5 py-3 sm:px-6 sm:py-4 bg-gradient-to-b from-[#1A130D] to-[#090A10] border-b border-white/[0.08] space-y-2.5 shrink-0">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-xs text-amber-300 font-semibold truncate">
+                      <span>Anime en Català</span>
+                      <span className="mx-1.5 text-zinc-500">·</span>
+                      <span className="text-zinc-300 font-normal">
+                        {selectedCatalaSeries.eraTag}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedCatalaSeries(null)}
+                      aria-label="Tancar"
+                      className="min-h-[40px] min-w-[40px] rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/15 flex items-center justify-center text-white shrink-0 cursor-pointer transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <h2 className="font-display font-bold text-lg sm:text-2xl text-white leading-tight">
+                        {selectedCatalaSeries.title}
+                      </h2>
+                      <p className="text-xs text-zinc-400 line-clamp-1 mt-0.5">
+                        {selectedCatalaSeries.overview}
+                      </p>
+                    </div>
+
+                    {orderedCatEps.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('success');
+                          onPlayCatalaEpisode(selectedCatalaSeries, orderedCatEps[0]);
+                          setSelectedCatalaSeries(null);
+                        }}
+                        className="min-h-[44px] px-4 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>Reproduir Cap. 1</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Season / Pack Tabs if multiple */}
+                  {selectedCatalaSeries.seasons.length > 1 && (
+                    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-0.5">
+                      {selectedCatalaSeries.seasons.map((sn) => {
+                        const active = sn.seasonNumber === selectedCatalaSeries.activeSeason;
+                        return (
+                          <button
+                            key={sn.seasonNumber}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              openCatalaSeriesDetails(
+                                {
+                                  id: selectedCatalaSeries.id,
+                                  title: selectedCatalaSeries.title,
+                                  originalTitle: selectedCatalaSeries.originalTitle || '',
+                                  mediaType: 'tv',
+                                  category: 'all',
+                                  eraTag: selectedCatalaSeries.eraTag,
+                                  episodeHint: '',
+                                  year: selectedCatalaSeries.year || 'CAT',
+                                  rating: selectedCatalaSeries.rating || '',
+                                  overview: selectedCatalaSeries.overview,
+                                  poster: selectedCatalaSeries.poster,
+                                  backdrop: selectedCatalaSeries.backdrop,
+                                  seasonCount: selectedCatalaSeries.seasons.length,
+                                },
+                                sn.seasonNumber
+                              );
+                            }}
+                            className={`min-h-[38px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                              active
+                                ? 'bg-white text-[#050508] border-white'
+                                : 'bg-white/[0.05] text-zinc-300 border-white/10 hover:bg-white/[0.1]'
+                            }`}
+                          >
+                            {sn.name}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Search & 50-Episode Range Chunks */}
+                  {allCatEps.length > 6 && (
+                    <div className="space-y-2 pt-0.5">
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1 min-w-0">
+                          <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                          <input
+                            type="text"
+                            value={catalaEpQuery}
+                            onChange={(e) => setCatalaEpQuery(e.target.value)}
+                            placeholder="Cercar número o títol de capítol (ex: 42)..."
+                            className="w-full h-10 pl-9 pr-8 rounded-xl bg-black/55 border border-white/12 focus:border-white/35 text-xs sm:text-sm text-white placeholder:text-zinc-500 outline-none"
+                          />
+                          {catalaEpQuery && (
+                            <button
+                              type="button"
+                              onClick={() => setCatalaEpQuery('')}
+                              aria-label="Netejar cerca"
+                              className="w-8 h-8 rounded-lg absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                            >
+                              <X className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setCatalaEpSortDesc((v) => !v);
+                            setCatalaEpRangeStart(0);
+                          }}
+                          className="min-h-[40px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-zinc-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                        >
+                          <ArrowUpDown className="w-3.5 h-3.5" />
+                          <span>
+                            {catalaEpSortDesc ? 'Últims primer' : 'Cap. 1 primer'}
+                          </span>
+                        </button>
+                      </div>
+
+                      {!trimmedCatQ && totalCatChunks > 1 && (
+                        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                          {Array.from({ length: totalCatChunks }).map((_, cIdx) => {
+                            const startIdx = cIdx * CAT_CHUNK;
+                            const firstEp = orderedCatEps[startIdx]?.episodeNumber ?? startIdx + 1;
+                            const lastEp =
+                              orderedCatEps[
+                                Math.min(orderedCatEps.length - 1, startIdx + CAT_CHUNK - 1)
+                              ]?.episodeNumber ?? Math.min(orderedCatEps.length, startIdx + CAT_CHUNK);
+                            const activeChunk = safeCatStart === startIdx;
+                            return (
+                              <button
+                                key={startIdx}
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic('light');
+                                  setCatalaEpRangeStart(startIdx);
+                                  catalaEpScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                                }}
+                                className={`min-h-[34px] px-3 rounded-lg text-xs font-semibold tabular-nums whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                                  activeChunk
+                                    ? 'bg-amber-400 text-[#120D02]'
+                                    : 'bg-white/[0.06] text-zinc-300 hover:bg-white/[0.12]'
+                                }`}
+                              >
+                                {firstEp}–{lastEp}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {/* Scrollable Catalan Episode List */}
+                <div
+                  ref={catalaEpScrollRef}
+                  className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3.5 sm:p-5 space-y-3"
+                >
+                  {loadingCatalaEpisodes ? (
+                    <div className="py-12 flex flex-col items-center justify-center gap-2.5 text-sm text-zinc-400">
+                      <Loader2 className="w-6 h-6 animate-spin text-amber-400" />
+                      <span>Carregant tots els capítols en català...</span>
+                    </div>
+                  ) : visibleCatEps.length === 0 ? (
+                    <div className="py-10 text-center text-sm text-zinc-400">
+                      No s&apos;han trobat capítols per a aquesta cerca.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                      {visibleCatEps.map((ep) => {
+                        const stillBroken = brokenEpisodeImgs[ep.id];
+                        return (
+                          <div
+                            key={ep.id}
+                            onClick={() => {
+                              triggerHaptic('success');
+                              onPlayCatalaEpisode(selectedCatalaSeries, ep);
+                              setSelectedCatalaSeries(null);
+                            }}
+                            role="button"
+                            tabIndex={0}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                onPlayCatalaEpisode(selectedCatalaSeries, ep);
+                                setSelectedCatalaSeries(null);
+                              }
+                            }}
+                            className="group min-w-0 text-left rounded-2xl bg-[#0F1119] hover:bg-[#161925] border border-white/[0.08] hover:border-amber-400/45 p-2.5 sm:p-3 flex items-center gap-3 transition-colors cursor-pointer"
+                          >
+                            <div className="relative w-28 sm:w-36 aspect-video rounded-xl overflow-hidden bg-[#090A10] shrink-0">
+                              {!stillBroken && (ep.still || selectedCatalaSeries.backdrop) ? (
+                                <img
+                                  src={ep.still || selectedCatalaSeries.backdrop}
+                                  alt={ep.title}
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer"
+                                  onError={() =>
+                                    setBrokenEpisodeImgs((prev) => ({
+                                      ...prev,
+                                      [ep.id]: true,
+                                    }))
+                                  }
+                                  className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center bg-[#0E0F16]">
+                                  <Tv className="w-5 h-5 text-zinc-500" />
+                                </div>
+                              )}
+                              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent flex items-center justify-center">
+                                <div className="w-8 h-8 rounded-full bg-[#E11D48]/95 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                                  <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                                </div>
+                              </div>
+                              <span className="absolute bottom-1.5 left-2 text-[10px] font-mono font-bold text-white tabular-nums drop-shadow">
+                                Cap. {ep.episodeNumber}
+                              </span>
+                            </div>
+
+                            <div className="min-w-0 flex-1 space-y-0.5">
+                              <h4 className="font-display font-semibold text-sm text-white line-clamp-1">
+                                {ep.episodeNumber}. {ep.title}
+                              </h4>
+                              <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 whitespace-nowrap overflow-hidden tabular-nums">
+                                <span className="text-amber-300 font-semibold">Català</span>
+                                {ep.runtime ? (
+                                  <>
+                                    <span aria-hidden="true">·</span>
+                                    <span>{ep.runtime} min</span>
+                                  </>
+                                ) : null}
+                              </div>
+                              <p className="text-xs text-zinc-400/90 line-clamp-1">
+                                {ep.overview}
+                              </p>
+                            </div>
+
+                            {ep.streamUrl && (
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerHaptic('success');
+                                  onAddToQueue({
+                                    kind: 'direct',
+                                    title: `${selectedCatalaSeries.title} · Cap. ${ep.episodeNumber}`,
+                                    subtitle: `${ep.title} (Català)`,
+                                    poster: selectedCatalaSeries.poster,
+                                    url: ep.streamUrl,
+                                  });
+                                }}
+                                title="Afegir a la cua"
+                                aria-label="Afegir a la cua"
+                                className="min-h-[44px] min-w-[44px] rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* ================================================================== */}
       {/* DEDICATED 2-STEP SERIES -> TEMPORADA -> CAPÍTULO MODAL (Z-65)      */}
@@ -2529,6 +3045,72 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               </div>
 
               {/* ============================================================ */}
+              {/* ROW 1B: FEATURED LANGUAGE HUBS (TODO EN CASTELLANO · CATALÀ) */}
+              {/* ============================================================ */}
+              <div className="grid grid-cols-1 @md:grid-cols-2 gap-3.5 sm:gap-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFocusedHub('all');
+                    setCastellanoKind('all');
+                    setCastellanoProvider('all');
+                    setCastellanoCategory('trending');
+                    setCastellanoQuery('');
+                    setCastellanoPage(1);
+                    onChangeSection('castellano');
+                  }}
+                  className="group min-h-[108px] sm:min-h-[120px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-amber-500/20 via-[#17100B] to-[#0B0C12] border border-white/[0.1] hover:border-amber-400/60 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all"
+                >
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
+                      <span className="font-mono font-bold">ES</span>
+                      <span aria-hidden="true">·</span>
+                      <span>Español de España</span>
+                    </div>
+                    <div className="font-display font-bold text-lg sm:text-2xl text-white">
+                      Todo en Castellano
+                    </div>
+                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
+                      From, Reina Roja, HBO, Netflix, Movistar+ y Cine en Castellano HD
+                    </p>
+                  </div>
+                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-amber-400 group-hover:text-[#140E02] text-white flex items-center justify-center shrink-0 transition-colors">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFocusedHub('all');
+                    setCatalaCategory('all');
+                    setCatalaQuery('');
+                    onChangeSection('catala');
+                  }}
+                  className="group min-h-[108px] sm:min-h-[120px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-rose-500/22 via-[#180E12] to-[#0B0C12] border border-white/[0.1] hover:border-rose-400/65 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all"
+                >
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="flex items-center gap-2 text-xs font-semibold text-rose-300">
+                      <span className="font-mono font-bold">CAT</span>
+                      <span aria-hidden="true">·</span>
+                      <span>Tot en un sol lloc</span>
+                    </div>
+                    <div className="font-display font-bold text-lg sm:text-2xl text-white">
+                      Anime en Català
+                    </div>
+                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
+                      Bola de Drac, Sakura, Detectiu Conan, Dr. Slump, Evangelion, SX3 i TV3
+                    </p>
+                  </div>
+                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-[#E11D48] text-white flex items-center justify-center shrink-0 transition-colors">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </button>
+              </div>
+
+              {/* ============================================================ */}
               {/* ROW 2: BIG PLATFORMS & LIVE TV GRID                          */}
               {/* Netflix · HBO Max · Disney+ · Prime Video · Movistar+ · DAZN · TDT */}
               {/* ============================================================ */}
@@ -2876,11 +3458,27 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </span>
                 )}
 
+                {activeSection === 'castellano' && (
+                  <span className="h-7 px-2 rounded-lg bg-amber-400 text-[#140E02] text-xs font-black flex items-center justify-center shrink-0">
+                    ES
+                  </span>
+                )}
+
+                {activeSection === 'catala' && (
+                  <span className="h-7 px-2 rounded-lg bg-[#E11D48] text-white text-xs font-black flex items-center justify-center shrink-0">
+                    CAT
+                  </span>
+                )}
+
                 <h2 className="font-display font-bold text-base sm:text-xl text-white truncate">
                   {showWatchlistOnly
                     ? lang === 'es'
                       ? `Mi Lista (${cleanWatchlist.length})`
                       : `My List (${cleanWatchlist.length})`
+                    : activeSection === 'castellano'
+                    ? 'Todo Disponible en Castellano (España)'
+                    : activeSection === 'catala'
+                    ? "Tot l'Anime en Català · En un sol lloc"
                     : activeSection === 'anime'
                     ? animePortal === 'anime_all'
                       ? lang === 'es'
@@ -2925,6 +3523,36 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
             {/* Right: Contextual Clean Mode Switcher */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
+              {/* CASTELLANO HUB SWITCH: Todo | Series | Películas */}
+              {activeSection === 'castellano' && (
+                <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                  {(
+                    [
+                      { id: 'all', label: 'Todo' },
+                      { id: 'series', label: 'Series' },
+                      { id: 'movies', label: 'Películas' },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setCastellanoKind(tab.id);
+                        setCastellanoPage(1);
+                      }}
+                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        castellanoKind === tab.id
+                          ? 'bg-white text-[#050508]'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
               {/* ANIME HUB SWITCH: Series Anime | Películas Anime (+ Optional Cloud Web Portal) */}
               {activeSection === 'anime' && (
                 <>
@@ -5794,6 +6422,481 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               </div>
             </form>
           </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* SECTION 7: TODO LO DISPONIBLE EN CASTELLANO (ESPAÑOL DE ESPAÑA)    */}
+      {/* ================================================================== */}
+      {activeSection === 'castellano' && (
+        <div className="space-y-5">
+          {/* Search + Platform Filter + Genre Filter */}
+          <div className="space-y-3">
+            <div className="relative">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={castellanoQuery}
+                onChange={(e) => setCastellanoQuery(e.target.value)}
+                placeholder="Buscar serie o película en Castellano (From, Reina Roja, Fallout, La que se avecina, Dune...)"
+                className="w-full h-12 pl-11 pr-11 rounded-2xl bg-[#0D0E15] border border-white/[0.1] focus:border-amber-400/50 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
+              />
+              {castellanoQuery && (
+                <button
+                  type="button"
+                  onClick={() => setCastellanoQuery('')}
+                  aria-label="Limpiar búsqueda"
+                  className="w-10 h-10 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Platform Filter Row */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+              {STREAMING_PLATFORMS.map((p) => {
+                const active = castellanoProvider === p.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setCastellanoProvider(p.id);
+                      setCastellanoPage(1);
+                    }}
+                    className={`min-h-[40px] px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                      active
+                        ? 'bg-white text-[#050508] border-white'
+                        : 'bg-[#0D0E15] text-zinc-300 border-white/[0.08] hover:border-white/25 hover:text-white'
+                    }`}
+                  >
+                    {p.es}
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Category / Origin Filter Row */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+              {(
+                [
+                  { id: 'trending', label: 'Destacados en Castellano' },
+                  { id: 'spanish_originals', label: 'Producción Española' },
+                  { id: 'top_rated', label: 'Mejor Valorados' },
+                  { id: 'thriller', label: 'Suspense y Misterio' },
+                  { id: 'action', label: 'Acción y Aventura' },
+                  { id: 'scifi', label: 'Ciencia Ficción' },
+                  { id: 'drama', label: 'Drama' },
+                  { id: 'comedy', label: 'Comedia' },
+                ] as const
+              ).map((cat) => {
+                const active = castellanoCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setCastellanoCategory(cat.id);
+                      setCastellanoPage(1);
+                    }}
+                    className={`min-h-[38px] px-3.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                      active
+                        ? 'bg-amber-400 text-[#140E02] border-amber-400 font-bold'
+                        : 'bg-white/[0.04] text-zinc-300 border-white/[0.08] hover:bg-white/[0.1]'
+                    }`}
+                  >
+                    {cat.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {loadingCastellano ? (
+            <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 sm:gap-4">
+              {Array.from({ length: 10 }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className="aspect-[2/3] rounded-2xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer"
+                />
+              ))}
+            </div>
+          ) : castellanoItems.length === 0 ? (
+            <div className="py-14 text-center rounded-3xl bg-white/[0.02] border border-white/[0.07] px-5 space-y-2">
+              <p className="text-sm font-semibold text-white">
+                No se encontraron títulos para este filtro en Castellano.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  setCastellanoQuery('');
+                  setCastellanoProvider('all');
+                  setCastellanoCategory('trending');
+                }}
+                className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
+              >
+                Restablecer filtros
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 sm:gap-4">
+                {castellanoItems.map((item) => {
+                  const isTv = item.mediaType === 'tv';
+                  const posterBroken = brokenPosters[`cast-${item.id}`];
+                  const saved = isBookmarked(item);
+                  return (
+                    <div
+                      key={item.id}
+                      onClick={() => {
+                        triggerHaptic('light');
+                        if (isTv && item.tmdbId) {
+                          setSeriesLangMode('ES');
+                          openSeriesDetails(item.tmdbId, 1, { ...item, mediaType: 'tv' });
+                        } else {
+                          setPreviewItem({ ...item, mediaType: 'movie' });
+                        }
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          if (isTv && item.tmdbId) {
+                            setSeriesLangMode('ES');
+                            openSeriesDetails(item.tmdbId, 1, { ...item, mediaType: 'tv' });
+                          } else {
+                            setPreviewItem({ ...item, mediaType: 'movie' });
+                          }
+                        }
+                      }}
+                      className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] hover:border-amber-400/50 cursor-pointer transition-colors"
+                    >
+                      {!posterBroken && item.poster ? (
+                        <img
+                          src={item.poster}
+                          alt={item.title}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setBrokenPosters((prev) => ({ ...prev, [`cast-${item.id}`]: true }))
+                          }
+                          className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                        />
+                      ) : (
+                        <div className="w-full h-full p-4 flex flex-col items-center justify-center text-center bg-gradient-to-b from-[#161824] to-[#0B0C12]">
+                          {isTv ? (
+                            <Tv className="w-8 h-8 text-zinc-500 mb-2" />
+                          ) : (
+                            <Film className="w-8 h-8 text-zinc-500 mb-2" />
+                          )}
+                          <span className="text-xs font-semibold text-white">{item.title}</span>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleBookmark(item, e)}
+                        aria-label="Guardar en Mi Lista"
+                        className="w-9 h-9 rounded-full bg-black/65 hover:bg-black/85 text-white flex items-center justify-center absolute top-2 right-2 z-10 cursor-pointer transition-colors"
+                      >
+                        <Heart
+                          className={`w-4 h-4 ${
+                            saved ? 'fill-current text-[#E11D48]' : 'text-zinc-200'
+                          }`}
+                        />
+                      </button>
+
+                      <div className="absolute inset-x-0 bottom-0 pt-16 pb-3 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent">
+                        <div className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug">
+                          {item.title}
+                        </div>
+                        <div className="text-[11px] text-zinc-300 mt-1 flex items-center gap-1.5 whitespace-nowrap overflow-hidden tabular-nums">
+                          <span className="text-amber-300 font-semibold">Castellano</span>
+                          <span aria-hidden="true">·</span>
+                          <span>{isTv ? 'Serie' : 'Cine'}</span>
+                          {item.year && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span>{item.year}</span>
+                            </>
+                          )}
+                          {item.rating && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span>★ {item.rating}</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {hasMoreCastellano && (
+                <div className="pt-2 flex justify-center">
+                  <button
+                    type="button"
+                    disabled={loadingMoreCastellano}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setCastellanoPage((p) => p + 1);
+                    }}
+                    className="min-h-[46px] px-6 rounded-2xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/15 text-xs sm:text-sm font-bold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  >
+                    {loadingMoreCastellano ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4" />
+                    )}
+                    <span>Cargar más títulos en Castellano</span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* SECTION 8: TOT L'ANIME EN CATALÀ EN UN SOL LLOC (`catala`)         */}
+      {/* ================================================================== */}
+      {activeSection === 'catala' && (
+        <div className="space-y-6">
+          {/* Intro + Search + Category Tabs */}
+          <div className="space-y-3.5">
+            <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed max-w-3xl">
+              Tot l&apos;anime en català que estava escampat per internet reunit en un sol lloc:
+              sèries clàssiques de TV3, K3 i Canal 3XL, estrenes del SX3, pel·lícules d&apos;anime i
+              canals en directe sense anuncis.
+            </p>
+
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={catalaQuery}
+                onChange={(e) => setCatalaQuery(e.target.value)}
+                placeholder="Cerca qualsevol anime en català (Bola de Drac, Sakura, Conan, Dr. Slump, Evangelion, Death Note...)"
+                className="w-full h-12 pl-11 pr-11 rounded-2xl bg-[#0D0E15] border border-white/[0.1] focus:border-rose-400/55 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
+              />
+              {catalaQuery && (
+                <button
+                  type="button"
+                  onClick={() => setCatalaQuery('')}
+                  aria-label="Netejar cerca"
+                  className="w-10 h-10 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            {/* Category Filter Tabs */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+              {(
+                [
+                  { id: 'all', label: "Tot l'Anime en Català" },
+                  { id: 'classics', label: 'Clàssics TV3 · K3 · 3XL' },
+                  { id: 'shonen', label: 'Shonen i Acció' },
+                  { id: 'movies', label: "Pel·lícules i OVAs" },
+                  { id: 'live_tv', label: 'TV en Directe · SX3 i TV3' },
+                ] as const
+              ).map((tab) => {
+                const active = catalaCategory === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setCatalaCategory(tab.id);
+                    }}
+                    className={`min-h-[40px] px-4 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                      active
+                        ? 'bg-[#E11D48] text-white border-[#E11D48]'
+                        : 'bg-[#0D0E15] text-zinc-300 border-white/[0.08] hover:border-white/25 hover:text-white'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Live Catalan Channels Strip (SX3 Anime 24h, TV3, Esport3, 324) */}
+          {(catalaCategory === 'all' || catalaCategory === 'live_tv') &&
+            !debouncedCatalaQuery &&
+            catalaLiveChannels.length > 0 && (
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h3 className="font-display font-bold text-sm sm:text-base text-white">
+                    Emissió en Directe en Català (SX3 · TV3 · 3Cat)
+                  </h3>
+                </div>
+                <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-4 gap-3">
+                  {catalaLiveChannels.map((ch) => (
+                    <button
+                      key={ch.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('success');
+                        onPlayTdtChannel(ch, 0);
+                      }}
+                      className="min-h-[76px] p-3.5 rounded-2xl bg-[#0D0E15] hover:bg-[#141724] border border-white/[0.08] hover:border-rose-400/50 flex items-center justify-between gap-3 text-left cursor-pointer transition-colors"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div
+                          className="w-11 h-11 rounded-xl shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-xs text-white"
+                          style={{
+                            background: `linear-gradient(145deg, ${ch.brandTone}40 0%, #090A10 100%)`,
+                          }}
+                        >
+                          {ch.shortMark}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="font-display font-bold text-sm text-white truncate">
+                            {ch.name}
+                          </div>
+                          <div className="text-xs text-zinc-400 truncate">
+                            Directe HD · {ch.network}
+                          </div>
+                        </div>
+                      </div>
+                      <span className="w-9 h-9 rounded-full bg-[#E11D48] text-white flex items-center justify-center shrink-0">
+                        <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </section>
+            )}
+
+          {/* Catalan Anime Series & Movies Grid */}
+          {catalaCategory !== 'live_tv' && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="font-display font-bold text-sm sm:text-base text-white">
+                  Catàleg d&apos;Anime en Català (Prem per triar temporada i capítol)
+                </h3>
+              </div>
+
+              {loadingCatala ? (
+                <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 sm:gap-4">
+                  {Array.from({ length: 10 }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      className="aspect-[2/3] rounded-2xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer"
+                    />
+                  ))}
+                </div>
+              ) : catalaItems.length === 0 ? (
+                <div className="py-12 text-center rounded-3xl bg-white/[0.02] border border-white/[0.07] px-5 space-y-2">
+                  <p className="text-sm font-semibold text-white">
+                    No s&apos;han trobat resultats per a «{debouncedCatalaQuery}».
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCatalaQuery('');
+                      setCatalaCategory('all');
+                    }}
+                    className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
+                  >
+                    Veure tot el catàleg en català
+                  </button>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 sm:gap-4">
+                  {catalaItems.map((item) => {
+                    const posterBroken = brokenPosters[`cat-${item.id}`];
+                    return (
+                      <div
+                        key={item.id}
+                        onClick={() => {
+                          triggerHaptic('light');
+                          openCatalaSeriesDetails(item, 1);
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') openCatalaSeriesDetails(item, 1);
+                        }}
+                        className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] hover:border-rose-400/55 cursor-pointer transition-colors"
+                      >
+                        {!posterBroken && item.poster ? (
+                          <img
+                            src={item.poster}
+                            alt={item.title}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={() =>
+                              setBrokenPosters((prev) => ({
+                                ...prev,
+                                [`cat-${item.id}`]: true,
+                              }))
+                            }
+                            className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="w-full h-full p-4 flex flex-col items-center justify-center text-center bg-gradient-to-b from-[#1A1016] to-[#0B0C12]">
+                            <Sparkles className="w-8 h-8 text-rose-400 mb-2" />
+                            <span className="text-xs font-semibold text-white">{item.title}</span>
+                          </div>
+                        )}
+
+                        <div className="absolute inset-x-0 bottom-0 pt-16 pb-3 px-3 bg-gradient-to-t from-black/95 via-black/80 to-transparent">
+                          <div className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug">
+                            {item.title}
+                          </div>
+                          <div className="text-[11px] text-zinc-300 mt-1 line-clamp-1">
+                            <span className="text-rose-300 font-semibold">Català</span>
+                            <span className="mx-1 text-zinc-500">·</span>
+                            <span>{item.episodeHint}</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </section>
+          )}
+
+          {/* Community Portals & Reference Sources (@animecatala · Fansubs.cat · SX3) */}
+          {catalaCommunityLinks.length > 0 && (
+            <section className="pt-2 border-t border-white/[0.07] space-y-3">
+              <h3 className="font-display font-semibold text-xs sm:text-sm text-zinc-300">
+                Fonts i Comunitat d&apos;Anime en Català (Obrir al Cloud Browser de la sala)
+              </h3>
+              <div className="grid grid-cols-1 @sm:grid-cols-3 gap-3">
+                {catalaCommunityLinks.map((lnk) => (
+                  <button
+                    key={lnk.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      onOpenCloudBrowser(lnk.url);
+                    }}
+                    className="min-h-[64px] p-3.5 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.06] border border-white/[0.08] flex items-center justify-between gap-3 text-left cursor-pointer transition-colors"
+                  >
+                    <div className="min-w-0">
+                      <div className="text-xs sm:text-sm font-bold text-white truncate">
+                        {lnk.label}
+                      </div>
+                      <div className="text-[11px] text-zinc-400 truncate mt-0.5">{lnk.desc}</div>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
         </div>
       )}
     </div>

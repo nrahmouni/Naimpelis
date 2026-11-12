@@ -184,6 +184,60 @@ export interface TvSeriesDetails {
   availableLanguages?: ('ES' | 'LAT' | 'VOSE' | 'EN')[];
 }
 
+export interface CatalaCatalogItem {
+  id: string;
+  title: string;
+  originalTitle: string;
+  tmdbId?: number;
+  mediaType: 'tv' | 'movie';
+  category: 'classics' | 'shonen' | 'movies' | 'all';
+  eraTag: string;
+  episodeHint: string;
+  year: string;
+  rating: string;
+  overview: string;
+  poster: string;
+  backdrop: string;
+  seasonCount: number;
+}
+
+export interface CatalaEpisodeItem {
+  id: string;
+  episodeNumber: number;
+  detectedNumber?: number;
+  seasonNumber: number;
+  title: string;
+  overview: string;
+  still: string;
+  runtime?: number;
+  streamUrl?: string;
+  ccmaVideoId?: string;
+  sourceType: 'archive_mp4' | 'ccma_3cat';
+  tracks?: StreamTrack[];
+}
+
+export interface CatalaSeriesDetails {
+  id: string;
+  title: string;
+  originalTitle?: string;
+  eraTag: string;
+  year?: string;
+  rating?: string;
+  overview: string;
+  poster: string;
+  backdrop: string;
+  activeSeason: number;
+  seasons: TvSeasonSummary[];
+  episodes: CatalaEpisodeItem[];
+}
+
+export interface CatalaCommunityLink {
+  id: string;
+  label: string;
+  url: string;
+  desc: string;
+}
+
 export interface YouTubeSearchItem {
   id: string;
   videoId: string;

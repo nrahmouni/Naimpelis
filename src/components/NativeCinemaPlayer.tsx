@@ -94,7 +94,16 @@ interface NativeCinemaPlayerProps {
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
   onPromoteCloudStreamToNative: (proxiedStreamUrl: string) => void;
   onOpenCatalogSection?: (
-    section: 'movies' | 'series' | 'anime' | 'tdt' | 'sports' | 'youtube' | 'direct'
+    section:
+      | 'movies'
+      | 'series'
+      | 'castellano'
+      | 'catala'
+      | 'anime'
+      | 'tdt'
+      | 'sports'
+      | 'youtube'
+      | 'direct'
   ) => void;
   onNextEpisode?: () => void;
   onProgressUpdate?: (currentTimeSec: number, durationSec: number) => void;
