@@ -14,6 +14,7 @@ export type PlaybackEngineMode =
   | 'hls'
   | 'direct'
   | 'youtube'
+  | 'embed'
   | 'cloud';
 
 export interface StreamTrack {
@@ -33,7 +34,9 @@ export interface StreamTrack {
     | 'tdt_hls'
     | 'direct_hls'
     | 'direct_mp4'
-    | 'youtube';
+    | 'youtube'
+    | 'web_embed'
+    | 'cloud_browser';
   /** Cached proxied HLS or direct URL ready for <video> */
   resolvedStreamUrl?: string;
 }
@@ -86,6 +89,21 @@ export interface SubtitleTrackItem {
   rawContent?: string;
 }
 
+export type StreamingProviderId =
+  | 'all'
+  | 'netflix'
+  | 'hbomax'
+  | 'disney'
+  | 'prime'
+  | 'apple'
+  | 'movistar'
+  | 'skyshowtime'
+  | 'anime_all'
+  | 'crunchyroll'
+  | 'animebox'
+  | 'jkanime'
+  | 'animeflv';
+
 export interface CatalogMovie {
   id: string;
   tmdbId?: number;
@@ -100,6 +118,8 @@ export interface CatalogMovie {
   movidyUrl?: string;
   bingetrixUrl?: string;
   languages: string[];
+  platform?: string;
+  providerId?: StreamingProviderId;
 }
 
 export interface CastMemberItem {
@@ -127,6 +147,7 @@ export interface MediaRichDetails {
   cast: CastMemberItem[];
   similar: CatalogMovie[];
   availableLanguages?: ('ES' | 'LAT' | 'VOSE' | 'EN')[];
+  watchProviders?: string[];
 }
 
 export interface TvSeasonSummary {

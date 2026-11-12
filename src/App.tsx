@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
+  LayoutGrid,
   Film,
-  Trophy,
-  Youtube,
   MessageSquare,
   Radio,
-  Share2,
   Check,
   LogOut,
   PanelRightClose,
@@ -31,6 +29,7 @@ import {
   LanguageNoticePopup,
   OnlineAppUser,
   Participant,
+  PlaybackEngineMode,
   PollProposalItem,
   RestoredRoomBlueprint,
   RoomPollState,
@@ -173,7 +172,7 @@ function loadSessionRoomPins(): Record<string, string> {
   }
 }
 
-type MobileNavTab = 'movies' | 'tdt' | 'sports' | 'youtube' | 'chat' | 'room';
+type MobileNavTab = 'home' | 'movies' | 'tdt' | 'sports' | 'youtube' | 'chat' | 'room';
 
 export function App() {
   const [lang, setLang] = useState<AppLanguage>('es');
@@ -313,8 +312,8 @@ export function App() {
   const [cloudState, setCloudState] = useState<CloudBrowserState | null>(null);
 
   // Navigation & Extraction State
-  const [catalogSection, setCatalogSection] = useState<CatalogSection>('movies');
-  const [mobileTab, setMobileTab] = useState<MobileNavTab>('movies');
+  const [catalogSection, setCatalogSection] = useState<CatalogSection>('home');
+  const [mobileTab, setMobileTab] = useState<MobileNavTab>('home');
   const [openQueueTrigger, setOpenQueueTrigger] = useState<number>(0);
   const [queueAddedNotice, setQueueAddedNotice] = useState<string | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
@@ -551,6 +550,8 @@ export function App() {
           lastLocalRoom?.name ||
           `Sala de ${firstName}`;
         setShowIntro(false);
+        setCatalogSection('home');
+        setMobileTab('home');
         setRoomId(targetCode);
         setRoomName(targetRoomTitle);
         setInRoom(true);
@@ -1245,6 +1246,8 @@ export function App() {
         `/${encodeURIComponent(targetRoomId)}`
       );
     }
+    setCatalogSection('home');
+    setMobileTab('home');
     setRoomId(targetRoomId);
     setRoomName(customName || `Sala ${targetRoomId.toUpperCase()}`);
     setInRoom(true);
@@ -1268,6 +1271,8 @@ export function App() {
     setVideoState(INITIAL_VIDEO_STATE);
     setCloudFrame(null);
     setCloudState(null);
+    setCatalogSection('home');
+    setMobileTab('home');
     setRoomId(targetRoomId);
     setRoomName(customName || `Sala ${targetRoomId.toUpperCase()}`);
     setInRoom(true);
@@ -1419,6 +1424,11 @@ export function App() {
         return;
       }
 
+      if (data.mode === 'cloud') {
+        socketService.startCloudBrowser(data.streamUrl, profile.name);
+        return;
+      }
+
       const tracks: StreamTrack[] = data.tracks || [];
       const activeIdx = Math.max(
         0,
@@ -1531,6 +1541,7 @@ export function App() {
         episode: String(episode.episodeNumber),
         preferLang,
         title: series.title,
+        episodeTitle: episode.title || '',
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`);
       const data = await res.json();
@@ -1539,6 +1550,11 @@ export function App() {
         setExtractionError(
           data?.error || 'Este episodio aún no tiene señal directa disponible.'
         );
+        return;
+      }
+
+      if (data.mode === 'cloud') {
+        socketService.startCloudBrowser(data.streamUrl, profile.name);
         return;
       }
 
@@ -1676,11 +1692,16 @@ export function App() {
           episode: String(item.episode),
           preferLang: item.preferLang || 'ES',
           title: item.title,
+          episodeTitle: item.episodeTitle || '',
         });
         const res = await fetch(`/api/extract/stream?${params.toString()}`);
         const data = await res.json();
         if (!res.ok || !data?.success || !data?.streamUrl) {
           setExtractionError('Este episodio no está disponible en este momento.');
+          return;
+        }
+        if (data.mode === 'cloud') {
+          socketService.startCloudBrowser(data.streamUrl, profile.name);
           return;
         }
 
@@ -1931,9 +1952,12 @@ export function App() {
           await handlePlaySportsMatch(match, channelIndex + 1);
           return;
         }
-        setExtractionError(
-          data?.error || 'La señal de este canal no está emitiendo ahora mismo.'
-        );
+        socketService.startCloudBrowser(channel.sourceUrl, profile.name);
+        return;
+      }
+
+      if (data.mode === 'cloud') {
+        socketService.startCloudBrowser(data.streamUrl, profile.name);
         return;
       }
 
@@ -2070,9 +2094,12 @@ export function App() {
       const data = await res.json();
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        setExtractionError(
-          data?.error || 'La señal de este canal favorito no está activa ahora mismo.'
-        );
+        socketService.startCloudBrowser(favCh.channelUrl, profile.name);
+        return;
+      }
+
+      if (data.mode === 'cloud') {
+        socketService.startCloudBrowser(data.streamUrl, profile.name);
         return;
       }
 
@@ -2142,6 +2169,17 @@ export function App() {
     playCinemaSound('play');
   };
 
+  const resolveTrackPlaybackMode = (
+    track: StreamTrack,
+    fallbackMode: PlaybackEngineMode
+  ): PlaybackEngineMode => {
+    if (track.resolverType === 'youtube') return 'youtube';
+    if (track.resolverType === 'web_embed') return 'embed';
+    if (track.resolverType === 'direct_mp4') return 'direct';
+    if (fallbackMode === 'embed' || fallbackMode === 'youtube') return 'hls';
+    return fallbackMode || 'hls';
+  };
+
   const handleSelectTrack = async (trackIndex: number, resumeTimeSec: number) => {
     const targetTrack = videoState.tracks[trackIndex];
     if (!targetTrack) return;
@@ -2149,8 +2187,10 @@ export function App() {
     const resumeAt = videoState.isLive ? 0 : resumeTimeSec;
 
     if (targetTrack.resolvedStreamUrl) {
+      const nextMode = resolveTrackPlaybackMode(targetTrack, videoState.mode);
       const instantState: VideoState = {
         ...videoState,
+        mode: nextMode,
         url: targetTrack.resolvedStreamUrl,
         rawSourceUrl: targetTrack.sourceUrl,
         subtitle: targetTrack.label,
@@ -2164,9 +2204,9 @@ export function App() {
       socketService.syncVideoState('change_url', instantState, profile.name);
       showLanguageNotice({
         type: 'success',
-        title: `✓ Idioma cambiado a: ${targetTrack.label}`,
+        title: `✓ Fuente activa: ${targetTrack.label}`,
         subtitle:
-          resumeAt > 3
+          resumeAt > 3 && (nextMode === 'hls' || nextMode === 'direct')
             ? `Sincronizado en el segundo exacto (${Math.floor(resumeAt / 60)}:${String(
                 Math.floor(resumeAt % 60)
               ).padStart(2, '0')})`
@@ -2290,6 +2330,10 @@ export function App() {
       const data = await res.json();
 
       if (res.ok && data?.success && data?.streamUrl) {
+        if (data.mode === 'cloud') {
+          socketService.startCloudBrowser(data.streamUrl, profile.name);
+          return;
+        }
         const nextState: VideoState = {
           mode: data.mode || 'hls',
           url: data.streamUrl,
@@ -2298,6 +2342,8 @@ export function App() {
           subtitle:
             data.mode === 'youtube'
               ? 'YouTube Sincronizado'
+              : data.mode === 'embed'
+              ? 'Reproductor Web Integrado'
               : 'Flujo Nativo Sin Anuncios',
           currentTime: 0,
           isPlaying: true,
@@ -2897,6 +2943,8 @@ export function App() {
     setVideoState(INITIAL_VIDEO_STATE);
     setCloudFrame(null);
     setCloudState(null);
+    setCatalogSection('home');
+    setMobileTab('home');
     setRoomId(invite.roomId);
     setRoomName(invite.roomName || `Sala ${invite.roomId.toUpperCase()}`);
     setInRoom(true);
@@ -3480,6 +3528,12 @@ export function App() {
               {(
                 [
                   {
+                    id: 'home',
+                    label: lang === 'es' ? 'Inicio' : 'Home',
+                    isActive: catalogSection === 'home',
+                    onClick: () => setCatalogSection('home'),
+                  },
+                  {
                     id: 'movies',
                     label: lang === 'es' ? 'Películas' : 'Movies',
                     isActive: catalogSection === 'movies' || catalogSection === 'vose',
@@ -3487,27 +3541,21 @@ export function App() {
                   },
                   {
                     id: 'series',
-                    label: t.tabSeries,
+                    label: lang === 'es' ? 'Series' : 'Series',
                     isActive: catalogSection === 'series',
                     onClick: () => setCatalogSection('series'),
                   },
                   {
+                    id: 'anime',
+                    label: 'Anime',
+                    isActive: catalogSection === 'anime',
+                    onClick: () => setCatalogSection('anime'),
+                  },
+                  {
                     id: 'tdt',
-                    label: t.tabTdt,
-                    isActive: catalogSection === 'tdt',
+                    label: lang === 'es' ? 'TV en Vivo' : 'Live TV',
+                    isActive: catalogSection === 'tdt' || catalogSection === 'sports',
                     onClick: () => setCatalogSection('tdt'),
-                  },
-                  {
-                    id: 'sports',
-                    label: t.tabSports,
-                    isActive: catalogSection === 'sports',
-                    onClick: () => setCatalogSection('sports'),
-                  },
-                  {
-                    id: 'youtube',
-                    label: t.tabYoutube,
-                    isActive: catalogSection === 'youtube',
-                    onClick: () => setCatalogSection('youtube'),
                   },
                 ] as const
               ).map((navItem) => (
@@ -3515,7 +3563,7 @@ export function App() {
                   key={navItem.id}
                   type="button"
                   onClick={navItem.onClick}
-                  className={`h-[58px] flex items-center gap-1.5 border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`h-[56px] flex items-center gap-1.5 border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     navItem.isActive
                       ? 'border-[#E11D48] text-white font-semibold'
                       : 'border-transparent text-zinc-400 hover:text-white'
@@ -3689,8 +3737,6 @@ export function App() {
                           : isAutoImmersiveLandscape
                           ? 'block h-full flex-1 bg-black'
                           : 'block border-b border-white/[0.08]'
-                        : isDesktopLayout
-                        ? 'block max-w-7xl mx-auto px-6 pt-5'
                         : 'hidden'
                     }`
               }
@@ -3759,6 +3805,10 @@ export function App() {
                   currentUserId={currentUser.id}
                   onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
                   onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
+                  onOpenInCloudBrowser={(targetUrl) => {
+                    if (!canControlRoom) return;
+                    socketService.startCloudBrowser(targetUrl, profile.name);
+                  }}
                   floatingChatOpen={floatingChatOpen}
                   onToggleFloatingChat={() => setFloatingChatOpen((v) => !v)}
                   compactVideoForMobileKeyboard={
@@ -3766,7 +3816,7 @@ export function App() {
                   }
                   onOpenCatalogSection={(sec) => {
                     setCatalogSection(sec);
-                    if (sec === 'movies' || sec === 'series') setMobileTab('movies');
+                    if (sec === 'movies' || sec === 'series' || sec === 'anime') setMobileTab('movies');
                     else if (sec === 'tdt') setMobileTab('tdt');
                     else if (sec === 'sports') setMobileTab('sports');
                     else if (sec === 'youtube') setMobileTab('youtube');
@@ -3983,7 +4033,14 @@ export function App() {
                       return;
                     }
                     setCatalogSection(sec);
-                    if (sec === 'movies' || sec === 'vose' || sec === 'series') {
+                    if (sec === 'home') {
+                      setMobileTab('home');
+                    } else if (
+                      sec === 'movies' ||
+                      sec === 'vose' ||
+                      sec === 'series' ||
+                      sec === 'anime'
+                    ) {
                       setMobileTab('movies');
                     } else if (sec === 'tdt') {
                       setMobileTab('tdt');
@@ -4096,25 +4153,48 @@ export function App() {
           )}
         </div>
 
-        {/* Floating Glass Bottom Navigation Island (separated from content, backdrop-blur, outline icons, >=48px touch targets) */}
+        {/* Clean 4-Tab Mobile Bottom Bar (Inicio · Cine/Series · TV en Vivo · Sala/Chat) */}
         {!isDesktopLayout && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
           <div className="shrink-0 px-3 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#050507] via-[#050507]/90 to-transparent z-30">
             <nav
-              className="rounded-3xl bg-[#0B0B12]/90 backdrop-blur-2xl border border-white/[0.12] shadow-[0_18px_45px_rgba(0,0,0,0.85)] p-1.5 grid grid-cols-5 gap-1"
+              className="rounded-3xl bg-[#0B0B12]/90 backdrop-blur-2xl border border-white/[0.12] shadow-[0_18px_45px_rgba(0,0,0,0.85)] p-1.5 grid grid-cols-4 gap-1.5"
               aria-label="Navegación móvil NAIM CINE"
             >
               {(
                 [
                   {
+                    id: 'home',
+                    label: lang === 'es' ? 'Inicio' : 'Home',
+                    icon: LayoutGrid,
+                    isActive:
+                      mobileTab !== 'chat' &&
+                      mobileTab !== 'room' &&
+                      catalogSection === 'home',
+                    onSelect: () => {
+                      setMobileTab('home');
+                      setCatalogSection('home');
+                      catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                    },
+                  },
+                  {
                     id: 'movies',
-                    label: lang === 'es' ? 'Cine' : 'Cinema',
+                    label: lang === 'es' ? 'Cine y Series' : 'Movies & TV',
                     icon: Film,
+                    isActive:
+                      mobileTab !== 'chat' &&
+                      mobileTab !== 'room' &&
+                      (catalogSection === 'movies' ||
+                        catalogSection === 'vose' ||
+                        catalogSection === 'series' ||
+                        catalogSection === 'anime' ||
+                        catalogSection === 'youtube'),
                     onSelect: () => {
                       setMobileTab('movies');
                       if (
                         catalogSection !== 'movies' &&
                         catalogSection !== 'vose' &&
-                        catalogSection !== 'series'
+                        catalogSection !== 'series' &&
+                        catalogSection !== 'anime'
                       ) {
                         setCatalogSection('movies');
                       }
@@ -4122,36 +4202,25 @@ export function App() {
                   },
                   {
                     id: 'tdt',
-                    label: lang === 'es' ? 'TV Vivo' : 'Live TV',
+                    label: lang === 'es' ? 'TV en Vivo' : 'Live TV',
                     icon: Radio,
+                    isActive:
+                      mobileTab !== 'chat' &&
+                      mobileTab !== 'room' &&
+                      (catalogSection === 'tdt' || catalogSection === 'sports'),
                     onSelect: () => {
                       setMobileTab('tdt');
-                      setCatalogSection('tdt');
-                    },
-                  },
-                  {
-                    id: 'sports',
-                    label: lang === 'es' ? 'Fútbol' : 'Sports',
-                    icon: Trophy,
-                    onSelect: () => {
-                      setMobileTab('sports');
-                      setCatalogSection('sports');
-                    },
-                  },
-                  {
-                    id: 'youtube',
-                    label: 'YouTube',
-                    icon: Youtube,
-                    onSelect: () => {
-                      setMobileTab('youtube');
-                      setCatalogSection('youtube');
+                      if (catalogSection !== 'tdt' && catalogSection !== 'sports') {
+                        setCatalogSection('tdt');
+                      }
                     },
                   },
                   {
                     id: 'chat',
                     label: lang === 'es' ? 'Sala · Chat' : 'Room',
                     icon: MessageSquare,
-                    badge: (unreadChatCount + roomQueue.length) || undefined,
+                    isActive: mobileTab === 'chat' || mobileTab === 'room',
+                    badge: unreadChatCount + roomQueue.length || undefined,
                     onSelect: () => {
                       if (unreadChatCount === 0 && roomQueue.length > 0) {
                         setOpenQueueTrigger((n) => n + 1);
@@ -4163,8 +4232,7 @@ export function App() {
                 ] as const
               ).map((item) => {
                 const Icon = item.icon;
-                const active =
-                  mobileTab === item.id || (item.id === 'chat' && mobileTab === 'room');
+                const active = item.isActive;
                 return (
                   <button
                     key={item.id}
@@ -4196,7 +4264,7 @@ export function App() {
                       ) : null}
                     </div>
                     <span
-                      className={`text-[0.68rem] leading-tight tracking-tight whitespace-nowrap ${
+                      className={`text-[0.68rem] leading-tight tracking-tight whitespace-nowrap shrink-0 ${
                         active ? 'font-bold text-white' : 'font-medium text-zinc-400'
                       }`}
                     >

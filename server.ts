@@ -122,13 +122,15 @@ interface TrackRecord {
     | 'tdt_hls'
     | 'direct_hls'
     | 'direct_mp4'
-    | 'youtube';
+    | 'youtube'
+    | 'web_embed'
+    | 'cloud_browser';
   resolvedStreamUrl?: string;
 }
 
 interface ExtractedStreamResult {
   success: boolean;
-  mode: 'hls' | 'direct' | 'youtube';
+  mode: 'hls' | 'direct' | 'youtube' | 'embed' | 'cloud';
   streamUrl: string;
   rawStreamUrl?: string;
   referer?: string;
@@ -151,7 +153,9 @@ function buildHlsProxyUrl(rawM3u8Url: string, referer: string, transcodeAudio = 
 }
 
 function buildTsProxyUrl(rawMediaUrl: string, referer: string, transcodeAudio = false): string {
-  const isMp4Segment = /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(rawMediaUrl);
+  const isMp4Segment =
+    /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(rawMediaUrl) ||
+    /\/segs\/[^/]+\/init\./i.test(rawMediaUrl);
   const ext = isMp4Segment ? 'segment.m4s' : 'segment.ts';
   const needsAac = !isMp4Segment && (transcodeAudio || isDvbHeadendStream(rawMediaUrl));
   return `/api/ts-proxy/${ext}?url=${encodeURIComponent(rawMediaUrl)}&referer=${encodeURIComponent(referer)}${needsAac ? '&aac=1' : ''}`;
@@ -706,6 +710,218 @@ async function resolveSeriesKaoVidurlTracks(opts: {
   }
 }
 
+const animeAv1SlugCache = new Map<string, { slug: string | null; ts: number }>();
+
+async function extractAnimeAv1Tracks(opts: {
+  titleHints: string[];
+  mediaType: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+}): Promise<TrackRecord[]> {
+  try {
+    const rawHints = Array.from(
+      new Set(
+        opts.titleHints
+          .flatMap((raw) => {
+            const clean = String(raw || '').replace(/\s*\([^)]*\)/g, '').trim();
+            const beforeColon = clean.includes(':') ? clean.split(':')[0].trim() : '';
+            const afterColon = clean.includes(':') ? clean.split(':').slice(1).join(' ').trim() : '';
+            return [clean, beforeColon, afterColon];
+          })
+          .filter((s) => s.length >= 2 && !/[\u3040-\u30ff\u4e00-\u9faf]/.test(s))
+      )
+    );
+    if (rawHints.length === 0) return [];
+
+    const seasonNum = opts.mediaType === 'tv' ? Math.max(1, opts.season || 1) : 1;
+    const epNum = opts.mediaType === 'tv' ? Math.max(1, opts.episode || 1) : 1;
+    const slugCacheKey = `${opts.mediaType}|s${seasonNum}|${normalizeTitleForMatch(rawHints[0])}`;
+
+    let matchedSlug: string | null = null;
+    const cachedSlug = animeAv1SlugCache.get(slugCacheKey);
+    if (cachedSlug && Date.now() - cachedSlug.ts < 30 * 60 * 1000) {
+      matchedSlug = cachedSlug.slug;
+    } else {
+      const normHints = rawHints.map((h) => normalizeTitleForMatch(h)).filter(Boolean);
+
+      for (const q of rawHints.slice(0, 3)) {
+        try {
+          const sRes = await fetch(
+            `https://animeav1.com/catalogo?search=${encodeURIComponent(q)}`,
+            {
+              headers: {
+                'User-Agent': CHROME_UA,
+                Referer: 'https://animeav1.com/',
+              },
+              signal: AbortSignal.timeout(3800),
+            }
+          );
+          if (!sRes.ok) continue;
+          const sHtml = await sRes.text();
+          const rIdx = sHtml.indexOf('results:[');
+          if (rIdx === -1) continue;
+          const block = sHtml.slice(rIdx, rIdx + 28000);
+
+          const candidates = [
+            ...block.matchAll(/\{id:"?\d+"?,title:"([^"]+)"[^{}]*?slug:"([^"]+)"/g),
+          ].map((m) => ({
+            title: m[1],
+            slug: m[2],
+          }));
+
+          let bestSlug: string | null = null;
+          let bestScore = -999;
+
+          for (const cand of candidates) {
+            const normCand = normalizeTitleForMatch(cand.title);
+            const slugLower = cand.slug.toLowerCase();
+            if (!normCand) continue;
+
+            let baseScore = 0;
+            for (const nh of normHints) {
+              if (normCand === nh || slugLower === nh.replace(/\s+/g, '-')) {
+                baseScore = Math.max(baseScore, 100);
+              } else if (normCand.startsWith(`${nh} `) || slugLower.startsWith(`${nh.replace(/\s+/g, '-')}-`)) {
+                baseScore = Math.max(baseScore, 84);
+              } else if (normCand.includes(nh) || nh.includes(normCand)) {
+                baseScore = Math.max(baseScore, 65);
+              }
+            }
+            if (baseScore < 60) continue;
+
+            const isMovieEntry = /\b(movie|pelicula|film)\b/i.test(`${cand.title} ${cand.slug}`);
+            const isSpecialOrOva = /\b(ova|special|sunny-side|recap|summary)\b/i.test(
+              `${cand.title} ${cand.slug}`
+            );
+            const hasSeasonN = new RegExp(
+              `(?:season[-\\s]*${seasonNum}|${seasonNum}(?:nd|rd|th)[-\\s]*season|\\bpart[-\\s]*${seasonNum}\\b)`,
+              'i'
+            ).test(`${cand.title} ${cand.slug}`);
+            const hasAnyHigherSeason =
+              /(?:season[-\s]*[2-9]|[2-9](?:nd|rd|th)[-\s]*season)/i.test(
+                `${cand.title} ${cand.slug}`
+              );
+
+            if (opts.mediaType === 'movie') {
+              if (isMovieEntry) baseScore += 22;
+              if (hasAnyHigherSeason) baseScore -= 30;
+            } else {
+              if (isMovieEntry) baseScore -= 45;
+              if (isSpecialOrOva) baseScore -= 35;
+              if (seasonNum >= 2) {
+                if (hasSeasonN) baseScore += 35;
+                else baseScore -= 25;
+              } else if (hasAnyHigherSeason) {
+                baseScore -= 28;
+              }
+            }
+
+            if (baseScore > bestScore) {
+              bestScore = baseScore;
+              bestSlug = cand.slug;
+            }
+          }
+
+          if (bestSlug && bestScore >= 55) {
+            matchedSlug = bestSlug;
+            break;
+          }
+        } catch {
+          // try next hint
+        }
+      }
+
+      animeAv1SlugCache.set(slugCacheKey, { slug: matchedSlug, ts: Date.now() });
+    }
+
+    if (!matchedSlug) return [];
+
+    const epUrl = `https://animeav1.com/media/${matchedSlug}/${epNum}`;
+    const epRes = await fetch(epUrl, {
+      headers: {
+        'User-Agent': CHROME_UA,
+        Referer: 'https://animeav1.com/',
+      },
+      signal: AbortSignal.timeout(4000),
+    });
+    if (!epRes.ok) return [];
+    const epHtml = await epRes.text();
+
+    const embedsIdx = epHtml.indexOf('embeds:{');
+    if (embedsIdx === -1) return [];
+    const embedsSlice = epHtml.slice(embedsIdx, embedsIdx + 4500);
+
+    const subBlockMatch = embedsSlice.match(/SUB:\s*\[([\s\S]*?)\]/);
+    const dubBlockMatch = embedsSlice.match(/DUB:\s*\[([\s\S]*?)\]/);
+
+    const resolveBlockTracks = async (
+      blockStr: string | undefined,
+      langCode: 'VOSE' | 'LAT',
+      langLabel: string
+    ): Promise<TrackRecord[]> => {
+      if (!blockStr) return [];
+      const found: TrackRecord[] = [];
+      const zillaMatch = blockStr.match(
+        /https:\/\/player\.zilla-networks\.com\/play\/([a-f0-9]{16,64})/i
+      );
+      if (zillaMatch?.[1]) {
+        const hash = zillaMatch[1];
+        const playRef = `https://player.zilla-networks.com/play/${hash}`;
+        const rawM3u8 = `https://player.zilla-networks.com/m3u8/${hash}`;
+        try {
+          const chk = await fetch(rawM3u8, {
+            headers: {
+              'User-Agent': CHROME_UA,
+              Referer: playRef,
+            },
+            signal: AbortSignal.timeout(3000),
+          });
+          if (chk.ok) {
+            const m3uTxt = await chk.text();
+            if (m3uTxt.includes('#EXTM3U')) {
+              found.push({
+                id: `anime-zilla-${matchedSlug}-${epNum}-${langCode.toLowerCase()}`,
+                label: `${langLabel} · Anime HD`,
+                lang: langCode,
+                quality: '1080p HLS',
+                sourceUrl: rawM3u8,
+                resolverType: 'direct_hls',
+                resolvedStreamUrl: buildHlsProxyUrl(rawM3u8, playRef),
+              });
+            }
+          }
+        } catch {
+          // fallback below
+        }
+      }
+
+      if (found.length === 0) {
+        const voeMatch = blockStr.match(/https?:\/\/(?:voe\.sx|[a-z0-9.-]*voe[a-z0-9.-]*)\/e\/[a-zA-Z0-9]+/i);
+        if (voeMatch?.[0]) {
+          found.push({
+            id: `anime-voe-${matchedSlug}-${epNum}-${langCode.toLowerCase()}`,
+            label: `${langLabel} · Mirror`,
+            lang: langCode,
+            quality: 'HD',
+            sourceUrl: voeMatch[0],
+            resolverType: 'embed_sniff',
+          });
+        }
+      }
+      return found;
+    };
+
+    const [voseTracks, dubTracks] = await Promise.all([
+      resolveBlockTracks(subBlockMatch?.[1], 'VOSE', 'Sub Español VOSE'),
+      resolveBlockTracks(dubBlockMatch?.[1], 'LAT', 'Español Doblado'),
+    ]);
+
+    return [...dubTracks, ...voseTracks];
+  } catch {
+    return [];
+  }
+}
+
 async function extractEmbed69SpanishTracks(opts: {
   tmdbId?: string | number;
   imdbId?: string | null;
@@ -724,7 +940,9 @@ async function extractEmbed69SpanishTracks(opts: {
         : '';
 
     const hints = [...(opts.titleHints || [])].filter(Boolean);
-    if (opts.tmdbId && hints.length < 2) {
+    let isLikelyAnime = false;
+
+    if (opts.tmdbId) {
       try {
         const cleanId = String(opts.tmdbId).replace(/\D/g, '');
         const tmUrl =
@@ -740,13 +958,38 @@ async function extractEmbed69SpanishTracks(opts: {
           ).trim();
           if (esName) hints.push(esName);
           if (origName) hints.push(origName);
+
+          const genres: any[] = Array.isArray(tmJson?.genres) ? tmJson.genres : [];
+          const hasAnimGenre = genres.some((g) => Number(g?.id) === 16);
+          const origCountries: string[] = Array.isArray(tmJson?.origin_country)
+            ? tmJson.origin_country
+            : [];
+          const isJp =
+            String(tmJson?.original_language || '').toLowerCase() === 'ja' ||
+            origCountries.includes('JP');
+          isLikelyAnime = hasAnimGenre && isJp;
+
+          if (isLikelyAnime) {
+            const enUrl =
+              opts.mediaType === 'tv'
+                ? `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=en-US`
+                : `https://api.themoviedb.org/3/movie/${cleanId}?api_key=${TMDB_API_KEY}&language=en-US`;
+            const enRes = await fetch(enUrl, { signal: AbortSignal.timeout(2400) }).catch(
+              () => null
+            );
+            if (enRes?.ok) {
+              const enJson: any = await enRes.json();
+              const enName = String(enJson?.name || enJson?.title || '').trim();
+              if (enName) hints.push(enName);
+            }
+          }
         }
       } catch {
         // ignore
       }
     }
 
-    const [directTracks, skTracks] = await Promise.all([
+    const [directTracks, skTracks, animeTracks] = await Promise.all([
       imdbId
         ? fetchEmbed69HtmlWithMirrorAndAnubis(`${imdbId}${epSuffix}`)
             .then((html) => parseEmbed69OrMoeTracks(html, `${imdbId}${epSuffix}`))
@@ -760,17 +1003,38 @@ async function extractEmbed69SpanishTracks(opts: {
             episode: opts.episode,
           }).catch(() => [] as TrackRecord[])
         : Promise.resolve([] as TrackRecord[]),
+      isLikelyAnime && hints.length > 0
+        ? extractAnimeAv1Tracks({
+            titleHints: hints,
+            mediaType: opts.mediaType,
+            season: opts.season,
+            episode: opts.episode,
+          }).catch(() => [] as TrackRecord[])
+        : Promise.resolve([] as TrackRecord[]),
     ]);
 
-    const seenLangs = new Set<string>();
+    const seenTrackKeys = new Set<string>();
+    const seenEmbedLangs = new Set<string>();
     const merged: TrackRecord[] = [];
+
     for (const tr of [...directTracks, ...skTracks]) {
       const code = String(tr.lang || '').toUpperCase();
-      if (code && !seenLangs.has(code)) {
-        seenLangs.add(code);
+      if (code && !seenEmbedLangs.has(code)) {
+        seenEmbedLangs.add(code);
+        seenTrackKeys.add(`${code}:${tr.sourceUrl}`);
         merged.push(tr);
       }
     }
+
+    for (const atr of animeTracks) {
+      const code = String(atr.lang || '').toUpperCase();
+      const key = `${code}:${atr.sourceUrl}`;
+      if (code && !seenTrackKeys.has(key)) {
+        seenTrackKeys.add(key);
+        merged.push(atr);
+      }
+    }
+
     const orderMap: Record<string, number> = { ES: 1, LAT: 2, VOSE: 3 };
     return merged.sort((a, b) => (orderMap[a.lang] || 9) - (orderMap[b.lang] || 9));
   } catch (err) {
@@ -1958,7 +2222,7 @@ interface RoomRecord {
   name: string;
   hostId: string;
   videoState: {
-    mode: 'idle' | 'hls' | 'direct' | 'youtube' | 'cloud';
+    mode: 'idle' | 'hls' | 'direct' | 'youtube' | 'embed' | 'cloud';
     url: string;
     rawSourceUrl: string;
     title: string;
@@ -2038,7 +2302,7 @@ function loadPersistedRoomsFromDisk() {
     const raw = fs.readFileSync(ROOMS_SNAPSHOT_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return;
-    const validModes = new Set(['idle', 'hls', 'direct', 'youtube', 'cloud']);
+    const validModes = new Set(['idle', 'hls', 'direct', 'youtube', 'embed', 'cloud']);
     for (const item of parsed.slice(0, 120)) {
       if (item && typeof item.id === 'string') {
         const vs = item.videoState;
@@ -3828,7 +4092,9 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
   const forceAac = req.query.aac === '1' || isDvbHeadendStream(targetUrl);
   if (!targetUrl) return res.status(400).end();
 
-  const isUrlMp4 = /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(targetUrl);
+  const isUrlMp4 =
+    /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(targetUrl) ||
+    /\/segs\/[^/]+\/init\./i.test(targetUrl);
 
   if (forceAac && !isUrlMp4) {
     try {
@@ -4057,22 +4323,293 @@ async function scrapeMovidyCatalog(opts: {
   }
 }
 
+const ANIME_PROVIDER_IDS = new Set([
+  'anime_all',
+  'crunchyroll',
+  'animebox',
+  'jkanime',
+  'animeflv',
+]);
+
+// Selecta Visión / AnimeBox Spain flagship TV & Movie TMDB IDs (always authentic & rich in Castellano/VOSE)
+const ANIMEBOX_CURATED_TV_IDS = [
+  12971, // Dragon Ball Z
+  12609, // Dragon Ball
+  62715, // Dragon Ball Super
+  46260, // Naruto
+  31910, // Naruto Shippuden
+  1429, // Attack on Titan (Shingeki no Kyojin)
+  203737, // Oshi no Ko
+  46261, // Fairy Tail
+  60863, // Haikyu!!
+  42444, // Saint Seiya: Los Caballeros del Zodiaco
+  30669, // Yu Yu Hakusho
+  42445, // Slam Dunk
+  35610, // Inuyasha
+  61374, // Tokyo Ghoul
+  61663, // Assassination Classroom
+];
+
+const ANIMEBOX_CURATED_MOVIE_IDS = [
+  372058, // Your Name
+  916224, // Suzume
+  503314, // Dragon Ball Super: Broly
+  149, // Akira
+  378064, // A Silent Voice (La voz silenciosa)
+  568160, // El tiempo contigo (Weathering with You)
+  783675, // The First Slam Dunk
+  635302, // Kimetsu no Yaiba: El tren infinito
+];
+
+const STREAMING_PROVIDER_MAP: Record<
+  string,
+  {
+    id: string;
+    label: string;
+    watchProviders: string;
+    tvNetworks: string;
+    movieCompanies?: string;
+    isAnimePortal?: boolean;
+    watchRegion?: string;
+  }
+> = {
+  netflix: {
+    id: 'netflix',
+    label: 'Netflix',
+    watchProviders: '8|1796',
+    tvNetworks: '213',
+  },
+  hbomax: {
+    id: 'hbomax',
+    label: 'HBO Max',
+    watchProviders: '1899|1825|384',
+    tvNetworks: '49|3186',
+    movieCompanies: '174|49',
+  },
+  disney: {
+    id: 'disney',
+    label: 'Disney+',
+    watchProviders: '337',
+    tvNetworks: '2739|453|88',
+    movieCompanies: '2|3|420|1',
+  },
+  prime: {
+    id: 'prime',
+    label: 'Prime Video',
+    watchProviders: '119|2100',
+    tvNetworks: '1024',
+    movieCompanies: '1024|20580',
+  },
+  apple: {
+    id: 'apple',
+    label: 'Apple TV+',
+    watchProviders: '350|2243',
+    tvNetworks: '2552',
+    movieCompanies: '194232',
+  },
+  movistar: {
+    id: 'movistar',
+    label: 'Movistar+',
+    watchProviders: '2241|149',
+    tvNetworks: '678',
+  },
+  skyshowtime: {
+    id: 'skyshowtime',
+    label: 'SkyShowtime',
+    watchProviders: '1773|2801',
+    tvNetworks: '4330|67',
+  },
+  anime_all: {
+    id: 'anime_all',
+    label: 'Anime',
+    watchProviders: '',
+    tvNetworks: '',
+    isAnimePortal: true,
+  },
+  crunchyroll: {
+    id: 'crunchyroll',
+    label: 'Crunchyroll',
+    watchProviders: '283|1968',
+    tvNetworks: '1112',
+    isAnimePortal: true,
+    watchRegion: 'US',
+  },
+  animebox: {
+    id: 'animebox',
+    label: 'AnimeBox',
+    watchProviders: '2735',
+    tvNetworks: '',
+    isAnimePortal: true,
+    watchRegion: 'ES',
+  },
+  jkanime: {
+    id: 'jkanime',
+    label: 'JKAnime',
+    watchProviders: '',
+    tvNetworks: '',
+    isAnimePortal: true,
+  },
+  animeflv: {
+    id: 'animeflv',
+    label: 'AnimeFLV',
+    watchProviders: '',
+    tvNetworks: '',
+    isAnimePortal: true,
+  },
+};
+
+function resolveEffectiveProviderAndQuery(
+  rawProvider: string,
+  rawQuery: string
+): { provider: string; query: string } {
+  const cleanProvider = String(rawProvider || 'all').toLowerCase().trim();
+  const cleanQuery = String(rawQuery || '').trim();
+  const normQ = cleanQuery.toLowerCase().replace(/\s+/g, ' ');
+
+  if (normQ === 'netflix') return { provider: 'netflix', query: '' };
+  if (normQ === 'hbo' || normQ === 'hbo max' || normQ === 'hbomax' || normQ === 'max') {
+    return { provider: 'hbomax', query: '' };
+  }
+  if (normQ === 'disney' || normQ === 'disney+' || normQ === 'disney plus') {
+    return { provider: 'disney', query: '' };
+  }
+  if (
+    normQ === 'prime' ||
+    normQ === 'prime video' ||
+    normQ === 'amazon' ||
+    normQ === 'amazon prime'
+  ) {
+    return { provider: 'prime', query: '' };
+  }
+  if (normQ === 'apple tv' || normQ === 'apple tv+' || normQ === 'apple') {
+    return { provider: 'apple', query: '' };
+  }
+  if (normQ === 'movistar' || normQ === 'movistar+' || normQ === 'movistar plus') {
+    return { provider: 'movistar', query: '' };
+  }
+  if (normQ === 'skyshowtime') {
+    return { provider: 'skyshowtime', query: '' };
+  }
+  if (normQ === 'crunchyroll') {
+    return { provider: 'crunchyroll', query: '' };
+  }
+  if (normQ === 'animebox' || normQ === 'anime box') {
+    return { provider: 'animebox', query: '' };
+  }
+  if (normQ === 'jkanime' || normQ === 'jk anime') {
+    return { provider: 'jkanime', query: '' };
+  }
+  if (normQ === 'animeflv' || normQ === 'anime flv') {
+    return { provider: 'animeflv', query: '' };
+  }
+  if (normQ === 'anime') {
+    return { provider: 'anime_all', query: '' };
+  }
+
+  return {
+    provider: STREAMING_PROVIDER_MAP[cleanProvider] ? cleanProvider : 'all',
+    query: cleanQuery,
+  };
+}
+
+const ANIME_MOVIE_GENRE_EXTRAS: Record<string, string> = {
+  shonen: '16,28',
+  action: '16,28',
+  fantasy: '16,14',
+  scifi: '16,878',
+  comedy: '16,35',
+  drama: '16,18',
+};
+
+async function fetchTmdbItemsByIds(
+  ids: number[],
+  mediaType: 'movie' | 'tv',
+  lang: 'es-ES' | 'en-US'
+): Promise<any[]> {
+  const results = await Promise.all(
+    ids.map((id) =>
+      fetch(
+        `https://api.themoviedb.org/3/${mediaType}/${id}?api_key=${TMDB_API_KEY}&language=${lang}`,
+        { signal: AbortSignal.timeout(3500) }
+      )
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+    )
+  );
+  return results.filter((x) => x && x.id && (x.poster_path || x.backdrop_path));
+}
+
 async function fetchTmdbMovieCatalog(opts: {
   lang: 'es-ES' | 'en-US';
   category: string;
   page: number;
   query: string;
+  provider?: string;
 }) {
-  const { lang, category, page, query } = opts;
-  const cacheKey = `${lang}|${category}|${page}|${query}`;
+  const { lang, category, page } = opts;
+  const { provider, query } = resolveEffectiveProviderAndQuery(opts.provider || 'all', opts.query);
+  const provCfg = STREAMING_PROVIDER_MAP[provider];
+  const isAnime = ANIME_PROVIDER_IDS.has(provider);
+
+  const cacheKey = `v5|${lang}|${provider}|${category}|${page}|${query}`;
   const cached = movieCatalogCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
     return cached;
   }
 
+  const todayIso = new Date().toISOString().slice(0, 10);
   let endpoint = '';
+  let curatedSeedItems: any[] = [];
+
   if (query) {
     endpoint = `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=${lang}&query=${encodeURIComponent(query)}&page=${page}&include_adult=false`;
+  } else if (isAnime) {
+    const animeGenres = ANIME_MOVIE_GENRE_EXTRAS[category] || '16';
+    const sortBy =
+      category === 'top_rated'
+        ? 'vote_average.desc'
+        : category === 'simulcast' || category === 'now_playing' || provider === 'jkanime'
+        ? 'primary_release_date.desc'
+        : provider === 'animeflv' && category === 'trending'
+        ? 'vote_count.desc'
+        : 'popularity.desc';
+    const minVotes =
+      category === 'top_rated'
+        ? 180
+        : sortBy === 'primary_release_date.desc'
+        ? 15
+        : 45;
+
+    if (provider === 'crunchyroll') {
+      endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&watch_region=US&with_watch_providers=283&with_watch_monetization_types=${encodeURIComponent(
+        'flatrate|ads|free'
+      )}&with_genres=${animeGenres}&with_original_language=ja&sort_by=${sortBy}&vote_count.gte=15&primary_release_date.lte=${todayIso}&page=${page}&include_adult=false`;
+    } else if (provider === 'animebox') {
+      if (page === 1 && (category === 'trending' || category === 'popular')) {
+        curatedSeedItems = await fetchTmdbItemsByIds(ANIMEBOX_CURATED_MOVIE_IDS, 'movie', lang);
+      }
+      endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&watch_region=ES&with_genres=${animeGenres}&with_original_language=ja&sort_by=${sortBy}&vote_count.gte=${minVotes}&primary_release_date.lte=${todayIso}&page=${page}&include_adult=false`;
+    } else {
+      endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&with_genres=${animeGenres}&with_original_language=ja&sort_by=${sortBy}&vote_count.gte=${minVotes}&primary_release_date.lte=${todayIso}&page=${page}&include_adult=false`;
+    }
+  } else if (provCfg) {
+    const sortBy =
+      category === 'top_rated'
+        ? 'vote_average.desc'
+        : category === 'now_playing'
+        ? 'primary_release_date.desc'
+        : 'popularity.desc';
+    const minVotes = category === 'top_rated' ? 300 : 120;
+    const genreParam = MOVIE_GENRE_MAP[category] ? `&with_genres=${MOVIE_GENRE_MAP[category]}` : '';
+    const companyParam =
+      category === 'originals' && provCfg.movieCompanies
+        ? `&with_companies=${encodeURIComponent(provCfg.movieCompanies)}`
+        : '';
+    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&watch_region=ES&with_watch_providers=${encodeURIComponent(
+      provCfg.watchProviders
+    )}&with_watch_monetization_types=${encodeURIComponent(
+      'flatrate|ads|free'
+    )}&sort_by=${sortBy}&vote_count.gte=${minVotes}&primary_release_date.lte=${todayIso}${genreParam}${companyParam}&page=${page}&include_adult=false`;
   } else if (category === 'popular') {
     endpoint = `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   } else if (category === 'top_rated') {
@@ -4080,27 +4617,52 @@ async function fetchTmdbMovieCatalog(opts: {
   } else if (category === 'now_playing') {
     endpoint = `https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   } else if (MOVIE_GENRE_MAP[category]) {
-    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=popularity.desc&vote_count.gte=25&with_genres=${MOVIE_GENRE_MAP[category]}&page=${page}&include_adult=false`;
+    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=popularity.desc&vote_count.gte=45&primary_release_date.lte=${todayIso}&with_genres=${MOVIE_GENRE_MAP[category]}&page=${page}&include_adult=false`;
   } else {
     endpoint = `https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   }
 
-  const res = await fetch(endpoint, { signal: AbortSignal.timeout(5000) });
-  if (!res.ok) {
-    return { movies: [], hasMore: false, ts: Date.now() };
+  let res = await fetch(endpoint, { signal: AbortSignal.timeout(5000) });
+  let json: any = res.ok ? await res.json() : { results: [], total_pages: 1 };
+  let results: any[] = Array.isArray(json?.results) ? json.results : [];
+  let totalPages = Number(json?.total_pages || 1);
+
+  // Fallback for Crunchyroll movie sub-genres if US watch_provider filter is sparse
+  if (isAnime && provider === 'crunchyroll' && !query && results.length < 4) {
+    const animeGenres = ANIME_MOVIE_GENRE_EXTRAS[category] || '16';
+    const fbRes = await fetch(
+      `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&with_genres=${animeGenres}&with_original_language=ja&sort_by=popularity.desc&vote_count.gte=30&primary_release_date.lte=${todayIso}&page=${page}&include_adult=false`,
+      { signal: AbortSignal.timeout(4500) }
+    ).catch(() => null);
+    if (fbRes?.ok) {
+      const fbJson: any = await fbRes.json();
+      if (Array.isArray(fbJson?.results) && fbJson.results.length > results.length) {
+        results = fbJson.results;
+        totalPages = Number(fbJson?.total_pages || 1);
+      }
+    }
   }
-  const json: any = await res.json();
-  const results: any[] = Array.isArray(json?.results) ? json.results : [];
-  const totalPages = Number(json?.total_pages || 1);
+
+  const mergedRaw: any[] = [];
+  const seenIds = new Set<number>();
+  for (const item of [...curatedSeedItems, ...results]) {
+    if (item?.id && !seenIds.has(item.id)) {
+      seenIds.add(item.id);
+      mergedRaw.push(item);
+    }
+  }
 
   const isEn = lang === 'en-US';
-  const todayIso = new Date().toISOString().slice(0, 10);
-  const movies = results
+  const movies = mergedRaw
     .filter((m) => {
       if (!m || !m.id || (!m.poster_path && !m.backdrop_path)) return false;
-      // Exclude unreleased movies or low-vote titles so listed movies have real streams
-      if (!query) {
-        if (Number(m.vote_count || 0) < 45 || Number(m.vote_average || 0) <= 0) {
+      if (isAnime && query) {
+        const gIds: number[] = Array.isArray(m.genre_ids) ? m.genre_ids : [];
+        const isJa = String(m.original_language || '').toLowerCase() === 'ja';
+        if (!gIds.includes(16) && !isJa) return false;
+      }
+      if (!query && !isAnime) {
+        if (Number(m.vote_count || 0) < 35 || Number(m.vote_average || 0) <= 0) {
           return false;
         }
         if (m.release_date && String(m.release_date) > todayIso) {
@@ -4110,7 +4672,7 @@ async function fetchTmdbMovieCatalog(opts: {
       return true;
     })
     .map((m) => ({
-      id: `${isEn ? 'bingetrix' : 'es'}-movie-${m.id}`,
+      id: `${isEn ? 'bingetrix' : 'es'}-${provider}-movie-${m.id}`,
       tmdbId: m.id,
       mediaType: 'movie',
       title: m.title || m.original_title || 'Película',
@@ -4119,13 +4681,21 @@ async function fetchTmdbMovieCatalog(opts: {
       rating: m.vote_average ? Number(m.vote_average).toFixed(1) : '',
       overview:
         m.overview ||
-        (isEn
-          ? 'Available in 1080p Original English ad-free HLS streaming via Bingetrix.'
-          : 'Disponible en reproducción directa HLS sin anuncios (Castellano, Latino e Inglés 1080p).'),
+        (isAnime
+          ? 'Película de anime disponible en Español, Latino y VOSE (Japonés Sub Español) en 1080p.'
+          : isEn
+          ? 'Available in 1080p Original English ad-free HLS streaming.'
+          : 'Disponible en reproducción directa HLS sin anuncios (Castellano, Latino y VO Inglés 1080p).'),
       poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : '',
       backdrop: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : '',
       bingetrixUrl: `https://bingetrix.sc/watch/${m.id}`,
-      languages: isEn ? ['English 1080p', 'ES / LAT'] : ['Castellano', 'Latino', 'EN'],
+      languages: isAnime
+        ? ['Español', 'VOSE · Sub', 'EN']
+        : isEn
+        ? ['English 1080p', 'ES / LAT']
+        : ['Castellano', 'Latino', 'EN'],
+      platform: provCfg?.label,
+      providerId: provCfg ? provider : undefined,
     }));
 
   const payload = {
@@ -4139,11 +4709,13 @@ async function fetchTmdbMovieCatalog(opts: {
 
 app.get('/api/catalog/movies', async (req, res) => {
   try {
-    const query = String(req.query.query || '').trim();
+    const rawQuery = String(req.query.query || '').trim();
+    const rawProvider = String(req.query.provider || 'all').toLowerCase().trim();
+    const { provider, query } = resolveEffectiveProviderAndQuery(rawProvider, rawQuery);
     const category = String(req.query.category || 'trending').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const mergedCacheKey = `merged-es-v3|${category}|${page}|${query}`;
+    const mergedCacheKey = `merged-es-v4|${provider}|${category}|${page}|${query}`;
     const cachedMerged = movieCatalogCache.get(mergedCacheKey);
     if (cachedMerged && Date.now() - cachedMerged.ts < 5 * 60 * 1000) {
       return res.json({
@@ -4154,9 +4726,31 @@ app.get('/api/catalog/movies', async (req, res) => {
       });
     }
 
+    // When a specific streaming platform or anime portal is active, serve its TMDB catalog directly
+    if ((STREAMING_PROVIDER_MAP[provider] && !query) || ANIME_PROVIDER_IDS.has(provider)) {
+      const tmdbData = await fetchTmdbMovieCatalog({
+        lang: 'es-ES',
+        category,
+        page,
+        query: '',
+        provider,
+      });
+      movieCatalogCache.set(mergedCacheKey, {
+        movies: tmdbData.movies,
+        hasMore: tmdbData.hasMore,
+        ts: Date.now(),
+      });
+      return res.json({
+        success: true,
+        movies: tmdbData.movies,
+        hasMore: tmdbData.hasMore,
+        page,
+      });
+    }
+
     const [movidyData, tmdbData] = await Promise.all([
       scrapeMovidyCatalog({ category, page, query }),
-      fetchTmdbMovieCatalog({ lang: 'es-ES', category, page, query }),
+      fetchTmdbMovieCatalog({ lang: 'es-ES', category, page, query, provider }),
     ]);
 
     const tmdbByNormTitle = new Map<string, any>();
@@ -4240,6 +4834,7 @@ app.get('/api/catalog/movies', async (req, res) => {
 app.get('/api/catalog/bingetrix', async (req, res) => {
   try {
     const query = String(req.query.query || '').trim();
+    const provider = String(req.query.provider || 'all').toLowerCase().trim();
     const category = String(req.query.category || 'trending').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
@@ -4248,6 +4843,7 @@ app.get('/api/catalog/bingetrix', async (req, res) => {
       category,
       page,
       query,
+      provider,
     });
     res.json({ success: true, movies: data.movies, hasMore: data.hasMore, page });
   } catch (err) {
@@ -4448,21 +5044,125 @@ async function scrapeMovidySeriesCatalog(opts: {
 
 app.get('/api/catalog/series', async (req, res) => {
   try {
-    const query = String(req.query.query || '').trim();
+    const rawQuery = String(req.query.query || '').trim();
+    const rawProvider = String(req.query.provider || 'all').toLowerCase().trim();
+    const { provider, query } = resolveEffectiveProviderAndQuery(rawProvider, rawQuery);
+    const provCfg = STREAMING_PROVIDER_MAP[provider];
+    const isAnime = ANIME_PROVIDER_IDS.has(provider);
     const category = String(req.query.category || 'trending').toLowerCase();
     const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
     const isSpanishCatalog = langParam === 'es-ES';
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const cacheKey = `v3|${langParam}|${category}|${page}|${query}`;
+    const cacheKey = `v5|${langParam}|${provider}|${category}|${page}|${query}`;
     const cached = seriesCatalogCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
       return res.json({ success: true, series: cached.series, hasMore: cached.hasMore, page });
     }
 
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const recentSimulcastIso = new Date(Date.now() - 75 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10);
     let endpoint = '';
+    let originalsBoostEndpoint = '';
+    let curatedAnimeSeedPromise: Promise<any[]> = Promise.resolve([]);
+
+    const ANIME_SERIES_GENRES: Record<string, string> = {
+      shonen: '16,10759',
+      action: '16,10759',
+      fantasy: '16,10765',
+      scifi: '16,10765',
+      comedy: '16,35',
+      drama: '16,18',
+      mystery: '16,9648',
+    };
+
     if (query) {
       endpoint = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=${langParam}&query=${encodeURIComponent(query)}&page=${page}&include_adult=false`;
+    } else if (isAnime) {
+      const animeGenreStr = ANIME_SERIES_GENRES[category] || '16';
+      const isSimulcastMode =
+        category === 'simulcast' || (provider === 'jkanime' && category === 'trending');
+      const sortBy =
+        category === 'top_rated'
+          ? 'vote_average.desc'
+          : provider === 'animeflv' && category === 'trending'
+          ? 'vote_count.desc'
+          : 'popularity.desc';
+      const minVotes = category === 'top_rated' ? 200 : isSimulcastMode ? 8 : 30;
+      const simulcastFilter = isSimulcastMode
+        ? `&air_date.gte=${recentSimulcastIso}&air_date.lte=${todayIso}`
+        : `&first_air_date.lte=${todayIso}`;
+
+      if (provider === 'crunchyroll') {
+        endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&watch_region=US&with_watch_providers=${encodeURIComponent(
+          '283|1968'
+        )}&with_watch_monetization_types=${encodeURIComponent(
+          'flatrate|ads|free'
+        )}&with_genres=${animeGenreStr}&with_origin_country=JP&sort_by=${sortBy}&vote_count.gte=${minVotes}${simulcastFilter}&page=${page}&include_adult=false`;
+
+        if (page === 1 && category === 'trending') {
+          originalsBoostEndpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&watch_region=ES&with_watch_providers=${encodeURIComponent(
+            '283|1968'
+          )}&with_watch_monetization_types=${encodeURIComponent(
+            'flatrate|ads|free'
+          )}&with_genres=16&with_origin_country=JP&sort_by=popularity.desc&vote_count.gte=25&page=1&include_adult=false`;
+        }
+      } else if (provider === 'animebox') {
+        if (page === 1 && (category === 'trending' || category === 'popular')) {
+          curatedAnimeSeedPromise = fetchTmdbItemsByIds(
+            ANIMEBOX_CURATED_TV_IDS,
+            'tv',
+            langParam
+          );
+        }
+        // Check Spain AnimeBox provider 2735 on page 1 boost + Japanese Anime in Spain
+        if (page === 1) {
+          originalsBoostEndpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&watch_region=ES&with_watch_providers=2735&with_watch_monetization_types=${encodeURIComponent(
+            'flatrate|ads|free'
+          )}&sort_by=popularity.desc&page=1&include_adult=false`;
+        }
+        endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&watch_region=ES&with_genres=${animeGenreStr}&with_origin_country=JP&sort_by=${sortBy}&vote_count.gte=${minVotes}${simulcastFilter}&page=${page}&include_adult=false`;
+      } else if (provider === 'jkanime') {
+        // JKAnime: En Emisión (Simulcasts) + Popular Japanese Anime Directory
+        if (page === 1 && category === 'trending') {
+          originalsBoostEndpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&with_genres=16&with_origin_country=JP&air_date.gte=${recentSimulcastIso}&air_date.lte=${todayIso}&sort_by=popularity.desc&vote_count.gte=10&page=1&include_adult=false`;
+        }
+        endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&with_genres=${animeGenreStr}&with_origin_country=JP&sort_by=${sortBy}&vote_count.gte=${minVotes}${simulcastFilter}&page=${page}&include_adult=false`;
+      } else if (provider === 'animeflv') {
+        // AnimeFLV: Latest seasonal premieres + All-Time Most Watched AnimeFLV legends
+        if (page === 1 && category === 'trending') {
+          originalsBoostEndpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&with_genres=16&with_origin_country=JP&air_date.gte=${recentSimulcastIso}&air_date.lte=${todayIso}&sort_by=vote_count.desc&vote_count.gte=15&page=1&include_adult=false`;
+        }
+        endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&with_genres=${animeGenreStr}&with_origin_country=JP&sort_by=${sortBy}&vote_count.gte=${minVotes}${simulcastFilter}&page=${page}&include_adult=false`;
+      } else {
+        // anime_all
+        endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&with_genres=${animeGenreStr}&with_origin_country=JP&sort_by=${sortBy}&vote_count.gte=${minVotes}${simulcastFilter}&page=${page}&include_adult=false`;
+      }
+    } else if (provCfg) {
+      const sortBy = category === 'top_rated' ? 'vote_average.desc' : 'popularity.desc';
+      const minVotes = category === 'top_rated' ? 250 : 80;
+      const genreParam = SERIES_GENRE_MAP[category] ? `&with_genres=${SERIES_GENRE_MAP[category]}` : '';
+
+      if (category === 'originals') {
+        endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&with_networks=${encodeURIComponent(
+          provCfg.tvNetworks
+        )}&sort_by=${sortBy}&vote_count.gte=${minVotes}&first_air_date.lte=${todayIso}&without_genres=10767,10763,10764${genreParam}&page=${page}&include_adult=false`;
+      } else {
+        endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&watch_region=ES&with_watch_providers=${encodeURIComponent(
+          provCfg.watchProviders
+        )}&with_watch_monetization_types=${encodeURIComponent(
+          'flatrate|ads|free'
+        )}&sort_by=${sortBy}&vote_count.gte=${minVotes}&first_air_date.lte=${todayIso}&without_genres=10767,10763,10764${genreParam}&page=${page}&include_adult=false`;
+
+        // On page 1 of Tendencias for a selected platform, lead with iconic flagship Originals
+        if (page === 1 && category === 'trending') {
+          originalsBoostEndpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&with_networks=${encodeURIComponent(
+            provCfg.tvNetworks
+          )}&sort_by=vote_count.desc&vote_count.gte=400&first_air_date.lte=${todayIso}&without_genres=10767,10763,10764&page=1&include_adult=false`;
+        }
+      }
     } else if (category === 'popular') {
       endpoint = `https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
     } else if (category === 'top_rated') {
@@ -4473,12 +5173,54 @@ app.get('/api/catalog/series', async (req, res) => {
       endpoint = `https://api.themoviedb.org/3/trending/tv/week?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
     }
 
-    const [movidySeriesData, tRes] = await Promise.all([
-      isSpanishCatalog
+    const mapTmdbSeriesItem = (s: any) => ({
+      id: `tv-${langParam}-${provider}-${s.id}`,
+      tmdbId: s.id,
+      mediaType: 'tv',
+      title: s.name || s.original_name || 'Serie',
+      originalTitle: s.original_name || s.name || '',
+      year: s.first_air_date ? String(s.first_air_date).split('-')[0] : 'TV',
+      rating: s.vote_average ? Number(s.vote_average).toFixed(1) : '',
+      overview:
+        s.overview ||
+        (isAnime
+          ? 'Anime disponible por temporadas y capítulos en Español, Latino y VOSE (Sub Español) 1080p.'
+          : isSpanishCatalog
+          ? 'Serie disponible en Español (Castellano / Latino) y VO Inglés 1080p.'
+          : 'Full TV series available in Original English 1080p & Spanish.'),
+      poster: s.poster_path ? `https://image.tmdb.org/t/p/w500${s.poster_path}` : '',
+      backdrop: s.backdrop_path ? `https://image.tmdb.org/t/p/w1280${s.backdrop_path}` : '',
+      languages: isAnime
+        ? ['Español', 'VOSE · Sub', 'EN']
+        : isSpanishCatalog
+        ? ['Español', 'VOSE · EN']
+        : ['English 1080p', 'Español'],
+      platform: provCfg?.label,
+      providerId: provCfg ? provider : undefined,
+    });
+
+    const [movidySeriesData, curatedAnimeRaw, originalsRes, tRes] = await Promise.all([
+      isSpanishCatalog && !provCfg && !isAnime
         ? scrapeMovidySeriesCatalog({ category, page, query })
         : Promise.resolve({ series: [], hasMore: false }),
+      curatedAnimeSeedPromise,
+      originalsBoostEndpoint
+        ? fetch(originalsBoostEndpoint, { signal: AbortSignal.timeout(4500) }).catch(() => null)
+        : Promise.resolve(null),
       fetch(endpoint, { signal: AbortSignal.timeout(5000) }),
     ]);
+
+    const curatedLead = curatedAnimeRaw.map(mapTmdbSeriesItem);
+
+    let originalsLead: any[] = [];
+    if (originalsRes?.ok) {
+      const oJson: any = await originalsRes.json().catch(() => null);
+      const oResults: any[] = Array.isArray(oJson?.results) ? oJson.results : [];
+      originalsLead = oResults
+        .filter((s) => s && s.id && (s.poster_path || s.backdrop_path))
+        .slice(0, 12)
+        .map(mapTmdbSeriesItem);
+    }
 
     let tmdbSeries: any[] = [];
     let totalPages = 1;
@@ -4491,42 +5233,47 @@ app.get('/api/catalog/series', async (req, res) => {
       tmdbSeries = results
         .filter((s) => {
           if (!s || !s.id || (!s.poster_path && !s.backdrop_path)) return false;
-          // Filter out un-dubbed US late-night talk/news shows when browsing Spanish series
-          if (isSpanishCatalog && !query && Array.isArray(s.genre_ids)) {
+          if (isAnime && query) {
+            const gIds: number[] = Array.isArray(s.genre_ids) ? s.genre_ids : [];
+            const origCountries: string[] = Array.isArray(s.origin_country)
+              ? s.origin_country
+              : [];
+            const isJa =
+              String(s.original_language || '').toLowerCase() === 'ja' ||
+              origCountries.includes('JP');
+            if (!gIds.includes(16) && !isJa) return false;
+          }
+          if (isSpanishCatalog && !query && !isAnime && Array.isArray(s.genre_ids)) {
             if (s.genre_ids.includes(10767) || s.genre_ids.includes(10763)) {
               return false;
             }
           }
           return true;
         })
-        .map((s) => ({
-          id: `tv-${langParam}-${s.id}`,
-          tmdbId: s.id,
-          mediaType: 'tv',
-          title: s.name || s.original_name || 'Serie',
-          originalTitle: s.original_name || s.name || '',
-          year: s.first_air_date ? String(s.first_air_date).split('-')[0] : 'TV',
-          rating: s.vote_average ? Number(s.vote_average).toFixed(1) : '',
-          overview:
-            s.overview ||
-            (isSpanishCatalog
-              ? 'Serie disponible en Castellano, Español Latino y VOSE en HD.'
-              : 'Full TV series available in 1080p HD.'),
-          poster: s.poster_path ? `https://image.tmdb.org/t/p/w500${s.poster_path}` : '',
-          backdrop: s.backdrop_path ? `https://image.tmdb.org/t/p/w1280${s.backdrop_path}` : '',
-          languages: isSpanishCatalog
-            ? ['Español', 'VOSE']
-            : ['English 1080p', 'Español'],
-        }));
+        .map(mapTmdbSeriesItem);
     }
 
     const seenTmdbIds = new Set<number>();
     const combinedSeries: any[] = [];
 
+    for (const cs of curatedLead) {
+      if (cs?.tmdbId && !seenTmdbIds.has(cs.tmdbId)) {
+        seenTmdbIds.add(cs.tmdbId);
+        combinedSeries.push(cs);
+      }
+    }
+
     for (const ms of movidySeriesData.series) {
       if (ms?.tmdbId && !seenTmdbIds.has(ms.tmdbId)) {
         seenTmdbIds.add(ms.tmdbId);
         combinedSeries.push(ms);
+      }
+    }
+
+    for (const orig of originalsLead) {
+      if (orig?.tmdbId && !seenTmdbIds.has(orig.tmdbId)) {
+        seenTmdbIds.add(orig.tmdbId);
+        combinedSeries.push(orig);
       }
     }
 
@@ -4547,88 +5294,242 @@ app.get('/api/catalog/series', async (req, res) => {
   }
 });
 
+const tvDetailsFastCache = new Map<string, { details: any; ts: number }>();
+const tvLangProbeCache = new Map<
+  string,
+  { availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[]; ts: number }
+>();
+
 app.get('/api/catalog/tv/:tmdbId', async (req, res) => {
   try {
     const cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
     if (!cleanId) return res.status(400).json({ success: false });
 
-    const seasonNum = Math.max(1, parseInt(String(req.query.season || '1'), 10) || 1);
-    const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
+    const requestedSeason = Math.max(1, parseInt(String(req.query.season || '1'), 10) || 1);
+    const isEn = String(req.query.lang || 'es').toLowerCase() === 'en';
+    const langParam = isEn ? 'en-US' : 'es-ES';
+    const cacheKey = `${cleanId}:${requestedSeason}:${langParam}`;
 
-    const [showRes, seasonRes] = await Promise.all([
-      fetch(
-        `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=${langParam}`,
-        { signal: AbortSignal.timeout(4500) }
-      ),
-      fetch(
-        `https://api.themoviedb.org/3/tv/${cleanId}/season/${seasonNum}?api_key=${TMDB_API_KEY}&language=${langParam}`,
-        { signal: AbortSignal.timeout(4500) }
-      ),
-    ]);
+    const cached = tvDetailsFastCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
+      const cachedLangs = tvLangProbeCache.get(`${cleanId}:${cached.details.activeSeason}:1`);
+      return res.json({
+        success: true,
+        details: {
+          ...cached.details,
+          ...(cachedLangs ? { availableLanguages: cachedLangs.availableLanguages } : {}),
+        },
+      });
+    }
+
+    const showRes = await fetch(
+      `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=${langParam}`,
+      { signal: AbortSignal.timeout(4500) }
+    );
 
     if (!showRes.ok) return res.status(404).json({ success: false });
     const showJson: any = await showRes.json();
-    const seasonJson: any = seasonRes.ok ? await seasonRes.json() : { episodes: [] };
 
     const seasons = (Array.isArray(showJson?.seasons) ? showJson.seasons : [])
-      .filter((s: any) => s && s.season_number >= 1 && s.episode_count > 0)
+      .filter(
+        (s: any) =>
+          s &&
+          typeof s.season_number === 'number' &&
+          s.season_number >= 1 &&
+          (Number(s.episode_count) > 0 || s.season_number === 1)
+      )
+      .sort((a: any, b: any) => a.season_number - b.season_number)
       .map((s: any) => ({
         seasonNumber: s.season_number,
-        name: s.name || `Temporada ${s.season_number}`,
-        episodeCount: s.episode_count,
+        name:
+          s.name && !/^season\s+\d+$/i.test(s.name)
+            ? s.name
+            : isEn
+            ? `Season ${s.season_number}`
+            : `Temporada ${s.season_number}`,
+        episodeCount: Number(s.episode_count) || 0,
         poster: s.poster_path ? `https://image.tmdb.org/t/p/w342${s.poster_path}` : '',
       }));
 
-    const episodes = (Array.isArray(seasonJson?.episodes) ? seasonJson.episodes : []).map(
-      (ep: any) => ({
-        id: `ep-${cleanId}-${seasonNum}-${ep.episode_number}`,
-        episodeNumber: ep.episode_number,
-        seasonNumber: seasonNum,
-        title: ep.name || `Episodio ${ep.episode_number}`,
-        overview: ep.overview || '',
-        still: ep.still_path ? `https://image.tmdb.org/t/p/w500${ep.still_path}` : '',
-        runtime: ep.runtime || undefined,
-        airDate: ep.air_date || undefined,
-        rating: ep.vote_average ? Number(ep.vote_average).toFixed(1) : undefined,
-      })
-    );
+    const effectiveSeason =
+      seasons.length > 0 && !seasons.some((s: any) => s.seasonNumber === requestedSeason)
+        ? seasons[0].seasonNumber
+        : requestedSeason;
+
+    const seasonRequests: Promise<Response>[] = [
+      fetch(
+        `https://api.themoviedb.org/3/tv/${cleanId}/season/${effectiveSeason}?api_key=${TMDB_API_KEY}&language=${langParam}`,
+        { signal: AbortSignal.timeout(4500) }
+      ),
+    ];
+    if (!isEn) {
+      seasonRequests.push(
+        fetch(
+          `https://api.themoviedb.org/3/tv/${cleanId}/season/${effectiveSeason}?api_key=${TMDB_API_KEY}&language=en-US`,
+          { signal: AbortSignal.timeout(4500) }
+        )
+      );
+    }
+
+    const [seasonRes, seasonEnRes] = await Promise.all(seasonRequests);
+    const seasonJson: any = seasonRes?.ok ? await seasonRes.json() : { episodes: [] };
+    const seasonEnJson: any = seasonEnRes?.ok ? await seasonEnRes.json() : { episodes: [] };
+
+    const enEpisodesByNum = new Map<number, any>();
+    if (Array.isArray(seasonEnJson?.episodes)) {
+      for (const epEn of seasonEnJson.episodes) {
+        if (epEn && typeof epEn.episode_number === 'number') {
+          enEpisodesByNum.set(epEn.episode_number, epEn);
+        }
+      }
+    }
+
+    const rawEpisodes =
+      Array.isArray(seasonJson?.episodes) && seasonJson.episodes.length > 0
+        ? seasonJson.episodes
+        : Array.isArray(seasonEnJson?.episodes)
+        ? seasonEnJson.episodes
+        : [];
+
+    let episodes = rawEpisodes
+      .filter((ep: any) => ep && typeof ep.episode_number === 'number' && ep.episode_number >= 1)
+      .sort((a: any, b: any) => a.episode_number - b.episode_number)
+      .map((ep: any) => {
+        const epNum = ep.episode_number;
+        const enFallback = enEpisodesByNum.get(epNum);
+        const rawName = String(ep.name || '').trim();
+        const isGenericEsName =
+          !rawName || /^(episodio|episode|cap[ií]tulo)\s*\d+$/i.test(rawName);
+        const enName = String(enFallback?.name || '').trim();
+        const finalTitle =
+          !isGenericEsName
+            ? rawName
+            : enName && !/^(episode|episodio)\s*\d+$/i.test(enName)
+            ? enName
+            : isEn
+            ? `Episode ${epNum}`
+            : `Capítulo ${epNum}`;
+        const stillPath = ep.still_path || enFallback?.still_path || '';
+
+        return {
+          id: `ep-${cleanId}-${effectiveSeason}-${epNum}`,
+          episodeNumber: epNum,
+          seasonNumber: effectiveSeason,
+          title: finalTitle,
+          overview: ep.overview || enFallback?.overview || '',
+          still: stillPath ? `https://image.tmdb.org/t/p/w500${stillPath}` : '',
+          runtime: ep.runtime || enFallback?.runtime || undefined,
+          airDate: ep.air_date || enFallback?.air_date || undefined,
+          rating: ep.vote_average ? Number(ep.vote_average).toFixed(1) : undefined,
+        };
+      });
+
+    const activeSeasonSummary = seasons.find((s: any) => s.seasonNumber === effectiveSeason);
+    if (episodes.length === 0 && activeSeasonSummary && activeSeasonSummary.episodeCount > 0) {
+      episodes = Array.from({ length: activeSeasonSummary.episodeCount }, (_, idx) => ({
+        id: `ep-${cleanId}-${effectiveSeason}-${idx + 1}`,
+        episodeNumber: idx + 1,
+        seasonNumber: effectiveSeason,
+        title: isEn ? `Episode ${idx + 1}` : `Capítulo ${idx + 1}`,
+        overview: '',
+        still: '',
+        runtime: undefined,
+        airDate: undefined,
+        rating: undefined,
+      }));
+    }
+
+    const normalizedSeasons =
+      seasons.length > 0
+        ? seasons.map((s: any) =>
+            s.seasonNumber === effectiveSeason && episodes.length > s.episodeCount
+              ? { ...s, episodeCount: episodes.length }
+              : s
+          )
+        : [
+            {
+              seasonNumber: 1,
+              name: isEn ? 'Season 1' : 'Temporada 1',
+              episodeCount: episodes.length,
+            },
+          ];
 
     const showTitle = showJson.name || showJson.original_name || 'Serie';
     const origTitle = showJson.original_name || showJson.name || '';
-    const firstEpNumber = episodes[0]?.episodeNumber || 1;
-    const availableLanguages = await probeAvailableLanguages({
-      tmdbId: cleanId,
-      mediaType: 'tv',
-      season: seasonNum,
-      episode: firstEpNumber,
-      titleHints: [showTitle, origTitle],
-    });
 
+    const detailsPayload: any = {
+      tmdbId: Number(cleanId),
+      title: showTitle,
+      originalTitle: origTitle,
+      year: showJson.first_air_date ? String(showJson.first_air_date).split('-')[0] : 'TV',
+      rating: showJson.vote_average ? Number(showJson.vote_average).toFixed(1) : '',
+      overview: showJson.overview || '',
+      poster: showJson.poster_path ? `https://image.tmdb.org/t/p/w500${showJson.poster_path}` : '',
+      backdrop: showJson.backdrop_path
+        ? `https://image.tmdb.org/t/p/w1280${showJson.backdrop_path}`
+        : '',
+      seasons: normalizedSeasons,
+      activeSeason: effectiveSeason,
+      episodes,
+    };
+
+    tvDetailsFastCache.set(cacheKey, { details: detailsPayload, ts: Date.now() });
+
+    const cachedLangs = tvLangProbeCache.get(`${cleanId}:${effectiveSeason}:1`);
     res.json({
       success: true,
       details: {
-        tmdbId: Number(cleanId),
-        title: showTitle,
-        originalTitle: origTitle,
-        year: showJson.first_air_date ? String(showJson.first_air_date).split('-')[0] : 'TV',
-        rating: showJson.vote_average ? Number(showJson.vote_average).toFixed(1) : '',
-        overview: showJson.overview || '',
-        poster: showJson.poster_path ? `https://image.tmdb.org/t/p/w500${showJson.poster_path}` : '',
-        backdrop: showJson.backdrop_path
-          ? `https://image.tmdb.org/t/p/w1280${showJson.backdrop_path}`
-          : '',
-        seasons:
-          seasons.length > 0
-            ? seasons
-            : [{ seasonNumber: 1, name: 'Temporada 1', episodeCount: episodes.length }],
-        activeSeason: seasonNum,
-        episodes,
-        availableLanguages,
+        ...detailsPayload,
+        ...(cachedLangs ? { availableLanguages: cachedLangs.availableLanguages } : {}),
       },
     });
   } catch (err) {
     console.error('TV details error:', err);
     res.status(500).json({ success: false });
+  }
+});
+
+app.get('/api/catalog/tv/:tmdbId/languages', async (req, res) => {
+  try {
+    const cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
+    if (!cleanId) return res.status(400).json({ success: false, availableLanguages: [] });
+
+    const seasonNum = Math.max(1, parseInt(String(req.query.season || '1'), 10) || 1);
+    const episodeNum = Math.max(1, parseInt(String(req.query.episode || '1'), 10) || 1);
+    const cacheKey = `${cleanId}:${seasonNum}:${episodeNum}`;
+
+    const cached = tvLangProbeCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
+      return res.json({ success: true, availableLanguages: cached.availableLanguages });
+    }
+
+    const titleHint = String(req.query.title || '').trim();
+    const origTitleHint = String(req.query.origTitle || '').trim();
+    let hints = [titleHint, origTitleHint].filter(Boolean);
+
+    if (hints.length === 0) {
+      const showRes = await fetch(
+        `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=es-ES`,
+        { signal: AbortSignal.timeout(3500) }
+      ).catch(() => null);
+      if (showRes?.ok) {
+        const showJson: any = await showRes.json();
+        hints = [showJson?.name, showJson?.original_name].filter(Boolean);
+      }
+    }
+
+    const availableLanguages = await probeAvailableLanguages({
+      tmdbId: cleanId,
+      mediaType: 'tv',
+      season: seasonNum,
+      episode: episodeNum,
+      titleHints: hints,
+    });
+
+    tvLangProbeCache.set(cacheKey, { availableLanguages, ts: Date.now() });
+    res.json({ success: true, availableLanguages });
+  } catch {
+    res.json({ success: false, availableLanguages: [] });
   }
 });
 
@@ -6169,12 +7070,13 @@ app.get('/api/extract/stream', async (req, res) => {
   const rawInput = String(req.query.url || '').trim();
   const movidyUrlParam = String(req.query.movidyUrl || '').trim();
   const resolverType = String(req.query.resolverType || '').trim();
-  const preferLang = String(req.query.preferLang || 'ES').toUpperCase();
+  const preferLang = String(req.query.preferLang || req.query.lang || 'ES').toUpperCase();
   const titleHint = String(req.query.title || '').trim();
-  const mediaTypeParam = String(req.query.mediaType || '').toLowerCase();
+  const mediaTypeParam = String(req.query.mediaType || req.query.type || '').toLowerCase();
   const tmdbIdParam = String(req.query.tmdbId || '').replace(/\D/g, '');
   const seasonParam = parseInt(String(req.query.season || '0'), 10) || undefined;
   const episodeParam = parseInt(String(req.query.episode || '0'), 10) || undefined;
+  const episodeTitleHint = String(req.query.episodeTitle || '').trim();
 
   if (!rawInput && !movidyUrlParam && !titleHint && !tmdbIdParam) {
     return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
@@ -6296,6 +7198,22 @@ app.get('/api/extract/stream', async (req, res) => {
         success: false,
         error: 'El servidor de esta pista Movidy no está activo ahora mismo.',
       });
+    }
+
+    // CASE 1C: Verified Web Embed Player track switch (`web_embed`)
+    if (resolverType === 'web_embed' && rawInput) {
+      const fullEmbedUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
+      const result: ExtractedStreamResult = {
+        success: true,
+        mode: 'embed',
+        streamUrl: fullEmbedUrl,
+        rawStreamUrl: fullEmbedUrl,
+        requestedLang: preferLang,
+        resolvedLang: preferLang,
+        expiresAt: Date.now() + 30 * 60 * 1000,
+      };
+      extractionCache.set(cacheKey, result);
+      return res.json(result);
     }
 
     // CASE 2: YouTube URL
@@ -6605,9 +7523,286 @@ app.get('/api/extract/stream', async (req, res) => {
         extractionCache.set(cacheKey, result);
         return res.json(result);
       }
+
+      // ======================================================================
+      // UNIVERSAL ZERO-DEAD-END PLAYBACK FALLBACK (ONLY WHEN DIRECT HLS = 0)
+      // Combines YouTube full-episode/movie search + verified multi-server web
+      // players so every episode/movie plays immediately without 404 dead ends.
+      // ======================================================================
+      const fallbackBaseTitle =
+        titleHint || extractedMovidyCleanTitle || '';
+      const displayFallbackTitle =
+        titleHint ||
+        (extractedMovidyCleanTitle
+          ? effectiveMediaType === 'tv'
+            ? `${extractedMovidyCleanTitle} · ${effectiveSeason}x${String(
+                effectiveEpisode
+              ).padStart(2, '0')}`
+            : extractedMovidyCleanTitle
+          : 'NAIMCINE HD');
+
+      const parseYtSec = (durText: string): number => {
+        const clean = String(durText || '').trim();
+        if (!clean || /live|directo/i.test(clean)) return 0;
+        const parts = clean.split(':').map((p) => parseInt(p.replace(/\D/g, ''), 10));
+        if (parts.some((n) => Number.isNaN(n))) return 0;
+        if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+        if (parts.length === 2) return parts[0] * 60 + parts[1];
+        return 0;
+      };
+
+      const searchYouTubeFullFallback = async (): Promise<{
+        track: TrackRecord;
+        exactEpisodeMatch: boolean;
+      } | null> => {
+        const cleanMain = fallbackBaseTitle
+          .replace(/\s*\([^)]*\)/g, '')
+          .replace(/[,:;!?]+/g, ' ')
+          .trim();
+        if (cleanMain.length < 2) return null;
+
+        const shortMain = cleanMain.split(/\s+/).slice(0, 4).join(' ');
+        const isGenericEpTitle =
+          !episodeTitleHint ||
+          /^(episodio|episode|cap[ií]tulo|cap\.?|ep\.?)\s*\d+$/i.test(episodeTitleHint.trim());
+
+        const langKeywords =
+          preferLang === 'LAT'
+            ? 'español latino'
+            : preferLang === 'VOSE'
+            ? 'sub español'
+            : preferLang === 'EN'
+            ? 'english'
+            : 'español castellano';
+
+        const queries: string[] = [];
+        if (effectiveMediaType === 'tv') {
+          if (!isGenericEpTitle && episodeTitleHint.length >= 3) {
+            queries.push(`${shortMain} ${episodeTitleHint} ${preferLang === 'EN' ? 'full episode' : 'español'}`);
+          }
+          queries.push(
+            preferLang === 'EN'
+              ? `${shortMain} season ${effectiveSeason} episode ${effectiveEpisode} full episode`
+              : `${shortMain} capitulo ${effectiveEpisode} ${langKeywords} completo`
+          );
+        } else {
+          queries.push(
+            preferLang === 'EN'
+              ? `${shortMain} full movie`
+              : `${shortMain} pelicula completa ${langKeywords}`
+          );
+        }
+
+        const normMainTokens = normalizeTitleForMatch(shortMain)
+          .split(/\s+/)
+          .filter((w) => w.length >= 3);
+        const normEpTitle = !isGenericEpTitle ? normalizeTitleForMatch(episodeTitleHint) : '';
+        const epNumRegex = new RegExp(`\\b0*${effectiveEpisode}\\b`);
+
+        for (const q of queries.slice(0, 2)) {
+          try {
+            const ytRes = await fetch(
+              `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}&hl=es`,
+              {
+                headers: {
+                  'User-Agent': CHROME_UA,
+                  'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+                },
+                signal: AbortSignal.timeout(3800),
+              }
+            );
+            if (!ytRes.ok) continue;
+            const html = await ytRes.text();
+            const initMatch = html.match(/var\s+ytInitialData\s*=\s*(\{[\s\S]+?\});<\/script>/);
+            if (!initMatch) continue;
+            const ytData = JSON.parse(initMatch[1]);
+            const sections =
+              ytData?.contents?.twoColumnSearchResultsRenderer?.primaryContents
+                ?.sectionListRenderer?.contents || [];
+
+            for (const sec of sections) {
+              const items = sec?.itemSectionRenderer?.contents || [];
+              for (const item of items) {
+                const vr = item?.videoRenderer;
+                if (!vr?.videoId) continue;
+                const vTitle = vr.title?.runs?.map((r: any) => r.text).join('') || '';
+                const durStr = vr.lengthText?.simpleText || '';
+                const durSec = parseYtSec(durStr);
+
+                if (effectiveMediaType === 'tv') {
+                  if (durSec < 360 || durSec > 7200) continue;
+                } else {
+                  if (durSec < 2700 || durSec > 14400) continue;
+                }
+
+                if (
+                  /\b(trailer|tráiler|teaser|reaction|reaccion|reacción|review|resumen|opening|ending|amv|ost|soundtrack|gameplay|parodia|parody|shorts|#shorts)\b/i.test(
+                    vTitle
+                  )
+                ) {
+                  continue;
+                }
+
+                const normVTitle = normalizeTitleForMatch(vTitle);
+                if (
+                  normMainTokens.length > 0 &&
+                  !normMainTokens.some((tok) => normVTitle.includes(tok))
+                ) {
+                  continue;
+                }
+
+                const exactEpisodeMatch =
+                  effectiveMediaType === 'movie' ||
+                  epNumRegex.test(vTitle) ||
+                  Boolean(normEpTitle && normEpTitle.length >= 4 && normVTitle.includes(normEpTitle));
+
+                const ytLangCode =
+                  preferLang === 'LAT'
+                    ? 'LAT'
+                    : preferLang === 'VOSE'
+                    ? 'VOSE'
+                    : preferLang === 'EN'
+                    ? 'EN'
+                    : 'ES';
+                const ytLangName =
+                  ytLangCode === 'LAT'
+                    ? 'Latino'
+                    : ytLangCode === 'VOSE'
+                    ? 'VOSE'
+                    : ytLangCode === 'EN'
+                    ? 'Inglés'
+                    : 'Español';
+
+                return {
+                  track: {
+                    id: `yt-fallback-${vr.videoId}`,
+                    label: `YouTube · ${ytLangName} (${durStr})`,
+                    lang: ytLangCode,
+                    quality: 'HD',
+                    sourceUrl: `https://www.youtube.com/watch?v=${vr.videoId}`,
+                    resolverType: 'youtube',
+                    resolvedStreamUrl: vr.videoId,
+                  },
+                  exactEpisodeMatch,
+                };
+              }
+            }
+          } catch {
+            // continue to next query or web embed
+          }
+        }
+        return null;
+      };
+
+      const buildWebEmbedTracks = (): TrackRecord[] => {
+        if (!resolvedTmdbId) return [];
+        const idStr = String(resolvedTmdbId);
+        const s = Math.max(1, effectiveSeason || 1);
+        const e = Math.max(1, effectiveEpisode || 1);
+        const rawEntries =
+          effectiveMediaType === 'tv'
+            ? [
+                {
+                  id: `embed-vidlink-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 1 · Multi-Audio HD',
+                  url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=e11d48`,
+                },
+                {
+                  id: `embed-vidfast-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 2 · VidFast HD',
+                  url: `https://vidfast.pro/tv/${idStr}/${s}/${e}?autoPlay=true&theme=E11D48`,
+                },
+                {
+                  id: `embed-111movies-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 3 · 111Movies HD',
+                  url: `https://111movies.com/tv/${idStr}/${s}/${e}`,
+                },
+                {
+                  id: `embed-2embed-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 4 · 2Embed',
+                  url: `https://www.2embed.cc/embedtv/${idStr}&s=${s}&e=${e}`,
+                },
+              ]
+            : [
+                {
+                  id: `embed-vidlink-${idStr}`,
+                  label: 'Servidor Web 1 · Multi-Audio HD',
+                  url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=e11d48`,
+                },
+                {
+                  id: `embed-vidfast-${idStr}`,
+                  label: 'Servidor Web 2 · VidFast HD',
+                  url: `https://vidfast.pro/movie/${idStr}?autoPlay=true&theme=E11D48`,
+                },
+                {
+                  id: `embed-111movies-${idStr}`,
+                  label: 'Servidor Web 3 · 111Movies HD',
+                  url: `https://111movies.com/movie/${idStr}`,
+                },
+                {
+                  id: `embed-2embed-${idStr}`,
+                  label: 'Servidor Web 4 · 2Embed',
+                  url: `https://www.2embed.cc/embed/${idStr}`,
+                },
+              ];
+
+        return rawEntries.map((entry) => ({
+          id: entry.id,
+          label: entry.label,
+          lang: preferLang || 'EN',
+          quality: '1080p',
+          sourceUrl: entry.url,
+          resolverType: 'web_embed' as const,
+          resolvedStreamUrl: entry.url,
+        }));
+      };
+
+      const [ytFallback, embedFallbackTracks] = await Promise.all([
+        searchYouTubeFullFallback(),
+        Promise.resolve(buildWebEmbedTracks()),
+      ]);
+
+      const prioritizeYoutube =
+        Boolean(ytFallback) &&
+        (embedFallbackTracks.length === 0 ||
+          ((preferLang === 'ES' || preferLang === 'LAT') && ytFallback!.exactEpisodeMatch));
+
+      const combinedFallbackTracks: TrackRecord[] = prioritizeYoutube
+        ? [ytFallback!.track, ...embedFallbackTracks]
+        : ytFallback
+        ? [embedFallbackTracks[0], ytFallback.track, ...embedFallbackTracks.slice(1)].filter(
+            Boolean
+          )
+        : embedFallbackTracks;
+
+      if (combinedFallbackTracks.length > 0) {
+        const firstTrack = combinedFallbackTracks[0];
+        const fallbackMode: ExtractedStreamResult['mode'] =
+          firstTrack.resolverType === 'youtube' ? 'youtube' : 'embed';
+        const fallbackResult: ExtractedStreamResult = {
+          success: true,
+          mode: fallbackMode,
+          streamUrl: firstTrack.resolvedStreamUrl || firstTrack.sourceUrl,
+          rawStreamUrl: firstTrack.sourceUrl,
+          youtubeId:
+            firstTrack.resolverType === 'youtube' ? firstTrack.resolvedStreamUrl : undefined,
+          title: displayFallbackTitle,
+          tracks: combinedFallbackTracks,
+          requestedLang: preferLang,
+          resolvedLang: firstTrack.lang || preferLang,
+          resolvedLabel: firstTrack.label,
+          languageFallbackUsed: false,
+          availableLanguages: Array.from(
+            new Set(combinedFallbackTracks.map((t) => String(t.lang || '').toUpperCase()))
+          ),
+          expiresAt: Date.now() + 10 * 60 * 1000,
+        };
+        extractionCache.set(cacheKey, fallbackResult);
+        return res.json(fallbackResult);
+      }
     }
 
-    // CASE 5: Live Sports Channel (`footunder.online`, `tilinhd`, etc.) -> Pure Crypto Direct (<350ms) + Safe Headless Fallback
+    // CASE 5: Live Sports Channel / External Web URL (`footunder.online`, `tilinhd`, etc.) -> Pure Crypto Direct (<350ms) + Safe Headless Fallback + Embed/Cloud Fallback
     if (rawInput) {
       const fullTargetUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
       const directSports = await extractLiveSportsHlsDirect(fullTargetUrl);
@@ -6629,13 +7824,59 @@ app.get('/api/extract/stream', async (req, res) => {
         extractionCache.set(cacheKey, result);
         return res.json(result);
       }
+
+      // If no raw HLS/MP4 stream was sniffed, check if the external source allows clean iframe embedding;
+      // otherwise automatically launch it in the ad-free Cloud Browser so playback never hits a 404 wall!
+      let canFrame = false;
+      try {
+        const probeController = new AbortController();
+        const probeTimer = setTimeout(() => probeController.abort(), 3000);
+        const probeRes = await fetch(fullTargetUrl, {
+          headers: { 'User-Agent': CHROME_UA },
+          signal: probeController.signal,
+        });
+        clearTimeout(probeTimer);
+        const xfo = String(probeRes.headers.get('x-frame-options') || '').toLowerCase();
+        const csp = String(probeRes.headers.get('content-security-policy') || '').toLowerCase();
+        probeController.abort();
+        const blockedByXfo = xfo.includes('deny') || xfo.includes('sameorigin');
+        const blockedByCsp =
+          csp.includes('frame-ancestors') &&
+          !csp.includes('frame-ancestors *') &&
+          !csp.includes('frame-ancestors https:');
+        canFrame = probeRes.ok && !blockedByXfo && !blockedByCsp;
+      } catch {
+        canFrame = false;
+      }
+
+      const extFallbackResult: ExtractedStreamResult = {
+        success: true,
+        mode: canFrame ? 'embed' : 'cloud',
+        streamUrl: fullTargetUrl,
+        rawStreamUrl: fullTargetUrl,
+        title: titleHint || 'Señal Web Directa',
+        tracks: canFrame
+          ? [
+              {
+                id: 'ext-web-embed-1',
+                label: 'Reproductor Web Integrado',
+                lang: preferLang || 'ES',
+                sourceUrl: fullTargetUrl,
+                resolverType: 'web_embed',
+                resolvedStreamUrl: fullTargetUrl,
+              },
+            ]
+          : [],
+        expiresAt: Date.now() + 2 * 60 * 1000,
+      };
+      return res.json(extFallbackResult);
     }
 
     return res.status(404).json({
       success: false,
       canUseCloudBrowser: true,
       error:
-        'Esta fuente externa aún no tiene flujo HLS activo. Prueba otra pista o ábrela en el Cloud Browser sin anuncios.',
+        'No se encontró ninguna señal activa para este enlace.',
     });
   } catch (err) {
     console.error('Extract stream error:', err);
@@ -6665,16 +7906,43 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
 
     const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
     const movidyUrlHint = String(req.query.movidyUrl || '').trim();
-    const cacheKey = `v2|${mediaType}|${cleanId}|${langParam}`;
+    const cacheKey = `v3|${mediaType}|${cleanId}|${langParam}`;
     const cached = richDetailsCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 10 * 60 * 1000) {
       return res.json({ success: true, details: cached.details });
     }
 
-    const url = `https://api.themoviedb.org/3/${mediaType}/${cleanId}?api_key=${TMDB_API_KEY}&language=${langParam}&append_to_response=videos,credits,recommendations`;
+    const url = `https://api.themoviedb.org/3/${mediaType}/${cleanId}?api_key=${TMDB_API_KEY}&language=${langParam}&append_to_response=videos,credits,recommendations,watch/providers`;
     const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
     if (!r.ok) return res.status(404).json({ success: false });
     const data: any = await r.json();
+
+    const esWp = data?.['watch/providers']?.results?.ES;
+    const rawProviderEntries: any[] = [
+      ...(Array.isArray(esWp?.flatrate) ? esWp.flatrate : []),
+      ...(Array.isArray(esWp?.ads) ? esWp.ads : []),
+      ...(Array.isArray(esWp?.free) ? esWp.free : []),
+    ];
+    const watchProviders = Array.from(
+      new Set(
+        rawProviderEntries
+          .map((p) => {
+            const n = String(p?.provider_name || '').trim();
+            if (/netflix/i.test(n)) return 'Netflix';
+            if (/hbo|max/i.test(n)) return 'HBO Max';
+            if (/disney/i.test(n)) return 'Disney+';
+            if (/prime video|amazon/i.test(n)) return 'Prime Video';
+            if (/apple tv/i.test(n)) return 'Apple TV+';
+            if (/movistar/i.test(n)) return 'Movistar+';
+            if (/skyshowtime/i.test(n)) return 'SkyShowtime';
+            if (/filmin/i.test(n)) return 'Filmin';
+            if (/crunchyroll/i.test(n)) return 'Crunchyroll';
+            if (/animebox/i.test(n)) return 'AnimeBox';
+            return '';
+          })
+          .filter(Boolean)
+      )
+    );
 
     const primaryTitle =
       data.title || data.name || data.original_title || data.original_name || 'Título';
@@ -6778,6 +8046,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
           languages: ['Español', 'VOSE'],
         })),
       availableLanguages,
+      watchProviders,
     };
 
     richDetailsCache.set(cacheKey, { details, ts: Date.now() });

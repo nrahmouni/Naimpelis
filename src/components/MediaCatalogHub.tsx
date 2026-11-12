@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Search,
   Film,
@@ -24,6 +24,9 @@ import {
   Vote,
   Radio,
   Trophy,
+  ChevronLeft,
+  ChevronRight,
+  ArrowUpDown,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -33,6 +36,7 @@ import {
   RoomQueueItem,
   SpanishTdtChannel,
   SportsMatch,
+  StreamingProviderId,
   TdtCategory,
   TvEpisodeItem,
   TvSeriesDetails,
@@ -63,30 +67,170 @@ function formatShortTime(sec?: number): string {
 }
 
 export type CatalogSection =
+  | 'home'
   | 'movies'
   | 'vose'
   | 'series'
+  | 'anime'
   | 'tdt'
   | 'sports'
   | 'youtube'
   | 'direct';
 
-const TDT_CATEGORIES: { id: 'all' | TdtCategory; es: string; en: string }[] = [
+type AnimePortalId = 'anime_all' | 'crunchyroll' | 'animebox' | 'jkanime' | 'animeflv';
+
+type FocusedHubMode =
+  | 'all'
+  | 'netflix'
+  | 'hbomax'
+  | 'disney'
+  | 'prime'
+  | 'apple'
+  | 'skyshowtime'
+  | 'movistar'
+  | 'dazn'
+  | 'tdt_es';
+
+const TDT_NATIONAL_CATEGORIES: {
+  id: 'tdt_all' | TdtCategory;
+  es: string;
+  en: string;
+}[] = [
+  { id: 'tdt_all', es: 'Toda la TDT', en: 'All National TDT' },
+  { id: 'generalistas', es: 'Generalistas (1–6)', en: 'Main Channels (1–6)' },
+  { id: 'cine_series', es: 'Cine y Series', en: 'Movies & Series' },
+  { id: 'entretenimiento', es: 'Entretenimiento', en: 'Entertainment' },
+  { id: 'noticias_deportes', es: '24h y Deportes', en: 'News & Sports' },
+  { id: 'infantil_autonomicas', es: 'Infantil y Autonómicas', en: 'Kids & Regional' },
+];
+
+const ALL_LIVE_CATEGORIES: { id: 'all' | 'tdt_all' | TdtCategory; es: string; en: string }[] = [
   { id: 'all', es: 'Todos en Vivo', en: 'All Live TV' },
+  { id: 'tdt_all', es: 'TDT España', en: 'Spain TDT' },
   { id: 'movistar', es: 'Movistar+', en: 'Movistar+' },
   { id: 'dazn', es: 'DAZN', en: 'DAZN' },
-  { id: 'generalistas', es: 'TDT Generalistas (1–6)', en: 'National TDT (1–6)' },
-  { id: 'cine_series', es: 'Cine & Series', en: 'Movies & Series' },
-  { id: 'entretenimiento', es: 'Entretenimiento', en: 'Entertainment' },
-  { id: 'noticias_deportes', es: '24h & Deportes TDT', en: 'News & TDT Sports' },
-  { id: 'infantil_autonomicas', es: 'Infantil & Autonómicas', en: 'Kids & Regional' },
+  { id: 'generalistas', es: 'La 1 · A3 · T5 · laSexta', en: 'Main Channels (1–6)' },
+];
+
+const STREAMING_PLATFORMS: {
+  id: StreamingProviderId;
+  es: string;
+  en: string;
+  mark: string;
+  accentBg: string;
+  accentText: string;
+  activeBorder: string;
+  cardGlow: string;
+  descEs: string;
+  descEn: string;
+}[] = [
+  {
+    id: 'all',
+    es: 'Todo el Catálogo',
+    en: 'All Platforms',
+    mark: 'ALL',
+    accentBg: 'bg-white/15',
+    accentText: 'text-white',
+    activeBorder: 'border-white bg-white text-[#050508]',
+    cardGlow: 'from-zinc-800/40 to-[#0B0C12]',
+    descEs: 'Todas las plataformas unidas',
+    descEn: 'Every platform combined',
+  },
+  {
+    id: 'netflix',
+    es: 'Netflix',
+    en: 'Netflix',
+    mark: 'N',
+    accentBg: 'bg-[#E50914]',
+    accentText: 'text-white',
+    activeBorder:
+      'border-[#E50914] bg-[#E50914]/20 text-white shadow-[0_6px_22px_rgba(229,9,20,0.28)]',
+    cardGlow: 'from-[#E50914]/22 via-[#17090D] to-[#0A0B10]',
+    descEs: 'Películas y series de Netflix',
+    descEn: 'Netflix movies & series',
+  },
+  {
+    id: 'hbomax',
+    es: 'HBO Max',
+    en: 'HBO Max',
+    mark: 'MAX',
+    accentBg: 'bg-[#6D28D9]',
+    accentText: 'text-white',
+    activeBorder:
+      'border-[#8B5CF6] bg-[#6D28D9]/25 text-white shadow-[0_6px_22px_rgba(124,58,237,0.3)]',
+    cardGlow: 'from-[#6D28D9]/25 via-[#120D24] to-[#0A0B10]',
+    descEs: 'Películas y series de HBO Max',
+    descEn: 'HBO Originals, Warner & DC',
+  },
+  {
+    id: 'disney',
+    es: 'Disney+',
+    en: 'Disney+',
+    mark: 'D+',
+    accentBg: 'bg-[#0063E5]',
+    accentText: 'text-white',
+    activeBorder:
+      'border-[#3B82F6] bg-[#0063E5]/25 text-white shadow-[0_6px_22px_rgba(0,99,229,0.3)]',
+    cardGlow: 'from-[#0063E5]/25 via-[#091326] to-[#0A0B10]',
+    descEs: 'Disney, Pixar, Marvel y Star Wars',
+    descEn: 'Disney, Pixar, Marvel & Star Wars',
+  },
+  {
+    id: 'prime',
+    es: 'Prime Video',
+    en: 'Prime Video',
+    mark: 'PRIME',
+    accentBg: 'bg-[#00A8E1]',
+    accentText: 'text-[#041118]',
+    activeBorder:
+      'border-[#00A8E1] bg-[#00A8E1]/20 text-white shadow-[0_6px_22px_rgba(0,168,225,0.28)]',
+    cardGlow: 'from-[#00A8E1]/22 via-[#081722] to-[#0A0B10]',
+    descEs: 'Películas y series de Prime Video',
+    descEn: 'Amazon Originals & Cinema',
+  },
+  {
+    id: 'movistar',
+    es: 'Movistar+',
+    en: 'Movistar+',
+    mark: 'M+',
+    accentBg: 'bg-[#019DF4]',
+    accentText: 'text-white',
+    activeBorder: 'border-[#019DF4] bg-[#019DF4]/20 text-white',
+    cardGlow: 'from-[#019DF4]/24 via-[#071624] to-[#0A0B10]',
+    descEs: 'Canales en vivo, cine y series',
+    descEn: 'Live TV channels, movies & series',
+  },
+  {
+    id: 'apple',
+    es: 'Apple TV+',
+    en: 'Apple TV+',
+    mark: 'tv+',
+    accentBg: 'bg-zinc-100',
+    accentText: 'text-[#050508]',
+    activeBorder: 'border-zinc-300 bg-white/15 text-white',
+    cardGlow: 'from-zinc-400/18 via-[#12131A] to-[#0A0B10]',
+    descEs: 'Cine y series originales Apple',
+    descEn: 'Apple Originals in HD',
+  },
+  {
+    id: 'skyshowtime',
+    es: 'SkyShowtime',
+    en: 'SkyShowtime',
+    mark: 'SKY',
+    accentBg: 'bg-[#0D9488]',
+    accentText: 'text-white',
+    activeBorder: 'border-[#14B8A6] bg-[#0D9488]/20 text-white',
+    cardGlow: 'from-[#0D9488]/22 via-[#081919] to-[#0A0B10]',
+    descEs: 'Universal, Paramount y series',
+    descEn: 'Universal & Paramount hits',
+  },
 ];
 
 const MOVIE_CATEGORIES = [
   { id: 'trending', es: 'Tendencias', en: 'Trending' },
   { id: 'popular', es: 'Populares', en: 'Popular' },
   { id: 'top_rated', es: 'Mejor Valoradas', en: 'Top Rated' },
-  { id: 'now_playing', es: 'En Cines', en: 'In Theaters' },
+  { id: 'now_playing', es: 'Estrenos Recientes', en: 'New Releases' },
   { id: 'action', es: 'Acción', en: 'Action' },
   { id: 'scifi', es: 'Sci-Fi', en: 'Sci-Fi' },
   { id: 'horror', es: 'Terror', en: 'Horror' },
@@ -101,22 +245,138 @@ const SERIES_CATEGORIES = [
   { id: 'trending', es: 'Tendencias TV', en: 'Trending TV' },
   { id: 'popular', es: 'Populares', en: 'Popular' },
   { id: 'top_rated', es: 'Mejor Valoradas', en: 'Top Rated' },
-  { id: 'scifi', es: 'Sci-Fi & Fantasía', en: 'Sci-Fi & Fantasy' },
-  { id: 'action', es: 'Acción & Aventura', en: 'Action & Adventure' },
+  { id: 'scifi', es: 'Sci-Fi y Fantasía', en: 'Sci-Fi & Fantasy' },
+  { id: 'action', es: 'Acción y Aventura', en: 'Action & Adventure' },
   { id: 'drama', es: 'Drama', en: 'Drama' },
   { id: 'crime', es: 'Crimen', en: 'Crime' },
   { id: 'comedy', es: 'Comedia', en: 'Comedy' },
-  { id: 'animation', es: 'Animación & Anime', en: 'Animation & Anime' },
+  { id: 'animation', es: 'Animación y Anime', en: 'Animation & Anime' },
   { id: 'mystery', es: 'Misterio', en: 'Mystery' },
 ] as const;
 
+const ANIME_PLATFORMS: {
+  id: AnimePortalId;
+  es: string;
+  en: string;
+  mark: string;
+  accentBg: string;
+  accentText: string;
+  activeBorder: string;
+  cardGlow: string;
+  descEs: string;
+  descEn: string;
+  externalUrl?: string;
+}[] = [
+  {
+    id: 'anime_all',
+    es: 'Todo el Anime',
+    en: 'All Anime',
+    mark: 'ANIME',
+    accentBg: 'bg-white/15',
+    accentText: 'text-white',
+    activeBorder: 'border-white bg-white/[0.14] text-white shadow-[0_8px_24px_rgba(255,255,255,0.12)]',
+    cardGlow: 'from-orange-500/18 via-[#141019] to-[#0B0C12]',
+    descEs: 'Todas las webs de anime unidas',
+    descEn: 'All anime portals combined',
+  },
+  {
+    id: 'crunchyroll',
+    es: 'Crunchyroll',
+    en: 'Crunchyroll',
+    mark: 'CR',
+    accentBg: 'bg-[#F47521]',
+    accentText: 'text-[#120902]',
+    activeBorder:
+      'border-[#F47521] bg-[#F47521]/20 text-white shadow-[0_8px_24px_rgba(244,117,33,0.28)]',
+    cardGlow: 'from-[#F47521]/25 via-[#191009] to-[#0B0C12]',
+    descEs: 'Simulcasts, Shonen y Estrenos',
+    descEn: 'Simulcasts, Shonen & Movies',
+  },
+  {
+    id: 'animebox',
+    es: 'AnimeBox',
+    en: 'AnimeBox',
+    mark: 'ABOX',
+    accentBg: 'bg-[#E11D48]',
+    accentText: 'text-white',
+    activeBorder:
+      'border-[#FB7185] bg-[#E11D48]/22 text-white shadow-[0_8px_24px_rgba(225,29,72,0.28)]',
+    cardGlow: 'from-[#E11D48]/25 via-[#190B12] to-[#0B0C12]',
+    descEs: 'Castellano y VOSE · Selecta',
+    descEn: 'Spanish Dub & Sub · Selecta',
+  },
+  {
+    id: 'jkanime',
+    es: 'JKAnime',
+    en: 'JKAnime',
+    mark: 'JK',
+    accentBg: 'bg-[#0EA5E9]',
+    accentText: 'text-[#04131D]',
+    activeBorder:
+      'border-[#38BDF8] bg-[#0EA5E9]/20 text-white shadow-[0_8px_24px_rgba(14,165,233,0.28)]',
+    cardGlow: 'from-[#0EA5E9]/24 via-[#091522] to-[#0B0C12]',
+    descEs: 'En Emisión · Sub Español y Latino',
+    descEn: 'Simulcast · Sub & LatAm Dub',
+    externalUrl: 'https://jkanime.net/',
+  },
+  {
+    id: 'animeflv',
+    es: 'AnimeFLV',
+    en: 'AnimeFLV',
+    mark: 'FLV',
+    accentBg: 'bg-[#10B981]',
+    accentText: 'text-[#03150E]',
+    activeBorder:
+      'border-[#34D399] bg-[#10B981]/20 text-white shadow-[0_8px_24px_rgba(16,185,129,0.28)]',
+    cardGlow: 'from-[#10B981]/22 via-[#081914] to-[#0B0C12]',
+    descEs: 'Directorio Anime · Sub y Doblado',
+    descEn: 'Full Directory · Sub & Dub',
+    externalUrl: 'https://www3.animeflv.net/',
+  },
+];
+
+const ANIME_CATEGORIES = [
+  { id: 'trending', es: 'Tendencias', en: 'Trending' },
+  { id: 'simulcast', es: 'En Emisión', en: 'Simulcast Airing' },
+  { id: 'popular', es: 'Populares', en: 'Popular' },
+  { id: 'shonen', es: 'Shonen y Acción', en: 'Shonen & Action' },
+  { id: 'fantasy', es: 'Fantasía e Isekai', en: 'Fantasy & Isekai' },
+  { id: 'top_rated', es: 'Mejor Valorados', en: 'Top Rated' },
+  { id: 'comedy', es: 'Comedia y Romance', en: 'Comedy & Romance' },
+  { id: 'drama', es: 'Drama y Seinen', en: 'Drama & Seinen' },
+] as const;
+
 const YOUTUBE_QUICK_TOPICS = [
-  { labelEs: 'Resúmenes LaLiga & Champions', labelEn: 'Football Highlights', q: 'resumen partido laliga champions highlights hd' },
-  { labelEs: 'Trailers Cine 4K', labelEn: '4K Movie Trailers', q: 'official movie trailer 2025 4k' },
-  { labelEs: 'Música & Videoclips', labelEn: 'Music Videos', q: 'latin hits music video oficial' },
-  { labelEs: 'F1 & Motorsport', labelEn: 'F1 Highlights', q: 'formula 1 race highlights official' },
-  { labelEs: 'Comedia & Stand-Up', labelEn: 'Stand-Up Comedy', q: 'monologos comedia stand up español' },
-  { labelEs: 'Lo-Fi Chill Room', labelEn: 'Lo-Fi Beats', q: 'lofi hip hop radio beats to relax' },
+  {
+    labelEs: 'Resúmenes LaLiga y Champions',
+    labelEn: 'Football Highlights',
+    q: 'resumen partido laliga champions highlights hd',
+  },
+  {
+    labelEs: 'Tráilers Cine 4K',
+    labelEn: '4K Movie Trailers',
+    q: 'official movie trailer 2025 4k',
+  },
+  {
+    labelEs: 'Música y Videoclips',
+    labelEn: 'Music Videos',
+    q: 'latin hits music video oficial',
+  },
+  {
+    labelEs: 'F1 y Motorsport',
+    labelEn: 'F1 Highlights',
+    q: 'formula 1 race highlights official',
+  },
+  {
+    labelEs: 'Comedia y Stand-Up',
+    labelEn: 'Stand-Up Comedy',
+    q: 'monologos comedia stand up español',
+  },
+  {
+    labelEs: 'Lo-Fi Chill Room',
+    labelEn: 'Lo-Fi Beats',
+    q: 'lofi hip hop radio beats to relax',
+  },
 ] as const;
 
 interface MediaCatalogHubProps {
@@ -192,11 +452,22 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 }) => {
   const t = UI_COPY[lang];
 
+  const [focusedHub, setFocusedHub] = useState<FocusedHubMode>('all');
   const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
   const [previewItem, setPreviewItem] = useState<CatalogMovie | null>(null);
   const [liveScores, setLiveScores] = useState<LiveScoreMatch[]>([]);
 
-  // Movies & Bingetrix state
+  // Universal Search on Home Launcher Grid
+  const [homeQuery, setHomeQuery] = useState('');
+  const [debouncedHomeQuery, setDebouncedHomeQuery] = useState('');
+  const [homeMovieResults, setHomeMovieResults] = useState<CatalogMovie[]>([]);
+  const [homeSeriesResults, setHomeSeriesResults] = useState<CatalogMovie[]>([]);
+  const [loadingHomeSearch, setLoadingHomeSearch] = useState(false);
+
+  // Streaming Platform Filter (Netflix, HBO Max, Disney+, Prime Video, Apple TV+, Movistar+, SkyShowtime)
+  const [streamingProvider, setStreamingProvider] = useState<StreamingProviderId>('all');
+
+  // Movies & VO state
   const [movieQuery, setMovieQuery] = useState('');
   const [debouncedMovieQuery, setDebouncedMovieQuery] = useState('');
   const [movieCategory, setMovieCategory] = useState<string>('trending');
@@ -218,14 +489,37 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [seriesList, setSeriesList] = useState<CatalogMovie[]>([]);
   const [loadingSeries, setLoadingSeries] = useState(false);
   const [loadingMoreSeries, setLoadingMoreSeries] = useState(false);
+  const [seriesSpotlightImgFailed, setSeriesSpotlightImgFailed] = useState(false);
+
+  // Dedicated Anime Hub state (Crunchyroll · AnimeBox · JKAnime · AnimeFLV)
+  const [animePortal, setAnimePortal] = useState<AnimePortalId>('anime_all');
+  const [animeMediaKind, setAnimeMediaKind] = useState<'series' | 'movies'>('series');
+  const [animeLangPref, setAnimeLangPref] = useState<'ES' | 'VOSE' | 'EN'>('ES');
+  const [animeQuery, setAnimeQuery] = useState('');
+  const [debouncedAnimeQuery, setDebouncedAnimeQuery] = useState('');
+  const [animeCategory, setAnimeCategory] = useState<string>('trending');
+  const [animePage, setAnimePage] = useState<number>(1);
+  const [hasMoreAnime, setHasMoreAnime] = useState<boolean>(false);
+  const [animeItems, setAnimeItems] = useState<CatalogMovie[]>([]);
+  const [loadingAnime, setLoadingAnime] = useState(false);
+  const [loadingMoreAnime, setLoadingMoreAnime] = useState(false);
+  const [animeSpotlightImgFailed, setAnimeSpotlightImgFailed] = useState(false);
+
+  // Instant Series -> Season -> Episode Modal state
   const [selectedSeries, setSelectedSeries] = useState<TvSeriesDetails | null>(null);
   const [loadingSeriesDetails, setLoadingSeriesDetails] = useState(false);
+  const [probingSeriesLangs, setProbingSeriesLangs] = useState(false);
   const [brokenEpisodeImgs, setBrokenEpisodeImgs] = useState<Record<string, boolean>>({});
+  const [episodeSearchQuery, setEpisodeSearchQuery] = useState('');
+  const [episodeRangeStart, setEpisodeRangeStart] = useState<number>(0);
+  const [episodeSortDesc, setEpisodeSortDesc] = useState<boolean>(false);
+  const episodeListScrollRef = useRef<HTMLDivElement | null>(null);
+  const seriesFetchSeqRef = useRef(0);
 
-  // Spanish TDT Live Television state
+  // Spanish TDT + Movistar+ + DAZN Live Television state
   const [tdtChannels, setTdtChannels] = useState<SpanishTdtChannel[]>([]);
   const [loadingTdt, setLoadingTdt] = useState(false);
-  const [tdtCategory, setTdtCategory] = useState<'all' | TdtCategory>('all');
+  const [tdtCategory, setTdtCategory] = useState<'all' | 'tdt_all' | TdtCategory>('all');
   const [tdtSearch, setTdtSearch] = useState('');
 
   // Sports state
@@ -239,7 +533,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   // YouTube state
   const [ytQuery, setYtQuery] = useState('');
-  const [debouncedYtQuery, setDebouncedYtQuery] = useState('resumen partido laliga champions highlights hd');
+  const [debouncedYtQuery, setDebouncedYtQuery] = useState(
+    'resumen partido laliga champions highlights hd'
+  );
   const [ytResults, setYtResults] = useState<YouTubeSearchItem[]>([]);
   const [loadingYt, setLoadingYt] = useState(false);
 
@@ -247,12 +543,37 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [customUrl, setCustomUrl] = useState('');
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
 
+  // Reset platform/category focus cleanly whenever returning to Home
+  useEffect(() => {
+    if (activeSection === 'home') {
+      setFocusedHub('all');
+      setStreamingProvider('all');
+      setAnimePortal('anime_all');
+      setAnimeCategory('trending');
+      setTdtCategory('all');
+      setShowWatchlistOnly(false);
+    }
+  }, [activeSection]);
+
+  // Debounce Home Global Search
+  useEffect(() => {
+    const clean = homeQuery.trim();
+    if (!clean || /^https?:\/\//i.test(clean)) {
+      setDebouncedHomeQuery('');
+      return;
+    }
+    const timer = setTimeout(() => {
+      setDebouncedHomeQuery(clean);
+    }, 260);
+    return () => clearTimeout(timer);
+  }, [homeQuery]);
+
   // Debounce Movie Search
   useEffect(() => {
     const timer = setTimeout(() => {
       setDebouncedMovieQuery(movieQuery.trim());
       setMoviePage(1);
-    }, 300);
+    }, 280);
     return () => clearTimeout(timer);
   }, [movieQuery]);
 
@@ -261,9 +582,18 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     const timer = setTimeout(() => {
       setDebouncedSeriesQuery(seriesQuery.trim());
       setSeriesPage(1);
-    }, 300);
+    }, 280);
     return () => clearTimeout(timer);
   }, [seriesQuery]);
+
+  // Debounce Anime Search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedAnimeQuery(animeQuery.trim());
+      setAnimePage(1);
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [animeQuery]);
 
   // Debounce YouTube Search
   useEffect(() => {
@@ -271,11 +601,78 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     if (!clean) return;
     const timer = setTimeout(() => {
       setDebouncedYtQuery(clean);
-    }, 360);
+    }, 340);
     return () => clearTimeout(timer);
   }, [ytQuery]);
 
-  // Fetch Movies (Spanish Cinema OR Full Bingetrix English Catalog)
+  // Preload Live Channels once so Home search and instant entry to TDT/DAZN/Movistar+ are 0ms
+  const fetchTdtCatalog = async () => {
+    setLoadingTdt(true);
+    try {
+      const res = await fetch('/api/catalog/tdt');
+      const data = await res.json();
+      if (Array.isArray(data?.channels)) {
+        setTdtChannels(data.channels);
+      }
+    } catch {
+      // Keep cached channels
+    } finally {
+      setLoadingTdt(false);
+    }
+  };
+
+  useEffect(() => {
+    if (
+      (activeSection === 'tdt' ||
+        (activeSection === 'home' && debouncedHomeQuery.length >= 2)) &&
+      tdtChannels.length === 0
+    ) {
+      fetchTdtCatalog();
+    }
+  }, [activeSection, debouncedHomeQuery]);
+
+  // Execute Universal Search on Home when user types
+  useEffect(() => {
+    if (activeSection !== 'home' || debouncedHomeQuery.length < 2) {
+      setHomeMovieResults([]);
+      setHomeSeriesResults([]);
+      setLoadingHomeSearch(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingHomeSearch(true);
+
+    Promise.all([
+      fetch(
+        `/api/catalog/movies?provider=all&category=trending&page=1&query=${encodeURIComponent(
+          debouncedHomeQuery
+        )}`
+      )
+        .then((r) => r.json())
+        .catch(() => ({ movies: [] })),
+      fetch(
+        `/api/catalog/series?provider=all&category=trending&page=1&lang=es&query=${encodeURIComponent(
+          debouncedHomeQuery
+        )}`
+      )
+        .then((r) => r.json())
+        .catch(() => ({ series: [] })),
+    ])
+      .then(([mData, sData]) => {
+        if (cancelled) return;
+        setHomeMovieResults(Array.isArray(mData?.movies) ? mData.movies.slice(0, 10) : []);
+        setHomeSeriesResults(Array.isArray(sData?.series) ? sData.series.slice(0, 10) : []);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingHomeSearch(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, debouncedHomeQuery]);
+
+  // Fetch Movies (Spanish Cinema OR Full VO/English Catalog across all or specific platform)
   useEffect(() => {
     if (activeSection !== 'movies' && activeSection !== 'vose') return;
     if (showWatchlistOnly) return;
@@ -290,8 +687,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
     const endpoint =
       activeSection === 'vose'
-        ? `/api/catalog/bingetrix?category=${encodeURIComponent(movieCategory)}&page=${moviePage}&query=${encodeURIComponent(debouncedMovieQuery)}`
-        : `/api/catalog/movies?category=${encodeURIComponent(movieCategory)}&page=${moviePage}&query=${encodeURIComponent(debouncedMovieQuery)}`;
+        ? `/api/catalog/bingetrix?provider=${encodeURIComponent(
+            streamingProvider
+          )}&category=${encodeURIComponent(movieCategory)}&page=${moviePage}&query=${encodeURIComponent(
+            debouncedMovieQuery
+          )}`
+        : `/api/catalog/movies?provider=${encodeURIComponent(
+            streamingProvider
+          )}&category=${encodeURIComponent(movieCategory)}&page=${moviePage}&query=${encodeURIComponent(
+            debouncedMovieQuery
+          )}`;
 
     fetch(endpoint)
       .then((r) => r.json())
@@ -318,21 +723,33 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeSection, movieCategory, moviePage, debouncedMovieQuery, showWatchlistOnly]);
+  }, [
+    activeSection,
+    streamingProvider,
+    movieCategory,
+    moviePage,
+    debouncedMovieQuery,
+    showWatchlistOnly,
+  ]);
 
-  // Fetch TV Series Catalog
+  // Fetch TV Series Catalog (across all or selected streaming platform in ES or VO/EN)
   useEffect(() => {
     if (activeSection !== 'series') return;
     let cancelled = false;
     if (seriesPage === 1) {
       setLoadingSeries(true);
+      setSeriesSpotlightImgFailed(false);
     } else {
       setLoadingMoreSeries(true);
     }
 
-    const apiLang = seriesLangMode === 'EN' ? 'en' : 'es';
+    const apiLang = seriesLangMode === 'EN' || seriesLangMode === 'VOSE' ? 'en' : 'es';
     fetch(
-      `/api/catalog/series?category=${encodeURIComponent(seriesCategory)}&page=${seriesPage}&lang=${apiLang}&query=${encodeURIComponent(debouncedSeriesQuery)}`
+      `/api/catalog/series?provider=${encodeURIComponent(
+        streamingProvider
+      )}&category=${encodeURIComponent(seriesCategory)}&page=${seriesPage}&lang=${apiLang}&query=${encodeURIComponent(
+        debouncedSeriesQuery
+      )}`
     )
       .then((r) => r.json())
       .then((data) => {
@@ -358,26 +775,215 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [activeSection, seriesCategory, seriesPage, seriesLangMode, debouncedSeriesQuery]);
+  }, [
+    activeSection,
+    streamingProvider,
+    seriesCategory,
+    seriesPage,
+    seriesLangMode,
+    debouncedSeriesQuery,
+  ]);
 
-  // Fetch Series Seasons & Episodes (includes real probed availableLanguages)
-  const openSeriesDetails = (tmdbId: number, seasonNum = 1) => {
+  // Fetch Dedicated Anime Catalog (Crunchyroll, AnimeBox, JKAnime, AnimeFLV, or All Anime)
+  useEffect(() => {
+    if (activeSection !== 'anime') return;
+    let cancelled = false;
+    if (animePage === 1) {
+      setLoadingAnime(true);
+      setAnimeSpotlightImgFailed(false);
+    } else {
+      setLoadingMoreAnime(true);
+    }
+
+    const apiLang = animeLangPref === 'EN' ? 'en' : 'es';
+    const endpoint =
+      animeMediaKind === 'series'
+        ? `/api/catalog/series?provider=${encodeURIComponent(
+            animePortal
+          )}&category=${encodeURIComponent(animeCategory)}&page=${animePage}&lang=${apiLang}&query=${encodeURIComponent(
+            debouncedAnimeQuery
+          )}`
+        : animeLangPref === 'EN'
+        ? `/api/catalog/bingetrix?provider=${encodeURIComponent(
+            animePortal
+          )}&category=${encodeURIComponent(animeCategory)}&page=${animePage}&query=${encodeURIComponent(
+            debouncedAnimeQuery
+          )}`
+        : `/api/catalog/movies?provider=${encodeURIComponent(
+            animePortal
+          )}&category=${encodeURIComponent(animeCategory)}&page=${animePage}&query=${encodeURIComponent(
+            debouncedAnimeQuery
+          )}`;
+
+    fetch(endpoint)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const rawList: CatalogMovie[] =
+          animeMediaKind === 'series'
+            ? Array.isArray(data?.series)
+              ? data.series
+              : []
+            : Array.isArray(data?.movies)
+            ? data.movies
+            : [];
+        const normalized = rawList.map((item) => ({
+          ...item,
+          mediaType: (animeMediaKind === 'series' ? 'tv' : 'movie') as 'tv' | 'movie',
+        }));
+        setHasMoreAnime(Boolean(data?.hasMore));
+        setAnimeItems((prev) => {
+          if (animePage === 1) return normalized;
+          const seen = new Set(prev.map((a) => a.id));
+          return [...prev, ...normalized.filter((a) => !seen.has(a.id))];
+        });
+      })
+      .catch(() => {
+        if (!cancelled && animePage === 1) setAnimeItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingAnime(false);
+          setLoadingMoreAnime(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSection,
+    animePortal,
+    animeMediaKind,
+    animeCategory,
+    animePage,
+    animeLangPref,
+    debouncedAnimeQuery,
+  ]);
+
+  // Instant 2-Step Series -> Temporada -> Capítulo Loader (Opens Modal in 0ms + Non-Blocking Language Check)
+  const openSeriesDetails = (
+    tmdbId: number,
+    seasonNum = 1,
+    seedShow?: Partial<CatalogMovie>
+  ) => {
+    const reqSeq = ++seriesFetchSeqRef.current;
     setLoadingSeriesDetails(true);
+    setEpisodeSearchQuery('');
+    setEpisodeSortDesc(false);
+    setEpisodeRangeStart(0);
+
+    // Open the Series Modal IMMEDIATELY so the user never waits for a network roundtrip
+    setSelectedSeries((prev) => {
+      if (prev && prev.tmdbId === tmdbId) {
+        return {
+          ...prev,
+          activeSeason: seasonNum,
+        };
+      }
+      return {
+        tmdbId,
+        title: seedShow?.title || (lang === 'es' ? 'Cargando serie...' : 'Loading series...'),
+        originalTitle: seedShow?.originalTitle || seedShow?.title || '',
+        year: seedShow?.year || 'TV',
+        rating: seedShow?.rating || '',
+        overview: seedShow?.overview || '',
+        poster: seedShow?.poster || '',
+        backdrop: seedShow?.backdrop || seedShow?.poster || '',
+        seasons: [
+          {
+            seasonNumber: seasonNum,
+            name: lang === 'es' ? `Temporada ${seasonNum}` : `Season ${seasonNum}`,
+            episodeCount: 0,
+          },
+        ],
+        activeSeason: seasonNum,
+        episodes: [],
+      };
+    });
+
     const apiLang = seriesLangMode === 'EN' ? 'en' : 'es';
     fetch(`/api/catalog/tv/${tmdbId}?season=${seasonNum}&lang=${apiLang}`)
       .then((r) => r.json())
       .then((data) => {
+        if (reqSeq !== seriesFetchSeqRef.current) return;
         if (data?.success && data?.details) {
           const nextSeries: TvSeriesDetails = data.details;
           setSelectedSeries(nextSeries);
-          const avail = nextSeries.availableLanguages;
-          if (Array.isArray(avail) && avail.length > 0) {
-            setSeriesLangMode((prev) => (avail.includes(prev) ? prev : avail[0]));
+          setLoadingSeriesDetails(false);
+
+          // Automatically open the 50-episode block containing the user's last watched episode in this season
+          const savedEpInSeason = watchHistory.find(
+            (h) =>
+              h.mediaType === 'tv' &&
+              h.tmdbId === tmdbId &&
+              h.season === nextSeries.activeSeason &&
+              Boolean(h.episode)
+          );
+          if (savedEpInSeason?.episode && nextSeries.episodes.length > 50) {
+            const foundIdx = nextSeries.episodes.findIndex(
+              (ep) => ep.episodeNumber === savedEpInSeason.episode
+            );
+            if (foundIdx >= 0) {
+              setEpisodeRangeStart(Math.floor(foundIdx / 50) * 50);
+            }
           }
+          setTimeout(() => {
+            episodeListScrollRef.current?.scrollTo({ top: 0 });
+          }, 0);
+
+          // If languages already cached in response, apply them; otherwise probe asynchronously in background
+          if (
+            Array.isArray(nextSeries.availableLanguages) &&
+            nextSeries.availableLanguages.length > 0
+          ) {
+            setProbingSeriesLangs(false);
+            setSeriesLangMode((prev) =>
+              nextSeries.availableLanguages!.includes(prev)
+                ? prev
+                : nextSeries.availableLanguages![0]
+            );
+          } else {
+            setProbingSeriesLangs(true);
+            const firstEp = nextSeries.episodes[0]?.episodeNumber || 1;
+            fetch(
+              `/api/catalog/tv/${tmdbId}/languages?season=${nextSeries.activeSeason}&episode=${firstEp}&title=${encodeURIComponent(
+                nextSeries.title || ''
+              )}&origTitle=${encodeURIComponent(nextSeries.originalTitle || '')}`
+            )
+              .then((r2) => r2.json())
+              .then((langData) => {
+                if (reqSeq !== seriesFetchSeqRef.current) return;
+                const avail: ('ES' | 'LAT' | 'VOSE' | 'EN')[] = Array.isArray(
+                  langData?.availableLanguages
+                )
+                  ? langData.availableLanguages
+                  : [];
+                if (avail.length > 0) {
+                  setSelectedSeries((curr) =>
+                    curr && curr.tmdbId === tmdbId
+                      ? { ...curr, availableLanguages: avail }
+                      : curr
+                  );
+                  setSeriesLangMode((prev) => (avail.includes(prev) ? prev : avail[0]));
+                }
+              })
+              .catch(() => {})
+              .finally(() => {
+                if (reqSeq === seriesFetchSeqRef.current) {
+                  setProbingSeriesLangs(false);
+                }
+              });
+          }
+        } else {
+          setLoadingSeriesDetails(false);
         }
       })
-      .catch(() => {})
-      .finally(() => setLoadingSeriesDetails(false));
+      .catch(() => {
+        if (reqSeq === seriesFetchSeqRef.current) {
+          setLoadingSeriesDetails(false);
+        }
+      });
   };
 
   // Fetch Sports Agenda + Live Real-Time Scoreboards
@@ -445,27 +1051,101 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     };
   }, [activeSection, debouncedYtQuery]);
 
-  // Fetch Spanish TDT Live Channels
-  const fetchTdtCatalog = async () => {
-    setLoadingTdt(true);
-    try {
-      const res = await fetch('/api/catalog/tdt');
-      const data = await res.json();
-      if (Array.isArray(data?.channels)) {
-        setTdtChannels(data.channels);
-      }
-    } catch {
-      // Keep cached channels if transient network hiccup
-    } finally {
-      setLoadingTdt(false);
+  // Navigation Helper Actions from the Big Launcher Grid
+  const goToHomeGrid = () => {
+    triggerHaptic('light');
+    setShowWatchlistOnly(false);
+    setFocusedHub('all');
+    onChangeSection('home');
+  };
+
+  const enterGeneralMovies = () => {
+    triggerHaptic('light');
+    setFocusedHub('all');
+    setStreamingProvider('all');
+    setShowWatchlistOnly(false);
+    setMovieCategory('trending');
+    setMoviePage(1);
+    onChangeSection('movies');
+  };
+
+  const enterGeneralSeries = () => {
+    triggerHaptic('light');
+    setFocusedHub('all');
+    setStreamingProvider('all');
+    setShowWatchlistOnly(false);
+    setSeriesCategory('trending');
+    setSeriesPage(1);
+    onChangeSection('series');
+  };
+
+  const enterAnimeHub = (
+    portal: AnimePortalId = 'anime_all',
+    mediaKind: 'series' | 'movies' = 'series'
+  ) => {
+    triggerHaptic('light');
+    setFocusedHub('all');
+    setShowWatchlistOnly(false);
+    setAnimePortal(portal);
+    setAnimeMediaKind(mediaKind);
+    setAnimeQuery('');
+    setAnimeCategory(portal === 'jkanime' ? 'simulcast' : 'trending');
+    setAnimePage(1);
+    onChangeSection('anime');
+  };
+
+  const enterStreamingPlatform = (
+    provider: Exclude<StreamingProviderId, 'all' | AnimePortalId>,
+    initialTab: 'movies' | 'series' = 'movies'
+  ) => {
+    triggerHaptic('light');
+    setFocusedHub(provider);
+    setStreamingProvider(provider);
+    setShowWatchlistOnly(false);
+    setMovieQuery('');
+    setSeriesQuery('');
+    setMovieCategory('trending');
+    setSeriesCategory('trending');
+    setMoviePage(1);
+    setSeriesPage(1);
+    onChangeSection(initialTab);
+  };
+
+  const enterMovistarHub = (mode: 'live' | 'movies' | 'series' = 'live') => {
+    triggerHaptic('light');
+    setFocusedHub('movistar');
+    setStreamingProvider('movistar');
+    setShowWatchlistOnly(false);
+    if (mode === 'live') {
+      setTdtCategory('movistar');
+      setTdtSearch('');
+      onChangeSection('tdt');
+    } else if (mode === 'movies') {
+      setMovieCategory('trending');
+      setMoviePage(1);
+      onChangeSection('movies');
+    } else {
+      setSeriesCategory('trending');
+      setSeriesPage(1);
+      onChangeSection('series');
     }
   };
 
-  useEffect(() => {
-    if (activeSection === 'tdt' && tdtChannels.length === 0) {
-      fetchTdtCatalog();
-    }
-  }, [activeSection]);
+  const enterDaznLiveHub = () => {
+    triggerHaptic('light');
+    setFocusedHub('dazn');
+    setTdtCategory('dazn');
+    setTdtSearch('');
+    onChangeSection('tdt');
+  };
+
+  const enterSpanishTdtHub = () => {
+    triggerHaptic('light');
+    setFocusedHub('tdt_es');
+    setTdtCategory('tdt_all');
+    setTdtSearch('');
+    onChangeSection('tdt');
+  };
 
   const handleToggleBookmark = (item: CatalogMovie, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -486,7 +1166,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const favoriteSeriesList = cleanWatchlist.filter((w) => w.mediaType === 'tv');
 
   const filteredTdtChannels = tdtChannels.filter((ch) => {
-    if (tdtCategory !== 'all' && ch.category !== tdtCategory) return false;
+    if (tdtCategory === 'tdt_all') {
+      if (ch.category === 'movistar' || ch.category === 'dazn') return false;
+    } else if (tdtCategory !== 'all' && ch.category !== tdtCategory) {
+      return false;
+    }
     if (tdtSearch.trim()) {
       const q = tdtSearch.toLowerCase();
       return (
@@ -499,6 +1183,19 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     }
     return true;
   });
+
+  const homeMatchingChannels = React.useMemo(() => {
+    if (!debouncedHomeQuery || debouncedHomeQuery.length < 2) return [];
+    const q = debouncedHomeQuery.toLowerCase();
+    return tdtChannels
+      .filter(
+        (ch) =>
+          ch.name.toLowerCase().includes(q) ||
+          ch.shortMark.toLowerCase().includes(q) ||
+          ch.network.toLowerCase().includes(q)
+      )
+      .slice(0, 6);
+  }, [debouncedHomeQuery, tdtChannels]);
 
   const filteredSports = sportsEvents.filter((ev) => {
     if (sportFilter !== 'all' && ev.sport !== sportFilter) return false;
@@ -524,6 +1221,18 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   };
 
   const displayedMovies = showWatchlistOnly ? cleanWatchlist : movies;
+  const activePlatformMeta =
+    STREAMING_PLATFORMS.find((p) => p.id === streamingProvider) || STREAMING_PLATFORMS[0];
+
+  const isSpecificPlatformView =
+    streamingProvider !== 'all' &&
+    !showWatchlistOnly &&
+    (activeSection === 'movies' || activeSection === 'vose' || activeSection === 'series');
+
+  const isMovistarContext =
+    focusedHub === 'movistar' ||
+    streamingProvider === 'movistar' ||
+    (activeSection === 'tdt' && tdtCategory === 'movistar');
 
   const showSpotlight =
     (activeSection === 'movies' || activeSection === 'vose') &&
@@ -535,23 +1244,286 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const spotlightMovie = showSpotlight ? displayedMovies[0] : null;
   const gridMovies = showSpotlight ? displayedMovies.slice(1) : displayedMovies;
 
-  const isCinemaFamily =
-    activeSection === 'movies' || activeSection === 'vose' || activeSection === 'series';
+  const showSeriesSpotlight =
+    activeSection === 'series' &&
+    !debouncedSeriesQuery &&
+    !loadingSeries &&
+    seriesList.length > 0;
+  const spotlightSeries = showSeriesSpotlight ? seriesList[0] : null;
+  const gridSeries = showSeriesSpotlight ? seriesList.slice(1) : seriesList;
+
+  const activeAnimePortalMeta =
+    ANIME_PLATFORMS.find((p) => p.id === animePortal) || ANIME_PLATFORMS[0];
+  const showAnimeSpotlight =
+    activeSection === 'anime' &&
+    !debouncedAnimeQuery &&
+    !loadingAnime &&
+    animeItems.length > 0;
+  const spotlightAnime = showAnimeSpotlight ? animeItems[0] : null;
+  const gridAnime = showAnimeSpotlight ? animeItems.slice(1) : animeItems;
+
+  // Find resume episode for currently open series modal if user watched it previously
+  const selectedSeriesHistory = selectedSeries
+    ? watchHistory.find(
+        (h) =>
+          h.mediaType === 'tv' &&
+          (h.tmdbId === selectedSeries.tmdbId ||
+            h.title.trim().toLowerCase() === selectedSeries.title.trim().toLowerCase())
+      )
+    : undefined;
+
+  const renderContinueWatchingStrip = () => {
+    if (watchHistory.length === 0) return null;
+    return (
+      <section
+        aria-label={lang === 'es' ? 'Seguir viendo' : 'Continue watching'}
+        className="space-y-2.5 pt-1"
+      >
+        <div className="flex items-center justify-between gap-2 px-0.5">
+          <div className="flex items-center gap-2 min-w-0">
+            <Clock className="w-4 h-4 text-[#E11D48] shrink-0" />
+            <h3 className="font-display font-semibold text-sm text-white truncate">
+              {lang === 'es' ? 'Seguir viendo' : 'Continue Watching'}
+            </h3>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              if (confirmClearHistory) {
+                onClearHistory();
+                setConfirmClearHistory(false);
+              } else {
+                setConfirmClearHistory(true);
+                setTimeout(() => setConfirmClearHistory(false), 3200);
+              }
+            }}
+            className={`min-h-[34px] px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+              confirmClearHistory
+                ? 'bg-rose-500 text-white border-rose-400'
+                : 'bg-white/[0.04] text-zinc-400 hover:text-white border-white/[0.08]'
+            }`}
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            <span>
+              {confirmClearHistory
+                ? lang === 'es'
+                  ? '¿Confirmar?'
+                  : 'Confirm?'
+                : lang === 'es'
+                ? 'Limpiar'
+                : 'Clear'}
+            </span>
+          </button>
+        </div>
+
+        <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-0.5 min-w-0">
+          {watchHistory.map((hItem) => {
+            const isLoadingThis = loadingItemId === hItem.id;
+            const thumb = hItem.backdrop || hItem.poster;
+            const imgBroken = brokenPosters[`hist-${hItem.id}`];
+            const resumeSec = hItem.resumeTimeSec || 0;
+            const durSec = hItem.durationSec || 0;
+            const hasResume = resumeSec > 5;
+            const progressPct = hasResume
+              ? durSec > 60
+                ? Math.min(96, Math.max(8, Math.round((resumeSec / durSec) * 100)))
+                : 28
+              : 0;
+
+            const isReadyForNextEp =
+              hItem.mediaType === 'tv' &&
+              Boolean(hItem.season) &&
+              Boolean(hItem.episode) &&
+              progressPct >= 88;
+
+            const triggerHistoryCardPlay = () => {
+              if (loadingItemId) return;
+              triggerHaptic('light');
+              if (isReadyForNextEp && hItem.season && hItem.episode) {
+                const nextEp = hItem.episode + 1;
+                onReplayHistoryItem(
+                  {
+                    ...hItem,
+                    id: sanitizeItemKey(
+                      `tv-${hItem.tmdbId || hItem.title}-${hItem.season}-${nextEp}`
+                    ),
+                    episode: nextEp,
+                    subtitle: `${hItem.season}x${String(nextEp).padStart(2, '0')}`,
+                    resumeTimeSec: 0,
+                  },
+                  true
+                );
+              } else {
+                onReplayHistoryItem(hItem, false);
+              }
+            };
+
+            return (
+              <div
+                key={hItem.id}
+                onClick={triggerHistoryCardPlay}
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') triggerHistoryCardPlay();
+                }}
+                className="group relative w-[204px] sm:w-[228px] shrink-0 rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] hover:border-white/25 transition-colors flex flex-col cursor-pointer"
+              >
+                <div className="relative aspect-[16/9] w-full bg-[#0E0F16] overflow-hidden">
+                  {!imgBroken && thumb ? (
+                    <img
+                      src={thumb}
+                      alt={hItem.title}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      onError={() =>
+                        setBrokenPosters((prev) => ({
+                          ...prev,
+                          [`hist-${hItem.id}`]: true,
+                        }))
+                      }
+                      className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                    />
+                  ) : (
+                    <div className="w-full h-full flex items-center justify-center bg-[#0E0F16]">
+                      {hItem.mediaType === 'tv' ? (
+                        <Tv className="w-6 h-6 text-zinc-500" />
+                      ) : (
+                        <Film className="w-6 h-6 text-zinc-500" />
+                      )}
+                    </div>
+                  )}
+
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+
+                  <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1">
+                    {hItem.mediaType === 'tv' && hItem.tmdbId && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerHaptic('light');
+                          openSeriesDetails(hItem.tmdbId!, hItem.season || 1, {
+                            tmdbId: hItem.tmdbId,
+                            title: hItem.title,
+                            poster: hItem.poster,
+                            backdrop: hItem.backdrop,
+                            year: hItem.year,
+                          });
+                        }}
+                        title={lang === 'es' ? 'Ver temporadas y capítulos' : 'All episodes'}
+                        aria-label="Ver capítulos"
+                        className="h-7 px-2 rounded-full bg-black/70 hover:bg-black/90 text-[10px] font-semibold text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer transition-colors whitespace-nowrap"
+                      >
+                        Capítulos
+                      </button>
+                    )}
+                    {hasResume && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (loadingItemId) return;
+                          triggerHaptic('light');
+                          onReplayHistoryItem(hItem, true);
+                        }}
+                        title={lang === 'es' ? 'Empezar desde el principio' : 'Start over'}
+                        aria-label="Empezar desde el principio"
+                        className="w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerHaptic('light');
+                        onRemoveHistoryItem(hItem.id);
+                      }}
+                      aria-label="Quitar del historial"
+                      className="w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-zinc-100 truncate tabular-nums">
+                      {hItem.mediaType === 'tv' && hItem.season && hItem.episode && progressPct >= 88
+                        ? `Siguiente · ${hItem.season}x${String(hItem.episode + 1).padStart(2, '0')}`
+                        : hasResume
+                        ? `${lang === 'es' ? 'Seguir' : 'Resume'} · ${formatShortTime(resumeSec)}`
+                        : hItem.mediaType === 'tv' && hItem.season && hItem.episode
+                        ? `Serie · ${hItem.season}x${String(hItem.episode).padStart(2, '0')}`
+                        : `Película · ${hItem.year || 'HD'}`}
+                    </span>
+                    <span className="w-7 h-7 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-md shrink-0">
+                      {isLoadingThis ? (
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      ) : (
+                        <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                      )}
+                    </span>
+                  </div>
+
+                  {hasResume && (
+                    <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
+                      <div
+                        className="h-full bg-[#E11D48]"
+                        style={{ width: `${progressPct}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-2.5 flex flex-col gap-0.5">
+                  <h4 className="font-display font-semibold text-xs text-white line-clamp-1">
+                    {hItem.title}
+                  </h4>
+                  <span className="text-[11px] text-zinc-400 line-clamp-1">
+                    {hItem.mediaType === 'tv' && hItem.season && hItem.episode
+                      ? `${hItem.season}x${String(hItem.episode).padStart(2, '0')} · ${
+                          hItem.episodeTitle || 'Capítulo'
+                        }`
+                      : hItem.subtitle ||
+                        (hItem.preferLang === 'EN' ? 'VO · Inglés' : 'Español HD')}
+                  </span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  };
 
   return (
     <div className="@container w-full min-w-0 max-w-full space-y-5">
-      {/* Netflix-Style Rich Details, Language Selector & 4K Official Trailer Modal */}
+      {/* Movie / Series Rich Details & Language Selector Modal */}
       <MediaDetailsModal
         item={previewItem}
         lang={lang}
-        defaultAudioLang={activeSection === 'vose' ? 'EN' : 'ES'}
+        defaultAudioLang={
+          activeSection === 'anime'
+            ? animeLangPref
+            : activeSection === 'vose'
+            ? 'EN'
+            : activeSection === 'series' && seriesLangMode === 'VOSE'
+            ? 'VOSE'
+            : activeSection === 'series' && seriesLangMode === 'EN'
+            ? 'EN'
+            : 'ES'
+        }
         isBookmarked={previewItem ? isBookmarked(previewItem) : false}
         onClose={() => setPreviewItem(null)}
         onPlayMovie={(m, pLang) => onPlayMovie(m, pLang)}
         onOpenSeriesEpisodes={(tmdbId) => {
-          setShowWatchlistOnly(false);
-          onChangeSection('series');
-          openSeriesDetails(tmdbId, 1);
+          const seed = previewItem || undefined;
+          setPreviewItem(null);
+          openSeriesDetails(tmdbId, 1, seed);
         }}
         onToggleBookmark={(m) => onToggleCatalogFavorite(m)}
         onAddToQueue={onAddToQueue}
@@ -559,389 +1531,1654 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       />
 
       {/* ================================================================== */}
-      {/* CINEMA UNIVERSE SWITCHER (PELÍCULAS · SERIES TV · TV ESPAÑA)       */}
+      {/* DEDICATED 2-STEP SERIES -> TEMPORADA -> CAPÍTULO MODAL (Z-65)      */}
+      {/* Opens in 0ms on click and lists ALL seasons and ALL episodes       */}
       {/* ================================================================== */}
-      {isCinemaFamily && (
-        <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar pb-0.5">
-          <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setShowWatchlistOnly(false);
-                setMoviePage(1);
-                if (activeSection === 'series') onChangeSection('movies');
-              }}
-              className={`min-h-[36px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                (activeSection === 'movies' || activeSection === 'vose') && !showWatchlistOnly
-                  ? 'bg-white text-[#050508] shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              {lang === 'es' ? 'Películas' : 'Movies'}
-            </button>
+      {selectedSeries &&
+        (() => {
+          const EPISODE_CHUNK_SIZE = 50;
+          const allSeasonEpisodes = selectedSeries.episodes || [];
+          const orderedEpisodes = episodeSortDesc
+            ? [...allSeasonEpisodes].reverse()
+            : allSeasonEpisodes;
 
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setShowWatchlistOnly(false);
-                onChangeSection('series');
-              }}
-              className={`min-h-[36px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
-                activeSection === 'series'
-                  ? 'bg-white text-[#050508] shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              {lang === 'es' ? 'Series TV' : 'TV Series'}
-            </button>
+          const trimmedEpQuery = episodeSearchQuery.trim();
+          const numericEpTarget = /^\d+$/.test(trimmedEpQuery)
+            ? parseInt(trimmedEpQuery, 10)
+            : null;
+          const lowerEpQuery = trimmedEpQuery.toLowerCase();
 
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setShowWatchlistOnly(false);
-                onChangeSection('tdt');
-              }}
-              className="min-h-[36px] px-4 rounded-xl text-xs font-bold text-zinc-300 hover:text-white flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer"
-            >
-              <span className="w-1.5 h-1.5 rounded-full bg-[#E11D48] animate-pulse" />
-              <span>{lang === 'es' ? 'TV España · Vivo' : 'Spain Live TV'}</span>
-            </button>
-          </div>
+          const filteredEpisodes = trimmedEpQuery
+            ? numericEpTarget !== null
+              ? [
+                  ...orderedEpisodes.filter((ep) => ep.episodeNumber === numericEpTarget),
+                  ...orderedEpisodes.filter(
+                    (ep) =>
+                      ep.episodeNumber !== numericEpTarget &&
+                      (String(ep.episodeNumber).includes(trimmedEpQuery) ||
+                        ep.title.toLowerCase().includes(lowerEpQuery))
+                  ),
+                ]
+              : orderedEpisodes.filter(
+                  (ep) =>
+                    ep.title.toLowerCase().includes(lowerEpQuery) ||
+                    (ep.overview && ep.overview.toLowerCase().includes(lowerEpQuery)) ||
+                    String(ep.episodeNumber).includes(lowerEpQuery)
+                )
+            : orderedEpisodes;
 
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('light');
-              if (activeSection === 'series') onChangeSection('movies');
-              setShowWatchlistOnly((v) => !v);
-            }}
-            className={`min-h-[38px] px-3.5 rounded-2xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer border transition-colors ${
-              showWatchlistOnly
-                ? 'bg-white text-[#050507] border-white'
-                : 'bg-[#0D0D12] text-zinc-300 border-white/[0.08] hover:text-white'
-            }`}
-          >
-            <Heart className={`w-3.5 h-3.5 ${showWatchlistOnly ? 'fill-current text-[#E11D48]' : ''}`} />
-            <span>
-              {lang === 'es' ? 'Mi Lista' : 'My List'} ({cleanWatchlist.length})
-            </span>
-          </button>
-        </div>
-      )}
+          const totalChunks = Math.ceil(orderedEpisodes.length / EPISODE_CHUNK_SIZE);
+          const safeRangeStart =
+            episodeRangeStart < orderedEpisodes.length ? episodeRangeStart : 0;
+          const visibleEpisodes = trimmedEpQuery
+            ? filteredEpisodes.slice(0, 80)
+            : orderedEpisodes.length > EPISODE_CHUNK_SIZE
+            ? orderedEpisodes.slice(safeRangeStart, safeRangeStart + EPISODE_CHUNK_SIZE)
+            : orderedEpisodes;
+
+          const seriesBookmarkPayload: CatalogMovie = {
+            id: `series-${selectedSeries.tmdbId}`,
+            tmdbId: selectedSeries.tmdbId,
+            mediaType: 'tv',
+            title: selectedSeries.title,
+            year: selectedSeries.year,
+            rating: selectedSeries.rating,
+            overview: selectedSeries.overview,
+            poster: selectedSeries.poster,
+            backdrop: selectedSeries.backdrop,
+            languages: [],
+          };
+          const seriesSaved = isBookmarked(seriesBookmarkPayload);
+
+          return (
+            <div
+              role="dialog"
+              aria-modal="true"
+              aria-label={selectedSeries.title}
+              onClick={() => setSelectedSeries(null)}
+              className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className="w-full sm:max-w-[940px] max-h-[93dvh] sm:max-h-[89dvh] rounded-t-3xl sm:rounded-3xl bg-[#090A10] border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden"
+              >
+                {/* Mobile Grab Handle */}
+                <div className="sm:hidden pt-2 flex justify-center shrink-0">
+                  <div className="w-10 h-1.5 rounded-full bg-white/25" />
+                </div>
+
+                {/* Compact Series Header + Season Selector (Never crushes episodes below) */}
+                <div className="relative px-3.5 py-3 sm:px-6 sm:py-4 bg-gradient-to-b from-[#131522] to-[#090A10] border-b border-white/[0.08] space-y-2.5 sm:space-y-3 shrink-0">
+                  {/* Top Action Bar: Save + Audio Switcher on Left | Pinned Close Button on Right */}
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-x-auto no-scrollbar">
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleBookmark(seriesBookmarkPayload, e)}
+                        className="min-h-[40px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                      >
+                        <Heart
+                          className={`w-3.5 h-3.5 shrink-0 ${
+                            seriesSaved ? 'fill-current text-[#E11D48]' : 'text-zinc-300'
+                          }`}
+                        />
+                        <span>
+                          {seriesSaved
+                            ? lang === 'es'
+                              ? 'Guardada'
+                              : 'Saved'
+                            : lang === 'es'
+                            ? 'Guardar'
+                            : 'Save'}
+                        </span>
+                      </button>
+
+                      {/* Audio Selector */}
+                      <div className="flex items-center gap-1 p-1 rounded-xl bg-black/55 border border-white/10 shrink-0">
+                        {(Array.isArray(selectedSeries.availableLanguages) &&
+                        selectedSeries.availableLanguages.length > 0
+                          ? (
+                              [
+                                { code: 'ES', label: 'Castellano' },
+                                { code: 'LAT', label: 'Latino' },
+                                { code: 'VOSE', label: 'VOSE' },
+                                { code: 'EN', label: 'Inglés' },
+                              ] as const
+                            ).filter((opt) =>
+                              selectedSeries.availableLanguages!.includes(opt.code)
+                            )
+                          : ([
+                              { code: 'ES', label: 'Español' },
+                              { code: 'EN', label: 'VO · Inglés' },
+                            ] as const)
+                        ).map((opt) => (
+                          <button
+                            key={opt.code}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setSeriesLangMode(opt.code);
+                            }}
+                            className={`min-h-[32px] px-2.5 sm:px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                              seriesLangMode === opt.code
+                                ? 'bg-white text-[#050508]'
+                                : 'text-zinc-400 hover:text-white'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                        {probingSeriesLangs && (
+                          <span
+                            title="Verificando pistas de audio..."
+                            className="px-1.5 flex items-center text-zinc-400"
+                          >
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#E11D48]" />
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setSelectedSeries(null)}
+                      aria-label="Cerrar serie"
+                      className="min-h-[40px] min-w-[40px] rounded-xl bg-white/[0.08] hover:bg-[#E11D48] text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  {/* Series Title + Quick Resume / Play Episode 1 */}
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0 flex-1 space-y-0.5">
+                      <div className="text-[11px] sm:text-xs text-zinc-400 flex items-center gap-1.5 whitespace-nowrap overflow-hidden">
+                        <span className="text-[#FB7185] font-semibold">
+                          {lang === 'es' ? 'Serie TV' : 'TV Series'}
+                        </span>
+                        <span aria-hidden="true">·</span>
+                        <span className="text-zinc-200 tabular-nums">{selectedSeries.year}</span>
+                        {selectedSeries.rating && (
+                          <>
+                            <span aria-hidden="true">·</span>
+                            <span className="text-amber-400 font-mono font-semibold tabular-nums">
+                              ★ {selectedSeries.rating}
+                            </span>
+                          </>
+                        )}
+                        <span aria-hidden="true">·</span>
+                        <span className="tabular-nums text-zinc-200 truncate">
+                          {selectedSeries.seasons.length}{' '}
+                          {selectedSeries.seasons.length === 1
+                            ? lang === 'es'
+                              ? 'Temporada'
+                              : 'Season'
+                            : lang === 'es'
+                            ? 'Temporadas'
+                            : 'Seasons'}
+                        </span>
+                      </div>
+                      <h3 className="font-display font-bold text-lg sm:text-2xl text-white leading-snug line-clamp-1 sm:line-clamp-2 text-balance">
+                        {selectedSeries.title}
+                      </h3>
+                      {selectedSeries.overview && (
+                        <p className="hidden sm:block text-xs text-zinc-400 line-clamp-1">
+                          {selectedSeries.overview}
+                        </p>
+                      )}
+                    </div>
+
+                    {selectedSeriesHistory?.season && selectedSeriesHistory?.episode ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('success');
+                          onReplayHistoryItem(selectedSeriesHistory, false);
+                          setSelectedSeries(null);
+                        }}
+                        className="min-h-[44px] px-3.5 sm:px-4 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-lg shadow-[#E11D48]/25"
+                      >
+                        <Play className="w-4 h-4 fill-current shrink-0" />
+                        <span className="tabular-nums">
+                          {lang === 'es'
+                            ? `Seguir T${selectedSeriesHistory.season} · Cap. ${selectedSeriesHistory.episode}`
+                            : `Resume S${selectedSeriesHistory.season} · Ep ${selectedSeriesHistory.episode}`}
+                        </span>
+                      </button>
+                    ) : allSeasonEpisodes.length > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('success');
+                          onPlaySeriesEpisode(
+                            selectedSeries,
+                            allSeasonEpisodes[0],
+                            seriesLangMode
+                          );
+                          setSelectedSeries(null);
+                        }}
+                        className="min-h-[44px] px-3.5 sm:px-4 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-lg shadow-[#E11D48]/25"
+                      >
+                        <Play className="w-4 h-4 fill-current shrink-0" />
+                        <span className="tabular-nums">
+                          {lang === 'es'
+                            ? `Ver T${selectedSeries.activeSeason} · Cap. ${allSeasonEpisodes[0].episodeNumber}`
+                            : `Play S${selectedSeries.activeSeason} · Ep ${allSeasonEpisodes[0].episodeNumber}`}
+                        </span>
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {/* Step 1: Horizontal Season Selector */}
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-0.5">
+                    {selectedSeries.seasons.map((s) => {
+                      const isActiveSeason = selectedSeries.activeSeason === s.seasonNumber;
+                      return (
+                        <button
+                          key={s.seasonNumber}
+                          type="button"
+                          onClick={() => {
+                            if (
+                              s.seasonNumber === selectedSeries.activeSeason &&
+                              !loadingSeriesDetails
+                            )
+                              return;
+                            triggerHaptic('light');
+                            openSeriesDetails(selectedSeries.tmdbId, s.seasonNumber);
+                          }}
+                          className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                            isActiveSeason
+                              ? 'bg-white text-[#050508] border-white shadow-sm'
+                              : 'bg-white/[0.05] hover:bg-white/[0.11] text-zinc-200 border-white/[0.1]'
+                          }`}
+                        >
+                          <span className="tabular-nums">
+                            {lang === 'es'
+                              ? `Temporada ${s.seasonNumber}`
+                              : `Season ${s.seasonNumber}`}
+                          </span>
+                          {s.episodeCount > 0 && (
+                            <span
+                              className={`text-[11px] font-normal tabular-nums ${
+                                isActiveSeason ? 'text-zinc-700' : 'text-zinc-400'
+                              }`}
+                            >
+                              · {s.episodeCount} cap.
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Step 2: Effortless Episode Navigation Bar (Jump to Ep #, Sort, & 50-Ep Range Tabs) */}
+                {!loadingSeriesDetails && allSeasonEpisodes.length > 0 && (
+                  <div className="px-3.5 py-2.5 sm:px-6 bg-[#0C0E16] border-b border-white/[0.07] space-y-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1 min-w-0">
+                        <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                        <input
+                          type="text"
+                          value={episodeSearchQuery}
+                          onChange={(e) => setEpisodeSearchQuery(e.target.value)}
+                          placeholder={
+                            lang === 'es'
+                              ? `Ir al cap. # (1–${allSeasonEpisodes.length}) o buscar título...`
+                              : `Jump to ep # (1–${allSeasonEpisodes.length}) or search title...`
+                          }
+                          className="w-full h-10 pl-9 pr-8 rounded-xl bg-[#06070B] border border-white/10 focus:border-[#E11D48]/60 text-xs sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
+                        />
+                        {episodeSearchQuery && (
+                          <button
+                            type="button"
+                            onClick={() => setEpisodeSearchQuery('')}
+                            aria-label="Limpiar búsqueda de capítulo"
+                            className="w-7 h-7 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center absolute right-1.5 top-1/2 -translate-y-1/2 cursor-pointer"
+                          >
+                            <X className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {allSeasonEpisodes.length > 4 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setEpisodeSortDesc((prev) => !prev);
+                            setEpisodeRangeStart(0);
+                            episodeListScrollRef.current?.scrollTo({ top: 0 });
+                          }}
+                          className="min-h-[40px] px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-semibold text-zinc-200 flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                          title={
+                            episodeSortDesc
+                              ? 'Ordenado de últimos a primeros'
+                              : 'Ordenado del capítulo 1 al final'
+                          }
+                        >
+                          <ArrowUpDown className="w-3.5 h-3.5 text-[#FB7185] shrink-0" />
+                          <span className="tabular-nums">
+                            {episodeSortDesc
+                              ? lang === 'es'
+                                ? 'Últimos primero'
+                                : 'Newest first'
+                              : `1 → ${allSeasonEpisodes.length}`}
+                          </span>
+                        </button>
+                      )}
+                    </div>
+
+                    {/* 50-Episode Range Blocks for Long Seasons (e.g. Doraemon 1464 eps, One Piece, etc.) */}
+                    {!trimmedEpQuery && totalChunks > 1 && (
+                      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                        {Array.from({ length: totalChunks }).map((_, chunkIdx) => {
+                          const startIdx = chunkIdx * EPISODE_CHUNK_SIZE;
+                          const chunkSlice = orderedEpisodes.slice(
+                            startIdx,
+                            startIdx + EPISODE_CHUNK_SIZE
+                          );
+                          if (chunkSlice.length === 0) return null;
+                          const firstEpNum = chunkSlice[0].episodeNumber;
+                          const lastEpNum = chunkSlice[chunkSlice.length - 1].episodeNumber;
+                          const isCurrentChunk = safeRangeStart === startIdx;
+                          return (
+                            <button
+                              key={startIdx}
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                setEpisodeRangeStart(startIdx);
+                                episodeListScrollRef.current?.scrollTo({
+                                  top: 0,
+                                  behavior: 'smooth',
+                                });
+                              }}
+                              className={`min-h-[34px] px-3 rounded-lg text-xs font-semibold tabular-nums whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                                isCurrentChunk
+                                  ? 'bg-[#E11D48] text-white shadow-sm'
+                                  : 'bg-white/[0.04] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.07]'
+                              }`}
+                            >
+                              {firstEpNum === lastEpNum
+                                ? `Cap. ${firstEpNum}`
+                                : `${firstEpNum} – ${lastEpNum}`}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Scrollable Episode List (Full-Width Cards on Mobile, 2 Spacious Columns on Desktop lg:) */}
+                <div
+                  ref={episodeListScrollRef}
+                  className="flex-1 overflow-y-auto px-3.5 py-3 sm:px-6 sm:py-4 space-y-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+                >
+                  {loadingSeriesDetails ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                      {Array.from({ length: 6 }).map((_, idx) => (
+                        <div
+                          key={idx}
+                          className="h-24 rounded-2xl bg-white/[0.04] border border-white/[0.07] skeleton-shimmer"
+                        />
+                      ))}
+                    </div>
+                  ) : allSeasonEpisodes.length === 0 ? (
+                    <div className="py-12 text-center rounded-2xl bg-white/[0.03] border border-white/[0.07] px-4 space-y-2">
+                      <Tv className="w-7 h-7 text-zinc-500 mx-auto" />
+                      <p className="text-sm font-semibold text-white">
+                        {lang === 'es'
+                          ? 'No hay capítulos listados en esta temporada todavía'
+                          : 'No episodes listed for this season yet'}
+                      </p>
+                    </div>
+                  ) : visibleEpisodes.length === 0 ? (
+                    <div className="py-10 text-center rounded-2xl bg-white/[0.03] border border-white/[0.07] px-4 space-y-2">
+                      <Search className="w-6 h-6 text-zinc-500 mx-auto" />
+                      <p className="text-sm font-semibold text-white">
+                        {lang === 'es'
+                          ? `No se encontró ningún capítulo para "${trimmedEpQuery}"`
+                          : `No episodes matching "${trimmedEpQuery}"`}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setEpisodeSearchQuery('')}
+                        className="min-h-[38px] px-4 rounded-xl bg-white/10 hover:bg-white/15 text-xs font-semibold text-white cursor-pointer"
+                      >
+                        {lang === 'es' ? 'Ver todos los capítulos' : 'Show all episodes'}
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
+                        {visibleEpisodes.map((ep) => {
+                          const epLoadId = `tv-${selectedSeries.tmdbId}-${ep.seasonNumber}-${ep.episodeNumber}`;
+                          const isExtractingEp = loadingItemId === epLoadId;
+                          const stillBroken = brokenEpisodeImgs[ep.id];
+                          const epHistory = watchHistory.find(
+                            (h) => sanitizeItemKey(h.id) === sanitizeItemKey(epLoadId)
+                          );
+                          const epResume = epHistory?.resumeTimeSec || 0;
+                          const epDur = epHistory?.durationSec || 0;
+                          const epProgressPct =
+                            epResume > 5
+                              ? epDur > 60
+                                ? Math.min(96, Math.max(8, Math.round((epResume / epDur) * 100)))
+                                : 30
+                              : 0;
+
+                          const rawTitle = (ep.title || '').trim();
+                          const isRedundantEpTitle =
+                            !rawTitle ||
+                            new RegExp(
+                              `^(episodio|episode|cap[ií]tulo|cap\\.?)\\s*0*${ep.episodeNumber}$`,
+                              'i'
+                            ).test(rawTitle);
+                          const displayEpHeading = isRedundantEpTitle
+                            ? lang === 'es'
+                              ? `Capítulo ${ep.episodeNumber}`
+                              : `Episode ${ep.episodeNumber}`
+                            : `${ep.episodeNumber}. ${rawTitle}`;
+
+                          return (
+                            <div
+                              key={ep.id}
+                              onClick={() => {
+                                if (loadingItemId) return;
+                                triggerHaptic('success');
+                                onPlaySeriesEpisode(selectedSeries, ep, seriesLangMode);
+                                setSelectedSeries(null);
+                              }}
+                              role="button"
+                              tabIndex={0}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter' && !loadingItemId) {
+                                  onPlaySeriesEpisode(selectedSeries, ep, seriesLangMode);
+                                  setSelectedSeries(null);
+                                }
+                              }}
+                              className="group min-w-0 text-left rounded-2xl bg-[#0F1119] hover:bg-[#161925] border border-white/[0.08] hover:border-white/25 p-2.5 sm:p-3 flex items-center gap-3 transition-colors cursor-pointer"
+                            >
+                              {/* 16:9 Episode Still with Crisp Number Overlay */}
+                              <div className="relative w-28 sm:w-36 aspect-video rounded-xl overflow-hidden bg-[#090A10] shrink-0">
+                                {!stillBroken && (ep.still || selectedSeries.backdrop) ? (
+                                  <img
+                                    src={ep.still || selectedSeries.backdrop}
+                                    alt={displayEpHeading}
+                                    loading="lazy"
+                                    referrerPolicy="no-referrer"
+                                    onError={() =>
+                                      setBrokenEpisodeImgs((prev) => ({
+                                        ...prev,
+                                        [ep.id]: true,
+                                      }))
+                                    }
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center bg-[#0E0F16]">
+                                    <Tv className="w-5 h-5 text-zinc-500" />
+                                  </div>
+                                )}
+
+                                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/25 to-transparent flex items-center justify-center">
+                                  <div className="w-8 h-8 rounded-full bg-[#E11D48]/95 text-white flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
+                                    {isExtractingEp ? (
+                                      <Loader2 className="w-4 h-4 animate-spin" />
+                                    ) : (
+                                      <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                                    )}
+                                  </div>
+                                </div>
+
+                                <span className="absolute bottom-1.5 left-2 text-[10px] font-mono font-bold text-white tabular-nums drop-shadow">
+                                  Cap. {ep.episodeNumber}
+                                </span>
+
+                                {epProgressPct > 0 && (
+                                  <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
+                                    <div
+                                      className={`h-full ${
+                                        epProgressPct >= 88 ? 'bg-emerald-400' : 'bg-[#E11D48]'
+                                      }`}
+                                      style={{
+                                        width: `${epProgressPct >= 88 ? 100 : epProgressPct}%`,
+                                      }}
+                                    />
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Clean Episode Title, Single-Line Metadata, and Synopsis */}
+                              <div className="min-w-0 flex-1 space-y-0.5">
+                                <h4 className="font-display font-semibold text-sm text-white line-clamp-1">
+                                  {displayEpHeading}
+                                </h4>
+
+                                <div className="text-[11px] text-zinc-400 flex items-center gap-1.5 whitespace-nowrap overflow-hidden tabular-nums">
+                                  <span className="text-[#FB7185] font-semibold">
+                                    T{ep.seasonNumber}
+                                  </span>
+                                  {ep.runtime ? (
+                                    <>
+                                      <span aria-hidden="true">·</span>
+                                      <span>{ep.runtime} min</span>
+                                    </>
+                                  ) : null}
+                                  {epProgressPct >= 88 ? (
+                                    <>
+                                      <span aria-hidden="true">·</span>
+                                      <span className="inline-flex items-center gap-0.5 text-emerald-400 font-semibold">
+                                        <Check className="w-3 h-3 shrink-0" />
+                                        <span>{lang === 'es' ? 'Visto' : 'Watched'}</span>
+                                      </span>
+                                    </>
+                                  ) : epResume > 5 ? (
+                                    <>
+                                      <span aria-hidden="true">·</span>
+                                      <span className="text-amber-300">
+                                        {formatShortTime(epResume)}
+                                      </span>
+                                    </>
+                                  ) : null}
+                                </div>
+
+                                <p className="text-xs text-zinc-400/90 line-clamp-2 leading-snug">
+                                  {ep.overview ||
+                                    (lang === 'es'
+                                      ? `Temporada ${ep.seasonNumber} · Capítulo ${ep.episodeNumber}`
+                                      : `Season ${ep.seasonNumber} · Episode ${ep.episodeNumber}`)}
+                                </p>
+                              </div>
+
+                              {/* Add to Room Queue Hitbox (>=44x44px) */}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerHaptic('success');
+                                  onAddToQueue({
+                                    kind: 'tv',
+                                    title: `${selectedSeries.title} · ${ep.seasonNumber}x${String(
+                                      ep.episodeNumber
+                                    ).padStart(2, '0')}`,
+                                    subtitle: `${rawTitle || `Capítulo ${ep.episodeNumber}`} (${seriesLangMode})`,
+                                    poster: ep.still || selectedSeries.poster,
+                                    tmdbId: selectedSeries.tmdbId,
+                                    season: ep.seasonNumber,
+                                    episode: ep.episodeNumber,
+                                    preferLang: seriesLangMode,
+                                  });
+                                }}
+                                title={lang === 'es' ? 'Añadir capítulo a la cola' : 'Add to queue'}
+                                aria-label="Añadir capítulo a la cola"
+                                className="min-h-[44px] min-w-[44px] rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      {/* Bottom Prev / Next 50-Episode Range Footer for Easy Sequential Navigation */}
+                      {!trimmedEpQuery && totalChunks > 1 && (
+                        <div className="pt-2 flex items-center justify-between gap-2 border-t border-white/[0.06]">
+                          <button
+                            type="button"
+                            disabled={safeRangeStart === 0}
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setEpisodeRangeStart(
+                                Math.max(0, safeRangeStart - EPISODE_CHUNK_SIZE)
+                              );
+                              episodeListScrollRef.current?.scrollTo({
+                                top: 0,
+                                behavior: 'smooth',
+                              });
+                            }}
+                            className="min-h-[44px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-35 disabled:pointer-events-none border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                            <span>{lang === 'es' ? 'Anteriores 50' : 'Previous 50'}</span>
+                          </button>
+
+                          <span className="text-xs text-zinc-400 tabular-nums text-center">
+                            {safeRangeStart + 1}–
+                            {Math.min(
+                              orderedEpisodes.length,
+                              safeRangeStart + EPISODE_CHUNK_SIZE
+                            )}{' '}
+                            {lang === 'es' ? 'de' : 'of'} {orderedEpisodes.length}
+                          </span>
+
+                          <button
+                            type="button"
+                            disabled={
+                              safeRangeStart + EPISODE_CHUNK_SIZE >= orderedEpisodes.length
+                            }
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setEpisodeRangeStart(safeRangeStart + EPISODE_CHUNK_SIZE);
+                              episodeListScrollRef.current?.scrollTo({
+                                top: 0,
+                                behavior: 'smooth',
+                              });
+                            }}
+                            className="min-h-[44px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-35 disabled:pointer-events-none border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                          >
+                            <span>{lang === 'es' ? 'Siguientes 50' : 'Next 50'}</span>
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
       {/* ================================================================== */}
-      {/* LIVE BROADCAST SWITCHER (TV ESPAÑA · MOVISTAR+ · DAZN · PARTIDOS)  */}
+      {/* VIEW 0: BIG VISUAL HOME LAUNCHER GRID ("¿QUÉ QUIERES VER?")        */}
       {/* ================================================================== */}
-      {(activeSection === 'tdt' || activeSection === 'sports') && (
-        <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar pb-0.5">
-          <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setTdtCategory('all');
-                onChangeSection('tdt');
-              }}
-              className={`min-h-[38px] px-3.5 sm:px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
-                activeSection === 'tdt' && tdtCategory !== 'movistar' && tdtCategory !== 'dazn'
-                  ? 'bg-white text-[#050508] shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <Radio
-                className={`w-3.5 h-3.5 ${
-                  activeSection === 'tdt' && tdtCategory !== 'movistar' && tdtCategory !== 'dazn'
-                    ? 'text-[#E11D48]'
-                    : ''
-                }`}
+      {activeSection === 'home' && (
+        <div className="space-y-6">
+          {/* Clean Header + Single Universal Search Bar */}
+          <div className="space-y-3.5">
+            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
+              <div>
+                <h2 className="font-display font-bold text-xl sm:text-2xl text-white tracking-tight">
+                  {lang === 'es' ? '¿Qué quieres ver hoy?' : 'What do you want to watch?'}
+                </h2>
+                <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
+                  {lang === 'es'
+                    ? 'Elige todo el cine y series o entra en tu plataforma o canal en directo.'
+                    : 'Browse all movies & series or jump into a specific streaming platform or live channel.'}
+                </p>
+              </div>
+            </div>
+
+            {/* Universal Search Input */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={homeQuery}
+                onChange={(e) => setHomeQuery(e.target.value)}
+                placeholder={
+                  lang === 'es'
+                    ? 'Buscar cualquier película, serie, canal (Antena 3, DAZN, Movistar) o pegar enlace...'
+                    : 'Search any movie, series, live channel, or paste a direct URL...'
+                }
+                className="w-full h-12 pl-11 pr-11 rounded-2xl bg-[#0D0E15] border border-white/[0.1] focus:border-white/35 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
               />
-              <span>{lang === 'es' ? 'TV España (TDT)' : 'Spain Live TV'}</span>
-            </button>
+              {homeQuery && (
+                <button
+                  type="button"
+                  onClick={() => setHomeQuery('')}
+                  aria-label="Limpiar búsqueda"
+                  className="w-10 h-10 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setTdtCategory('movistar');
-                onChangeSection('tdt');
-              }}
-              className={`min-h-[38px] px-3.5 sm:px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
-                activeSection === 'tdt' && tdtCategory === 'movistar'
-                  ? 'bg-[#00A9E0] text-white shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <Tv className="w-3.5 h-3.5" />
-              <span>Movistar+</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setTdtCategory('dazn');
-                onChangeSection('tdt');
-              }}
-              className={`min-h-[38px] px-3.5 sm:px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
-                activeSection === 'tdt' && tdtCategory === 'dazn'
-                  ? 'bg-white text-[#050508] shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <Play className="w-3 h-3 fill-current" />
-              <span>DAZN</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                onChangeSection('sports');
-              }}
-              className={`min-h-[38px] px-3.5 sm:px-4 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all whitespace-nowrap cursor-pointer ${
-                activeSection === 'sports'
-                  ? 'bg-white text-[#050508] shadow-sm'
-                  : 'text-zinc-400 hover:text-white'
-              }`}
-            >
-              <Trophy className={`w-3.5 h-3.5 ${activeSection === 'sports' ? 'text-amber-500' : ''}`} />
-              <span>{lang === 'es' ? 'Agenda Partidos' : 'Live Matches'}</span>
-            </button>
+            {/* Instant URL Paste Action on Home */}
+            {/^https?:\/\//i.test(homeQuery.trim()) && (
+              <div className="p-3.5 rounded-2xl bg-[#101119] border border-[#E11D48]/35 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2 min-w-0 text-xs text-zinc-200">
+                  <Link2 className="w-4 h-4 text-[#E11D48] shrink-0" />
+                  <span className="font-mono truncate max-w-[260px] sm:max-w-[440px]">
+                    {homeQuery.trim()}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('success');
+                      onPlayCustomUrl(homeQuery.trim());
+                      setHomeQuery('');
+                    }}
+                    className="min-h-[40px] px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>{lang === 'es' ? 'Reproducir enlace' : 'Play link'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      onOpenCloudBrowser(homeQuery.trim());
+                      setHomeQuery('');
+                    }}
+                    className="min-h-[40px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <Tv className="w-3.5 h-3.5" />
+                    <span>Cloud Browser</span>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
-          {activeVideoRawUrl && onPlaySecondaryChannel && (
-            <span className="hidden sm:inline-flex text-[11px] text-sky-300 items-center gap-1.5 px-2.5">
-              <Columns2 className="w-3.5 h-3.5" />
-              <span>
-                {lang === 'es'
-                  ? 'Icono doble = Ver 2 canales a la vez'
-                  : 'Split icon = Multi-View'}
-              </span>
-            </span>
+          {/* Unified Instant Search Results When Typing on Home */}
+          {debouncedHomeQuery.length >= 2 ? (
+            <div className="space-y-6">
+              {loadingHomeSearch && (
+                <div className="py-8 flex items-center justify-center gap-2 text-sm text-zinc-400">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#E11D48]" />
+                  <span>{lang === 'es' ? 'Buscando en todo el catálogo...' : 'Searching...'}</span>
+                </div>
+              )}
+
+              {/* Matching Live TV Channels */}
+              {homeMatchingChannels.length > 0 && (
+                <section className="space-y-3">
+                  <h3 className="font-display font-bold text-sm text-white">
+                    {lang === 'es' ? 'Canales en Directo' : 'Live TV Channels'}
+                  </h3>
+                  <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 gap-3">
+                    {homeMatchingChannels.map((ch) => (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('success');
+                          onPlayTdtChannel(ch, 0);
+                        }}
+                        className="min-h-[68px] p-3.5 rounded-2xl bg-[#0D0E15] hover:bg-[#141622] border border-white/[0.08] hover:border-white/25 flex items-center justify-between gap-3 text-left cursor-pointer transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className="w-11 h-11 rounded-xl shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-xs text-white"
+                            style={{
+                              background: `linear-gradient(145deg, ${ch.brandTone}33 0%, #090A10 100%)`,
+                            }}
+                          >
+                            {ch.shortMark}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="font-display font-bold text-sm text-white truncate">
+                              {ch.name}
+                            </div>
+                            <div className="text-xs text-zinc-400 truncate">
+                              En directo · {ch.network}
+                            </div>
+                          </div>
+                        </div>
+                        <span className="w-9 h-9 rounded-full bg-[#E11D48] text-white flex items-center justify-center shrink-0">
+                          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Matching Series (1-Tap Opens Temporadas -> Capítulos Immediately) */}
+              {homeSeriesResults.length > 0 && (
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="font-display font-bold text-sm text-white">
+                      {lang === 'es'
+                        ? 'Series (Pulsa para elegir temporada y capítulo)'
+                        : 'TV Series (Tap for seasons & episodes)'}
+                    </h3>
+                  </div>
+                  <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5">
+                    {homeSeriesResults.map((show) => (
+                      <div
+                        key={`hseries-${show.id}`}
+                        onClick={() => {
+                          if (!show.tmdbId) return;
+                          triggerHaptic('light');
+                          openSeriesDetails(show.tmdbId, 1, { ...show, mediaType: 'tv' });
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && show.tmdbId) {
+                            openSeriesDetails(show.tmdbId, 1, { ...show, mediaType: 'tv' });
+                          }
+                        }}
+                        className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] hover:border-white/25 cursor-pointer transition-colors"
+                      >
+                        {show.poster ? (
+                          <img
+                            src={show.poster}
+                            alt={show.title}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="w-full h-full p-4 flex flex-col items-center justify-center text-center">
+                            <Tv className="w-8 h-8 text-zinc-500 mb-2" />
+                            <span className="text-xs font-semibold text-white">{show.title}</span>
+                          </div>
+                        )}
+                        <div className="absolute inset-x-0 bottom-0 pt-14 pb-3 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent">
+                          <div className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2">
+                            {show.title}
+                          </div>
+                          <div className="text-[11px] text-zinc-300 mt-0.5">
+                            Serie · {show.year || 'TV'} · Ver capítulos
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {/* Matching Movies */}
+              {homeMovieResults.length > 0 && (
+                <section className="space-y-3">
+                  <h3 className="font-display font-bold text-sm text-white">
+                    {lang === 'es' ? 'Películas' : 'Movies'}
+                  </h3>
+                  <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5">
+                    {homeMovieResults.map((movie) => (
+                      <div
+                        key={`hmovie-${movie.id}`}
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setPreviewItem(movie);
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') setPreviewItem(movie);
+                        }}
+                        className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] hover:border-white/25 cursor-pointer transition-colors"
+                      >
+                        {movie.poster ? (
+                          <img
+                            src={movie.poster}
+                            alt={movie.title}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                          />
+                        ) : (
+                          <div className="w-full h-full p-4 flex flex-col items-center justify-center text-center">
+                            <Film className="w-8 h-8 text-zinc-500 mb-2" />
+                            <span className="text-xs font-semibold text-white">{movie.title}</span>
+                          </div>
+                        )}
+                        <div className="absolute inset-x-0 bottom-0 pt-14 pb-3 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent">
+                          <div className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2">
+                            {movie.title}
+                          </div>
+                          <div className="text-[11px] text-zinc-300 mt-0.5">
+                            Película · {movie.year || 'HD'}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {!loadingHomeSearch &&
+                homeMovieResults.length === 0 &&
+                homeSeriesResults.length === 0 &&
+                homeMatchingChannels.length === 0 && (
+                  <div className="py-12 text-center rounded-2xl bg-white/[0.02] border border-white/[0.07] px-4 space-y-2">
+                    <p className="text-sm font-semibold text-white">
+                      {lang === 'es'
+                        ? `No encontramos resultados para «${debouncedHomeQuery}»`
+                        : `No results found for "${debouncedHomeQuery}"`}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setYtQuery(debouncedHomeQuery);
+                        setDebouncedYtQuery(debouncedHomeQuery);
+                        onChangeSection('youtube');
+                      }}
+                      className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold inline-flex items-center gap-2 cursor-pointer"
+                    >
+                      <Youtube className="w-4 h-4 text-[#E11D48]" />
+                      <span>Buscar en YouTube</span>
+                    </button>
+                  </div>
+                )}
+            </div>
+          ) : (
+            <>
+              {/* ============================================================ */}
+              {/* ROW 1: THREE GENERAL MASTER CARDS (PELÍCULAS · SERIES · ANIME)*/}
+              {/* ============================================================ */}
+              <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 gap-3.5 sm:gap-4">
+                <button
+                  type="button"
+                  onClick={enterGeneralMovies}
+                  className="group min-h-[112px] sm:min-h-[128px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#E11D48]/22 via-[#130C14] to-[#0B0C12] border border-white/[0.1] hover:border-[#E11D48]/60 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all"
+                >
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="inline-flex items-center gap-2 text-xs font-semibold text-[#FB7185]">
+                      <Film className="w-4 h-4 shrink-0" />
+                      <span>{lang === 'es' ? 'Catálogo General' : 'All Cinema'}</span>
+                    </div>
+                    <div className="font-display font-bold text-xl sm:text-2xl text-white">
+                      {lang === 'es' ? 'Películas' : 'Movies'}
+                    </div>
+                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
+                      {lang === 'es'
+                        ? 'Todas las películas juntas · Español y VO Inglés'
+                        : 'Every movie across all platforms · Spanish & English'}
+                    </p>
+                  </div>
+                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-[#E11D48] text-white flex items-center justify-center shrink-0 transition-colors">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={enterGeneralSeries}
+                  className="group min-h-[112px] sm:min-h-[128px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-indigo-500/22 via-[#0E1020] to-[#0B0C12] border border-white/[0.1] hover:border-indigo-400/60 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all"
+                >
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-300">
+                      <Tv className="w-4 h-4 shrink-0" />
+                      <span>{lang === 'es' ? 'Catálogo General' : 'All TV Shows'}</span>
+                    </div>
+                    <div className="font-display font-bold text-xl sm:text-2xl text-white">
+                      {lang === 'es' ? 'Series' : 'TV Series'}
+                    </div>
+                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
+                      {lang === 'es'
+                        ? 'Todas las series por temporadas y capítulos'
+                        : 'Every TV series organized by season & episode'}
+                    </p>
+                  </div>
+                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-indigo-500 text-white flex items-center justify-center shrink-0 transition-colors">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => enterAnimeHub('anime_all', 'series')}
+                  className="group min-h-[112px] sm:min-h-[128px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#F47521]/25 via-[#18100B] to-[#0B0C12] border border-white/[0.1] hover:border-[#F47521]/65 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all @sm:col-span-2 @lg:col-span-1"
+                >
+                  <div className="space-y-1.5 min-w-0">
+                    <div className="inline-flex items-center gap-2 text-xs font-semibold text-[#FDBA74]">
+                      <Sparkles className="w-4 h-4 shrink-0" />
+                      <span>{lang === 'es' ? 'Sección de Anime' : 'Anime Hub'}</span>
+                    </div>
+                    <div className="font-display font-bold text-xl sm:text-2xl text-white">
+                      Anime
+                    </div>
+                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
+                      Crunchyroll · AnimeBox · JKAnime · AnimeFLV
+                    </p>
+                  </div>
+                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-[#F47521] group-hover:text-[#120902] text-white flex items-center justify-center shrink-0 transition-colors">
+                    <ChevronRight className="w-5 h-5" />
+                  </div>
+                </button>
+              </div>
+
+              {/* ============================================================ */}
+              {/* ROW 2: BIG PLATFORMS & LIVE TV GRID                          */}
+              {/* Netflix · HBO Max · Disney+ · Prime Video · Movistar+ · DAZN · TDT */}
+              {/* ============================================================ */}
+              <section className="space-y-3">
+                <h3 className="font-display font-semibold text-sm sm:text-base text-zinc-200 px-0.5">
+                  {lang === 'es'
+                    ? 'Plataformas y Televisión en Directo'
+                    : 'Streaming Platforms & Live TV'}
+                </h3>
+
+                <div className="grid grid-cols-2 @sm:grid-cols-3 @lg:grid-cols-4 gap-3.5 sm:gap-4">
+                  {/* NETFLIX */}
+                  <button
+                    type="button"
+                    onClick={() => enterStreamingPlatform('netflix', 'movies')}
+                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#E50914]/22 via-[#15090D] to-[#0B0C12] border border-white/[0.09] hover:border-[#E50914]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="h-9 min-w-9 px-2.5 rounded-xl bg-[#E50914] text-white font-display font-black text-base flex items-center justify-center shadow-md">
+                        N
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-base sm:text-lg text-white">
+                        Netflix
+                      </div>
+                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
+                        {lang === 'es' ? 'Películas y Series' : 'Movies & Series'}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* HBO MAX */}
+                  <button
+                    type="button"
+                    onClick={() => enterStreamingPlatform('hbomax', 'movies')}
+                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#6D28D9]/25 via-[#120D22] to-[#0B0C12] border border-white/[0.09] hover:border-[#8B5CF6]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="h-9 px-2.5 rounded-xl bg-[#6D28D9] text-white font-display font-black text-xs tracking-wider flex items-center justify-center shadow-md">
+                        MAX
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-base sm:text-lg text-white">
+                        HBO Max
+                      </div>
+                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
+                        {lang === 'es' ? 'Películas y Series' : 'Movies & Series'}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* DISNEY+ */}
+                  <button
+                    type="button"
+                    onClick={() => enterStreamingPlatform('disney', 'movies')}
+                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#0063E5]/25 via-[#091224] to-[#0B0C12] border border-white/[0.09] hover:border-[#3B82F6]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="h-9 px-2.5 rounded-xl bg-[#0063E5] text-white font-display font-black text-sm flex items-center justify-center shadow-md">
+                        D+
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-base sm:text-lg text-white">
+                        Disney+
+                      </div>
+                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
+                        {lang === 'es' ? 'Disney, Marvel y Star Wars' : 'Disney, Marvel & Star Wars'}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* PRIME VIDEO */}
+                  <button
+                    type="button"
+                    onClick={() => enterStreamingPlatform('prime', 'movies')}
+                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#00A8E1]/22 via-[#081620] to-[#0B0C12] border border-white/[0.09] hover:border-[#00A8E1]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="h-9 px-2.5 rounded-xl bg-[#00A8E1] text-[#041118] font-display font-black text-[11px] tracking-tight flex items-center justify-center shadow-md">
+                        PRIME
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-base sm:text-lg text-white">
+                        Prime Video
+                      </div>
+                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
+                        {lang === 'es' ? 'Películas y Series' : 'Movies & Series'}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* MOVISTAR+ */}
+                  <button
+                    type="button"
+                    onClick={() => enterMovistarHub('live')}
+                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#019DF4]/24 via-[#081624] to-[#0B0C12] border border-white/[0.09] hover:border-[#019DF4]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="h-9 px-2.5 rounded-xl bg-[#019DF4] text-white font-display font-black text-sm flex items-center justify-center shadow-md">
+                        M+
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-base sm:text-lg text-white">
+                        Movistar+
+                      </div>
+                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
+                        {lang === 'es'
+                          ? 'Canales en Vivo · Cine y Series'
+                          : 'Live Channels · Movies & Series'}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* DAZN EN VIVO */}
+                  <button
+                    type="button"
+                    onClick={enterDaznLiveHub}
+                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-zinc-200/15 via-[#12131A] to-[#0B0C12] border border-white/[0.09] hover:border-white/45 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="h-9 px-2.5 rounded-xl bg-white text-[#050508] font-display font-black text-xs tracking-tight flex items-center justify-center shadow-md">
+                        DAZN
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-base sm:text-lg text-white">
+                        DAZN en Vivo
+                      </div>
+                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
+                        {lang === 'es' ? 'LaLiga, F1, MotoGP y DAZN 1–4' : 'LaLiga, F1, MotoGP Live'}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* TDT ESPAÑA EN VIVO */}
+                  <button
+                    type="button"
+                    onClick={enterSpanishTdtHub}
+                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-emerald-500/20 via-[#091815] to-[#0B0C12] border border-white/[0.09] hover:border-emerald-400/55 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="h-9 px-2.5 rounded-xl bg-emerald-500 text-[#04130E] font-display font-black text-xs tracking-tight flex items-center justify-center shadow-md">
+                        TDT
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-base sm:text-lg text-white">
+                        TDT España
+                      </div>
+                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
+                        {lang === 'es'
+                          ? 'La 1, Antena 3, Telecinco, laSexta...'
+                          : 'National Spanish TV Live'}
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* PARTIDOS Y AGENDA DEPORTIVA */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setFocusedHub('all');
+                      onChangeSection('sports');
+                    }}
+                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-amber-500/20 via-[#181309] to-[#0B0C12] border border-white/[0.09] hover:border-amber-400/55 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="h-9 w-9 rounded-xl bg-amber-400 text-[#140E02] flex items-center justify-center shadow-md">
+                        <Trophy className="w-4 h-4" />
+                      </span>
+                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
+                    </div>
+                    <div>
+                      <div className="font-display font-bold text-base sm:text-lg text-white">
+                        {lang === 'es' ? 'Partidos en Vivo' : 'Live Matches'}
+                      </div>
+                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
+                        {lang === 'es'
+                          ? 'Agenda de hoy y marcadores'
+                          : "Today's schedule & scores"}
+                      </div>
+                    </div>
+                  </button>
+                </div>
+              </section>
+
+              {/* ============================================================ */}
+              {/* ROW 3: SECONDARY UTILITIES (YouTube · Mi Lista · Apple · URL)*/}
+              {/* ============================================================ */}
+              <div className="grid grid-cols-2 @sm:grid-cols-4 gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFocusedHub('all');
+                    onChangeSection('youtube');
+                  }}
+                  className="min-h-[60px] px-4 py-3 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.06] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer transition-colors"
+                >
+                  <Youtube className="w-5 h-5 text-[#E11D48] shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs sm:text-sm font-bold text-white truncate">YouTube</div>
+                    <div className="text-[11px] text-zinc-400 truncate">
+                      {lang === 'es' ? 'Vídeos en sala' : 'Watch together'}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFocusedHub('all');
+                    setStreamingProvider('all');
+                    setShowWatchlistOnly(true);
+                    onChangeSection('movies');
+                  }}
+                  className="min-h-[60px] px-4 py-3 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.06] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer transition-colors"
+                >
+                  <Heart className="w-5 h-5 text-[#FB7185] shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs sm:text-sm font-bold text-white truncate">
+                      {lang === 'es' ? 'Mi Lista' : 'My List'} ({cleanWatchlist.length})
+                    </div>
+                    <div className="text-[11px] text-zinc-400 truncate">
+                      {lang === 'es' ? 'Tus guardados' : 'Saved titles'}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => enterStreamingPlatform('apple', 'movies')}
+                  className="min-h-[60px] px-4 py-3 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.06] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer transition-colors"
+                >
+                  <span className="h-7 px-2 rounded-lg bg-zinc-100 text-[#050508] font-display font-black text-xs flex items-center justify-center shrink-0">
+                    tv+
+                  </span>
+                  <div className="min-w-0">
+                    <div className="text-xs sm:text-sm font-bold text-white truncate">Apple TV+</div>
+                    <div className="text-[11px] text-zinc-400 truncate">
+                      {lang === 'es' ? 'Cine y Series' : 'Originals'}
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFocusedHub('all');
+                    onChangeSection('direct');
+                  }}
+                  className="min-h-[60px] px-4 py-3 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.06] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer transition-colors"
+                >
+                  <Link2 className="w-5 h-5 text-sky-400 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="text-xs sm:text-sm font-bold text-white truncate">
+                      {lang === 'es' ? 'Enlace y Cola' : 'Link & Queue'}
+                    </div>
+                    <div className="text-[11px] text-zinc-400 truncate">
+                      {roomQueue.length > 0
+                        ? `${roomQueue.length} en cola`
+                        : lang === 'es'
+                        ? 'Pegar URL directa'
+                        : 'Paste direct URL'}
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              {/* Continue Watching Strip right below the main launcher grid */}
+              {renderContinueWatchingStrip()}
+            </>
           )}
         </div>
       )}
 
       {/* ================================================================== */}
-      {/* SINGLE APPLE TV+ 16:9 "SEGUIR VIENDO" RAIL                         */}
+      {/* FOCUSED SUB-VIEW HEADER BAR (ALWAYS 1 TAP BACK TO "← INICIO")      */}
+      {/* Eliminates multi-row navigation clutter across all sub-views       */}
       {/* ================================================================== */}
-      {isCinemaFamily && !showWatchlistOnly && watchHistory.length > 0 && (
-        <section
-          aria-label={lang === 'es' ? 'Seguir viendo' : 'Continue watching'}
-          className="space-y-2.5"
-        >
-          <div className="flex items-center justify-between gap-2 px-0.5">
-            <div className="flex items-center gap-2 min-w-0">
-              <Clock className="w-4 h-4 text-[#E11D48] shrink-0" />
-              <h3 className="font-display font-semibold text-xs sm:text-sm text-white truncate">
-                {lang === 'es' ? 'Seguir viendo' : 'Continue Watching'}
-              </h3>
+      {activeSection !== 'home' && (
+        <div className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2.5 pb-1 border-b border-white/[0.07]">
+            {/* Left: Back to Home Grid + Clear Context Title */}
+            <div className="flex items-center gap-2.5 min-w-0">
+              <button
+                type="button"
+                onClick={goToHomeGrid}
+                className="min-h-[44px] px-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>{lang === 'es' ? 'Inicio' : 'Home'}</span>
+              </button>
+
+              <div className="flex items-center gap-2 min-w-0">
+                {/* Brand Mark when inside a specific streaming hub */}
+                {(activeSection === 'movies' ||
+                  activeSection === 'vose' ||
+                  activeSection === 'series') &&
+                  streamingProvider !== 'all' &&
+                  !showWatchlistOnly && (
+                    <span
+                      className={`h-7 px-2 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${activePlatformMeta.accentBg} ${activePlatformMeta.accentText}`}
+                    >
+                      {activePlatformMeta.mark}
+                    </span>
+                  )}
+
+                {activeSection === 'tdt' && tdtCategory === 'movistar' && (
+                  <span className="h-7 px-2 rounded-lg bg-[#019DF4] text-white text-xs font-black flex items-center justify-center shrink-0">
+                    M+
+                  </span>
+                )}
+
+                {activeSection === 'tdt' && tdtCategory === 'dazn' && (
+                  <span className="h-7 px-2 rounded-lg bg-white text-[#050508] text-xs font-black flex items-center justify-center shrink-0">
+                    DAZN
+                  </span>
+                )}
+
+                {activeSection === 'anime' && (
+                  <span
+                    className={`h-7 px-2 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
+                      animePortal === 'anime_all'
+                        ? 'bg-[#F47521] text-[#120902]'
+                        : `${activeAnimePortalMeta.accentBg} ${activeAnimePortalMeta.accentText}`
+                    }`}
+                  >
+                    {activeAnimePortalMeta.mark}
+                  </span>
+                )}
+
+                <h2 className="font-display font-bold text-base sm:text-xl text-white truncate">
+                  {showWatchlistOnly
+                    ? lang === 'es'
+                      ? `Mi Lista (${cleanWatchlist.length})`
+                      : `My List (${cleanWatchlist.length})`
+                    : activeSection === 'anime'
+                    ? animePortal === 'anime_all'
+                      ? lang === 'es'
+                        ? 'Sección de Anime'
+                        : 'Anime Hub'
+                      : activeAnimePortalMeta.es
+                    : (activeSection === 'movies' ||
+                        activeSection === 'vose' ||
+                        activeSection === 'series') &&
+                      streamingProvider !== 'all'
+                    ? activePlatformMeta.es
+                    : activeSection === 'movies' || activeSection === 'vose'
+                    ? lang === 'es'
+                      ? 'Todas las Películas'
+                      : 'All Movies'
+                    : activeSection === 'series'
+                    ? lang === 'es'
+                      ? 'Todas las Series'
+                      : 'All TV Series'
+                    : activeSection === 'tdt'
+                    ? tdtCategory === 'movistar'
+                      ? 'Movistar+'
+                      : tdtCategory === 'dazn'
+                      ? 'DAZN en Vivo'
+                      : tdtCategory === 'tdt_all' || focusedHub === 'tdt_es'
+                      ? 'TDT España en Vivo'
+                      : lang === 'es'
+                      ? 'Televisión en Directo'
+                      : 'Live TV'
+                    : activeSection === 'sports'
+                    ? lang === 'es'
+                      ? 'Partidos en Directo'
+                      : 'Live Sports'
+                    : activeSection === 'youtube'
+                    ? 'YouTube'
+                    : lang === 'es'
+                    ? 'Enlace y Cola'
+                    : 'Link & Queue'}
+                </h2>
+              </div>
             </div>
 
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('medium');
-                if (confirmClearHistory) {
-                  onClearHistory();
-                  setConfirmClearHistory(false);
-                } else {
-                  setConfirmClearHistory(true);
-                  setTimeout(() => setConfirmClearHistory(false), 3200);
-                }
-              }}
-              className={`text-[11px] font-bold flex items-center gap-1 shrink-0 cursor-pointer transition-all px-2.5 py-1 rounded-xl border ${
-                confirmClearHistory
-                  ? 'bg-rose-500 text-white border-rose-400 animate-pulse'
-                  : 'bg-white/[0.04] text-zinc-400 hover:text-white border-white/[0.08]'
-              }`}
-            >
-              <Trash2 className="w-3 h-3" />
-              <span>
-                {confirmClearHistory
-                  ? lang === 'es'
-                    ? '¿Confirmar?'
-                    : 'Confirm?'
-                  : lang === 'es'
-                  ? 'Limpiar'
-                  : 'Clear'}
-              </span>
-            </button>
-          </div>
-
-          <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-0.5 min-w-0">
-            {watchHistory.map((hItem) => {
-              const isLoadingThis = loadingItemId === hItem.id;
-              const thumb = hItem.backdrop || hItem.poster;
-              const imgBroken = brokenPosters[`hist-${hItem.id}`];
-              const resumeSec = hItem.resumeTimeSec || 0;
-              const durSec = hItem.durationSec || 0;
-              const hasResume = resumeSec > 5;
-              const progressPct = hasResume
-                ? durSec > 60
-                  ? Math.min(96, Math.max(8, Math.round((resumeSec / durSec) * 100)))
-                  : 28
-                : 0;
-
-              const isReadyForNextEp =
-                hItem.mediaType === 'tv' &&
-                Boolean(hItem.season) &&
-                Boolean(hItem.episode) &&
-                progressPct >= 88;
-
-              const triggerHistoryCardPlay = () => {
-                if (loadingItemId) return;
-                triggerHaptic('light');
-                if (isReadyForNextEp && hItem.season && hItem.episode) {
-                  const nextEp = hItem.episode + 1;
-                  onReplayHistoryItem(
-                    {
-                      ...hItem,
-                      id: sanitizeItemKey(
-                        `tv-${hItem.tmdbId || hItem.title}-${hItem.season}-${nextEp}`
-                      ),
-                      episode: nextEp,
-                      subtitle: `${hItem.season}x${String(nextEp).padStart(2, '0')}`,
-                      resumeTimeSec: 0,
-                    },
-                    true
-                  );
-                } else {
-                  onReplayHistoryItem(hItem, false);
-                }
-              };
-
-              return (
-                <div
-                  key={hItem.id}
-                  onClick={triggerHistoryCardPlay}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      triggerHistoryCardPlay();
-                    }
-                  }}
-                  className="group relative w-[200px] sm:w-[224px] shrink-0 rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.07] hover:border-white/25 transition-all flex flex-col cursor-pointer"
-                >
-                  <div className="relative aspect-[16/9] w-full bg-[#0E0F16] overflow-hidden">
-                    {!imgBroken && thumb ? (
-                      <img
-                        src={thumb}
-                        alt={hItem.title}
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        onError={() =>
-                          setBrokenPosters((prev) => ({
-                            ...prev,
-                            [`hist-${hItem.id}`]: true,
-                          }))
-                        }
-                        className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-[#0E0F16]">
-                        {hItem.mediaType === 'tv' ? (
-                          <Tv className="w-6 h-6 text-zinc-500" />
-                        ) : (
-                          <Film className="w-6 h-6 text-zinc-500" />
-                        )}
-                      </div>
-                    )}
-
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
-
-                    {/* Restart from 00:00 + Remove item buttons */}
-                    <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1">
-                      {hasResume && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            if (loadingItemId) return;
-                            triggerHaptic('light');
-                            onReplayHistoryItem(hItem, true);
-                          }}
-                          title={lang === 'es' ? 'Empezar desde el principio' : 'Start from beginning'}
-                          aria-label="Empezar desde el principio"
-                          className="w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-                        >
-                          <RotateCcw className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          triggerHaptic('light');
-                          onRemoveHistoryItem(hItem.id);
-                        }}
-                        aria-label="Quitar del historial"
-                        className="w-7 h-7 rounded-full bg-black/65 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-
-                    <div className="absolute bottom-2.5 left-2.5 right-2.5 flex items-center justify-between gap-2">
-                      <span className="text-[10px] font-semibold text-zinc-100 truncate">
-                        {hItem.mediaType === 'tv' && hItem.season && hItem.episode && progressPct >= 88
-                          ? `▶ Siguiente: ${hItem.season}x${String(hItem.episode + 1).padStart(2, '0')}`
-                          : hasResume
-                          ? `${lang === 'es' ? 'Seguir' : 'Resume'} · ${formatShortTime(resumeSec)}`
-                          : hItem.mediaType === 'tv' && hItem.season && hItem.episode
-                          ? `Serie · ${hItem.season}x${String(hItem.episode).padStart(2, '0')}`
-                          : `Película · ${hItem.year || 'HD'}`}
-                      </span>
-                      <span className="w-7 h-7 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-md shrink-0">
-                        {isLoadingThis ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                        )}
-                      </span>
-                    </div>
-
-                    {/* Exact Playback Progress Bar */}
-                    {hasResume && (
-                      <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
-                        <div
-                          className="h-full bg-[#E11D48]"
-                          style={{ width: `${progressPct}%` }}
-                        />
-                      </div>
-                    )}
+            {/* Right: Contextual Clean Mode Switcher */}
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
+              {/* ANIME HUB SWITCH: Series Anime | Películas Anime (+ Optional Cloud Web Portal) */}
+              {activeSection === 'anime' && (
+                <>
+                  <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setAnimeMediaKind('series');
+                        setAnimePage(1);
+                      }}
+                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        animeMediaKind === 'series'
+                          ? 'bg-white text-[#050508]'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {lang === 'es' ? 'Series Anime' : 'Anime Series'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setAnimeMediaKind('movies');
+                        setAnimePage(1);
+                      }}
+                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        animeMediaKind === 'movies'
+                          ? 'bg-white text-[#050508]'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {lang === 'es' ? 'Películas Anime' : 'Anime Movies'}
+                    </button>
                   </div>
 
-                  <div className="p-2.5 flex flex-col gap-0.5">
-                    <h4 className="font-display font-semibold text-xs text-white line-clamp-1">
-                      {hItem.title}
-                    </h4>
-                    <span className="text-[11px] text-zinc-400 line-clamp-1">
-                      {hItem.mediaType === 'tv' && hItem.season && hItem.episode
-                        ? `${hItem.season}x${String(hItem.episode).padStart(2, '0')} · ${
-                            hItem.episodeTitle || 'Episodio'
-                          }`
-                        : hItem.subtitle ||
-                          (hItem.preferLang === 'EN' ? 'English 1080p' : 'Español HD')}
-                    </span>
-                  </div>
+                  {activeAnimePortalMeta.externalUrl && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        onOpenCloudBrowser(activeAnimePortalMeta.externalUrl!);
+                      }}
+                      title={`Abrir ${activeAnimePortalMeta.es} en el navegador compartido de la sala`}
+                      className="min-h-[38px] px-3.5 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.08] border border-white/[0.1] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                    >
+                      <Tv className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
+                      <span>
+                        {lang === 'es'
+                          ? `Web ${activeAnimePortalMeta.es}`
+                          : `Open ${activeAnimePortalMeta.en}`}
+                      </span>
+                    </button>
+                  )}
+                </>
+              )}
+
+              {/* MOVISTAR+ UNIFIED 3-WAY SWITCH: Canales en Vivo | Películas | Series */}
+              {isMovistarContext && !showWatchlistOnly && activeSection !== 'anime' && (
+                <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => enterMovistarHub('live')}
+                    className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      activeSection === 'tdt' && tdtCategory === 'movistar'
+                        ? 'bg-[#019DF4] text-white'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {lang === 'es' ? 'Canales en Vivo' : 'Live Channels'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => enterMovistarHub('movies')}
+                    className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      activeSection === 'movies' || activeSection === 'vose'
+                        ? 'bg-white text-[#050508]'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {lang === 'es' ? 'Películas' : 'Movies'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => enterMovistarHub('series')}
+                    className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      activeSection === 'series'
+                        ? 'bg-white text-[#050508]'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    {lang === 'es' ? 'Series' : 'Series'}
+                  </button>
                 </div>
-              );
-            })}
+              )}
+
+              {/* PELÍCULAS | SERIES SWITCH FOR NETFLIX, HBO, DISNEY+, PRIME, GENERAL */}
+              {(activeSection === 'movies' ||
+                activeSection === 'vose' ||
+                activeSection === 'series') &&
+                !isMovistarContext &&
+                !showWatchlistOnly && (
+                  <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setShowWatchlistOnly(false);
+                        setMoviePage(1);
+                        if (activeSection === 'series') onChangeSection('movies');
+                      }}
+                      className={`min-h-[36px] px-4 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        activeSection === 'movies' || activeSection === 'vose'
+                          ? 'bg-white text-[#050508]'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {lang === 'es' ? 'Películas' : 'Movies'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setShowWatchlistOnly(false);
+                        setSeriesPage(1);
+                        onChangeSection('series');
+                      }}
+                      className={`min-h-[36px] px-4 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        activeSection === 'series'
+                          ? 'bg-white text-[#050508]'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {lang === 'es' ? 'Series' : 'Series'}
+                    </button>
+                  </div>
+                )}
+
+              {/* MI LISTA QUICK TOGGLE IN GENERAL CATALOG */}
+              {(activeSection === 'movies' ||
+                activeSection === 'vose' ||
+                activeSection === 'series') &&
+                !isSpecificPlatformView && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      if (activeSection === 'series') onChangeSection('movies');
+                      setShowWatchlistOnly((v) => !v);
+                    }}
+                    className={`min-h-[38px] px-3.5 rounded-2xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer border transition-colors ${
+                      showWatchlistOnly
+                        ? 'bg-white text-[#050507] border-white'
+                        : 'bg-[#0D0E15] text-zinc-300 border-white/[0.08] hover:text-white'
+                    }`}
+                  >
+                    <Heart
+                      className={`w-3.5 h-3.5 ${
+                        showWatchlistOnly ? 'fill-current text-[#E11D48]' : ''
+                      }`}
+                    />
+                    <span>
+                      {lang === 'es' ? 'Mi Lista' : 'My List'} ({cleanWatchlist.length})
+                    </span>
+                  </button>
+                )}
+
+              {/* LIVE TV / PARTIDOS QUICK SWITCH WHEN NOT IN FOCUSED DAZN/MOVISTAR/TDT */}
+              {(activeSection === 'tdt' || activeSection === 'sports') &&
+                focusedHub === 'all' && (
+                  <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        onChangeSection('tdt');
+                      }}
+                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        activeSection === 'tdt'
+                          ? 'bg-white text-[#050508]'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {lang === 'es' ? 'Canales TV' : 'TV Channels'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        onChangeSection('sports');
+                      }}
+                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        activeSection === 'sports'
+                          ? 'bg-white text-[#050508]'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      {lang === 'es' ? 'Partidos Hoy' : 'Live Matches'}
+                    </button>
+                  </div>
+                )}
+            </div>
           </div>
-        </section>
+
+          {/* Optional Platform Filter Pills ONLY when viewing "Todas las Películas" or "Todas las Series" */}
+          {(activeSection === 'movies' ||
+            activeSection === 'vose' ||
+            activeSection === 'series') &&
+            focusedHub === 'all' &&
+            !showWatchlistOnly && (
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+                {STREAMING_PLATFORMS.map((plat) => {
+                  const isSelected = streamingProvider === plat.id;
+                  return (
+                    <button
+                      key={plat.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setStreamingProvider(plat.id);
+                        setMoviePage(1);
+                        setSeriesPage(1);
+                        if (plat.id === 'all') {
+                          if (movieCategory === 'originals') setMovieCategory('trending');
+                          if (seriesCategory === 'originals') setSeriesCategory('trending');
+                        }
+                      }}
+                      className={`min-h-[40px] px-3.5 rounded-2xl border text-xs font-bold flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        isSelected
+                          ? plat.activeBorder
+                          : 'bg-[#0D0E15] hover:bg-white/[0.07] border-white/[0.08] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {plat.id !== 'all' && (
+                        <span
+                          className={`h-5 px-1.5 rounded-md text-[10px] font-black tracking-tight flex items-center justify-center shrink-0 ${plat.accentBg} ${plat.accentText}`}
+                        >
+                          {plat.mark}
+                        </span>
+                      )}
+                      <span>{lang === 'es' ? plat.es : plat.en}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+        </div>
       )}
 
       {/* ================================================================== */}
-      {/* SECTION 1 & 2: MOVIES (ESPAÑOL CAST/LAT + BINGETRIX EXPLORE EN)    */}
+      {/* SECTION 1 & 2: MOVIES (ESPAÑOL CAST/LAT + VO · INGLÉS)             */}
       {/* ================================================================== */}
       {(activeSection === 'movies' || activeSection === 'vose') && (
         <div className="space-y-4">
-          {/* Smart Search Input + Inline ES/VOSE Toggle + Instant URL Auto-Detect */}
           {!showWatchlistOnly && (
             <div className="space-y-3">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
@@ -952,9 +3189,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     value={movieQuery}
                     onChange={(e) => setMovieQuery(e.target.value)}
                     placeholder={
-                      lang === 'es'
-                        ? 'Buscar película o pegar cualquier enlace (YouTube, .m3u8, web)...'
-                        : 'Search movies or paste any URL (YouTube, .m3u8, web)...'
+                      streamingProvider !== 'all'
+                        ? lang === 'es'
+                          ? `Buscar película en ${activePlatformMeta.es}...`
+                          : `Search ${activePlatformMeta.en} movies...`
+                        : activeSection === 'vose'
+                        ? t.searchBingetrixPlaceholder
+                        : t.searchMoviesPlaceholder
                     }
                     className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
                   />
@@ -970,7 +3211,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   )}
                 </div>
 
-                {/* Sleek Inline Audio Language Switcher (ES | VOSE) */}
+                {/* Audio Language Switcher (Español | VO · Inglés) */}
                 <div className="flex items-center p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] shrink-0">
                   <button
                     type="button"
@@ -979,7 +3220,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       setMoviePage(1);
                       onChangeSection('movies');
                     }}
-                    className={`flex-1 sm:flex-initial min-h-[34px] px-3.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
+                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                       activeSection === 'movies'
                         ? 'bg-white text-[#050507]'
                         : 'text-zinc-400 hover:text-white'
@@ -994,54 +3235,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       setMoviePage(1);
                       onChangeSection('vose');
                     }}
-                    className={`flex-1 sm:flex-initial min-h-[34px] px-3.5 rounded-xl text-xs font-semibold cursor-pointer transition-colors ${
+                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                       activeSection === 'vose'
                         ? 'bg-white text-[#050507]'
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    VOSE · EN
+                    VO · Inglés
                   </button>
                 </div>
               </div>
-
-              {/* Instant Pasted URL Action Strip */}
-              {/^https?:\/\//i.test(movieQuery.trim()) && (
-                <div className="p-3 rounded-2xl bg-[#101016] border border-[#E11D48]/35 flex flex-wrap items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-2 min-w-0 text-xs text-zinc-200">
-                    <Link2 className="w-4 h-4 text-[#E11D48] shrink-0" />
-                    <span className="font-mono truncate max-w-[260px] sm:max-w-[420px]">
-                      {movieQuery.trim()}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('success');
-                        onPlayCustomUrl(movieQuery.trim());
-                        setMovieQuery('');
-                      }}
-                      className="min-h-[36px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      <span>{lang === 'es' ? 'Reproducir enlace' : 'Play link'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        onOpenCloudBrowser(movieQuery.trim());
-                        setMovieQuery('');
-                      }}
-                      className="min-h-[36px] px-3.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Tv className="w-3.5 h-3.5" />
-                      <span>Cloud Browser</span>
-                    </button>
-                  </div>
-                </div>
-              )}
 
               {!debouncedMovieQuery && (
                 <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
@@ -1054,9 +3257,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       if (rand) setPreviewItem(rand);
                     }}
                     title="Elegir una película al azar"
-                    className="min-h-[38px] px-3.5 rounded-full text-xs font-bold bg-[#E11D48]/15 hover:bg-[#E11D48]/25 border border-[#E11D48]/35 text-[#FB7185] flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+                    className="min-h-[38px] px-3.5 rounded-xl text-xs font-bold bg-[#E11D48]/15 hover:bg-[#E11D48]/25 border border-[#E11D48]/35 text-[#FB7185] flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   >
-                    <span>🎲 Sorpréndeme</span>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Sorpréndeme</span>
                   </button>
                   {MOVIE_CATEGORIES.map((cat) => (
                     <button
@@ -1067,9 +3271,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         setMovieCategory(cat.id);
                         setMoviePage(1);
                       }}
-                      className={`min-h-[38px] px-4 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                      className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                         movieCategory === cat.id
-                          ? 'bg-white text-[#050508] shadow-[0_6px_18px_rgba(255,255,255,0.16)]'
+                          ? 'bg-white text-[#050508]'
                           : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
                       }`}
                     >
@@ -1083,7 +3287,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
           {/* Editorial Spotlight Feature Card */}
           {spotlightMovie && (
-            <div className="relative rounded-3xl overflow-hidden border border-white/[0.08] bg-[#0D0D12] min-h-[220px] sm:min-h-[275px] flex flex-col justify-end p-5 sm:p-8 shadow-2xl">
+            <div className="relative rounded-3xl overflow-hidden border border-white/[0.08] bg-[#0D0D12] min-h-[210px] sm:min-h-[265px] flex flex-col justify-end p-5 sm:p-8 shadow-2xl">
               {!spotlightImgFailed && (spotlightMovie.backdrop || spotlightMovie.poster) ? (
                 <img
                   src={spotlightMovie.backdrop || spotlightMovie.poster}
@@ -1100,18 +3304,26 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
               <div className="relative z-10 max-w-xl space-y-2.5">
                 <div className="text-xs text-zinc-300 font-medium">
-                  <span className="text-[#E11D48] font-bold uppercase tracking-wider">
-                    {activeSection === 'vose'
-                      ? 'VOSE 1080p'
+                  <span className="text-[#FB7185] font-semibold">
+                    {streamingProvider !== 'all'
+                      ? `${activePlatformMeta.es} · ${
+                          activeSection === 'vose' ? 'VO Inglés' : 'Película Destacada'
+                        }`
+                      : activeSection === 'vose'
+                      ? 'VO · Inglés 1080p'
                       : lang === 'es'
-                      ? 'Estreno Destacado'
-                      : 'Featured Screening'}
+                      ? 'Película Destacada'
+                      : 'Featured Movie'}
                   </span>
-                  <span className="mx-1.5 text-zinc-600" aria-hidden="true">·</span>
+                  <span className="mx-1.5 text-zinc-600" aria-hidden="true">
+                    ·
+                  </span>
                   <span>{spotlightMovie.year || 'HD'}</span>
                   {spotlightMovie.rating && (
                     <>
-                      <span className="mx-1.5 text-zinc-600" aria-hidden="true">·</span>
+                      <span className="mx-1.5 text-zinc-600" aria-hidden="true">
+                        ·
+                      </span>
                       <span className="font-mono tabular-nums text-amber-400">
                         ★ {spotlightMovie.rating}
                       </span>
@@ -1134,13 +3346,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       triggerHaptic('light');
                       setPreviewItem(spotlightMovie);
                     }}
-                    className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.98] text-xs sm:text-sm font-bold text-white flex items-center gap-2 shadow-lg shadow-[#E11D48]/30 transition-all whitespace-nowrap cursor-pointer"
+                    className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center gap-2 shadow-lg shadow-[#E11D48]/30 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     <Info className="w-4 h-4 text-white" />
                     <span>
-                      {lang === 'es'
-                        ? 'Ver Ficha y Elegir Idioma'
-                        : 'Details & Select Language'}
+                      {lang === 'es' ? 'Elegir Idioma y Ver' : 'Select Language & Watch'}
                     </span>
                   </button>
 
@@ -1149,27 +3359,22 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     disabled={Boolean(loadingItemId)}
                     onClick={() => {
                       triggerHaptic('success');
-                      onPlayMovie(
-                        spotlightMovie,
-                        activeSection === 'vose' ? 'EN' : 'ES'
-                      );
+                      onPlayMovie(spotlightMovie, activeSection === 'vose' ? 'EN' : 'ES');
                     }}
-                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   >
                     {loadingItemId === spotlightMovie.id ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
                       <Play className="w-4 h-4 fill-current text-[#E11D48]" />
                     )}
-                    <span>
-                      {lang === 'es' ? 'Reproducir ahora' : 'Quick Play'}
-                    </span>
+                    <span>{lang === 'es' ? 'Reproducir directo' : 'Quick Play'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={(e) => handleToggleBookmark(spotlightMovie, e)}
-                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   >
                     <Heart
                       className={`w-4 h-4 ${
@@ -1183,7 +3388,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </div>
           )}
 
-          {/* Edge-to-Edge Movie Poster Grid */}
+          {/* Movie Poster Grid */}
           {loadingMovies ? (
             <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
               {Array.from({ length: 10 }).map((_, i) => (
@@ -1205,11 +3410,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   ? 'No encontramos películas con ese título'
                   : 'No movies found matching your search'}
               </p>
-              <p className="text-xs text-zinc-400">
-                {lang === 'es'
-                  ? 'Prueba con otro título o busca directamente en Series TV.'
-                  : 'Try another title or search in TV Series.'}
-              </p>
               {!showWatchlistOnly && movieQuery.trim().length > 1 && (
                 <button
                   type="button"
@@ -1218,13 +3418,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     setSeriesQuery(movieQuery.trim());
                     onChangeSection('series');
                   }}
-                  className="mt-2 min-h-[42px] px-5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+                  className="mt-2 min-h-[44px] px-5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-colors"
                 >
                   <Tv className="w-4 h-4 text-[#E11D48]" />
                   <span>
                     {lang === 'es'
-                      ? `¿Buscar «${movieQuery.trim()}» en Series TV?`
-                      : `Search "${movieQuery.trim()}" in TV Series?`}
+                      ? `Buscar «${movieQuery.trim()}» en Series`
+                      : `Search "${movieQuery.trim()}" in Series`}
                   </span>
                 </button>
               )}
@@ -1246,8 +3446,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       h.title.trim().toLowerCase() === movie.title.trim().toLowerCase()
                   );
                   const watchedPct =
-                    historyEntry?.resumeTimeSec && historyEntry?.durationSec && historyEntry.durationSec > 60
-                      ? Math.min(100, Math.max(8, Math.round((historyEntry.resumeTimeSec / historyEntry.durationSec) * 100)))
+                    historyEntry?.resumeTimeSec &&
+                    historyEntry?.durationSec &&
+                    historyEntry.durationSec > 60
+                      ? Math.min(
+                          100,
+                          Math.max(
+                            8,
+                            Math.round((historyEntry.resumeTimeSec / historyEntry.durationSec) * 100)
+                          )
+                        )
                       : historyEntry?.resumeTimeSec && historyEntry.resumeTimeSec > 15
                       ? 30
                       : 0;
@@ -1260,11 +3468,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         triggerHaptic('light');
                         if (movie.mediaType === 'tv' && movie.tmdbId) {
                           setShowWatchlistOnly(false);
-                          onChangeSection('series');
-                          openSeriesDetails(movie.tmdbId, 1);
+                          openSeriesDetails(movie.tmdbId, 1, movie);
                           return;
                         }
-                        // Always open the Movie Detail Sheet (Ficha + Language Selector + Trailer) first
                         setPreviewItem(movie);
                       }}
                       role="button"
@@ -1273,14 +3479,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         if (e.key === 'Enter' && !loadingItemId) {
                           if (movie.mediaType === 'tv' && movie.tmdbId) {
                             setShowWatchlistOnly(false);
-                            onChangeSection('series');
-                            openSeriesDetails(movie.tmdbId, 1);
+                            openSeriesDetails(movie.tmdbId, 1, movie);
                             return;
                           }
                           setPreviewItem(movie);
                         }
                       }}
-                      className={`group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border active:scale-[0.98] transition-all cursor-pointer shadow-[0_12px_30px_rgba(0,0,0,0.6)] ${
+                      className={`group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border transition-colors cursor-pointer shadow-[0_12px_30px_rgba(0,0,0,0.55)] ${
                         isNowInRoom
                           ? 'border-[#E11D48] ring-1 ring-[#E11D48]/50'
                           : 'border-white/[0.08] hover:border-white/25'
@@ -1293,7 +3498,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           loading="lazy"
                           referrerPolicy="no-referrer"
                           onError={() =>
-                            setBrokenPosters((prev) => ({ ...prev, [favKey]: true, [movie.id]: true }))
+                            setBrokenPosters((prev) => ({
+                              ...prev,
+                              [favKey]: true,
+                              [movie.id]: true,
+                            }))
                           }
                           className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
                         />
@@ -1306,25 +3515,23 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         </div>
                       )}
 
-                      {/* Top-Left Live Room Status or Completed Check */}
                       {isNowInRoom ? (
                         <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-[#E11D48] text-white text-[10px] font-bold flex items-center gap-1 shadow-md">
                           <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                           <span>En sala</span>
                         </div>
                       ) : watchedPct >= 90 ? (
-                        <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md border border-emerald-400/40 text-emerald-300 text-[10px] font-bold flex items-center gap-1">
+                        <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-emerald-300 text-[10px] font-bold flex items-center gap-1">
                           <Check className="w-3 h-3" />
                           <span>Vista</span>
                         </div>
                       ) : null}
 
-                      {/* Single Discreet Top-Right Favorite Button */}
                       <button
                         type="button"
                         onClick={(e) => handleToggleBookmark(movie, e)}
                         aria-label="Guardar en Mi Lista"
-                        className={`absolute top-2.5 right-2.5 z-10 w-8 h-8 rounded-full backdrop-blur-md border flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+                        className={`absolute top-2 right-2 z-10 w-9 h-9 rounded-full backdrop-blur-md border flex items-center justify-center cursor-pointer transition-colors ${
                           saved
                             ? 'bg-black/75 border-[#E11D48]/50 text-[#E11D48]'
                             : 'bg-black/45 hover:bg-black/75 border-white/10 text-white/80 hover:text-white'
@@ -1333,7 +3540,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         <Heart className={`w-3.5 h-3.5 ${saved ? 'fill-current' : ''}`} />
                       </button>
 
-                      {/* Center Extracting / Hover Play Indicator */}
                       {isExtractingThis && (
                         <div className="absolute inset-0 bg-black/55 flex items-center justify-center pointer-events-none">
                           <div className="w-11 h-11 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-2xl">
@@ -1342,26 +3548,27 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         </div>
                       )}
 
-                      {/* Editorial Bottom Overlay + 1-Tap Quick Play Pill */}
                       <div className="absolute inset-x-0 bottom-0 pt-16 pb-2.5 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent flex items-end justify-between gap-2">
                         <div className="min-w-0 flex-1 pointer-events-none">
-                          <h3 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug drop-shadow">
+                          <h3 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug">
                             {movie.title}
                           </h3>
-                          <div className="text-[10px] text-zinc-300 truncate mt-1 flex items-center gap-1.5">
+                          <div className="text-[11px] text-zinc-300 truncate mt-1 flex items-center gap-1.5">
                             <span>{movie.year || 'HD'}</span>
                             {movie.rating && (
                               <>
                                 <span className="text-zinc-500">·</span>
-                                <span className="text-amber-400 font-mono font-bold">
+                                <span className="text-amber-400 font-mono font-bold tabular-nums">
                                   ★ {movie.rating}
                                 </span>
                               </>
                             )}
-                            <span className="text-zinc-500">·</span>
-                            <span className="text-zinc-200 font-semibold">
-                              {activeSection === 'vose' ? 'VOSE · EN' : 'Cine HD'}
-                            </span>
+                            {movie.mediaType === 'tv' && (
+                              <>
+                                <span className="text-zinc-500">·</span>
+                                <span className="text-indigo-300 font-semibold">Serie</span>
+                              </>
+                            )}
                           </div>
                         </div>
 
@@ -1372,24 +3579,23 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             if (loadingItemId) return;
                             triggerHaptic('success');
                             if (movie.mediaType === 'tv' && movie.tmdbId) {
-                              openSeriesDetails(movie.tmdbId, 1);
+                              openSeriesDetails(movie.tmdbId, 1, movie);
                               return;
                             }
                             onPlayMovie(movie, activeSection === 'vose' ? 'EN' : 'ES');
                           }}
                           title={
-                            lang === 'es'
-                              ? 'Reproducir directamente en la sala'
-                              : 'Play directly in room'
+                            movie.mediaType === 'tv'
+                              ? 'Elegir temporada y capítulo'
+                              : 'Reproducir directamente en la sala'
                           }
-                          aria-label="Reproducir directamente"
-                          className="w-8 h-8 rounded-full bg-[#E11D48] hover:bg-[#F43F5E] text-white flex items-center justify-center shrink-0 shadow-[0_4px_14px_rgba(225,29,72,0.45)] active:scale-90 transition-all cursor-pointer"
+                          aria-label="Reproducir"
+                          className="w-9 h-9 rounded-full bg-[#E11D48] hover:bg-[#F43F5E] text-white flex items-center justify-center shrink-0 shadow-md cursor-pointer transition-colors"
                         >
                           <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                         </button>
                       </div>
 
-                      {/* Watched Progress Bar along Bottom Edge */}
                       {watchedPct > 0 && watchedPct < 90 && (
                         <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20 pointer-events-none">
                           <div
@@ -1414,10 +3620,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     }}
                     className="min-h-[46px] px-6 rounded-2xl bg-[#0E0F16] hover:bg-white/[0.08] border border-white/12 text-xs sm:text-sm font-semibold text-white flex items-center gap-2 transition-colors cursor-pointer"
                   >
-                    {loadingMoreMovies && <Loader2 className="w-4 h-4 animate-spin text-[#E11D48]" />}
-                    <span>
-                      {lang === 'es' ? 'Cargar más películas' : 'Load more movies'}
-                    </span>
+                    {loadingMoreMovies && (
+                      <Loader2 className="w-4 h-4 animate-spin text-[#E11D48]" />
+                    )}
+                    <span>{lang === 'es' ? 'Cargar más películas' : 'Load more movies'}</span>
                   </button>
                 </div>
               )}
@@ -1427,330 +3633,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       )}
 
       {/* ================================================================== */}
-      {/* DEDICATED SERIES EPISODE BROWSER MODAL / BOTTOM SHEET (Z-65)       */}
-      {/* Preserves catalog scroll position and works from any section       */}
-      {/* ================================================================== */}
-      {selectedSeries && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-label={selectedSeries.title}
-          onClick={() => setSelectedSeries(null)}
-          className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="w-full sm:max-w-[880px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#08090E]/98 backdrop-blur-2xl border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden"
-          >
-            {/* Mobile Grab Handle */}
-            <div className="sm:hidden pt-2.5 flex justify-center shrink-0">
-              <div className="w-10 h-1 rounded-full bg-white/25" />
-            </div>
-
-            {/* Series Header & Season Selector */}
-            <div className="relative p-4 sm:p-6 bg-gradient-to-b from-[#141622] to-[#08090E] border-b border-white/[0.08] space-y-3.5 shrink-0">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={(e) =>
-                      handleToggleBookmark(
-                        {
-                          id: `series-${selectedSeries.tmdbId}`,
-                          tmdbId: selectedSeries.tmdbId,
-                          mediaType: 'tv',
-                          title: selectedSeries.title,
-                          year: selectedSeries.year,
-                          rating: selectedSeries.rating,
-                          overview: selectedSeries.overview,
-                          poster: selectedSeries.poster,
-                          backdrop: selectedSeries.backdrop,
-                          languages: [],
-                        },
-                        e
-                      )
-                    }
-                    className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <Heart
-                      className={`w-3.5 h-3.5 ${
-                        isBookmarked({
-                          id: `series-${selectedSeries.tmdbId}`,
-                          tmdbId: selectedSeries.tmdbId,
-                          mediaType: 'tv',
-                          title: selectedSeries.title,
-                          year: selectedSeries.year,
-                          rating: selectedSeries.rating,
-                          overview: '',
-                          poster: selectedSeries.poster,
-                          backdrop: selectedSeries.backdrop,
-                          languages: [],
-                        })
-                          ? 'fill-current text-[#E11D48]'
-                          : 'text-zinc-300'
-                      }`}
-                    />
-                    <span>
-                      {isBookmarked({
-                        id: `series-${selectedSeries.tmdbId}`,
-                        tmdbId: selectedSeries.tmdbId,
-                        mediaType: 'tv',
-                        title: selectedSeries.title,
-                        year: selectedSeries.year,
-                        rating: selectedSeries.rating,
-                        overview: '',
-                        poster: selectedSeries.poster,
-                        backdrop: selectedSeries.backdrop,
-                        languages: [],
-                      })
-                        ? lang === 'es'
-                          ? 'En Mi Lista'
-                          : 'Saved'
-                        : lang === 'es'
-                        ? 'Guardar Serie'
-                        : 'Save Series'}
-                    </span>
-                  </button>
-
-                  {loadingSeriesDetails && !Array.isArray(selectedSeries.availableLanguages) ? (
-                    <div className="min-h-9 px-3 rounded-xl bg-black/60 border border-white/10 flex items-center gap-1.5 text-xs text-zinc-300">
-                      <Loader2 className="w-3.5 h-3.5 animate-spin text-[#E11D48]" />
-                      <span>{lang === 'es' ? 'Comprobando idiomas...' : 'Checking audio...'}</span>
-                    </div>
-                  ) : Array.isArray(selectedSeries.availableLanguages) &&
-                    selectedSeries.availableLanguages.length > 0 ? (
-                    <div className="flex flex-wrap items-center gap-1 p-1 rounded-xl bg-black/60 border border-white/10">
-                      {(
-                        [
-                          { code: 'ES', label: '🇪🇸 Castellano' },
-                          { code: 'LAT', label: '🇲🇽 Latino' },
-                          { code: 'VOSE', label: '💬 VOSE' },
-                          { code: 'EN', label: '🇬🇧 Inglés' },
-                        ] as const
-                      )
-                        .filter((opt) => selectedSeries.availableLanguages!.includes(opt.code))
-                        .map((opt) => (
-                          <button
-                            key={opt.code}
-                            type="button"
-                            onClick={() => setSeriesLangMode(opt.code)}
-                            className={`min-h-7 px-2.5 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
-                              seriesLangMode === opt.code
-                                ? 'bg-white text-[#050508]'
-                                : 'text-zinc-400 hover:text-white'
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                    </div>
-                  ) : null}
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setSelectedSeries(null)}
-                  aria-label="Cerrar episodios"
-                  className="w-9 h-9 rounded-xl bg-white/[0.08] hover:bg-[#E11D48] text-white flex items-center justify-center cursor-pointer transition-colors"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              <div className="space-y-1 max-w-2xl">
-                <div className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
-                  <span className="text-[#E11D48] font-bold uppercase tracking-wider">Serie TV</span>
-                  <span>·</span>
-                  <span className="text-zinc-200">{selectedSeries.year}</span>
-                  {selectedSeries.rating && (
-                    <>
-                      <span>·</span>
-                      <span className="text-amber-400 font-mono font-bold">
-                        ★ {selectedSeries.rating}
-                      </span>
-                    </>
-                  )}
-                  <span>·</span>
-                  <span>
-                    {selectedSeries.seasons.length}{' '}
-                    {lang === 'es' ? 'Temporadas' : 'Seasons'}
-                  </span>
-                </div>
-                <h3 className="font-display font-bold text-xl sm:text-2xl text-white">
-                  {selectedSeries.title}
-                </h3>
-                <p className="text-xs text-zinc-300 line-clamp-2">
-                  {selectedSeries.overview}
-                </p>
-              </div>
-
-              {/* Season Selector Strip */}
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
-                {selectedSeries.seasons.map((s) => (
-                  <button
-                    key={s.seasonNumber}
-                    type="button"
-                    disabled={loadingSeriesDetails}
-                    onClick={() => {
-                      triggerHaptic('light');
-                      openSeriesDetails(selectedSeries.tmdbId, s.seasonNumber);
-                    }}
-                    className={`min-h-9 px-4 rounded-full text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
-                      selectedSeries.activeSeason === s.seasonNumber
-                        ? 'bg-white text-[#050508] shadow-sm'
-                        : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/10'
-                    }`}
-                  >
-                    {lang === 'es' ? `Temporada ${s.seasonNumber}` : `Season ${s.seasonNumber}`}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Scrollable Episodes Grid */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-              {loadingSeriesDetails ? (
-                <div className="py-12 flex items-center justify-center gap-2 text-sm text-zinc-400">
-                  <Loader2 className="w-5 h-5 animate-spin text-[#E11D48]" />
-                  <span>Cargando episodios...</span>
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {selectedSeries.episodes.map((ep) => {
-                    const epLoadId = `tv-${selectedSeries.tmdbId}-${ep.seasonNumber}-${ep.episodeNumber}`;
-                    const isExtractingEp = loadingItemId === epLoadId;
-                    const stillBroken = brokenEpisodeImgs[ep.id];
-                    const epHistory = watchHistory.find(
-                      (h) => sanitizeItemKey(h.id) === sanitizeItemKey(epLoadId)
-                    );
-                    const epResume = epHistory?.resumeTimeSec || 0;
-                    const epDur = epHistory?.durationSec || 0;
-                    const epProgressPct =
-                      epResume > 5
-                        ? epDur > 60
-                          ? Math.min(96, Math.max(8, Math.round((epResume / epDur) * 100)))
-                          : 30
-                        : 0;
-
-                    return (
-                      <div
-                        key={ep.id}
-                        onClick={() => {
-                          if (loadingItemId) return;
-                          triggerHaptic('success');
-                          onPlaySeriesEpisode(selectedSeries, ep, seriesLangMode);
-                          setSelectedSeries(null);
-                        }}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' && !loadingItemId) {
-                            onPlaySeriesEpisode(selectedSeries, ep, seriesLangMode);
-                            setSelectedSeries(null);
-                          }
-                        }}
-                        className="group text-left rounded-2xl bg-[#0E1017] hover:bg-[#151824] border border-white/[0.08] hover:border-white/25 p-3 flex items-center gap-3 transition-all cursor-pointer"
-                      >
-                        <div className="relative w-28 sm:w-32 aspect-video rounded-xl overflow-hidden bg-[#0E0F16] shrink-0">
-                          {!stillBroken && (ep.still || selectedSeries.backdrop) ? (
-                            <img
-                              src={ep.still || selectedSeries.backdrop}
-                              alt={ep.title}
-                              loading="lazy"
-                              referrerPolicy="no-referrer"
-                              onError={() =>
-                                setBrokenEpisodeImgs((prev) => ({ ...prev, [ep.id]: true }))
-                              }
-                              className="w-full h-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center bg-[#0E0F16]">
-                              <Tv className="w-5 h-5 text-zinc-500" />
-                            </div>
-                          )}
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                            <div className="w-8 h-8 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-md">
-                              {isExtractingEp ? (
-                                <Loader2 className="w-4 h-4 animate-spin" />
-                              ) : (
-                                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                              )}
-                            </div>
-                          </div>
-                          {epProgressPct > 0 && (
-                            <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
-                              <div
-                                className={`h-full ${
-                                  epProgressPct >= 88 ? 'bg-emerald-400' : 'bg-[#E11D48]'
-                                }`}
-                                style={{ width: `${epProgressPct >= 88 ? 100 : epProgressPct}%` }}
-                              />
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="min-w-0 flex-1 space-y-1">
-                          <div className="text-[11px] font-mono text-[#FB7185] flex items-center gap-1.5 flex-wrap">
-                            <span>
-                              {ep.seasonNumber}x{String(ep.episodeNumber).padStart(2, '0')}
-                              {ep.runtime ? ` · ${ep.runtime}m` : ''}
-                            </span>
-                            {epProgressPct >= 88 ? (
-                              <span className="inline-flex items-center gap-0.5 text-emerald-400 font-semibold">
-                                <Check className="w-3 h-3" />
-                                <span>{lang === 'es' ? 'Visto' : 'Watched'}</span>
-                              </span>
-                            ) : epResume > 5 ? (
-                              <span className="text-amber-300">
-                                · {lang === 'es' ? 'Seguir' : 'Resume'} {formatShortTime(epResume)}
-                              </span>
-                            ) : null}
-                          </div>
-                          <h4 className="font-display font-semibold text-xs sm:text-sm text-white line-clamp-1">
-                            {ep.title}
-                          </h4>
-                          <p className="text-[11px] text-zinc-400 line-clamp-2">
-                            {ep.overview || 'Reproducir episodio en alta definición.'}
-                          </p>
-                        </div>
-
-                        {/* 1-Tap Add Episode to Room Queue */}
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            triggerHaptic('success');
-                            onAddToQueue({
-                              kind: 'tv',
-                              title: `${selectedSeries.title} · ${ep.seasonNumber}x${String(
-                                ep.episodeNumber
-                              ).padStart(2, '0')}`,
-                              subtitle: `${ep.title} (${seriesLangMode})`,
-                              poster: ep.still || selectedSeries.poster,
-                              tmdbId: selectedSeries.tmdbId,
-                              season: ep.seasonNumber,
-                              episode: ep.episodeNumber,
-                              preferLang: seriesLangMode,
-                            });
-                          }}
-                          title={lang === 'es' ? 'Añadir episodio a la cola' : 'Add episode to queue'}
-                          aria-label="Añadir episodio a la cola"
-                          className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ================================================================== */}
-      {/* SECTION 3: TV SERIES CATALOG                                       */}
+      {/* SECTION 3: TV SERIES CATALOG (GENERAL OR SPECIFIC PLATFORM)        */}
+      {/* Clicking ANY series opens 1. Temporada -> 2. Capítulo in 0ms       */}
       {/* ================================================================== */}
       {activeSection === 'series' && (
         <div className="space-y-4">
@@ -1761,7 +3645,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 type="text"
                 value={seriesQuery}
                 onChange={(e) => setSeriesQuery(e.target.value)}
-                placeholder={t.searchSeriesPlaceholder}
+                placeholder={
+                  streamingProvider !== 'all'
+                    ? lang === 'es'
+                      ? `Buscar serie en ${activePlatformMeta.es}...`
+                      : `Search ${activePlatformMeta.en} series...`
+                    : t.searchSeriesPlaceholder
+                }
                 className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
               />
               {seriesQuery && (
@@ -1780,10 +3670,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  triggerHaptic('light');
                   setSeriesLangMode('ES');
                   setSeriesPage(1);
                 }}
-                className={`flex-1 sm:flex-initial min-h-[34px] px-3.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                   seriesLangMode !== 'EN' && seriesLangMode !== 'VOSE'
                     ? 'bg-white text-[#050508]'
                     : 'text-zinc-400 hover:text-white'
@@ -1794,56 +3685,42 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               <button
                 type="button"
                 onClick={() => {
+                  triggerHaptic('light');
                   setSeriesLangMode('EN');
                   setSeriesPage(1);
                 }}
-                className={`flex-1 sm:flex-initial min-h-[34px] px-3.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                   seriesLangMode === 'EN' || seriesLangMode === 'VOSE'
                     ? 'bg-white text-[#050508]'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                VOSE · EN
+                VO · Inglés
               </button>
             </div>
           </div>
 
-          {/^https?:\/\//i.test(seriesQuery.trim()) && (
-            <div className="p-3 rounded-2xl bg-[#101016] border border-[#E11D48]/35 flex flex-wrap items-center justify-between gap-2.5">
-              <span className="text-xs font-mono text-zinc-200 truncate max-w-[260px] sm:max-w-[420px]">
-                {seriesQuery.trim()}
-              </span>
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('success');
-                    onPlayCustomUrl(seriesQuery.trim());
-                    setSeriesQuery('');
-                  }}
-                  className="min-h-[38px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>{lang === 'es' ? 'Reproducir serie / enlace' : 'Play series link'}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('medium');
-                    onOpenCloudBrowser(seriesQuery.trim());
-                    setSeriesQuery('');
-                  }}
-                  className="min-h-[38px] px-3.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
-                >
-                  <Tv className="w-3.5 h-3.5" />
-                  <span>Cloud Browser</span>
-                </button>
-              </div>
-            </div>
-          )}
-
           {!debouncedSeriesQuery && (
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+              {streamingProvider !== 'all' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setSeriesCategory('originals');
+                    setSeriesPage(1);
+                  }}
+                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    seriesCategory === 'originals'
+                      ? 'bg-white text-[#050508]'
+                      : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-200 border border-white/[0.12]'
+                  }`}
+                >
+                  {lang === 'es'
+                    ? `Originales ${activePlatformMeta.es}`
+                    : `${activePlatformMeta.en} Originals`}
+                </button>
+              )}
               {SERIES_CATEGORIES.map((cat) => (
                 <button
                   key={cat.id}
@@ -1853,9 +3730,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     setSeriesCategory(cat.id);
                     setSeriesPage(1);
                   }}
-                  className={`min-h-[38px] px-4 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     seriesCategory === cat.id
-                      ? 'bg-white text-[#050508] shadow-[0_6px_18px_rgba(255,255,255,0.16)]'
+                      ? 'bg-white text-[#050508]'
                       : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
                   }`}
                 >
@@ -1865,13 +3742,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </div>
           )}
 
-          {/* Quick-Access Favorite TV Series Rail (Edge-to-Edge) */}
-          {!debouncedSeriesQuery && favoriteSeriesList.length > 0 && (
+          {/* Favorite Series Quick Rail (only when browsing All Series) */}
+          {!debouncedSeriesQuery && streamingProvider === 'all' && favoriteSeriesList.length > 0 && (
             <section className="rounded-3xl bg-white/[0.02] border border-white/[0.07] p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Heart className="w-4 h-4 fill-current text-[#E11D48] shrink-0" />
                 <h3 className="font-display font-bold text-xs sm:text-sm text-white">
-                  {lang === 'es' ? 'Mis Series Favoritas' : 'My Favorite Series'} (
+                  {lang === 'es' ? 'Mis Series Guardadas' : 'My Saved Series'} (
                   {favoriteSeriesList.length})
                 </h3>
               </div>
@@ -1882,16 +3759,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     onClick={() => {
                       if (!favShow.tmdbId) return;
                       triggerHaptic('light');
-                      openSeriesDetails(favShow.tmdbId, 1);
+                      openSeriesDetails(favShow.tmdbId, 1, favShow);
                     }}
                     role="button"
                     tabIndex={0}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter' && favShow.tmdbId) {
-                        openSeriesDetails(favShow.tmdbId, 1);
+                        openSeriesDetails(favShow.tmdbId, 1, favShow);
                       }
                     }}
-                    className="group relative w-[136px] sm:w-[152px] aspect-[2/3] shrink-0 rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-white/30 active:scale-[0.98] transition-all cursor-pointer"
+                    className="group relative w-[136px] sm:w-[152px] aspect-[2/3] shrink-0 rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-white/30 transition-colors cursor-pointer"
                   >
                     {favShow.poster ? (
                       <img
@@ -1925,6 +3802,115 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </section>
           )}
 
+          {/* Editorial Spotlight Feature Card for Series */}
+          {spotlightSeries && (
+            <div className="relative rounded-3xl overflow-hidden border border-white/[0.08] bg-[#0D0D12] min-h-[210px] sm:min-h-[265px] flex flex-col justify-end p-5 sm:p-8 shadow-2xl">
+              {!seriesSpotlightImgFailed &&
+              (spotlightSeries.backdrop || spotlightSeries.poster) ? (
+                <img
+                  src={spotlightSeries.backdrop || spotlightSeries.poster}
+                  alt={spotlightSeries.title}
+                  referrerPolicy="no-referrer"
+                  onError={() => setSeriesSpotlightImgFailed(true)}
+                  className="absolute inset-0 w-full h-full object-cover object-center opacity-60"
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-[#1C0B12] via-[#0D0D12] to-[#050507]" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#050507] via-[#050507]/80 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#050507]/90 via-[#050507]/45 to-transparent" />
+
+              <div className="relative z-10 max-w-xl space-y-2.5">
+                <div className="text-xs text-zinc-300 font-medium">
+                  <span className="text-[#FB7185] font-semibold">
+                    {streamingProvider !== 'all'
+                      ? `${activePlatformMeta.es} · Serie Destacada`
+                      : lang === 'es'
+                      ? 'Serie Destacada'
+                      : 'Featured Series'}
+                  </span>
+                  <span className="mx-1.5 text-zinc-600" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>{spotlightSeries.year || 'TV'}</span>
+                  {spotlightSeries.rating && (
+                    <>
+                      <span className="mx-1.5 text-zinc-600" aria-hidden="true">
+                        ·
+                      </span>
+                      <span className="font-mono tabular-nums text-amber-400">
+                        ★ {spotlightSeries.rating}
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                <h3 className="font-display font-bold text-xl sm:text-3xl text-white leading-tight text-balance">
+                  {spotlightSeries.title}
+                </h3>
+
+                <p className="text-xs sm:text-sm text-zinc-300 line-clamp-2 max-w-[54ch]">
+                  {spotlightSeries.overview}
+                </p>
+
+                <div className="pt-1.5 flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!spotlightSeries.tmdbId) return;
+                      triggerHaptic('success');
+                      openSeriesDetails(spotlightSeries.tmdbId, 1, {
+                        ...spotlightSeries,
+                        mediaType: 'tv',
+                      });
+                    }}
+                    className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center gap-2 shadow-lg shadow-[#E11D48]/30 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <Play className="w-4 h-4 fill-current text-white" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Ver Temporadas y Capítulos'
+                        : 'Choose Season & Episode'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setPreviewItem({ ...spotlightSeries, mediaType: 'tv' });
+                    }}
+                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  >
+                    <Info className="w-4 h-4 text-white" />
+                    <span>{lang === 'es' ? 'Tráiler y Reparto' : 'Trailer & Cast'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={(e) =>
+                      handleToggleBookmark({ ...spotlightSeries, mediaType: 'tv' }, e)
+                    }
+                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  >
+                    <Heart
+                      className={`w-4 h-4 ${
+                        isBookmarked({ ...spotlightSeries, mediaType: 'tv' })
+                          ? 'fill-current text-[#E11D48]'
+                          : ''
+                      }`}
+                    />
+                    <span>
+                      {isBookmarked({ ...spotlightSeries, mediaType: 'tv' })
+                        ? 'Guardada'
+                        : 'Mi Lista'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {loadingSeries ? (
             <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
               {Array.from({ length: 10 }).map((_, i) => (
@@ -1942,11 +3928,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   ? 'No encontramos series con ese título'
                   : 'No TV series found matching your search'}
               </p>
-              <p className="text-xs text-zinc-400">
-                {lang === 'es'
-                  ? 'Prueba con otro título o busca directamente en Películas.'
-                  : 'Try another title or search in Movies.'}
-              </p>
               {seriesQuery.trim().length > 1 && (
                 <button
                   type="button"
@@ -1955,13 +3936,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     setMovieQuery(seriesQuery.trim());
                     onChangeSection('movies');
                   }}
-                  className="mt-2 min-h-[42px] px-5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold inline-flex items-center gap-2 cursor-pointer active:scale-95 transition-all"
+                  className="mt-2 min-h-[44px] px-5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-colors"
                 >
                   <Film className="w-4 h-4 text-[#E11D48]" />
                   <span>
                     {lang === 'es'
-                      ? `¿Buscar «${seriesQuery.trim()}» en Películas?`
-                      : `Search "${seriesQuery.trim()}" in Movies?`}
+                      ? `Buscar «${seriesQuery.trim()}» en Películas`
+                      : `Search "${seriesQuery.trim()}" in Movies`}
                   </span>
                 </button>
               )}
@@ -1969,7 +3950,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           ) : (
             <>
               <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
-                {seriesList.map((show) => {
+                {gridSeries.map((show) => {
                   const seriesItem: CatalogMovie = { ...show, mediaType: 'tv' };
                   const savedSeries = isBookmarked(seriesItem);
                   const imgBroken = brokenPosters[show.id];
@@ -1990,7 +3971,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           100,
                           Math.max(
                             8,
-                            Math.round((seriesHistory.resumeTimeSec / seriesHistory.durationSec) * 100)
+                            Math.round(
+                              (seriesHistory.resumeTimeSec / seriesHistory.durationSec) * 100
+                            )
                           )
                         )
                       : seriesHistory
@@ -2003,16 +3986,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       onClick={() => {
                         if (!show.tmdbId) return;
                         triggerHaptic('light');
-                        openSeriesDetails(show.tmdbId, 1);
+                        openSeriesDetails(show.tmdbId, seriesHistory?.season || 1, seriesItem);
                       }}
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && show.tmdbId) {
-                          openSeriesDetails(show.tmdbId, 1);
+                          openSeriesDetails(show.tmdbId, seriesHistory?.season || 1, seriesItem);
                         }
                       }}
-                      className={`group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border active:scale-[0.98] transition-all cursor-pointer shadow-[0_12px_30px_rgba(0,0,0,0.6)] ${
+                      className={`group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border transition-colors cursor-pointer shadow-[0_12px_30px_rgba(0,0,0,0.55)] ${
                         isSeriesInRoom
                           ? 'border-[#E11D48] ring-1 ring-[#E11D48]/50'
                           : 'border-white/[0.08] hover:border-white/25'
@@ -2044,17 +4027,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           <span>En sala</span>
                         </div>
                       ) : seriesHistory?.season && seriesHistory?.episode ? (
-                        <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md border border-white/15 text-zinc-200 text-[10px] font-mono font-bold">
-                          {seriesHistory.season}x{String(seriesHistory.episode).padStart(2, '0')}
+                        <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-zinc-100 text-[10px] font-mono font-bold tabular-nums">
+                          T{seriesHistory.season} · Cap. {seriesHistory.episode}
                         </div>
                       ) : null}
 
-                      {/* Discreet Favorite Heart Button */}
                       <button
                         type="button"
                         onClick={(e) => handleToggleBookmark(seriesItem, e)}
-                        aria-label="Marcar serie como favorita"
-                        className={`absolute top-2.5 right-2.5 z-10 w-8 h-8 rounded-full backdrop-blur-md border flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+                        aria-label="Guardar serie"
+                        className={`absolute top-2 right-2 z-10 w-9 h-9 rounded-full backdrop-blur-md border flex items-center justify-center cursor-pointer transition-colors ${
                           savedSeries
                             ? 'bg-black/75 border-[#E11D48]/50 text-[#E11D48]'
                             : 'bg-black/45 hover:bg-black/75 border-white/10 text-white/80 hover:text-white'
@@ -2063,28 +4045,23 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         <Heart className={`w-3.5 h-3.5 ${savedSeries ? 'fill-current' : ''}`} />
                       </button>
 
-                      {/* Editorial Bottom Overlay */}
-                      <div className="absolute inset-x-0 bottom-0 pt-16 pb-2.5 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent flex items-end justify-between gap-2">
+                      <div className="absolute inset-x-0 bottom-0 pt-16 pb-2.5 px-3 bg-gradient-to-t from-black/95 via-black/80 to-transparent flex items-end justify-between gap-2">
                         <div className="min-w-0 flex-1 pointer-events-none">
-                          <h3 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug drop-shadow">
+                          <h3 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug">
                             {show.title}
                           </h3>
-                          <div className="text-[10px] text-zinc-300 truncate mt-1 flex items-center gap-1.5">
+                          <div className="text-[11px] text-zinc-300 truncate mt-1 flex items-center gap-1.5">
                             <span>{show.year || 'TV'}</span>
                             {show.rating && (
                               <>
                                 <span className="text-zinc-500">·</span>
-                                <span className="text-amber-400 font-mono font-bold">
+                                <span className="text-amber-400 font-mono font-bold tabular-nums">
                                   ★ {show.rating}
                                 </span>
                               </>
                             )}
                             <span className="text-zinc-500">·</span>
-                            <span className="text-zinc-200 font-semibold">
-                              {seriesLangMode === 'EN' || seriesLangMode === 'VOSE'
-                                ? 'VOSE · EN'
-                                : 'Serie TV'}
-                            </span>
+                            <span className="text-[#FB7185] font-semibold">Capítulos</span>
                           </div>
                         </div>
 
@@ -2096,11 +4073,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               triggerHaptic('light');
                               setPreviewItem(seriesItem);
                             }}
-                            title={lang === 'es' ? 'Ver Ficha y Tráiler' : 'Details & Trailer'}
+                            title={lang === 'es' ? 'Ver Tráiler y Ficha' : 'Trailer & Info'}
                             aria-label="Ver ficha de la serie"
-                            className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/15 text-white flex items-center justify-center shrink-0 active:scale-90 transition-all cursor-pointer"
+                            className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/15 text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
                           >
-                            <Info className="w-3.5 h-3.5" />
+                            <Info className="w-4 h-4" />
                           </button>
                         )}
                       </div>
@@ -2142,11 +4119,617 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       )}
 
       {/* ================================================================== */}
-      {/* SECTION 3.5: TV ESPAÑA · CANALES NACIONALES TDT EN DIRECTO 1080P   */}
+      {/* SECTION 3.2: DEDICATED ANIME HUB                                   */}
+      {/* Crunchyroll · AnimeBox · JKAnime · AnimeFLV (Series y Películas)   */}
+      {/* ================================================================== */}
+      {activeSection === 'anime' && (
+        <div className="space-y-4">
+          {/* 4-Platform + All Anime Big Visual Selector Grid */}
+          <div className="grid grid-cols-2 @sm:grid-cols-3 @lg:grid-cols-5 gap-3">
+            {ANIME_PLATFORMS.map((portal) => {
+              const isSelected = animePortal === portal.id;
+              return (
+                <button
+                  key={portal.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setAnimePortal(portal.id);
+                    setAnimePage(1);
+                    if (portal.id === 'jkanime' && animeCategory === 'trending') {
+                      setAnimeCategory('simulcast');
+                    }
+                  }}
+                  className={`group min-h-[104px] p-4 rounded-3xl bg-gradient-to-br ${
+                    portal.cardGlow
+                  } border text-left flex flex-col justify-between gap-2.5 cursor-pointer active:scale-[0.98] transition-all ${
+                    isSelected
+                      ? portal.activeBorder
+                      : 'border-white/[0.08] hover:border-white/25 text-zinc-200'
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span
+                      className={`h-8 px-2.5 rounded-xl text-xs font-display font-black tracking-tight flex items-center justify-center shrink-0 shadow-sm ${portal.accentBg} ${portal.accentText}`}
+                    >
+                      {portal.mark}
+                    </span>
+                    <ChevronRight
+                      className={`w-4 h-4 transition-colors ${
+                        isSelected
+                          ? 'text-white'
+                          : 'text-zinc-500 group-hover:text-white'
+                      }`}
+                    />
+                  </div>
+                  <div>
+                    <div className="font-display font-bold text-sm sm:text-base text-white truncate">
+                      {lang === 'es' ? portal.es : portal.en}
+                    </div>
+                    <div className="text-[11px] text-zinc-400 mt-0.5 line-clamp-1">
+                      {lang === 'es' ? portal.descEs : portal.descEn}
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search Input + Audio Selector (Español · Lat | VOSE · Sub | Inglés) */}
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={animeQuery}
+                onChange={(e) => setAnimeQuery(e.target.value)}
+                placeholder={
+                  animePortal === 'anime_all'
+                    ? lang === 'es'
+                      ? 'Buscar anime (One Piece, Naruto, Solo Leveling, Dragon Ball, Jujutsu Kaisen...)'
+                      : 'Search anime series or movies...'
+                    : lang === 'es'
+                    ? `Buscar en ${activeAnimePortalMeta.es} (Naruto, Kimetsu no Yaiba, Frieren...)`
+                    : `Search ${activeAnimePortalMeta.en} anime...`
+                }
+                className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
+              />
+              {animeQuery && (
+                <button
+                  type="button"
+                  onClick={() => setAnimeQuery('')}
+                  aria-label="Limpiar búsqueda de anime"
+                  className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] shrink-0">
+              {(
+                [
+                  { code: 'ES', labelEs: 'Español · Lat', labelEn: 'Spanish Dub' },
+                  { code: 'VOSE', labelEs: 'VOSE · Sub', labelEn: 'Sub ES (VOSE)' },
+                  { code: 'EN', labelEs: 'Inglés', labelEn: 'English' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.code}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setAnimeLangPref(opt.code);
+                    setSeriesLangMode(opt.code);
+                    setAnimePage(1);
+                  }}
+                  className={`flex-1 sm:flex-initial min-h-[36px] px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    animeLangPref === opt.code
+                      ? 'bg-white text-[#050508]'
+                      : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  {lang === 'es' ? opt.labelEs : opt.labelEn}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Anime Genre & Simulcast Filter Bar */}
+          {!debouncedAnimeQuery && (
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+              <button
+                type="button"
+                onClick={() => {
+                  if (animeItems.length === 0) return;
+                  triggerHaptic('success');
+                  const rand = animeItems[Math.floor(Math.random() * animeItems.length)];
+                  if (!rand) return;
+                  if (animeMediaKind === 'series' && rand.tmdbId) {
+                    setSeriesLangMode(animeLangPref);
+                    openSeriesDetails(rand.tmdbId, 1, { ...rand, mediaType: 'tv' });
+                  } else {
+                    setPreviewItem({ ...rand, mediaType: 'movie' });
+                  }
+                }}
+                title="Elegir un anime al azar"
+                className="min-h-[38px] px-3.5 rounded-xl text-xs font-bold bg-[#F47521]/15 hover:bg-[#F47521]/25 border border-[#F47521]/35 text-[#FDBA74] flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{lang === 'es' ? 'Sorpréndeme' : 'Surprise Me'}</span>
+              </button>
+
+              {ANIME_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setAnimeCategory(cat.id);
+                    setAnimePage(1);
+                  }}
+                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    animeCategory === cat.id
+                      ? 'bg-white text-[#050508]'
+                      : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                  }`}
+                >
+                  {lang === 'es' ? cat.es : cat.en}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Editorial Anime Spotlight Hero Card */}
+          {spotlightAnime && (
+            <div className="relative rounded-3xl overflow-hidden border border-white/[0.08] bg-[#0D0D12] min-h-[210px] sm:min-h-[265px] flex flex-col justify-end p-5 sm:p-8 shadow-2xl">
+              {!animeSpotlightImgFailed &&
+              (spotlightAnime.backdrop || spotlightAnime.poster) ? (
+                <img
+                  src={spotlightAnime.backdrop || spotlightAnime.poster}
+                  alt={spotlightAnime.title}
+                  referrerPolicy="no-referrer"
+                  onError={() => setAnimeSpotlightImgFailed(true)}
+                  className="absolute inset-0 w-full h-full object-cover object-center opacity-60"
+                />
+              ) : (
+                <div className="absolute inset-0 bg-gradient-to-br from-[#231208] via-[#0D0D12] to-[#050507]" />
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-[#050507] via-[#050507]/80 to-transparent" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#050507]/90 via-[#050507]/45 to-transparent" />
+
+              <div className="relative z-10 max-w-xl space-y-2.5">
+                <div className="text-xs text-zinc-300 font-medium">
+                  <span className="text-[#FDBA74] font-semibold">
+                    {animePortal === 'anime_all'
+                      ? animeMediaKind === 'series'
+                        ? 'Anime Destacado · Series'
+                        : 'Anime Destacado · Película'
+                      : `${activeAnimePortalMeta.es} · ${
+                          animeMediaKind === 'series' ? 'Serie Anime' : 'Película Anime'
+                        }`}
+                  </span>
+                  <span className="mx-1.5 text-zinc-600" aria-hidden="true">
+                    ·
+                  </span>
+                  <span>{spotlightAnime.year || 'HD'}</span>
+                  {spotlightAnime.rating && (
+                    <>
+                      <span className="mx-1.5 text-zinc-600" aria-hidden="true">
+                        ·
+                      </span>
+                      <span className="font-mono tabular-nums text-amber-400">
+                        ★ {spotlightAnime.rating}
+                      </span>
+                    </>
+                  )}
+                </div>
+
+                <h3 className="font-display font-bold text-xl sm:text-3xl text-white leading-tight text-balance">
+                  {spotlightAnime.title}
+                </h3>
+
+                <p className="text-xs sm:text-sm text-zinc-300 line-clamp-2 max-w-[54ch]">
+                  {spotlightAnime.overview}
+                </p>
+
+                <div className="pt-1.5 flex flex-wrap items-center gap-2.5">
+                  {animeMediaKind === 'series' ? (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!spotlightAnime.tmdbId) return;
+                          triggerHaptic('success');
+                          setSeriesLangMode(animeLangPref);
+                          openSeriesDetails(spotlightAnime.tmdbId, 1, {
+                            ...spotlightAnime,
+                            mediaType: 'tv',
+                          });
+                        }}
+                        className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center gap-2 shadow-lg shadow-[#E11D48]/30 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        <Play className="w-4 h-4 fill-current text-white" />
+                        <span>
+                          {lang === 'es'
+                            ? 'Ver Temporadas y Capítulos'
+                            : 'Choose Season & Episode'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setPreviewItem({ ...spotlightAnime, mediaType: 'tv' });
+                        }}
+                        className="min-h-[44px] px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                      >
+                        <Info className="w-4 h-4 text-white" />
+                        <span>{lang === 'es' ? 'Tráiler y Ficha' : 'Trailer & Info'}</span>
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setPreviewItem({ ...spotlightAnime, mediaType: 'movie' });
+                        }}
+                        className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center gap-2 shadow-lg shadow-[#E11D48]/30 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+                      >
+                        <Info className="w-4 h-4 text-white" />
+                        <span>
+                          {lang === 'es' ? 'Elegir Idioma y Ver' : 'Select Language & Watch'}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={Boolean(loadingItemId)}
+                        onClick={() => {
+                          triggerHaptic('success');
+                          onPlayMovie(
+                            { ...spotlightAnime, mediaType: 'movie' },
+                            animeLangPref
+                          );
+                        }}
+                        className="min-h-[44px] px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                      >
+                        {loadingItemId === spotlightAnime.id ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <Play className="w-4 h-4 fill-current text-[#E11D48]" />
+                        )}
+                        <span>{lang === 'es' ? 'Reproducir directo' : 'Quick Play'}</span>
+                      </button>
+                    </>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={(e) =>
+                      handleToggleBookmark(
+                        {
+                          ...spotlightAnime,
+                          mediaType: animeMediaKind === 'series' ? 'tv' : 'movie',
+                        },
+                        e
+                      )
+                    }
+                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  >
+                    <Heart
+                      className={`w-4 h-4 ${
+                        isBookmarked({
+                          ...spotlightAnime,
+                          mediaType: animeMediaKind === 'series' ? 'tv' : 'movie',
+                        })
+                          ? 'fill-current text-[#E11D48]'
+                          : ''
+                      }`}
+                    />
+                    <span>
+                      {isBookmarked({
+                        ...spotlightAnime,
+                        mediaType: animeMediaKind === 'series' ? 'tv' : 'movie',
+                      })
+                        ? 'Guardado'
+                        : 'Mi Lista'}
+                    </span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Anime Poster Grid */}
+          {loadingAnime ? (
+            <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="aspect-[2/3] rounded-2xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer"
+                />
+              ))}
+            </div>
+          ) : animeItems.length === 0 ? (
+            <div className="py-14 text-center rounded-3xl bg-white/[0.02] border border-white/[0.07] px-5 space-y-3">
+              <Sparkles className="w-8 h-8 text-[#F47521] mx-auto mb-1" />
+              <p className="text-sm font-bold text-white">
+                {lang === 'es'
+                  ? 'No encontramos anime con ese título en esta vista'
+                  : 'No anime found matching your search'}
+              </p>
+              <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
+                {animePortal !== 'anime_all' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setAnimePortal('anime_all');
+                      setAnimePage(1);
+                    }}
+                    className="min-h-[44px] px-5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  >
+                    <span>
+                      {lang === 'es' ? 'Buscar en Todo el Anime' : 'Search All Anime'}
+                    </span>
+                  </button>
+                )}
+                {animeQuery.trim().length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      setAnimeMediaKind((k) => (k === 'series' ? 'movies' : 'series'));
+                      setAnimePage(1);
+                    }}
+                    className="min-h-[44px] px-5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/12 text-white text-xs font-bold inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  >
+                    <span>
+                      {animeMediaKind === 'series'
+                        ? lang === 'es'
+                          ? `Buscar «${animeQuery.trim()}» en Películas Anime`
+                          : `Search in Anime Movies`
+                        : lang === 'es'
+                        ? `Buscar «${animeQuery.trim()}» en Series Anime`
+                        : `Search in Anime Series`}
+                    </span>
+                  </button>
+                )}
+              </div>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
+                {gridAnime.map((anime) => {
+                  const isSeriesCard = animeMediaKind === 'series';
+                  const normalizedItem: CatalogMovie = {
+                    ...anime,
+                    mediaType: isSeriesCard ? 'tv' : 'movie',
+                  };
+                  const favKey = getCatalogFavoriteKey(normalizedItem);
+                  const savedAnime = isBookmarked(normalizedItem);
+                  const imgBroken = brokenPosters[favKey] || brokenPosters[anime.id];
+                  const isExtractingThis =
+                    loadingItemId === anime.id || loadingItemId === favKey;
+                  const isAnimeInRoom =
+                    Boolean(activeMediaTitle) &&
+                    activeMediaTitle.toLowerCase().includes(anime.title.trim().toLowerCase());
+                  const animeHistory = watchHistory.find(
+                    (h) =>
+                      (anime.tmdbId && h.tmdbId === anime.tmdbId) ||
+                      h.title.trim().toLowerCase() === anime.title.trim().toLowerCase()
+                  );
+                  const animePct =
+                    animeHistory?.resumeTimeSec &&
+                    animeHistory?.durationSec &&
+                    animeHistory.durationSec > 60
+                      ? Math.min(
+                          100,
+                          Math.max(
+                            8,
+                            Math.round(
+                              (animeHistory.resumeTimeSec / animeHistory.durationSec) * 100
+                            )
+                          )
+                        )
+                      : animeHistory
+                      ? 30
+                      : 0;
+
+                  const handleCardOpen = () => {
+                    if (loadingItemId) return;
+                    triggerHaptic('light');
+                    if (isSeriesCard && anime.tmdbId) {
+                      setSeriesLangMode(animeLangPref);
+                      openSeriesDetails(
+                        anime.tmdbId,
+                        animeHistory?.season || 1,
+                        normalizedItem
+                      );
+                    } else {
+                      setPreviewItem(normalizedItem);
+                    }
+                  };
+
+                  return (
+                    <div
+                      key={`anime-${favKey}`}
+                      onClick={handleCardOpen}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleCardOpen();
+                      }}
+                      className={`group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border transition-colors cursor-pointer shadow-[0_12px_30px_rgba(0,0,0,0.55)] ${
+                        isAnimeInRoom
+                          ? 'border-[#F47521] ring-1 ring-[#F47521]/50'
+                          : 'border-white/[0.08] hover:border-white/25'
+                      }`}
+                    >
+                      {!imgBroken && anime.poster ? (
+                        <img
+                          src={anime.poster}
+                          alt={anime.title}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setBrokenPosters((prev) => ({
+                              ...prev,
+                              [favKey]: true,
+                              [anime.id]: true,
+                            }))
+                          }
+                          className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                        />
+                      ) : (
+                        <div className="w-full h-full p-4 flex flex-col items-center justify-center text-center bg-[#0E0F16]">
+                          <Sparkles className="w-8 h-8 text-zinc-500 mb-2" />
+                          <span className="font-display font-semibold text-xs text-zinc-200 line-clamp-3">
+                            {anime.title}
+                          </span>
+                        </div>
+                      )}
+
+                      {isAnimeInRoom ? (
+                        <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-[#E11D48] text-white text-[10px] font-bold flex items-center gap-1 shadow-md">
+                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                          <span>En sala</span>
+                        </div>
+                      ) : isSeriesCard && animeHistory?.season && animeHistory?.episode ? (
+                        <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-zinc-100 text-[10px] font-mono font-bold tabular-nums">
+                          T{animeHistory.season} · Cap. {animeHistory.episode}
+                        </div>
+                      ) : !isSeriesCard && animePct >= 90 ? (
+                        <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-black/75 backdrop-blur-md text-emerald-300 text-[10px] font-bold flex items-center gap-1">
+                          <Check className="w-3 h-3" />
+                          <span>Vista</span>
+                        </div>
+                      ) : null}
+
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleBookmark(normalizedItem, e)}
+                        aria-label="Guardar anime en Mi Lista"
+                        className={`absolute top-2 right-2 z-10 w-9 h-9 rounded-full backdrop-blur-md border flex items-center justify-center cursor-pointer transition-colors ${
+                          savedAnime
+                            ? 'bg-black/75 border-[#E11D48]/50 text-[#E11D48]'
+                            : 'bg-black/45 hover:bg-black/75 border-white/10 text-white/80 hover:text-white'
+                        }`}
+                      >
+                        <Heart className={`w-3.5 h-3.5 ${savedAnime ? 'fill-current' : ''}`} />
+                      </button>
+
+                      {isExtractingThis && (
+                        <div className="absolute inset-0 bg-black/55 flex items-center justify-center pointer-events-none">
+                          <div className="w-11 h-11 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-2xl">
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          </div>
+                        </div>
+                      )}
+
+                      <div className="absolute inset-x-0 bottom-0 pt-16 pb-2.5 px-3 bg-gradient-to-t from-black/95 via-black/80 to-transparent flex items-end justify-between gap-2">
+                        <div className="min-w-0 flex-1 pointer-events-none">
+                          <h3 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug">
+                            {anime.title}
+                          </h3>
+                          <div className="text-[11px] text-zinc-300 truncate mt-1 flex items-center gap-1.5">
+                            <span>{anime.year || 'HD'}</span>
+                            {anime.rating && (
+                              <>
+                                <span className="text-zinc-500">·</span>
+                                <span className="text-amber-400 font-mono font-bold tabular-nums">
+                                  ★ {anime.rating}
+                                </span>
+                              </>
+                            )}
+                            <span className="text-zinc-500">·</span>
+                            <span className="text-[#FDBA74] font-semibold">
+                              {isSeriesCard ? 'Capítulos' : 'Película'}
+                            </span>
+                          </div>
+                        </div>
+
+                        {isSeriesCard ? (
+                          anime.tmdbId ? (
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                triggerHaptic('light');
+                                setPreviewItem(normalizedItem);
+                              }}
+                              title={lang === 'es' ? 'Ver Tráiler y Ficha' : 'Trailer & Info'}
+                              aria-label="Ver ficha del anime"
+                              className="w-9 h-9 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/15 text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                            >
+                              <Info className="w-4 h-4" />
+                            </button>
+                          ) : null
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (loadingItemId) return;
+                              triggerHaptic('success');
+                              onPlayMovie(normalizedItem, animeLangPref);
+                            }}
+                            title="Reproducir película anime en la sala"
+                            aria-label="Reproducir"
+                            className="w-9 h-9 rounded-full bg-[#E11D48] hover:bg-[#F43F5E] text-white flex items-center justify-center shrink-0 shadow-md cursor-pointer transition-colors"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                          </button>
+                        )}
+                      </div>
+
+                      {animePct > 0 && animePct < 90 && (
+                        <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20 pointer-events-none">
+                          <div
+                            className="h-full bg-[#E11D48]"
+                            style={{ width: `${animePct}%` }}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {hasMoreAnime && (
+                <div className="pt-3 flex justify-center">
+                  <button
+                    type="button"
+                    disabled={loadingMoreAnime}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setAnimePage((p) => p + 1);
+                    }}
+                    className="min-h-[46px] px-6 rounded-2xl bg-[#0E0F16] hover:bg-white/[0.08] border border-white/12 text-xs sm:text-sm font-semibold text-white flex items-center gap-2 transition-colors cursor-pointer"
+                  >
+                    {loadingMoreAnime && (
+                      <Loader2 className="w-4 h-4 animate-spin text-[#F47521]" />
+                    )}
+                    <span>{lang === 'es' ? 'Cargar más anime' : 'Load more anime'}</span>
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* SECTION 3.5: LIVE TELEVISION (TDT ESPAÑA · MOVISTAR+ · DAZN)       */}
+      {/* Adapts cleanly whether viewing DAZN only, Movistar+ only, or TDT   */}
       {/* ================================================================== */}
       {activeSection === 'tdt' && (
         <div className="space-y-5">
-          {/* Search + Category Filter Row */}
+          {/* Search + Clean Sub-Category Filter */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2 w-full sm:max-w-md">
               <div className="relative flex-1">
@@ -2155,7 +4738,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   type="text"
                   value={tdtSearch}
                   onChange={(e) => setTdtSearch(e.target.value)}
-                  placeholder={t.searchTdtPlaceholder}
+                  placeholder={
+                    tdtCategory === 'dazn'
+                      ? 'Buscar canal de DAZN (LaLiga, F1, MotoGP...)'
+                      : tdtCategory === 'movistar'
+                      ? 'Buscar canal de Movistar+ (LaLiga, Campeones, F1...)'
+                      : t.searchTdtPlaceholder
+                  }
                   className="w-full h-11 pl-10 pr-9 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
                 />
                 {tdtSearch && (
@@ -2175,46 +4764,67 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   triggerHaptic('light');
                   fetchTdtCatalog();
                 }}
-                aria-label="Actualizar canales TDT"
-                className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#16161E] active:scale-95 border border-white/[0.08] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer transition-all"
+                aria-label="Actualizar canales"
+                className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#16161E] border border-white/[0.08] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer transition-colors"
               >
                 <RefreshCw className={`w-4 h-4 ${loadingTdt ? 'animate-spin' : ''}`} />
               </button>
             </div>
 
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
-              {TDT_CATEGORIES.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setTdtCategory(cat.id);
-                  }}
-                  className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
-                    tdtCategory === cat.id
-                      ? 'bg-white text-[#050508] shadow-sm'
-                      : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
-                  }`}
-                >
-                  {lang === 'es' ? cat.es : cat.en}
-                </button>
-              ))}
-            </div>
+            {/* Category Tabs: Shown only for TDT España or All Live TV (NOT shown when inside dedicated DAZN or Movistar+) */}
+            {focusedHub === 'tdt_es' ? (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+                {TDT_NATIONAL_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setTdtCategory(cat.id);
+                    }}
+                    className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      tdtCategory === cat.id
+                        ? 'bg-white text-[#050508]'
+                        : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                    }`}
+                  >
+                    {lang === 'es' ? cat.es : cat.en}
+                  </button>
+                ))}
+              </div>
+            ) : focusedHub === 'all' ? (
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
+                {ALL_LIVE_CATEGORIES.map((cat) => (
+                  <button
+                    key={cat.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setTdtCategory(cat.id);
+                    }}
+                    className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      tdtCategory === cat.id
+                        ? 'bg-white text-[#050508]'
+                        : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                    }`}
+                  >
+                    {lang === 'es' ? cat.es : cat.en}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           {/* Saved Favorite Channels Quick Bar */}
-          {favoriteChannels.length > 0 && (
+          {favoriteChannels.length > 0 && focusedHub === 'all' && (
             <section className="rounded-2xl bg-white/[0.02] border border-white/[0.08] p-3.5 space-y-2.5">
-              <div className="flex items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 font-display font-bold text-white">
-                  <Star className="w-3.5 h-3.5 text-amber-400 fill-current" />
-                  <span>
-                    {lang === 'es'
-                      ? `Mis Canales Favoritos (${favoriteChannels.length})`
-                      : `Favorite Channels (${favoriteChannels.length})`}
-                  </span>
-                </div>
+              <div className="flex items-center gap-2 text-xs font-display font-bold text-white">
+                <Star className="w-3.5 h-3.5 text-amber-400 fill-current" />
+                <span>
+                  {lang === 'es'
+                    ? `Mis Canales Favoritos (${favoriteChannels.length})`
+                    : `Favorite Channels (${favoriteChannels.length})`}
+                </span>
               </div>
               <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
                 {favoriteChannels.map((fCh) => {
@@ -2223,7 +4833,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   return (
                     <div
                       key={fCh.favId}
-                      className={`flex items-center rounded-xl border shrink-0 transition-all ${
+                      className={`flex items-center rounded-xl border shrink-0 transition-colors ${
                         isPlayingFav
                           ? 'bg-white text-[#050508] border-white'
                           : 'bg-[#0E0F16] border-white/[0.1] text-zinc-100 hover:border-white/25'
@@ -2281,7 +4891,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </section>
           )}
 
-          {/* Spanish TDT Dial Grid */}
+          {/* Live Channel Grid */}
           {loadingTdt && tdtChannels.length === 0 ? (
             <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 gap-3.5">
               {Array.from({ length: 9 }).map((_, idx) => (
@@ -2303,11 +4913,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 type="button"
                 onClick={() => {
                   setTdtSearch('');
-                  setTdtCategory('all');
+                  if (focusedHub === 'tdt_es') setTdtCategory('tdt_all');
+                  else if (focusedHub === 'all') setTdtCategory('all');
                 }}
-                className="min-h-[40px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
+                className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
               >
-                {lang === 'es' ? 'Mostrar todos los canales TDT' : 'Show all channels'}
+                {lang === 'es' ? 'Limpiar búsqueda' : 'Reset filter'}
               </button>
             </div>
           ) : (
@@ -2323,13 +4934,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 return (
                   <div
                     key={ch.id}
-                    className={`group relative rounded-2xl p-4 bg-[#0D0E15] border transition-all flex flex-col justify-between gap-3.5 ${
+                    className={`group relative rounded-2xl p-4 bg-[#0D0E15] border transition-colors flex flex-col justify-between gap-3.5 ${
                       isPlayingThis
-                        ? 'border-white/60 ring-1 ring-white/25 shadow-[0_14px_34px_rgba(0,0,0,0.65)]'
-                        : 'border-white/[0.08] hover:border-white/20 shadow-[0_10px_28px_rgba(0,0,0,0.5)]'
+                        ? 'border-white/60 ring-1 ring-white/25'
+                        : 'border-white/[0.08] hover:border-white/20'
                     }`}
                   >
-                    {/* Top Row: Dial Monogram + Channel Identity + Quick Actions */}
                     <div className="flex items-start justify-between gap-3">
                       <button
                         type="button"
@@ -2340,7 +4950,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         }}
                         className="flex items-center gap-3.5 min-w-0 text-left flex-1 cursor-pointer"
                       >
-                        {/* Broadcaster Dial Tile */}
                         <div
                           className="w-13 h-13 rounded-2xl shrink-0 flex flex-col items-center justify-center border border-white/15 shadow-inner relative overflow-hidden"
                           style={{
@@ -2369,7 +4978,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             )}
                           </div>
                           <div className="mt-0.5 text-[11px] text-zinc-400 truncate">
-                            <span className="text-emerald-400 font-semibold">EN DIRECTO</span>
+                            <span className="text-emerald-400 font-semibold">En directo</span>
                             <span className="mx-1.5 text-zinc-600" aria-hidden="true">
                               ·
                             </span>
@@ -2387,7 +4996,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         </div>
                       </button>
 
-                      {/* Favorite Star + Optional Multi-View Split Button */}
                       <div className="flex items-center gap-1 shrink-0">
                         {activeVideoRawUrl &&
                           !isPlayingThis &&
@@ -2403,9 +5011,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                   subtitle: `TV en Directo · ${ch.network}`,
                                 });
                               }}
-                              title="Ver en 2ª pantalla simultánea (Multiview)"
+                              title="Ver en 2ª pantalla simultánea"
                               aria-label={`Ver ${ch.name} en 2ª pantalla`}
-                              className="w-10 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.08] text-sky-400 flex items-center justify-center active:scale-95 transition-all cursor-pointer"
+                              className="w-10 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.08] text-sky-400 flex items-center justify-center cursor-pointer transition-colors"
                             >
                               <Columns2 className="w-4 h-4" />
                             </button>
@@ -2425,13 +5033,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                 title: `${ch.name} en Directo`,
                               });
                             }}
-                            title={
-                              isFav
-                                ? 'Quitar de mis canales favoritos'
-                                : 'Guardar en mis canales favoritos'
-                            }
                             aria-label={`Favorito ${ch.name}`}
-                            className={`w-10 h-10 rounded-xl border flex items-center justify-center active:scale-95 transition-all cursor-pointer ${
+                            className={`w-10 h-10 rounded-xl border flex items-center justify-center cursor-pointer transition-colors ${
                               isFav
                                 ? 'bg-amber-400/15 border-amber-400/40 text-amber-300'
                                 : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/[0.08] text-zinc-400 hover:text-white'
@@ -2443,7 +5046,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       </div>
                     </div>
 
-                    {/* Bottom Action Row: Primary Play + Backup Signal Selector */}
                     <div className="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
                       {ch.channels.map((sig, sIdx) => {
                         const sigActive = activeVideoRawUrl === sig.sourceUrl;
@@ -2459,9 +5061,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               triggerHaptic('success');
                               onPlayTdtChannel(ch, sIdx);
                             }}
-                            className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-all whitespace-nowrap cursor-pointer active:scale-[0.98] ${
+                            className={`min-h-[42px] px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                               sigActive
-                                ? 'flex-1 bg-white text-[#050508] shadow-sm'
+                                ? 'flex-1 bg-white text-[#050508]'
                                 : isPrimary
                                 ? 'flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white'
                                 : 'bg-white/[0.05] hover:bg-white/[0.11] border border-white/[0.09] text-zinc-200'
@@ -2504,86 +5106,77 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             <div className="flex items-center gap-2 w-full sm:max-w-md">
               <div className="relative flex-1">
                 <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={sportsSearch}
-                    onChange={(e) => setSportsSearch(e.target.value)}
-                    placeholder={t.searchSportsPlaceholder}
-                    className="w-full h-11 pl-10 pr-9 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
-                  />
-                  {sportsSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setSportsSearch('')}
-                      aria-label="Limpiar búsqueda"
-                      className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
+                <input
+                  type="text"
+                  value={sportsSearch}
+                  onChange={(e) => setSportsSearch(e.target.value)}
+                  placeholder={t.searchSportsPlaceholder}
+                  className="w-full h-11 pl-10 pr-9 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
+                />
+                {sportsSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setSportsSearch('')}
+                    aria-label="Limpiar búsqueda"
+                    className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  fetchSportsAgenda();
+                }}
+                aria-label="Actualizar agenda deportiva"
+                className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#16161E] border border-white/[0.08] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer transition-colors"
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingSports ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+              {(
+                [
+                  { id: 'all', label: t.allSports },
+                  { id: 'soccer', label: t.soccer },
+                  { id: 'motor', label: t.motor },
+                  { id: 'basketball', label: t.basketball },
+                  { id: 'tennis', label: t.tennis },
+                ] as const
+              ).map((cat) => (
                 <button
+                  key={cat.id}
                   type="button"
                   onClick={() => {
                     triggerHaptic('light');
-                    fetchSportsAgenda();
+                    setSportFilter(cat.id);
                   }}
-                  aria-label="Actualizar agenda deportiva"
-                  className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#16161E] active:scale-95 border border-white/[0.08] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer transition-all"
+                  className={`min-h-[42px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                    sportFilter === cat.id
+                      ? 'bg-white text-[#050508]'
+                      : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.08]'
+                  }`}
                 >
-                  <RefreshCw className={`w-4 h-4 ${loadingSports ? 'animate-spin' : ''}`} />
+                  {cat.label}
                 </button>
-              </div>
-
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                {(
-                  [
-                    { id: 'all', label: t.allSports },
-                    { id: 'soccer', label: t.soccer },
-                    { id: 'motor', label: t.motor },
-                    { id: 'basketball', label: t.basketball },
-                    { id: 'tennis', label: t.tennis },
-                  ] as const
-                ).map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setSportFilter(cat.id);
-                    }}
-                    className={`min-h-[42px] px-4 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
-                      sportFilter === cat.id
-                        ? 'bg-white text-[#050508] shadow-sm'
-                        : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.08]'
-                    }`}
-                  >
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
+              ))}
             </div>
+          </div>
 
-            {/* Live Real-Time Match Scoreboards Ticker (LaLiga, Champions, Premier, NBA) */}
-            {liveScores.length > 0 && (
-              <section className="rounded-3xl bg-white/[0.02] border border-white/[0.07] p-3.5 sm:p-4 space-y-2.5">
+          {/* Live Match Scoreboards */}
+          {liveScores.length > 0 && (
+            <section className="rounded-3xl bg-white/[0.02] border border-white/[0.07] p-3.5 sm:p-4 space-y-2.5">
               <div className="flex items-center justify-between gap-2 text-xs">
-                <div className="flex items-center gap-2 font-display font-bold text-white">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span>
-                    {lang === 'es'
-                      ? 'Marcadores en Directo · Jornada'
-                      : 'Live Match Scoreboard'}
-                  </span>
+                <div className="font-display font-bold text-white">
+                  {lang === 'es' ? 'Marcadores de la Jornada' : 'Matchday Scoreboard'}
                 </div>
                 {activeVideoRawUrl && onPlaySecondaryChannel && (
                   <span className="text-[11px] text-sky-300 flex items-center gap-1">
                     <Columns2 className="w-3.5 h-3.5" />
-                    <span>
-                      {lang === 'es'
-                        ? 'Icono doble = Multiview'
-                        : 'Split icon = Multi-View'}
-                    </span>
+                    <span>{lang === 'es' ? 'Icono doble = Multiview' : 'Multi-View ready'}</span>
                   </span>
                 )}
               </div>
@@ -2604,7 +5197,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         setSportsSearch(sc.homeTeam);
                       }}
                       title={`Buscar retransmisión de ${sc.homeTeam}`}
-                      className={`min-w-[178px] sm:min-w-[196px] shrink-0 rounded-2xl p-3 border flex flex-col justify-between gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                      className={`min-w-[178px] sm:min-w-[196px] shrink-0 rounded-2xl p-3 border flex flex-col justify-between gap-1.5 cursor-pointer transition-colors ${
                         sc.isLive
                           ? 'bg-[#0E0F16] border-emerald-400/40 hover:border-emerald-400'
                           : 'bg-white/[0.03] border-white/[0.07] hover:border-white/20'
@@ -2613,7 +5206,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       <div className="flex items-center justify-between gap-1 text-[10px]">
                         <span className="font-semibold text-zinc-400">{sc.league}</span>
                         <span
-                          className={`font-mono font-bold ${
+                          className={`font-mono font-bold tabular-nums ${
                             sc.isLive ? 'text-emerald-400' : 'text-zinc-400'
                           }`}
                         >
@@ -2636,7 +5229,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               {sc.homeTeam}
                             </span>
                           </div>
-                          <span className="font-mono font-bold text-white shrink-0">
+                          <span className="font-mono font-bold tabular-nums text-white shrink-0">
                             {sc.homeScore}
                           </span>
                         </div>
@@ -2655,81 +5248,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               {sc.awayTeam}
                             </span>
                           </div>
-                          <span className="font-mono font-bold text-zinc-200 shrink-0">
+                          <span className="font-mono font-bold tabular-nums text-zinc-200 shrink-0">
                             {sc.awayScore}
                           </span>
                         </div>
                       </div>
                     </div>
                   ))}
-              </div>
-            </section>
-          )}
-
-          {/* Quick-Launch Favorite Sports Channels Rail */}
-          {favoriteChannels.length > 0 && (
-            <section className="rounded-3xl bg-white/[0.02] border border-amber-400/25 p-3.5 sm:p-4 space-y-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
-                  <Star className="w-4 h-4 fill-current text-amber-400 shrink-0" />
-                  <h3 className="font-display font-bold text-xs sm:text-sm text-white truncate">
-                    {lang === 'es'
-                      ? 'Mis Canales Favoritos · Acceso Rápido'
-                      : 'My Favorite Channels · Quick Launch'}{' '}
-                    ({favoriteChannels.length})
-                  </h3>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5 min-w-0">
-                {favoriteChannels.map((favCh) => {
-                  const isActiveFav = activeVideoRawUrl === favCh.channelUrl;
-                  const isLoadingFav = loadingItemId === `favch-${favCh.favId}`;
-                  return (
-                    <div
-                      key={favCh.favId}
-                      className={`inline-flex items-center rounded-2xl border shrink-0 overflow-hidden transition-colors ${
-                        isActiveFav
-                          ? 'bg-[#E11D48] border-[#E11D48] text-white'
-                          : 'bg-[#090A0F] border-white/12 text-zinc-100'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        disabled={Boolean(loadingItemId)}
-                        onClick={() => {
-                          triggerHaptic('medium');
-                          onPlayFavoriteChannel(favCh);
-                        }}
-                        className="min-h-[44px] pl-3.5 pr-2.5 text-xs font-semibold flex items-center gap-2 whitespace-nowrap cursor-pointer"
-                      >
-                        {isLoadingFav ? (
-                          <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                        ) : (
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                        )}
-                        <div className="text-left">
-                          <div className="leading-tight">{favCh.channelLabel}</div>
-                          <div className="text-[10px] opacity-75 font-normal">
-                            {favCh.title}
-                          </div>
-                        </div>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          onToggleChannelFavorite(favCh);
-                        }}
-                        aria-label="Quitar canal de favoritos"
-                        title="Quitar canal de favoritos"
-                        className="min-h-[44px] px-3 border-l border-white/10 text-amber-400 hover:text-rose-300 flex items-center justify-center cursor-pointer"
-                      >
-                        <Star className="w-3.5 h-3.5 fill-current" />
-                      </button>
-                    </div>
-                  );
-                })}
               </div>
             </section>
           )}
@@ -2755,7 +5280,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     return (
                       <div
                         key={mux.id}
-                        className="relative rounded-3xl overflow-hidden border border-white/[0.09] bg-[#0E0F16] min-h-[205px] sm:min-h-[220px] p-5 flex flex-col justify-end gap-4 min-w-0 shadow-[0_14px_40px_rgba(0,0,0,0.65)]"
+                        className="relative rounded-3xl overflow-hidden border border-white/[0.09] bg-[#0E0F16] min-h-[205px] p-5 flex flex-col justify-end gap-4 min-w-0"
                       >
                         {!imgFailed ? (
                           <img
@@ -2774,10 +5299,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
                         <div className="relative z-10 flex items-start justify-between gap-3">
                           <div className="min-w-0">
-                            <div className="text-xs text-[#FB7185] font-bold uppercase tracking-wider">
+                            <div className="text-xs text-[#FB7185] font-semibold">
                               {mux.competition} · {mux.time}
                             </div>
-                            <h3 className="font-display font-bold text-base sm:text-xl text-white mt-0.5 text-balance drop-shadow">
+                            <h3 className="font-display font-bold text-base sm:text-xl text-white mt-0.5 text-balance">
                               {mux.title}
                             </h3>
                           </div>
@@ -2795,9 +5320,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             return (
                               <div
                                 key={ch.id}
-                                className={`inline-flex items-center rounded-full shrink-0 overflow-hidden transition-all ${
+                                className={`inline-flex items-center rounded-xl shrink-0 overflow-hidden transition-colors ${
                                   activeCh
-                                    ? 'bg-white text-[#050508] shadow-md'
+                                    ? 'bg-white text-[#050508]'
                                     : 'bg-black/65 hover:bg-black/85 text-white backdrop-blur-xl border border-white/15'
                                 }`}
                               >
@@ -2827,7 +5352,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                       sport: mux.sport,
                                     });
                                   }}
-                                  title="Guardar canal favorito"
                                   aria-label="Marcar como canal favorito"
                                   className={`min-h-9 px-2.5 border-l flex items-center justify-center cursor-pointer ${
                                     activeCh ? 'border-black/10' : 'border-white/10'
@@ -2853,7 +5377,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 </div>
               )}
 
-              {/* Edge-to-Edge Live Match Cards */}
               {scheduledMatches.length > 0 && (
                 <div className="space-y-3">
                   <h3 className="font-display font-bold text-sm sm:text-base text-white px-0.5">
@@ -2875,7 +5398,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       return (
                         <div
                           key={match.id}
-                          className="relative rounded-3xl overflow-hidden border border-white/[0.09] hover:border-white/25 bg-[#0D0F18] min-h-[164px] p-4 sm:p-5 flex flex-col justify-end gap-3 transition-all min-w-0 shadow-[0_12px_32px_rgba(0,0,0,0.6)]"
+                          className="relative rounded-3xl overflow-hidden border border-white/[0.09] hover:border-white/25 bg-[#0D0F18] min-h-[160px] p-4 sm:p-5 flex flex-col justify-end gap-3 transition-colors min-w-0"
                         >
                           <img
                             src={matchBackdrop}
@@ -2889,14 +5412,17 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           <div className="relative z-10 flex items-start justify-between gap-3">
                             <div className="min-w-0">
                               <div className="text-xs text-zinc-300 truncate flex items-center gap-1.5">
-                                <span className="px-2 py-0.5 rounded-full bg-[#E11D48]/20 border border-[#E11D48]/40 font-mono tabular-nums text-[#FB7185] font-bold">
+                                <span className="font-mono tabular-nums text-[#FB7185] font-bold">
                                   {match.time}
+                                </span>
+                                <span className="text-zinc-600" aria-hidden="true">
+                                  ·
                                 </span>
                                 <span className="font-semibold text-zinc-300 truncate">
                                   {match.competition}
                                 </span>
                               </div>
-                              <h4 className="font-display font-bold text-base sm:text-lg text-white mt-1.5 line-clamp-2 drop-shadow">
+                              <h4 className="font-display font-bold text-base sm:text-lg text-white mt-1 line-clamp-2">
                                 {match.title}
                               </h4>
                             </div>
@@ -2919,9 +5445,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                       sport: match.sport,
                                     });
                                   }}
-                                  title="Guardar partido / canal en Favoritos"
                                   aria-label="Guardar canal favorito"
-                                  className="w-8 h-8 rounded-full bg-black/55 hover:bg-black/80 border border-white/15 flex items-center justify-center cursor-pointer transition-colors"
+                                  className="w-9 h-9 rounded-full bg-black/55 hover:bg-black/80 border border-white/15 flex items-center justify-center cursor-pointer transition-colors"
                                 >
                                   <Star
                                     className={`w-3.5 h-3.5 ${
@@ -2935,7 +5460,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             </div>
                           </div>
 
-                          {/* Clean 1-Tap Signal Pills */}
                           <div className="relative z-10 flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5 min-w-0">
                             {match.channels.slice(0, 6).map((ch, idx) => {
                               const activeCh = activeVideoRawUrl === ch.sourceUrl;
@@ -2950,11 +5474,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                     triggerHaptic('light');
                                     onPlaySportsMatch(match, idx);
                                   }}
-                                  className={`min-h-9 px-3.5 rounded-full text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all active:scale-95 ${
+                                  className={`min-h-[38px] px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                                     activeCh
-                                      ? 'bg-white text-[#050508] shadow-md'
+                                      ? 'bg-white text-[#050508]'
                                       : idx === 0
-                                      ? 'bg-[#E11D48] hover:bg-[#F43F5E] text-white shadow-[0_4px_14px_rgba(225,29,72,0.35)]'
+                                      ? 'bg-[#E11D48] hover:bg-[#F43F5E] text-white'
                                       : 'bg-black/65 hover:bg-black/85 text-zinc-100 backdrop-blur-xl border border-white/15'
                                   }`}
                                 >
@@ -3019,41 +5543,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               </button>
             </div>
 
-            {/^https?:\/\//i.test(ytQuery.trim()) && (
-              <div className="p-3 rounded-2xl bg-[#101016] border border-[#E11D48]/35 flex flex-wrap items-center justify-between gap-2.5">
-                <span className="text-xs font-mono text-zinc-200 truncate max-w-[260px] sm:max-w-[420px]">
-                  {ytQuery.trim()}
-                </span>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('success');
-                      onPlayCustomUrl(ytQuery.trim());
-                      setYtQuery('');
-                    }}
-                    className="min-h-[38px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>{lang === 'es' ? 'Reproducir enlace' : 'Play link'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      onOpenCloudBrowser(ytQuery.trim());
-                      setYtQuery('');
-                    }}
-                    className="min-h-[38px] px-3.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Tv className="w-3.5 h-3.5" />
-                    <span>Cloud Browser</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Fluid Quick Party Mood Topics */}
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
               {YOUTUBE_QUICK_TOPICS.map((topic) => (
                 <button
@@ -3064,9 +5553,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     setYtQuery(lang === 'es' ? topic.labelEs : topic.labelEn);
                     setDebouncedYtQuery(topic.q);
                   }}
-                  className={`min-h-[42px] px-4 rounded-full text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                  className={`min-h-[40px] px-4 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                     debouncedYtQuery === topic.q
-                      ? 'bg-white text-[#050508] shadow-sm'
+                      ? 'bg-white text-[#050508]'
                       : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.08]'
                   }`}
                 >
@@ -3093,18 +5582,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   ? 'Busca cualquier vídeo o canal de YouTube'
                   : 'Search any YouTube video or channel'}
               </p>
-              <p className="text-xs text-zinc-400 mt-1">
-                {lang === 'es'
-                  ? 'Reproduce al instante en sincronía o añádelo a la cola compartida.'
-                  : 'Play in instant sync or add it to the shared room queue.'}
-              </p>
             </div>
           ) : (
             <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 gap-4">
               {ytResults.map((vid) => (
                 <div
                   key={vid.id}
-                  className="group relative w-full rounded-2xl overflow-hidden bg-[#0D0D12] border border-white/[0.08] hover:border-white/25 transition-all flex flex-col shadow-[0_12px_30px_rgba(0,0,0,0.6)]"
+                  className="group relative w-full rounded-2xl overflow-hidden bg-[#0D0D12] border border-white/[0.08] hover:border-white/25 transition-colors flex flex-col"
                 >
                   <div
                     onClick={() => {
@@ -3120,7 +5604,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       referrerPolicy="no-referrer"
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                     />
-                    <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-[10px] font-mono font-bold text-white">
+                    <div className="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/80 backdrop-blur-md text-[10px] font-mono tabular-nums font-bold text-white">
                       {vid.duration}
                     </div>
                   </div>
@@ -3154,7 +5638,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           triggerHaptic('success');
                           onPlayYouTubeVideo(vid);
                         }}
-                        className="flex-1 min-h-[34px] px-3 rounded-xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-sm"
+                        className="flex-1 min-h-[38px] px-3 rounded-xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
                         <span>Poner</span>
@@ -3173,7 +5657,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             url: vid.url,
                           });
                         }}
-                        className="min-h-[34px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all"
+                        className="min-h-[38px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1 cursor-pointer transition-colors"
                       >
                         <Plus className="w-3.5 h-3.5" />
                         <span>Cola</span>
@@ -3192,7 +5676,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* ================================================================== */}
       {activeSection === 'direct' && (
         <div className="space-y-5">
-          {/* Shared Room Queue ("Cola de la Sala") */}
           <div className="rounded-3xl bg-[#0D0D12] border border-white/[0.08] p-5 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
@@ -3210,7 +5693,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     triggerHaptic('medium');
                     onStartPollFromQueue();
                   }}
-                  className="min-h-[38px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors"
+                  className="min-h-[40px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <Vote className="w-4 h-4" />
                   <span>
@@ -3225,8 +5708,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             {roomQueue.length === 0 ? (
               <p className="text-xs sm:text-sm text-zinc-400">
                 {lang === 'es'
-                  ? 'Pulsa el botón "+" en cualquier película o vídeo de YouTube para preparar la sesión con tus amigos.'
-                  : 'Tap "+" on any movie or YouTube video to queue up what your room watches next.'}
+                  ? 'Pulsa el botón "+" en cualquier película, capítulo o vídeo de YouTube para añadirlo a la cola.'
+                  : 'Tap "+" on any movie, episode, or YouTube video to queue it up.'}
               </p>
             ) : (
               <div className="grid grid-cols-1 @md:grid-cols-2 gap-2.5">
@@ -3259,7 +5742,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         type="button"
                         onClick={() => onRemoveFromQueue(qItem.id)}
                         aria-label="Eliminar de la cola"
-                        className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-400 hover:text-rose-400 cursor-pointer"
+                        className="w-10 h-10 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-400 hover:text-rose-400 cursor-pointer"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -3270,15 +5753,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             )}
           </div>
 
-          {/* Universal Link Decompiler & Cloud Browser */}
           <div className="rounded-3xl bg-[#0D0D12] border border-white/[0.08] p-5 sm:p-8 space-y-6">
             <div className="max-w-2xl space-y-1.5">
               <h3 className="font-display font-semibold text-lg sm:text-xl text-white">
                 {t.directTitle}
               </h3>
-              <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">
-                {t.directSub}
-              </p>
+              <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">{t.directSub}</p>
             </div>
 
             <form onSubmit={handleDirectSubmit} className="space-y-3">
@@ -3286,14 +5766,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 type="text"
                 value={customUrl}
                 onChange={(e) => setCustomUrl(e.target.value)}
-                placeholder="https://youtube.com/watch?v=... | https://bingetrix.sc/watch/... | .m3u8"
+                placeholder="https://youtube.com/watch?v=... | .m3u8 | .mp4"
                 className="w-full h-12 px-4 rounded-2xl bg-[#07070A] border border-white/12 focus:border-white/35 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none font-mono"
               />
               <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2.5">
                 <button
                   type="submit"
                   disabled={!customUrl.trim() || Boolean(loadingItemId)}
-                  className="min-h-12 px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.98] disabled:opacity-40 text-sm font-semibold text-white flex items-center justify-center gap-2 transition-all whitespace-nowrap cursor-pointer disabled:cursor-not-allowed"
+                  className="min-h-12 px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-40 text-sm font-semibold text-white flex items-center justify-center gap-2 transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed"
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>{t.playNativeBtn}</span>
@@ -3306,41 +5786,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     triggerHaptic('medium');
                     onOpenCloudBrowser(customUrl.trim());
                   }}
-                  className="min-h-12 px-5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] active:scale-[0.98] disabled:opacity-40 border border-white/10 text-sm font-semibold text-zinc-100 flex items-center justify-center gap-2 transition-all whitespace-nowrap cursor-pointer disabled:cursor-not-allowed"
+                  className="min-h-12 px-5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-40 border border-white/10 text-sm font-semibold text-zinc-100 flex items-center justify-center gap-2 transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed"
                 >
                   <Tv className="w-4 h-4 text-zinc-300" />
                   <span>{t.openCloudBtn}</span>
                 </button>
               </div>
             </form>
-
-            <div className="pt-4 border-t border-white/[0.08] space-y-3">
-              <span className="block text-xs font-medium text-zinc-400">
-                {lang === 'es'
-                  ? 'Portales rápidos en Cloud Browser Aislado (cero redirecciones ni popups):'
-                  : 'Quick portals in Isolated Cloud Browser (zero redirects or popups):'}
-              </span>
-              <div className="grid grid-cols-2 @sm:grid-cols-4 gap-2.5">
-                {[
-                  { label: 'Bingetrix Explore', url: 'https://bingetrix.sc/explore-movies' },
-                  { label: 'Movidy.pw', url: 'https://movidy.pw/pelis/' },
-                  { label: 'Rojadirecta TV', url: 'https://www.rojadirectv.live/' },
-                  { label: 'YouTube', url: 'https://www.youtube.com/' },
-                ].map((portal) => (
-                  <button
-                    key={portal.label}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      onOpenCloudBrowser(portal.url);
-                    }}
-                    className="min-h-[48px] px-4 rounded-2xl bg-[#07070A] hover:bg-white/[0.07] active:scale-[0.98] border border-white/[0.08] text-xs sm:text-sm font-semibold text-zinc-200 transition-all whitespace-nowrap cursor-pointer"
-                  >
-                    {portal.label}
-                  </button>
-                ))}
-              </div>
-            </div>
           </div>
         </div>
       )}

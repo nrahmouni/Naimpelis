@@ -335,6 +335,16 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   ? 'Película HD'
                   : 'HD Movie'}
               </span>
+              {(details?.watchProviders?.length || item.platform) ? (
+                <>
+                  <span className="text-zinc-600">·</span>
+                  <span className="font-bold text-white">
+                    {details?.watchProviders?.length
+                      ? details.watchProviders.slice(0, 3).join(' · ')
+                      : item.platform}
+                  </span>
+                </>
+              ) : null}
               {year && (
                 <>
                   <span className="text-zinc-600">·</span>

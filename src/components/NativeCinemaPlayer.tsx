@@ -94,7 +94,7 @@ interface NativeCinemaPlayerProps {
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
   onPromoteCloudStreamToNative: (proxiedStreamUrl: string) => void;
   onOpenCatalogSection?: (
-    section: 'movies' | 'series' | 'tdt' | 'sports' | 'youtube' | 'direct'
+    section: 'movies' | 'series' | 'anime' | 'tdt' | 'sports' | 'youtube' | 'direct'
   ) => void;
   onNextEpisode?: () => void;
   onProgressUpdate?: (currentTimeSec: number, durationSec: number) => void;
@@ -125,6 +125,7 @@ interface NativeCinemaPlayerProps {
   floatingChatOpen?: boolean;
   onToggleFloatingChat?: () => void;
   compactVideoForMobileKeyboard?: boolean;
+  onOpenInCloudBrowser?: (url: string) => void;
 }
 
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
@@ -170,6 +171,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   floatingChatOpen = false,
   onToggleFloatingChat,
   compactVideoForMobileKeyboard = false,
+  onOpenInCloudBrowser,
 }) => {
   const t = UI_COPY[lang];
   const stageWrapperRef = useRef<HTMLDivElement | null>(null);
@@ -2796,10 +2798,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           </div>
         )}
 
-        {/* Top Bar Inside Player: Title + Finish Time on Pause + Cast + Chat + Ajustes + Close */}
+        {/* Top Bar Inside Player: Title + Finish Time on Pause + Cast + Chat + Ajustes + Close (Native HLS/Direct) */}
         {!isMinimized &&
-          videoState.mode !== 'idle' &&
-          videoState.mode !== 'cloud' && (
+          (videoState.mode === 'hls' || videoState.mode === 'direct') && (
           <div
             className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-3 sm:px-5 pt-3 pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent flex items-start justify-between gap-3 transition-opacity duration-300 ${
               showControls ? 'opacity-100' : 'opacity-0'
@@ -2980,6 +2981,68 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           </div>
         )}
 
+        {/* Unobtrusive Corner Actions for Embedded Web & YouTube Stages (Zero Top Scrim Obstruction) */}
+        {!isMinimized &&
+          (videoState.mode === 'embed' || videoState.mode === 'youtube') && (
+            <div className="pointer-events-none absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5">
+              {!isTvMode &&
+                !isFullscreen &&
+                !isHorizontalFullscreen &&
+                onToggleMinimize && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('light');
+                      onToggleMinimize();
+                    }}
+                    title="Mini-Player flotante"
+                    aria-label="Activar Mini-Player flotante"
+                    className="pointer-events-auto min-h-[40px] min-w-[40px] rounded-xl bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Minimize2 className="w-4 h-4" />
+                  </button>
+                )}
+
+              <button
+                type="button"
+                onClick={handleToggleFullscreen}
+                title={
+                  isFullscreen || isHorizontalFullscreen
+                    ? 'Salir de pantalla completa'
+                    : 'Pantalla completa'
+                }
+                aria-label="Pantalla completa"
+                className="pointer-events-auto min-h-[40px] min-w-[40px] rounded-xl bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
+              >
+                {isFullscreen || isHorizontalFullscreen ? (
+                  <Minimize className="w-4 h-4" />
+                ) : (
+                  <Maximize className="w-4 h-4" />
+                )}
+              </button>
+
+              {!isTvMode &&
+                !isFullscreen &&
+                !isHorizontalFullscreen &&
+                onClosePlayer && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('light');
+                      onClosePlayer();
+                    }}
+                    title="Cerrar reproductor"
+                    aria-label="Cerrar reproductor"
+                    className="pointer-events-auto min-h-[40px] min-w-[40px] rounded-xl bg-black/70 hover:bg-rose-600/90 backdrop-blur-md border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+            </div>
+          )}
+
         {/* ================================================================== */}
         {/* IDLE STANDBY STAGE (Apple TV OLED Lounge)                          */}
         {/* ================================================================== */}
@@ -3077,6 +3140,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 >
                   <Tv className="w-4 h-4 text-[#FB7185]" />
                   <span>{t.tabSeries}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onOpenCatalogSection('anime')}
+                  className="min-h-[44px] px-4 rounded-xl bg-[#0E0F16] hover:bg-white/[0.08] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
+                >
+                  <Sparkles className="w-4 h-4 text-[#F47521]" />
+                  <span>Anime</span>
                 </button>
                 <button
                   type="button"
@@ -3438,6 +3509,23 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </button>
               </div>
             )}
+          </div>
+        )}
+
+        {/* ================================================================== */}
+        {/* UNIVERSAL WEB EMBED STAGE (MULTI-SERVER FALLBACK PLAYER)           */}
+        {/* ================================================================== */}
+        {videoState.mode === 'embed' && videoState.url && (
+          <div className="relative w-full h-full bg-black">
+            <iframe
+              key={videoState.url}
+              src={videoState.url}
+              title={videoState.title || 'Reproductor Web HD'}
+              allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+              allowFullScreen
+              referrerPolicy="origin"
+              className="w-full h-full border-0 bg-black"
+            />
           </div>
         )}
 
@@ -3865,9 +3953,58 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         videoState.mode !== 'idle' &&
         videoState.mode !== 'cloud' && (
           <div className="bg-[#08080C] border-t border-white/[0.06] px-3 sm:px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
-            {/* Left: Quick Language Pills (VOD) OR Live Signal Pills (Sports) */}
+            {/* Left: Quick Language Pills (VOD), Multi-Server Fallback Switcher, OR Live Signal Pills */}
             <div className="flex items-center gap-1.5 min-w-0 shrink-0">
-              {!videoState.isLive &&
+              {videoState.tracks.length > 1 &&
+              (videoState.mode === 'embed' ||
+                (videoState.tracks || []).some(
+                  (tr) => tr.resolverType === 'web_embed' || tr.resolverType === 'youtube'
+                )) ? (
+                <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08]">
+                  {videoState.tracks.slice(0, 6).map((tr, idx) => {
+                    const active = idx === videoState.activeTrackIndex;
+                    const shortLabel =
+                      tr.resolverType === 'youtube'
+                        ? tr.label.replace(/\s*\([^)]*\)/g, '')
+                        : tr.label.split('·')[0].trim() || `Opción ${idx + 1}`;
+                    return (
+                      <button
+                        key={tr.id || idx}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          onSelectTrack(idx, currentTime);
+                        }}
+                        title={tr.label}
+                        className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                          active
+                            ? 'bg-white text-[#050508] shadow-sm'
+                            : 'text-zinc-300 hover:bg-white/10'
+                        }`}
+                      >
+                        {shortLabel}
+                      </button>
+                    );
+                  })}
+                  {videoState.mode === 'embed' && onOpenInCloudBrowser && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        onOpenInCloudBrowser(
+                          videoState.tracks[videoState.activeTrackIndex]?.sourceUrl ||
+                            videoState.url
+                        );
+                      }}
+                      title="Abrir en Cloud Browser aislado sin ventanas emergentes"
+                      className="min-h-[34px] px-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+                    >
+                      <Globe className="w-3.5 h-3.5 shrink-0" />
+                      <span>Cloud Sin Anuncios</span>
+                    </button>
+                  )}
+                </div>
+              ) : !videoState.isLive &&
               (videoState.mode === 'hls' || videoState.mode === 'direct') &&
               (videoState.tracks || []).some((tr) =>
                 ['ES', 'LAT', 'VOSE', 'EN'].includes(String(tr.lang || '').toUpperCase())
@@ -3929,12 +4066,25 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   })}
                 </div>
               ) : (
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
-                  <Radio className="w-3.5 h-3.5 text-[#E11D48]" />
+                <div className="flex items-center gap-2 text-xs font-semibold text-zinc-300">
+                  <Radio className="w-3.5 h-3.5 text-[#E11D48] shrink-0" />
                   <span className="truncate max-w-[180px]">
                     {videoState.tracks[videoState.activeTrackIndex]?.label ||
                       (videoState.isLive ? 'Señal en directo' : 'Proyección activa')}
                   </span>
+                  {videoState.mode === 'embed' && onOpenInCloudBrowser && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        onOpenInCloudBrowser(videoState.url);
+                      }}
+                      className="min-h-[32px] px-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      <Globe className="w-3.5 h-3.5 shrink-0" />
+                      <span>Cloud Sin Anuncios</span>
+                    </button>
+                  )}
                 </div>
               )}
             </div>
