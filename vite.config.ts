@@ -18,8 +18,8 @@ export default defineConfig(() => {
           short_name: 'NAIM CINE',
           description:
             'Tu sala privada para ver películas, series, fútbol en directo y YouTube sincronizado con tus amigos sin anuncios.',
-          theme_color: '#090A0F',
-          background_color: '#090A0F',
+          theme_color: '#050508',
+          background_color: '#050508',
           display: 'standalone',
           orientation: 'any',
           start_url: '/',
@@ -47,6 +47,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
+          cacheId: 'naim-cine-oled-v4',
           skipWaiting: true,
           clientsClaim: true,
           cleanupOutdatedCaches: true,

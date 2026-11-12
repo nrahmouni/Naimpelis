@@ -136,21 +136,28 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       return;
     }
     let cancelled = false;
+    setDetails(null);
     setLoading(true);
     setPlayTrailer(false);
     setQueuedFeedback(false);
 
     const mediaType = item.mediaType === 'tv' ? 'tv' : 'movie';
     const idSegment = item.tmdbId || 0;
+    const movidyParam = item.movidyUrl ? `&movidyUrl=${encodeURIComponent(item.movidyUrl)}` : '';
     fetch(
       `/api/catalog/details/${mediaType}/${idSegment}?lang=${lang}&title=${encodeURIComponent(
         item.title || ''
-      )}`
+      )}${movidyParam}`
     )
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled && data?.success && data?.details) {
-          setDetails(data.details);
+          const nextDetails: MediaRichDetails = data.details;
+          setDetails(nextDetails);
+          const avail = nextDetails.availableLanguages;
+          if (Array.isArray(avail) && avail.length > 0) {
+            setSelectedAudioLang((prev) => (avail.includes(prev) ? prev : avail[0]));
+          }
         }
       })
       .catch(() => {})
@@ -161,7 +168,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [item?.id, item?.tmdbId, item?.mediaType, item?.title, lang]);
+  }, [item?.id, item?.tmdbId, item?.mediaType, item?.title, item?.movidyUrl, lang]);
 
   useEffect(() => {
     if (!item) return;
@@ -180,6 +187,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const rating = details?.rating || item.rating;
   const overview = details?.overview || item.overview;
   const backdrop = details?.backdrop || item.backdrop || item.poster;
+  const hasProbedLanguages = Array.isArray(details?.availableLanguages);
+  const visibleAudioOptions = hasProbedLanguages
+    ? AUDIO_LANGUAGE_OPTIONS.filter((opt) => details!.availableLanguages!.includes(opt.code))
+    : [];
 
   return (
     <div
@@ -362,7 +373,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               </p>
             )}
 
-            {/* Pre-Screening Audio & Language Selector (For Movies) */}
+            {/* Pre-Screening Audio & Language Selector (For Movies — ONLY verified available languages) */}
             {!isSeries && (
               <div className="pt-2 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
@@ -370,57 +381,86 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     <Globe className="w-3.5 h-3.5 text-[#E11D48]" />
                     <span>
                       {lang === 'es'
-                        ? '1. Elige el idioma antes de proyectar'
-                        : '1. Choose audio language before screening'}
+                        ? 'Idiomas disponibles para proyectar'
+                        : 'Available audio languages'}
                     </span>
                   </span>
-                  <span className="text-[11px] font-semibold text-[#FB7185]">
-                    {
-                      AUDIO_LANGUAGE_OPTIONS.find((o) => o.code === selectedAudioLang)?.[
-                        lang === 'es' ? 'labelEs' : 'labelEn'
-                      ]
-                    }
-                  </span>
+                  {visibleAudioOptions.length > 0 && (
+                    <span className="text-[11px] font-semibold text-[#FB7185]">
+                      {
+                        visibleAudioOptions.find((o) => o.code === selectedAudioLang)?.[
+                          lang === 'es' ? 'labelEs' : 'labelEn'
+                        ]
+                      }
+                    </span>
+                  )}
                 </div>
 
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  {AUDIO_LANGUAGE_OPTIONS.map((opt) => {
-                    const active = selectedAudioLang === opt.code;
-                    return (
-                      <button
-                        key={opt.code}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setSelectedAudioLang(opt.code);
-                        }}
-                        className={`min-h-[52px] px-3 py-2 rounded-2xl border text-left transition-all cursor-pointer active:scale-[0.98] flex items-center gap-2.5 ${
-                          active
-                            ? 'bg-white text-[#050508] border-white shadow-[0_8px_24px_rgba(255,255,255,0.16)]'
-                            : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
-                        }`}
-                      >
-                        <span className="text-lg shrink-0">{opt.flag}</span>
-                        <div className="min-w-0 flex-1">
-                          <div
-                            className={`text-xs font-bold truncate ${
-                              active ? 'text-[#050508]' : 'text-white'
-                            }`}
-                          >
-                            {lang === 'es' ? opt.labelEs : opt.labelEn}
+                {loading && !hasProbedLanguages ? (
+                  <div className="min-h-[52px] px-4 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center gap-2.5 text-xs text-zinc-300">
+                    <Loader2 className="w-4 h-4 animate-spin text-[#E11D48] shrink-0" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Comprobando idiomas disponibles en tiempo real...'
+                        : 'Checking available audio languages...'}
+                    </span>
+                  </div>
+                ) : visibleAudioOptions.length > 0 ? (
+                  <div
+                    className={`grid gap-2 ${
+                      visibleAudioOptions.length === 1
+                        ? 'grid-cols-1 sm:max-w-[260px]'
+                        : visibleAudioOptions.length === 2
+                        ? 'grid-cols-2 sm:max-w-[460px]'
+                        : visibleAudioOptions.length === 3
+                        ? 'grid-cols-2 sm:grid-cols-3'
+                        : 'grid-cols-2 sm:grid-cols-4'
+                    }`}
+                  >
+                    {visibleAudioOptions.map((opt) => {
+                      const active = selectedAudioLang === opt.code;
+                      return (
+                        <button
+                          key={opt.code}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setSelectedAudioLang(opt.code);
+                          }}
+                          className={`min-h-[52px] px-3 py-2 rounded-2xl border text-left transition-all cursor-pointer active:scale-[0.98] flex items-center gap-2.5 ${
+                            active
+                              ? 'bg-white text-[#050508] border-white shadow-[0_8px_24px_rgba(255,255,255,0.16)]'
+                              : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
+                          }`}
+                        >
+                          <span className="text-lg shrink-0">{opt.flag}</span>
+                          <div className="min-w-0 flex-1">
+                            <div
+                              className={`text-xs font-bold truncate ${
+                                active ? 'text-[#050508]' : 'text-white'
+                              }`}
+                            >
+                              {lang === 'es' ? opt.labelEs : opt.labelEn}
+                            </div>
+                            <div
+                              className={`text-[10px] truncate ${
+                                active ? 'text-zinc-700 font-medium' : 'text-zinc-400'
+                              }`}
+                            >
+                              {lang === 'es' ? opt.subEs : opt.subEn}
+                            </div>
                           </div>
-                          <div
-                            className={`text-[10px] truncate ${
-                              active ? 'text-zinc-700 font-medium' : 'text-zinc-400'
-                            }`}
-                          >
-                            {lang === 'es' ? opt.subEs : opt.subEn}
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="min-h-[48px] px-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center text-xs text-zinc-400">
+                    {lang === 'es'
+                      ? 'Este título no tiene pistas directas activas en este momento.'
+                      : 'No direct audio tracks currently active for this title.'}
+                  </div>
+                )}
               </div>
             )}
 
@@ -445,6 +485,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               ) : (
                 <button
                   type="button"
+                  disabled={(loading && !hasProbedLanguages) || (hasProbedLanguages && visibleAudioOptions.length === 0)}
                   onClick={() => {
                     triggerHaptic('success');
                     const enrichedMovie: CatalogMovie = {
@@ -454,11 +495,23 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     onClose();
                     onPlayMovie(enrichedMovie, selectedAudioLang);
                   }}
-                  className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-lg shadow-[#E11D48]/30"
+                  className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-lg shadow-[#E11D48]/30"
                 >
-                  <Play className="w-4 h-4 fill-current shrink-0" />
+                  {loading && !hasProbedLanguages ? (
+                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                  ) : (
+                    <Play className="w-4 h-4 fill-current shrink-0" />
+                  )}
                   <span>
-                    {lang === 'es'
+                    {loading && !hasProbedLanguages
+                      ? lang === 'es'
+                        ? 'Verificando idiomas...'
+                        : 'Checking languages...'
+                      : visibleAudioOptions.length === 0 && hasProbedLanguages
+                      ? lang === 'es'
+                        ? 'No disponible ahora'
+                        : 'Unavailable right now'
+                      : lang === 'es'
                       ? `Proyectar en ${
                           AUDIO_LANGUAGE_OPTIONS.find((o) => o.code === selectedAudioLang)
                             ?.labelEs || 'Sala'

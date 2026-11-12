@@ -94,7 +94,7 @@ interface NativeCinemaPlayerProps {
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
   onPromoteCloudStreamToNative: (proxiedStreamUrl: string) => void;
   onOpenCatalogSection?: (
-    section: 'movies' | 'series' | 'sports' | 'youtube' | 'direct'
+    section: 'movies' | 'series' | 'tdt' | 'sports' | 'youtube' | 'direct'
   ) => void;
   onNextEpisode?: () => void;
   onProgressUpdate?: (currentTimeSec: number, durationSec: number) => void;
@@ -110,6 +110,8 @@ interface NativeCinemaPlayerProps {
   onClosePlayer?: () => void;
   isTvMode?: boolean;
   roomCode?: string;
+  roomDisplayName?: string;
+  participantCount?: number;
   onExitTvMode?: () => void;
   onOpenSmartTvModal?: () => void;
   hasConnectedSmartTv?: boolean;
@@ -153,6 +155,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onClosePlayer,
   isTvMode = false,
   roomCode,
+  roomDisplayName,
+  participantCount = 1,
   onExitTvMode,
   onOpenSmartTvModal,
   hasConnectedSmartTv = false,
@@ -177,8 +181,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const isApplyingRemoteRef = useRef(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const bufferingDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastTapRef = useRef<{ time: number; side: 'left' | 'right' } | null>(null);
+  const showControlsRef = useRef<boolean>(true);
+  const lastManualHideAtRef = useRef<number>(0);
+  const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
   const lastProgressEmitRef = useRef<number>(0);
+  const [batterySaverTvMode, setBatterySaverTvMode] = useState<boolean>(false);
 
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -231,8 +238,21 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
   // Cinema Pro Engine: Ambilight, Vocal Boost (Web Audio Compressor), Playback Speed & Subtitles
   const [showProMenu, setShowProMenu] = useState<boolean>(false);
-  const [ambilightEnabled, setAmbilightEnabled] = useState<boolean>(true);
-  const [vocalBoostEnabled, setVocalBoostEnabled] = useState<boolean>(false);
+  const [ambilightEnabled, setAmbilightEnabled] = useState<boolean>(() => {
+    try {
+      const stored = localStorage.getItem('naim_ambilight_v1');
+      return stored !== null ? stored === 'true' : true;
+    } catch {
+      return true;
+    }
+  });
+  const [vocalBoostEnabled, setVocalBoostEnabled] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('naim_vocal_boost_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
   const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrackItem[]>([]);
   const [activeSubId, setActiveSubId] = useState<string>('off');
@@ -302,22 +322,49 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     }
   }, [floatingChatOpen, messages.length]);
 
+  useEffect(() => {
+    showControlsRef.current = showControls;
+  }, [showControls]);
+
   const scheduleHideControls = useCallback(() => {
     if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
     controlsTimeoutRef.current = setTimeout(() => {
+      const vid = videoRef.current;
+      const isActivelyPlaying = vid ? !vid.paused : videoState.isPlaying;
       if (
-        videoState.isPlaying &&
+        isActivelyPlaying &&
+        !showProMenu &&
+        !floatingChatOpen &&
         (videoState.mode === 'hls' || videoState.mode === 'direct')
       ) {
+        showControlsRef.current = false;
         setShowControls(false);
       }
-    }, 3000);
-  }, [videoState.isPlaying, videoState.mode]);
+    }, 3800);
+  }, [videoState.isPlaying, videoState.mode, showProMenu, floatingChatOpen]);
+
+  const hideControlsImmediately = useCallback(() => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = null;
+    }
+    lastManualHideAtRef.current = Date.now();
+    showControlsRef.current = false;
+    setShowControls(false);
+  }, []);
 
   const revealControls = useCallback(() => {
+    showControlsRef.current = true;
     setShowControls(true);
     scheduleHideControls();
   }, [scheduleHideControls]);
+
+  // Show HUD and reset idle timer whenever a new stream loads or menus close
+  useEffect(() => {
+    if (videoState.mode === 'hls' || videoState.mode === 'direct') {
+      revealControls();
+    }
+  }, [videoState.url, videoState.mode, revealControls]);
 
   useEffect(() => {
     const updateViewportOrientation = () => {
@@ -448,12 +495,46 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           );
           return next;
         });
+      } else if (cmd === 'cycle_subtitles') {
+        const subOptions = ['off', ...subtitleTracks.map((s) => s.id)];
+        if (subOptions.length <= 1) {
+          showTransientToast('💬 No hay subtítulos adicionales en este título');
+        } else {
+          const curIdx = Math.max(0, subOptions.indexOf(activeSubId));
+          const nextSubId = subOptions[(curIdx + 1) % subOptions.length];
+          handleSelectSubtitleTrack(nextSubId);
+          const nextLabel =
+            nextSubId === 'off'
+              ? 'Desactivados'
+              : subtitleTracks.find((s) => s.id === nextSubId)?.label || 'Activados';
+          showTransientToast(`💬 Subtítulos TV: ${nextLabel}`);
+        }
+      } else if (cmd === 'cycle_audio') {
+        if (videoState.tracks && videoState.tracks.length > 1) {
+          const nextIdx = (videoState.activeTrackIndex + 1) % videoState.tracks.length;
+          const nextTrack = videoState.tracks[nextIdx];
+          onSelectTrack(nextIdx, videoRef.current?.currentTime || currentTime || 0);
+          showTransientToast(`🔊 Audio TV: ${nextTrack?.label || `Pista ${nextIdx + 1}`}`);
+        } else {
+          showTransientToast('🔊 Audio original único en esta señal');
+        }
       } else if (cmd === 'disconnect_tv') {
         onExitTvMode?.();
       }
     });
     return () => unsub();
-  }, [isTvMode, onExitTvMode, showTransientToast, videoState.url]);
+  }, [
+    isTvMode,
+    onExitTvMode,
+    showTransientToast,
+    videoState.url,
+    videoState.tracks,
+    videoState.activeTrackIndex,
+    subtitleTracks,
+    activeSubId,
+    currentTime,
+    onSelectTrack,
+  ]);
 
   // Keyboard shortcuts for Modo Cine (T / Escape) when player is active
   useEffect(() => {
@@ -597,6 +678,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       }
 
       setVocalBoostEnabled(next);
+      try {
+        localStorage.setItem('naim_vocal_boost_v1', String(next));
+      } catch {
+        // ignore
+      }
       showTransientToast(
         next
           ? lang === 'es'
@@ -608,6 +694,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       );
     } catch {
       setVocalBoostEnabled(false);
+      try {
+        localStorage.setItem('naim_vocal_boost_v1', 'false');
+      } catch {
+        // ignore
+      }
     }
   }, [vocalBoostEnabled, lang, showTransientToast]);
 
@@ -901,6 +992,101 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     onNextEpisode,
     onSyncAction,
   ]);
+
+  // Update lock-screen MediaSession position state
+  useEffect(() => {
+    if (
+      typeof navigator === 'undefined' ||
+      !('mediaSession' in navigator) ||
+      typeof navigator.mediaSession.setPositionState !== 'function'
+    ) {
+      return;
+    }
+    if (videoState.mode === 'idle' || videoState.isLive || duration <= 0) return;
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: Math.max(duration, currentTime),
+        playbackRate: playbackSpeed || 1,
+        position: Math.max(0, Math.min(duration, currentTime)),
+      });
+    } catch {
+      // ignore invalid position state
+    }
+  }, [currentTime, duration, playbackSpeed, videoState.mode, videoState.isLive]);
+
+  // Global PC Keyboard Shortcuts (Space/K, F, M, J/ArrowLeft, L/ArrowRight, C)
+  useEffect(() => {
+    if (videoState.mode === 'idle' || videoState.mode === 'cloud') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName?.toLowerCase();
+      if (
+        tag === 'input' ||
+        tag === 'textarea' ||
+        tag === 'select' ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+      const key = e.key.toLowerCase();
+      if (key === ' ' || key === 'k') {
+        e.preventDefault();
+        handleTogglePlay();
+      } else if (key === 'f') {
+        e.preventDefault();
+        handleToggleFullscreen();
+      } else if (key === 'm') {
+        e.preventDefault();
+        const v = videoRef.current;
+        if (v) {
+          const next = !v.muted;
+          v.muted = next;
+          setIsMuted(next);
+          showTransientToast(next ? '🔇 Silenciado' : '🔊 Sonido activo');
+        }
+      } else if ((key === 'arrowleft' || key === 'j') && !videoState.isLive) {
+        e.preventDefault();
+        handleSeekRelative(-10);
+        setSeekRipple('left');
+        setTimeout(() => setSeekRipple(null), 500);
+      } else if ((key === 'arrowright' || key === 'l') && !videoState.isLive) {
+        e.preventDefault();
+        handleSeekRelative(10);
+        setSeekRipple('right');
+        setTimeout(() => setSeekRipple(null), 500);
+      } else if (key === 'c' && subtitleTracks.length > 0) {
+        e.preventDefault();
+        const subOptions = ['off', ...subtitleTracks.map((s) => s.id)];
+        const curIdx = Math.max(0, subOptions.indexOf(activeSubId));
+        const nextSub = subOptions[(curIdx + 1) % subOptions.length];
+        handleSelectSubtitleTrack(nextSub);
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [
+    videoState.mode,
+    videoState.isLive,
+    subtitleTracks,
+    activeSubId,
+  ]);
+
+  // Pause local phone decoding when Battery Saver Remote Mode is enabled
+  useEffect(() => {
+    if (!hasConnectedSmartTv && !isCastingToTv) {
+      if (batterySaverTvMode) setBatterySaverTvMode(false);
+      return;
+    }
+    const v = videoRef.current;
+    if (!v || isTvMode) return;
+    if (batterySaverTvMode) {
+      v.pause();
+    } else if (videoState.isPlaying && v.paused) {
+      v.play().catch(() => {});
+    }
+  }, [batterySaverTvMode, hasConnectedSmartTv, isCastingToTv, isTvMode, videoState.isPlaying]);
 
   // ============================================================================
   // DIRECT GOOGLE CHROMECAST + REMOTE PLAYBACK + AIRPLAY ENGINE (VIDEO + AUDIO)
@@ -1558,10 +1744,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (!data.fatal) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 3) {
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 2) {
           networkRecoveries += 1;
           hls.startLoad();
-        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 3) {
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 2) {
           mediaRecoveries += 1;
           hls.recoverMediaError();
         } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
@@ -1576,6 +1762,21 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             },
             { once: true }
           );
+        } else if (
+          videoState.isLive &&
+          videoState.tracks.length > 1 &&
+          canControlRoom &&
+          !isTvMode
+        ) {
+          const nextIdx = (videoState.activeTrackIndex + 1) % videoState.tracks.length;
+          const nextTrack = videoState.tracks[nextIdx];
+          setIsBuffering(false);
+          showTransientToast(
+            `⚡ Señal ocupada · Saltando automáticamente a ${
+              nextTrack?.label || `Señal ${nextIdx + 1}`
+            }...`
+          );
+          onSelectTrack(nextIdx, 0);
         } else {
           setIsBuffering(false);
           setStreamError(
@@ -1930,39 +2131,17 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   };
 
   const handleVideoSurfaceTap = (e: React.MouseEvent<HTMLElement>) => {
+    e.stopPropagation();
     if (isMinimized) {
       return;
     }
+    lastMousePosRef.current = { x: e.clientX, y: e.clientY };
 
-    // Double-tap left/right side on VOD to skip -10s / +10s like Netflix/YouTube
-    if (!videoState.isLive && (videoState.mode === 'hls' || videoState.mode === 'direct')) {
-      const rect = e.currentTarget.getBoundingClientRect();
-      const relX = shouldRotate90
-        ? (e.clientY - rect.top) / Math.max(1, rect.height)
-        : (e.clientX - rect.left) / Math.max(1, rect.width);
-      const side: 'left' | 'right' | null =
-        relX < 0.34 ? 'left' : relX > 0.66 ? 'right' : null;
-      const now = Date.now();
-      if (
-        side &&
-        lastTapRef.current &&
-        lastTapRef.current.side === side &&
-        now - lastTapRef.current.time < 310
-      ) {
-        lastTapRef.current = null;
-        handleSeekRelative(side === 'left' ? -10 : 10);
-        setSeekRipple(side);
-        setTimeout(() => setSeekRipple(null), 550);
-        return;
-      }
-      if (side) {
-        lastTapRef.current = { time: now, side };
-      }
-    }
-
-    if (showControls) {
-      setShowControls(false);
-      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    // Netflix-style instant tap-anywhere toggle:
+    // Tap anywhere (center, left lateral, right lateral) shows HUD and starts ~3.8s idle timer;
+    // tapping anywhere on empty video space while HUD is open hides it immediately.
+    if (showControlsRef.current) {
+      hideControlsImmediately();
     } else {
       revealControls();
     }
@@ -2294,7 +2473,32 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       {/* ==================================================================== */}
       <div
         ref={stageWrapperRef}
-        onMouseMove={revealControls}
+        onPointerMove={(e) => {
+          if (isMinimized) return;
+          if (e.pointerType === 'mouse') {
+            if (Date.now() - lastManualHideAtRef.current < 350) return;
+            const prev = lastMousePosRef.current;
+            if (
+              prev &&
+              Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 6 &&
+              !showControlsRef.current
+            ) {
+              return;
+            }
+            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
+            revealControls();
+          }
+        }}
+        onPointerDownCapture={() => {
+          if (showControlsRef.current) {
+            scheduleHideControls();
+          }
+        }}
+        onPointerMoveCapture={(e) => {
+          if (e.pointerType !== 'mouse' && showControlsRef.current) {
+            scheduleHideControls();
+          }
+        }}
         style={
           isStageFullscreen
             ? {
@@ -2423,7 +2627,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
         {/* Transient Player Toast (Chromecast / PiP feedback) */}
         {playerToast && !isMinimized && (
-          <div className="pointer-events-none absolute top-14 left-1/2 -translate-x-1/2 z-40 px-3.5 py-2 rounded-xl bg-[#12141D]/95 border border-white/15 text-xs font-medium text-white shadow-xl text-center max-w-[90%]">
+          <div className="pointer-events-none absolute top-14 left-1/2 -translate-x-1/2 z-40 px-3.5 py-2 rounded-xl bg-[#0E0F16]/95 border border-white/15 text-xs font-medium text-white shadow-xl text-center max-w-[90%]">
             {playerToast}
           </div>
         )}
@@ -2560,43 +2764,70 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           </div>
         )}
 
-        {/* Active Chromecast Banner */}
-        {isCastingToTv && !isMinimized && (
-          <div className="pointer-events-none absolute inset-0 z-15 bg-[#090A0F]/85 flex flex-col items-center justify-center gap-2 p-4 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-[#38BDF8]/15 border border-[#38BDF8]/40 flex items-center justify-center text-[#38BDF8]">
-              <Cast className="w-6 h-6" />
+        {/* Active Chromecast or Phone Battery-Saver Remote Overlay */}
+        {(isCastingToTv || (batterySaverTvMode && hasConnectedSmartTv)) && !isMinimized && !isTvMode && (
+          <div className="absolute inset-0 z-15 bg-[#050508]/92 flex flex-col items-center justify-center gap-2.5 p-4 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-400/40 flex items-center justify-center text-emerald-300">
+              <Tv className="w-6 h-6" />
             </div>
             <p className="font-display font-bold text-sm sm:text-base text-white">
-              {lang === 'es'
-                ? `Transmitiendo en ${castDeviceName || 'tu TV'}`
-                : `Casting to ${castDeviceName || 'your TV'}`}
+              {isCastingToTv
+                ? lang === 'es'
+                  ? `Transmitiendo en ${castDeviceName || 'tu TV'}`
+                  : `Casting to ${castDeviceName || 'your TV'}`
+                : lang === 'es'
+                ? 'Modo Solo Mando · Reproduciendo en tu Smart TV'
+                : 'Remote-Only Mode · Playing on your Smart TV'}
             </p>
-            <p className="text-xs text-zinc-400">{videoState.title}</p>
+            <p className="text-xs text-zinc-400 max-w-xs">
+              {batterySaverTvMode
+                ? 'Vídeo local pausado para ahorrar batería en tu móvil. Tus controles siguen sincronizados.'
+                : videoState.title}
+            </p>
+            {batterySaverTvMode && (
+              <button
+                type="button"
+                onClick={() => setBatterySaverTvMode(false)}
+                className="mt-1 min-h-[38px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer active:scale-95 transition-all"
+              >
+                Ver vídeo también en el móvil
+              </button>
+            )}
           </div>
         )}
 
-        {/* Top Bar Inside Player: Title + Floating Chat + El Menú Mágico + Close */}
+        {/* Top Bar Inside Player: Title + Finish Time on Pause + Cast + Chat + Ajustes + Close */}
         {!isMinimized &&
           videoState.mode !== 'idle' &&
           videoState.mode !== 'cloud' && (
           <div
             className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-3 sm:px-5 pt-3 pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent flex items-start justify-between gap-3 transition-opacity duration-300 ${
-              showControls || !localPlaying ? 'opacity-100' : 'opacity-0'
+              showControls ? 'opacity-100' : 'opacity-0'
             }`}
           >
             <div className="min-w-0 pt-1">
               <h2 className="font-display font-bold text-sm sm:text-base text-white truncate drop-shadow">
                 {videoState.title}
               </h2>
-              {videoState.subtitle && (
-                <p className="text-[11px] sm:text-xs text-zinc-300 truncate mt-0.5">
-                  {videoState.subtitle}
-                </p>
-              )}
+              <div className="flex items-center gap-2 flex-wrap mt-0.5">
+                {videoState.subtitle && (
+                  <p className="text-[11px] sm:text-xs text-zinc-300 truncate">
+                    {videoState.subtitle}
+                  </p>
+                )}
+                {!localPlaying && !videoState.isLive && duration > 60 && duration > currentTime && (
+                  <span className="px-2 py-0.5 rounded-full bg-white/12 backdrop-blur-md text-[10px] font-mono font-semibold text-zinc-200">
+                    Termina a las{' '}
+                    {new Date(
+                      Date.now() + ((duration - currentTime) / (playbackSpeed || 1)) * 1000
+                    ).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+              </div>
             </div>
 
-            <div className="pointer-events-auto flex items-center gap-2 shrink-0">
-              {/* 1. 1-TAP DIRECT CAST TO TV BUTTON (Always accessible in top-right of player!) */}
+            <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 shrink-0">
+              {/* 1. 1-TAP DIRECT CAST TO TV BUTTON */}
               {!isTvMode && (
                 <button
                   type="button"
@@ -2610,11 +2841,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   }`}
                 >
                   <Cast className="w-4 h-4 shrink-0" />
-                  <span>{isCastingToTv ? 'En TV' : 'Cast'}</span>
+                  <span className="hidden sm:inline">{isCastingToTv ? 'En TV' : 'Cast'}</span>
                 </button>
               )}
 
-              {/* 2. Floating Chat Toggle (44x44px Touch Target) */}
+              {/* 2. Floating Chat Toggle */}
               {!isTvMode && onToggleFloatingChat && (
                 <button
                   type="button"
@@ -2636,7 +2867,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </button>
               )}
 
-              {/* 3. EL MENÚ MÁGICO (Subtítulos, Modo Cine, PiP, Cast, Audio y Cinema Pro) */}
+              {/* 3. Ajustes de Reproducción (Subtítulos, Modo Cine, PiP, Audio y Velocidad) */}
               {!isTvMode && (
                 <button
                   type="button"
@@ -2645,25 +2876,24 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     triggerHaptic('medium');
                     setShowProMenu(true);
                   }}
-                  title="Menú Mágico: Subtítulos, Modo Cine, PiP, Cast e Idioma"
-                  aria-label="Abrir Menú Mágico"
-                  className={`min-h-[44px] min-w-[44px] px-3.5 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                  title="Ajustes de Reproducción: Subtítulos, Modo Cine, PiP, Audio y Calidad"
+                  aria-label="Abrir Ajustes de Reproducción"
+                  className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
                     showProMenu ||
                     isCinemaMode ||
                     isInPiP ||
-                    isCastingToTv ||
                     vocalBoostEnabled ||
                     activeSubId !== 'off'
                       ? 'bg-[#E11D48]/25 border-[#E11D48]/60 text-white shadow-[0_0_20px_rgba(225,29,72,0.3)]'
                       : 'bg-black/60 hover:bg-black/80 border-white/15 text-white'
                   }`}
                 >
-                  <Sparkles className="w-4 h-4 text-[#FB7185] shrink-0" />
-                  <span className="hidden sm:inline">Menú Mágico</span>
+                  <SlidersHorizontal className="w-4 h-4 text-zinc-100 shrink-0" />
+                  <span className="hidden sm:inline">Ajustes</span>
                 </button>
               )}
 
-              {/* 4. 1-Tap Internal Floating 16:9 Mini-Player (Draggable 4-Corner PiP) */}
+              {/* 4. 1-Tap Internal Floating 16:9 Mini-Player */}
               {!isTvMode &&
                 !isFullscreen &&
                 !isHorizontalFullscreen &&
@@ -2683,7 +2913,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   </button>
                 )}
 
-              {/* Accessible Fullscreen & Exit buttons when playing in TV Receiver Mode */}
               {isTvMode && (
                 <button
                   type="button"
@@ -2718,7 +2947,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </button>
               )}
 
-              {/* 3. Exit Fullscreen or Close Player (44x44px Touch Target) */}
               {!isTvMode && (isFullscreen || isHorizontalFullscreen) ? (
                 <button
                   type="button"
@@ -2753,21 +2981,21 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         )}
 
         {/* ================================================================== */}
-        {/* IDLE STANDBY STAGE                                                 */}
+        {/* IDLE STANDBY STAGE (Apple TV OLED Lounge)                          */}
         {/* ================================================================== */}
         {videoState.mode === 'idle' && !isExtracting && !isMinimized && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-5 sm:p-8 text-center bg-gradient-to-b from-[#12141D] to-[#090A0F]">
+          <div className="absolute inset-0 flex flex-col items-center justify-center p-5 sm:p-8 text-center bg-gradient-to-b from-[#0B0B12] via-[#050508] to-[#020204]">
             {isTvMode && (
-              <div className="mb-4 px-4 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-400/40 text-xs sm:text-sm font-semibold text-emerald-300 flex items-center gap-2">
+              <div className="mb-4 px-4 py-1.5 rounded-full bg-emerald-500/15 border border-emerald-400/40 text-xs sm:text-sm font-semibold text-emerald-300 flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
                 <span>
                   {lang === 'es'
-                    ? `Smart TV conectada · Sala ${(roomCode || '').toUpperCase()}`
-                    : `Smart TV connected · Room ${(roomCode || '').toUpperCase()}`}
+                    ? `${roomDisplayName || `Sala ${(roomCode || '').toUpperCase()}`} · ${participantCount} ${participantCount === 1 ? 'conectado' : 'conectados'}`
+                    : `${roomDisplayName || `Room ${(roomCode || '').toUpperCase()}`} · ${participantCount} connected`}
                 </span>
               </div>
             )}
-            <div className="w-12 h-12 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center mb-3">
+            <div className="w-12 h-12 rounded-2xl bg-white/[0.05] border border-white/10 flex items-center justify-center mb-3 shadow-[0_0_30px_rgba(225,29,72,0.18)]">
               <Tv className="w-6 h-6 text-[#FB7185]" />
             </div>
             <h3 className="font-display font-semibold text-base sm:text-2xl text-white text-balance">
@@ -2780,7 +3008,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             <p className="text-xs sm:text-base text-zinc-400 max-w-lg mt-1.5">
               {isTvMode
                 ? lang === 'es'
-                  ? 'Elige una película, serie, canal deportivo o vídeo de YouTube desde tu móvil y empezará aquí automáticamente.'
+                  ? 'Elige una película, serie, partido en directo o vídeo de YouTube desde tu móvil y empezará aquí automáticamente.'
                   : 'Pick any movie, series, live match, or YouTube video on your phone and it will play here automatically.'
                 : t.standbySub}
             </p>
@@ -2845,15 +3073,23 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenCatalogSection('series')}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#191C28] hover:bg-[#232738] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
+                  className="min-h-[44px] px-4 rounded-xl bg-[#0E0F16] hover:bg-white/[0.08] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
                 >
                   <Tv className="w-4 h-4 text-[#FB7185]" />
                   <span>{t.tabSeries}</span>
                 </button>
                 <button
                   type="button"
+                  onClick={() => onOpenCatalogSection('tdt')}
+                  className="min-h-[44px] px-4 rounded-xl bg-[#0E0F16] hover:bg-white/[0.08] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
+                >
+                  <Radio className="w-4 h-4 text-sky-400" />
+                  <span>{t.tabTdt}</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => onOpenCatalogSection('sports')}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#191C28] hover:bg-[#232738] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
+                  className="min-h-[44px] px-4 rounded-xl bg-[#0E0F16] hover:bg-white/[0.08] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
                 >
                   <Trophy className="w-4 h-4 text-amber-400" />
                   <span>{t.tabSports}</span>
@@ -2861,7 +3097,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 <button
                   type="button"
                   onClick={() => onOpenCatalogSection('youtube')}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#191C28] hover:bg-[#232738] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
+                  className="min-h-[44px] px-4 rounded-xl bg-[#0E0F16] hover:bg-white/[0.08] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
                 >
                   <Youtube className="w-4 h-4 text-rose-500" />
                   <span>YouTube</span>
@@ -2875,6 +3111,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* NATIVE HTML5 + HLS VIDEO ELEMENT + OPTIONAL MULTI-VIEW 2ND MATCH   */}
         {/* ================================================================== */}
         <div
+          onClick={handleVideoSurfaceTap}
           className={`w-full h-full ${
             videoState.mode === 'hls' || videoState.mode === 'direct'
               ? secondaryStream && !isMinimized
@@ -2941,9 +3178,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               clearBufferingIndicator();
               setLocalPlaying(true);
               setStreamError(null);
+              if (showControlsRef.current) {
+                scheduleHideControls();
+              }
             }}
             onPause={(e) => {
               setLocalPlaying(false);
+              if (controlsTimeoutRef.current) {
+                clearTimeout(controlsTimeoutRef.current);
+                controlsTimeoutRef.current = null;
+              }
+              showControlsRef.current = true;
+              setShowControls(true);
               if (
                 onProgressUpdate &&
                 !videoState.isLive &&
@@ -3037,7 +3283,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             return (
               <div
                 className={`pointer-events-none absolute inset-x-4 z-25 flex justify-center transition-all duration-150 ${
-                  showControls || !localPlaying ? 'bottom-16 sm:bottom-20' : 'bottom-4 sm:bottom-7'
+                  showControls ? 'bottom-16 sm:bottom-20' : 'bottom-4 sm:bottom-7'
                 }`}
               >
                 <div
@@ -3108,17 +3354,17 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           !streamError && (
             <div
               className={`pointer-events-none absolute inset-0 z-35 flex items-center justify-center gap-6 sm:gap-10 transition-opacity duration-150 ${
-                showControls || !localPlaying ? 'opacity-100' : 'opacity-0'
+                showControls ? 'opacity-100' : 'opacity-0'
               }`}
             >
               {!videoState.isLive && (
                 <button
                   type="button"
-                  disabled={!showControls && localPlaying}
+                  disabled={!showControls}
                   onClick={(e) => handleSeekRelative(-10, e)}
                   aria-label="Retroceder 10 segundos"
-                  className={` relative z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/25 flex flex-col items-center justify-center text-white shadow-xl active:scale-90 transition-all cursor-pointer ${
-                    showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+                  className={`relative z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/25 flex flex-col items-center justify-center text-white shadow-xl active:scale-90 transition-all cursor-pointer ${
+                    showControls ? 'pointer-events-auto' : 'pointer-events-none'
                   }`}
                 >
                   <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -3128,11 +3374,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
               <button
                 type="button"
-                disabled={!showControls && localPlaying}
+                disabled={!showControls}
                 onClick={(e) => handleTogglePlay(e)}
                 aria-label={localPlaying ? 'Pausar' : 'Reproducir'}
                 className={`relative z-40 w-15 h-15 sm:w-18 sm:h-18 rounded-full bg-black/70 hover:bg-[#E11D48] backdrop-blur-md border border-white/25 flex items-center justify-center text-white shadow-2xl active:scale-90 transition-all cursor-pointer ${
-                  showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+                  showControls ? 'pointer-events-auto' : 'pointer-events-none'
                 }`}
               >
                 {localPlaying ? (
@@ -3145,11 +3391,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               {!videoState.isLive && (
                 <button
                   type="button"
-                  disabled={!showControls && localPlaying}
+                  disabled={!showControls}
                   onClick={(e) => handleSeekRelative(10, e)}
                   aria-label="Avanzar 10 segundos"
                   className={`relative z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/25 flex flex-col items-center justify-center text-white shadow-xl active:scale-90 transition-all cursor-pointer ${
-                    showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+                    showControls ? 'pointer-events-auto' : 'pointer-events-none'
                   }`}
                 >
                   <RotateCw className="w-5 h-5 sm:w-6 sm:h-6" />
@@ -3201,13 +3447,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {videoState.mode === 'cloud' && (
           <div
             onWheel={handleCloudWheel}
-            className="absolute inset-0 flex flex-col bg-[#090A0F] z-30"
+            className="absolute inset-0 flex flex-col bg-[#050508] z-30"
           >
-            <div className="px-2.5 py-2 bg-[#12141D] border-b border-white/[0.08] flex items-center gap-1.5 shrink-0">
+            <div className="px-2.5 py-2 bg-[#0E0F16] border-b border-white/[0.08] flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => socketService.sendCloudBrowserInput({ type: 'back' })}
-                className="w-9 h-9 rounded-xl bg-[#191C28] hover:bg-[#232738] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
+                className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
                 aria-label="Atrás"
               >
                 <ArrowLeft className="w-4 h-4" />
@@ -3215,7 +3461,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               <button
                 type="button"
                 onClick={() => socketService.sendCloudBrowserInput({ type: 'reload' })}
-                className="w-9 h-9 rounded-xl bg-[#191C28] hover:bg-[#232738] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
+                className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
                 aria-label="Recargar"
               >
                 <RefreshCw className="w-4 h-4" />
@@ -3228,7 +3474,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   type="text"
                   value={cloudUrlInput}
                   onChange={(e) => setCloudUrlInput(e.target.value)}
-                  className="w-full h-9 px-3 rounded-xl bg-[#090A0F] border border-white/10 text-base sm:text-xs font-mono text-zinc-200 outline-none"
+                  className="w-full h-9 px-3 rounded-xl bg-[#050508] border border-white/10 text-base sm:text-xs font-mono text-zinc-200 outline-none"
                 />
               </form>
               {cloudState?.detectedStreamUrl && (
@@ -3251,7 +3497,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 cursor-pointer border transition-colors ${
                     isCinemaMode
                       ? 'bg-amber-400/25 border-amber-400/55 text-amber-200'
-                      : 'bg-[#191C28] hover:bg-[#232738] border-white/10 text-zinc-200'
+                      : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/10 text-zinc-200'
                   }`}
                   aria-label="Modo Cine"
                 >
@@ -3266,7 +3512,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 <button
                   type="button"
                   onClick={onClosePlayer}
-                  className="w-9 h-9 rounded-xl bg-[#191C28] hover:bg-rose-600 flex items-center justify-center text-zinc-200 shrink-0 cursor-pointer"
+                  className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-rose-600 flex items-center justify-center text-zinc-200 shrink-0 cursor-pointer"
                   aria-label="Cerrar navegador"
                 >
                   <X className="w-4 h-4" />
@@ -3357,12 +3603,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         )}
 
         {/* ================================================================== */}
-        {/* ZERO-OVERLAP BOTTOM TRANSPORT BAR (3s Inactivity Auto-Hide)        */}
+        {/* ZERO-OVERLAP BOTTOM TRANSPORT BAR (3.8s Inactivity Auto-Hide)      */}
         {/* ================================================================== */}
         {!isMinimized && (videoState.mode === 'hls' || videoState.mode === 'direct') && (
           <div
             className={`pointer-events-none absolute bottom-0 inset-x-0 z-30 px-2.5 sm:px-5 pb-2 sm:pb-3 pt-4 bg-gradient-to-t from-black/95 via-black/75 to-transparent transition-opacity duration-300 ${
-              showControls || !localPlaying ? 'opacity-100' : 'opacity-0'
+              showControls ? 'opacity-100' : 'opacity-0'
             }`}
           >
             {/* Protected Legible Timeline Scrubber (Rotation-aware for 90deg Landscape) */}
@@ -3389,7 +3635,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   handleScrub(Math.round(ratio * duration));
                 }}
                 className={`h-6 flex items-center px-1 mb-0.5 ${
-                  showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+                  showControls ? 'pointer-events-auto' : 'pointer-events-none'
                 }`}
               >
                 <input
@@ -3408,7 +3654,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             <div
               onClick={(e) => e.stopPropagation()}
               className={`flex items-center justify-between gap-1.5 ${
-                showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
+                showControls ? 'pointer-events-auto' : 'pointer-events-none'
               }`}
             >
               {/* Left Cluster: Play/Pause + Mute/Volume + Timecode */}
@@ -3465,65 +3711,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 )}
               </div>
 
-              {/* Right Cluster: Audio Badge + Direct Cast + Rotate Horizontal + Magic Menu + Fullscreen */}
+              {/* Right Cluster: Clean Orientation Rotate + Fullscreen Only */}
               <div className="flex items-center gap-1 shrink-0">
-                {!videoState.isLive && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerHaptic('light');
-                      setShowProMenu(true);
-                    }}
-                    className="min-h-[38px] px-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-[11px] font-bold text-white flex items-center gap-1 cursor-pointer active:scale-95 transition-all"
-                    title="Cambiar idioma, subtítulos o servidor"
-                  >
-                    <Globe className="w-3.5 h-3.5 text-[#FB7185]" />
-                    <span>{activeTrackLangCode || 'ES'}</span>
-                  </button>
-                )}
-
-                {!isTvMode && (
-                  <button
-                    type="button"
-                    onClick={handleDirectCastToTv}
-                    className={`min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
-                      isCastingToTv || hasConnectedSmartTv
-                        ? 'bg-emerald-500/25 text-emerald-300 border border-emerald-400/50'
-                        : 'hover:bg-white/12 text-white'
-                    }`}
-                    title="Cast Directo a TV (Chromecast / AirPlay 2 / Smart TV)"
-                    aria-label="Cast Directo a TV"
-                  >
-                    <Cast className="w-4 h-4" />
-                  </button>
-                )}
-
-                {!isTvMode && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerHaptic('light');
-                      setShowProMenu(true);
-                    }}
-                    className={`min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
-                      showProMenu || vocalBoostEnabled || activeSubId !== 'off' || playbackSpeed !== 1
-                        ? 'bg-[#E11D48] text-white'
-                        : 'hover:bg-white/12 text-zinc-100'
-                    }`}
-                    title="El Menú Mágico (Subtítulos, Modo Cine, PiP, Cast y Audio)"
-                    aria-label="Abrir Menú Mágico"
-                  >
-                    <SlidersHorizontal className="w-4 h-4" />
-                  </button>
-                )}
-
-                {/* Dedicated 1-Tap Horizontal Rotation Toggle on Mobile/Fullscreen */}
                 <button
                   type="button"
                   onClick={handleToggleLandscapeRotation}
-                  className={`min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+                  className={`min-h-[42px] min-w-[42px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
                     (isFullscreen || isHorizontalFullscreen) && forceLandscapeRotation
                       ? 'bg-[#E11D48]/25 text-[#FB7185] border border-[#E11D48]/50'
                       : 'hover:bg-white/12 text-white'
@@ -3537,7 +3730,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 <button
                   type="button"
                   onClick={handleToggleFullscreen}
-                  className="min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
+                  className="min-h-[42px] min-w-[42px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
                   title="Pantalla completa horizontal"
                   aria-label="Pantalla completa"
                 >
@@ -3664,7 +3857,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       </div>
 
       {/* ==================================================================== */}
-      {/* SLEEK BELOW-VIDEO STRIP: QUICK AUDIO PILLS + MENÚ MÁGICO TRIGGER     */}
+      {/* UNIFIED BELOW-VIDEO CONTROL STRIP (Single Source of Truth)           */}
       {/* ==================================================================== */}
       {!isTvMode &&
         !isMinimized &&
@@ -3672,9 +3865,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         videoState.mode !== 'idle' &&
         videoState.mode !== 'cloud' && (
           <div className="bg-[#08080C] border-t border-white/[0.06] px-3 sm:px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
-            {/* Left: Fluid Language Pills (Castellano / Latino / VOSE / EN) */}
+            {/* Left: Quick Language Pills (VOD) OR Live Signal Pills (Sports) */}
             <div className="flex items-center gap-1.5 min-w-0 shrink-0">
-              {!videoState.isLive && (videoState.mode === 'hls' || videoState.mode === 'direct') ? (
+              {!videoState.isLive &&
+              (videoState.mode === 'hls' || videoState.mode === 'direct') &&
+              (videoState.tracks || []).some((tr) =>
+                ['ES', 'LAT', 'VOSE', 'EN'].includes(String(tr.lang || '').toUpperCase())
+              ) ? (
                 <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08]">
                   {(
                     [
@@ -3683,26 +3880,50 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       { code: 'VOSE', short: '💬 VOSE', title: 'Subtitulado VOSE' },
                       { code: 'EN', short: '🇬🇧 EN', title: 'Inglés Original' },
                     ] as const
-                  ).map((langBtn) => {
-                    const isCurrentLang = activeTrackLangCode === langBtn.code;
-                    const isAvailable = (videoState.tracks || []).some(
-                      (tr) => String(tr.lang || '').toUpperCase() === langBtn.code
-                    );
+                  )
+                    .filter((langBtn) =>
+                      (videoState.tracks || []).some(
+                        (tr) => String(tr.lang || '').toUpperCase() === langBtn.code
+                      )
+                    )
+                    .map((langBtn) => {
+                      const isCurrentLang = activeTrackLangCode === langBtn.code;
+                      return (
+                        <button
+                          key={langBtn.code}
+                          type="button"
+                          onClick={() => handleQuickLanguageSwitch(langBtn.code)}
+                          title={langBtn.title}
+                          className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all ${
+                            isCurrentLang
+                              ? 'bg-white text-[#050508] shadow-sm'
+                              : 'text-zinc-200 hover:bg-white/10'
+                          }`}
+                        >
+                          <span>{langBtn.short}</span>
+                        </button>
+                      );
+                    })}
+                </div>
+              ) : videoState.isLive && videoState.tracks.length > 1 ? (
+                <div className="flex items-center gap-1 bg-white/[0.04] p-1 rounded-2xl border border-white/[0.08]">
+                  {videoState.tracks.slice(0, 5).map((tr, idx) => {
+                    const active = idx === videoState.activeTrackIndex;
                     return (
                       <button
-                        key={langBtn.code}
+                        key={tr.id || idx}
                         type="button"
-                        onClick={() => handleQuickLanguageSwitch(langBtn.code)}
-                        title={langBtn.title}
-                        className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all ${
-                          isCurrentLang
-                            ? 'bg-[#E11D48] text-white shadow-sm'
-                            : isAvailable
-                            ? 'text-zinc-200 hover:bg-white/10'
-                            : 'text-zinc-500 hover:text-zinc-300 hover:bg-white/[0.05]'
+                        onClick={() => {
+                          triggerHaptic('light');
+                          onSelectTrack(idx, 0);
+                        }}
+                        className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all ${
+                          active
+                            ? 'bg-white text-[#050508] shadow-sm'
+                            : 'text-zinc-300 hover:bg-white/10'
                         }`}
                       >
-                        <span>{langBtn.short}</span>
+                        {tr.label || `Señal ${idx + 1}`}
                       </button>
                     );
                   })}
@@ -3718,7 +3939,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               )}
             </div>
 
-            {/* Right: Clean Actions (Siguiente + Cast Directo + Chat Flotante + Opciones) */}
+            {/* Right: Siguiente + Solo Mando (if TV connected) + Cast TV + Chat + Ajustes */}
             <div className="flex items-center gap-2 shrink-0">
               {videoState.seriesMeta && onNextEpisode && (
                 <button
@@ -3727,10 +3948,29 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     triggerHaptic('success');
                     onNextEpisode();
                   }}
-                  className="min-h-[38px] px-3.5 rounded-2xl bg-white text-[#050507] hover:bg-zinc-200 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+                  className="min-h-[38px] px-3.5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
                 >
                   <SkipForward className="w-3.5 h-3.5 fill-current" />
                   <span>Siguiente</span>
+                </button>
+              )}
+
+              {hasConnectedSmartTv && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setBatterySaverTvMode((v) => !v);
+                  }}
+                  title="Pausar vídeo en el móvil y usarlo solo como mando de la TV"
+                  className={`min-h-[38px] px-3 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+                    batterySaverTvMode
+                      ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/50'
+                      : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border-white/[0.09]'
+                  }`}
+                >
+                  <Tv className="w-3.5 h-3.5 shrink-0" />
+                  <span>{batterySaverTvMode ? 'Solo Mando ✓' : 'Solo Mando'}</span>
                 </button>
               )}
 
@@ -3762,7 +4002,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   }`}
                 >
                   <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                  <span>Chat Flotante</span>
+                  <span>Chat</span>
                 </button>
               )}
 
@@ -3774,15 +4014,15 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 }}
                 className="min-h-[38px] px-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
               >
-                <Sparkles className="w-3.5 h-3.5 text-[#E11D48]" />
-                <span>Opciones</span>
+                <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-200" />
+                <span>Ajustes</span>
               </button>
             </div>
           </div>
         )}
 
       {/* ==================================================================== */}
-      {/* EL MENÚ MÁGICO (UNIFIED PROGRESSIVE DISCLOSURE BOTTOM SHEET)         */}
+      {/* AJUSTES DE REPRODUCCIÓN (UNIFIED BOTTOM SHEET — NO DUPLICATE CAST)   */}
       {/* ==================================================================== */}
       {showProMenu && (
         <div
@@ -3800,15 +4040,15 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             {/* Header */}
             <div className="px-5 py-3.5 border-b border-white/[0.08] flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#E11D48]/15 border border-[#E11D48]/30 flex items-center justify-center text-[#E11D48]">
-                  <Sparkles className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-2xl bg-white/[0.06] border border-white/[0.12] flex items-center justify-center text-white">
+                  <SlidersHorizontal className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="text-base font-bold text-white tracking-tight">
-                    El Menú Mágico
+                    Ajustes de Reproducción
                   </h3>
                   <p className="text-xs text-zinc-400">
-                    Idioma, Subtítulos, Modo Cine, PiP y Cast Directo
+                    Idioma, Subtítulos, Modo Cine, PiP, Audio y Velocidad
                   </p>
                 </div>
               </div>
@@ -3816,7 +4056,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 type="button"
                 onClick={() => setShowProMenu(false)}
                 className="min-h-[44px] min-w-[44px] rounded-2xl hover:bg-white/10 flex items-center justify-center text-zinc-300 cursor-pointer"
-                aria-label="Cerrar Menú Mágico"
+                aria-label="Cerrar Ajustes de Reproducción"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -3824,42 +4064,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
             {/* Sheet Body */}
             <div className="p-5 overflow-y-auto custom-scrollbar space-y-5 pb-[max(1.5rem,env(safe-area-inset-bottom))]">
-              {/* 1. Primary Action Grid: Cast Directo, Mando TV, Modo Cine, PiP */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    setShowProMenu(false);
-                    handleDirectCastToTv(e);
-                  }}
-                  className={`min-h-[68px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
-                    isCastingToTv
-                      ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
-                      : 'bg-[#E11D48]/15 hover:bg-[#E11D48]/25 border-[#E11D48]/40 text-white'
-                  }`}
-                >
-                  <Cast className="w-5 h-5 text-[#FB7185]" />
-                  <span>{isCastingToTv ? 'Cast Activo' : 'Cast Directo'}</span>
-                </button>
-
-                {onOpenSmartTvModal && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowProMenu(false);
-                      onOpenSmartTvModal();
-                    }}
-                    className={`min-h-[68px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
-                      hasConnectedSmartTv
-                        ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
-                        : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
-                    }`}
-                  >
-                    <Tv className="w-5 h-5 text-emerald-400" />
-                    <span>{hasConnectedSmartTv ? 'Mando TV' : 'Código 4 Dígitos'}</span>
-                  </button>
-                )}
-
+              {/* 1. Primary Viewing Modes: Modo Cine & PiP Flotante */}
+              <div className="grid grid-cols-2 gap-2.5">
                 {onToggleCinemaMode && (
                   <button
                     type="button"
@@ -3867,7 +4073,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       triggerHaptic('light');
                       onToggleCinemaMode();
                     }}
-                    className={`min-h-[68px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                    className={`min-h-[64px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                       isCinemaMode
                         ? 'bg-amber-400/20 border-amber-400/50 text-amber-200'
                         : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
@@ -3889,7 +4095,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       handleTogglePiP(e);
                       setShowProMenu(false);
                     }}
-                    className={`min-h-[68px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                    className={`min-h-[64px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                       isInPiP
                         ? 'bg-[#E11D48]/25 border-[#E11D48]/60 text-white'
                         : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
@@ -3909,37 +4115,46 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     <span>Idioma de Audio y Servidor</span>
                   </div>
 
-                  {!videoState.isLive && (
-                    <div className="grid grid-cols-4 gap-2">
-                      {(
-                        [
-                          { code: 'ES', label: '🇪🇸 Español' },
-                          { code: 'LAT', label: '🇲🇽 Latino' },
-                          { code: 'VOSE', label: '💬 VOSE' },
-                          { code: 'EN', label: '🇬🇧 Inglés' },
-                        ] as const
-                      ).map((lBtn) => {
-                        const isCurrent = activeTrackLangCode === lBtn.code;
-                        return (
-                          <button
-                            key={lBtn.code}
-                            type="button"
-                            onClick={() => {
-                              handleQuickLanguageSwitch(lBtn.code);
-                              setShowProMenu(false);
-                            }}
-                            className={`min-h-[42px] px-2 rounded-xl text-xs font-bold cursor-pointer transition-all border ${
-                              isCurrent
-                                ? 'bg-[#E11D48] border-[#E11D48] text-white'
-                                : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.08] text-zinc-200'
-                            }`}
-                          >
-                            {lBtn.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  )}
+                  {!videoState.isLive &&
+                    (videoState.tracks || []).some((tr) =>
+                      ['ES', 'LAT', 'VOSE', 'EN'].includes(String(tr.lang || '').toUpperCase())
+                    ) && (
+                      <div className="flex flex-wrap gap-2">
+                        {(
+                          [
+                            { code: 'ES', label: '🇪🇸 Castellano' },
+                            { code: 'LAT', label: '🇲🇽 Latino' },
+                            { code: 'VOSE', label: '💬 VOSE' },
+                            { code: 'EN', label: '🇬🇧 Inglés' },
+                          ] as const
+                        )
+                          .filter((lBtn) =>
+                            (videoState.tracks || []).some(
+                              (tr) => String(tr.lang || '').toUpperCase() === lBtn.code
+                            )
+                          )
+                          .map((lBtn) => {
+                            const isCurrent = activeTrackLangCode === lBtn.code;
+                            return (
+                              <button
+                                key={lBtn.code}
+                                type="button"
+                                onClick={() => {
+                                  handleQuickLanguageSwitch(lBtn.code);
+                                  setShowProMenu(false);
+                                }}
+                                className={`flex-1 min-w-[110px] min-h-[42px] px-3 rounded-xl text-xs font-bold cursor-pointer transition-all border ${
+                                  isCurrent
+                                    ? 'bg-[#E11D48] border-[#E11D48] text-white'
+                                    : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.08] text-zinc-200'
+                                }`}
+                              >
+                                {lBtn.label}
+                              </button>
+                            );
+                          })}
+                      </div>
+                    )}
 
                   {videoState.tracks.length > 1 && (
                     <select
@@ -4068,7 +4283,17 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
                   <button
                     type="button"
-                    onClick={() => setAmbilightEnabled((v) => !v)}
+                    onClick={() =>
+                      setAmbilightEnabled((v) => {
+                        const next = !v;
+                        try {
+                          localStorage.setItem('naim_ambilight_v1', String(next));
+                        } catch {
+                          // ignore
+                        }
+                        return next;
+                      })
+                    }
                     className={`min-h-[48px] px-3 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer ${
                       ambilightEnabled
                         ? 'bg-[#E11D48]/20 border-[#E11D48]/50 text-white'

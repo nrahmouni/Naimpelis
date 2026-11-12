@@ -27,8 +27,10 @@ export interface StreamTrack {
   resolverType:
     | 'movidy_embed'
     | 'vidhide_hls'
+    | 'embed_sniff'
     | 'bingetrix_en'
     | 'sports_channel'
+    | 'tdt_hls'
     | 'direct_hls'
     | 'direct_mp4'
     | 'youtube';
@@ -124,6 +126,7 @@ export interface MediaRichDetails {
   directorOrCreator?: string;
   cast: CastMemberItem[];
   similar: CatalogMovie[];
+  availableLanguages?: ('ES' | 'LAT' | 'VOSE' | 'EN')[];
 }
 
 export interface TvSeasonSummary {
@@ -157,6 +160,7 @@ export interface TvSeriesDetails {
   seasons: TvSeasonSummary[];
   activeSeason: number;
   episodes: TvEpisodeItem[];
+  availableLanguages?: ('ES' | 'LAT' | 'VOSE' | 'EN')[];
 }
 
 export interface YouTubeSearchItem {
@@ -229,13 +233,35 @@ export interface SportsMatch {
   channels: StreamTrack[];
 }
 
+export type TdtCategory =
+  | 'movistar'
+  | 'dazn'
+  | 'generalistas'
+  | 'cine_series'
+  | 'entretenimiento'
+  | 'noticias_deportes'
+  | 'infantil_autonomicas';
+
+export interface SpanishTdtChannel {
+  id: string;
+  dial: number;
+  name: string;
+  shortMark: string;
+  brandTone: string;
+  network: string;
+  category: TdtCategory;
+  quality: string;
+  description: string;
+  channels: StreamTrack[];
+}
+
 export interface FavoriteChannelItem {
   favId: string;
   title: string;
   channelLabel: string;
   channelUrl: string;
   competition: string;
-  sport: 'soccer' | 'motor' | 'basketball' | 'tennis' | 'other';
+  sport: 'soccer' | 'motor' | 'basketball' | 'tennis' | 'tdt' | 'other';
   poster?: string;
   addedAt: number;
 }
@@ -325,6 +351,8 @@ export type TvRemoteCommandType =
   | 'toggle_hud'
   | 'reload_tv'
   | 'toggle_ambilight'
+  | 'cycle_subtitles'
+  | 'cycle_audio'
   | 'disconnect_tv';
 
 export interface LanguageNoticePopup {

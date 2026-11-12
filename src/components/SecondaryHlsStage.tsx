@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Hls from 'hls.js';
-import { ArrowLeftRight, Columns2, PictureInPicture2, VolumeX, X, Loader2 } from 'lucide-react';
+import { ArrowLeftRight, Columns2, Move, PictureInPicture2, VolumeX, X, Loader2 } from 'lucide-react';
 import { AppLanguage, SecondaryStreamState } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -22,6 +22,14 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
   const secVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const [buffering, setBuffering] = useState(true);
+  const [cornerIndex, setCornerIndex] = useState<0 | 1 | 2 | 3>(0);
+
+  const cornerClasses = [
+    'top-12 right-2.5 sm:top-14 sm:right-4',
+    'top-12 left-2.5 sm:top-14 sm:left-4',
+    'bottom-14 left-2.5 sm:bottom-16 sm:left-4',
+    'bottom-14 right-2.5 sm:bottom-16 sm:right-4',
+  ][cornerIndex];
 
   useEffect(() => {
     const video = secVideoRef.current;
@@ -97,7 +105,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
       className={
         isSplit
           ? 'relative w-1/2 h-full bg-black border-l border-white/15 overflow-hidden select-none'
-          : 'absolute top-12 right-2.5 sm:top-14 sm:right-4 z-35 w-[42%] max-w-[280px] aspect-video rounded-xl overflow-hidden bg-black border border-sky-400/50 shadow-[0_14px_40px_rgba(0,0,0,0.9)] select-none'
+          : `absolute ${cornerClasses} z-35 w-[42%] max-w-[280px] aspect-video rounded-2xl overflow-hidden bg-[#050508] border border-white/20 shadow-[0_14px_40px_rgba(0,0,0,0.95)] select-none transition-all duration-200`
       }
     >
       <video
@@ -119,15 +127,15 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
       />
 
       {buffering && (
-        <div className="pointer-events-none absolute inset-0 bg-black/55 flex items-center justify-center">
-          <Loader2 className="w-5 h-5 animate-spin text-sky-400" />
+        <div className="pointer-events-none absolute inset-0 bg-black/60 flex items-center justify-center">
+          <Loader2 className="w-5 h-5 animate-spin text-[#E11D48]" />
         </div>
       )}
 
       {/* Top Mini Overlay */}
-      <div className="absolute top-0 inset-x-0 px-2 py-1.5 bg-gradient-to-b from-black/85 to-transparent flex items-center justify-between gap-1">
-        <div className="min-w-0 flex items-center gap-1 text-[10px] font-semibold text-sky-300 truncate">
-          <VolumeX className="w-3 h-3 shrink-0 text-zinc-300" />
+      <div className="absolute top-0 inset-x-0 px-2.5 py-1.5 bg-gradient-to-b from-black/90 to-transparent flex items-center justify-between gap-1">
+        <div className="min-w-0 flex items-center gap-1.5 text-[10px] font-semibold text-zinc-200 truncate">
+          <VolumeX className="w-3 h-3 shrink-0 text-zinc-400" />
           <span className="truncate">{secondaryStream.title}</span>
         </div>
 
@@ -143,13 +151,27 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
                 ? 'Pasar este partido al principal con sonido'
                 : 'Swap to main screen with audio'
             }
-            className="h-6 px-1.5 rounded-md bg-sky-500 hover:bg-sky-400 text-[#090A0F] text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+            className="h-6 px-2 rounded-lg bg-white hover:bg-zinc-200 text-[#050508] text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
           >
             <ArrowLeftRight className="w-3 h-3" />
             <span className="hidden sm:inline">
               {lang === 'es' ? 'Audio' : 'Swap'}
             </span>
           </button>
+
+          {!isSplit && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setCornerIndex((prev) => ((prev + 1) % 4) as 0 | 1 | 2 | 3);
+              }}
+              title={lang === 'es' ? 'Cambiar de esquina' : 'Move corner'}
+              className="w-6 h-6 rounded-lg bg-black/70 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
+            >
+              <Move className="w-3 h-3" />
+            </button>
+          )}
 
           <button
             type="button"
@@ -166,7 +188,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
                 ? 'Dividir pantalla 50/50'
                 : 'Split 50/50'
             }
-            className="w-6 h-6 rounded-md bg-black/70 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer"
+            className="w-6 h-6 rounded-lg bg-black/70 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
           >
             {isSplit ? (
               <PictureInPicture2 className="w-3 h-3" />
@@ -182,7 +204,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
               onCloseSecondary();
             }}
             title={lang === 'es' ? 'Cerrar 2ª pantalla' : 'Close 2nd screen'}
-            className="w-6 h-6 rounded-md bg-black/70 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer"
+            className="w-6 h-6 rounded-lg bg-black/70 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition-colors"
           >
             <X className="w-3 h-3" />
           </button>

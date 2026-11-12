@@ -37,9 +37,24 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
   const [pairingCode, setPairingCode] = useState<string>('');
   const [connected, setConnected] = useState<boolean>(false);
   const [audioUnlocked, setAudioUnlocked] = useState<boolean>(false);
-  const [pairedByBanner, setPairedByBanner] = useState<string | null>(null);
   const [directRoomDraft, setDirectRoomDraft] = useState<string>('');
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
+  const [pairedByBanner, setPairedByBanner] = useState<string | null>(null);
+  const [lastSavedRoom, setLastSavedRoom] = useState<{
+    roomId: string;
+    roomName: string;
+    claimedBy: string;
+  } | null>(() => {
+    try {
+      const stored = localStorage.getItem('naim_tv_last_room_v1');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  });
 
   useEffect(() => {
     const onFs = () => {
@@ -97,6 +112,20 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           ? `✓ Vinculada por ${params.claimedBy || 'tu móvil'} · Entrando a ${resolvedTitle}...`
           : `✓ Paired by ${params.claimedBy || 'your phone'} · Entering ${resolvedTitle}...`
       );
+
+      try {
+        localStorage.setItem(
+          'naim_tv_last_room_v1',
+          JSON.stringify({
+            roomId: cleanRoomId,
+            roomName: resolvedTitle,
+            claimedBy: params.claimedBy || 'tu móvil',
+            time: Date.now(),
+          })
+        );
+      } catch {
+        // ignore
+      }
 
       setTimeout(() => {
         onPaired({
@@ -412,6 +441,31 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
             </div>
           ))}
         </div>
+
+        {/* 1-Touch Smart Reconnect to Previous Room */}
+        {lastSavedRoom && (
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => {
+                unlockTvAudioGesture();
+                onPaired({
+                  roomId: lastSavedRoom.roomId,
+                  roomName: lastSavedRoom.roomName,
+                  tvAuthToken: '',
+                });
+              }}
+              className="min-h-[58px] px-8 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 font-display font-bold text-base sm:text-lg flex items-center gap-3 cursor-pointer shadow-[0_12px_36px_rgba(255,255,255,0.18)] active:scale-95 transition-all"
+            >
+              <Tv className="w-5 h-5 text-[#E11D48]" />
+              <span>
+                {lang === 'es'
+                  ? `Reconectar a ${lastSavedRoom.roomName} (Pulsa OK)`
+                  : `Reconnect to ${lastSavedRoom.roomName} (Press OK)`}
+              </span>
+            </button>
+          </div>
+        )}
 
         {pairedByBanner ? (
           <div className="px-6 py-4 rounded-2xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 font-display font-bold text-base sm:text-xl animate-pulse">

@@ -288,6 +288,13 @@ class SocketService {
     });
   }
 
+  promoteQueueItem(itemId: string) {
+    this.send('QUEUE_PROMOTE', {
+      roomId: this.roomId,
+      itemId,
+    });
+  }
+
   setHostLock(hostOnlyControl: boolean) {
     this.send('SET_HOST_LOCK', {
       roomId: this.roomId,

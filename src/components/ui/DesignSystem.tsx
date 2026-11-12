@@ -13,6 +13,7 @@ import {
   Unlink,
   Tv,
   Hand,
+  Subtitles,
 } from 'lucide-react';
 
 // ============================================================================
@@ -358,7 +359,9 @@ export interface HapticTvRemoteProps {
       | 'force_sync'
       | 'toggle_fullscreen'
       | 'cycle_aspect'
-      | 'toggle_ambilight',
+      | 'toggle_ambilight'
+      | 'cycle_subtitles'
+      | 'cycle_audio',
     value?: number
   ) => void;
   onDisconnect: () => void;
@@ -629,11 +632,31 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
       </div>
 
       {showAdvancedTvTools && (
-        <div className="grid grid-cols-3 gap-2 pt-1 animate-fade-in">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 animate-fade-in">
+          <SecondaryButton
+            onClick={() => {
+              onCommand('cycle_subtitles');
+              triggerHaptic('💬 Subtítulos TV');
+            }}
+            className="text-[11px] px-2"
+          >
+            <Subtitles className="w-3.5 h-3.5 text-zinc-300" />
+            <span>Subtítulos</span>
+          </SecondaryButton>
+          <SecondaryButton
+            onClick={() => {
+              onCommand('cycle_audio');
+              triggerHaptic('🔊 Audio TV');
+            }}
+            className="text-[11px] px-2"
+          >
+            <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Audio TV</span>
+          </SecondaryButton>
           <SecondaryButton
             onClick={() => {
               onCommand('cycle_aspect');
-              triggerHaptic('📐 Formato cambiado');
+              triggerHaptic('📐 Formato');
             }}
             className="text-[11px] px-2"
           >
@@ -648,16 +671,6 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
           >
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             <span>Ambilight</span>
-          </SecondaryButton>
-          <SecondaryButton
-            onClick={() => {
-              onCommand('force_sync');
-              triggerHaptic('🔄 Sincronizado');
-            }}
-            className="text-[11px] px-2"
-          >
-            <RefreshCw className="w-3.5 h-3.5 text-sky-400" />
-            <span>Sincronizar</span>
           </SecondaryButton>
         </div>
       )}

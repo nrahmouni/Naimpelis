@@ -92,7 +92,9 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
       | 'force_sync'
       | 'toggle_fullscreen'
       | 'cycle_aspect'
-      | 'toggle_ambilight',
+      | 'toggle_ambilight'
+      | 'cycle_subtitles'
+      | 'cycle_audio',
     value?: number
   ) => {
     if (action === 'toggle_play') {
@@ -113,6 +115,10 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
       onSendTvRemoteCommand('toggle_aspect');
     } else if (action === 'toggle_ambilight') {
       onSendTvRemoteCommand('toggle_ambilight');
+    } else if (action === 'cycle_subtitles') {
+      onSendTvRemoteCommand('cycle_subtitles');
+    } else if (action === 'cycle_audio') {
+      onSendTvRemoteCommand('cycle_audio');
     }
   };
 

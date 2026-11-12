@@ -28,8 +28,8 @@ export class AppErrorBoundary extends React.Component<
     const isQuota = this.state.message.toLowerCase().includes('quota exceeded');
 
     return (
-      <div className="min-h-full w-full bg-[#090A0F] text-[#F4F5F8] flex items-center justify-center p-6">
-        <div className="max-w-md w-full rounded-3xl bg-[#12141D] border border-white/12 p-6 text-center space-y-4">
+      <div className="min-h-full w-full bg-[#050508] text-[#F4F5F8] flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-3xl bg-[#0E0F16] border border-white/12 p-6 text-center space-y-4">
           <h2 className="font-display font-bold text-lg text-white">
             {isQuota
               ? 'Límite diario de sincronización en la nube alcanzado'

@@ -18,6 +18,7 @@ export const UI_COPY: Record<
     tabMovies: string;
     tabVose: string;
     tabSeries: string;
+    tabTdt: string;
     tabSports: string;
     tabYoutube: string;
     tabDirect: string;
@@ -26,6 +27,7 @@ export const UI_COPY: Record<
     searchMoviesPlaceholder: string;
     searchBingetrixPlaceholder: string;
     searchSeriesPlaceholder: string;
+    searchTdtPlaceholder: string;
     searchSportsPlaceholder: string;
     searchYoutubePlaceholder: string;
     unmuteAudio: string;
@@ -59,10 +61,10 @@ export const UI_COPY: Record<
   }
 > = {
   es: {
-    appTagline: 'NAIM CINE · Cine, Series, Fútbol y YouTube Sincronizado',
-    heroHeadline: 'Tu sala privada para ver cine, series y deporte juntos.',
+    appTagline: 'NAIM CINE · Cine, Series, TV España, Fútbol y YouTube Sincronizado',
+    heroHeadline: 'Tu sala privada para ver cine, series, TV España y deporte juntos.',
     heroDescription:
-      'Películas en Castellano, Latino e Inglés 1080p, series completas por temporadas, fútbol en directo y YouTube sincronizado al milisegundo.',
+      'Películas en Castellano, Latino e Inglés 1080p, series completas, TV España TDT, Movistar+ y DAZN en directo, fútbol y YouTube sincronizado.',
     nicknameLabel: 'Tu nombre en la sala',
     nicknamePlaceholder: 'Escribe tu nombre (ej. Naim, Carlos, Marta...)',
     avatarLabel: 'Identidad',
@@ -75,6 +77,7 @@ export const UI_COPY: Record<
     tabMovies: 'Películas',
     tabVose: 'Bingetrix EN',
     tabSeries: 'Series TV',
+    tabTdt: 'TV España',
     tabSports: 'Fútbol · Vivo',
     tabYoutube: 'YouTube',
     tabDirect: 'Cola · Enlace',
@@ -83,6 +86,7 @@ export const UI_COPY: Record<
     searchMoviesPlaceholder: 'Buscar cualquier película en Español, Latino o Inglés...',
     searchBingetrixPlaceholder: 'Buscar entre +500.000 películas en Bingetrix (Inglés 1080p)...',
     searchSeriesPlaceholder: 'Buscar cualquier serie (Breaking Bad, Stranger Things, Severance...)',
+    searchTdtPlaceholder: 'Buscar canal en vivo (Movistar LaLiga, DAZN F1, DAZN 1, Telecinco, Antena 3, La 1...)',
     searchSportsPlaceholder: 'Buscar partido, LaLiga, Champions, F1 o canal...',
     searchYoutubePlaceholder: 'Buscar vídeos, música, resúmenes o canales en YouTube...',
     unmuteAudio: 'Activar sonido',
@@ -102,7 +106,7 @@ export const UI_COPY: Record<
     extractingTitle: 'Preparando proyección HD sin anuncios...',
     extractingSub: 'Conectando audio multi-idioma y sincronizando tu sala NAIM CINE',
     standbyTitle: 'Sala lista para proyectar',
-    standbySub: 'Selecciona una película, serie, partido en directo o vídeo de YouTube abajo.',
+    standbySub: 'Selecciona una película, serie, canal de TV España en directo, partido o YouTube abajo.',
     directTitle: 'Enlace Directo y Cloud Browser Aislado',
     directSub:
       'Pega cualquier enlace de YouTube, archivo .m3u8 / .mp4 o página web para extraer el vídeo limpio sin ventanas emergentes.',
@@ -132,6 +136,7 @@ export const UI_COPY: Record<
     tabMovies: 'Movies',
     tabVose: 'Bingetrix EN',
     tabSeries: 'TV Series',
+    tabTdt: 'Spain TV',
     tabSports: 'Live Sports',
     tabYoutube: 'YouTube',
     tabDirect: 'Queue · Link',
@@ -140,6 +145,7 @@ export const UI_COPY: Record<
     searchMoviesPlaceholder: 'Search any movie in English, Spanish, or Latino...',
     searchBingetrixPlaceholder: 'Search 500,000+ movies on Bingetrix (English 1080p)...',
     searchSeriesPlaceholder: 'Search any TV series (Breaking Bad, Severance, Game of Thrones...)',
+    searchTdtPlaceholder: 'Search live channel (Movistar LaLiga, DAZN F1, DAZN 1, La 1, Antena 3, Telecinco...)',
     searchSportsPlaceholder: 'Search match, Champions League, F1, or channel...',
     searchYoutubePlaceholder: 'Search YouTube videos, music, highlights, or channels...',
     unmuteAudio: 'Tap to unmute',

@@ -27,6 +27,7 @@ import {
   LogOut,
   UserCheck,
   UserPlus,
+  Clock,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -41,6 +42,7 @@ import {
 import { UI_COPY } from '../utils/i18n';
 import { buildShortInviteUrl } from '../utils/shortLink';
 import { deriveFriendCode } from '../utils/storage';
+import { triggerHaptic } from '../utils/haptics';
 import {
   EffectiveViewMode,
   ViewModeSwitchButton,
@@ -89,6 +91,10 @@ interface PartySidebarProps {
   roomQueue: RoomQueueItem[];
   onPlayQueueItem: (item: RoomQueueItem) => void;
   onRemoveFromQueue: (id: string) => void;
+  onPromoteQueueItem?: (id: string) => void;
+  activeMediaTitle?: string;
+  currentVideoTimeSec?: number;
+  onSeekToTimestamp?: (seconds: number) => void;
   onPlayCustomUrl: (rawUrl: string) => void;
   onOpenCloudBrowser: (url: string) => void;
   onStartPollFromQueue: () => void;
@@ -124,6 +130,23 @@ interface PartySidebarProps {
 
 const QUICK_REACTIONS = ['🔥', '😂', '❤️', '👏', '😱', '⚽', '🍿', '🎉'];
 
+function formatChatVideoStamp(sec: number): string {
+  const total = Math.max(0, Math.floor(sec));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n: number) => (n < 10 ? `0${n}` : `${n}`);
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
+}
+
+function parseTimestampToSeconds(token: string): number | null {
+  const parts = token.split(':').map((n) => Number(n));
+  if (parts.some((n) => !Number.isFinite(n) || n < 0)) return null;
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
+
 export const PartySidebar: React.FC<PartySidebarProps> = ({
   roomId,
   currentUser,
@@ -144,6 +167,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   onTogglePermanentRoom,
   onClaimTvCode,
   tvClaimStatus,
+  isRoomPlaying,
   onRemoteTogglePlay,
   onRemoteSeekDelta,
   onSendTvRemoteCommand,
@@ -151,6 +175,10 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   roomQueue,
   onPlayQueueItem,
   onRemoveFromQueue,
+  onPromoteQueueItem,
+  activeMediaTitle = '',
+  currentVideoTimeSec = 0,
+  onSeekToTimestamp,
   onPlayCustomUrl,
   onOpenCloudBrowser,
   onStartPollFromQueue,
@@ -185,6 +213,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const [showFloatingReactions, setShowFloatingReactions] = useState(true);
   const [pairedCodeLabel, setPairedCodeLabel] = useState<string | null>(null);
   const [forceShowRemote, setForceShowRemote] = useState(false);
+  const [confirmLeave, setConfirmLeave] = useState(false);
 
   // Progressive Disclosure Bottom Sheets
   const [showUrlLoaderSheet, setShowUrlLoaderSheet] = useState(false);
@@ -230,11 +259,15 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
     forceShowRemote;
 
   const handleShareInvite = async () => {
+    const shareText = activeMediaTitle
+      ? `🍿 Estamos viendo «${activeMediaTitle}» en directo en la sala de ${currentUser.name}. ¡Entra en 1 toque:`
+      : `🍿 Únete a nuestra sala de cine y fútbol en directo (${roomName}):`;
+
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
           title: `${roomName} — NAIM CINE`,
-          text: `Únete a nuestra sala en directo (${roomName}):`,
+          text: shareText,
           url: inviteUrl,
         });
         return;
@@ -243,7 +276,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       }
     }
     try {
-      await navigator.clipboard.writeText(inviteUrl);
+      await navigator.clipboard.writeText(`${shareText}\n${inviteUrl}`);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
     } catch {
@@ -261,7 +294,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       | 'force_sync'
       | 'toggle_fullscreen'
       | 'cycle_aspect'
-      | 'toggle_ambilight',
+      | 'toggle_ambilight'
+      | 'cycle_subtitles'
+      | 'cycle_audio',
     value?: number
   ) => {
     if (action === 'toggle_play') {
@@ -282,6 +317,10 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       onSendTvRemoteCommand('toggle_aspect');
     } else if (action === 'toggle_ambilight') {
       onSendTvRemoteCommand('toggle_ambilight');
+    } else if (action === 'cycle_subtitles') {
+      onSendTvRemoteCommand('cycle_subtitles');
+    } else if (action === 'cycle_audio') {
+      onSendTvRemoteCommand('cycle_audio');
     }
   };
 
@@ -313,41 +352,25 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             className="flex-1"
             value={activeTab}
             onChange={setActiveTab}
-            options={
-              effectiveView === 'mobile'
-                ? [
-                    {
-                      id: 'chat',
-                      label: t.tabChat,
-                      icon: <MessageSquare className="w-4 h-4 shrink-0" />,
-                    },
-                    {
-                      id: 'queue',
-                      label: lang === 'es' ? 'Cola' : 'Queue',
-                      icon: <ListVideo className="w-4 h-4 shrink-0" />,
-                      badge: roomQueue.length,
-                    },
-                  ]
-                : [
-                    {
-                      id: 'chat',
-                      label: t.tabChat,
-                      icon: <MessageSquare className="w-4 h-4 shrink-0" />,
-                    },
-                    {
-                      id: 'queue',
-                      label: lang === 'es' ? 'Cola' : 'Queue',
-                      icon: <ListVideo className="w-4 h-4 shrink-0" />,
-                      badge: roomQueue.length,
-                    },
-                    {
-                      id: 'room',
-                      label: t.tabRoom,
-                      icon: <Users className="w-4 h-4 shrink-0" />,
-                      badge: participants.length,
-                    },
-                  ]
-            }
+            options={[
+              {
+                id: 'chat',
+                label: t.tabChat,
+                icon: <MessageSquare className="w-4 h-4 shrink-0" />,
+              },
+              {
+                id: 'queue',
+                label: lang === 'es' ? 'Cola' : 'Queue',
+                icon: <ListVideo className="w-4 h-4 shrink-0" />,
+                badge: roomQueue.length,
+              },
+              {
+                id: 'room',
+                label: t.tabRoom,
+                icon: <Users className="w-4 h-4 shrink-0" />,
+                badge: participants.length,
+              },
+            ]}
           />
 
           {onOpenFloatingChatOnVideo && (
@@ -492,7 +515,33 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                         </span>
                       </div>
                       <p className="text-sm text-zinc-100 leading-relaxed break-words select-text mt-0.5">
-                        {msg.text}
+                        {onSeekToTimestamp
+                          ? msg.text
+                              .split(/(\b(?:\d{1,2}:)?\d{1,2}:\d{2}\b)/g)
+                              .map((part, i) => {
+                                if (/^(?:\d{1,2}:)?\d{1,2}:\d{2}$/.test(part)) {
+                                  const secs = parseTimestampToSeconds(part);
+                                  if (secs !== null) {
+                                    return (
+                                      <button
+                                        key={i}
+                                        type="button"
+                                        onClick={() => {
+                                          triggerHaptic('light');
+                                          onSeekToTimestamp(secs);
+                                        }}
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-[#E11D48]/20 hover:bg-[#E11D48]/35 border border-[#E11D48]/40 font-mono text-xs font-bold text-[#FB7185] cursor-pointer"
+                                        title={`Saltar a ${part}`}
+                                      >
+                                        <Clock className="w-2.5 h-2.5" />
+                                        <span>{part}</span>
+                                      </button>
+                                    );
+                                  }
+                                }
+                                return <React.Fragment key={i}>{part}</React.Fragment>;
+                              })
+                          : msg.text}
                       </p>
                     </div>
                   </div>
@@ -505,7 +554,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {/* FLOATING REACTION PILL (Hovering above the chat input) */}
           {showFloatingReactions && (
             <div className="absolute left-3 right-3 bottom-17 z-20 flex justify-center pointer-events-none animate-fade-in">
-              <div className="pointer-events-auto inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#12121A]/85 backdrop-blur-2xl border border-white/[0.12] shadow-[0_12px_32px_rgba(0,0,0,0.75)] max-w-full overflow-x-auto no-scrollbar">
+              <div className="pointer-events-auto inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#0E0F16]/90 backdrop-blur-2xl border border-white/[0.12] shadow-[0_12px_32px_rgba(0,0,0,0.75)] max-w-full overflow-x-auto no-scrollbar">
                 {QUICK_REACTIONS.map((emoji) => (
                   <button
                     key={emoji}
@@ -533,7 +582,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {/* Chat Input Bar */}
           <form
             onSubmit={handleSend}
-            className="p-2.5 border-t border-white/[0.07] bg-[#0B0B10]/95 backdrop-blur-xl flex items-center gap-2 shrink-0 z-20"
+            className="p-2.5 border-t border-white/[0.07] bg-[#0B0B10]/95 backdrop-blur-xl flex items-center gap-1.5 shrink-0 z-20"
           >
             {!showFloatingReactions && (
               <IconButton
@@ -545,6 +594,27 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               >
                 <Smile className="w-5 h-5 text-zinc-400" />
               </IconButton>
+            )}
+
+            {currentVideoTimeSec > 1 && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  const stamp = formatChatVideoStamp(currentVideoTimeSec);
+                  setInputText((prev) =>
+                    prev ? `${prev.trim()} ${stamp} ` : `${stamp} `
+                  );
+                }}
+                title="Insertar minuto exacto del vídeo"
+                aria-label="Insertar minuto actual"
+                className="min-h-11 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] font-mono text-[11px] font-bold text-zinc-300 hover:text-white flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+              >
+                <Clock className="w-3.5 h-3.5 text-[#E11D48]" />
+                <span className="hidden sm:inline">
+                  {formatChatVideoStamp(currentVideoTimeSec)}
+                </span>
+              </button>
             )}
 
             <StandardInput
@@ -643,6 +713,19 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
                   {(!hostOnlyControl || isHost) && (
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {idx > 0 && onPromoteQueueItem && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            onPromoteQueueItem(item.id);
+                          }}
+                          title="Poner siguiente en reproducirse"
+                          className="min-h-9 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[10px] font-bold text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <span>↑ #1</span>
+                        </button>
+                      )}
                       <IconButton
                         onClick={() => onPlayQueueItem(item)}
                         variant="crimson"
@@ -779,9 +862,33 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                             </span>
                           )}
                         </div>
-                        <span className="text-xs text-emerald-400 flex items-center gap-1.5 mt-0.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                          Sincronizado
+                        <span
+                          className={`text-xs flex items-center gap-1.5 mt-0.5 ${
+                            isTvDevice || isRoomPlaying
+                              ? 'text-emerald-400'
+                              : activeMediaTitle
+                              ? 'text-amber-300'
+                              : 'text-zinc-400'
+                          }`}
+                        >
+                          <span
+                            className={`w-1.5 h-1.5 rounded-full ${
+                              isTvDevice || isRoomPlaying
+                                ? 'bg-emerald-400'
+                                : activeMediaTitle
+                                ? 'bg-amber-400'
+                                : 'bg-zinc-500'
+                            }`}
+                          />
+                          <span>
+                            {isTvDevice
+                              ? '📺 En Smart TV'
+                              : isRoomPlaying
+                              ? '▶ Viendo en directo'
+                              : activeMediaTitle
+                              ? '⏸ En pausa'
+                              : 'Sincronizado en sala'}
+                          </span>
                         </span>
                       </div>
                     </div>
@@ -947,9 +1054,28 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           </div>
 
           <div className="pt-2">
-            <SecondaryButton onClick={onLeaveRoom} fullWidth>
+            <SecondaryButton
+              onClick={() => {
+                triggerHaptic('medium');
+                if (confirmLeave) {
+                  onLeaveRoom();
+                  setConfirmLeave(false);
+                } else {
+                  setConfirmLeave(true);
+                  setTimeout(() => setConfirmLeave(false), 3200);
+                }
+              }}
+              fullWidth
+              className={confirmLeave ? '!bg-rose-600 !text-white animate-pulse' : ''}
+            >
               <LogOut className="w-4 h-4 text-rose-400" />
-              <span>{t.leaveRoom}</span>
+              <span>
+                {confirmLeave
+                  ? lang === 'es'
+                    ? '¿Seguro? Pulsa para salir'
+                    : 'Sure? Tap to leave'
+                  : t.leaveRoom}
+              </span>
             </SecondaryButton>
           </div>
         </div>

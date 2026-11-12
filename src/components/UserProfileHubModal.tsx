@@ -117,8 +117,12 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
   onDeleteSavedRoom,
   onLeaveRoom,
 }) => {
-  const [activeTab, setActiveTab] = useState<ProfileHubTab>(initialTab);
-  const [favFilter, setFavFilter] = useState<'all' | 'tv' | 'movie'>('all');
+  const [activeTab, setActiveTab] = useState<ProfileHubTab>(
+    initialTab === 'channels' ? 'favorites' : initialTab
+  );
+  const [favFilter, setFavFilter] = useState<'all' | 'tv' | 'movie' | 'channels'>(
+    initialTab === 'channels' ? 'channels' : 'all'
+  );
   const [draftName, setDraftName] = useState(displayName);
   const [savedNameFeedback, setSavedNameFeedback] = useState(false);
   const [joinCode, setJoinCode] = useState('');
@@ -127,7 +131,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
 
   useEffect(() => {
     if (isOpen) {
-      setActiveTab(initialTab);
+      setActiveTab(initialTab === 'channels' ? 'favorites' : initialTab);
+      if (initialTab === 'channels') setFavFilter('channels');
       setDraftName(displayName);
     }
   }, [isOpen, initialTab, displayName]);
@@ -149,10 +154,12 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
 
   const latestWatched = watchHistory[0] || null;
   const filteredWatchlist = watchlist.filter((item) => {
+    if (favFilter === 'channels') return false;
     if (favFilter === 'all') return true;
     const type = item.mediaType === 'tv' ? 'tv' : 'movie';
     return type === favFilter;
   });
+  const totalSavedCount = watchlist.length + favoriteChannels.length;
 
   const handleSaveName = (e: React.FormEvent) => {
     e.preventDefault();
@@ -269,7 +276,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
         </div>
 
         {/* ================================================================ */}
-        {/* NAVIGATION TABS                                                  */}
+        {/* NAVIGATION TABS (3 CLEAN TABS: CONTINUAR VIENDO · GUARDADOS · CUENTA) */}
         {/* ================================================================ */}
         <div className="px-4 sm:px-6 bg-[#09090D] border-b border-white/[0.07] flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar shrink-0">
           {(
@@ -278,26 +285,19 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 id: 'history',
                 label:
                   lang === 'es'
-                    ? `Historial (${watchHistory.length})`
+                    ? `Continuar Viendo (${watchHistory.length})`
                     : `History (${watchHistory.length})`,
               },
               {
                 id: 'favorites',
                 label:
                   lang === 'es'
-                    ? `Pelis y Series (${watchlist.length})`
-                    : `Movies & Series (${watchlist.length})`,
-              },
-              {
-                id: 'channels',
-                label:
-                  lang === 'es'
-                    ? `Canales (${favoriteChannels.length})`
-                    : `Channels (${favoriteChannels.length})`,
+                    ? `Guardados (${totalSavedCount})`
+                    : `Saved (${totalSavedCount})`,
               },
               {
                 id: 'account',
-                label: lang === 'es' ? 'Salas y Cuenta' : 'Rooms & Account',
+                label: lang === 'es' ? 'Cuenta y Salas' : 'Account & Rooms',
               },
             ] as const
           ).map((tab) => {
@@ -310,9 +310,9 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   triggerHaptic('light');
                   setActiveTab(tab.id);
                 }}
-                className={`min-h-[44px] px-3 sm:px-4 border-b-2 text-xs sm:text-sm font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                className={`min-h-[44px] px-3 sm:px-4 border-b-2 text-xs sm:text-sm font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                   active
-                    ? 'border-[#E11D48] text-white font-semibold'
+                    ? 'border-[#E11D48] text-white'
                     : 'border-transparent text-zinc-400 hover:text-white'
                 }`}
               >
@@ -344,7 +344,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                           className="w-16 h-24 rounded-xl object-cover border border-white/10 shrink-0"
                         />
                       ) : (
-                        <div className="w-16 h-24 rounded-xl bg-[#191C28] flex items-center justify-center shrink-0">
+                        <div className="w-16 h-24 rounded-xl bg-[#0E0F16] flex items-center justify-center shrink-0">
                           <Film className="w-6 h-6 text-zinc-500" />
                         </div>
                       )}
@@ -425,7 +425,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             onClose();
                           }}
                           title={lang === 'es' ? 'Empezar desde 00:00' : 'Start from 00:00'}
-                          className="w-11 h-11 rounded-xl bg-[#191C28] hover:bg-[#232838] border border-white/10 flex items-center justify-center text-zinc-300 cursor-pointer"
+                          className="w-11 h-11 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 flex items-center justify-center text-zinc-300 cursor-pointer"
                         >
                           <RotateCcw className="w-4 h-4" />
                         </button>
@@ -442,11 +442,23 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     </h4>
                     <button
                       type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        onClearHistory();
+                      onClick={(e) => {
+                        const btn = e.currentTarget;
+                        triggerHaptic('medium');
+                        if (btn.dataset.confirm === '1') {
+                          btn.dataset.confirm = '0';
+                          onClearHistory();
+                        } else {
+                          btn.dataset.confirm = '1';
+                          const span = btn.querySelector('span');
+                          if (span) span.textContent = lang === 'es' ? '¿Confirmar borrar?' : 'Confirm clear?';
+                          setTimeout(() => {
+                            btn.dataset.confirm = '0';
+                            if (span) span.textContent = lang === 'es' ? 'Borrar todo' : 'Clear all';
+                          }, 3000);
+                        }
                       }}
-                      className="text-xs font-medium text-zinc-400 hover:text-rose-400 flex items-center gap-1 cursor-pointer transition-colors"
+                      className="min-h-[36px] px-2.5 rounded-xl bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] text-xs font-medium text-zinc-300 hover:text-rose-300 flex items-center gap-1 cursor-pointer transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
                       <span>{lang === 'es' ? 'Borrar todo' : 'Clear all'}</span>
@@ -482,7 +494,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             }}
                             className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
                           >
-                            <div className="relative w-12 h-16 rounded-lg overflow-hidden bg-[#191C28] shrink-0">
+                            <div className="relative w-12 h-16 rounded-lg overflow-hidden bg-[#0E0F16] shrink-0">
                               {item.poster ? (
                                 <img
                                   src={item.poster}
@@ -559,195 +571,219 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
           )}
 
           {/* -------------------------------------------------------------- */}
-          {/* TAB 2: PELÍCULAS Y SERIES FAVORITAS                            */}
+          {/* TAB 2: UNIFIED GUARDADOS (PELÍCULAS, SERIES Y CANALES TV)      */}
           {/* -------------------------------------------------------------- */}
           {activeTab === 'favorites' && (
-            <div className="space-y-4">
-              <div className="flex items-center justify-between gap-2 flex-wrap">
-                <div className="flex items-center gap-1 p-1 rounded-xl bg-[#090A0F] border border-white/[0.08]">
-                  {(
-                    [
-                      { id: 'all', label: lang === 'es' ? 'Todo' : 'All' },
-                      { id: 'tv', label: lang === 'es' ? 'Series' : 'Series' },
-                      { id: 'movie', label: lang === 'es' ? 'Películas' : 'Movies' },
-                    ] as const
-                  ).map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      onClick={() => setFavFilter(f.id)}
-                      className={`min-h-[34px] px-3 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
-                        favFilter === f.id
-                          ? 'bg-[#191C28] text-white font-semibold'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
-                </div>
+            <div className="space-y-5">
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {(
+                  [
+                    {
+                      id: 'all',
+                      label: lang === 'es' ? `Todo (${totalSavedCount})` : `All (${totalSavedCount})`,
+                    },
+                    {
+                      id: 'movie',
+                      label:
+                        lang === 'es'
+                          ? `Películas (${watchlist.filter((w) => w.mediaType !== 'tv').length})`
+                          : 'Movies',
+                    },
+                    {
+                      id: 'tv',
+                      label:
+                        lang === 'es'
+                          ? `Series (${watchlist.filter((w) => w.mediaType === 'tv').length})`
+                          : 'Series',
+                    },
+                    {
+                      id: 'channels',
+                      label:
+                        lang === 'es'
+                          ? `Canales TV (${favoriteChannels.length})`
+                          : `Channels (${favoriteChannels.length})`,
+                    },
+                  ] as const
+                ).map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    onClick={() => setFavFilter(f.id)}
+                    className={`min-h-9 px-3.5 rounded-full text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
+                      favFilter === f.id
+                        ? 'bg-white text-[#050508] shadow-sm'
+                        : 'bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-zinc-300'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
               </div>
 
-              {filteredWatchlist.length > 0 ? (
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
-                  {filteredWatchlist.map((item) => {
-                    const isSeries = item.mediaType === 'tv';
-                    return (
-                      <div
-                        key={`${item.mediaType || 'movie'}-${item.tmdbId || item.id}`}
-                        className="group relative rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-white/25 flex flex-col transition-all"
-                      >
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            onPlayCatalogItem(item);
-                            onClose();
-                          }}
-                          className="relative aspect-[2/3] w-full overflow-hidden bg-[#191C28] text-left cursor-pointer"
+              {/* Saved Live Sports Channels Section */}
+              {(favFilter === 'all' || favFilter === 'channels') &&
+                favoriteChannels.length > 0 && (
+                  <div className="space-y-2.5">
+                    {favFilter === 'all' && (
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                        <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Canales y Partidos Guardados ({favoriteChannels.length})</span>
+                      </h4>
+                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {favoriteChannels.map((ch) => (
+                        <div
+                          key={ch.favId}
+                          className="rounded-2xl bg-[#090A0F] border border-white/[0.08] hover:border-white/20 p-3.5 flex items-center justify-between gap-3 transition-colors"
                         >
-                          {item.poster ? (
-                            <img
-                              src={item.poster}
-                              alt={item.title}
-                              referrerPolicy="no-referrer"
-                              className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                            />
-                          ) : (
-                            <div className="w-full h-full flex items-center justify-center">
-                              {isSeries ? (
-                                <Tv className="w-7 h-7 text-zinc-600" />
-                              ) : (
-                                <Film className="w-7 h-7 text-zinc-600" />
-                              )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('success');
+                              onPlayFavoriteChannel(ch);
+                              onClose();
+                            }}
+                            className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
+                          >
+                            <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
+                              <Trophy className="w-4 h-4" />
                             </div>
-                          )}
-                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent flex flex-col justify-end p-3">
-                            <div className="text-[10px] text-zinc-300">
-                              {isSeries
-                                ? lang === 'es'
-                                  ? 'Serie TV'
-                                  : 'TV Series'
-                                : lang === 'es'
-                                ? 'Película'
-                                : 'Movie'}
-                              {item.year ? ` · ${item.year}` : ''}
+                            <div className="min-w-0 flex-1">
+                              <div className="text-xs sm:text-sm font-semibold text-white truncate">
+                                {ch.channelLabel}
+                              </div>
+                              <div className="text-[11px] text-zinc-400 truncate">
+                                {ch.competition} · {ch.title}
+                              </div>
                             </div>
-                            <div className="font-display font-semibold text-xs sm:text-sm text-white line-clamp-2 mt-0.5">
-                              {item.title}
-                            </div>
-                          </div>
-                        </button>
+                          </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            onToggleCatalogFavorite(item);
-                          }}
-                          title={lang === 'es' ? 'Quitar de favoritos' : 'Remove favorite'}
-                          aria-label="Quitar de favoritos"
-                          className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-rose-600 flex items-center justify-center text-[#FB7185] hover:text-white cursor-pointer transition-colors"
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('success');
+                                onPlayFavoriteChannel(ch);
+                                onClose();
+                              }}
+                              className="min-h-9 px-3 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Play className="w-3 h-3 fill-current" />
+                              <span>{lang === 'es' ? 'Ver' : 'Watch'}</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                onRemoveFavoriteChannel(ch);
+                              }}
+                              title={lang === 'es' ? 'Quitar canal favorito' : 'Remove channel'}
+                              aria-label="Quitar canal favorito"
+                              className="w-9 h-9 rounded-xl bg-white/[0.04] hover:bg-rose-500/20 text-amber-400 hover:text-rose-300 flex items-center justify-center cursor-pointer transition-colors"
+                            >
+                              <Star className="w-4 h-4 fill-current" />
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+              {/* Saved Movies & TV Series Grid */}
+              {favFilter !== 'channels' && filteredWatchlist.length > 0 && (
+                <div className="space-y-2.5">
+                  {favFilter === 'all' && favoriteChannels.length > 0 && (
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                      <Film className="w-3.5 h-3.5 text-[#E11D48]" />
+                      <span>Películas y Series en Mi Lista ({filteredWatchlist.length})</span>
+                    </h4>
+                  )}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
+                    {filteredWatchlist.map((item) => {
+                      const isSeries = item.mediaType === 'tv';
+                      return (
+                        <div
+                          key={`${item.mediaType || 'movie'}-${item.tmdbId || item.id}`}
+                          className="group relative rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-white/25 flex flex-col transition-all"
                         >
-                          <Heart className="w-4 h-4 fill-current" />
-                        </button>
-                      </div>
-                    );
-                  })}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              onPlayCatalogItem(item);
+                              onClose();
+                            }}
+                            className="relative aspect-[2/3] w-full overflow-hidden bg-[#0E0F16] text-left cursor-pointer"
+                          >
+                            {item.poster ? (
+                              <img
+                                src={item.poster}
+                                alt={item.title}
+                                referrerPolicy="no-referrer"
+                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center">
+                                {isSeries ? (
+                                  <Tv className="w-7 h-7 text-zinc-600" />
+                                ) : (
+                                  <Film className="w-7 h-7 text-zinc-600" />
+                                )}
+                              </div>
+                            )}
+                            <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent flex flex-col justify-end p-3">
+                              <div className="text-[10px] text-zinc-300">
+                                {isSeries
+                                  ? lang === 'es'
+                                    ? 'Serie TV'
+                                    : 'TV Series'
+                                  : lang === 'es'
+                                  ? 'Película'
+                                  : 'Movie'}
+                                {item.year ? ` · ${item.year}` : ''}
+                              </div>
+                              <div className="font-display font-semibold text-xs sm:text-sm text-white line-clamp-2 mt-0.5">
+                                {item.title}
+                              </div>
+                            </div>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              onToggleCatalogFavorite(item);
+                            }}
+                            title={lang === 'es' ? 'Quitar de favoritos' : 'Remove favorite'}
+                            aria-label="Quitar de favoritos"
+                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-rose-600 flex items-center justify-center text-[#E11D48] hover:text-white cursor-pointer transition-colors"
+                          >
+                            <Heart className="w-3.5 h-3.5 fill-current" />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
-              ) : (
+              )}
+
+              {/* Empty state when nothing saved matches filter */}
+              {((favFilter === 'channels' && favoriteChannels.length === 0) ||
+                (favFilter !== 'channels' &&
+                  filteredWatchlist.length === 0 &&
+                  (favFilter !== 'all' || favoriteChannels.length === 0))) && (
                 <div className="py-12 text-center space-y-2">
                   <Heart className="w-8 h-8 text-zinc-600 mx-auto" />
                   <p className="font-display font-semibold text-sm sm:text-base text-white">
                     {lang === 'es'
-                      ? 'No tienes favoritos guardados en esta categoría'
-                      : 'No saved favorites in this category'}
+                      ? 'No tienes elementos guardados en esta sección'
+                      : 'No saved items in this section'}
                   </p>
                   <p className="text-xs text-zinc-400 max-w-md mx-auto">
                     {lang === 'es'
-                      ? 'Pulsa el corazón en cualquier película o serie del catálogo para guardarla en tu perfil.'
-                      : 'Tap the heart icon on any movie or TV series in the catalog to save it here.'}
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {/* -------------------------------------------------------------- */}
-          {/* TAB 3: CANALES DEPORTIVOS FAVORITOS                            */}
-          {/* -------------------------------------------------------------- */}
-          {activeTab === 'channels' && (
-            <div className="space-y-3">
-              {favoriteChannels.length > 0 ? (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {favoriteChannels.map((ch) => (
-                    <div
-                      key={ch.favId}
-                      className="rounded-2xl bg-[#090A0F] border border-white/[0.08] hover:border-white/20 p-3.5 flex items-center justify-between gap-3 transition-colors"
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('success');
-                          onPlayFavoriteChannel(ch);
-                          onClose();
-                        }}
-                        className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
-                      >
-                        <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400 shrink-0">
-                          <Trophy className="w-4 h-4" />
-                        </div>
-                        <div className="min-w-0 flex-1">
-                          <div className="text-xs sm:text-sm font-semibold text-white truncate">
-                            {ch.channelLabel}
-                          </div>
-                          <div className="text-[11px] text-zinc-400 truncate">
-                            {ch.competition} · {ch.title}
-                          </div>
-                        </div>
-                      </button>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('success');
-                            onPlayFavoriteChannel(ch);
-                            onClose();
-                          }}
-                          className="min-h-[36px] px-3 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
-                        >
-                          <Play className="w-3 h-3 fill-current" />
-                          <span>{lang === 'es' ? 'Ver' : 'Watch'}</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            onRemoveFavoriteChannel(ch);
-                          }}
-                          title={lang === 'es' ? 'Quitar canal favorito' : 'Remove channel'}
-                          aria-label="Quitar canal favorito"
-                          className="w-9 h-9 rounded-xl bg-white/[0.04] hover:bg-rose-500/20 text-amber-400 hover:text-rose-300 flex items-center justify-center cursor-pointer transition-colors"
-                        >
-                          <Star className="w-4 h-4 fill-current" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="py-12 text-center space-y-2">
-                  <Star className="w-8 h-8 text-zinc-600 mx-auto" />
-                  <p className="font-display font-semibold text-sm sm:text-base text-white">
-                    {lang === 'es'
-                      ? 'Aún no has marcado canales favoritos'
-                      : 'No favorite channels yet'}
-                  </p>
-                  <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                    {lang === 'es'
-                      ? 'En la pestaña Fútbol · Vivo, pulsa la estrella junto a cualquier canal 24/7 o partido para tenerlo siempre a mano.'
-                      : 'Tap the star next to any live channel in the Sports tab to pin it here.'}
+                      ? 'Pulsa el corazón (♥) en cualquier película o serie, o la estrella (★) en los canales de fútbol para tenerlos siempre a mano aquí.'
+                      : 'Tap the heart on movies/series or the star on sports channels to save them here.'}
                   </p>
                 </div>
               )}
@@ -774,7 +810,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   <button
                     type="button"
                     onClick={handleCopyCurrentInvite}
-                    className="min-h-[38px] px-3 rounded-xl bg-[#191C28] hover:bg-[#232838] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
+                    className="min-h-[38px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
                   >
                     {copiedInvite ? (
                       <>
@@ -865,7 +901,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   <button
                     type="submit"
                     disabled={!joinCode.trim()}
-                    className="h-11 px-3.5 rounded-xl bg-[#191C28] hover:bg-[#232838] disabled:opacity-40 border border-white/12 text-xs font-semibold text-white flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
+                    className="h-11 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-40 border border-white/12 text-xs font-semibold text-white flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
                   >
                     <span>{lang === 'es' ? 'Ir' : 'Join'}</span>
                     <ArrowRight className="w-3.5 h-3.5" />
@@ -966,7 +1002,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             className={`h-9 px-3 rounded-xl text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
                               isCurrent
                                 ? 'bg-[#E11D48]/20 border border-[#E11D48]/50 text-white'
-                                : 'bg-[#11131B] hover:bg-[#191C28] border border-white/[0.08] text-zinc-300'
+                                : 'bg-[#0E0F16] hover:bg-white/[0.08] border border-white/[0.08] text-zinc-300'
                             }`}
                           >
                             <span className="truncate max-w-[130px]">{r.name}</span>
@@ -993,11 +1029,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       value={draftName}
                       onChange={(e) => setDraftName(e.target.value)}
                       maxLength={24}
-                      className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#11131B] border border-white/12 focus:border-[#E11D48] text-base sm:text-xs text-white outline-none"
+                      className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#0E0F16] border border-white/12 focus:border-[#E11D48] text-base sm:text-xs text-white outline-none"
                     />
                     <button
                       type="submit"
-                      className="h-11 px-4 rounded-xl bg-[#191C28] hover:bg-[#232838] border border-white/12 text-xs font-semibold text-white shrink-0 cursor-pointer"
+                      className="h-11 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-xs font-semibold text-white shrink-0 cursor-pointer"
                     >
                       {savedNameFeedback
                         ? lang === 'es'

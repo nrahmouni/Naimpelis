@@ -5,7 +5,7 @@ import {
   Trophy,
   Youtube,
   MessageSquare,
-  Users,
+  Radio,
   Share2,
   Check,
   LogOut,
@@ -37,6 +37,7 @@ import {
   RoomQueueItem,
   SavedFriend,
   SecondaryStreamState,
+  SpanishTdtChannel,
   SportsMatch,
   StreamTrack,
   TvEpisodeItem,
@@ -172,7 +173,7 @@ function loadSessionRoomPins(): Record<string, string> {
   }
 }
 
-type MobileNavTab = 'movies' | 'sports' | 'youtube' | 'chat' | 'room';
+type MobileNavTab = 'movies' | 'tdt' | 'sports' | 'youtube' | 'chat' | 'room';
 
 export function App() {
   const [lang, setLang] = useState<AppLanguage>('es');
@@ -328,6 +329,12 @@ export function App() {
   const [floatingChatOpen, setFloatingChatOpen] = useState<boolean>(false);
   const [visualViewportHeight, setVisualViewportHeight] = useState<number | null>(null);
   const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = useState<boolean>(false);
+  const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(() =>
+    typeof window !== 'undefined'
+      ? window.innerWidth > window.innerHeight && window.innerHeight < 520
+      : false
+  );
+  const [livePlaybackSec, setLivePlaybackSec] = useState<number>(0);
   const langNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showLanguageNotice = useCallback(
@@ -344,22 +351,39 @@ export function App() {
     []
   );
 
-  // Detect mobile virtual keyboard via visualViewport so video + chat stay visible above the keyboard
+  // Detect mobile virtual keyboard via visualViewport & mobile horizontal landscape orientation
   useEffect(() => {
-    if (typeof window === 'undefined' || !window.visualViewport) return;
+    if (typeof window === 'undefined') return;
+    const updateOrientation = () => {
+      setIsMobileLandscape(
+        window.innerWidth > window.innerHeight && window.innerHeight < 520
+      );
+    };
+    updateOrientation();
+    window.addEventListener('resize', updateOrientation);
+    window.addEventListener('orientationchange', updateOrientation);
+
     const vv = window.visualViewport;
     const handleViewportChange = () => {
+      updateOrientation();
+      if (!vv) return;
       const fullH = window.innerHeight || document.documentElement.clientHeight || 800;
       const currentH = Math.round(vv.height);
       const keyboardLikelyOpen = fullH - currentH > 135 && fullH < 1024;
       setIsMobileKeyboardOpen(keyboardLikelyOpen);
       setVisualViewportHeight(keyboardLikelyOpen ? currentH : null);
     };
-    vv.addEventListener('resize', handleViewportChange);
-    vv.addEventListener('scroll', handleViewportChange);
+    if (vv) {
+      vv.addEventListener('resize', handleViewportChange);
+      vv.addEventListener('scroll', handleViewportChange);
+    }
     return () => {
-      vv.removeEventListener('resize', handleViewportChange);
-      vv.removeEventListener('scroll', handleViewportChange);
+      window.removeEventListener('resize', updateOrientation);
+      window.removeEventListener('orientationchange', updateOrientation);
+      if (vv) {
+        vv.removeEventListener('resize', handleViewportChange);
+        vv.removeEventListener('scroll', handleViewportChange);
+      }
     };
   }, []);
 
@@ -699,6 +723,7 @@ export function App() {
 
   const handlePlayerProgressUpdate = useCallback(
     (currentTimeSec: number, durationSec: number) => {
+      setLivePlaybackSec(Math.max(0, Math.floor(currentTimeSec)));
       const activeId = activeHistoryIdRef.current;
       if (!activeId || currentTimeSec <= 4) return;
 
@@ -1472,7 +1497,7 @@ export function App() {
   const handlePlaySeriesEpisode = async (
     series: TvSeriesDetails,
     episode: TvEpisodeItem,
-    preferLang: 'ES' | 'EN',
+    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
     startAtOverrideSec?: number
   ) => {
     if (!canControlRoom) {
@@ -1526,9 +1551,17 @@ export function App() {
         tracks[activeIdx]?.label || data.resolvedLabel || preferLang;
 
       if (data.languageFallbackUsed) {
+        const reqLabel =
+          preferLang === 'ES'
+            ? 'Castellano'
+            : preferLang === 'LAT'
+            ? 'Español Latino'
+            : preferLang === 'VOSE'
+            ? 'VOSE'
+            : 'Inglés / VOSE';
         showLanguageNotice({
           type: 'warning',
-          title: `⚠️ Idioma ${preferLang === 'ES' ? 'Español' : 'Inglés / VOSE'} no disponible en este episodio`,
+          title: `⚠️ Idioma ${reqLabel} no disponible en este episodio`,
           subtitle: `Reproduciendo en: ${activeEpLabel}`,
         });
       } else {
@@ -1780,7 +1813,11 @@ export function App() {
     }
 
     const activeTrack = videoState.tracks[videoState.activeTrackIndex];
-    const preferLang: 'ES' | 'EN' = activeTrack?.lang === 'EN' ? 'EN' : 'ES';
+    const rawActiveLang = String(activeTrack?.lang || '').toUpperCase();
+    const preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' =
+      rawActiveLang === 'LAT' || rawActiveLang === 'VOSE' || rawActiveLang === 'EN'
+        ? rawActiveLang
+        : 'ES';
 
     setIsExtracting(true);
     setExtractionError(null);
@@ -1931,6 +1968,82 @@ export function App() {
     }
   };
 
+  const handlePlayTdtChannel = async (tdtCh: SpanishTdtChannel, signalIndex = 0) => {
+    if (!canControlRoom) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
+    const chosenSignal = tdtCh.channels[signalIndex] || tdtCh.channels[0];
+    if (!chosenSignal) return;
+
+    scrollDesktopToPlayer();
+    setIsExtracting(true);
+    setLoadingItemId(`tdt-${tdtCh.id}-${signalIndex}`);
+    setExtractionError(null);
+    setExtractionLabel(`${tdtCh.name} · Conectando emisión en directo HD...`);
+    activeHistoryIdRef.current = null;
+
+    const signalResolver = chosenSignal.resolverType || 'tdt_hls';
+
+    try {
+      const params = new URLSearchParams({
+        url: chosenSignal.sourceUrl,
+        resolverType: signalResolver,
+        title: tdtCh.name,
+      });
+      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const data = await res.json();
+
+      if (!res.ok || !data?.success || !data?.streamUrl) {
+        if (signalIndex + 1 < tdtCh.channels.length) {
+          setIsExtracting(false);
+          setLoadingItemId(null);
+          await handlePlayTdtChannel(tdtCh, signalIndex + 1);
+          return;
+        }
+        setExtractionError(
+          data?.error || `La emisión de ${tdtCh.name} no responde en este instante.`
+        );
+        return;
+      }
+
+      const mappedTracks: StreamTrack[] = tdtCh.channels.map((sig, idx) => ({
+        id: sig.id,
+        label: `${tdtCh.name} · ${sig.label}`,
+        lang: 'ES',
+        quality: sig.quality,
+        sourceUrl: sig.sourceUrl,
+        resolverType: sig.resolverType || 'tdt_hls',
+        resolvedStreamUrl: idx === signalIndex ? data.streamUrl : undefined,
+      }));
+
+      const nextState: VideoState = {
+        mode: data.mode || 'hls',
+        url: data.streamUrl,
+        rawSourceUrl: chosenSignal.sourceUrl,
+        title: tdtCh.name,
+        subtitle: `TV en Directo · ${tdtCh.network} · ${chosenSignal.label}`,
+        currentTime: 0,
+        isPlaying: true,
+        isLive: true,
+        tracks: mappedTracks,
+        activeTrackIndex: signalIndex,
+        seriesMeta: undefined,
+        lastUpdated: Date.now(),
+        updatedBy: profile.name,
+      };
+
+      setVideoState(nextState);
+      socketService.syncVideoState('change_url', nextState, profile.name);
+      playCinemaSound('play');
+    } catch {
+      setExtractionError(`No se pudo conectar con ${tdtCh.name}.`);
+    } finally {
+      setIsExtracting(false);
+      setLoadingItemId(null);
+    }
+  };
+
   const handlePlayFavoriteChannel = async (favCh: FavoriteChannelItem) => {
     if (!canControlRoom) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
@@ -1942,10 +2055,15 @@ export function App() {
     setExtractionError(null);
     setExtractionLabel(`${favCh.channelLabel} · Conectando canal favorito...`);
 
+    const isDirectTdtHls = /\.m3u8(\?|$)/i.test(favCh.channelUrl);
+    const favResolver: StreamTrack['resolverType'] = isDirectTdtHls
+      ? 'tdt_hls'
+      : 'sports_channel';
+
     try {
       const params = new URLSearchParams({
         url: favCh.channelUrl,
-        resolverType: 'sports_channel',
+        resolverType: favResolver,
         title: favCh.title || favCh.channelLabel,
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`);
@@ -1963,7 +2081,7 @@ export function App() {
         label: favCh.channelLabel,
         lang: 'ES',
         sourceUrl: favCh.channelUrl,
-        resolverType: 'sports_channel',
+        resolverType: favResolver,
         resolvedStreamUrl: data.streamUrl,
       };
 
@@ -2070,20 +2188,50 @@ export function App() {
       const params = new URLSearchParams({
         url: targetTrack.sourceUrl,
         resolverType: targetTrack.resolverType,
-        preferLang: targetTrack.lang === 'EN' ? 'EN' : 'ES',
+        preferLang: String(targetTrack.lang || 'ES').toUpperCase(),
         title: videoState.title,
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`);
       const data = await res.json();
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        const msg = `El idioma "${targetTrack.label}" no está disponible en este servidor.`;
+        const requestedLang = String(targetTrack.lang || '').toUpperCase();
+        const prunedTracks = videoState.tracks.filter((_, idx) => idx !== trackIndex);
+        const prunedActiveIdx = Math.max(
+          0,
+          Math.min(
+            prunedTracks.length - 1,
+            videoState.activeTrackIndex > trackIndex
+              ? videoState.activeTrackIndex - 1
+              : videoState.activeTrackIndex
+          )
+        );
+        setVideoState((prev) => ({
+          ...prev,
+          tracks: prunedTracks,
+          activeTrackIndex: prunedActiveIdx,
+        }));
+
+        const backupIdxInOriginal = videoState.tracks.findIndex(
+          (tr, idx) =>
+            idx !== trackIndex && String(tr.lang || '').toUpperCase() === requestedLang
+        );
+        if (backupIdxInOriginal !== -1) {
+          const adjustedBackupIdx =
+            backupIdxInOriginal > trackIndex ? backupIdxInOriginal - 1 : backupIdxInOriginal;
+          setIsExtracting(false);
+          setTimeout(() => {
+            handleSelectTrack(adjustedBackupIdx, resumeAt);
+          }, 10);
+          return;
+        }
+
+        const msg = `El servidor de "${targetTrack.label}" no responde ahora mismo.`;
         setExtractionError(msg);
         showLanguageNotice({
-          type: 'error',
-          title: `⚠️ Idioma no disponible: ${targetTrack.label}`,
-          subtitle:
-            'Prueba otra pista de idioma desde el botón Idioma / Audio del reproductor.',
+          type: 'warning',
+          title: `Servidor caído: ${targetTrack.label}`,
+          subtitle: 'Se ha ocultado la pista inactiva automáticamente.',
         });
         return;
       }
@@ -2265,6 +2413,10 @@ export function App() {
     title: string;
     subtitle?: string;
   }) => {
+    const mvResolver: StreamTrack['resolverType'] = /\.m3u8(\?|$)/i.test(opts.sourceUrl)
+      ? 'tdt_hls'
+      : 'sports_channel';
+
     // If no primary stream is active yet, open directly on the main screen
     if (videoState.mode === 'idle' && canControlRoom) {
       await handlePlaySportsMatch(
@@ -2281,7 +2433,7 @@ export function App() {
               label: opts.title,
               lang: 'ES',
               sourceUrl: opts.sourceUrl,
-              resolverType: 'sports_channel',
+              resolverType: mvResolver,
             },
           ],
         },
@@ -2297,7 +2449,7 @@ export function App() {
     try {
       const params = new URLSearchParams({
         url: opts.sourceUrl,
-        resolverType: 'sports_channel',
+        resolverType: mvResolver,
         title: opts.title,
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`);
@@ -2918,6 +3070,8 @@ export function App() {
           onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
           onNextEpisode={handleNextEpisode}
           roomCode={roomId}
+          roomDisplayName={roomName || `Sala ${roomId.toUpperCase()}`}
+          participantCount={participants.length}
           onExitTvMode={() => {
             socketService.disconnect();
             setInRoom(false);
@@ -3061,6 +3215,12 @@ export function App() {
 
   const isMobileChatWithKeyboard =
     !isDesktopLayout && isMobileKeyboardOpen && (mobileTab === 'chat' || floatingChatOpen);
+  const isAutoImmersiveLandscape =
+    !isDesktopLayout &&
+    isMobileLandscape &&
+    isPlayerActive &&
+    !isDockedMini &&
+    !isMobileKeyboardOpen;
 
   // ============================================================================
   // RENDER 3: UNIFIED WORKSPACE (DESKTOP OR USER-SELECTED MOBILE VIEW)
@@ -3240,10 +3400,10 @@ export function App() {
           />
         )}
 
-        {/* Top Bar (z-30 so Modo Cine z-40 dims it cleanly; auto-hides on mobile when keyboard is open in chat so video + chat fit) */}
+        {/* Top Bar (z-30 so Modo Cine z-40 dims it cleanly; auto-hides on mobile when keyboard is open in chat or when phone is rotated to landscape during playback) */}
         <header
           className={`${
-            isMobileChatWithKeyboard
+            isMobileChatWithKeyboard || isAutoImmersiveLandscape
               ? 'hidden'
               : isDesktopLayout
               ? 'h-14 px-6 flex'
@@ -3332,6 +3492,12 @@ export function App() {
                     onClick: () => setCatalogSection('series'),
                   },
                   {
+                    id: 'tdt',
+                    label: t.tabTdt,
+                    isActive: catalogSection === 'tdt',
+                    onClick: () => setCatalogSection('tdt'),
+                  },
+                  {
                     id: 'sports',
                     label: t.tabSports,
                     isActive: catalogSection === 'sports',
@@ -3342,13 +3508,6 @@ export function App() {
                     label: t.tabYoutube,
                     isActive: catalogSection === 'youtube',
                     onClick: () => setCatalogSection('youtube'),
-                  },
-                  {
-                    id: 'direct',
-                    label: t.tabDirect,
-                    badge: roomQueue.length || undefined,
-                    isActive: catalogSection === 'direct',
-                    onClick: () => setCatalogSection('direct'),
                   },
                 ] as const
               ).map((navItem) => (
@@ -3363,11 +3522,6 @@ export function App() {
                   }`}
                 >
                   <span>{navItem.label}</span>
-                  {'badge' in navItem && navItem.badge ? (
-                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#E11D48] text-[10px] font-bold text-white flex items-center justify-center tabular-nums">
-                      {navItem.badge > 9 ? '9+' : navItem.badge}
-                    </span>
-                  ) : null}
                 </button>
               ))}
             </nav>
@@ -3532,6 +3686,8 @@ export function App() {
                       isPlayerActive
                         ? isDesktopLayout
                           ? 'block max-w-7xl mx-auto px-6 pt-5'
+                          : isAutoImmersiveLandscape
+                          ? 'block h-full flex-1 bg-black'
                           : 'block border-b border-white/[0.08]'
                         : isDesktopLayout
                         ? 'block max-w-7xl mx-auto px-6 pt-5'
@@ -3596,6 +3752,9 @@ export function App() {
                   onOpenSmartTvModal={() => setSmartTvModalOpen(true)}
                   hasConnectedSmartTv={hasConnectedSmartTv}
                   onSendTvRemoteCommand={handleSendTvRemoteCommand}
+                  roomCode={roomId}
+                  roomDisplayName={roomName || `Sala ${roomId.toUpperCase()}`}
+                  participantCount={participants.length}
                   messages={messages}
                   currentUserId={currentUser.id}
                   onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
@@ -3608,79 +3767,30 @@ export function App() {
                   onOpenCatalogSection={(sec) => {
                     setCatalogSection(sec);
                     if (sec === 'movies' || sec === 'series') setMobileTab('movies');
+                    else if (sec === 'tdt') setMobileTab('tdt');
                     else if (sec === 'sports') setMobileTab('sports');
                     else if (sec === 'youtube') setMobileTab('youtube');
                   }}
                 />
 
-                {/* 1-Tap Quick Signal / Audio Track & Multiview Bar below Full Player */}
-                {isPlayerActive &&
-                  !isDockedMini &&
-                  !isExtracting &&
-                  (effectiveVideoState.tracks.length > 1 ||
-                    effectiveVideoState.isLive ||
-                    Boolean(secondaryStream)) && (
-                    <div className="px-3 py-2 bg-[#090A10] border-t border-white/[0.07] flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
-                      <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
-                        <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-500 shrink-0 mr-0.5">
-                          {effectiveVideoState.isLive
-                            ? lang === 'es'
-                              ? 'Señales:'
-                              : 'Signals:'
-                            : lang === 'es'
-                            ? 'Audio:'
-                            : 'Track:'}
-                        </span>
-                        {effectiveVideoState.tracks.map((tr, idx) => {
-                          const isActiveTrack = idx === effectiveVideoState.activeTrackIndex;
-                          return (
-                            <button
-                              key={`${tr.label}-${idx}`}
-                              type="button"
-                              onClick={() => {
-                                triggerHaptic('light');
-                                handleSelectTrack(idx, effectiveVideoState.currentTime || 0);
-                              }}
-                              className={`min-h-7 px-2.5 rounded-full text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
-                                isActiveTrack
-                                  ? 'bg-white text-[#050508] shadow-sm'
-                                  : 'bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 border border-white/[0.08]'
-                              }`}
-                            >
-                              {tr.label || `Señal ${idx + 1}`}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        {secondaryStream ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic('light');
-                              handleCloseSecondaryStream();
-                            }}
-                            className="min-h-7 px-2.5 rounded-full bg-[#E11D48]/20 border border-[#E11D48]/40 text-[11px] font-bold text-[#FB7185] whitespace-nowrap cursor-pointer"
-                          >
-                            Cerrar 2ª Pantalla
-                          </button>
-                        ) : effectiveVideoState.isLive ? (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic('light');
-                              setCatalogSection('sports');
-                              if (!isDesktopLayout) setMobileTab('sports');
-                            }}
-                            className="min-h-7 px-2.5 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-semibold text-zinc-300 whitespace-nowrap cursor-pointer"
-                          >
-                            + 2ª Pantalla
-                          </button>
-                        ) : null}
-                      </div>
-                    </div>
-                  )}
+                {/* 1-Tap Quick Multiview Bar if secondary stream active */}
+                {isPlayerActive && !isDockedMini && !isExtracting && secondaryStream && (
+                  <div className="px-3 py-1.5 bg-[#08080C] border-t border-white/[0.06] flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-zinc-300 truncate">
+                      📺 2ª Pantalla Activa: {secondaryStream.title}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        handleCloseSecondaryStream();
+                      }}
+                      className="min-h-7 px-2.5 rounded-full bg-[#E11D48]/20 border border-[#E11D48]/40 text-[11px] font-bold text-[#FB7185] whitespace-nowrap cursor-pointer hover:bg-[#E11D48]/30 transition-colors"
+                    >
+                      Cerrar 2ª Pantalla
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -3750,6 +3860,18 @@ export function App() {
                   roomQueue={roomQueue}
                   onPlayQueueItem={handlePlayQueueItem}
                   onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+                  onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
+                  activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
+                  currentVideoTimeSec={
+                    videoState.mode !== 'idle' && !videoState.isLive
+                      ? livePlaybackSec || videoState.currentTime || 0
+                      : 0
+                  }
+                  onSeekToTimestamp={
+                    videoState.mode !== 'idle' && !videoState.isLive
+                      ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
+                      : undefined
+                  }
                   onPlayCustomUrl={handlePlayCustomUrl}
                   onOpenCloudBrowser={handleOpenCloudBrowser}
                   onStartPollFromQueue={handleStartPollFromQueue}
@@ -3863,6 +3985,8 @@ export function App() {
                     setCatalogSection(sec);
                     if (sec === 'movies' || sec === 'vose' || sec === 'series') {
                       setMobileTab('movies');
+                    } else if (sec === 'tdt') {
+                      setMobileTab('tdt');
                     } else if (sec === 'sports') {
                       setMobileTab('sports');
                     } else if (sec === 'youtube') {
@@ -3872,6 +3996,7 @@ export function App() {
                   lang={lang}
                   userName={currentUser.name}
                   activeVideoRawUrl={videoState.rawSourceUrl}
+                  activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
                   loadingItemId={loadingItemId}
                   roomQueue={roomQueue}
                   watchHistory={watchHistory}
@@ -3886,6 +4011,7 @@ export function App() {
                   onRemoveHistoryItem={handleRemoveHistoryItem}
                   onClearHistory={handleClearAllHistory}
                   onPlaySportsMatch={handlePlaySportsMatch}
+                  onPlayTdtChannel={handlePlayTdtChannel}
                   onPlayYouTubeVideo={handlePlayYouTubeVideo}
                   onPlayCustomUrl={handlePlayCustomUrl}
                   onOpenCloudBrowser={handleOpenCloudBrowser}
@@ -3936,6 +4062,18 @@ export function App() {
                 roomQueue={roomQueue}
                 onPlayQueueItem={handlePlayQueueItem}
                 onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+                onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
+                activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
+                currentVideoTimeSec={
+                  videoState.mode !== 'idle' && !videoState.isLive
+                    ? livePlaybackSec || videoState.currentTime || 0
+                    : 0
+                }
+                onSeekToTimestamp={
+                  videoState.mode !== 'idle' && !videoState.isLive
+                    ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
+                    : undefined
+                }
                 onPlayCustomUrl={handlePlayCustomUrl}
                 onOpenCloudBrowser={handleOpenCloudBrowser}
                 onStartPollFromQueue={handleStartPollFromQueue}
@@ -3959,7 +4097,7 @@ export function App() {
         </div>
 
         {/* Floating Glass Bottom Navigation Island (separated from content, backdrop-blur, outline icons, >=48px touch targets) */}
-        {!isDesktopLayout && !isMobileChatWithKeyboard && (
+        {!isDesktopLayout && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
           <div className="shrink-0 px-3 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#050507] via-[#050507]/90 to-transparent z-30">
             <nav
               className="rounded-3xl bg-[#0B0B12]/90 backdrop-blur-2xl border border-white/[0.12] shadow-[0_18px_45px_rgba(0,0,0,0.85)] p-1.5 grid grid-cols-5 gap-1"
@@ -3969,7 +4107,7 @@ export function App() {
                 [
                   {
                     id: 'movies',
-                    label: lang === 'es' ? 'Cine · TV' : 'Cinema',
+                    label: lang === 'es' ? 'Cine' : 'Cinema',
                     icon: Film,
                     onSelect: () => {
                       setMobileTab('movies');
@@ -3980,6 +4118,15 @@ export function App() {
                       ) {
                         setCatalogSection('movies');
                       }
+                    },
+                  },
+                  {
+                    id: 'tdt',
+                    label: lang === 'es' ? 'TV Vivo' : 'Live TV',
+                    icon: Radio,
+                    onSelect: () => {
+                      setMobileTab('tdt');
+                      setCatalogSection('tdt');
                     },
                   },
                   {
@@ -4002,7 +4149,7 @@ export function App() {
                   },
                   {
                     id: 'chat',
-                    label: lang === 'es' ? 'Chat · Cola' : 'Chat',
+                    label: lang === 'es' ? 'Sala · Chat' : 'Room',
                     icon: MessageSquare,
                     badge: (unreadChatCount + roomQueue.length) || undefined,
                     onSelect: () => {
@@ -4013,18 +4160,11 @@ export function App() {
                       setUnreadChatCount(0);
                     },
                   },
-                  {
-                    id: 'room',
-                    label: `${t.tabRoom} (${participants.length})`,
-                    icon: Users,
-                    onSelect: () => {
-                      setMobileTab('room');
-                    },
-                  },
                 ] as const
               ).map((item) => {
                 const Icon = item.icon;
-                const active = mobileTab === item.id;
+                const active =
+                  mobileTab === item.id || (item.id === 'chat' && mobileTab === 'room');
                 return (
                   <button
                     key={item.id}

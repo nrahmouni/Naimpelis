@@ -32,7 +32,13 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    const autoDismissTimer = setTimeout(() => {
+      onDismissKeepRandom();
+    }, 12000);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      clearTimeout(autoDismissTimer);
+    };
   }, [onDismissKeepRandom]);
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -47,7 +53,7 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
   return (
     <aside
       aria-label={lang === 'es' ? 'Personalizar tu nombre en la sala' : 'Set your display name'}
-      className="fixed bottom-[68px] inset-x-3 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[360px] z-30 rounded-2xl bg-[#12141D]/95 backdrop-blur-xl border border-white/15 shadow-[0_24px_60px_rgba(0,0,0,0.8)] p-4 animate-room-warp"
+      className="fixed bottom-[68px] inset-x-3 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[360px] z-30 rounded-2xl bg-[#0E0F16]/95 backdrop-blur-xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.9)] p-4 animate-room-warp"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
