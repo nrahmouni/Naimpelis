@@ -76,6 +76,39 @@
     scrollbar-width: none;
   }
 
+  .glass-bar {
+    background: rgba(6, 6, 9, 0.72);
+    backdrop-filter: blur(32px) saturate(180%);
+    -webkit-backdrop-filter: blur(32px) saturate(180%);
+  }
+
+  .liquid-glass {
+    background: rgba(18, 19, 26, 0.64);
+    backdrop-filter: blur(36px) saturate(185%);
+    -webkit-backdrop-filter: blur(36px) saturate(185%);
+    border: 1px solid rgba(255, 255, 255, 0.11);
+    box-shadow:
+      0 20px 55px rgba(0, 0, 0, 0.72),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  }
+
+  .liquid-glass-pill {
+    background: rgba(255, 255, 255, 0.075);
+    backdrop-filter: blur(28px) saturate(175%);
+    -webkit-backdrop-filter: blur(28px) saturate(175%);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+
+  .apple-card {
+    background: #0B0C11;
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.62);
+    transition:
+      transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
+      border-color 0.2s ease;
+  }
+
   .glass-panel {
     background: rgba(14, 14, 18, 0.82);
     backdrop-filter: blur(24px);
@@ -191,4 +224,33 @@
 .top-\[68px\] { top: 4.25rem !important; }
 .bottom-\[68px\] { bottom: 4.25rem !important; }
 .bottom-\[86px\] { bottom: 5.375rem !important; }
+
+/* ==========================================================================
+   GOOGLE TV / CHROMECAST PHYSICAL REMOTE 10-FOOT FOCUS RING
+   High-contrast crisp white + crimson halo visible from across the living room.
+   ========================================================================== */
+html.is-google-tv,
+html.is-google-tv body {
+  cursor: none;
+  user-select: none;
+}
+
+html.tv-dpad-active *:focus {
+  outline: 3px solid #FFFFFF !important;
+  outline-offset: 3px !important;
+  box-shadow:
+    0 0 0 6px rgba(225, 29, 72, 0.78),
+    0 16px 38px rgba(0, 0, 0, 0.85) !important;
+  z-index: 30;
+  transition:
+    transform 0.14s cubic-bezier(0.16, 1, 0.3, 1),
+    box-shadow 0.14s ease !important;
+}
+
+html.tv-dpad-active button:focus,
+html.tv-dpad-active a:focus,
+html.tv-dpad-active [role="button"]:focus {
+  transform: scale(1.025);
+}
+
 

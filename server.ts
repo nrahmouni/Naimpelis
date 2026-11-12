@@ -10,7 +10,8 @@ import { Readable } from 'stream';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import puppeteer, { Browser, Page } from 'puppeteer';
+import puppeteer, { type Browser, type Page } from 'puppeteer';
+import ffmpegStatic from 'ffmpeg-static';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -19,6 +20,12 @@ process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg')
+  ? '/usr/bin/ffmpeg'
+  : typeof ffmpegStatic === 'string' && fs.existsSync(ffmpegStatic)
+    ? ffmpegStatic
+    : 'ffmpeg';
 
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
@@ -92,10 +99,6 @@ async function getSharedBrowser(): Promise<Browser> {
   });
   return browser;
 }
-
-setTimeout(() => {
-  getSharedBrowser().catch(() => {});
-}, 1500);
 
 // ============================================================================
 // STREAM EXTRACTION TYPES & CACHE
@@ -616,25 +619,31 @@ async function resolveSeriesKaoVidurlTracks(opts: {
   mediaType: 'movie' | 'tv';
   season?: number;
   episode?: number;
+  yearHint?: string;
+  imdbId?: string | null;
 }): Promise<TrackRecord[]> {
   try {
     const uniqueHints = Array.from(
       new Set(
         opts.titleHints
           .map((t) => String(t || '').replace(/\s*\([^)]*\)/g, '').trim())
-          .filter((t) => t.length >= 2)
+          .filter((t) => normalizeTitleForMatch(t).length >= 2)
       )
     );
     if (uniqueHints.length === 0) return [];
 
     const expectedSegment = opts.mediaType === 'tv' ? '/serie/' : '/pelicula/';
-    const cacheKey = `${opts.mediaType}|${normalizeTitleForMatch(uniqueHints[0])}`;
+    const expectedYearNum =
+      opts.yearHint && /^\d{4}$/.test(opts.yearHint.trim()) ? Number(opts.yearHint.trim()) : 0;
+    const cacheKey = `${opts.mediaType}|${expectedYearNum || ''}|${normalizeTitleForMatch(
+      uniqueHints[0]
+    )}`;
     let matchedShowUrl = seriesKaoSlugCache.get(cacheKey) || null;
 
     if (!seriesKaoSlugCache.has(cacheKey)) {
       const normTargets = uniqueHints
         .map((h) => normalizeTitleForMatch(h))
-        .filter(Boolean);
+        .filter((nt) => nt.length >= 2);
 
       for (const hint of uniqueHints.slice(0, 2)) {
         try {
@@ -652,40 +661,50 @@ async function resolveSeriesKaoVidurlTracks(opts: {
           const sHtml = await sRes.text();
 
           const cardRe =
-            /<a[^>]+href="((?:https?:\/\/serieskao\.top)?\/(?:serie|pelicula)\/[^"]+)"[^>]*>[\s\S]*?<h2[^>]*>([^<]+)<\/h2>/gi;
+            /<a[^>]+href="((?:https?:\/\/serieskao\.top)?\/(?:serie|pelicula)\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
           let bestUrl: string | null = null;
           let bestScore = 0;
           let cm: RegExpExecArray | null;
 
           while ((cm = cardRe.exec(sHtml)) !== null) {
             const href = String(cm[1] || '').trim();
-            const cardTitle = String(cm[2] || '').trim();
+            const cardInner = String(cm[2] || '');
             if (!href.includes(expectedSegment)) continue;
+
+            const h2Match = cardInner.match(/<h2[^>]*>([^<]+)<\/h2>/i);
+            const cardTitle = String(h2Match?.[1] || '').trim();
+            if (!cardTitle) continue;
+
+            const cardYearMatch = cardInner.match(/\b(19\d{2}|20\d{2})\b/);
+            const cardYearNum = cardYearMatch?.[1] ? Number(cardYearMatch[1]) : 0;
+            if (expectedYearNum && cardYearNum && Math.abs(cardYearNum - expectedYearNum) > 1) {
+              continue;
+            }
 
             const fullHref = href.startsWith('http')
               ? href.replace(/\/+$/, '')
               : `https://serieskao.top${href.replace(/\/+$/, '')}`;
             const normCard = normalizeTitleForMatch(cardTitle);
-            if (!normCard) continue;
+            const normCardOutside = normalizeTitleForMatch(
+              cardTitle.replace(/\s*\([^)]*\)/g, '')
+            );
+            if (!normCard || normCard.length < 2) continue;
 
             let score = 0;
             for (const nt of normTargets) {
-              if (normCard === nt) score = Math.max(score, 100);
-              else if (normCard.startsWith(`${nt} `) || nt.startsWith(`${normCard} `)) {
-                score = Math.max(score, 82);
-              } else if (normCard.includes(nt) || nt.includes(normCard)) {
-                score = Math.max(score, 65);
+              if (normCard === nt || (normCardOutside && normCardOutside === nt)) {
+                score = Math.max(score, expectedYearNum && cardYearNum === expectedYearNum ? 105 : 100);
               }
             }
 
             if (score > bestScore) {
               bestScore = score;
               bestUrl = fullHref;
-              if (score === 100) break;
+              if (score >= 105) break;
             }
           }
 
-          if (bestUrl && bestScore >= 65) {
+          if (bestUrl && bestScore >= 100) {
             matchedShowUrl = bestUrl;
             break;
           }
@@ -713,6 +732,13 @@ async function resolveSeriesKaoVidurlTracks(opts: {
     });
     if (!pRes.ok) return [];
     const pHtml = await pRes.text();
+
+    if (opts.imdbId) {
+      const pageImdbMatch = pHtml.match(/\b(tt\d{6,10})\b/i);
+      if (pageImdbMatch?.[1] && pageImdbMatch[1].toLowerCase() !== opts.imdbId.toLowerCase()) {
+        return [];
+      }
+    }
 
     const vidurlMatch = pHtml.match(
       /data-url="((?:https?:\/\/serieskao\.top)?\/vidurl\/[^"]+)"/i
@@ -777,7 +803,10 @@ async function extractAnimeAv1Tracks(opts: {
     if (cachedSlug && Date.now() - cachedSlug.ts < 30 * 60 * 1000) {
       matchedSlug = cachedSlug.slug;
     } else {
-      const normHints = rawHints.map((h) => normalizeTitleForMatch(h)).filter(Boolean);
+      const normHints = rawHints
+        .map((h) => normalizeTitleForMatch(h))
+        .filter((nh) => nh.length >= 2);
+      if (normHints.length === 0) return [];
 
       for (const q of rawHints.slice(0, 3)) {
         try {
@@ -810,19 +839,21 @@ async function extractAnimeAv1Tracks(opts: {
           for (const cand of candidates) {
             const normCand = normalizeTitleForMatch(cand.title);
             const slugLower = cand.slug.toLowerCase();
-            if (!normCand) continue;
+            if (!normCand || normCand.length < 2) continue;
 
             let baseScore = 0;
             for (const nh of normHints) {
               if (normCand === nh || slugLower === nh.replace(/\s+/g, '-')) {
                 baseScore = Math.max(baseScore, 100);
-              } else if (normCand.startsWith(`${nh} `) || slugLower.startsWith(`${nh.replace(/\s+/g, '-')}-`)) {
+              } else if (
+                nh.length >= 5 &&
+                (normCand.startsWith(`${nh} `) ||
+                  slugLower.startsWith(`${nh.replace(/\s+/g, '-')}-`))
+              ) {
                 baseScore = Math.max(baseScore, 84);
-              } else if (normCand.includes(nh) || nh.includes(normCand)) {
-                baseScore = Math.max(baseScore, 65);
               }
             }
-            if (baseScore < 60) continue;
+            if (baseScore < 80) continue;
 
             const isMovieEntry = /\b(movie|pelicula|film)\b/i.test(`${cand.title} ${cand.slug}`);
             const isSpecialOrOva = /\b(ova|special|sunny-side|recap|summary)\b/i.test(
@@ -983,7 +1014,7 @@ async function resolveGnulaSlug(opts: {
     new Set(
       opts.titleHints
         .map((h) => String(h || '').replace(/\s*\([^)]*\)/g, '').trim())
-        .filter((h) => h.length >= 2)
+        .filter((h) => normalizeTitleForMatch(h).length >= 2)
     )
   ).slice(0, 3);
   if (uniqueHints.length === 0) return null;
@@ -997,6 +1028,8 @@ async function resolveGnulaSlug(opts: {
   }
 
   const wantedType = opts.mediaType === 'tv' ? 'serie' : 'pelicula';
+  const expectedYearNum =
+    opts.yearHint && /^\d{4}$/.test(opts.yearHint.trim()) ? Number(opts.yearHint.trim()) : 0;
 
   for (const hint of uniqueHints) {
     try {
@@ -1014,27 +1047,41 @@ async function resolveGnulaSlug(opts: {
       const results: any[] = Array.isArray(json?.results) ? json.results : [];
       if (results.length === 0) continue;
 
-      const normTargets = uniqueHints.map((h) => normalizeTitleForMatch(h)).filter(Boolean);
-      const typeFiltered = results.filter((r) => {
-        const rType = normalizeTitleForMatch(String(r?.type || ''));
-        return !rType || rType.includes(wantedType);
-      });
-      const pool = typeFiltered.length > 0 ? typeFiltered : results;
+      const normTargets = uniqueHints
+        .map((h) => normalizeTitleForMatch(h))
+        .filter((nt) => nt.length >= 2);
+      const hasAnyTypedResult = results.some((r) => Boolean(String(r?.type || '').trim()));
+      const pool = hasAnyTypedResult
+        ? results.filter((r) =>
+            normalizeTitleForMatch(String(r?.type || '')).includes(wantedType)
+          )
+        : results;
+      if (pool.length === 0) continue;
 
-      let chosen =
-        pool.find((r) => {
-          const rTitle = normalizeTitleForMatch(String(r?.title || ''));
-          const yearMatches =
-            !opts.yearHint || !r?.year || String(r.year).trim() === String(opts.yearHint).trim();
-          return normTargets.includes(rTitle) && yearMatches;
-        }) ||
-        pool.find((r) => normTargets.includes(normalizeTitleForMatch(String(r?.title || '')))) ||
-        pool.find((r) => {
-          const rTitle = normalizeTitleForMatch(String(r?.title || ''));
-          return normTargets.some(
-            (nt) => nt.length >= 4 && (rTitle.startsWith(nt) || nt.startsWith(rTitle))
-          );
-        });
+      const isYearCompatible = (rawYear: any): boolean => {
+        if (!expectedYearNum) return true;
+        const ry = String(rawYear || '').trim();
+        if (!/^\d{4}$/.test(ry)) return true;
+        return Math.abs(Number(ry) - expectedYearNum) <= 1;
+      };
+
+      const isExactTitle = (rawTitle: any): boolean => {
+        const str = String(rawTitle || '').trim();
+        const rFull = normalizeTitleForMatch(str);
+        const rOutside = normalizeTitleForMatch(str.replace(/\s*\([^)]*\)/g, ''));
+        return (
+          (rFull.length >= 2 && normTargets.includes(rFull)) ||
+          (rOutside.length >= 2 && normTargets.includes(rOutside))
+        );
+      };
+
+      const chosen =
+        pool.find(
+          (r) =>
+            isExactTitle(r?.title) &&
+            expectedYearNum > 0 &&
+            Number(String(r?.year || '').trim()) === expectedYearNum
+        ) || pool.find((r) => isExactTitle(r?.title) && isYearCompatible(r?.year));
 
       if (chosen?.url) {
         const m = String(chosen.url).match(/\/ver\/([^/?#]+)\/?/i);
@@ -1267,6 +1314,8 @@ async function extractEmbed69SpanishTracks(opts: {
             mediaType: opts.mediaType,
             season: opts.season,
             episode: opts.episode,
+            yearHint,
+            imdbId,
           }).catch(() => [] as TrackRecord[])
         : Promise.resolve([] as TrackRecord[]),
       isLikelyAnime && hints.length > 0
@@ -1283,10 +1332,10 @@ async function extractEmbed69SpanishTracks(opts: {
     const countPerLang: Record<string, number> = {};
     const merged: TrackRecord[] = [];
 
-    // Prioritize native HLS extractors (`vidhide_hls` / `embed_sniff`) ahead of `web_embed` backups
+    // Prioritize exact IMDb-matched `directTracks` FIRST, followed by year-verified native HLS extractors
     const orderedCandidates = [
-      ...gnulaTracks.filter((t) => t.resolverType !== 'web_embed'),
       ...directTracks,
+      ...gnulaTracks.filter((t) => t.resolverType !== 'web_embed'),
       ...skTracks,
       ...animeTracks,
       ...gnulaTracks.filter((t) => t.resolverType === 'web_embed'),
@@ -1852,10 +1901,28 @@ async function decodeNuploadToHls(embedUrlOrB64: string): Promise<{ rawM3u8: str
   }
 }
 
-async function extractMovidyPageTracks(movidyVerUrl: string): Promise<TrackRecord[]> {
+interface MovidyPageMetadata {
+  isTvShow: boolean;
+  cleanTitle: string;
+  year: string;
+  durationText: string;
+  director: string;
+  cast: { id: number; name: string; character: string }[];
+  overview: string;
+  html: string;
+}
+
+const movidyPageMetaCache = new Map<string, { meta: MovidyPageMetadata; ts: number }>();
+
+async function fetchMovidyPageMetadata(movidyVerUrl: string): Promise<MovidyPageMetadata | null> {
   try {
-    const cleanUrl = movidyVerUrl.trim();
-    if (!cleanUrl.includes('movidy.pw/ver/')) return [];
+    const cleanUrl = String(movidyVerUrl || '').trim();
+    if (!cleanUrl.includes('movidy.pw/ver/')) return null;
+
+    const cached = movidyPageMetaCache.get(cleanUrl);
+    if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
+      return cached.meta;
+    }
 
     let html = '';
     try {
@@ -1870,12 +1937,96 @@ async function extractMovidyPageTracks(movidyVerUrl: string): Promise<TrackRecor
         html = await res.text();
       }
     } catch {
-      const fb = await curlGetText(cleanUrl, { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' }, 5).catch(() => ({ text: '' }));
+      const fb = await curlGetText(
+        cleanUrl,
+        { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
+        5
+      ).catch(() => ({ text: '' }));
       html = fb.text;
     }
 
-    if (!html) return [];
+    if (!html) return null;
 
+    const isTvShow = html.includes('id="eps"');
+    const h2Match = html.match(/<h2>\s*Ver\s+([\s\S]*?)\s+Movidy\s*<\/h2>/i);
+    const cleanTitle = h2Match?.[1] ? h2Match[1].replace(/<[^>]+>/g, '').trim() : '';
+
+    const numbersBlock =
+      html.match(/<div\s+class="numbers">([\s\S]*?)<\/div>\s*<div\s+class="links">/i)?.[1] ||
+      html.match(/<div\s+class="numbers">([\s\S]{0,400})/i)?.[1] ||
+      '';
+    const yearMatch = numbersBlock.match(/<span>\s*(19\d{2}|20\d{2})\s*<\/span>/i);
+    const year = yearMatch?.[1] ? yearMatch[1].trim() : '';
+    const durMatch = numbersBlock.match(/<span>\s*(\d+h\s*\d*m(?:in)?|\d+\s*min)\s*<\/span>/i);
+    const durationText = durMatch?.[1] ? durMatch[1].trim() : '';
+
+    const linksBlock =
+      html.match(/<div\s+class="links">([\s\S]*?)<\/div>\s*<p>/i)?.[1] || '';
+    const dirMatch = linksBlock.match(/<b>\s*Director:\s*<\/b>\s*<a[^>]*>([^<]+)<\/a>/i);
+    const director = dirMatch?.[1] ? dirMatch[1].trim() : '';
+
+    const castBlock = linksBlock.split(/<b>\s*Reparto:\s*<\/b>/i)[1] || '';
+    const castNames = [...castBlock.matchAll(/<a[^>]*>([^<]+)<\/a>/gi)]
+      .map((m) => String(m[1] || '').replace(/,+$/, '').trim())
+      .filter(Boolean)
+      .slice(0, 8);
+    const cast = castNames.map((name, idx) => ({
+      id: idx + 1,
+      name,
+      character: 'Reparto',
+    }));
+
+    const pMatch = html.match(/<div\s+class="links">[\s\S]*?<\/div>\s*<p>([\s\S]*?)<\/p>/i);
+    const overview = pMatch?.[1] ? pMatch[1].replace(/<[^>]+>/g, '').trim() : '';
+
+    const meta: MovidyPageMetadata = {
+      isTvShow,
+      cleanTitle,
+      year,
+      durationText,
+      director,
+      cast,
+      overview,
+      html,
+    };
+    movidyPageMetaCache.set(cleanUrl, { meta, ts: Date.now() });
+    if (movidyPageMetaCache.size > 300) {
+      const oldest = movidyPageMetaCache.keys().next().value;
+      if (oldest) movidyPageMetaCache.delete(oldest);
+    }
+    return meta;
+  } catch {
+    return null;
+  }
+}
+
+async function extractMovidyPageTracks(
+  movidyVerUrl: string,
+  opts?: { expectedYear?: string; requireMovieOnly?: boolean }
+): Promise<TrackRecord[]> {
+  try {
+    const cleanUrl = movidyVerUrl.trim();
+    if (!cleanUrl.includes('movidy.pw/ver/')) return [];
+
+    const meta = await fetchMovidyPageMetadata(cleanUrl);
+    if (!meta || !meta.html) return [];
+
+    if (opts?.requireMovieOnly && meta.isTvShow) {
+      return [];
+    }
+
+    if (
+      opts?.expectedYear &&
+      /^\d{4}$/.test(opts.expectedYear.trim()) &&
+      meta.year &&
+      /^\d{4}$/.test(meta.year)
+    ) {
+      if (Math.abs(Number(meta.year) - Number(opts.expectedYear.trim())) > 1) {
+        return [];
+      }
+    }
+
+    const html = meta.html;
     const slug =
       cleanUrl
         .split('/ver/')[1]
@@ -1936,13 +2087,22 @@ function normalizeTitleForMatch(raw: string): string {
     .trim();
 }
 
-async function findMovidyUrlByTitle(title: string): Promise<string | null> {
+async function findMovidyUrlByTitle(
+  title: string,
+  expectedYear?: string
+): Promise<string | null> {
   try {
     const rawClean = String(title || '').trim();
     const clean = rawClean.replace(/\s*\([^)]*\)/g, '').trim();
     const parenPart = (rawClean.match(/\(([^)]+)\)/)?.[1] || '').trim();
     const queryTerm = clean || rawClean;
-    if (!queryTerm || queryTerm.length < 2) return null;
+    const normTarget = normalizeTitleForMatch(clean || rawClean);
+    const normParenTarget = normalizeTitleForMatch(parenPart);
+
+    // Reject empty or 1-char normalized titles (e.g. non-Latin / CJK scripts) so they NEVER match random titles!
+    if (!queryTerm || queryTerm.length < 2 || !normTarget || normTarget.length < 2) {
+      return null;
+    }
 
     const searchUrl = `https://movidy.pw/?s=${encodeURIComponent(queryTerm)}`;
     let html = '';
@@ -1964,11 +2124,8 @@ async function findMovidyUrlByTitle(title: string): Promise<string | null> {
 
     const itemRe =
       /<li>\s*<a\s+href="((?:https?:\/\/movidy\.[a-z]+)?\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>/gi;
-    const normTarget = normalizeTitleForMatch(clean || rawClean);
-    const normParenTarget = normalizeTitleForMatch(parenPart);
 
-    let bestUrl: string | null = null;
-    let bestScore = 0;
+    const exactMatches: string[] = [];
     let m: RegExpExecArray | null;
 
     while ((m = itemRe.exec(html)) !== null) {
@@ -1981,35 +2138,36 @@ async function findMovidyUrlByTitle(title: string): Promise<string | null> {
       const outsideNorm = normalizeTitleForMatch(rawSpanTitle.replace(/\s*\([^)]*\)/g, ''));
       const insideNorm = normalizeTitleForMatch(rawSpanTitle.match(/\(([^)]+)\)/)?.[1] || '');
 
-      let score = 0;
-      if (
-        fullNorm === normTarget ||
-        (outsideNorm && outsideNorm === normTarget) ||
-        (insideNorm && insideNorm === normTarget) ||
-        (normParenTarget &&
-          (outsideNorm === normParenTarget || insideNorm === normParenTarget))
-      ) {
-        score = 100;
-      } else if (
-        (outsideNorm && outsideNorm.startsWith(`${normTarget} `)) ||
-        (insideNorm && insideNorm.startsWith(`${normTarget} `))
-      ) {
-        score = 80;
-      } else if (
-        fullNorm.split(' ').includes(normTarget) ||
-        fullNorm.includes(normTarget) ||
-        (outsideNorm && normTarget.includes(outsideNorm))
-      ) {
-        score = 55;
-      }
+      const isExact =
+        (fullNorm.length >= 2 && fullNorm === normTarget) ||
+        (outsideNorm.length >= 2 && outsideNorm === normTarget) ||
+        (insideNorm.length >= 2 && insideNorm === normTarget) ||
+        (normParenTarget.length >= 2 &&
+          (outsideNorm === normParenTarget || insideNorm === normParenTarget));
 
-      if (score > bestScore) {
-        bestScore = score;
-        bestUrl = fullUrl;
-        if (score === 100) break;
+      if (isExact && !exactMatches.includes(fullUrl)) {
+        exactMatches.push(fullUrl);
       }
     }
-    return bestUrl;
+
+    if (exactMatches.length === 0) return null;
+
+    // Verify movie type + release year against Movidy's `/ver/` page so homonym movies from different decades never collide!
+    const expectedYearNum =
+      expectedYear && /^\d{4}$/.test(expectedYear.trim()) ? Number(expectedYear.trim()) : 0;
+
+    for (const candidateUrl of exactMatches.slice(0, 3)) {
+      const meta = await fetchMovidyPageMetadata(candidateUrl);
+      if (!meta || meta.isTvShow) continue;
+      if (expectedYearNum && meta.year && /^\d{4}$/.test(meta.year)) {
+        if (Math.abs(Number(meta.year) - expectedYearNum) > 1) {
+          continue;
+        }
+      }
+      return candidateUrl;
+    }
+
+    return null;
   } catch {
     return null;
   }
@@ -2027,11 +2185,12 @@ async function probeAvailableLanguages(opts: {
   episode?: number;
   titleHints?: string[];
   movidyUrl?: string;
+  yearHint?: string;
 }): Promise<('ES' | 'LAT' | 'VOSE' | 'EN')[]> {
   const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
   const season = opts.mediaType === 'tv' ? opts.season || 1 : 0;
   const episode = opts.mediaType === 'tv' ? opts.episode || 1 : 0;
-  const cacheKey = `${opts.mediaType}|${cleanId}|${season}|${episode}`;
+  const cacheKey = `${opts.mediaType}|${cleanId || opts.movidyUrl || ''}|${season}|${episode}`;
 
   const cached = availableLangsCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
@@ -2042,13 +2201,16 @@ async function probeAvailableLanguages(opts: {
     new Set((opts.titleHints || []).map((t) => String(t || '').trim()).filter(Boolean))
   );
 
+  const hasExplicitMovidy = Boolean(
+    opts.movidyUrl && opts.movidyUrl.includes('movidy.pw/ver/')
+  );
+
   const movidyPromise = (async (): Promise<TrackRecord[]> => {
     if (opts.mediaType !== 'movie') return [];
-    let mvUrl =
-      opts.movidyUrl && opts.movidyUrl.includes('movidy.pw/ver/') ? opts.movidyUrl : '';
+    let mvUrl = hasExplicitMovidy ? opts.movidyUrl! : '';
     if (!mvUrl) {
       for (const h of hints.slice(0, 2)) {
-        const found = await findMovidyUrlByTitle(h);
+        const found = await findMovidyUrlByTitle(h, opts.yearHint);
         if (found) {
           mvUrl = found;
           break;
@@ -2056,7 +2218,12 @@ async function probeAvailableLanguages(opts: {
       }
     }
     if (!mvUrl) return [];
-    return extractMovidyPageTracks(mvUrl);
+    return extractMovidyPageTracks(
+      mvUrl,
+      hasExplicitMovidy
+        ? undefined
+        : { expectedYear: opts.yearHint, requireMovieOnly: true }
+    );
   })();
 
   const embedPromise =
@@ -2121,8 +2288,185 @@ async function probeAvailableLanguages(opts: {
 // SUBSYSTEM 2: PURE CRYPTO + HTTP LIVE SPORTS DECOMPILER (<350ms, ZERO CHROME)
 // ============================================================================
 function healUpstreamSportsDomain(rawUrl: string): string {
-  // Auto-heal rotated mirror hostnames (e.g. doc.tilinhd.lol -> dog.tilinhd.lol)
-  return rawUrl.replace(/\/\/doc\.tilinhd\.lol\b/gi, '//dog.tilinhd.lol');
+  // Auto-heal rotated mirror hostnames (doc.tilinhd.lol / dog.tilinhd.lol -> pig.footunder.online)
+  return rawUrl.replace(/\/\/(?:doc|dog)\.tilinhd\.lol\b/gi, '//pig.footunder.online');
+}
+
+const liveFrameHealthCache = new Map<string, { ok: boolean; ts: number }>();
+
+async function verifyM3u8HasCleanVideoFrame(
+  m3uText: string,
+  m3uUrl: string,
+  referer: string
+): Promise<boolean> {
+  const now = Date.now();
+  const cached = liveFrameHealthCache.get(m3uUrl);
+  if (cached && now - cached.ts < 150_000) {
+    return cached.ok;
+  }
+
+  try {
+    const segLines = m3uText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter((l) => l && !l.startsWith('#'));
+    if (segLines.length === 0) return false;
+
+    // Pick the freshest segment near the live edge
+    const chosenRel = segLines[segLines.length - 1] || segLines[0];
+    const segUrl = new URL(chosenRel, m3uUrl).href;
+
+    // If nested variant playlist, follow one level
+    if (/\.m3u8(\?|$)/i.test(segUrl)) {
+      const subText = await fetchSportsHtmlHop(segUrl, referer);
+      if (subText.includes('#EXTM3U')) {
+        return verifyM3u8HasCleanVideoFrame(subText, segUrl, referer);
+      }
+      return false;
+    }
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 3500);
+    const chunks: Buffer[] = [];
+    let totalBytes = 0;
+
+    try {
+      const resp = await fetch(segUrl, {
+        headers: {
+          Referer: referer,
+          'User-Agent': CHROME_UA,
+          Range: 'bytes=0-380000',
+        },
+        signal: ctrl.signal,
+      });
+      if (!resp.ok || !resp.body) {
+        clearTimeout(timer);
+        liveFrameHealthCache.set(m3uUrl, { ok: false, ts: now });
+        return false;
+      }
+
+      const reader = resp.body.getReader();
+      while (totalBytes < 380_000) {
+        const { done, value } = await reader.read();
+        if (done || !value) break;
+        chunks.push(Buffer.from(value));
+        totalBytes += value.byteLength;
+      }
+      ctrl.abort();
+    } catch {
+      // Partial buffer already collected before abort is expected
+    } finally {
+      clearTimeout(timer);
+    }
+
+    const sampleBuf = Buffer.concat(chunks);
+    if (sampleBuf.length < 16_000) {
+      liveFrameHealthCache.set(m3uUrl, { ok: false, ts: now });
+      return false;
+    }
+
+    let ffmpegSpawnFailed = false;
+    const rawFrame = await new Promise<Buffer>((resolve) => {
+      const ff = spawn(FFMPEG_BIN, [
+        '-hide_banner',
+        '-loglevel',
+        'error',
+        '-i',
+        'pipe:0',
+        '-vf',
+        'scale=160:90',
+        '-frames:v',
+        '1',
+        '-f',
+        'rawvideo',
+        '-pix_fmt',
+        'rgb24',
+        'pipe:1',
+      ]);
+      const outChunks: Buffer[] = [];
+      const killTimer = setTimeout(() => {
+        try {
+          ff.kill('SIGKILL');
+        } catch {
+          // ignore
+        }
+      }, 2200);
+      ff.stdout.on('data', (c: Buffer) => {
+        outChunks.push(c);
+      });
+      ff.on('error', () => {
+        ffmpegSpawnFailed = true;
+        clearTimeout(killTimer);
+        resolve(Buffer.alloc(0));
+      });
+      ff.on('close', () => {
+        clearTimeout(killTimer);
+        resolve(Buffer.concat(outChunks));
+      });
+      ff.stdin.on('error', () => {});
+      ff.stdin.end(sampleBuf);
+    });
+
+    if (ffmpegSpawnFailed) {
+      // Never block valid live streams if FFmpeg binary cannot spawn in container
+      liveFrameHealthCache.set(m3uUrl, { ok: true, ts: now });
+      return true;
+    }
+
+    const expectedBytes = 160 * 90 * 3;
+    if (rawFrame.length < expectedBytes) {
+      liveFrameHealthCache.set(m3uUrl, { ok: false, ts: now });
+      return false;
+    }
+
+    // Pixel-level guard against scrambled/corrupted satellite feeds:
+    // 1) Detect YUV (0,0,0) uninitialized decoder-green (`G > 95 && R < 45 && B < 45 && G > R + 55 && G > B + 55`),
+    //    including top-25%-rainbow-garbled + bottom-75%-green feeds that fool JPEG size checks!
+    // 2) Detect dead black/flat static feeds via luma standard deviation.
+    const totalPixels = 160 * 90;
+    const bottomStartY = 45;
+    const bottomPixels = 160 * (90 - bottomStartY);
+    let decoderGreenAll = 0;
+    let decoderGreenBottom = 0;
+    let lumaSum = 0;
+    let lumaSqSum = 0;
+
+    for (let y = 0; y < 90; y++) {
+      for (let x = 0; x < 160; x++) {
+        const idx = (y * 160 + x) * 3;
+        const r = rawFrame[idx];
+        const g = rawFrame[idx + 1];
+        const b = rawFrame[idx + 2];
+
+        const isDecoderGreen =
+          g > 95 && r < 45 && b < 45 && g > r + 55 && g > b + 55;
+        if (isDecoderGreen) {
+          decoderGreenAll++;
+          if (y >= bottomStartY) decoderGreenBottom++;
+        }
+
+        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
+        lumaSum += luma;
+        lumaSqSum += luma * luma;
+      }
+    }
+
+    const greenAllRatio = decoderGreenAll / totalPixels;
+    const greenBottomRatio = decoderGreenBottom / bottomPixels;
+    const meanLuma = lumaSum / totalPixels;
+    const lumaVariance = Math.max(0, lumaSqSum / totalPixels - meanLuma * meanLuma);
+    const lumaStdDev = Math.sqrt(lumaVariance);
+
+    const isClean =
+      greenBottomRatio < 0.08 &&
+      greenAllRatio < 0.10 &&
+      lumaStdDev >= 4.0;
+
+    liveFrameHealthCache.set(m3uUrl, { ok: isClean, ts: now });
+    return isClean;
+  } catch {
+    return false;
+  }
 }
 
 function decodeSportsPlaystreamEconfig(econfig: string): any | null {
@@ -2169,7 +2513,12 @@ async function fetchSportsHtmlHop(url: string, referer: string): Promise<string>
 
 async function extractLiveSportsHlsDirect(
   initialUrl: string
-): Promise<{ streamUrl: string; referer: string; isDirectMp4: boolean } | null> {
+): Promise<{
+  streamUrl: string;
+  referer: string;
+  isDirectMp4: boolean;
+  isBrokenGreenFeed?: boolean;
+} | null> {
   let currentUrl = healUpstreamSportsDomain(initialUrl);
   let currentReferer = 'https://www.rojadirectv.live/';
   try {
@@ -2183,7 +2532,7 @@ async function extractLiveSportsHlsDirect(
     const html = await fetchSportsHtmlHop(currentUrl, currentReferer);
     if (!html) break;
 
-    // 1. Playstream / TilinHD / Footunder `window._econfig` pure crypto decode!
+    // 1. Playstream / Footunder `window._econfig` pure crypto decode + green-screen guard!
     const econfigMatch = html.match(/window\._econfig\s*=\s*['"]([^'"]+)['"]/);
     if (econfigMatch && econfigMatch[1]) {
       const cfg = decodeSportsPlaystreamEconfig(econfigMatch[1]);
@@ -2199,8 +2548,6 @@ async function extractLiveSportsHlsDirect(
             : { url: new URL(rawCandidate, currentUrl).href, ref: currentUrl },
         ];
 
-        // dog.tilinhd.lol intercepts /playstream.php?stream_tv= only in a client ServiceWorker (404 on HTTP),
-        // whereas pig.footunder.online proxies the same CDN upstream natively on the server.
         if (!origin.includes('pig.footunder.online') && rawCandidate.startsWith('http')) {
           candidateTargets.push({
             url: `https://pig.footunder.online/playstream.php?stream_tv=${Buffer.from(rawCandidate).toString('base64')}`,
@@ -2208,9 +2555,15 @@ async function extractLiveSportsHlsDirect(
           });
         }
 
+        let sawM3uButScrambled = false;
         for (const cand of candidateTargets) {
           const checkM3u = await fetchSportsHtmlHop(cand.url, cand.ref);
           if (checkM3u.includes('#EXTM3U')) {
+            const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, cand.url, cand.ref);
+            if (!frameOk) {
+              sawM3uButScrambled = true;
+              continue;
+            }
             return {
               streamUrl: cand.url,
               referer: cand.ref,
@@ -2218,17 +2571,43 @@ async function extractLiveSportsHlsDirect(
             };
           }
         }
+        if (sawM3uButScrambled) {
+          return {
+            streamUrl: '',
+            referer: currentUrl,
+            isDirectMp4: false,
+            isBrokenGreenFeed: true,
+          };
+        }
       }
-      return null;
+      return {
+        streamUrl: '',
+        referer: currentUrl,
+        isDirectMp4: false,
+        isBrokenGreenFeed: true,
+      };
     }
 
-    // 2. Direct `.m3u8` in Clappr / JWPlayer / HLS.js config
+    // 2. Direct `.m3u8` in Clappr / JWPlayer / HLS.js config (verified clean frame!)
     const directM3u8Match = html.match(
       /(?:source|file|src|streamUrl)\s*:\s*['"](https?:\/\/[^'"]+\.m3u8[^'"]*)['"]/i
     );
     if (directM3u8Match && directM3u8Match[1] && !isBlockedAdUrl(directM3u8Match[1])) {
+      const m3uCandidate = directM3u8Match[1];
+      const checkM3u = await fetchSportsHtmlHop(m3uCandidate, currentUrl);
+      if (checkM3u.includes('#EXTM3U')) {
+        const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, m3uCandidate, currentUrl);
+        if (!frameOk) {
+          return {
+            streamUrl: '',
+            referer: currentUrl,
+            isDirectMp4: false,
+            isBrokenGreenFeed: true,
+          };
+        }
+      }
       return {
-        streamUrl: directM3u8Match[1],
+        streamUrl: m3uCandidate,
         referer: currentUrl,
         isDirectMp4: false,
       };
@@ -2434,7 +2813,20 @@ app.get('/.well-known/assetlinks.json', (_req, res) => {
   res.sendFile(target);
 });
 
-// Direct Ready-to-Install Signed Android APK Download
+// Direct Ready-to-Install Signed Android APK Download (Mobile & Google TV / Chromecast)
+app.get(['/NAIM-CINE-TV.apk', '/tv.apk', '/googletv.apk', '/api/download/apk-tv'], (_req, res) => {
+  const pubTvApk = path.resolve(__dirname, 'public', 'NAIM-CINE-TV.apk');
+  const distTvApk = path.resolve(__dirname, 'dist', 'NAIM-CINE-TV.apk');
+  const target = fs.existsSync(pubTvApk) ? pubTvApk : distTvApk;
+  if (!fs.existsSync(target)) {
+    return res.status(404).json({ error: 'Google TV APK file not found' });
+  }
+  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+  res.setHeader('Content-Disposition', 'attachment; filename="NAIM-CINE-TV.apk"');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.sendFile(target);
+});
+
 app.get(['/NAIM-CINE.apk', '/naimcine.apk', '/api/download/apk'], (_req, res) => {
   const pubApk = path.resolve(__dirname, 'public', 'NAIM-CINE.apk');
   const distApk = path.resolve(__dirname, 'dist', 'NAIM-CINE.apk');
@@ -3042,12 +3434,24 @@ async function startCloudSession(roomId: string, targetUrl: string) {
       req.abort().catch(() => {});
       return;
     }
-    if (reqUrl.includes('.m3u8') || reqUrl.includes('stream_tv=') || /\.mp4(\?|$)/i.test(reqUrl)) {
+    if (/\.mp4(\?|$)/i.test(reqUrl)) {
       const ref = req.headers()['referer'] || session.url;
-      const proxied = /\.mp4(\?|$)/i.test(reqUrl)
-        ? buildTsProxyUrl(reqUrl, ref)
-        : buildHlsProxyUrl(reqUrl, ref);
-      session.detectedStreamUrl = proxied;
+      session.detectedStreamUrl = buildTsProxyUrl(reqUrl, ref);
+    } else if (reqUrl.includes('.m3u8') || reqUrl.includes('stream_tv=')) {
+      const ref = req.headers()['referer'] || session.url;
+      // Verify live frame health asynchronously before exposing `detectedStreamUrl` so scrambled green satellite streams are never promoted!
+      void (async () => {
+        try {
+          const m3uText = await fetchSportsHtmlHop(reqUrl, ref);
+          if (m3uText.includes('#EXTM3U')) {
+            const clean = await verifyM3u8HasCleanVideoFrame(m3uText, reqUrl, ref);
+            if (!clean) return;
+          }
+          session.detectedStreamUrl = buildHlsProxyUrl(reqUrl, ref);
+        } catch {
+          // ignore
+        }
+      })();
     }
     req.continue().catch(() => {});
   });
@@ -4092,15 +4496,62 @@ function markHostNeedsCurlFallback(urlStr: string): void {
 
 const dvbAacSegmentCache = new Map<string, { promise: Promise<Buffer>; ts: number }>();
 
-function remuxDvbTsToAac(segmentUrl: string, referer: string): Promise<Buffer> {
+interface DvbTranscodeTask {
+  run: () => void;
+  highPriority: boolean;
+}
+let activeDvbTranscodes = 0;
+const MAX_CONCURRENT_DVB_TRANSCODES = 2;
+const dvbTranscodeQueue: DvbTranscodeTask[] = [];
+
+function scheduleDvbTranscode<T>(fn: () => Promise<T>, highPriority: boolean): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const execTask = () => {
+      activeDvbTranscodes++;
+      fn()
+        .then(resolve, reject)
+        .finally(() => {
+          activeDvbTranscodes = Math.max(0, activeDvbTranscodes - 1);
+          const next = dvbTranscodeQueue.shift();
+          if (next) next.run();
+        });
+    };
+    if (activeDvbTranscodes < MAX_CONCURRENT_DVB_TRANSCODES) {
+      execTask();
+    } else if (highPriority) {
+      let insertIdx = 0;
+      while (insertIdx < dvbTranscodeQueue.length && dvbTranscodeQueue[insertIdx].highPriority) {
+        insertIdx++;
+      }
+      dvbTranscodeQueue.splice(insertIdx, 0, { run: execTask, highPriority: true });
+    } else {
+      dvbTranscodeQueue.push({ run: execTask, highPriority: false });
+    }
+  });
+}
+
+interface RollingDvbSeg {
+  seq: number;
+  extinf: string;
+  absUrl: string;
+  proxiedUrl: string;
+  ts: number;
+}
+const dvbRollingPlaylistMap = new Map<string, RollingDvbSeg[]>();
+
+function remuxDvbTsToAac(
+  segmentUrl: string,
+  referer: string,
+  highPriority = false
+): Promise<Buffer> {
   const now = Date.now();
   const cached = dvbAacSegmentCache.get(segmentUrl);
-  if (cached && now - cached.ts < 30_000) {
+  if (cached && now - cached.ts < 75_000) {
     return cached.promise;
   }
 
   for (const [k, v] of dvbAacSegmentCache.entries()) {
-    if (now - v.ts > 35_000 || dvbAacSegmentCache.size > 28) {
+    if (now - v.ts > 80_000 || dvbAacSegmentCache.size > 65) {
       dvbAacSegmentCache.delete(k);
     }
   }
@@ -4118,7 +4569,7 @@ function remuxDvbTsToAac(segmentUrl: string, referer: string): Promise<Buffer> {
     try {
       const resp = await fetch(segmentUrl, {
         headers: segHeaders,
-        signal: AbortSignal.timeout(5500),
+        signal: AbortSignal.timeout(5000),
       });
       if (resp.ok) {
         rawBuf = Buffer.from(await resp.arrayBuffer());
@@ -4128,78 +4579,104 @@ function remuxDvbTsToAac(segmentUrl: string, referer: string): Promise<Buffer> {
     }
 
     if (!rawBuf || rawBuf.length === 0) {
-      rawBuf = await curlGetBuffer(segmentUrl, segHeaders, 8);
+      rawBuf = await curlGetBuffer(segmentUrl, segHeaders, 7);
     }
     if (!rawBuf || rawBuf.length === 0) {
       throw new Error('Empty DVB TS segment');
     }
 
-    return await new Promise<Buffer>((resolve) => {
-      const ff = spawn('ffmpeg', [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-probesize',
-        '500000',
-        '-analyzeduration',
-        '500000',
-        '-threads',
-        '2',
-        '-f',
-        'mpegts',
-        '-i',
-        'pipe:0',
-        '-map',
-        '0:v:0',
-        '-map',
-        '0:a:0?',
-        '-c:v',
-        'copy',
-        '-c:a',
-        'aac',
-        '-ac',
-        '2',
-        '-ar',
-        '48000',
-        '-b:a',
-        '128k',
-        '-copyts',
-        '-muxdelay',
-        '0',
-        '-muxpreload',
-        '0',
-        '-f',
-        'mpegts',
-        'pipe:1',
-      ]);
+    return await scheduleDvbTranscode(
+      () =>
+        new Promise<Buffer>((resolve) => {
+          const ff = spawn(FFMPEG_BIN, [
+            '-hide_banner',
+            '-loglevel',
+            'error',
+            '-fflags',
+            '+genpts+discardcorrupt',
+            '-flags2',
+            '+showall',
+            '-threads',
+            '2',
+            '-f',
+            'mpegts',
+            '-i',
+            'pipe:0',
+            '-map',
+            '0:v:0',
+            '-map',
+            '0:a:0?',
+            '-vf',
+            'field=top,scale=960:540:flags=fast_bilinear,setsar=1:1',
+            '-c:v',
+            'libx264',
+            '-preset',
+            'ultrafast',
+            '-tune',
+            'zerolatency',
+            '-profile:v',
+            'main',
+            '-level',
+            '3.1',
+            '-pix_fmt',
+            'yuv420p',
+            '-bf',
+            '0',
+            '-g',
+            '50',
+            '-crf',
+            '24',
+            '-maxrate',
+            '1600k',
+            '-bufsize',
+            '3200k',
+            '-c:a',
+            'aac',
+            '-ac',
+            '2',
+            '-ar',
+            '48000',
+            '-b:a',
+            '112k',
+            '-copyts',
+            '-muxdelay',
+            '0',
+            '-muxpreload',
+            '0',
+            '-f',
+            'mpegts',
+            'pipe:1',
+          ]);
 
-      const outChunks: Buffer[] = [];
-      const safetyTimer = setTimeout(() => {
-        try {
-          ff.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-      }, 6500);
+          const outChunks: Buffer[] = [];
+          const safetyTimer = setTimeout(() => {
+            try {
+              ff.kill('SIGKILL');
+            } catch {
+              // ignore
+            }
+          }, 6000);
 
-      ff.stdout.on('data', (chunk: Buffer) => outChunks.push(chunk));
-      ff.on('error', () => {
-        clearTimeout(safetyTimer);
-        resolve(rawBuf!);
-      });
-      ff.on('close', (code) => {
-        clearTimeout(safetyTimer);
-        const remuxed = Buffer.concat(outChunks);
-        if (code === 0 && remuxed.length > 512) {
-          resolve(remuxed);
-        } else {
-          resolve(rawBuf!);
-        }
-      });
+          ff.stdout.on('data', (chunk: Buffer) => outChunks.push(chunk));
+          ff.on('error', () => {
+            clearTimeout(safetyTimer);
+            resolve(rawBuf!);
+          });
+          ff.on('close', (code) => {
+            clearTimeout(safetyTimer);
+            const remuxed = Buffer.concat(outChunks);
+            if (code === 0 && remuxed.length > 512) {
+              resolve(remuxed);
+            } else {
+              resolve(rawBuf!);
+            }
+          });
 
-      ff.stdin.on('error', () => {});
-      ff.stdin.end(rawBuf);
-    });
+          ff.stdin.on('error', () => {});
+          ff.stdin.end(rawBuf);
+        }),
+      highPriority
+    );
   })();
 
   jobPromise.catch(() => {
@@ -4209,6 +4686,276 @@ function remuxDvbTsToAac(segmentUrl: string, referer: string): Promise<Buffer> {
   dvbAacSegmentCache.set(segmentUrl, { promise: jobPromise, ts: now });
   return jobPromise;
 }
+
+// ============================================================================
+// CONTINUOUS LIVE DVB-T2 PROGRESSIVE H.264 IDR + AAC RELAY ENGINE
+// Fixes Spanish Atresmedia (Antena 3, laSexta, Neox, Nova, Mega, Atreseries)
+// & Mediaset Open-GOP non-IDR / PAFF 1080i streams that render black on MSE/Android
+// ============================================================================
+interface LiveDvbRelaySession {
+  key: string;
+  upstreamUrl: string;
+  dir: string;
+  proc: ReturnType<typeof spawn>;
+  startedAt: number;
+  lastAccessAt: number;
+  readyPromise: Promise<boolean>;
+  dead: boolean;
+}
+
+const DVB_LIVE_ROOT = '/tmp/naim-dvb-live';
+const liveDvbSessions = new Map<string, LiveDvbRelaySession>();
+
+function destroyLiveDvbSession(key: string): void {
+  const sess = liveDvbSessions.get(key);
+  if (!sess) return;
+  sess.dead = true;
+  liveDvbSessions.delete(key);
+  try {
+    sess.proc.kill('SIGKILL');
+  } catch {
+    // ignore
+  }
+  try {
+    fs.rmSync(sess.dir, { recursive: true, force: true });
+  } catch {
+    // ignore
+  }
+}
+
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, sess] of liveDvbSessions.entries()) {
+    if (sess.dead || now - sess.lastAccessAt > 45_000) {
+      destroyLiveDvbSession(key);
+    }
+  }
+}, 12_000).unref();
+
+async function ensureLiveDvbCleanHlsSession(
+  rawUpstreamUrl: string,
+  profile: 'hd' | 'fast' = 'hd'
+): Promise<string | null> {
+  const cleanUpstream = rawUpstreamUrl.replace(/[?&]profile=(hd|fast)\b/gi, '');
+  const hash = crypto
+    .createHash('sha1')
+    .update(`${cleanUpstream}|${profile}`)
+    .digest('hex')
+    .slice(0, 14);
+  const sessionKey = `dvb_${profile}_${hash}`;
+
+  const existing = liveDvbSessions.get(sessionKey);
+  if (existing && !existing.dead) {
+    existing.lastAccessAt = Date.now();
+    const ok = await existing.readyPromise;
+    if (ok && fs.existsSync(path.join(existing.dir, 'index.m3u8'))) {
+      return `/api/dvb-live/${sessionKey}/index.m3u8`;
+    }
+    destroyLiveDvbSession(sessionKey);
+  }
+
+  // Cap concurrent FFmpeg live transcodes to 4 (evict least-recently accessed)
+  if (liveDvbSessions.size >= 4) {
+    let oldestKey = '';
+    let oldestAccess = Infinity;
+    for (const [k, s] of liveDvbSessions.entries()) {
+      if (s.lastAccessAt < oldestAccess) {
+        oldestAccess = s.lastAccessAt;
+        oldestKey = k;
+      }
+    }
+    if (oldestKey) destroyLiveDvbSession(oldestKey);
+  }
+
+  const sessionDir = path.join(DVB_LIVE_ROOT, sessionKey);
+  try {
+    fs.rmSync(sessionDir, { recursive: true, force: true });
+    fs.mkdirSync(sessionDir, { recursive: true });
+  } catch {
+    return null;
+  }
+
+  const playlistPath = path.join(sessionDir, 'index.m3u8');
+  const segmentPattern = path.join(sessionDir, 'seg_%05d.ts');
+  // Ultra-low-CPU progressive field extraction (avoids heavy yadif CPU bottleneck on 1-vCPU Cloud Run!)
+  const vfFilter =
+    profile === 'fast'
+      ? 'field=top,scale=960:540:flags=fast_bilinear'
+      : 'field=top,scale=1280:720:flags=fast_bilinear';
+
+  const proc = spawn(FFMPEG_BIN, [
+    '-hide_banner',
+    '-loglevel',
+    'error',
+    '-user_agent',
+    TDT_DVB_UA,
+    '-reconnect',
+    '1',
+    '-reconnect_streamed',
+    '1',
+    '-reconnect_delay_max',
+    '2',
+    '-live_start_index',
+    '-3',
+    '-fflags',
+    '+genpts+discardcorrupt',
+    '-flags2',
+    '+showall',
+    '-threads',
+    '3',
+    '-i',
+    cleanUpstream,
+    '-map',
+    '0:v:0',
+    '-map',
+    '0:a:0?',
+    '-vf',
+    vfFilter,
+    '-c:v',
+    'libx264',
+    '-preset',
+    'ultrafast',
+    '-tune',
+    'zerolatency',
+    '-profile:v',
+    'main',
+    '-level',
+    '3.1',
+    '-pix_fmt',
+    'yuv420p',
+    '-r',
+    '25',
+    '-g',
+    '50',
+    '-keyint_min',
+    '50',
+    '-sc_threshold',
+    '0',
+    '-bf',
+    '0',
+    '-crf',
+    profile === 'fast' ? '25' : '23',
+    '-maxrate',
+    profile === 'fast' ? '1800k' : '3000k',
+    '-bufsize',
+    profile === 'fast' ? '3600k' : '6000k',
+    '-c:a',
+    'aac',
+    '-ac',
+    '2',
+    '-ar',
+    '48000',
+    '-b:a',
+    '128k',
+    '-f',
+    'hls',
+    '-hls_time',
+    '2',
+    '-hls_list_size',
+    '8',
+    '-hls_flags',
+    'delete_segments+independent_segments+omit_endlist+temp_file',
+    '-hls_segment_filename',
+    segmentPattern,
+    playlistPath,
+  ]);
+
+  const session: LiveDvbRelaySession = {
+    key: sessionKey,
+    upstreamUrl: cleanUpstream,
+    dir: sessionDir,
+    proc,
+    startedAt: Date.now(),
+    lastAccessAt: Date.now(),
+    dead: false,
+    readyPromise: Promise.resolve(false),
+  };
+
+  proc.on('exit', () => {
+    session.dead = true;
+  });
+  proc.on('error', () => {
+    session.dead = true;
+  });
+
+  session.readyPromise = new Promise<boolean>((resolve) => {
+    const deadline = Date.now() + 9000;
+    const poll = setInterval(() => {
+      if (session.dead) {
+        clearInterval(poll);
+        resolve(false);
+        return;
+      }
+      try {
+        if (fs.existsSync(playlistPath)) {
+          const content = fs.readFileSync(playlistPath, 'utf8');
+          const segMatches = content.match(/seg_\d+\.ts/g);
+          // Wait for at least 2 segments (4s buffer) so hls.js starts smoothly with zero "Cargando buffer..."!
+          if (segMatches && segMatches.length >= 2) {
+            clearInterval(poll);
+            resolve(true);
+            return;
+          }
+        }
+      } catch {
+        // wait next tick
+      }
+      if (Date.now() > deadline) {
+        clearInterval(poll);
+        destroyLiveDvbSession(sessionKey);
+        resolve(false);
+      }
+    }, 120);
+  });
+
+  liveDvbSessions.set(sessionKey, session);
+  const ready = await session.readyPromise;
+  return ready ? `/api/dvb-live/${sessionKey}/index.m3u8` : null;
+}
+
+app.options(
+  [
+    '/api/dvb-live/:sessionKey/:filename',
+    '/api/hls-proxy',
+    '/api/hls-proxy/:filename',
+    '/api/ts-proxy',
+    '/api/ts-proxy/:filename',
+  ],
+  (_req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
+    res.status(204).end();
+  }
+);
+
+app.get('/api/dvb-live/:sessionKey/:filename', (req, res) => {
+  const sessionKey = String(req.params.sessionKey || '').replace(/[^a-zA-Z0-9_-]/g, '');
+  const filename = String(req.params.filename || '').replace(/[^a-zA-Z0-9_.-]/g, '');
+  const sess = liveDvbSessions.get(sessionKey);
+  if (!sess || sess.dead || !filename) {
+    return res.status(404).send('Live session expired');
+  }
+  sess.lastAccessAt = Date.now();
+  const filePath = path.join(sess.dir, filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).send('Segment not ready');
+  }
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', '*');
+  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
+  if (filename.endsWith('.m3u8')) {
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  } else {
+    res.setHeader('Content-Type', 'video/mp2t');
+    res.setHeader('Cache-Control', 'public, max-age=12');
+  }
+  return res.sendFile(filePath);
+});
 
 app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
   const targetUrl = String(req.query.url || '');
@@ -4326,15 +5073,91 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
       }
     });
 
-    // Warm-prefetch the latest 2 live DVB-T2 segments into AAC cache so hls.js starts in <0.5s
+    // Warm-prefetch ALL live DVB-T2 segments in playback order into RAM cache (~200ms/seg)
+    // and extend the 5-segment (~10s) upstream playlist into a contiguous 11-segment (~25s) rolling window
+    let finalManifest = rewritten.join('\n');
     if (forceAac && discoveredTsUrls.length > 0) {
-      const latestTwo = discoveredTsUrls.slice(-2);
-      for (const segUrl of latestTwo) {
-        remuxDvbTsToAac(segUrl, effectiveReferer).catch(() => {});
+      for (const segUrl of discoveredTsUrls) {
+        remuxDvbTsToAac(segUrl, effectiveReferer, false).catch(() => {});
+      }
+
+      if (isDvbHeadendStream(targetUrl) && !manifestText.includes('#EXT-X-STREAM-INF')) {
+        const seqMatch = manifestText.match(/#EXT-X-MEDIA-SEQUENCE:(\d+)/i);
+        if (seqMatch) {
+          const baseSeq = parseInt(seqMatch[1], 10);
+          const nowMs = Date.now();
+          const currentSegs: RollingDvbSeg[] = [];
+          let pendingExtinf = '#EXTINF:2.500000,';
+          let segOffset = 0;
+          for (const rawLine of lines) {
+            const t = rawLine.trim();
+            if (!t) continue;
+            if (t.startsWith('#EXTINF:')) {
+              pendingExtinf = t;
+            } else if (!t.startsWith('#')) {
+              try {
+                const abs = new URL(t, baseUrl).href;
+                currentSegs.push({
+                  seq: baseSeq + segOffset,
+                  extinf: pendingExtinf,
+                  absUrl: abs,
+                  proxiedUrl: buildTsProxyUrl(abs, effectiveReferer, true),
+                  ts: nowMs,
+                });
+                segOffset++;
+              } catch {
+                // ignore
+              }
+            }
+          }
+
+          if (currentSegs.length > 0) {
+            const prevHistory = dvbRollingPlaylistMap.get(targetUrl) || [];
+            const bySeq = new Map<number, RollingDvbSeg>();
+            for (const oldSeg of prevHistory) {
+              if (nowMs - oldSeg.ts < 65_000 && dvbAacSegmentCache.has(oldSeg.absUrl)) {
+                bySeq.set(oldSeg.seq, oldSeg);
+              }
+            }
+            for (const curSeg of currentSegs) {
+              bySeq.set(curSeg.seq, curSeg);
+            }
+
+            // Walk backwards from newest segment so sequence numbers are 100% contiguous with zero gaps
+            const maxSeq = currentSegs[currentSegs.length - 1].seq;
+            const contiguous: RollingDvbSeg[] = [];
+            for (let s = maxSeq; s > maxSeq - 11; s--) {
+              const found = bySeq.get(s);
+              if (!found) break;
+              contiguous.unshift(found);
+            }
+            dvbRollingPlaylistMap.set(targetUrl, contiguous);
+
+            if (dvbRollingPlaylistMap.size > 40) {
+              const oldestChannel = dvbRollingPlaylistMap.keys().next().value;
+              if (oldestChannel) dvbRollingPlaylistMap.delete(oldestChannel);
+            }
+
+            if (contiguous.length > currentSegs.length) {
+              const targetDurMatch = manifestText.match(/#EXT-X-TARGETDURATION:(\d+)/i);
+              const targetDur = targetDurMatch ? targetDurMatch[1] : '4';
+              const headerLines = [
+                '#EXTM3U',
+                '#EXT-X-VERSION:3',
+                `#EXT-X-MEDIA-SEQUENCE:${contiguous[0].seq}`,
+                '#EXT-X-ALLOW-CACHE:YES',
+                `#EXT-X-TARGETDURATION:${targetDur}`,
+              ];
+              for (const seg of contiguous) {
+                headerLines.push(seg.extinf);
+                headerLines.push(seg.proxiedUrl);
+              }
+              finalManifest = headerLines.join('\n') + '\n';
+            }
+          }
+        }
       }
     }
-
-    const finalManifest = rewritten.join('\n');
     if (
       !forceAac &&
       (manifestText.includes('#EXT-X-ENDLIST') ||
@@ -4373,7 +5196,7 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
 
   if (forceAac && !isUrlMp4) {
     try {
-      const remuxedBuf = await remuxDvbTsToAac(targetUrl, referer);
+      const remuxedBuf = await remuxDvbTsToAac(targetUrl, referer, true);
       res.status(200);
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
@@ -5917,7 +6740,7 @@ function getPermanent247SportsMatches() {
           label: 'M+ LaLiga HD',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/84',
+          sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
           resolverType: 'sports_channel',
         },
         {
@@ -5938,10 +6761,10 @@ function getPermanent247SportsMatches() {
         },
         {
           id: 'ch-laliga-4',
-          label: 'DAZN 1 España',
+          label: 'Señal Satélite LaLiga',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/445',
+          sourceUrl: 'https://pig.footunder.online/stream/84',
           resolverType: 'sports_channel',
         },
       ],
@@ -5956,36 +6779,36 @@ function getPermanent247SportsMatches() {
       is247Channel: true,
       channels: [
         {
-          id: 'ch-f1-1',
-          label: 'DAZN F1 HD',
+          id: 'ch-f1-rb',
+          label: 'Red Bull Motorsport 1080p',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/537',
-          resolverType: 'sports_channel',
+          sourceUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8',
+          resolverType: 'tdt_hls',
         },
         {
-          id: 'ch-f1-2',
-          label: 'DAZN 1 Motor',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/445',
-          resolverType: 'sports_channel',
-        },
-        {
-          id: 'ch-f1-3',
-          label: 'DAZN 2 España',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/446',
-          resolverType: 'sports_channel',
-        },
-        {
-          id: 'ch-f1-4',
-          label: 'Eurosport 2 Motor',
+          id: 'ch-f1-euro2',
+          label: 'Eurosport 2 Motor HD',
           lang: 'ES',
           quality: '1080p',
           sourceUrl: 'https://pig.footunder.online/stream/232',
           resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-f1-1',
+          label: 'F1 Circuito 24/7 HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://pig.footunder.online/stream/60',
+          resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-f1-tdp',
+          label: 'Teledeporte Motor 1080p',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+          resolverType: 'tdt_hls',
         },
       ],
     },
@@ -5999,6 +6822,22 @@ function getPermanent247SportsMatches() {
       is247Channel: true,
       channels: [
         {
+          id: 'ch-ucl-gol',
+          label: 'GOL Fútbol Abierto 1080p',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-ucl-ll',
+          label: 'Fútbol en Directo M+ HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+          resolverType: 'sports_channel',
+        },
+        {
           id: 'ch-ucl-1',
           label: 'M+ Liga de Campeones',
           lang: 'ES',
@@ -6008,18 +6847,10 @@ function getPermanent247SportsMatches() {
         },
         {
           id: 'ch-ucl-2',
-          label: 'DAZN 3 España',
+          label: 'DAZN Fútbol Europeo HD',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/447',
-          resolverType: 'sports_channel',
-        },
-        {
-          id: 'ch-ucl-3',
-          label: 'DAZN 4 España',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/448',
+          sourceUrl: 'https://footunder.online/tvtodo/dazn3.php',
           resolverType: 'sports_channel',
         },
       ],
@@ -6034,35 +6865,35 @@ function getPermanent247SportsMatches() {
       is247Channel: true,
       channels: [
         {
-          id: 'ch-nba-1',
-          label: 'M+ Deportes HD',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/438',
-          resolverType: 'sports_channel',
-        },
-        {
-          id: 'ch-nba-2',
-          label: 'M+ Deportes 2',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/527',
-          resolverType: 'sports_channel',
-        },
-        {
-          id: 'ch-nba-3',
-          label: 'M+ Golf HD',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/528',
-          resolverType: 'sports_channel',
-        },
-        {
           id: 'ch-nba-4',
-          label: 'Eurosport 1 HD',
+          label: 'Teledeporte 1080p',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/231',
+          sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-nba-euro2',
+          label: 'Eurosport 2 Arena HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://pig.footunder.online/stream/232',
+          resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-nba-e3',
+          label: 'Esport3 Polideportivo HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-origin/esport3-hls/master.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-nba-1',
+          label: 'Arena Basket & Deportes HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://footunder.online/tvtodo/mligacampeones.php',
           resolverType: 'sports_channel',
         },
       ],
@@ -6076,6 +6907,77 @@ function detectSportKind(text: string): 'soccer' | 'motor' | 'basketball' | 'ten
   if (/tenis|tennis|atp|wta|roland|wimbledon/.test(lower)) return 'tennis';
   if (/f1|formula|fórmula|motogp|motor|nascar|rally|indy/.test(lower)) return 'motor';
   return 'soccer';
+}
+
+function getVerifiedSportBackupChannels(
+  sport: 'soccer' | 'motor' | 'basketball' | 'tennis' | 'other'
+): TrackRecord[] {
+  if (sport === 'motor') {
+    return [
+      {
+        id: 'bk-motor-rb',
+        label: 'Señal Respaldo · Motorsport 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'bk-motor-eu2',
+        label: 'Señal Respaldo · Eurosport 2 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
+        resolverType: 'sports_channel',
+      },
+    ];
+  }
+  if (sport === 'basketball' || sport === 'tennis') {
+    return [
+      {
+        id: 'bk-arena-tdp',
+        label: 'Señal Respaldo · Teledeporte HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'bk-arena-eu2',
+        label: 'Señal Respaldo · Eurosport 2 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
+        resolverType: 'sports_channel',
+      },
+    ];
+  }
+  return [
+    {
+      id: 'bk-fut-daznll',
+      label: 'Señal Respaldo · Fútbol HD 1',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://pig.footunder.online/stream/538',
+      resolverType: 'sports_channel',
+    },
+    {
+      id: 'bk-fut-mll',
+      label: 'Señal Respaldo · Fútbol HD 2',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+      resolverType: 'sports_channel',
+    },
+    {
+      id: 'bk-fut-gol',
+      label: 'Señal Respaldo · GOL 1080p',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
+      resolverType: 'tdt_hls',
+    },
+  ];
 }
 
 app.get('/api/catalog/sports', async (_req, res) => {
@@ -6149,7 +7051,21 @@ app.get('/api/catalog/sports', async (_req, res) => {
     console.warn('RojaDirecta live scrape fallback to 24/7 channels:', err);
   }
 
-  const scrapedEvents = Array.from(liveGrouped.values()).slice(0, 28);
+  // Ensure every scraped match has verified clean HD fallback signals so a single scrambled satellite feed never dead-ends!
+  const scrapedEvents = Array.from(liveGrouped.values())
+    .slice(0, 28)
+    .map((ev) => {
+      const backups = getVerifiedSportBackupChannels(ev.sport);
+      const existingUrls = new Set(ev.channels.map((c: any) => c.sourceUrl));
+      return {
+        ...ev,
+        channels: [
+          ...ev.channels,
+          ...backups.filter((bk) => !existingUrls.has(bk.sourceUrl)),
+        ],
+      };
+    });
+
   const combined = [...permanentChannels, ...scrapedEvents];
   cachedSportsSchedule = { matches: combined, ts: Date.now() };
 
@@ -6189,19 +7105,19 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     network: 'RTVE',
     category: 'generalistas',
     quality: '1080p HD',
-    description: 'Telediario, cine, entretenimiento y grandes eventos en directo',
+    description: 'Telediario, cine, entretenimiento, selección española y grandes eventos en directo',
     channels: [
       {
         id: 'la1-rtve',
-        label: 'Señal Oficial RTVE HD',
+        label: 'Señal Oficial RTVE HD (La 1 España)',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la1/la1_main_dvr.m3u8',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8',
         resolverType: 'tdt_hls',
       },
       {
         id: 'la1-dvb',
-        label: 'Señal Antena TDT HD',
+        label: 'Señal Antena TDT 1080p (La 1)',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/45/index.m3u8',
@@ -6222,15 +7138,15 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'la2-rtve',
-        label: 'Señal Oficial RTVE HD',
+        label: 'Señal Oficial RTVE HD (La 2 España)',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la2/la2_main_dvr.m3u8',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la2/la2_main.m3u8',
         resolverType: 'tdt_hls',
       },
       {
         id: 'la2-dvb',
-        label: 'Señal Antena TDT HD',
+        label: 'Señal Antena TDT 1080p (La 2)',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/48/index.m3u8',
@@ -6251,10 +7167,18 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'a3-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa HD',
         lang: 'ES',
-        quality: '1080p',
+        quality: '720p HD',
         sourceUrl: 'http://90.163.85.113:8093/stream/20/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'a3-fast',
+        label: 'Señal 2 · Estabilizada Rápida',
+        lang: 'ES',
+        quality: 'HD',
+        sourceUrl: 'http://90.163.85.113:8093/stream/20/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -6272,10 +7196,18 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'cuatro-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa HD',
         lang: 'ES',
-        quality: '1080p',
+        quality: '720p HD',
         sourceUrl: 'http://90.163.85.113:8093/stream/42/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'cuatro-fast',
+        label: 'Señal 2 · Estabilizada Rápida',
+        lang: 'ES',
+        quality: 'HD',
+        sourceUrl: 'http://90.163.85.113:8093/stream/42/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -6293,10 +7225,18 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 't5-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa HD',
         lang: 'ES',
-        quality: '1080p',
+        quality: '720p HD',
         sourceUrl: 'http://90.163.85.113:8093/stream/41/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 't5-fast',
+        label: 'Señal 2 · Estabilizada Rápida',
+        lang: 'ES',
+        quality: 'HD',
+        sourceUrl: 'http://90.163.85.113:8093/stream/41/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -6314,10 +7254,18 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'lasexta-dvb',
-        label: 'Antena TDT 1080p',
+        label: 'Señal Directa HD',
         lang: 'ES',
-        quality: '1080p',
+        quality: '720p HD',
         sourceUrl: 'http://90.163.85.113:8093/stream/21/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'lasexta-fast',
+        label: 'Señal 2 · Estabilizada Rápida',
+        lang: 'ES',
+        quality: 'HD',
+        sourceUrl: 'http://90.163.85.113:8093/stream/21/index.m3u8?profile=fast',
         resolverType: 'tdt_hls',
       },
     ],
@@ -6338,7 +7286,23 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'mplus-1',
-        label: 'Señal 24/7 M+ HD',
+        label: 'Señal Principal M+ 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'mplus-2',
+        label: 'Señal Alternativa M+ HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'mplus-sat',
+        label: 'Señal Satélite M+',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/531',
@@ -6359,26 +7323,26 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'mvamos-1',
-        label: 'Señal 24/7 Vamos HD',
+        label: 'Señal Directo Fútbol 1080p',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/526',
-        resolverType: 'sports_channel',
+        sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
+        resolverType: 'tdt_hls',
       },
       {
         id: 'mvamos-2',
-        label: 'Señal M+ Deportes',
+        label: 'Señal Multideporte HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/438',
+        sourceUrl: 'https://pig.footunder.online/stream/529',
         resolverType: 'sports_channel',
       },
       {
-        id: 'mvamos-ev',
-        label: 'Señal Evento',
+        id: 'mvamos-sat',
+        label: 'Señal Satélite Vamos',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/m-vamos.php',
+        sourceUrl: 'https://pig.footunder.online/stream/526',
         resolverType: 'sports_channel',
       },
     ],
@@ -6395,20 +7359,44 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'LaLiga EA Sports en directo, previas, postpartidos y resúmenes oficiales 24/7',
     channels: [
       {
+        id: 'mlaliga-fast',
+        label: 'Señal Directa LaLiga 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/538',
+        resolverType: 'sports_channel',
+      },
+      {
         id: 'mlaliga-1',
-        label: 'Señal 24/7 M+ LaLiga HD',
+        label: 'Señal Principal M+ LaLiga HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'mlaliga-2',
+        label: 'Señal Alternativa LaLiga HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/522',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'mlaliga-sat',
+        label: 'Señal Satélite M+ LaLiga',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/84',
         resolverType: 'sports_channel',
       },
       {
-        id: 'mlaliga-ev',
-        label: 'Señal Evento 2',
+        id: 'mlaliga-gol',
+        label: 'Señal Respaldo Fútbol TDT 1080p',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
-        resolverType: 'sports_channel',
+        sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
+        resolverType: 'tdt_hls',
       },
     ],
   },
@@ -6433,7 +7421,7 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
       },
       {
         id: 'mhyper-ev',
-        label: 'Señal Evento 2',
+        label: 'Señal Evento 2 HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://footunder.online/tvtodo/laliga2.php',
@@ -6453,27 +7441,27 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'UEFA Champions League, Europa League, Conference League y fútbol europeo en vivo',
     channels: [
       {
+        id: 'mucl-gol',
+        label: 'Señal Directo Fútbol 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'mucl-ll',
+        label: 'Señal Fútbol M+ HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+        resolverType: 'sports_channel',
+      },
+      {
         id: 'mucl-1',
-        label: 'Señal 24/7 Champions HD',
+        label: 'Señal Satélite Champions HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/435',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'mucl-ev1',
-        label: 'Señal Evento 2',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/mligacampeones.php',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'mucl-ev2',
-        label: 'Señal Evento 3',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/mligacampeones2.php',
         resolverType: 'sports_channel',
       },
     ],
@@ -6490,8 +7478,24 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Liga Endesa ACB, Euroliga, NBA, ATP Masters 1000, Wimbledon, Rugby y NFL en directo',
     channels: [
       {
-        id: 'mdep1-1',
-        label: 'Señal 24/7 M+ Deportes HD',
+        id: 'mdep1-eu2',
+        label: 'Señal Arena Deportes HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'mdep1-tdp',
+        label: 'Señal Polideportivo 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'mdep1-sat',
+        label: 'Señal Satélite M+ Deportes',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/438',
@@ -6512,18 +7516,26 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'mdep2-1',
-        label: 'Señal 24/7 M+ Deportes 2 HD',
+        label: 'Señal Directo Deportes 1080p',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/527',
-        resolverType: 'sports_channel',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+        resolverType: 'tdt_hls',
       },
       {
         id: 'mdep2-2',
-        label: 'Señal M+ Deportes 1',
+        label: 'Señal Arena 2 HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/438',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'mdep2-sat',
+        label: 'Señal Satélite M+ Dep 2',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/527',
         resolverType: 'sports_channel',
       },
     ],
@@ -6540,8 +7552,24 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'PGA Tour, DP World Tour, Ryder Cup, Masters de Augusta y LIV Golf 24 horas en vivo',
     channels: [
       {
+        id: 'mgolf-eu2',
+        label: 'Señal Directo Deportes HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'mgolf-tdp',
+        label: 'Señal Polideportivo 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
         id: 'mgolf-1',
-        label: 'Señal 24/7 M+ Golf HD',
+        label: 'Señal Satélite M+ Golf HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/528',
@@ -6561,8 +7589,24 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Roland Garros, Open de Australia, Tour de Francia, La Vuelta, UFC y JJ.OO.',
     channels: [
       {
+        id: 'euro1-2',
+        label: 'Señal Eurosport Directo HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'euro1-tdp',
+        label: 'Señal Respaldo 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
         id: 'euro1-1',
-        label: 'Señal 24/7 Eurosport 1 HD',
+        label: 'Señal Satélite Eurosport 1',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/231',
@@ -6587,6 +7631,14 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/232',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'euro2-2',
+        label: 'Señal Motor WEC HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/525',
         resolverType: 'sports_channel',
       },
     ],
@@ -6615,10 +7667,10 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
       },
       {
         id: 'daznll-ev',
-        label: 'Señal Evento 2',
+        label: 'Señal Evento 2 HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/dazn-laliga.php',
+        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
         resolverType: 'sports_channel',
       },
     ],
@@ -6632,22 +7684,30 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     network: 'DAZN España',
     category: 'dazn',
     quality: '1080p HD',
-    description: 'Mundial de Fórmula 1 24/7 en castellano: libres, clasificación, sprint, carreras y Box, Box',
+    description: 'Mundial de Fórmula 1 24/7: libres, clasificación, sprint, carreras y cámaras onboard',
     channels: [
       {
-        id: 'daznf1-1',
-        label: 'Señal 24/7 DAZN F1 HD',
+        id: 'daznf1-rb',
+        label: 'Red Bull Motorsport 1080p',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/537',
+        sourceUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'daznf1-eu2',
+        label: 'Señal Circuito Motor HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
         resolverType: 'sports_channel',
       },
       {
-        id: 'daznf1-ev',
-        label: 'Señal Alternativa F1',
+        id: 'daznf1-1',
+        label: 'Señal Satélite F1 HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/daznf1.php',
+        sourceUrl: 'https://pig.footunder.online/stream/60',
         resolverType: 'sports_channel',
       },
     ],
@@ -6664,19 +7724,27 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Premier League, MotoGP, Serie A, Bundesliga, Liga F y boxeo mundial en directo',
     channels: [
       {
-        id: 'dazn1-1',
-        label: 'Señal 24/7 DAZN 1 HD',
+        id: 'dazn1-ll',
+        label: 'Señal Directo DAZN HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/445',
+        sourceUrl: 'https://pig.footunder.online/stream/538',
         resolverType: 'sports_channel',
       },
       {
-        id: 'dazn1-ev',
-        label: 'Señal Evento 2',
+        id: 'dazn1-eu2',
+        label: 'Señal Motor & Deportes HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/dazn1.php',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'dazn1-1',
+        label: 'Señal Satélite DAZN 1',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/dazn3.php',
         resolverType: 'sports_channel',
       },
     ],
@@ -6694,18 +7762,26 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'dazn2-1',
-        label: 'Señal 24/7 DAZN 2 HD',
+        label: 'Señal 24/7 Multideporte HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/446',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
         resolverType: 'sports_channel',
       },
       {
         id: 'dazn2-ev',
-        label: 'Señal Evento 2',
+        label: 'Señal Fútbol En Vivo HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/dazn2.php',
+        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'dazn2-sat',
+        label: 'Señal Satélite DAZN 2',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/446',
         resolverType: 'sports_channel',
       },
     ],
@@ -6722,19 +7798,35 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Canal multievento DAZN 3 para jornadas simultáneas de fútbol europeo y motor',
     channels: [
       {
+        id: 'dazn3-ll',
+        label: 'Señal DAZN Multievento HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/522',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'dazn3-eu2',
+        label: 'Señal Motor & Arena HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/232',
+        resolverType: 'sports_channel',
+      },
+      {
         id: 'dazn3-1',
         label: 'Señal 24/7 DAZN 3 HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/447',
+        sourceUrl: 'https://footunder.online/tvtodo/dazn3.php',
         resolverType: 'sports_channel',
       },
       {
-        id: 'dazn3-ev',
-        label: 'Señal Evento 2',
+        id: 'dazn3-2',
+        label: 'Señal Circuito F1 HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/dazn3.php',
+        sourceUrl: 'https://pig.footunder.online/stream/60',
         resolverType: 'sports_channel',
       },
     ],
@@ -6752,10 +7844,18 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'dazn4-1',
-        label: 'Señal 24/7 DAZN 4 HD',
+        label: 'Señal DAZN Motorsport 1080p',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/448',
+        sourceUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'dazn4-2',
+        label: 'Señal Arena Multievento HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/mligacampeones.php',
         resolverType: 'sports_channel',
       },
     ],
@@ -6892,17 +7992,25 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     name: 'Paramount Network',
     shortMark: 'PAR',
     brandTone: '#3B82F6',
-    network: 'Paramount',
+    network: 'Paramount · TDT Cine',
     category: 'cine_series',
     quality: '1080p HD',
     description: 'Cine de estudio, thriller, acción y series clásicas de misterio',
     channels: [
       {
-        id: 'paramount-hls',
-        label: 'Señal Directa HD',
+        id: 'paramount-dvb',
+        label: 'Antena TDT Cine 1080p',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://jmp2.uk/plu-68d566603d3a9580eb461251.m3u8',
+        sourceUrl: 'http://90.163.85.113:8093/stream/50/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'paramount-bom',
+        label: 'Señal Cine Alternativa HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/35/index.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
@@ -7079,7 +8187,7 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
         label: 'Señal Oficial RTVE HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/24h/24h_main_dvr.m3u8',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/24h/24h_main.m3u8',
         resolverType: 'tdt_hls',
       },
       {
@@ -7104,19 +8212,19 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Tenis, ciclismo, fútbol, atletismo, motor y Estudio Estadio en vivo',
     channels: [
       {
-        id: 'tdp-rtve',
-        label: 'Señal Oficial RTVE HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
         id: 'tdp-dvb',
-        label: 'Señal Antena TDT HD',
+        label: 'Señal Antena TDT 1080p',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/43/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'tdp-rtve',
+        label: 'Señal Oficial RTVE HD (España)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
@@ -7162,19 +8270,27 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Series infantiles, animación familiar y cine juvenil',
     channels: [
       {
-        id: 'clan-rtve',
-        label: 'Señal Oficial RTVE HD',
+        id: 'clan-dvb',
+        label: 'Señal Antena TDT 1080p',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/clan/clan_main_dvr.m3u8',
+        sourceUrl: 'http://90.163.85.113:8093/stream/52/index.m3u8',
         resolverType: 'tdt_hls',
       },
       {
-        id: 'clan-dvb',
-        label: 'Señal Antena TDT HD',
+        id: 'clan-rtve',
+        label: 'Señal Oficial RTVE HD (España)',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'http://90.163.85.113:8093/stream/59/index.m3u8',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/clan/clan_main.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'clan-boing-bk',
+        label: 'Señal Infantil Alternativa HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://90.163.85.113:8093/stream/19/index.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
@@ -7316,6 +8432,419 @@ app.get('/api/catalog/tdt', (_req, res) => {
 });
 
 // ============================================================================
+// REAL-TIME SPANISH EPG ENGINE (TDT + MOVISTAR+ + DAZN + 3CAT)
+// ============================================================================
+interface RawEpgEvent {
+  title: string;
+  subtitle?: string;
+  description?: string;
+  category?: string;
+  icon?: string;
+  startMs: number;
+  stopMs: number;
+  isLiveSport?: boolean;
+}
+
+const EPG_CHANNEL_MAPPING: Record<string, { xmltv: string[]; tdtJson: string[] }> = {
+  'tdt-la1': { xmltv: ['La 1 HD', 'La 1'], tdtJson: ['La1.TV'] },
+  'tdt-la2': { xmltv: ['La 2', 'La 2 HD'], tdtJson: ['La2.TV'] },
+  'tdt-antena3': { xmltv: ['Antena 3 HD', 'Antena 3'], tdtJson: ['Antena3.TV'] },
+  'tdt-cuatro': { xmltv: ['Cuatro HD', 'Cuatro'], tdtJson: ['Cuatro.TV'] },
+  'tdt-telecinco': { xmltv: ['Telecinco HD', 'Telecinco'], tdtJson: ['Telecinco.TV'] },
+  'tdt-lasexta': { xmltv: ['La Sexta HD', 'La Sexta'], tdtJson: ['LaSexta.TV'] },
+  'mplus-canal': { xmltv: ['Movistar Plus HD', 'M+ Cero'], tdtJson: [] },
+  'mplus-vamos': { xmltv: ['M+ Vamos HD', 'M+ Vamos 2'], tdtJson: [] },
+  'mplus-laliga': { xmltv: ['M+ LaLiga HD', 'M+ LaLiga HDR', 'M+ LaLiga 2 HD'], tdtJson: [] },
+  'mplus-hypermotion': { xmltv: ['LaLiga TV Hypermotion HD', 'LaLiga TV Hypermotion 2'], tdtJson: [] },
+  'mplus-champions': { xmltv: ['M+ Liga de Campeones HD', 'M+ Liga de Campeones 2 HD'], tdtJson: [] },
+  'mplus-deportes': { xmltv: ['M+ Deportes HD', 'M+ Baloncesto'], tdtJson: [] },
+  'mplus-deportes2': { xmltv: ['M+ Deportes 2 HD', 'M+ Deportes 3'], tdtJson: [] },
+  'mplus-golf': { xmltv: ['M+ Golf HD', 'M+ Golf 2 HD'], tdtJson: [] },
+  'mplus-eurosport1': { xmltv: ['Eurosport 1 HD'], tdtJson: [] },
+  'mplus-eurosport2': { xmltv: ['Eurosport 2'], tdtJson: [] },
+  'dazn-laliga': { xmltv: ['DAZN LaLiga HD', 'DAZN LaLiga 2 HD'], tdtJson: [] },
+  'dazn-f1': { xmltv: ['DAZN F1 HD'], tdtJson: [] },
+  'dazn-1': { xmltv: ['DAZN 1 HD', 'DAZN MotoGP'], tdtJson: [] },
+  'dazn-2': { xmltv: ['DAZN 2 HD', 'DAZN Baloncesto'], tdtJson: [] },
+  'dazn-3': { xmltv: ['DAZN 3 HD', 'DAZN Bundesliga'], tdtJson: [] },
+  'dazn-4': { xmltv: ['DAZN 4 HD', 'Unbeaten (DAZN)', 'Red Bull TV (DAZN)'], tdtJson: [] },
+  'tdt-neox': { xmltv: ['Neox'], tdtJson: ['Neox.TV'] },
+  'tdt-fdf': { xmltv: ['Factoría de Ficción'], tdtJson: ['FDF.TV'] },
+  'tdt-nova': { xmltv: ['Nova'], tdtJson: ['Nova.TV'] },
+  'tdt-energy': { xmltv: ['Energy'], tdtJson: ['Energy.TV'] },
+  'tdt-atreseries': { xmltv: ['Atreseries'], tdtJson: ['Atreseries.TV'] },
+  'tdt-bemad': { xmltv: ['Be Mad'], tdtJson: ['Bemad.TV'] },
+  'tdt-paramount': { xmltv: ['Paramount Network', 'Squirrel TV'], tdtJson: ['Paramount.TV'] },
+  'tdt-bomcine': { xmltv: ['BOM Cine'], tdtJson: ['BOM.TV'] },
+  'tdt-mega': { xmltv: ['Mega'], tdtJson: ['Mega.TV'] },
+  'tdt-dmax': { xmltv: ['DMAX'], tdtJson: ['DMax.TV'] },
+  'tdt-divinity': { xmltv: ['Divinity'], tdtJson: ['Divinity.TV'] },
+  'tdt-dkiss': { xmltv: ['DKISS'], tdtJson: ['DKISS.TV'] },
+  'tdt-ten': { xmltv: ['Ten'], tdtJson: ['TEN.TV'] },
+  'tdt-trece': { xmltv: ['TRECE', 'TR3CE'], tdtJson: ['13.TV'] },
+  'tdt-24h': { xmltv: ['24 Horas'], tdtJson: ['24Horas.TV'] },
+  'tdt-teledeporte': { xmltv: ['Teledeporte'], tdtJson: ['TDP.TV'] },
+  'tdt-rmtv': { xmltv: ['Real Madrid TV'], tdtJson: ['RMTV.TV'] },
+  'tdt-clan': { xmltv: ['Clan'], tdtJson: ['Clan.TV'] },
+  'tdt-boing': { xmltv: ['Boing'], tdtJson: ['Boing.TV'] },
+  'tdt-canalsur': { xmltv: ['Canal Sur HD', 'Canal Sur Andalucía'], tdtJson: ['CanalSurA.TV'] },
+  'tdt-3cat': { xmltv: ['TV3', 'TV3 Catalunya'], tdtJson: ['TV3.TV'] },
+  'tdt-etb1': { xmltv: ['etb1'], tdtJson: ['ETB1.TV'] },
+  'tdt-etb2': { xmltv: ['etb2'], tdtJson: ['ETB2.TV'] },
+  'tdt-tvcanaria': { xmltv: ['TV Canaria', 'Atlántico TV'], tdtJson: ['TVCanaria.TV'] },
+  'cat-sx3': { xmltv: ['SX3', 'SX3 Catalunya'], tdtJson: ['SX3.TV'] },
+  'cat-tv3': { xmltv: ['TV3', 'TV3 Catalunya'], tdtJson: ['TV3.TV'] },
+  'cat-324': { xmltv: ['3CatInfo', '3CatInfo Catalunya'], tdtJson: ['324.TV'] },
+  'cat-c33': { xmltv: ['El 33 Catalunya'], tdtJson: ['C33.TV'] },
+};
+
+const madridTimeFormatter = new Intl.DateTimeFormat('es-ES', {
+  timeZone: 'Europe/Madrid',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: false,
+});
+
+function formatMadridHHMM(ms: number): string {
+  try {
+    return madridTimeFormatter.format(new Date(ms));
+  } catch {
+    const d = new Date(ms);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+}
+
+function decodeXmlEntities(str: string): string {
+  return str
+    .replace(/&amp;/g, '&')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&#039;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .trim();
+}
+
+function parseXmltvTimeMs(raw: string): number {
+  const m = raw.trim().match(/^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})(?:\s*([+-])(\d{2})(\d{2}))?/);
+  if (!m) return 0;
+  const [, y, mo, d, h, mi, s, sign, offH, offM] = m;
+  const utcBase = Date.UTC(
+    Number(y),
+    Number(mo) - 1,
+    Number(d),
+    Number(h),
+    Number(mi),
+    Number(s)
+  );
+  if (!sign) return utcBase;
+  const offsetMs = (Number(offH) * 60 + Number(offM)) * 60_000 * (sign === '+' ? 1 : -1);
+  return utcBase - offsetMs;
+}
+
+function isSportsProgramText(title: string, category: string): boolean {
+  const txt = `${title} ${category}`.toLowerCase();
+  return /fútbol|futbol|laliga|champions|premier|bundesliga|f1|fórmula 1|formula 1|motogp|baloncesto|nba|acb|euroliga|tenis|golf|ciclismo|boxeo|ufc|deporte|directo:\s| vs | - /i.test(
+    txt
+  );
+}
+
+let cachedEpgStore: { byChannel: Map<string, RawEpgEvent[]>; fetchedAt: number } | null = null;
+let inflightEpgPromise: Promise<Map<string, RawEpgEvent[]>> | null = null;
+
+async function loadSpanishEpgSchedule(): Promise<Map<string, RawEpgEvent[]>> {
+  if (cachedEpgStore && Date.now() - cachedEpgStore.fetchedAt < 20 * 60 * 1000) {
+    return cachedEpgStore.byChannel;
+  }
+  if (inflightEpgPromise) return inflightEpgPromise;
+
+  inflightEpgPromise = (async () => {
+    const result = new Map<string, RawEpgEvent[]>();
+    const now = Date.now();
+    const minWindow = now - 3 * 60 * 60 * 1000;
+    const maxWindow = now + 18 * 60 * 60 * 1000;
+
+    // Reverse lookup tables
+    const xmltvToOurIds = new Map<string, { ourId: string; priority: number }[]>();
+    const jsonToOurIds = new Map<string, string[]>();
+
+    for (const [ourId, cfg] of Object.entries(EPG_CHANNEL_MAPPING)) {
+      cfg.xmltv.forEach((xName, idx) => {
+        const list = xmltvToOurIds.get(xName) || [];
+        list.push({ ourId, priority: idx });
+        xmltvToOurIds.set(xName, list);
+      });
+      cfg.tdtJson.forEach((jName) => {
+        const list = jsonToOurIds.get(jName.toLowerCase()) || [];
+        list.push(ourId);
+        jsonToOurIds.set(jName.toLowerCase(), list);
+      });
+    }
+
+    // 1. Stream-gunzip EPG_dobleM (Movistar+, DAZN, TDT & 3Cat complete XMLTV) with <5MB RAM
+    try {
+      const xmlByPriority = new Map<string, { priority: number; events: RawEpgEvent[] }>();
+      const resp = await fetch(
+        'https://raw.githubusercontent.com/davidmuma/EPG_dobleM/master/guiatv_sincolor.xml.gz',
+        {
+          headers: { 'User-Agent': CHROME_UA },
+          signal: AbortSignal.timeout(14_000),
+        }
+      );
+
+      if (resp.ok && resp.body) {
+        const gunzip = zlib.createGunzip();
+        gunzip.setEncoding('utf8');
+        let leftover = '';
+
+        await new Promise<void>((resolve) => {
+          gunzip.on('data', (chunk: string) => {
+            leftover += chunk;
+            let endIdx = leftover.indexOf('</programme>');
+            while (endIdx !== -1) {
+              const block = leftover.slice(0, endIdx + 12);
+              leftover = leftover.slice(endIdx + 12);
+              endIdx = leftover.indexOf('</programme>');
+
+              const pStart = block.indexOf('<programme ');
+              if (pStart === -1) continue;
+              const tagEnd = block.indexOf('>', pStart);
+              if (tagEnd === -1) continue;
+              const header = block.slice(pStart, tagEnd);
+
+              const chMatch = header.match(/channel="([^"]+)"/);
+              if (!chMatch) continue;
+              const chName = decodeXmlEntities(chMatch[1]);
+              const targets = xmltvToOurIds.get(chName);
+              if (!targets) continue;
+
+              const startMatch = header.match(/start="([^"]+)"/);
+              const stopMatch = header.match(/stop="([^"]+)"/);
+              if (!startMatch || !stopMatch) continue;
+
+              const startMs = parseXmltvTimeMs(startMatch[1]);
+              const stopMs = parseXmltvTimeMs(stopMatch[1]);
+              if (!startMs || !stopMs || stopMs < minWindow || startMs > maxWindow) continue;
+
+              const body = block.slice(tagEnd + 1);
+              const titleM = body.match(/<title[^>]*>([\s\S]*?)<\/title>/);
+              if (!titleM) continue;
+              const title = decodeXmlEntities(titleM[1]);
+              if (!title) continue;
+
+              const subM = body.match(/<sub-title[^>]*>([\s\S]*?)<\/sub-title>/);
+              const descM = body.match(/<desc[^>]*>([\s\S]*?)<\/desc>/);
+              const catM = body.match(/<category[^>]*>([\s\S]*?)<\/category>/);
+              const iconM = body.match(/<icon[^>]+src="([^"]+)"/);
+
+              const category = catM ? decodeXmlEntities(catM[1]) : undefined;
+              const ev: RawEpgEvent = {
+                title,
+                subtitle: subM ? decodeXmlEntities(subM[1]) : undefined,
+                description: descM ? decodeXmlEntities(descM[1]) : undefined,
+                category,
+                icon: iconM ? iconM[1] : undefined,
+                startMs,
+                stopMs,
+                isLiveSport: isSportsProgramText(title, category || ''),
+              };
+
+              for (const t of targets) {
+                const cur = xmlByPriority.get(t.ourId);
+                if (!cur || t.priority < cur.priority) {
+                  xmlByPriority.set(t.ourId, { priority: t.priority, events: [ev] });
+                } else if (t.priority === cur.priority) {
+                  cur.events.push(ev);
+                }
+              }
+            }
+            if (leftover.length > 250_000) {
+              leftover = leftover.slice(-60_000);
+            }
+          });
+          gunzip.on('end', () => resolve());
+          gunzip.on('error', () => resolve());
+          Readable.fromWeb(resp.body as any)
+            .on('error', () => resolve())
+            .pipe(gunzip);
+        });
+
+        for (const [ourId, data] of xmlByPriority.entries()) {
+          if (data.events.length > 0) {
+            data.events.sort((a, b) => a.startMs - b.startMs);
+            result.set(ourId, data.events);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('EPG XMLTV stream warning:', err);
+    }
+
+    // 2. Fallback / complement from TDTChannels JSON EPG for any missing TDT channel
+    try {
+      const missingJsonTargets = Array.from(jsonToOurIds.values()).some((ids) =>
+        ids.some((id) => !result.has(id))
+      );
+      if (missingJsonTargets) {
+        const jResp = await fetch('https://www.tdtchannels.com/epg/TV.json', {
+          headers: { 'User-Agent': CHROME_UA },
+          signal: AbortSignal.timeout(8000),
+        });
+        if (jResp.ok) {
+          const jList: any[] = await jResp.json();
+          if (Array.isArray(jList)) {
+            for (const entry of jList) {
+              const nameKey = String(entry?.name || '').toLowerCase();
+              const ourIds = jsonToOurIds.get(nameKey);
+              if (!ourIds || !Array.isArray(entry?.events)) continue;
+              const parsed: RawEpgEvent[] = [];
+              for (const ev of entry.events) {
+                const startMs = Number(ev.hi || 0) * 1000;
+                const stopMs = Number(ev.hf || 0) * 1000;
+                if (!startMs || !stopMs || stopMs < minWindow || startMs > maxWindow) continue;
+                const title = String(ev.t || '').trim();
+                if (!title) continue;
+                const category = String(ev.g || '').trim() || undefined;
+                parsed.push({
+                  title,
+                  description: String(ev.d || '').trim() || undefined,
+                  category,
+                  startMs,
+                  stopMs,
+                  isLiveSport: isSportsProgramText(title, category || ''),
+                });
+              }
+              if (parsed.length > 0) {
+                parsed.sort((a, b) => a.startMs - b.startMs);
+                for (const oid of ourIds) {
+                  if (!result.has(oid)) {
+                    result.set(oid, parsed);
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    } catch {
+      // keep XMLTV results
+    }
+
+    if (result.size > 0) {
+      cachedEpgStore = { byChannel: result, fetchedAt: Date.now() };
+    }
+    return result;
+  })().finally(() => {
+    inflightEpgPromise = null;
+  });
+
+  return inflightEpgPromise;
+}
+
+// Pre-warm Spanish EPG quietly in background (pure HTTP gunzip, <5MB RAM)
+setTimeout(() => {
+  loadSpanishEpgSchedule().catch(() => {});
+}, 800);
+
+app.get('/api/epg/live', async (_req, res) => {
+  try {
+    const store = await loadSpanishEpgSchedule();
+    const now = Date.now();
+    const epgMap: Record<string, any> = {};
+
+    const allKnownChannelIds = Object.keys(EPG_CHANNEL_MAPPING);
+    for (const chId of allKnownChannelIds) {
+      const events = store.get(chId) || [];
+      if (events.length === 0) continue;
+
+      let nowIdx = events.findIndex((e) => e.startMs <= now && e.stopMs > now);
+      if (nowIdx === -1) {
+        nowIdx = events.findIndex((e) => e.startMs > now);
+        if (nowIdx > 0) nowIdx = nowIdx - 1;
+      }
+
+      const activeEv =
+        nowIdx >= 0 && events[nowIdx] && events[nowIdx].stopMs > now ? events[nowIdx] : null;
+      const nextIdx = activeEv
+        ? nowIdx + 1
+        : events.findIndex((e) => e.startMs > now);
+      const nextEv = nextIdx >= 0 && nextIdx < events.length ? events[nextIdx] : null;
+
+      const upcomingSlice = events
+        .filter((e) => e.stopMs > now)
+        .slice(0, 8)
+        .map((e) => ({
+          title: e.title,
+          subtitle: e.subtitle,
+          description: e.description,
+          category: e.category,
+          icon: e.icon,
+          startMs: e.startMs,
+          stopMs: e.stopMs,
+          startLabel: formatMadridHHMM(e.startMs),
+          stopLabel: formatMadridHHMM(e.stopMs),
+          isLiveSport: e.isLiveSport,
+        }));
+
+      let progressPct = 0;
+      let remainingMin = 0;
+      if (activeEv) {
+        const dur = Math.max(1, activeEv.stopMs - activeEv.startMs);
+        progressPct = Math.max(2, Math.min(99, Math.round(((now - activeEv.startMs) / dur) * 100)));
+        remainingMin = Math.max(1, Math.ceil((activeEv.stopMs - now) / 60_000));
+      }
+
+      epgMap[chId] = {
+        channelId: chId,
+        now: activeEv
+          ? {
+              title: activeEv.title,
+              subtitle: activeEv.subtitle,
+              description: activeEv.description,
+              category: activeEv.category,
+              icon: activeEv.icon,
+              startMs: activeEv.startMs,
+              stopMs: activeEv.stopMs,
+              startLabel: formatMadridHHMM(activeEv.startMs),
+              stopLabel: formatMadridHHMM(activeEv.stopMs),
+              isLiveSport: activeEv.isLiveSport,
+            }
+          : null,
+        next: nextEv
+          ? {
+              title: nextEv.title,
+              subtitle: nextEv.subtitle,
+              description: nextEv.description,
+              category: nextEv.category,
+              icon: nextEv.icon,
+              startMs: nextEv.startMs,
+              stopMs: nextEv.stopMs,
+              startLabel: formatMadridHHMM(nextEv.startMs),
+              stopLabel: formatMadridHHMM(nextEv.stopMs),
+              isLiveSport: nextEv.isLiveSport,
+            }
+          : null,
+        upcoming: upcomingSlice,
+        progressPct,
+        remainingMin,
+      };
+    }
+
+    res.setHeader('Cache-Control', 'public, max-age=45');
+    res.json({
+      success: true,
+      serverTimeMs: now,
+      madridTimeLabel: formatMadridHHMM(now),
+      channelsCount: Object.keys(epgMap).length,
+      epg: epgMap,
+    });
+  } catch (err) {
+    console.warn('/api/epg/live error:', err);
+    res.json({ success: true, serverTimeMs: Date.now(), epg: {} });
+  }
+});
+
+// ============================================================================
 // REST API: UNIVERSAL STREAM DECOMPILER (/api/extract/stream)
 // ============================================================================
 function parseYouTubeVideoId(url: string): string | null {
@@ -7325,17 +8854,58 @@ function parseYouTubeVideoId(url: string): string | null {
   return m ? m[1] : null;
 }
 
-async function resolveTmdbIdByTitle(title: string, mediaType: 'movie' | 'tv'): Promise<number | null> {
+async function resolveTmdbIdByTitle(
+  title: string,
+  mediaType: 'movie' | 'tv',
+  expectedYear?: string
+): Promise<number | null> {
   try {
-    const clean = title.replace(/\s*\([^)]*\)/g, '').trim();
-    if (!clean) return null;
+    const rawStr = String(title || '').trim();
+    const clean = rawStr.replace(/\s*\([^)]*\)/g, '').trim();
+    const parenPart = (rawStr.match(/\(([^)]+)\)/)?.[1] || '').trim();
+    const normClean = normalizeTitleForMatch(clean || rawStr);
+    const normParen = normalizeTitleForMatch(parenPart);
+    if (!clean || normClean.length < 2) return null;
+
+    const yearNum =
+      expectedYear && /^\d{4}$/.test(expectedYear.trim()) ? Number(expectedYear.trim()) : 0;
+
     const res = await fetch(
       `https://api.themoviedb.org/3/search/${mediaType}?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(clean)}&page=1`,
       { signal: AbortSignal.timeout(3500) }
     );
     if (!res.ok) return null;
     const json: any = await res.json();
-    return json?.results?.[0]?.id || null;
+    const results: any[] = Array.isArray(json?.results) ? json.results : [];
+    if (results.length === 0) return null;
+
+    const matchesTitle = (r: any): boolean => {
+      const rTitle = normalizeTitleForMatch(String(r?.title || r?.name || ''));
+      const rOrig = normalizeTitleForMatch(String(r?.original_title || r?.original_name || ''));
+      return (
+        (rTitle.length >= 2 && (rTitle === normClean || (normParen.length >= 2 && rTitle === normParen))) ||
+        (rOrig.length >= 2 && (rOrig === normClean || (normParen.length >= 2 && rOrig === normParen)))
+      );
+    };
+
+    const matchesYear = (r: any): boolean => {
+      if (!yearNum) return true;
+      const rawDate = String(r?.release_date || r?.first_air_date || '').trim();
+      const ry = rawDate.split('-')[0];
+      if (!/^\d{4}$/.test(ry)) return false;
+      return Math.abs(Number(ry) - yearNum) <= 1;
+    };
+
+    const exactYearAndTitle = results.find(
+      (r) =>
+        matchesTitle(r) &&
+        yearNum > 0 &&
+        Number(String(r?.release_date || r?.first_air_date || '').split('-')[0]) === yearNum
+    );
+    if (exactYearAndTitle?.id) return Number(exactYearAndTitle.id);
+
+    const exactCompatible = results.find((r) => matchesTitle(r) && matchesYear(r));
+    return exactCompatible?.id ? Number(exactCompatible.id) : null;
   } catch {
     return null;
   }
@@ -7364,15 +8934,18 @@ app.get('/api/extract/stream', async (req, res) => {
   }
 
   try {
-    // CASE 0: Live Spanish TDT Channel (`tdt_hls`) -> Verify live #EXTM3U + Audio AAC Remux when DVB-T2
+    // CASE 0: Live Spanish TDT Channel (`tdt_hls`) -> Stateless per-segment Progressive H.264 IDR + AAC via /api/hls-proxy
+    // (100% stateless across multi-instance Cloud Run deployments — never expires or drops across load-balanced containers!)
     if (resolverType === 'tdt_hls' && rawInput) {
+
+      const cleanCheckUrl = rawInput.replace(/[?&]profile=(hd|fast)\b/gi, '');
       const checkHeaders: Record<string, string> = {
-        'User-Agent': isDvbHeadendStream(rawInput) ? TDT_DVB_UA : CHROME_UA,
+        'User-Agent': isDvbHeadendStream(cleanCheckUrl) ? TDT_DVB_UA : CHROME_UA,
         Accept: '*/*',
       };
       let isAlive = false;
       try {
-        const chk = await fetch(rawInput, {
+        const chk = await fetch(cleanCheckUrl, {
           headers: checkHeaders,
           signal: AbortSignal.timeout(4000),
         });
@@ -7381,7 +8954,7 @@ app.get('/api/extract/stream', async (req, res) => {
           isAlive = txt.includes('#EXTM3U');
         }
       } catch {
-        const fb = await curlGetText(rawInput, checkHeaders, 5);
+        const fb = await curlGetText(cleanCheckUrl, checkHeaders, 5);
         isAlive = Boolean(fb.text && fb.text.includes('#EXTM3U'));
       }
 
@@ -7392,13 +8965,23 @@ app.get('/api/extract/stream', async (req, res) => {
         });
       }
 
-      const originRef = new URL(rawInput).origin + '/';
-      const proxiedUrl = buildHlsProxyUrl(rawInput, originRef, isDvbHeadendStream(rawInput));
+      const originRef = new URL(cleanCheckUrl).origin + '/';
+      // Official Spanish public broadcaster HTTPS CDNs (`rtvelivestream.rtve.es`, `3catdirectes.cat`, `eitb.eus`)
+      // send `Access-Control-Allow-Origin: *` for direct client playback in Spain, whereas proxying them through
+      // a non-Spanish Cloud Run datacenter triggers HTTP 403 geo-blocks on `.ts` segments!
+      const isDirectBrowserCorsPublicCdn =
+        /^https:\/\/([^/]*\.)?(rtvelivestream\.rtve\.es|3catdirectes\.cat|eitb\.eus)\//i.test(
+          cleanCheckUrl
+        );
+      const finalStreamUrl = isDirectBrowserCorsPublicCdn
+        ? cleanCheckUrl
+        : buildHlsProxyUrl(cleanCheckUrl, originRef, isDvbHeadendStream(cleanCheckUrl));
+
       const result: ExtractedStreamResult = {
         success: true,
         mode: 'hls',
-        streamUrl: proxiedUrl,
-        rawStreamUrl: rawInput,
+        streamUrl: finalStreamUrl,
+        rawStreamUrl: cleanCheckUrl,
         referer: originRef,
         title: titleHint || 'TV España en Directo',
         requestedLang: 'ES',
@@ -7570,6 +9153,8 @@ app.get('/api/extract/stream', async (req, res) => {
         (bingetrixTvMatch ? bingetrixTvMatch[1] : null) ||
         (bingetrixMovieMatch ? bingetrixMovieMatch[1] : null);
 
+      const hasExplicitMovidyUrl =
+        movidyUrlParam.includes('movidy.pw/ver/') || rawInput.includes('movidy.pw/ver/');
       let effectiveMovidyUrl = movidyUrlParam.includes('movidy.pw/ver/')
         ? movidyUrlParam
         : rawInput.includes('movidy.pw/ver/')
@@ -7577,37 +9162,34 @@ app.get('/api/extract/stream', async (req, res) => {
         : '';
 
       let extractedMovidyCleanTitle = '';
+      let extractedMovidyYear = '';
+      let tmdbVerifiedYear = '';
 
-      // Inspect direct Movidy `/ver/...` link to detect TV Series (`id="eps"`) & extract exact clean title (e.g. `nocturno-2` -> `Nocturno`)
+      // Inspect direct Movidy `/ver/...` link to detect TV Series (`id="eps"`), exact title, and exact release year
       if (effectiveMovidyUrl && (!mediaTypeParam || !resolvedTmdbId)) {
-        try {
-          const mvRes = await fetch(effectiveMovidyUrl, {
-            headers: { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-            signal: AbortSignal.timeout(4000),
-          });
-          if (mvRes.ok) {
-            const mvHtml = await mvRes.text();
-            if (!mediaTypeParam && mvHtml.includes('id="eps"')) {
-              effectiveMediaType = 'tv';
-            }
-            const h2Match = mvHtml.match(/<h2>\s*Ver\s+([\s\S]*?)\s+Movidy\s*<\/h2>/i);
-            if (h2Match?.[1]) {
-              extractedMovidyCleanTitle = h2Match[1].replace(/<[^>]+>/g, '').trim();
-            }
+        const mvMeta = await fetchMovidyPageMetadata(effectiveMovidyUrl);
+        if (mvMeta) {
+          if (!mediaTypeParam && mvMeta.isTvShow) {
+            effectiveMediaType = 'tv';
           }
-        } catch {
-          // ignore
+          extractedMovidyCleanTitle = mvMeta.cleanTitle;
+          extractedMovidyYear = mvMeta.year;
         }
       }
 
       if (!resolvedTmdbId && titleHint) {
-        resolvedTmdbId = await resolveTmdbIdByTitle(titleHint, effectiveMediaType);
+        resolvedTmdbId = await resolveTmdbIdByTitle(
+          titleHint,
+          effectiveMediaType,
+          extractedMovidyYear || undefined
+        );
       }
 
       if (!resolvedTmdbId && extractedMovidyCleanTitle) {
         resolvedTmdbId = await resolveTmdbIdByTitle(
           extractedMovidyCleanTitle,
-          effectiveMediaType
+          effectiveMediaType,
+          extractedMovidyYear || undefined
         );
       }
 
@@ -7619,42 +9201,64 @@ app.get('/api/extract/stream', async (req, res) => {
             .replace(/-\d+$/, '')
             .replace(/-/g, ' ') || '';
         if (slug) {
-          resolvedTmdbId = await resolveTmdbIdByTitle(slug, effectiveMediaType);
+          resolvedTmdbId = await resolveTmdbIdByTitle(
+            slug,
+            effectiveMediaType,
+            extractedMovidyYear || undefined
+          );
         }
       }
 
-      if (effectiveMediaType === 'movie' && !effectiveMovidyUrl) {
-        if (titleHint) {
-          effectiveMovidyUrl = (await findMovidyUrlByTitle(titleHint)) || '';
-        }
-        if (!effectiveMovidyUrl && resolvedTmdbId) {
-          try {
-            const tmRes = await fetch(
-              `https://api.themoviedb.org/3/movie/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`,
-              { signal: AbortSignal.timeout(3000) }
-            );
-            if (tmRes.ok) {
-              const tmJson: any = await tmRes.json();
-              const esTitle = String(tmJson?.title || '').trim();
-              const origTitle = String(tmJson?.original_title || '').trim();
-              if (esTitle && esTitle.toLowerCase() !== titleHint.toLowerCase()) {
-                effectiveMovidyUrl = (await findMovidyUrlByTitle(esTitle)) || '';
-              }
-              if (!effectiveMovidyUrl && origTitle && origTitle.toLowerCase() !== esTitle.toLowerCase()) {
-                effectiveMovidyUrl = (await findMovidyUrlByTitle(origTitle)) || '';
-              }
+      if (effectiveMediaType === 'movie' && resolvedTmdbId && !hasExplicitMovidyUrl) {
+        try {
+          const tmRes = await fetch(
+            `https://api.themoviedb.org/3/movie/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`,
+            { signal: AbortSignal.timeout(3000) }
+          );
+          if (tmRes.ok) {
+            const tmJson: any = await tmRes.json();
+            const esTitle = String(tmJson?.title || '').trim();
+            const origTitle = String(tmJson?.original_title || '').trim();
+            tmdbVerifiedYear = String(tmJson?.release_date || '').split('-')[0] || '';
+
+            if (!effectiveMovidyUrl && titleHint) {
+              effectiveMovidyUrl =
+                (await findMovidyUrlByTitle(titleHint, tmdbVerifiedYear)) || '';
             }
-          } catch {
-            // ignore
+            if (
+              !effectiveMovidyUrl &&
+              esTitle &&
+              esTitle.toLowerCase() !== titleHint.toLowerCase()
+            ) {
+              effectiveMovidyUrl =
+                (await findMovidyUrlByTitle(esTitle, tmdbVerifiedYear)) || '';
+            }
+            if (
+              !effectiveMovidyUrl &&
+              origTitle &&
+              origTitle.toLowerCase() !== esTitle.toLowerCase()
+            ) {
+              effectiveMovidyUrl =
+                (await findMovidyUrlByTitle(origTitle, tmdbVerifiedYear)) || '';
+            }
           }
+        } catch {
+          // ignore
         }
+      } else if (effectiveMediaType === 'movie' && !effectiveMovidyUrl && titleHint) {
+        effectiveMovidyUrl = (await findMovidyUrlByTitle(titleHint)) || '';
       }
 
       const combinedTitleHints = [titleHint, extractedMovidyCleanTitle].filter(Boolean);
 
       const [movidyTracks, esTracks, enTracks] = await Promise.all([
         effectiveMediaType === 'movie' && effectiveMovidyUrl
-          ? extractMovidyPageTracks(effectiveMovidyUrl)
+          ? extractMovidyPageTracks(
+              effectiveMovidyUrl,
+              hasExplicitMovidyUrl
+                ? undefined
+                : { expectedYear: tmdbVerifiedYear || undefined, requireMovieOnly: true }
+            )
           : Promise.resolve([]),
         resolvedTmdbId || combinedTitleHints.length > 0
           ? extractEmbed69SpanishTracks({
@@ -7676,7 +9280,9 @@ app.get('/api/extract/stream', async (req, res) => {
       ]);
 
       // Combine all discovered tracks and sort by requested language priority
-      const allDiscovered: TrackRecord[] = [...movidyTracks, ...esTracks, ...enTracks];
+      const allDiscovered: TrackRecord[] = hasExplicitMovidyUrl
+        ? [...movidyTracks, ...esTracks, ...enTracks]
+        : [...esTracks, ...movidyTracks, ...enTracks];
 
       const getLangScore = (trackLang: string): number => {
         const tl = String(trackLang || '').toUpperCase();
@@ -8113,13 +9719,50 @@ app.get('/api/extract/stream', async (req, res) => {
       }
     }
 
-    // CASE 5: Live Sports Channel / External Web URL (`footunder.online`, `tilinhd`, etc.) -> Pure Crypto Direct (<350ms) + Safe Headless Fallback + Embed/Cloud Fallback
+    // CASE 5: Live Sports Channel / External Web URL -> Pure Crypto Direct (<350ms) + Green-Screen Guard + Safe Fallback
     if (rawInput) {
       const fullTargetUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
       const directSports = await extractLiveSportsHlsDirect(fullTargetUrl);
+
+      if (directSports?.isBrokenGreenFeed) {
+        return res.status(502).json({
+          success: false,
+          canUseCloudBrowser: false,
+          error: 'Señal satélite en mantenimiento temporal; cambiando automáticamente a señal alternativa.',
+        });
+      }
+
+      // For sports_channel tracks on known mirrors (footunder / tilinhd), skip slow headless Chrome if direct HTTP failed
+      const isKnownDirectMirror = /footunder\.online|tilinhd\./i.test(fullTargetUrl);
+      if (!directSports && resolverType === 'sports_channel' && isKnownDirectMirror) {
+        return res.status(404).json({
+          success: false,
+          canUseCloudBrowser: false,
+          error: 'Esta señal alternativa no está activa ahora mismo; saltando a otra pista.',
+        });
+      }
+
       const sniffed = directSports || (await sniffStreamWithHeadless(fullTargetUrl));
 
-      if (sniffed) {
+      if (sniffed && sniffed.streamUrl) {
+        if (!sniffed.isDirectMp4 && resolverType === 'sports_channel') {
+          const checkM3u = await fetchSportsHtmlHop(sniffed.streamUrl, sniffed.referer);
+          if (checkM3u.includes('#EXTM3U')) {
+            const clean = await verifyM3u8HasCleanVideoFrame(
+              checkM3u,
+              sniffed.streamUrl,
+              sniffed.referer
+            );
+            if (!clean) {
+              return res.status(502).json({
+                success: false,
+                canUseCloudBrowser: false,
+                error: 'Señal con interferencias descartada automáticamente; saltando a respaldo HD.',
+              });
+            }
+          }
+        }
+
         const proxiedUrl = sniffed.isDirectMp4
           ? buildTsProxyUrl(sniffed.streamUrl, sniffed.referer)
           : buildHlsProxyUrl(sniffed.streamUrl, sniffed.referer);
@@ -8209,15 +9852,59 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
     const mediaType = req.params.mediaType === 'tv' ? 'tv' : 'movie';
     let cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
     const titleHint = String(req.query.title || '').trim();
-    if ((!cleanId || cleanId === '0') && titleHint) {
-      const resolved = await resolveTmdbIdByTitle(titleHint, mediaType);
+    const movidyUrlHint = String(req.query.movidyUrl || '').trim();
+
+    let movidyMeta: MovidyPageMetadata | null = null;
+    if ((!cleanId || cleanId === '0') && movidyUrlHint) {
+      movidyMeta = await fetchMovidyPageMetadata(movidyUrlHint);
+    }
+
+    if ((!cleanId || cleanId === '0') && (movidyMeta?.cleanTitle || titleHint)) {
+      const resolved = await resolveTmdbIdByTitle(
+        movidyMeta?.cleanTitle || titleHint,
+        mediaType,
+        movidyMeta?.year || undefined
+      );
       if (resolved) cleanId = String(resolved);
     }
+
+    // If a Movidy movie has no exact TMDB match (e.g. brand-new release or homonym from another year),
+    // return Movidy's own verified metadata & languages so the modal NEVER jumps to an unrelated TMDB movie!
+    if ((!cleanId || cleanId === '0') && movidyMeta) {
+      const availableLanguages = await probeAvailableLanguages({
+        tmdbId: '',
+        mediaType,
+        titleHints: [movidyMeta.cleanTitle || titleHint].filter(Boolean),
+        movidyUrl: movidyUrlHint,
+        yearHint: movidyMeta.year || undefined,
+      });
+      return res.json({
+        success: true,
+        details: {
+          tmdbId: undefined,
+          mediaType: movidyMeta.isTvShow ? 'tv' : mediaType,
+          title: titleHint || movidyMeta.cleanTitle || 'Película',
+          originalTitle: movidyMeta.cleanTitle || undefined,
+          year: movidyMeta.year || 'HD',
+          rating: '',
+          runtimeText: movidyMeta.durationText || undefined,
+          genres: [],
+          overview: movidyMeta.overview || '',
+          poster: '',
+          backdrop: '',
+          directorOrCreator: movidyMeta.director || undefined,
+          watchProviders: [],
+          availableLanguages,
+          cast: movidyMeta.cast,
+          similar: [],
+        },
+      });
+    }
+
     if (!cleanId || cleanId === '0') return res.status(400).json({ success: false });
 
     const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
-    const movidyUrlHint = String(req.query.movidyUrl || '').trim();
-    const cacheKey = `v3|${mediaType}|${cleanId}|${langParam}`;
+    const cacheKey = `v4|${mediaType}|${cleanId}|${langParam}|${movidyUrlHint}`;
     const cached = richDetailsCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 10 * 60 * 1000) {
       return res.json({ success: true, details: cached.details });
@@ -8258,6 +9945,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
     const primaryTitle =
       data.title || data.name || data.original_title || data.original_name || 'Título';
     const originalTitle = data.original_title || data.original_name || '';
+    const tmdbYear = String(data.release_date || data.first_air_date || '').split('-')[0] || '';
 
     const [allVideosResolved, availableLanguages] = await Promise.all([
       (async () => {
@@ -8281,6 +9969,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         episode: mediaType === 'tv' ? 1 : undefined,
         titleHints: [primaryTitle, originalTitle, titleHint],
         movidyUrl: movidyUrlHint || undefined,
+        yearHint: tmdbYear || undefined,
       }),
     ]);
 
@@ -8519,6 +10208,839 @@ app.get('/api/sports/scores', async (_req, res) => {
     res.json({ success: true, scores: liveScoresCache.matches });
   } catch {
     res.json({ success: true, scores: [] });
+  }
+});
+
+// ============================================================================
+// REST API: LIVE FOOTBALL MATCHBOARD (FLAGS, CLUB CRESTS, LIVE MINUTE, STREAMS & STATS)
+// ============================================================================
+interface SoccerLeagueFeedDef {
+  slug: string;
+  regionName: string;
+  leagueName: string;
+  regionFlagUrl: string;
+  priority: number;
+  broadcasterProfile: 'spain_nt' | 'laliga' | 'copa_rey' | 'uefa' | 'europe' | 'americas';
+}
+
+const SOCCER_BOARD_LEAGUES: SoccerLeagueFeedDef[] = [
+  {
+    slug: 'esp.1',
+    regionName: 'España',
+    leagueName: 'LaLiga EA Sports',
+    regionFlagUrl: 'https://flagcdn.com/w40/es.png',
+    priority: 1,
+    broadcasterProfile: 'laliga',
+  },
+  {
+    slug: 'uefa.champions',
+    regionName: 'Europa',
+    leagueName: 'Champions League',
+    regionFlagUrl: 'https://flagcdn.com/w40/eu.png',
+    priority: 2,
+    broadcasterProfile: 'uefa',
+  },
+  {
+    slug: 'uefa.nations',
+    regionName: 'Europa',
+    leagueName: 'Liga de Naciones UEFA',
+    regionFlagUrl: 'https://flagcdn.com/w40/eu.png',
+    priority: 3,
+    broadcasterProfile: 'spain_nt',
+  },
+  {
+    slug: 'esp.copa_del_rey',
+    regionName: 'España',
+    leagueName: 'Copa del Rey',
+    regionFlagUrl: 'https://flagcdn.com/w40/es.png',
+    priority: 4,
+    broadcasterProfile: 'copa_rey',
+  },
+  {
+    slug: 'esp.2',
+    regionName: 'España',
+    leagueName: 'LaLiga Hypermotion',
+    regionFlagUrl: 'https://flagcdn.com/w40/es.png',
+    priority: 5,
+    broadcasterProfile: 'laliga',
+  },
+  {
+    slug: 'uefa.europa',
+    regionName: 'Europa',
+    leagueName: 'Europa League',
+    regionFlagUrl: 'https://flagcdn.com/w40/eu.png',
+    priority: 6,
+    broadcasterProfile: 'uefa',
+  },
+  {
+    slug: 'uefa.europa.conf',
+    regionName: 'Europa',
+    leagueName: 'Conference League',
+    regionFlagUrl: 'https://flagcdn.com/w40/eu.png',
+    priority: 7,
+    broadcasterProfile: 'uefa',
+  },
+  {
+    slug: 'uefa.wchampions',
+    regionName: 'Europa',
+    leagueName: 'Champions League Femenina',
+    regionFlagUrl: 'https://flagcdn.com/w40/eu.png',
+    priority: 8,
+    broadcasterProfile: 'uefa',
+  },
+  {
+    slug: 'eng.1',
+    regionName: 'Inglaterra',
+    leagueName: 'Premier League',
+    regionFlagUrl: 'https://flagcdn.com/w40/gb-eng.png',
+    priority: 9,
+    broadcasterProfile: 'europe',
+  },
+  {
+    slug: 'eng.fa',
+    regionName: 'Inglaterra',
+    leagueName: 'FA Cup',
+    regionFlagUrl: 'https://flagcdn.com/w40/gb-eng.png',
+    priority: 10,
+    broadcasterProfile: 'europe',
+  },
+  {
+    slug: 'ita.1',
+    regionName: 'Italia',
+    leagueName: 'Serie A',
+    regionFlagUrl: 'https://flagcdn.com/w40/it.png',
+    priority: 11,
+    broadcasterProfile: 'europe',
+  },
+  {
+    slug: 'ger.1',
+    regionName: 'Alemania',
+    leagueName: 'Bundesliga',
+    regionFlagUrl: 'https://flagcdn.com/w40/de.png',
+    priority: 12,
+    broadcasterProfile: 'europe',
+  },
+  {
+    slug: 'fra.1',
+    regionName: 'Francia',
+    leagueName: 'Ligue 1',
+    regionFlagUrl: 'https://flagcdn.com/w40/fr.png',
+    priority: 13,
+    broadcasterProfile: 'europe',
+  },
+  {
+    slug: 'fra.coupe_de_france',
+    regionName: 'Francia',
+    leagueName: 'Coupe de France',
+    regionFlagUrl: 'https://flagcdn.com/w40/fr.png',
+    priority: 14,
+    broadcasterProfile: 'europe',
+  },
+  {
+    slug: 'por.1',
+    regionName: 'Portugal',
+    leagueName: 'Primeira Liga',
+    regionFlagUrl: 'https://flagcdn.com/w40/pt.png',
+    priority: 15,
+    broadcasterProfile: 'europe',
+  },
+  {
+    slug: 'ned.1',
+    regionName: 'Países Bajos',
+    leagueName: 'Eredivisie',
+    regionFlagUrl: 'https://flagcdn.com/w40/nl.png',
+    priority: 16,
+    broadcasterProfile: 'europe',
+  },
+  {
+    slug: 'fifa.worldq.uefa',
+    regionName: 'Europa',
+    leagueName: 'Clasificación Mundial UEFA',
+    regionFlagUrl: 'https://flagcdn.com/w40/eu.png',
+    priority: 17,
+    broadcasterProfile: 'spain_nt',
+  },
+  {
+    slug: 'fifa.worldq.conmebol',
+    regionName: 'Sudamérica',
+    leagueName: 'Eliminatorias CONMEBOL',
+    regionFlagUrl: 'https://flagcdn.com/w40/ar.png',
+    priority: 18,
+    broadcasterProfile: 'americas',
+  },
+  {
+    slug: 'fifa.worldq.caf',
+    regionName: 'África',
+    leagueName: 'Clasificación CAF',
+    regionFlagUrl: 'https://flagcdn.com/w40/ma.png',
+    priority: 19,
+    broadcasterProfile: 'europe',
+  },
+  {
+    slug: 'fifa.friendly',
+    regionName: 'Internacional',
+    leagueName: 'Amistosos Internacionales',
+    regionFlagUrl: 'https://flagcdn.com/w40/un.png',
+    priority: 20,
+    broadcasterProfile: 'spain_nt',
+  },
+  {
+    slug: 'conmebol.libertadores',
+    regionName: 'Sudamérica',
+    leagueName: 'Copa Libertadores',
+    regionFlagUrl: 'https://flagcdn.com/w40/br.png',
+    priority: 21,
+    broadcasterProfile: 'americas',
+  },
+  {
+    slug: 'bra.1',
+    regionName: 'Brasil',
+    leagueName: 'Brasileirao Serie A',
+    regionFlagUrl: 'https://flagcdn.com/w40/br.png',
+    priority: 22,
+    broadcasterProfile: 'americas',
+  },
+  {
+    slug: 'bra.2',
+    regionName: 'Brasil',
+    leagueName: 'Brasileirao Serie B',
+    regionFlagUrl: 'https://flagcdn.com/w40/br.png',
+    priority: 23,
+    broadcasterProfile: 'americas',
+  },
+  {
+    slug: 'arg.1',
+    regionName: 'Argentina',
+    leagueName: 'Liga Profesional',
+    regionFlagUrl: 'https://flagcdn.com/w40/ar.png',
+    priority: 24,
+    broadcasterProfile: 'americas',
+  },
+  {
+    slug: 'mex.1',
+    regionName: 'México',
+    leagueName: 'Liga MX',
+    regionFlagUrl: 'https://flagcdn.com/w40/mx.png',
+    priority: 25,
+    broadcasterProfile: 'americas',
+  },
+  {
+    slug: 'usa.1',
+    regionName: 'EE. UU.',
+    leagueName: 'MLS',
+    regionFlagUrl: 'https://flagcdn.com/w40/us.png',
+    priority: 26,
+    broadcasterProfile: 'americas',
+  },
+];
+
+const COUNTRY_NAME_TO_ISO2: Record<string, string> = {
+  espana: 'es',
+  spain: 'es',
+  francia: 'fr',
+  france: 'fr',
+  italia: 'it',
+  italy: 'it',
+  alemania: 'de',
+  germany: 'de',
+  inglaterra: 'gb-eng',
+  england: 'gb-eng',
+  escocia: 'gb-sct',
+  gales: 'gb-wls',
+  portugal: 'pt',
+  croacia: 'hr',
+  croatia: 'hr',
+  republica_checa: 'cz',
+  chequia: 'cz',
+  czechia: 'cz',
+  montenegro: 'me',
+  letonia: 'lv',
+  latvia: 'lv',
+  albania: 'al',
+  finlandia: 'fi',
+  finland: 'fi',
+  san_marino: 'sm',
+  bielorrusia: 'by',
+  belarus: 'by',
+  paises_bajos: 'nl',
+  holanda: 'nl',
+  belgica: 'be',
+  suiza: 'ch',
+  austria: 'at',
+  dinamarca: 'dk',
+  suecia: 'se',
+  noruega: 'no',
+  polonia: 'pl',
+  turquia: 'tr',
+  grecia: 'gr',
+  serbia: 'rs',
+  rumania: 'ro',
+  ucrania: 'ua',
+  hungria: 'hu',
+  irlanda: 'ie',
+  islandia: 'is',
+  eslovaquia: 'sk',
+  eslovenia: 'si',
+  georgia: 'ge',
+  armenia: 'am',
+  chipre: 'cy',
+  rusia: 'ru',
+  brasil: 'br',
+  argentina: 'ar',
+  uruguay: 'uy',
+  colombia: 'co',
+  chile: 'cl',
+  paraguay: 'py',
+  peru: 'pe',
+  ecuador: 'ec',
+  venezuela: 've',
+  bolivia: 'bo',
+  mexico: 'mx',
+  estados_unidos: 'us',
+  canada: 'ca',
+  japon: 'jp',
+  marruecos: 'ma',
+  nigeria: 'ng',
+  senegal: 'sn',
+  egipto: 'eg',
+  camerun: 'cm',
+  ghana: 'gh',
+  argelia: 'dz',
+  tunez: 'tn',
+};
+
+function normalizeTeamToken(raw: string): string {
+  return String(raw || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
+}
+
+function resolveTeamBadgeUrl(teamObj: any, isInternational: boolean): string | undefined {
+  const directLogo = String(teamObj?.logo || teamObj?.logos?.[0]?.href || '').trim();
+  if (directLogo.startsWith('http')) {
+    return directLogo;
+  }
+  if (isInternational) {
+    const slug = normalizeTeamToken(teamObj?.displayName || teamObj?.shortDisplayName || '');
+    const iso = COUNTRY_NAME_TO_ISO2[slug];
+    if (iso) return `https://flagcdn.com/w40/${iso}.png`;
+  }
+  return undefined;
+}
+
+function buildFootballMatchChannels(params: {
+  matchId: string;
+  homeTeam: string;
+  awayTeam: string;
+  league: SoccerLeagueFeedDef;
+  scrapedMatches: any[];
+}): TrackRecord[] {
+  const { matchId, homeTeam, awayTeam, league, scrapedMatches } = params;
+  const channels: TrackRecord[] = [];
+  const seenUrls = new Set<string>();
+
+  const pushTrack = (track: TrackRecord) => {
+    if (!track.sourceUrl || seenUrls.has(track.sourceUrl)) return;
+    seenUrls.add(track.sourceUrl);
+    channels.push(track);
+  };
+
+  const homeNorm = normalizeTeamToken(homeTeam).replace(/_/g, ' ');
+  const awayNorm = normalizeTeamToken(awayTeam).replace(/_/g, ' ');
+  const isSpainTeam =
+    /\bespana\b|\bspain\b/i.test(homeNorm) || /\bespana\b|\bspain\b/i.test(awayNorm);
+
+  // 1. If Selección Española or Copa del Rey is playing, put La 1 RTVE HD & Teledeporte HD first!
+  if (isSpainTeam || league.broadcasterProfile === 'copa_rey') {
+    pushTrack({
+      id: `${matchId}-la1`,
+      label: 'La 1 RTVE HD',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8',
+      resolverType: 'tdt_hls',
+    });
+    pushTrack({
+      id: `${matchId}-tdp`,
+      label: 'Teledeporte HD',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+      resolverType: 'tdt_hls',
+    });
+  }
+
+  // 2. Match any live scraped direct match channels from our sports agenda!
+  const homeWords = homeNorm.split(' ').filter((w) => w.length >= 4);
+  const awayWords = awayNorm.split(' ').filter((w) => w.length >= 4);
+  for (const sm of scrapedMatches) {
+    if (sm.is247Channel) continue;
+    const smTitle = normalizeTeamToken(sm.title || '').replace(/_/g, ' ');
+    const hitHome = homeWords.some((w) => smTitle.includes(w));
+    const hitAway = awayWords.some((w) => smTitle.includes(w));
+    if (hitHome || hitAway) {
+      for (const ch of sm.channels || []) {
+        pushTrack({
+          id: `${matchId}-live-${channels.length + 1}`,
+          label: ch.label || `Señal Directo ${channels.length + 1}`,
+          lang: ch.lang || 'ES',
+          quality: ch.quality || 'HD',
+          sourceUrl: ch.sourceUrl,
+          resolverType: ch.resolverType || 'sports_channel',
+        });
+      }
+    }
+  }
+
+  // 3. Competition-tailored broadcasters so every match has instant multi-server buttons
+  if (league.broadcasterProfile === 'laliga') {
+    pushTrack({
+      id: `${matchId}-mll`,
+      label: 'Movistar LaLiga',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+      resolverType: 'sports_channel',
+    });
+    pushTrack({
+      id: `${matchId}-daznll`,
+      label: 'DAZN LaLiga',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://pig.footunder.online/stream/538',
+      resolverType: 'sports_channel',
+    });
+    pushTrack({
+      id: `${matchId}-hyper`,
+      label: 'LaLiga TV 2',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://pig.footunder.online/stream/522',
+      resolverType: 'sports_channel',
+    });
+    pushTrack({
+      id: `${matchId}-gol`,
+      label: 'GOL Play HD',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
+      resolverType: 'tdt_hls',
+    });
+  } else if (league.broadcasterProfile === 'uefa' || league.broadcasterProfile === 'spain_nt') {
+    pushTrack({
+      id: `${matchId}-mlc`,
+      label: 'Movistar Campeones',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://pig.footunder.online/stream/435',
+      resolverType: 'sports_channel',
+    });
+    pushTrack({
+      id: `${matchId}-dazneu`,
+      label: 'DAZN Europa',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://footunder.online/tvtodo/dazn3.php',
+      resolverType: 'sports_channel',
+    });
+    pushTrack({
+      id: `${matchId}-mplus`,
+      label: 'Movistar Fútbol',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+      resolverType: 'sports_channel',
+    });
+    if (league.slug === 'uefa.wchampions') {
+      pushTrack({
+        id: `${matchId}-esport3`,
+        label: 'Esport3 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-origin/esport3-hls/master.m3u8',
+        resolverType: 'tdt_hls',
+      });
+    }
+    pushTrack({
+      id: `${matchId}-tdp-bk`,
+      label: 'Teledeporte HD',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+      resolverType: 'tdt_hls',
+    });
+  } else {
+    pushTrack({
+      id: `${matchId}-dazn1`,
+      label: 'DAZN Fútbol HD',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://pig.footunder.online/stream/538',
+      resolverType: 'sports_channel',
+    });
+    pushTrack({
+      id: `${matchId}-mplus-int`,
+      label: 'Movistar Fútbol',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://pig.footunder.online/stream/435',
+      resolverType: 'sports_channel',
+    });
+    pushTrack({
+      id: `${matchId}-gol-int`,
+      label: 'GOL Play HD',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
+      resolverType: 'tdt_hls',
+    });
+    pushTrack({
+      id: `${matchId}-tdp-int`,
+      label: 'Teledeporte HD',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+      resolverType: 'tdt_hls',
+    });
+  }
+
+  return channels.slice(0, 7);
+}
+
+let cachedFootballBoard: { dateKey: string; matches: any[]; ts: number } | null = null;
+
+app.get('/api/sports/football-board', async (req, res) => {
+  const requestedDate = String(req.query.date || '')
+    .replace(/\D/g, '')
+    .slice(0, 8);
+  const madridToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' })
+    .format(new Date())
+    .replace(/-/g, '');
+  const dateKey = requestedDate.length === 8 ? requestedDate : madridToday;
+
+  if (
+    cachedFootballBoard &&
+    cachedFootballBoard.dateKey === dateKey &&
+    Date.now() - cachedFootballBoard.ts < 35 * 1000
+  ) {
+    return res.json({ success: true, dateKey, matches: cachedFootballBoard.matches });
+  }
+
+  try {
+    const scrapedMatches = cachedSportsSchedule?.matches || [];
+    const madridTimeFmt = new Intl.DateTimeFormat('es-ES', {
+      timeZone: 'Europe/Madrid',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+
+    const responses = await Promise.all(
+      SOCCER_BOARD_LEAGUES.map((league) =>
+        fetch(
+          `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.slug}/scoreboard?dates=${dateKey}&lang=es&region=es`,
+          { signal: AbortSignal.timeout(4500) }
+        )
+          .then((r) => (r.ok ? r.json() : null))
+          .then((json) => ({ league, json }))
+          .catch(() => ({ league, json: null }))
+      )
+    );
+
+    const items: any[] = [];
+    const seenEventIds = new Set<string>();
+
+    for (const { league, json } of responses) {
+      const events: any[] = Array.isArray(json?.events) ? json.events : [];
+      const espnLeagueLogo = String(json?.leagues?.[0]?.logos?.[0]?.href || '').trim() || undefined;
+      const isInternational =
+        league.slug.startsWith('uefa.nations') || league.slug.startsWith('fifa.');
+
+      for (const ev of events) {
+        const eventId = String(ev?.id || '').trim();
+        if (!eventId || seenEventIds.has(eventId)) continue;
+        seenEventIds.add(eventId);
+
+        const comp = ev?.competitions?.[0];
+        const competitors: any[] = Array.isArray(comp?.competitors) ? comp.competitors : [];
+        const home = competitors.find((c) => c.homeAway === 'home') || competitors[0];
+        const away = competitors.find((c) => c.homeAway === 'away') || competitors[1];
+        if (!home || !away) continue;
+
+        const kickoffDate = ev?.date ? new Date(ev.date) : new Date();
+        const kickoffTime = Number.isNaN(kickoffDate.getTime())
+          ? '20:45'
+          : madridTimeFmt.format(kickoffDate);
+
+        const rawState = String(ev?.status?.type?.state || '').toLowerCase();
+        const statusName = String(ev?.status?.type?.name || '');
+        const statusState: 'live' | 'upcoming' | 'finished' =
+          rawState === 'in' ? 'live' : rawState === 'post' ? 'finished' : 'upcoming';
+
+        let statusLabel = '';
+        if (statusState === 'live') {
+          if (statusName.includes('HALFTIME')) {
+            statusLabel = 'HT';
+          } else {
+            const clk = String(
+              ev?.status?.displayClock || ev?.status?.type?.shortDetail || ''
+            ).trim();
+            statusLabel = clk || 'EN VIVO';
+          }
+        } else if (statusState === 'finished') {
+          statusLabel = statusName.includes('PEN') ? 'PEN' : statusName.includes('AET') ? 'PRÓ' : 'FT';
+        }
+
+        const homeTeam = String(
+          home.team?.shortDisplayName || home.team?.displayName || 'Local'
+        ).trim();
+        const awayTeam = String(
+          away.team?.shortDisplayName || away.team?.displayName || 'Visitante'
+        ).trim();
+
+        const channels = buildFootballMatchChannels({
+          matchId: `fb-${eventId}`,
+          homeTeam,
+          awayTeam,
+          league,
+          scrapedMatches,
+        });
+
+        items.push({
+          id: `fb-${eventId}`,
+          eventId,
+          leagueSlug: league.slug,
+          regionName: league.regionName,
+          leagueName: league.leagueName,
+          groupTitle: `${league.regionName}: ${league.leagueName}`,
+          regionFlagUrl: league.regionFlagUrl,
+          leagueLogoUrl: espnLeagueLogo,
+          priority: league.priority,
+          kickoffIso: kickoffDate.toISOString(),
+          kickoffTime,
+          kickoffMs: kickoffDate.getTime() || 0,
+          statusState,
+          statusLabel,
+          homeTeam,
+          awayTeam,
+          homeShort: String(home.team?.abbreviation || homeTeam.slice(0, 3)).toUpperCase(),
+          awayShort: String(away.team?.abbreviation || awayTeam.slice(0, 3)).toUpperCase(),
+          homeLogo: resolveTeamBadgeUrl(home.team, isInternational),
+          awayLogo: resolveTeamBadgeUrl(away.team, isInternational),
+          homeScore: statusState === 'upcoming' ? '-' : String(home.score ?? '0'),
+          awayScore: statusState === 'upcoming' ? '-' : String(away.score ?? '0'),
+          channels,
+        });
+      }
+    }
+
+    items.sort((a, b) => {
+      if (a.priority !== b.priority) return a.priority - b.priority;
+      const rank = (s: string) => (s === 'live' ? 0 : s === 'upcoming' ? 1 : 2);
+      if (rank(a.statusState) !== rank(b.statusState)) {
+        return rank(a.statusState) - rank(b.statusState);
+      }
+      return a.kickoffMs - b.kickoffMs;
+    });
+
+    cachedFootballBoard = { dateKey, matches: items, ts: Date.now() };
+    res.json({ success: true, dateKey, matches: items });
+  } catch (err) {
+    console.warn('Football matchboard fetch error:', err);
+    res.json({ success: true, dateKey, matches: cachedFootballBoard?.matches || [] });
+  }
+});
+
+const cachedMatchDetailsMap = new Map<string, { data: any; ts: number }>();
+
+app.get('/api/sports/match-details', async (req, res) => {
+  const eventId = String(req.query.eventId || '').replace(/\D/g, '');
+  const leagueSlug = String(req.query.leagueSlug || 'all').replace(/[^a-z0-9._-]/gi, '') || 'all';
+  if (!eventId) {
+    return res.status(400).json({ success: false, error: 'Missing eventId' });
+  }
+
+  const cacheKey = `${leagueSlug}:${eventId}`;
+  const cached = cachedMatchDetailsMap.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 30 * 1000) {
+    return res.json({ success: true, details: cached.data });
+  }
+
+  try {
+    const summaryUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/summary?event=${eventId}&lang=es&region=es`;
+    const r = await fetch(summaryUrl, { signal: AbortSignal.timeout(4500) });
+    if (!r.ok) {
+      return res.json({
+        success: true,
+        details: { eventId, stats: [], events: [] },
+      });
+    }
+    const sj: any = await r.json();
+
+    const comp = sj?.header?.competitions?.[0];
+    const competitors: any[] = Array.isArray(comp?.competitors) ? comp.competitors : [];
+    const homeComp = competitors.find((c) => c.homeAway === 'home') || competitors[0];
+    const awayComp = competitors.find((c) => c.homeAway === 'away') || competitors[1];
+    const homeTeamId = String(homeComp?.team?.id || homeComp?.id || '');
+    const awayTeamId = String(awayComp?.team?.id || awayComp?.id || '');
+
+    // 1. Comparative Team Statistics
+    const boxTeams: any[] = Array.isArray(sj?.boxscore?.teams) ? sj.boxscore.teams : [];
+    const homeStatsArr: any[] =
+      boxTeams.find((t) => String(t?.team?.id || '') === homeTeamId)?.statistics ||
+      boxTeams[0]?.statistics ||
+      [];
+    const awayStatsArr: any[] =
+      boxTeams.find((t) => String(t?.team?.id || '') === awayTeamId)?.statistics ||
+      boxTeams[1]?.statistics ||
+      [];
+
+    const statKeysOrder: { key: string; esLabel: string }[] = [
+      { key: 'possessionPct', esLabel: 'Posesión (%)' },
+      { key: 'shotsSummary', esLabel: 'Remates Totales' },
+      { key: 'totalShots', esLabel: 'Remates Totales' },
+      { key: 'shotsOnTarget', esLabel: 'Remates a Puerta' },
+      { key: 'wonCorners', esLabel: 'Saques de Esquina' },
+      { key: 'foulsCommitted', esLabel: 'Faltas Cometidas' },
+      { key: 'offsides', esLabel: 'Fueras de Juego' },
+      { key: 'yellowCards', esLabel: 'Tarjetas Amarillas' },
+      { key: 'redCards', esLabel: 'Tarjetas Rojas' },
+      { key: 'saves', esLabel: 'Paradas del Portero' },
+    ];
+
+    const stats: any[] = [];
+    const seenLabels = new Set<string>();
+    for (const def of statKeysOrder) {
+      const hs = homeStatsArr.find((s) => s?.name === def.key);
+      const as = awayStatsArr.find((s) => s?.name === def.key);
+      if (!hs && !as) continue;
+      const label = def.esLabel || hs?.label || as?.label || def.key;
+      if (seenLabels.has(label)) continue;
+      seenLabels.add(label);
+
+      const hStr = String(hs?.displayValue ?? '0');
+      const aStr = String(as?.displayValue ?? '0');
+      const hNum = parseFloat(hStr.replace(/[^0-9.]/g, '')) || 0;
+      const aNum = parseFloat(aStr.replace(/[^0-9.]/g, '')) || 0;
+      const sum = hNum + aNum;
+      const homePct = sum > 0 ? Math.round((hNum / sum) * 100) : 50;
+      const awayPct = sum > 0 ? 100 - homePct : 50;
+
+      stats.push({
+        key: def.key,
+        label,
+        homeValue: def.key === 'possessionPct' && !hStr.includes('%') ? `${hStr}%` : hStr,
+        awayValue: def.key === 'possessionPct' && !aStr.includes('%') ? `${aStr}%` : aStr,
+        homePct,
+        awayPct,
+      });
+    }
+
+    // 2. Match Key Events (Goals, Cards, Substitutions)
+    const rawKeyEvents: any[] = Array.isArray(sj?.keyEvents)
+      ? sj.keyEvents
+      : Array.isArray(comp?.details)
+      ? comp.details
+      : [];
+
+    const events: any[] = rawKeyEvents
+      .map((ke, idx) => {
+        const rawType = String(ke?.type?.type || ke?.type?.text || '').toLowerCase();
+        const isGoal = Boolean(ke?.scoringPlay) || rawType.includes('goal') || rawType.includes('gol');
+        const isRed = rawType.includes('red') || rawType.includes('roja');
+        const isYellow = !isRed && (rawType.includes('yellow') || rawType.includes('amarilla'));
+        const isSub = rawType.includes('sub') || rawType.includes('cambio');
+        if (!isGoal && !isRed && !isYellow && !isSub) return null;
+
+        const evTeamId = String(ke?.team?.id || '');
+        const side: 'home' | 'away' | 'neutral' =
+          evTeamId && evTeamId === homeTeamId
+            ? 'home'
+            : evTeamId && evTeamId === awayTeamId
+            ? 'away'
+            : 'neutral';
+
+        const participants: any[] = Array.isArray(ke?.participants) ? ke.participants : [];
+        const playerName =
+          String(
+            participants[0]?.athlete?.displayName ||
+              ke?.athletesInvolved?.[0]?.displayName ||
+              ke?.shortText ||
+              ''
+          ).trim() || 'Jugador';
+        const assistOrSubName =
+          String(participants[1]?.athlete?.displayName || '').trim() || undefined;
+
+        return {
+          id: String(ke?.id || `ev-${idx}`),
+          clock: String(ke?.clock?.displayValue || '').trim() || "•",
+          type: isGoal
+            ? 'goal'
+            : isRed
+            ? 'red-card'
+            : isYellow
+            ? 'yellow-card'
+            : isSub
+            ? 'substitution'
+            : 'other',
+          typeLabel: isGoal
+            ? 'Gol'
+            : isRed
+            ? 'Tarjeta Roja'
+            : isYellow
+            ? 'Amarilla'
+            : 'Cambio',
+          playerName,
+          assistOrSubName,
+          side,
+          detailText: String(ke?.shortText || ke?.text || '').trim() || undefined,
+        };
+      })
+      .filter(Boolean);
+
+    // 3. Starting XI & Substitutes Lineups
+    const rosters: any[] = Array.isArray(sj?.rosters) ? sj.rosters : [];
+    const parseLineup = (rObj: any) => {
+      if (!rObj) return undefined;
+      const list: any[] = Array.isArray(rObj?.roster) ? rObj.roster : [];
+      if (list.length === 0) return undefined;
+      const mapped = list.map((p, idx) => ({
+        id: String(p?.athlete?.id || `p-${idx}`),
+        jersey: String(p?.jersey || '-'),
+        name: String(p?.athlete?.displayName || p?.athlete?.shortName || 'Jugador'),
+        position: String(p?.position?.abbreviation || ''),
+        starter: Boolean(p?.starter),
+      }));
+      return {
+        teamName: String(rObj?.team?.displayName || ''),
+        formation: rObj?.formation ? String(rObj.formation) : undefined,
+        starters: mapped.filter((x) => x.starter),
+        substitutes: mapped.filter((x) => !x.starter),
+      };
+    };
+
+    const homeRoster = rosters.find((rItem) => rItem?.homeAway === 'home') || rosters[0];
+    const awayRoster = rosters.find((rItem) => rItem?.homeAway === 'away') || rosters[1];
+
+    const details = {
+      eventId,
+      venue: sj?.gameInfo?.venue?.fullName
+        ? String(sj.gameInfo.venue.fullName)
+        : undefined,
+      stats,
+      events,
+      homeLineup: parseLineup(homeRoster),
+      awayLineup: parseLineup(awayRoster),
+    };
+
+    cachedMatchDetailsMap.set(cacheKey, { data: details, ts: Date.now() });
+    res.json({ success: true, details });
+  } catch (err) {
+    console.warn('Match details error:', err);
+    res.json({ success: true, details: { eventId, stats: [], events: [] } });
   }
 });
 
@@ -9042,12 +11564,15 @@ interface CatalaPackSeasonDef {
   name: string;
   archiveId?: string;
   ccmaProgramId?: string;
+  audioNote?: string;
+  customEpisodes?: any[];
 }
 
 interface CatalaAnimeEntryDef {
   id: string;
   titleCat: string;
   originalTitle: string;
+  aliases?: string;
   tmdbId?: number;
   tmdbType?: 'tv' | 'movie';
   category: 'classics' | 'shonen' | 'movies';
@@ -9059,6 +11584,89 @@ interface CatalaAnimeEntryDef {
 }
 
 const CATALA_ANIME_REGISTRY: CatalaAnimeEntryDef[] = [
+  {
+    id: 'combat-xiaolin',
+    titleCat: 'Combat Xiaolin (Combat Xaolín)',
+    originalTitle: 'Xiaolin Showdown',
+    aliases: 'combat xaolin combat xiaolin duelo xiaolin xiaolin showdown k3 3xl omi raimundo kimiko clay shen gong wu',
+    tmdbId: 679,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'K3 / 3XL · Arxiu + Sèrie',
+    episodeHint: 'Arxiu Català K3 + 52 capítols MP4',
+    overviewCat:
+      "L'Omi, en Raimundo, la Kimiko i en Clay entrenant al Temple Xiaolin per protegir els Shen Gong Wu contra en Jack Spicer i la Wuya. Inclou l'arxiu conservat en català del K3 i els 52 capítols complets en reproducció directa MP4.",
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Arxiu K3 en Català (Openings i Clips)',
+        customEpisodes: [
+          {
+            id: 'xiaolin-cat-op1',
+            episodeNumber: 1,
+            detectedNumber: 1,
+            seasonNumber: 1,
+            title: 'Opening 1 Oficial en Català (Emissió K3 / TV3)',
+            overview: 'Careta d’entrada original en català emesa pel canal K3 / Super3.',
+            still: 'https://i.ytimg.com/vi/oRvYwMsGAZQ/hqdefault.jpg',
+            runtime: 1,
+            youtubeVideoId: 'oRvYwMsGAZQ',
+            streamUrl: 'oRvYwMsGAZQ',
+            audioNote: 'Doblatge Original Català (K3)',
+            sourceType: 'youtube',
+          },
+          {
+            id: 'xiaolin-cat-intro2',
+            episodeNumber: 2,
+            detectedNumber: 2,
+            seasonNumber: 1,
+            title: 'Intro Televisió de Catalunya · Combat Xiaolin',
+            overview: 'Versió televisiva conservada de la sintonia en català del canal K3.',
+            still: 'https://i.ytimg.com/vi/RO7SwnPHKAk/hqdefault.jpg',
+            runtime: 1,
+            youtubeVideoId: 'RO7SwnPHKAk',
+            streamUrl: 'RO7SwnPHKAk',
+            audioNote: 'Doblatge Original Català (K3)',
+            sourceType: 'youtube',
+          },
+          {
+            id: 'xiaolin-cat-k3promo',
+            episodeNumber: 3,
+            detectedNumber: 3,
+            seasonNumber: 1,
+            title: 'Especial K3 Arts Marcials · Combat Xiaolin & Jackie Chan',
+            overview: 'Fragment nostàlgic d’emissió de les sèries d’arts marcials en català al K3.',
+            still: 'https://i.ytimg.com/vi/J9fNCr05ij8/hqdefault.jpg',
+            runtime: 2,
+            youtubeVideoId: 'J9fNCr05ij8',
+            streamUrl: 'J9fNCr05ij8',
+            audioNote: 'Arxiu Històric K3 Català',
+            sourceType: 'youtube',
+          },
+          {
+            id: 'xiaolin-cat-op-alt',
+            episodeNumber: 4,
+            detectedNumber: 4,
+            seasonNumber: 1,
+            title: 'Sintonia Clàssica · Combat Xiaolin (Remaster)',
+            overview: ' Versió neta de l’opening de Combat Xiaolin.',
+            still: 'https://i.ytimg.com/vi/v9URlfv_JDI/hqdefault.jpg',
+            runtime: 1,
+            youtubeVideoId: 'v9URlfv_JDI',
+            streamUrl: 'v9URlfv_JDI',
+            audioNote: 'Arxiu Català (K3)',
+            sourceType: 'youtube',
+          },
+        ],
+      },
+      {
+        seasonNumber: 2,
+        name: 'Sèrie Completa · 52 Capítols (MP4 Directe)',
+        archiveId: 'Dueloxiaolinlat',
+        audioNote: 'Sèrie Completa MP4 (Àudio alternatiu · Rip K3 només a eMule TotsRucs)',
+      },
+    ],
+  },
   {
     id: 'bola-de-drac',
     titleCat: 'Bola de Drac',
@@ -9426,20 +12034,31 @@ const CATALA_ANIME_REGISTRY: CatalaAnimeEntryDef[] = [
   },
   {
     id: 'magica-doremi-cat',
-    titleCat: 'La Màgica DoReMi',
+    titleCat: 'La Màgica DoReMi (+ Naisho i Pel·lícula)',
     originalTitle: 'Ojamajo Doremi',
+    aliases: 'doremi naisho totsrucs buscant la magica doremi',
     tmdbId: 42705,
     tmdbType: 'tv',
     category: 'classics',
-    eraTag: 'K3 / Super3 · 1080p',
-    episodeHint: 'BDMV 1080p en català',
+    eraTag: 'K3 / TotsRucs · 1080p',
+    episodeHint: 'Sèrie + 13 OVAs + Pel·lícula',
     overviewCat:
-      'La Doremi, la Hazuki i l’Aiko convertides en aprenentes de bruixa en alta definició 1080p en català.',
+      'La Doremi, la Hazuki i l’Aiko convertides en aprenentes de bruixa en català, incloent les 13 OVAs de Naisho i la pel·lícula de TotsRucs.',
     seasons: [
       {
         seasonNumber: 1,
         name: 'Edició 1080p Català',
         archiveId: 'buscant-la-magica-doremi-bdmv-1080p-cat-jap-by-el-millor-anime',
+      },
+      {
+        seasonNumber: 2,
+        name: 'DoReMi Naisho · 13 OVAs en Català',
+        archiveId: 'doreminaisho.cat',
+      },
+      {
+        seasonNumber: 3,
+        name: 'Pel·lícula · Buscant la Màgica DoReMi (TotsRucs)',
+        archiveId: 'buscando-a-la-magica-doremi-adria-tots-rucs_202609',
       },
     ],
   },
@@ -9450,15 +12069,20 @@ const CATALA_ANIME_REGISTRY: CatalaAnimeEntryDef[] = [
     tmdbId: 31687,
     tmdbType: 'tv',
     category: 'classics',
-    eraTag: '3XL / K3 · Català',
+    eraTag: '3XL / K3 · 2 Temporades',
     episodeHint: '52 capítols en català',
     overviewCat:
-      'La Miaka i la Yui transportades a l’interior del llibre dels Quatre Déus amb doblatge en català.',
+      'La Miaka i la Yui transportades a l’interior del llibre dels Quatre Déus amb doblatge íntegre en català.',
     seasons: [
       {
         seasonNumber: 1,
-        name: 'Sèrie Completa',
+        name: 'Temporada 1 (Català)',
         archiveId: 'fushigi-yuugi-o-el-joc-misterios-01-dvd-raw-480cat-jap-by-taketokun-el-millor-anime',
+      },
+      {
+        seasonNumber: 2,
+        name: 'Temporada 2 (Català)',
+        archiveId: 'fushigi-yuugi-o-el-joc-misterios-02-dvd-raw-480cat-jap-by-taketokun-el-millor-anime',
       },
     ],
   },
@@ -9668,6 +12292,223 @@ const CATALA_ANIME_REGISTRY: CatalaAnimeEntryDef[] = [
       },
     ],
   },
+  // --- COL·LECCIÓ TOTSRUCS / MECANOSCRIT / 3XL / K3 EN CATALÀ ---
+  {
+    id: 'serial-experiments-lain-cat',
+    titleCat: 'Serial Experiments Lain',
+    originalTitle: 'Serial Experiments Lain',
+    aliases: 'lain 3xl ciberpunk totsrucs',
+    tmdbId: 1087,
+    tmdbType: 'tv',
+    category: 'shonen',
+    eraTag: 'Canal 3XL · Obra de Culte',
+    episodeHint: '13 capítols HD en català',
+    overviewCat:
+      'La Lain Iwakura endinsant-se al Wired en una de les obres mestres més hipnòtiques i llegendàries emeses al Canal 3XL en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Sèrie Completa (1–13 HD Català)',
+        archiveId: 'serial-experiments-lain-9-hd-catala-480p-24fps-h-264-128kbit-aac',
+      },
+    ],
+  },
+  {
+    id: 'candy-candy-cat',
+    titleCat: 'Candy Candy',
+    originalTitle: 'Candy Candy',
+    aliases: 'candy tv3 classic totsrucs',
+    tmdbId: 9160,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'TV3 · Clàssic Complet',
+    episodeHint: '115 capítols en català',
+    overviewCat:
+      'La història clàssica i inoblidable de la Candy White amb els 115 capítols íntegres doblats en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Sèrie Completa (1–115 Català)',
+        archiveId: 'CandyCandyCatalan',
+      },
+    ],
+  },
+  {
+    id: 'reboot-cat',
+    titleCat: 'ReBoot',
+    originalTitle: 'ReBoot',
+    aliases: 'reboot bob enzo mainframe k3 3xl totsrucs',
+    tmdbId: 2121,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'K3 / 3XL · Clàssic Digital',
+    episodeHint: '39 capítols en català',
+    overviewCat:
+      'En Bob, la Dot i l’Enzo defensant el sistema Mainframe dels virus Megabyte i Hexadecimal amb el doblatge mític en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: ' Temporades en Català (39 cap.)',
+        archiveId: 'reboot_202601',
+      },
+    ],
+  },
+  {
+    id: 'dome-beisbol-cat',
+    titleCat: 'Dome, el petit geni del beisbol',
+    originalTitle: 'Miracle Giants Dome-kun',
+    aliases: 'dome beisbol tv3 k3 totsrucs',
+    category: 'classics',
+    eraTag: 'TV3 / K3 · Esports Clàssic',
+    episodeHint: 'Sèrie completa en català',
+    overviewCat:
+      'En Dome新城 i els seus llançaments impossibles als Yomiuri Giants amb el doblatge clàssic en català de TV3.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Sèrie en Català',
+        archiveId: 'dome-el-petit-geni-del-beisbol',
+      },
+    ],
+  },
+  {
+    id: 'os-gran-casa-blava-cat',
+    titleCat: "L'ós de la gran casa blava",
+    originalTitle: 'Bear in the Big Blue House',
+    aliases: 'os de la gran casa blava totsrucs super3 k3',
+    tmdbId: 207,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'Club Super3 · TotsRucs',
+    episodeHint: '44 capítols en català',
+    overviewCat:
+      'El clàssic més estimat del Club Super3 rescatat per TotsRucs amb 44 episodis complets en català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Col·lecció TotsRucs (44 cap. Català)',
+        archiveId: 'los-de-la-gran-casa-blava',
+      },
+    ],
+  },
+  {
+    id: 'sagwa-cat',
+    titleCat: 'Sagwa, la gata siamesa',
+    originalTitle: 'Sagwa, the Chinese Siamese Cat',
+    aliases: 'sagwa k3 super3 totsrucs',
+    tmdbId: 35104,
+    tmdbType: 'tv',
+    category: 'classics',
+    eraTag: 'K3 / Super3 · Català',
+    episodeHint: '17 episodis en català',
+    overviewCat:
+      'Les aventures cal·ligràfiques de la gata Sagwa amb l’emissió clàssica en català de TV3 / K3.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Episodis TV3Rip en Català',
+        archiveId: 'sagwa-la-gata-siamesa-catala',
+      },
+    ],
+  },
+  {
+    id: 'taro-alienigena-cat',
+    titleCat: "Taro, l'alienígena",
+    originalTitle: 'Uchuuujin Tanaka Tarou',
+    aliases: 'taro alienigena k3 totsrucs',
+    category: 'classics',
+    eraTag: 'K3 · Humor Esbojarrat',
+    episodeHint: 'Capítols en català',
+    overviewCat:
+      'Les bogeries surrealistes d’en Taro Tanaka a l’escola primària amb el doblatge en català del K3.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Capítols Conservats en Català',
+        archiveId: 'taro-lalienigena-catala',
+      },
+    ],
+  },
+  {
+    id: 'castell-al-cel-ghibli-cat',
+    titleCat: 'El Castell al Cel (Studio Ghibli · 1080p)',
+    originalTitle: 'Tenkuu no Shiro Laputa',
+    aliases: 'laputa castell al cel ghibli miyazaki totsrucs hakyra',
+    tmdbId: 10515,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'Studio Ghibli · TotsRucs 1080p',
+    episodeHint: 'Blu-ray 1080p Català',
+    overviewCat:
+      "L'aventura llegendària d'en Pazu i la Sheeta cap a Laputa dirigida per Hayao Miyazaki, edició TotsRucs Blu-ray 1080p en català.",
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Edició TotsRucs BD 1080p Català',
+        archiveId: 'sg-01-el-castell-al-cel-1986-bd.-1080p.-cat-esp-jpn.-h-264.8bit.-25-fps-hakyra-t',
+      },
+    ],
+  },
+  {
+    id: 'akira-totsrucs-cat',
+    titleCat: 'Akira (1988 · Edició TotsRucs 1080p)',
+    originalTitle: 'Akira',
+    aliases: 'akira kaneda tetsuo neo tokyo 3xl totsrucs',
+    tmdbId: 149,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: '3XL / TotsRucs · BDRip 1080p',
+    episodeHint: 'Pel·lícula 1080p Català',
+    overviewCat:
+      'Neo-Tokyo 2019: l’obra mestra ciberpunk de Katsuhiro Otomo en edició restaurada BDRip 1080p de TotsRucs amb àudio català.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'BDRip 1080p TotsRucs',
+        archiveId: 'akira-bdrip-1080p-h-264-ac-3-multiaudio-subs-kyaneros-shippuden-sanin-sondela-89-tots-rucs',
+      },
+    ],
+  },
+  {
+    id: 'tortugues-ninja-1990-cat',
+    titleCat: 'Les Tortugues Ninja (1990 · TotsRucs 1080p)',
+    originalTitle: 'Teenage Mutant Ninja Turtles',
+    aliases: 'tortugues ninja tmnt totsrucs 1990',
+    tmdbId: 1498,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'TotsRucs.cat · BDRip 1080p',
+    episodeHint: 'Pel·lícula 1080p en català',
+    overviewCat:
+      'El clàssic de 1990 d’en Leonardo, Raphael, Michelangelo i Donatello en 1080p amb el mític doblatge en català (TotsRucs.cat).',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'Pel·lícula BDRip 1080p Català (TotsRucs)',
+        archiveId: 'les-tortugues-ninja-1990-teenage-mutant-ninja-turtles-bdrip-1080p-x-264-ac-3-cat',
+      },
+    ],
+  },
+  {
+    id: 'la-mascara-1994-cat',
+    titleCat: 'La Màscara (1994 · Mecanoscrit / TotsRucs)',
+    originalTitle: 'The Mask',
+    aliases: 'la mascara jim carrey mecanoscrit totsrucs tv3',
+    tmdbId: 854,
+    tmdbType: 'movie',
+    category: 'movies',
+    eraTag: 'TV3 / Mecanoscrit · 720p',
+    episodeHint: 'Pel·lícula HD en català',
+    overviewCat:
+      'Jim Carrey amb l’icònic doblatge català de TV3 preservat per Mecanoscrit.cat i TotsRucs en alta definició.',
+    seasons: [
+      {
+        seasonNumber: 1,
+        name: 'BRRip 720p Català (Mecanoscrit.cat)',
+        archiveId: 'la-mascara-1994-brrip-720p-x-264-catala-english-per-hal-9000-mecanoscrit.cat',
+      },
+    ],
+  },
 ];
 
 const CATALA_LIVE_CHANNELS: any[] = [
@@ -9817,8 +12658,12 @@ async function hydrateCatalaArtwork(entry: CatalaAnimeEntryDef) {
   return art;
 }
 
-async function fetchArchivePackEpisodes(archiveId: string, seasonNumber: number): Promise<any[]> {
-  const cacheKey = `${archiveId}:${seasonNumber}`;
+async function fetchArchivePackEpisodes(
+  archiveId: string,
+  seasonNumber: number,
+  audioNote?: string
+): Promise<any[]> {
+  const cacheKey = `${archiveId}:${seasonNumber}:${audioNote || ''}`;
   const cached = archiveMetadataCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < 60 * 60 * 1000) {
     return cached.episodes;
@@ -9946,10 +12791,11 @@ async function fetchArchivePackEpisodes(archiveId: string, seasonNumber: number)
         detectedNumber: epNumMatch?.[1] ? Number(epNumMatch[1]) : epNumber,
         seasonNumber,
         title: displayTitle,
-        overview: 'Àudio en català · Reproducció directa sense anuncis.',
+        overview: audioNote || 'Àudio en català · Reproducció directa sense anuncis.',
         still: thumbsByStem.get(stem) || defaultThumb,
         runtime: runtimeMin,
         streamUrl: primaryUrl,
+        audioNote,
         sourceType: 'archive_mp4',
         tracks,
       };
@@ -10025,7 +12871,11 @@ app.get('/api/catalog/catala', async (req, res) => {
   try {
     const category = String(req.query.category || 'all').toLowerCase();
     const query = String(req.query.query || '').trim();
-    const normQ = normalizeTitleForMatch(query);
+    const normalizeCatalaSearch = (s: string) =>
+      normalizeTitleForMatch(s)
+        .replace(/\bxaolin\b/g, 'xiaolin')
+        .replace(/xao/g, 'xiao');
+    const normQ = normalizeCatalaSearch(query);
 
     let baseEntries = CATALA_ANIME_REGISTRY;
     if (category === 'classics' || category === 'shonen' || category === 'movies') {
@@ -10033,8 +12883,8 @@ app.get('/api/catalog/catala', async (req, res) => {
     }
     if (normQ) {
       baseEntries = baseEntries.filter((e) => {
-        const hay = normalizeTitleForMatch(
-          `${e.titleCat} ${e.originalTitle} ${e.overviewCat} ${e.eraTag}`
+        const hay = normalizeCatalaSearch(
+          `${e.titleCat} ${e.originalTitle} ${e.aliases || ''} ${e.overviewCat} ${e.eraTag}`
         );
         return hay.includes(normQ);
       });
@@ -10062,11 +12912,12 @@ app.get('/api/catalog/catala', async (req, res) => {
       })
     );
 
-    // Dynamic Live Archive.org Search when user types a custom anime title in Català!
+    // Dynamic Live Archive.org Search (including TotsRucs / Mecanoscrit / Trobanime uploads) when user types a custom title!
     let dynamicArchiveItems: any[] = [];
     if (query.length >= 2) {
       try {
-        const advQ = `(${query}) AND (catala OR català OR valencia OR 3xl OR super3) AND mediatype:(movies)`;
+        const cleanArchQ = query.replace(/xaol[ií]n/gi, 'xiaolin');
+        const advQ = `(${cleanArchQ}) AND (catala OR català OR valencia OR 3xl OR super3 OR totsrucs OR "tots rucs" OR mecanoscrit OR trobanime) AND mediatype:(movies)`;
         const advUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(
           advQ
         )}&fl[]=identifier,title,description&sort[]=downloads+desc&rows=12&page=1&output=json`;
@@ -10090,8 +12941,8 @@ app.get('/api/catalog/catala', async (req, res) => {
                 originalTitle: ident,
                 mediaType: 'tv',
                 category: 'all',
-                eraTag: 'Arxiu Català',
-                episodeHint: ' Vídeo directe',
+                eraTag: 'Arxiu Català / TotsRucs',
+                episodeHint: 'Vídeo directe',
                 year: 'CAT',
                 rating: '',
                 overview:
@@ -10114,6 +12965,18 @@ app.get('/api/catalog/catala', async (req, res) => {
       items: [...hydratedItems, ...dynamicArchiveItems],
       liveChannels: CATALA_LIVE_CHANNELS,
       communityLinks: [
+        {
+          id: 'totsrucs-cat',
+          label: 'TotsRucs.cat (Índex P2P Català)',
+          url: 'https://web.totsrucs.cat/',
+          desc: 'Arxiu històric eMule/ed2k de sèries i cinema en català (packs directes ja integrats aquí)',
+        },
+        {
+          id: 'mecanoscrit-cat',
+          label: 'Mecanoscrit.cat',
+          url: 'https://mecanoscrit.cat/',
+          desc: 'Preservació de cinema i ciència-ficció doblada o subtitulada en català',
+        },
         {
           id: 'tg-animecatala',
           label: 'Telegram @animecatala',
@@ -10175,8 +13038,14 @@ app.get('/api/catalog/catala/:itemId/episodes', async (req, res) => {
     const chosenSeason =
       entry.seasons.find((s) => s.seasonNumber === requestedSeason) || entry.seasons[0];
 
-    const episodes = chosenSeason.archiveId
-      ? await fetchArchivePackEpisodes(chosenSeason.archiveId, chosenSeason.seasonNumber)
+    const episodes = Array.isArray(chosenSeason.customEpisodes)
+      ? chosenSeason.customEpisodes
+      : chosenSeason.archiveId
+      ? await fetchArchivePackEpisodes(
+          chosenSeason.archiveId,
+          chosenSeason.seasonNumber,
+          chosenSeason.audioNote
+        )
       : chosenSeason.ccmaProgramId
       ? await fetchCcmaProgramEpisodes(chosenSeason.ccmaProgramId, chosenSeason.seasonNumber)
       : [];
@@ -10197,7 +13066,12 @@ app.get('/api/catalog/catala/:itemId/episodes', async (req, res) => {
         seasons: entry.seasons.map((s) => ({
           seasonNumber: s.seasonNumber,
           name: s.name,
-          episodeCount: s.seasonNumber === chosenSeason.seasonNumber ? episodes.length : 0,
+          episodeCount:
+            s.seasonNumber === chosenSeason.seasonNumber
+              ? episodes.length
+              : Array.isArray(s.customEpisodes)
+              ? s.customEpisodes.length
+              : 0,
         })),
         episodes,
       },
@@ -10293,14 +13167,6 @@ self.addEventListener('activate', function (event) {
       try {
         await self.registration.unregister();
       } catch (e) {}
-      try {
-        var clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-        for (var i = 0; i < clientList.length; i++) {
-          if ('navigate' in clientList[i]) {
-            await clientList[i].navigate(clientList[i].url);
-          }
-        }
-      } catch (e) {}
     })()
   );
 });
@@ -10319,24 +13185,38 @@ app.get('/registerSW.js', (_req, res) => {
 });
 
 // ============================================================================
-// VITE + PRODUCTION STATIC MOUNTING
+// VITE + PRODUCTION STATIC MOUNTING (INSTANT PORT 3000 BINDING)
 // ============================================================================
 async function startServer() {
   const PORT = Number(process.env.PORT) || 3000;
   const isProd = process.env.NODE_ENV === 'production';
 
   if (!isProd) {
-    const { createServer: createViteServer } = await import('vite');
-    const hmrEnabled = process.env.DISABLE_HMR !== 'true';
-    const vite = await createViteServer({
-      server: {
-        middlewareMode: true,
-        hmr: hmrEnabled,
-        ws: { server: httpServer },
-      },
-      appType: 'spa',
+    let viteMiddleware: any = null;
+    const viteReady = (async () => {
+      const { createServer: createViteServer } = await import('vite');
+      const hmrEnabled = process.env.DISABLE_HMR !== 'true';
+      const vite = await createViteServer({
+        server: {
+          middlewareMode: true,
+          hmr: hmrEnabled,
+          ws: { server: httpServer },
+        },
+        appType: 'spa',
+      });
+      viteMiddleware = vite.middlewares;
+    })();
+
+    app.use(async (req, res, next) => {
+      if (!viteMiddleware) {
+        await viteReady;
+      }
+      return viteMiddleware(req, res, next);
     });
-    app.use(vite.middlewares);
+
+    httpServer.listen(PORT, '0.0.0.0', () => {
+      console.log(`NAIMCINE Media Engine running on http://0.0.0.0:${PORT}`);
+    });
   } else {
     app.use(
       express.static(path.resolve(__dirname, 'dist'), {
@@ -10354,11 +13234,11 @@ async function startServer() {
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
-  }
 
-  httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`NAIMCINE Media Engine running on http://0.0.0.0:${PORT}`);
-  });
+    httpServer.listen(PORT, '0.0.0.0', () => {
+      console.log(`NAIMCINE Media Engine running on http://0.0.0.0:${PORT}`);
+    });
+  }
 }
 
 startServer();

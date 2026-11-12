@@ -13,6 +13,7 @@ import {
   Square,
   Lock,
   Tv,
+  Trophy,
   ListVideo,
   UserPlus,
 } from 'lucide-react';
@@ -133,6 +134,11 @@ import {
   FriendsInviteModal,
   GlobalIncomingInviteBanner,
 } from './components/FriendsInviteModal';
+import { NaimCineAdsPage } from './components/NaimCineAdsPage';
+import {
+  isGoogleTvEnvironment,
+  useTvSpatialRemote,
+} from './utils/tvSpatialNav';
 
 const INITIAL_VIDEO_STATE: VideoState = {
   mode: 'idle',
@@ -220,6 +226,9 @@ export function App() {
   const [isTvPairLobby, setIsTvPairLobby] = useState<boolean>(
     initialRoute.isTvPairLobby
   );
+  const [isAdsPageOpen, setIsAdsPageOpen] = useState<boolean>(
+    Boolean(initialRoute.isAdsPage)
+  );
   const [tvAuthToken, setTvAuthToken] = useState<string>('');
 
   // Permanent Cloud Rooms & Private 4-Digit Room PIN State
@@ -244,11 +253,22 @@ export function App() {
   const [showIntro, setShowIntro] = useState<boolean>(false);
   const [introWithSound, setIntroWithSound] = useState<boolean>(false);
 
-  const [roomId, setRoomId] = useState<string>(initialUrlRoom);
+  const isGoogleTvApp = isGoogleTvEnvironment();
+  const initialGoogleTvRoom =
+    !initialUrlRoom && isGoogleTvApp && !initialRoute.isTvPairLobby && !initialRoute.isAdsPage
+      ? loadCachedSavedRooms()[0]?.roomCode || getRecentRooms()[0]?.id || generateShortRoomCode(4)
+      : '';
+  const effectiveInitialRoom = initialUrlRoom || initialGoogleTvRoom;
+
+  const [roomId, setRoomId] = useState<string>(effectiveInitialRoom);
   const [roomName, setRoomName] = useState<string>(
-    initialUrlRoom ? `Sala ${initialUrlRoom.toUpperCase()}` : ''
+    effectiveInitialRoom
+      ? isGoogleTvApp && !initialUrlRoom
+        ? 'NAIM CINE · Google TV'
+        : `Sala ${effectiveInitialRoom.toUpperCase()}`
+      : ''
   );
-  const [inRoom, setInRoom] = useState<boolean>(Boolean(initialUrlRoom));
+  const [inRoom, setInRoom] = useState<boolean>(Boolean(effectiveInitialRoom));
 
   // Player Minimize, Local Close, Auto-Scroll PiP, 4-Corner Drag & 'Modo Cine' State
   const [isPlayerMinimized, setIsPlayerMinimized] = useState<boolean>(false);
@@ -319,7 +339,7 @@ export function App() {
   const [openQueueTrigger, setOpenQueueTrigger] = useState<number>(0);
   const [queueAddedNotice, setQueueAddedNotice] = useState<string | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(true);
+  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
   const [copiedHeaderInvite, setCopiedHeaderInvite] = useState<boolean>(false);
 
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
@@ -331,7 +351,7 @@ export function App() {
   const [visualViewportHeight, setVisualViewportHeight] = useState<number | null>(null);
   const [isMobileKeyboardOpen, setIsMobileKeyboardOpen] = useState<boolean>(false);
   const [isMobileLandscape, setIsMobileLandscape] = useState<boolean>(() =>
-    typeof window !== 'undefined'
+    typeof window !== 'undefined' && !isGoogleTvEnvironment()
       ? window.innerWidth > window.innerHeight && window.innerHeight < 520
       : false
   );
@@ -356,6 +376,10 @@ export function App() {
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const updateOrientation = () => {
+      if (isGoogleTvEnvironment()) {
+        setIsMobileLandscape(false);
+        return;
+      }
       setIsMobileLandscape(
         window.innerWidth > window.innerHeight && window.innerHeight < 520
       );
@@ -416,6 +440,24 @@ export function App() {
   const sessionPinMapRef = useRef<Record<string, string>>(sessionPinMap);
   sessionPinMapRef.current = sessionPinMap;
   const tvClaimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isExtractingRef = useRef<boolean>(isExtracting);
+  isExtractingRef.current = isExtracting;
+  const extractionReqSeqRef = useRef<number>(0);
+  const extractionAbortRef = useRef<AbortController | null>(null);
+
+  const beginMediaExtraction = useCallback(() => {
+    if (extractionAbortRef.current) {
+      try {
+        extractionAbortRef.current.abort();
+      } catch {
+        // ignore
+      }
+    }
+    const ctrl = new AbortController();
+    extractionAbortRef.current = ctrl;
+    const reqSeq = ++extractionReqSeqRef.current;
+    return { reqSeq, signal: ctrl.signal };
+  }, []);
 
   const rememberSessionPin = useCallback((targetCode: string, pinCode: string) => {
     const cleanCode = targetCode.trim().toLowerCase();
@@ -966,18 +1008,28 @@ export function App() {
         addRecentRoom({ id: roomId, name: nextRoomTitle });
         setRecentRooms(getRecentRooms());
         if (payload.videoState) {
-          setVideoState((prev) => {
-            if (
-              prev.url &&
-              prev.url === payload.videoState.url &&
-              prev.mode === payload.videoState.mode &&
-              (payload.videoState.lastUpdated || 0) <= (prev.lastUpdated || 0)
-            ) {
-              return prev;
-            }
-            return payload.videoState;
-          });
-          recordStateInWatchHistory(payload.videoState);
+          if (!isExtractingRef.current) {
+            setVideoState((prev) => {
+              if (
+                prev.url &&
+                prev.mode !== 'idle' &&
+                (payload.videoState.lastUpdated || 0) < (prev.lastUpdated || 0)
+              ) {
+                return prev;
+              }
+              if (
+                prev.url &&
+                prev.url === payload.videoState.url &&
+                prev.mode === payload.videoState.mode &&
+                (payload.videoState.lastUpdated || 0) <= (prev.lastUpdated || 0)
+              ) {
+                return prev;
+              }
+              videoStateUrlRef.current = payload.videoState.url;
+              return payload.videoState;
+            });
+            recordStateInWatchHistory(payload.videoState);
+          }
         }
       } else if (type === 'ROOM_PIN_REQUIRED') {
         setPinPromptState({
@@ -1392,8 +1444,11 @@ export function App() {
         ? startAtOverrideSec
         : findSavedResumeSec(histId);
 
+    const { reqSeq, signal } = beginMediaExtraction();
+
     scrollDesktopToPlayer();
     setIsExtracting(true);
+    isExtractingRef.current = true;
     setLoadingItemId(movie.id);
     setExtractionError(null);
     setExtractionLabel(
@@ -1411,8 +1466,9 @@ export function App() {
         preferLang,
         title: movie.title,
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
       const data = await res.json();
+      if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
         const errMsg =
@@ -1498,11 +1554,15 @@ export function App() {
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || reqSeq !== extractionReqSeqRef.current) return;
       setExtractionError('Error de red al conectar con el motor NAIM CINE.');
     } finally {
-      setIsExtracting(false);
-      setLoadingItemId(null);
+      if (reqSeq === extractionReqSeqRef.current) {
+        isExtractingRef.current = false;
+        setIsExtracting(false);
+        setLoadingItemId(null);
+      }
     }
   };
 
@@ -1524,8 +1584,11 @@ export function App() {
         ? startAtOverrideSec
         : findSavedResumeSec(epLoadId);
 
+    const { reqSeq, signal } = beginMediaExtraction();
+
     scrollDesktopToPlayer();
     setIsExtracting(true);
+    isExtractingRef.current = true;
     setLoadingItemId(epLoadId);
     setExtractionError(null);
     setExtractionLabel(
@@ -1545,8 +1608,9 @@ export function App() {
         title: series.title,
         episodeTitle: episode.title || '',
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
       const data = await res.json();
+      if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
         setExtractionError(
@@ -1654,11 +1718,15 @@ export function App() {
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || reqSeq !== extractionReqSeqRef.current) return;
       setExtractionError('Error al conectar con el episodio seleccionado.');
     } finally {
-      setIsExtracting(false);
-      setLoadingItemId(null);
+      if (reqSeq === extractionReqSeqRef.current) {
+        isExtractingRef.current = false;
+        setIsExtracting(false);
+        setLoadingItemId(null);
+      }
     }
   };
 
@@ -1676,8 +1744,10 @@ export function App() {
       const epLoadId = sanitizeItemKey(
         `tv-${item.tmdbId}-${item.season}-${item.episode}`
       );
+      const { reqSeq, signal } = beginMediaExtraction();
       scrollDesktopToPlayer();
       setIsExtracting(true);
+      isExtractingRef.current = true;
       setLoadingItemId(item.id);
       setExtractionError(null);
       setExtractionLabel(
@@ -1696,8 +1766,9 @@ export function App() {
           title: item.title,
           episodeTitle: item.episodeTitle || '',
         });
-        const res = await fetch(`/api/extract/stream?${params.toString()}`);
+        const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
         const data = await res.json();
+        if (reqSeq !== extractionReqSeqRef.current) return;
         if (!res.ok || !data?.success || !data?.streamUrl) {
           setExtractionError('Este episodio no está disponible en este momento.');
           return;
@@ -1753,11 +1824,15 @@ export function App() {
         setVideoState(nextState);
         socketService.syncVideoState('change_url', nextState, profile.name);
         playCinemaSound('play');
-      } catch {
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || reqSeq !== extractionReqSeqRef.current) return;
         setExtractionError('Error al reanudar el episodio del historial.');
       } finally {
-        setIsExtracting(false);
-        setLoadingItemId(null);
+        if (reqSeq === extractionReqSeqRef.current) {
+          isExtractingRef.current = false;
+          setIsExtracting(false);
+          setLoadingItemId(null);
+        }
       }
       return;
     }
@@ -1926,7 +2001,11 @@ export function App() {
     }
   };
 
-  const handlePlaySportsMatch = async (match: SportsMatch, channelIndex: number) => {
+  const handlePlaySportsMatch = async (
+    match: SportsMatch,
+    channelIndex: number,
+    failedIndices: Set<number> = new Set()
+  ) => {
     if (!canControlRoom) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
@@ -1938,33 +2017,55 @@ export function App() {
     setIsExtracting(true);
     setLoadingItemId(`${match.id}-${channelIndex}`);
     setExtractionError(null);
-    setExtractionLabel(`${match.title} · Conectando ${channel.label}...`);
+    setExtractionLabel(`${match.title} · Verificando ${channel.label} HD...`);
 
     try {
       const params = new URLSearchParams({
         url: channel.sourceUrl,
-        resolverType: 'sports_channel',
+        resolverType: channel.resolverType || 'sports_channel',
         title: match.title,
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`);
       const data = await res.json();
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        if (channelIndex + 1 < match.channels.length) {
-          await handlePlaySportsMatch(match, channelIndex + 1);
+        const nextFailed = new Set(failedIndices);
+        nextFailed.add(channelIndex);
+
+        const nextIdx = match.channels.findIndex((_, idx) => !nextFailed.has(idx));
+        if (nextIdx !== -1) {
+          await handlePlaySportsMatch(match, nextIdx, nextFailed);
           return;
         }
+
+        // Never open scrambled satellite mirrors (canUseCloudBrowser === false) in Cloud Browser!
+        if (data?.canUseCloudBrowser === false || /footunder\.online|tilinhd/i.test(channel.sourceUrl)) {
+          setExtractionError(
+            'Las señales satélite de este encuentro están en mantenimiento temporal. Prueba otro canal en directo.'
+          );
+          return;
+        }
+
         socketService.startCloudBrowser(channel.sourceUrl, profile.name);
         return;
       }
 
       if (data.mode === 'cloud') {
+        if (/footunder\.online|tilinhd/i.test(data.streamUrl || channel.sourceUrl)) {
+          setExtractionError('Señal temporalmente fuera de servicio.');
+          return;
+        }
         socketService.startCloudBrowser(data.streamUrl, profile.name);
         return;
       }
 
-      const enrichedChannels = match.channels.map((c, idx) =>
-        idx === channelIndex ? { ...c, resolvedStreamUrl: data.streamUrl } : c
+      // Prune any channels that already failed verification so dead/green pills disappear from the player bar!
+      const healthyChannels = match.channels
+        .map((c, idx) => (idx === channelIndex ? { ...c, resolvedStreamUrl: data.streamUrl } : c))
+        .filter((_, idx) => !failedIndices.has(idx));
+      const activeIdxInHealthy = Math.max(
+        0,
+        healthyChannels.findIndex((c) => c.id === channel.id)
       );
 
       const nextState: VideoState = {
@@ -1976,8 +2077,8 @@ export function App() {
         currentTime: 0,
         isPlaying: true,
         isLive: true,
-        tracks: enrichedChannels,
-        activeTrackIndex: channelIndex,
+        tracks: healthyChannels,
+        activeTrackIndex: activeIdxInHealthy,
         seriesMeta: undefined,
         lastUpdated: Date.now(),
         updatedBy: profile.name,
@@ -1994,7 +2095,11 @@ export function App() {
     }
   };
 
-  const handlePlayTdtChannel = async (tdtCh: SpanishTdtChannel, signalIndex = 0) => {
+  const handlePlayTdtChannel = async (
+    tdtCh: SpanishTdtChannel,
+    signalIndex = 0,
+    liveProgramHint?: string
+  ) => {
     if (!canControlRoom) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
@@ -2006,7 +2111,11 @@ export function App() {
     setIsExtracting(true);
     setLoadingItemId(`tdt-${tdtCh.id}-${signalIndex}`);
     setExtractionError(null);
-    setExtractionLabel(`${tdtCh.name} · Conectando emisión en directo HD...`);
+    setExtractionLabel(
+      liveProgramHint
+        ? `${tdtCh.name} · ${liveProgramHint}...`
+        : `${tdtCh.name} · Conectando emisión en directo HD...`
+    );
     activeHistoryIdRef.current = null;
 
     const signalResolver = chosenSignal.resolverType || 'tdt_hls';
@@ -2017,14 +2126,22 @@ export function App() {
         resolverType: signalResolver,
         title: tdtCh.name,
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`);
-      const data = await res.json();
+      const ctrl = new AbortController();
+      const timeoutId = setTimeout(() => ctrl.abort(), 7500);
+      let res: Response | null = null;
+      let data: any = null;
+      try {
+        res = await fetch(`/api/extract/stream?${params.toString()}`, { signal: ctrl.signal });
+        data = await res.json().catch(() => null);
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
-      if (!res.ok || !data?.success || !data?.streamUrl) {
+      if (!res || !res.ok || !data?.success || !data?.streamUrl) {
         if (signalIndex + 1 < tdtCh.channels.length) {
           setIsExtracting(false);
           setLoadingItemId(null);
-          await handlePlayTdtChannel(tdtCh, signalIndex + 1);
+          await handlePlayTdtChannel(tdtCh, signalIndex + 1, liveProgramHint);
           return;
         }
         setExtractionError(
@@ -2048,7 +2165,9 @@ export function App() {
         url: data.streamUrl,
         rawSourceUrl: chosenSignal.sourceUrl,
         title: tdtCh.name,
-        subtitle: `TV en Directo · ${tdtCh.network} · ${chosenSignal.label}`,
+        subtitle: liveProgramHint
+          ? `En emisión: ${liveProgramHint} · ${tdtCh.network}`
+          : `TV en Directo · ${tdtCh.network} · ${chosenSignal.label}`,
         currentTime: 0,
         isPlaying: true,
         isLive: true,
@@ -2063,6 +2182,12 @@ export function App() {
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
     } catch {
+      if (signalIndex + 1 < tdtCh.channels.length) {
+        setIsExtracting(false);
+        setLoadingItemId(null);
+        await handlePlayTdtChannel(tdtCh, signalIndex + 1, liveProgramHint);
+        return;
+      }
       setExtractionError(`No se pudo conectar con ${tdtCh.name}.`);
     } finally {
       setIsExtracting(false);
@@ -2231,6 +2356,45 @@ export function App() {
       return;
     }
 
+    if (episode.sourceType === 'youtube' && (episode.youtubeVideoId || episode.streamUrl)) {
+      const ytId = episode.youtubeVideoId || episode.streamUrl || '';
+      const nextState: VideoState = {
+        mode: 'youtube',
+        url: ytId,
+        rawSourceUrl: `https://www.youtube.com/watch?v=${ytId}`,
+        title: `${series.title} · ${episode.title}`,
+        subtitle: episode.audioNote || 'Arxiu en Català (K3 / 3XL)',
+        poster: episode.still || series.poster,
+        backdrop: series.backdrop || series.poster,
+        currentTime: 0,
+        isPlaying: true,
+        isLive: false,
+        tracks:
+          Array.isArray(episode.tracks) && episode.tracks.length > 0
+            ? episode.tracks
+            : [
+                {
+                  id: `cat-yt-${episode.id}`,
+                  label: 'Arxiu Català · YouTube HD',
+                  lang: 'ES',
+                  quality: 'HD',
+                  sourceUrl: ytId,
+                  resolverType: 'youtube',
+                  resolvedStreamUrl: ytId,
+                },
+              ],
+        activeTrackIndex: 0,
+        seriesMeta: undefined,
+        lastUpdated: Date.now(),
+        updatedBy: profile.name,
+      };
+      videoStateUrlRef.current = nextState.url;
+      setVideoState(nextState);
+      socketService.syncVideoState('change_url', nextState, profile.name);
+      playCinemaSound('play');
+      return;
+    }
+
     if (!episode.streamUrl) {
       setExtractionError('Capítol sense flux directe disponible.');
       return;
@@ -2256,7 +2420,7 @@ export function App() {
       url: episode.streamUrl,
       rawSourceUrl: episode.id,
       title: `${series.title} · Cap. ${episode.episodeNumber}`,
-      subtitle: `${episode.title} · Àudio en Català`,
+      subtitle: `${episode.title} · ${episode.audioNote || 'Àudio en Català'}`,
       poster: series.poster,
       backdrop: series.backdrop || series.poster,
       currentTime: 0,
@@ -2363,10 +2527,14 @@ export function App() {
           activeTrackIndex: prunedActiveIdx,
         }));
 
-        const backupIdxInOriginal = videoState.tracks.findIndex(
+        const sameLangIdx = videoState.tracks.findIndex(
           (tr, idx) =>
             idx !== trackIndex && String(tr.lang || '').toUpperCase() === requestedLang
         );
+        const anyLiveIdx = videoState.isLive
+          ? videoState.tracks.findIndex((_, idx) => idx !== trackIndex)
+          : -1;
+        const backupIdxInOriginal = sameLangIdx !== -1 ? sameLangIdx : anyLiveIdx;
         if (backupIdxInOriginal !== -1) {
           const adjustedBackupIdx =
             backupIdxInOriginal > trackIndex ? backupIdxInOriginal - 1 : backupIdxInOriginal;
@@ -3105,6 +3273,81 @@ export function App() {
     )
   ).length;
 
+  // Physical Google TV / Chromecast Remote Back & Channel Zapping Integration
+  useTvSpatialRemote({
+    onBackStep: () => {
+      if (isAdsPageOpen) {
+        setIsAdsPageOpen(false);
+        if (typeof window !== 'undefined') window.history.replaceState({}, '', '/');
+        return true;
+      }
+      if (smartTvModalOpen) {
+        setSmartTvModalOpen(false);
+        return true;
+      }
+      if (friendsModalOpen) {
+        setFriendsModalOpen(false);
+        return true;
+      }
+      if (profileHubOpen) {
+        setProfileHubOpen(false);
+        return true;
+      }
+      if (floatingChatOpen) {
+        setFloatingChatOpen(false);
+        return true;
+      }
+      if (sidebarOpen) {
+        setSidebarOpen(false);
+        return true;
+      }
+      if (
+        (videoState.mode !== 'idle' || isExtracting) &&
+        !isPlayerClosedLocally
+      ) {
+        setIsPlayerClosedLocally(true);
+        setIsExtracting(false);
+        return true;
+      }
+      if (inRoom && catalogSection !== 'home') {
+        setCatalogSection('home');
+        setMobileTab('home');
+        return true;
+      }
+      return false;
+    },
+    onChannelStep: (delta) => {
+      if (videoState.isLive && videoState.tracks.length > 1) {
+        const len = videoState.tracks.length;
+        const nextIdx = (videoState.activeTrackIndex + delta + len) % len;
+        handleSelectTrack(nextIdx, 0);
+        return true;
+      }
+      return false;
+    },
+  });
+
+  // ============================================================================
+  // RENDER -1: NAIMCINE ADS PROMOTIONAL & PNG EXPORT PAGE (/ads)
+  // ============================================================================
+  if (isAdsPageOpen) {
+    return (
+      <NaimCineAdsPage
+        onBack={() => {
+          setIsAdsPageOpen(false);
+          if (
+            typeof window !== 'undefined' &&
+            (/^\/(ads|naimcine-ads)\b/i.test(window.location.pathname) ||
+              window.location.search.includes('ads=1'))
+          ) {
+            const backPath = inRoom && roomId ? `/${roomId}` : '/';
+            window.history.replaceState({}, '', backPath);
+          }
+        }}
+      />
+    );
+  }
+
   // ============================================================================
   // RENDER 0: SMART TV 4-DIGIT PAIRING LOBBY (/tv)
   // ============================================================================
@@ -3190,6 +3433,12 @@ export function App() {
               window.location.href = '/tv';
             } else {
               setIsTvPairLobby(true);
+            }
+          }}
+          onOpenAdsPage={() => {
+            setIsAdsPageOpen(true);
+            if (typeof window !== 'undefined') {
+              window.history.pushState({}, '', '/naimcine-ads');
             }
           }}
         />
@@ -3559,28 +3808,29 @@ export function App() {
           />
         )}
 
-        {/* Top Bar (z-30 so Modo Cine z-40 dims it cleanly; auto-hides on mobile when keyboard is open in chat or when phone is rotated to landscape during playback) */}
+        {/* Top Bar (Apple TV+ Liquid Glass 3-Zone Navigation) */}
         <header
           className={`${
             isMobileChatWithKeyboard || isAutoImmersiveLandscape
               ? 'hidden'
               : isDesktopLayout
-              ? 'h-14 px-6 flex'
-              : 'h-13 px-3 flex'
-          } glass-bar border-b border-white/[0.07] items-center justify-between gap-2 shrink-0 z-30`}
+              ? 'h-16 px-7 flex'
+              : 'h-14 px-3.5 flex'
+          } glass-bar border-b border-white/[0.06] items-center justify-between gap-4 shrink-0 z-30`}
         >
-          {/* Zone 1: Brand Emblem & Active Room Selector */}
-          <div className="flex items-center gap-2 min-w-0">
+          {/* Zone 1: Clean Brand Lockup */}
+          <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
               onClick={() => {
-                setIntroWithSound(true);
-                setShowIntro(true);
+                setCatalogSection('home');
+                setMobileTab('home');
+                catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              title={lang === 'es' ? 'Ver Intro NC Cinema' : 'Play NC Cinema Intro'}
-              className="shrink-0 cursor-pointer rounded-xl overflow-hidden shadow-[0_0_22px_rgba(229,9,20,0.32)] hover:scale-105 active:scale-95 transition-transform"
+              title="NAIM CINE · Inicio"
+              className="shrink-0 cursor-pointer rounded-xl overflow-hidden hover:scale-105 active:scale-95 transition-transform"
             >
-              <NaimBrandLogo size={36} />
+              <NaimBrandLogo size={34} />
             </button>
             <button
               type="button"
@@ -3593,47 +3843,35 @@ export function App() {
                 setProfileHubTab('account');
                 setProfileHubOpen(true);
               }}
-              className="flex flex-col min-w-0 text-left cursor-pointer group"
+              className="flex items-center gap-2 min-w-0 text-left cursor-pointer group"
               title={
                 lang === 'es'
                   ? 'Gestionar sala activa o cambiar de sala'
                   : 'Manage active room or switch room'
               }
             >
-              <span className="font-display font-bold text-xs tracking-[0.1em] text-white leading-tight truncate flex items-center gap-1">
-                <span>
-                  NAIM <span className="text-[#E11D48]">CINE</span>
-                </span>
-                {isDesktopLayout && (
-                  <>
-                    <span className="text-zinc-600 font-normal mx-1">·</span>
-                    <span className="font-semibold text-zinc-200 tracking-normal group-hover:text-white transition-colors truncate max-w-44">
-                      {roomName || `Sala ${roomId.toUpperCase()}`}
-                    </span>
-                  </>
-                )}
-                {roomHasPin && (
-                  <Lock
-                    className="w-3 h-3 text-[#E11D48] shrink-0 ml-0.5"
-                    aria-label="Sala con PIN privado"
-                  />
-                )}
+              <span className="font-display font-bold text-sm tracking-tight text-white whitespace-nowrap shrink-0">
+                NAIM CINE
               </span>
-              {!isDesktopLayout && (
-                <span className="text-[0.65rem] text-zinc-400 truncate max-w-[8.5rem] flex items-center gap-1">
-                  <span className="truncate">
-                    {roomName || `Sala #${roomId.toUpperCase()}`}
-                  </span>
-                  <span className="text-zinc-500">▾</span>
-                </span>
+              <span className="text-zinc-600 text-xs" aria-hidden="true">
+                ·
+              </span>
+              <span className="text-xs font-medium text-zinc-400 group-hover:text-zinc-200 transition-colors truncate max-w-[7.5rem] sm:max-w-44">
+                {roomName || `Sala ${roomId.toUpperCase()}`}
+              </span>
+              {roomHasPin && (
+                <Lock
+                  className="w-3 h-3 text-zinc-400 shrink-0"
+                  aria-label="Sala con PIN privado"
+                />
               )}
             </button>
           </div>
 
-          {/* Zone 2: Clean Direct Navigation Links (Desktop Mode) */}
+          {/* Zone 2: Floating Liquid Glass Capsule Tabs (Desktop Mode) */}
           {isDesktopLayout && (
             <nav
-              className="flex items-center gap-6 text-sm font-medium overflow-x-auto no-scrollbar"
+              className="liquid-glass-pill rounded-full p-1 flex items-center gap-1 overflow-x-auto no-scrollbar"
               aria-label="Catálogo NAIM CINE"
             >
               {(
@@ -3653,31 +3891,27 @@ export function App() {
                   {
                     id: 'series',
                     label: lang === 'es' ? 'Series' : 'Series',
-                    isActive: catalogSection === 'series',
+                    isActive:
+                      catalogSection === 'series' || catalogSection === 'castellano',
                     onClick: () => setCatalogSection('series'),
-                  },
-                  {
-                    id: 'castellano',
-                    label: 'Castellano',
-                    isActive: catalogSection === 'castellano',
-                    onClick: () => setCatalogSection('castellano'),
-                  },
-                  {
-                    id: 'catala',
-                    label: 'Català',
-                    isActive: catalogSection === 'catala',
-                    onClick: () => setCatalogSection('catala'),
                   },
                   {
                     id: 'anime',
                     label: 'Anime',
-                    isActive: catalogSection === 'anime',
+                    isActive:
+                      catalogSection === 'anime' || catalogSection === 'catala',
                     onClick: () => setCatalogSection('anime'),
+                  },
+                  {
+                    id: 'sports',
+                    label: lang === 'es' ? 'Fútbol' : 'Football',
+                    isActive: catalogSection === 'sports',
+                    onClick: () => setCatalogSection('sports'),
                   },
                   {
                     id: 'tdt',
                     label: lang === 'es' ? 'TV en Vivo' : 'Live TV',
-                    isActive: catalogSection === 'tdt' || catalogSection === 'sports',
+                    isActive: catalogSection === 'tdt',
                     onClick: () => setCatalogSection('tdt'),
                   },
                 ] as const
@@ -3686,10 +3920,10 @@ export function App() {
                   key={navItem.id}
                   type="button"
                   onClick={navItem.onClick}
-                  className={`h-[56px] flex items-center gap-1.5 border-b-2 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`min-h-[36px] px-4 rounded-full text-xs font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                     navItem.isActive
-                      ? 'border-[#E11D48] text-white font-semibold'
-                      : 'border-transparent text-zinc-400 hover:text-white'
+                      ? 'bg-white text-[#050507] shadow-sm'
+                      : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
                   }`}
                 >
                   <span>{navItem.label}</span>
@@ -3698,7 +3932,7 @@ export function App() {
             </nav>
           )}
 
-          {/* Zone 3: Spacious Ergonomic Right Actions (3 clean buttons on Mobile, full bar on PC) */}
+          {/* Zone 3: Minimal Smoked Glass & Pure White Actions */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             {isDesktopLayout && (
               <ViewModeSwitchButton
@@ -3717,47 +3951,69 @@ export function App() {
               }}
               title={
                 lang === 'es'
-                  ? 'Conectar Samsung TV / Smart TV y Mando'
-                  : 'Connect Samsung TV / Smart TV & Remote'
+                  ? 'Conectar Smart TV y Mando'
+                  : 'Connect Smart TV & Remote'
               }
-              className={`min-h-11 min-w-11 px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all relative ${
+              className={`min-h-10 min-w-10 px-3 rounded-full border text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all relative ${
                 hasConnectedSmartTv
-                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/45 text-emerald-200'
-                  : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.1] text-zinc-200'
+                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/40 text-emerald-200'
+                  : 'bg-white/[0.07] hover:bg-white/[0.13] border-white/[0.1] text-zinc-200'
               }`}
             >
               <Tv className="w-4 h-4 text-zinc-100 shrink-0" />
-              <span className={isDesktopLayout ? 'inline' : 'hidden'}>
-                Smart TV
-              </span>
-              {hasConnectedSmartTv && (
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-              )}
+              <span className={isDesktopLayout ? 'inline' : 'hidden'}>TV</span>
             </button>
 
             <button
               type="button"
               onClick={handleShareOrCopyHeaderInvite}
               title="Amigos e Invitación Directa a la Sala"
-              className="min-h-11 px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#F43F5E] active:scale-95 text-xs font-semibold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_8px_22px_rgba(225,29,72,0.32)] relative"
+              className="min-h-10 px-4 rounded-full bg-white hover:bg-zinc-200 active:scale-95 text-xs font-bold text-[#050507] flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-sm relative"
             >
               {copiedHeaderInvite ? (
                 <>
-                  <Check className="w-4 h-4 shrink-0" />
+                  <Check className="w-3.5 h-3.5 shrink-0" />
                   <span>{t.copied}</span>
                 </>
               ) : (
                 <>
-                  <UserPlus className="w-4 h-4 shrink-0" />
-                  <span>{isDesktopLayout ? 'Amigos · Invitar' : t.invite}</span>
+                  <UserPlus className="w-3.5 h-3.5 shrink-0" />
+                  <span>{isDesktopLayout ? 'Invitar' : t.invite}</span>
                   {onlineSavedFriendsCount > 0 && (
-                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-400 text-[#050507] text-[10px] font-extrabold flex items-center justify-center tabular-nums">
+                    <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-[#050507] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                       {onlineSavedFriendsCount}
                     </span>
                   )}
                 </>
               )}
             </button>
+
+            {isDesktopLayout && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSidebarOpen((v) => !v);
+                  setUnreadChatCount(0);
+                }}
+                className={`min-h-10 px-3.5 rounded-full border text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all relative whitespace-nowrap shrink-0 ${
+                  sidebarOpen
+                    ? 'bg-white text-[#050507] border-white'
+                    : 'bg-white/[0.07] hover:bg-white/[0.13] border-white/[0.1] text-zinc-200'
+                }`}
+                title={sidebarOpen ? 'Ocultar Sala y Chat' : 'Abrir Sala, Cola y Chat'}
+                aria-label="Alternar Sala y Chat"
+              >
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>Sala</span>
+                {!sidebarOpen && unreadChatCount + roomQueue.length > 0 && (
+                  <span className="min-w-[18px] h-[18px] px-1 rounded-full bg-white text-[#050507] text-[10px] font-bold flex items-center justify-center tabular-nums">
+                    {unreadChatCount + roomQueue.length > 9
+                      ? '9+'
+                      : unreadChatCount + roomQueue.length}
+                  </span>
+                )}
+              </button>
+            )}
 
             <CloudAccountButton
               user={authUser}
@@ -3775,37 +4031,15 @@ export function App() {
             />
 
             {isDesktopLayout && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => setSidebarOpen((v) => !v)}
-                  className="w-11 h-11 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-zinc-300 cursor-pointer active:scale-95 transition-all relative"
-                  title={sidebarOpen ? 'Ocultar panel lateral' : 'Mostrar panel lateral'}
-                  aria-label="Alternar panel lateral"
-                >
-                  {sidebarOpen ? (
-                    <PanelRightClose className="w-4 h-4" />
-                  ) : (
-                    <PanelRightOpen className="w-4 h-4" />
-                  )}
-                  {!sidebarOpen && roomQueue.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-[#E11D48] text-[10px] font-bold text-white flex items-center justify-center tabular-nums">
-                      {roomQueue.length > 9 ? '9+' : roomQueue.length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleLeaveRoom}
-                  className="min-h-11 px-3.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-medium text-zinc-300 flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-                  title={t.leaveRoom}
-                  aria-label={t.leaveRoom}
-                >
-                  <LogOut className="w-4 h-4" />
-                  <span>{t.leaveRoom}</span>
-                </button>
-              </>
+              <button
+                type="button"
+                onClick={handleLeaveRoom}
+                className="w-10 h-10 rounded-full bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+                title={t.leaveRoom}
+                aria-label={t.leaveRoom}
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
             )}
           </div>
         </header>
@@ -3867,12 +4101,24 @@ export function App() {
               <div
                 className={
                   isDockedMini || showCinemaOverlay
-                    ? ''
+                    ? 'relative'
                     : isDesktopLayout
-                    ? 'rounded-3xl shadow-[0_20px_70px_rgba(225,29,72,0.1)]'
-                    : ''
+                    ? 'relative rounded-3xl shadow-[0_32px_90px_rgba(0,0,0,0.9)]'
+                    : 'relative'
                 }
               >
+                {/* Dynamic Ambilight Cinema Glow from Active Poster / Backdrop */}
+                {isPlayerActive &&
+                  !isDockedMini &&
+                  (effectiveVideoState.backdrop || effectiveVideoState.poster) && (
+                    <img
+                      src={effectiveVideoState.backdrop || effectiveVideoState.poster}
+                      alt=""
+                      aria-hidden="true"
+                      referrerPolicy="no-referrer"
+                      className="hidden sm:block absolute -inset-6 w-[calc(100%+3rem)] h-[calc(100%+3rem)] object-cover blur-3xl opacity-30 scale-105 pointer-events-none select-none -z-10"
+                    />
+                  )}
                 <NativeCinemaPlayer
                   videoState={effectiveVideoState}
                   lang={lang}
@@ -4212,6 +4458,23 @@ export function App() {
                   onPlaySecondaryChannel={handlePlaySecondaryChannel}
                   hasConnectedSmartTv={hasConnectedSmartTv}
                 />
+
+                {/* Hidden Discreet Footer Link at Very Bottom: naimcine ads */}
+                <footer className="mt-14 pt-6 pb-4 border-t border-white/[0.04] flex items-center justify-center">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setIsAdsPageOpen(true);
+                      if (typeof window !== 'undefined') {
+                        window.history.pushState({}, '', '/naimcine-ads');
+                      }
+                    }}
+                    className="text-[11px] font-mono tracking-wider text-zinc-600 hover:text-zinc-300 opacity-45 hover:opacity-100 transition-all cursor-pointer py-1.5 px-3 rounded-full hover:bg-white/[0.04]"
+                  >
+                    naimcine ads
+                  </button>
+                </footer>
               </div>
             </div>
           </div>
@@ -4286,11 +4549,11 @@ export function App() {
           )}
         </div>
 
-        {/* Clean 4-Tab Mobile Bottom Bar (Inicio · Cine/Series · TV en Vivo · Sala/Chat) */}
+        {/* Apple TV+ Floating Liquid Glass Mobile Tab Bar */}
         {!isDesktopLayout && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-          <div className="shrink-0 px-3 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#050507] via-[#050507]/90 to-transparent z-30">
+          <div className="shrink-0 px-3.5 pt-1.5 pb-[max(0.5rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#050507] via-[#050507]/85 to-transparent z-30">
             <nav
-              className="rounded-3xl bg-[#0B0B12]/90 backdrop-blur-2xl border border-white/[0.12] shadow-[0_18px_45px_rgba(0,0,0,0.85)] p-1.5 grid grid-cols-4 gap-1.5"
+              className="liquid-glass rounded-full p-1.5 grid grid-cols-5 gap-1"
               aria-label="Navegación móvil NAIM CINE"
             >
               {(
@@ -4311,7 +4574,7 @@ export function App() {
                   },
                   {
                     id: 'movies',
-                    label: lang === 'es' ? 'Cine y Series' : 'Movies & TV',
+                    label: lang === 'es' ? 'Catálogo' : 'Browse',
                     icon: Film,
                     isActive:
                       mobileTab !== 'chat' &&
@@ -4320,6 +4583,8 @@ export function App() {
                         catalogSection === 'vose' ||
                         catalogSection === 'series' ||
                         catalogSection === 'anime' ||
+                        catalogSection === 'castellano' ||
+                        catalogSection === 'catala' ||
                         catalogSection === 'youtube'),
                     onSelect: () => {
                       setMobileTab('movies');
@@ -4327,30 +4592,43 @@ export function App() {
                         catalogSection !== 'movies' &&
                         catalogSection !== 'vose' &&
                         catalogSection !== 'series' &&
-                        catalogSection !== 'anime'
+                        catalogSection !== 'anime' &&
+                        catalogSection !== 'castellano' &&
+                        catalogSection !== 'catala'
                       ) {
                         setCatalogSection('movies');
                       }
                     },
                   },
                   {
+                    id: 'sports',
+                    label: lang === 'es' ? 'Fútbol' : 'Football',
+                    icon: Trophy,
+                    isActive:
+                      mobileTab !== 'chat' &&
+                      mobileTab !== 'room' &&
+                      catalogSection === 'sports',
+                    onSelect: () => {
+                      setMobileTab('sports');
+                      setCatalogSection('sports');
+                    },
+                  },
+                  {
                     id: 'tdt',
-                    label: lang === 'es' ? 'TV en Vivo' : 'Live TV',
+                    label: lang === 'es' ? 'En Vivo' : 'Live TV',
                     icon: Radio,
                     isActive:
                       mobileTab !== 'chat' &&
                       mobileTab !== 'room' &&
-                      (catalogSection === 'tdt' || catalogSection === 'sports'),
+                      catalogSection === 'tdt',
                     onSelect: () => {
                       setMobileTab('tdt');
-                      if (catalogSection !== 'tdt' && catalogSection !== 'sports') {
-                        setCatalogSection('tdt');
-                      }
+                      setCatalogSection('tdt');
                     },
                   },
                   {
                     id: 'chat',
-                    label: lang === 'es' ? 'Sala · Chat' : 'Room',
+                    label: lang === 'es' ? 'Sala' : 'Room',
                     icon: MessageSquare,
                     isActive: mobileTab === 'chat' || mobileTab === 'room',
                     badge: unreadChatCount + roomQueue.length || undefined,
@@ -4374,31 +4652,34 @@ export function App() {
                       triggerHaptic('light');
                       item.onSelect();
                     }}
-                    className={`min-h-13 py-1 rounded-2xl flex flex-col items-center justify-center gap-1 relative active:scale-95 transition-all cursor-pointer ${
+                    className={`min-h-[48px] py-1 rounded-full flex flex-col items-center justify-center gap-0.5 relative active:scale-95 transition-all cursor-pointer ${
                       active
-                        ? 'bg-white/[0.1] text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]'
+                        ? 'bg-white text-[#050507] shadow-sm'
                         : 'text-zinc-400 hover:text-zinc-200'
                     }`}
                   >
-                    {active && (
-                      <span className="absolute top-1 w-5 h-0.5 rounded-full bg-[#E11D48]" />
-                    )}
-                    <div className="relative mt-0.5 flex items-center justify-center">
+                    <div className="relative flex items-center justify-center">
                       <Icon
-                        className={`w-5 h-5 shrink-0 ${
-                          active ? 'text-[#FB7185]' : 'text-zinc-400'
+                        className={`w-4 h-4 shrink-0 ${
+                          active ? 'text-[#050507]' : 'text-zinc-400'
                         }`}
-                        strokeWidth={2}
+                        strokeWidth={2.2}
                       />
                       {'badge' in item && item.badge ? (
-                        <span className="absolute -top-1.5 -right-2.5 min-w-4 h-4 px-1 rounded-full bg-[#E11D48] text-[0.65rem] font-bold text-white flex items-center justify-center tabular-nums shadow-sm">
+                        <span
+                          className={`absolute -top-1.5 -right-2.5 min-w-4 h-4 px-1 rounded-full text-[0.62rem] font-bold flex items-center justify-center tabular-nums shadow-sm ${
+                            active
+                              ? 'bg-[#050507] text-white'
+                              : 'bg-white text-[#050507]'
+                          }`}
+                        >
                           {item.badge > 9 ? '9+' : item.badge}
                         </span>
                       ) : null}
                     </div>
                     <span
-                      className={`text-[0.68rem] leading-tight tracking-tight whitespace-nowrap shrink-0 ${
-                        active ? 'font-bold text-white' : 'font-medium text-zinc-400'
+                      className={`text-[0.65rem] leading-tight tracking-tight whitespace-nowrap shrink-0 ${
+                        active ? 'font-bold text-[#050507]' : 'font-medium text-zinc-400'
                       }`}
                     >
                       {item.label}

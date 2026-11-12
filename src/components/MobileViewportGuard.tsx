@@ -84,8 +84,18 @@ export function useViewLayoutMode() {
     windowHeight / Math.max(windowWidth, 1) >= 1.5 &&
     viewPreference !== 'desktop';
 
+  const isSmartTvScreen =
+    typeof window !== 'undefined' &&
+    (Boolean((window as Window & { __NAIM_GOOGLE_TV__?: boolean }).__NAIM_GOOGLE_TV__) ||
+      window.location.search.includes('googletv=1') ||
+      /NaimCineGoogleTV|GoogleTV|Android TV|BRAVIA|SMART-TV|SmartTV|Tizen|Web0S|WebOS|AFTB|AFTT|AFTM|AFTKA/i.test(
+        typeof navigator !== 'undefined' ? navigator.userAgent || '' : ''
+      ));
+
   const naturalMode: EffectiveViewMode =
-    !isPhoneForcedDesktopViewport && windowWidth >= 1024 ? 'desktop' : 'mobile';
+    isSmartTvScreen || (!isPhoneForcedDesktopViewport && windowWidth >= 1024)
+      ? 'desktop'
+      : 'mobile';
 
   const effectiveView: EffectiveViewMode =
     viewPreference === 'auto' ? naturalMode : viewPreference;

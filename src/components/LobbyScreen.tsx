@@ -68,6 +68,7 @@ interface LobbyScreenProps {
   onReplayIntro: () => void;
   onEnterRoom: (roomId: string, profile: StoredProfile, roomName?: string) => void;
   onOpenTvPairLobby?: () => void;
+  onOpenAdsPage?: () => void;
 }
 
 export const LobbyScreen: React.FC<LobbyScreenProps> = ({
@@ -85,6 +86,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onReplayIntro,
   onEnterRoom,
   onOpenTvPairLobby,
+  onOpenAdsPage,
 }) => {
   const t = UI_COPY[lang];
   const isDesktop = effectiveView === 'desktop';
@@ -564,6 +566,21 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </div>
           </div>
         </section>
+
+        {onOpenAdsPage && (
+          <div className="pt-4 pb-1 flex justify-center">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenAdsPage();
+              }}
+              className="text-[11px] font-mono tracking-wider text-zinc-600 hover:text-zinc-300 opacity-50 hover:opacity-100 transition-all cursor-pointer py-1 px-3"
+            >
+              naimcine ads
+            </button>
+          </div>
+        )}
 
         {/* ==================================================================== */}
         {/* PROGRESSIVE DISCLOSURE: LOBBY SETTINGS & APK BOTTOM SHEET            */}

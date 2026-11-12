@@ -24,6 +24,7 @@ import {
   Vote,
   Radio,
   Trophy,
+  Calendar,
   ChevronLeft,
   ChevronRight,
   ArrowUpDown,
@@ -35,6 +36,8 @@ import {
   CatalaEpisodeItem,
   CatalaSeriesDetails,
   CatalogMovie,
+  ChannelLiveEpg,
+  EpgProgramItem,
   FavoriteChannelItem,
   LiveScoreMatch,
   RoomQueueItem,
@@ -57,6 +60,7 @@ import {
   sanitizeItemKey,
 } from '../utils/storage';
 import { MediaDetailsModal } from './MediaDetailsModal';
+import { FootballMatchboard } from './FootballMatchboard';
 import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.jpg';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
 
@@ -410,7 +414,11 @@ interface MediaCatalogHubProps {
   onRemoveHistoryItem: (id: string) => void;
   onClearHistory: () => void;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
-  onPlayTdtChannel: (channel: SpanishTdtChannel, signalIndex?: number) => void;
+  onPlayTdtChannel: (
+    channel: SpanishTdtChannel,
+    signalIndex?: number,
+    liveProgramHint?: string
+  ) => void;
   onPlayYouTubeVideo: (item: YouTubeSearchItem) => void;
   onPlayCustomUrl: (url: string) => void;
   onOpenCloudBrowser: (url: string) => void;
@@ -465,12 +473,17 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [previewItem, setPreviewItem] = useState<CatalogMovie | null>(null);
   const [liveScores, setLiveScores] = useState<LiveScoreMatch[]>([]);
 
-  // Universal Search on Home Launcher Grid
+  // Universal Search & Apple TV+ Showcase on Home
   const [homeQuery, setHomeQuery] = useState('');
   const [debouncedHomeQuery, setDebouncedHomeQuery] = useState('');
   const [homeMovieResults, setHomeMovieResults] = useState<CatalogMovie[]>([]);
   const [homeSeriesResults, setHomeSeriesResults] = useState<CatalogMovie[]>([]);
   const [loadingHomeSearch, setLoadingHomeSearch] = useState(false);
+  const [homeShowcaseMovies, setHomeShowcaseMovies] = useState<CatalogMovie[]>([]);
+  const [homeShowcaseSeries, setHomeShowcaseSeries] = useState<CatalogMovie[]>([]);
+  const [loadingHomeShowcase, setLoadingHomeShowcase] = useState(false);
+  const [heroSlideIndex, setHeroSlideIndex] = useState(0);
+  const [isHeroHovered, setIsHeroHovered] = useState(false);
 
   // Streaming Platform Filter (Netflix, HBO Max, Disney+, Prime Video, Apple TV+, Movistar+, SkyShowtime)
   const [streamingProvider, setStreamingProvider] = useState<StreamingProviderId>('all');
@@ -524,18 +537,24 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const episodeListScrollRef = useRef<HTMLDivElement | null>(null);
   const seriesFetchSeqRef = useRef(0);
 
-  // Spanish TDT + Movistar+ + DAZN Live Television state
+  // Spanish TDT + Movistar+ + DAZN Live Television + Real-Time EPG state
   const [tdtChannels, setTdtChannels] = useState<SpanishTdtChannel[]>([]);
   const [loadingTdt, setLoadingTdt] = useState(false);
   const [tdtCategory, setTdtCategory] = useState<'all' | 'tdt_all' | TdtCategory>('all');
   const [tdtSearch, setTdtSearch] = useState('');
+  const [epgMap, setEpgMap] = useState<Record<string, ChannelLiveEpg>>({});
+  const [epgMadridClock, setEpgMadridClock] = useState<string>('');
+  const [loadingEpg, setLoadingEpg] = useState(false);
+  const [epgFilter, setEpgFilter] = useState<'all' | 'sports_now' | 'cinema_now'>('all');
+  const [selectedEpgChannel, setSelectedEpgChannel] = useState<SpanishTdtChannel | null>(null);
+  const [epgClockMs, setEpgClockMs] = useState<number>(() => Date.now());
 
   // Sports state
   const [sportsEvents, setSportsEvents] = useState<SportsMatch[]>([]);
   const [loadingSports, setLoadingSports] = useState(false);
   const [sportFilter, setSportFilter] = useState<
     'all' | 'soccer' | 'motor' | 'basketball' | 'tennis'
-  >('all');
+  >('soccer');
   const [sportsSearch, setSportsSearch] = useState('');
   const [brokenHeroImgs, setBrokenHeroImgs] = useState<Record<string, boolean>>({});
 
@@ -559,6 +578,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       setAnimePortal('anime_all');
       setAnimeCategory('trending');
       setTdtCategory('all');
+      setEpgFilter('all');
       setShowWatchlistOnly(false);
     }
   }, [activeSection]);
@@ -677,15 +697,211 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     }
   };
 
+  const fetchLiveEpg = React.useCallback(async (forceRefresh = false) => {
+    setLoadingEpg(true);
+    try {
+      const res = await fetch(forceRefresh ? '/api/epg/live?refresh=1' : '/api/epg/live');
+      const data = await res.json();
+      if (data?.epg && typeof data.epg === 'object') {
+        setEpgMap(data.epg);
+      }
+      if (typeof data?.madridTimeLabel === 'string') {
+        setEpgMadridClock(data.madridTimeLabel);
+      }
+      setEpgClockMs(Date.now());
+    } catch {
+      // Keep previous EPG snapshot
+    } finally {
+      setLoadingEpg(false);
+    }
+  }, []);
+
+  // Tick local clock every 30s so live EPG progress bars and remaining minutes advance automatically
   useEffect(() => {
-    if (
-      (activeSection === 'tdt' ||
-        (activeSection === 'home' && debouncedHomeQuery.length >= 2)) &&
-      tdtChannels.length === 0
-    ) {
+    const tick = setInterval(() => {
+      const now = Date.now();
+      setEpgClockMs(now);
+      try {
+        setEpgMadridClock(
+          new Intl.DateTimeFormat('es-ES', {
+            timeZone: 'Europe/Madrid',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          }).format(new Date(now))
+        );
+      } catch {
+        // Ignore Intl timezone fallback
+      }
+    }, 30000);
+    return () => clearInterval(tick);
+  }, []);
+
+  // Load and auto-refresh EPG every 3 minutes when viewing Home, Live TV, or Català TV
+  useEffect(() => {
+    const needsEpg =
+      activeSection === 'home' ||
+      activeSection === 'tdt' ||
+      activeSection === 'catala';
+    if (!needsEpg) return;
+
+    fetchLiveEpg(false);
+    const refreshTimer = setInterval(() => {
+      fetchLiveEpg(false);
+    }, 180000);
+    return () => clearInterval(refreshTimer);
+  }, [activeSection, fetchLiveEpg]);
+
+  const getChannelLiveEpg = React.useCallback(
+    (channelId: string): ChannelLiveEpg | null => {
+      const raw = epgMap[channelId];
+      if (!raw) return null;
+      const schedule: EpgProgramItem[] =
+        Array.isArray(raw.upcoming) && raw.upcoming.length > 0
+          ? raw.upcoming
+          : ([raw.now, raw.next].filter(Boolean) as EpgProgramItem[]);
+      if (schedule.length === 0) return raw;
+
+      const activeIdx = schedule.findIndex(
+        (p) => p.startMs <= epgClockMs && p.stopMs > epgClockMs
+      );
+      if (activeIdx === -1) {
+        const nextUpcoming = schedule.find((p) => p.startMs > epgClockMs) || null;
+        return {
+          ...raw,
+          now: raw.now && raw.now.stopMs > epgClockMs ? raw.now : null,
+          next: nextUpcoming,
+        };
+      }
+
+      const nowProg = schedule[activeIdx];
+      const nextProg = schedule[activeIdx + 1] || null;
+      const duration = Math.max(60000, nowProg.stopMs - nowProg.startMs);
+      const elapsed = Math.max(0, Math.min(duration, epgClockMs - nowProg.startMs));
+      const progressPct = Math.max(2, Math.min(100, Math.round((elapsed / duration) * 100)));
+      const remainingMin = Math.max(1, Math.ceil((nowProg.stopMs - epgClockMs) / 60000));
+
+      return {
+        channelId,
+        now: nowProg,
+        next: nextProg,
+        progressPct,
+        remainingMin,
+        upcoming: schedule.filter((p) => p.stopMs > epgClockMs),
+      };
+    },
+    [epgMap, epgClockMs]
+  );
+
+  useEffect(() => {
+    if ((activeSection === 'home' || activeSection === 'tdt') && tdtChannels.length === 0) {
       fetchTdtCatalog();
     }
-  }, [activeSection, debouncedHomeQuery]);
+  }, [activeSection, tdtChannels.length]);
+
+  // Preload Apple TV+ Home Showcase (Top Movies & Featured 16:9 Series) once
+  useEffect(() => {
+    if (homeShowcaseMovies.length > 0 && homeShowcaseSeries.length > 0) return;
+    let cancelled = false;
+    setLoadingHomeShowcase(true);
+
+    Promise.all([
+      fetch('/api/catalog/movies?provider=all&category=trending&page=1')
+        .then((r) => r.json())
+        .catch(() => ({ items: [] })),
+      fetch('/api/catalog/series?provider=all&category=trending&page=1&lang=es')
+        .then((r) => r.json())
+        .catch(() => ({ items: [] })),
+    ])
+      .then(([mData, sData]) => {
+        if (cancelled) return;
+        const mItems: CatalogMovie[] = Array.isArray(mData?.items)
+          ? mData.items
+          : Array.isArray(mData?.movies)
+          ? mData.movies
+          : [];
+        const sItems: CatalogMovie[] = Array.isArray(sData?.items)
+          ? sData.items.map((it: CatalogMovie) => ({ ...it, mediaType: 'tv' as const }))
+          : Array.isArray(sData?.series)
+          ? sData.series.map((it: CatalogMovie) => ({ ...it, mediaType: 'tv' as const }))
+          : [];
+        if (mItems.length > 0) setHomeShowcaseMovies(mItems);
+        if (sItems.length > 0) setHomeShowcaseSeries(sItems);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingHomeShowcase(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [homeShowcaseMovies.length, homeShowcaseSeries.length]);
+
+  const homeHeroSlides = React.useMemo(() => {
+    const interleaved: CatalogMovie[] = [];
+    const validMovies = homeShowcaseMovies.filter((m) => m.backdrop || m.poster);
+    const validSeries = homeShowcaseSeries.filter((s) => s.backdrop || s.poster);
+    const maxCount = Math.max(validMovies.length, validSeries.length);
+    for (let i = 0; i < maxCount && interleaved.length < 6; i++) {
+      if (validMovies[i]) interleaved.push({ ...validMovies[i], mediaType: 'movie' });
+      if (interleaved.length < 6 && validSeries[i]) {
+        interleaved.push({ ...validSeries[i], mediaType: 'tv' });
+      }
+    }
+    return interleaved;
+  }, [homeShowcaseMovies, homeShowcaseSeries]);
+
+  useEffect(() => {
+    if (
+      activeSection !== 'home' ||
+      debouncedHomeQuery.length >= 2 ||
+      homeHeroSlides.length <= 1 ||
+      isHeroHovered ||
+      Boolean(previewItem) ||
+      Boolean(selectedSeries)
+    ) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setHeroSlideIndex((prev) => (prev + 1) % homeHeroSlides.length);
+    }, 7500);
+    return () => clearInterval(timer);
+  }, [
+    activeSection,
+    debouncedHomeQuery,
+    homeHeroSlides.length,
+    isHeroHovered,
+    previewItem,
+    selectedSeries,
+  ]);
+
+  const homeFeaturedLiveChannels = React.useMemo(() => {
+    if (tdtChannels.length === 0) return [];
+    const priorityIds = [
+      'mplus-laliga',
+      'dazn-laliga',
+      'dazn-f1',
+      'mplus-campeones',
+      'mplus-plus',
+      'mplus-estrenos',
+      'la1',
+      'antena3',
+      'cuatro',
+      'telecinco',
+      'lasexta',
+      'dazn-1',
+    ];
+    const picked: SpanishTdtChannel[] = [];
+    for (const pid of priorityIds) {
+      const found = tdtChannels.find((c) => c.id === pid);
+      if (found) picked.push(found);
+    }
+    for (const ch of tdtChannels) {
+      if (picked.length >= 12) break;
+      if (!picked.some((p) => p.id === ch.id)) picked.push(ch);
+    }
+    return picked;
+  }, [tdtChannels]);
 
   // Execute Universal Search on Home when user types
   useEffect(() => {
@@ -1352,6 +1568,41 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     } else if (tdtCategory !== 'all' && ch.category !== tdtCategory) {
       return false;
     }
+
+    const chEpg = getChannelLiveEpg(ch.id);
+    const epgHaystack = `${chEpg?.now?.title || ''} ${chEpg?.now?.category || ''} ${
+      chEpg?.now?.description || ''
+    } ${chEpg?.next?.title || ''}`.toLowerCase();
+
+    if (epgFilter === 'sports_now') {
+      const isSportsChannel =
+        ch.category === 'dazn' ||
+        ch.id.includes('laliga') ||
+        ch.id.includes('champions') ||
+        ch.id.includes('deportes') ||
+        ch.id.includes('vamos') ||
+        ch.id.includes('golf') ||
+        ch.id.includes('tdp') ||
+        ch.id.includes('gol') ||
+        ch.id.includes('rmtv');
+      const isAiringSports =
+        /deporte|f[uú]tbol|laliga|champions|f1|f[oó]rmula|motogp|tenis|baloncesto|nba|acb|ciclismo|golf|motor|directo|liga/i.test(
+          epgHaystack
+        );
+      if (!isSportsChannel && !isAiringSports) return false;
+    } else if (epgFilter === 'cinema_now') {
+      const isCinemaChannel =
+        ch.category === 'cine_series' ||
+        ch.id === 'mplus-estrenos' ||
+        ch.id === 'mplus-accion' ||
+        ch.id === 'mplus-series';
+      const isAiringCinema =
+        /cine|pel[ií]cula|serie|thriller|drama|comedia|acci[oó]n|ficci[oó]n|temporada|episodio|cap[ií]tulo/i.test(
+          epgHaystack
+        );
+      if (!isCinemaChannel && !isAiringCinema) return false;
+    }
+
     if (tdtSearch.trim()) {
       const q = tdtSearch.toLowerCase();
       return (
@@ -1359,6 +1610,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         ch.shortMark.toLowerCase().includes(q) ||
         ch.network.toLowerCase().includes(q) ||
         ch.description.toLowerCase().includes(q) ||
+        epgHaystack.includes(q) ||
         String(ch.dial) === q.trim()
       );
     }
@@ -1369,14 +1621,18 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     if (!debouncedHomeQuery || debouncedHomeQuery.length < 2) return [];
     const q = debouncedHomeQuery.toLowerCase();
     return tdtChannels
-      .filter(
-        (ch) =>
+      .filter((ch) => {
+        const chEpg = getChannelLiveEpg(ch.id);
+        return (
           ch.name.toLowerCase().includes(q) ||
           ch.shortMark.toLowerCase().includes(q) ||
-          ch.network.toLowerCase().includes(q)
-      )
+          ch.network.toLowerCase().includes(q) ||
+          (chEpg?.now?.title || '').toLowerCase().includes(q) ||
+          (chEpg?.next?.title || '').toLowerCase().includes(q)
+        );
+      })
       .slice(0, 6);
-  }, [debouncedHomeQuery, tdtChannels]);
+  }, [debouncedHomeQuery, tdtChannels, getChannelLiveEpg]);
 
   const filteredSports = sportsEvents.filter((ev) => {
     if (sportFilter !== 'all' && ev.sport !== sportFilter) return false;
@@ -1458,13 +1714,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     return (
       <section
         aria-label={lang === 'es' ? 'Seguir viendo' : 'Continue watching'}
-        className="space-y-2.5 pt-1"
+        className="space-y-3"
       >
         <div className="flex items-center justify-between gap-2 px-0.5">
           <div className="flex items-center gap-2 min-w-0">
-            <Clock className="w-4 h-4 text-[#E11D48] shrink-0" />
-            <h3 className="font-display font-semibold text-sm text-white truncate">
-              {lang === 'es' ? 'Seguir viendo' : 'Continue Watching'}
+            <h3 className="font-display font-bold text-base sm:text-lg text-white tracking-tight truncate">
+              {lang === 'es' ? 'Seguir viendo' : 'Up Next'}
             </h3>
           </div>
 
@@ -1480,7 +1735,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 setTimeout(() => setConfirmClearHistory(false), 3200);
               }
             }}
-            className={`min-h-[34px] px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+            className={`min-h-[36px] px-3 rounded-full text-xs font-semibold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
               confirmClearHistory
                 ? 'bg-rose-500 text-white border-rose-400'
                 : 'bg-white/[0.04] text-zinc-400 hover:text-white border-white/[0.08]'
@@ -1499,7 +1754,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           </button>
         </div>
 
-        <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-0.5 min-w-0">
+        <div className="flex items-stretch gap-3.5 overflow-x-auto no-scrollbar pb-1 min-w-0">
           {watchHistory.map((hItem) => {
             const isLoadingThis = loadingItemId === hItem.id;
             const thumb = hItem.backdrop || hItem.poster;
@@ -1550,9 +1805,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') triggerHistoryCardPlay();
                 }}
-                className="group relative w-[204px] sm:w-[228px] shrink-0 rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] hover:border-white/25 transition-colors flex flex-col cursor-pointer"
+                className="group relative w-[220px] sm:w-[252px] shrink-0 rounded-2xl overflow-hidden bg-[#0B0C12] border border-white/[0.08] hover:border-white/25 transition-all duration-200 hover:-translate-y-0.5 flex flex-col cursor-pointer"
               >
-                <div className="relative aspect-[16/9] w-full bg-[#0E0F16] overflow-hidden">
+                <div className="relative aspect-[16/9] w-full bg-[#0B0C12] overflow-hidden">
                   {!imgBroken && thumb ? (
                     <img
                       src={thumb}
@@ -1568,7 +1823,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
                     />
                   ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-[#0E0F16]">
+                    <div className="w-full h-full flex items-center justify-center bg-[#0B0C12]">
                       {hItem.mediaType === 'tv' ? (
                         <Tv className="w-6 h-6 text-zinc-500" />
                       ) : (
@@ -1577,9 +1832,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     </div>
                   )}
 
-                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/30 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent" />
 
-                  <div className="absolute top-1.5 right-1.5 z-10 flex items-center gap-1">
+                  <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
                     {hItem.mediaType === 'tv' && hItem.tmdbId && (
                       <button
                         type="button"
@@ -1596,7 +1851,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         }}
                         title={lang === 'es' ? 'Ver temporadas y capítulos' : 'All episodes'}
                         aria-label="Ver capítulos"
-                        className="h-7 px-2 rounded-full bg-black/70 hover:bg-black/90 text-[10px] font-semibold text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer transition-colors whitespace-nowrap"
+                        className="h-7 px-2.5 rounded-full bg-black/70 backdrop-blur-md hover:bg-black/90 text-[10px] font-semibold text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer transition-colors whitespace-nowrap"
                       >
                         Capítulos
                       </button>
@@ -1612,7 +1867,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         }}
                         title={lang === 'es' ? 'Empezar desde el principio' : 'Start over'}
                         aria-label="Empezar desde el principio"
-                        className="w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                        className="w-7 h-7 rounded-full bg-black/70 backdrop-blur-md hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
                       >
                         <RotateCcw className="w-3.5 h-3.5" />
                       </button>
@@ -1625,7 +1880,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         onRemoveHistoryItem(hItem.id);
                       }}
                       aria-label="Quitar del historial"
-                      className="w-7 h-7 rounded-full bg-black/70 hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                      className="w-7 h-7 rounded-full bg-black/70 backdrop-blur-md hover:bg-black/90 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
                     </button>
@@ -1641,7 +1896,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         ? `Serie · ${hItem.season}x${String(hItem.episode).padStart(2, '0')}`
                         : `Película · ${hItem.year || 'HD'}`}
                     </span>
-                    <span className="w-7 h-7 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-md shrink-0">
+                    <span className="w-7 h-7 rounded-full bg-white text-[#050507] flex items-center justify-center shadow-md shrink-0">
                       {isLoadingThis ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
@@ -1653,7 +1908,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   {hasResume && (
                     <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
                       <div
-                        className="h-full bg-[#E11D48]"
+                        className="h-full bg-white"
                         style={{ width: `${progressPct}%` }}
                       />
                     </div>
@@ -2699,57 +2954,97 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         })()}
 
       {/* ================================================================== */}
-      {/* VIEW 0: BIG VISUAL HOME LAUNCHER GRID ("¿QUÉ QUIERES VER?")        */}
+      {/* VIEW 0: APPLE TV+ LIQUID GLASS ART-FIRST HOME SHOWCASE             */}
       {/* ================================================================== */}
       {activeSection === 'home' && (
-        <div className="space-y-6">
-          {/* Clean Header + Single Universal Search Bar */}
-          <div className="space-y-3.5">
-            <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-2">
-              <div>
-                <h2 className="font-display font-bold text-xl sm:text-2xl text-white tracking-tight">
-                  {lang === 'es' ? '¿Qué quieres ver hoy?' : 'What do you want to watch?'}
-                </h2>
-                <p className="text-xs sm:text-sm text-zinc-400 mt-0.5">
-                  {lang === 'es'
-                    ? 'Elige todo el cine y series o entra en tu plataforma o canal en directo.'
-                    : 'Browse all movies & series or jump into a specific streaming platform or live channel.'}
-                </p>
+        <div className="space-y-8">
+          {/* Sleek Liquid Glass Universal Search Pill + Direct URL Paste Action */}
+          <div className="space-y-3">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+              <div className="relative flex-1">
+                <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  type="text"
+                  value={homeQuery}
+                  onChange={(e) => setHomeQuery(e.target.value)}
+                  placeholder={
+                    lang === 'es'
+                      ? 'Buscar películas, series, anime, canales en vivo o pegar enlace...'
+                      : 'Search movies, series, anime, live channels, or paste a URL...'
+                  }
+                  className="w-full h-12 pl-11 pr-11 rounded-full liquid-glass-pill focus:border-white/35 text-base sm:text-sm text-white placeholder:text-zinc-400 outline-none transition-colors"
+                />
+                {homeQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setHomeQuery('')}
+                    aria-label="Limpiar búsqueda"
+                    className="w-9 h-9 rounded-full absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFocusedHub('all');
+                    setStreamingProvider('all');
+                    setShowWatchlistOnly(true);
+                    onChangeSection('movies');
+                  }}
+                  className="min-h-[44px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                >
+                  <Heart className="w-3.5 h-3.5 text-zinc-300" />
+                  <span>
+                    {lang === 'es' ? 'Mi Lista' : 'My List'}
+                    {cleanWatchlist.length > 0 ? ` · ${cleanWatchlist.length}` : ''}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFocusedHub('all');
+                    setSportFilter('soccer');
+                    onChangeSection('sports');
+                  }}
+                  className="min-h-[44px] px-4 rounded-full bg-[#FFBD0F]/15 hover:bg-[#FFBD0F]/25 border border-[#FFBD0F]/35 text-xs font-bold text-[#FFBD0F] flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                >
+                  <Trophy className="w-3.5 h-3.5 text-[#FFBD0F]" />
+                  <span>{lang === 'es' ? 'Fútbol en Vivo' : 'Live Football'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFocusedHub('all');
+                    onChangeSection('direct');
+                  }}
+                  className="min-h-[44px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                >
+                  <Link2 className="w-3.5 h-3.5 text-zinc-300" />
+                  <span>
+                    {roomQueue.length > 0
+                      ? `${lang === 'es' ? 'Cola' : 'Queue'} · ${roomQueue.length}`
+                      : lang === 'es'
+                      ? 'Pegar URL'
+                      : 'Direct URL'}
+                  </span>
+                </button>
               </div>
             </div>
 
-            {/* Universal Search Input */}
-            <div className="relative">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={homeQuery}
-                onChange={(e) => setHomeQuery(e.target.value)}
-                placeholder={
-                  lang === 'es'
-                    ? 'Buscar cualquier película, serie, canal (Antena 3, DAZN, Movistar) o pegar enlace...'
-                    : 'Search any movie, series, live channel, or paste a direct URL...'
-                }
-                className="w-full h-12 pl-11 pr-11 rounded-2xl bg-[#0D0E15] border border-white/[0.1] focus:border-white/35 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
-              />
-              {homeQuery && (
-                <button
-                  type="button"
-                  onClick={() => setHomeQuery('')}
-                  aria-label="Limpiar búsqueda"
-                  className="w-10 h-10 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {/* Instant URL Paste Action on Home */}
             {/^https?:\/\//i.test(homeQuery.trim()) && (
-              <div className="p-3.5 rounded-2xl bg-[#101119] border border-[#E11D48]/35 flex flex-wrap items-center justify-between gap-3">
+              <div className="p-3.5 rounded-2xl liquid-glass flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center gap-2 min-w-0 text-xs text-zinc-200">
-                  <Link2 className="w-4 h-4 text-[#E11D48] shrink-0" />
-                  <span className="font-mono truncate max-w-[260px] sm:max-w-[440px]">
+                  <Link2 className="w-4 h-4 text-white shrink-0" />
+                  <span className="font-mono truncate max-w-[260px] sm:max-w-[460px]">
                     {homeQuery.trim()}
                   </span>
                 </div>
@@ -2761,7 +3056,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       onPlayCustomUrl(homeQuery.trim());
                       setHomeQuery('');
                     }}
-                    className="min-h-[40px] px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                    className="min-h-[42px] px-4 rounded-full bg-white hover:bg-zinc-200 text-xs font-bold text-[#050507] flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   >
                     <Play className="w-3.5 h-3.5 fill-current" />
                     <span>{lang === 'es' ? 'Reproducir enlace' : 'Play link'}</span>
@@ -2773,7 +3068,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       onOpenCloudBrowser(homeQuery.trim());
                       setHomeQuery('');
                     }}
-                    className="min-h-[40px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer"
+                    className="min-h-[42px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.14] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   >
                     <Tv className="w-3.5 h-3.5" />
                     <span>Cloud Browser</span>
@@ -2788,65 +3083,72 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             <div className="space-y-6">
               {loadingHomeSearch && (
                 <div className="py-8 flex items-center justify-center gap-2 text-sm text-zinc-400">
-                  <Loader2 className="w-5 h-5 animate-spin text-[#E11D48]" />
+                  <Loader2 className="w-5 h-5 animate-spin text-white" />
                   <span>{lang === 'es' ? 'Buscando en todo el catálogo...' : 'Searching...'}</span>
                 </div>
               )}
 
-              {/* Matching Live TV Channels */}
               {homeMatchingChannels.length > 0 && (
                 <section className="space-y-3">
-                  <h3 className="font-display font-bold text-sm text-white">
+                  <h3 className="font-display font-bold text-sm sm:text-base text-white">
                     {lang === 'es' ? 'Canales en Directo' : 'Live TV Channels'}
                   </h3>
                   <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 gap-3">
-                    {homeMatchingChannels.map((ch) => (
-                      <button
-                        key={ch.id}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('success');
-                          onPlayTdtChannel(ch, 0);
-                        }}
-                        className="min-h-[68px] p-3.5 rounded-2xl bg-[#0D0E15] hover:bg-[#141622] border border-white/[0.08] hover:border-white/25 flex items-center justify-between gap-3 text-left cursor-pointer transition-colors"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <div
-                            className="w-11 h-11 rounded-xl shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-xs text-white"
-                            style={{
-                              background: `linear-gradient(145deg, ${ch.brandTone}33 0%, #090A10 100%)`,
-                            }}
-                          >
-                            {ch.shortMark}
-                          </div>
-                          <div className="min-w-0">
-                            <div className="font-display font-bold text-sm text-white truncate">
-                              {ch.name}
+                    {homeMatchingChannels.map((ch) => {
+                      const chEpg = getChannelLiveEpg(ch.id);
+                      return (
+                        <button
+                          key={ch.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('success');
+                            onPlayTdtChannel(ch, 0, chEpg?.now?.title);
+                          }}
+                          className="min-h-[72px] p-3.5 rounded-2xl bg-[#0B0C12] hover:bg-[#131520] border border-white/[0.08] hover:border-white/25 flex items-center justify-between gap-3 text-left cursor-pointer transition-colors"
+                        >
+                          <div className="flex items-center gap-3 min-w-0">
+                            <div
+                              className="w-11 h-11 rounded-xl shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-xs text-white"
+                              style={{
+                                background: `linear-gradient(145deg, ${ch.brandTone}33 0%, #090A10 100%)`,
+                              }}
+                            >
+                              {ch.shortMark}
                             </div>
-                            <div className="text-xs text-zinc-400 truncate">
-                              En directo · {ch.network}
+                            <div className="min-w-0">
+                              <div className="font-display font-bold text-sm text-white truncate">
+                                {ch.name}
+                              </div>
+                              {chEpg?.now ? (
+                                <div className="text-xs text-zinc-300 truncate">
+                                  <span className="font-mono tabular-nums text-emerald-400">
+                                    {chEpg.now.startLabel}
+                                  </span>
+                                  <span className="mx-1 text-zinc-500">·</span>
+                                  <span>{chEpg.now.title}</span>
+                                </div>
+                              ) : (
+                                <div className="text-xs text-zinc-400 truncate">
+                                  En directo · {ch.network}
+                                </div>
+                              )}
                             </div>
                           </div>
-                        </div>
-                        <span className="w-9 h-9 rounded-full bg-[#E11D48] text-white flex items-center justify-center shrink-0">
-                          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                        </span>
-                      </button>
-                    ))}
+                          <span className="w-9 h-9 rounded-full bg-white text-[#050507] flex items-center justify-center shrink-0">
+                            <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                          </span>
+                        </button>
+                      );
+                    })}
                   </div>
                 </section>
               )}
 
-              {/* Matching Series (1-Tap Opens Temporadas -> Capítulos Immediately) */}
               {homeSeriesResults.length > 0 && (
                 <section className="space-y-3">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="font-display font-bold text-sm text-white">
-                      {lang === 'es'
-                        ? 'Series (Pulsa para elegir temporada y capítulo)'
-                        : 'TV Series (Tap for seasons & episodes)'}
-                    </h3>
-                  </div>
+                  <h3 className="font-display font-bold text-sm sm:text-base text-white">
+                    {lang === 'es' ? 'Series' : 'TV Series'}
+                  </h3>
                   <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5">
                     {homeSeriesResults.map((show) => (
                       <div
@@ -2863,7 +3165,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             openSeriesDetails(show.tmdbId, 1, { ...show, mediaType: 'tv' });
                           }
                         }}
-                        className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] hover:border-white/25 cursor-pointer transition-colors"
+                        className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0B0C12] border border-white/[0.08] hover:border-white/25 cursor-pointer transition-colors"
                       >
                         {show.poster ? (
                           <img
@@ -2884,7 +3186,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             {show.title}
                           </div>
                           <div className="text-[11px] text-zinc-300 mt-0.5">
-                            Serie · {show.year || 'TV'} · Ver capítulos
+                            Serie · {show.year || 'TV'}
                           </div>
                         </div>
                       </div>
@@ -2893,10 +3195,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 </section>
               )}
 
-              {/* Matching Movies */}
               {homeMovieResults.length > 0 && (
                 <section className="space-y-3">
-                  <h3 className="font-display font-bold text-sm text-white">
+                  <h3 className="font-display font-bold text-sm sm:text-base text-white">
                     {lang === 'es' ? 'Películas' : 'Movies'}
                   </h3>
                   <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5">
@@ -2912,7 +3213,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') setPreviewItem(movie);
                         }}
-                        className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] hover:border-white/25 cursor-pointer transition-colors"
+                        className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0B0C12] border border-white/[0.08] hover:border-white/25 cursor-pointer transition-colors"
                       >
                         {movie.poster ? (
                           <img
@@ -2946,7 +3247,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 homeMovieResults.length === 0 &&
                 homeSeriesResults.length === 0 &&
                 homeMatchingChannels.length === 0 && (
-                  <div className="py-12 text-center rounded-2xl bg-white/[0.02] border border-white/[0.07] px-4 space-y-2">
+                  <div className="py-12 text-center rounded-3xl bg-white/[0.02] border border-white/[0.07] px-4 space-y-2.5">
                     <p className="text-sm font-semibold text-white">
                       {lang === 'es'
                         ? `No encontramos resultados para «${debouncedHomeQuery}»`
@@ -2959,9 +3260,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         setDebouncedYtQuery(debouncedHomeQuery);
                         onChangeSection('youtube');
                       }}
-                      className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold inline-flex items-center gap-2 cursor-pointer"
+                      className="min-h-[44px] px-5 rounded-full bg-white text-[#050507] text-xs font-bold inline-flex items-center gap-2 cursor-pointer"
                     >
-                      <Youtube className="w-4 h-4 text-[#E11D48]" />
+                      <Youtube className="w-4 h-4 text-[#050507]" />
                       <span>Buscar en YouTube</span>
                     </button>
                   </div>
@@ -2970,433 +3271,633 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           ) : (
             <>
               {/* ============================================================ */}
-              {/* ROW 1: THREE GENERAL MASTER CARDS (PELÍCULAS · SERIES · ANIME)*/}
+              {/* 1. APPLE TV+ PANORAMIC 16:9 HERO CAROUSEL                    */}
               {/* ============================================================ */}
-              <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 gap-3.5 sm:gap-4">
-                <button
-                  type="button"
-                  onClick={enterGeneralMovies}
-                  className="group min-h-[112px] sm:min-h-[128px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#E11D48]/22 via-[#130C14] to-[#0B0C12] border border-white/[0.1] hover:border-[#E11D48]/60 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all"
-                >
-                  <div className="space-y-1.5 min-w-0">
-                    <div className="inline-flex items-center gap-2 text-xs font-semibold text-[#FB7185]">
-                      <Film className="w-4 h-4 shrink-0" />
-                      <span>{lang === 'es' ? 'Catálogo General' : 'All Cinema'}</span>
-                    </div>
-                    <div className="font-display font-bold text-xl sm:text-2xl text-white">
-                      {lang === 'es' ? 'Películas' : 'Movies'}
-                    </div>
-                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
-                      {lang === 'es'
-                        ? 'Todas las películas juntas · Español y VO Inglés'
-                        : 'Every movie across all platforms · Spanish & English'}
-                    </p>
-                  </div>
-                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-[#E11D48] text-white flex items-center justify-center shrink-0 transition-colors">
-                    <ChevronRight className="w-5 h-5" />
-                  </div>
-                </button>
+              {(() => {
+                const safeIdx =
+                  homeHeroSlides.length > 0 ? heroSlideIndex % homeHeroSlides.length : 0;
+                const heroItem = homeHeroSlides[safeIdx] || null;
+                const heroImg = heroItem ? heroItem.backdrop || heroItem.poster : '';
+                const heroKey = heroItem ? `hero-${heroItem.id}` : '';
+                const heroBroken = heroKey ? brokenHeroImgs[heroKey] : false;
 
-                <button
-                  type="button"
-                  onClick={enterGeneralSeries}
-                  className="group min-h-[112px] sm:min-h-[128px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-indigo-500/22 via-[#0E1020] to-[#0B0C12] border border-white/[0.1] hover:border-indigo-400/60 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all"
-                >
-                  <div className="space-y-1.5 min-w-0">
-                    <div className="inline-flex items-center gap-2 text-xs font-semibold text-indigo-300">
-                      <Tv className="w-4 h-4 shrink-0" />
-                      <span>{lang === 'es' ? 'Catálogo General' : 'All TV Shows'}</span>
-                    </div>
-                    <div className="font-display font-bold text-xl sm:text-2xl text-white">
-                      {lang === 'es' ? 'Series' : 'TV Series'}
-                    </div>
-                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
-                      {lang === 'es'
-                        ? 'Todas las series por temporadas y capítulos'
-                        : 'Every TV series organized by season & episode'}
-                    </p>
-                  </div>
-                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-indigo-500 text-white flex items-center justify-center shrink-0 transition-colors">
-                    <ChevronRight className="w-5 h-5" />
-                  </div>
-                </button>
+                if (loadingHomeShowcase && !heroItem) {
+                  return (
+                    <div className="w-full min-h-[300px] sm:min-h-[400px] rounded-[28px] bg-white/[0.03] border border-white/[0.08] skeleton-shimmer" />
+                  );
+                }
 
-                <button
-                  type="button"
-                  onClick={() => enterAnimeHub('anime_all', 'series')}
-                  className="group min-h-[112px] sm:min-h-[128px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-[#F47521]/25 via-[#18100B] to-[#0B0C12] border border-white/[0.1] hover:border-[#F47521]/65 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all @sm:col-span-2 @lg:col-span-1"
-                >
-                  <div className="space-y-1.5 min-w-0">
-                    <div className="inline-flex items-center gap-2 text-xs font-semibold text-[#FDBA74]">
-                      <Sparkles className="w-4 h-4 shrink-0" />
-                      <span>{lang === 'es' ? 'Sección de Anime' : 'Anime Hub'}</span>
+                if (!heroItem) return null;
+
+                const isTv = heroItem.mediaType === 'tv';
+                const heroSaved = isBookmarked(heroItem);
+
+                return (
+                  <section
+                    aria-label={lang === 'es' ? 'Estrenos destacados' : 'Featured spotlight'}
+                    onMouseEnter={() => setIsHeroHovered(true)}
+                    onMouseLeave={() => setIsHeroHovered(false)}
+                    className="relative w-full min-h-[310px] sm:min-h-[415px] rounded-[28px] overflow-hidden border border-white/[0.1] bg-[#08090E] flex flex-col justify-end p-5 sm:p-9 lg:p-11 shadow-[0_28px_70px_rgba(0,0,0,0.7)]"
+                  >
+                    {!heroBroken && heroImg ? (
+                      <img
+                        key={heroKey}
+                        src={heroImg}
+                        alt={heroItem.title}
+                        referrerPolicy="no-referrer"
+                        onError={() =>
+                          setBrokenHeroImgs((prev) => ({ ...prev, [heroKey]: true }))
+                        }
+                        className="absolute inset-0 w-full h-full object-cover object-center opacity-80 transition-opacity duration-500"
+                      />
+                    ) : (
+                      <div className="absolute inset-0 bg-gradient-to-br from-zinc-800/40 via-[#0B0C14] to-[#050507]" />
+                    )}
+
+                    {/* Cinema Scrims for Crisp Readability Without Boxy Clutter */}
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#050507] via-[#050507]/60 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#050507]/95 via-[#050507]/45 to-transparent" />
+
+                    <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-5">
+                      <div className="max-w-2xl space-y-2.5">
+                        <div className="text-xs sm:text-[13px] font-medium text-zinc-300 flex flex-wrap items-center gap-1.5">
+                          <span className="font-semibold text-white">
+                            {isTv
+                              ? lang === 'es'
+                                ? 'Serie Destacada'
+                                : 'Featured Series'
+                              : lang === 'es'
+                              ? 'Película Destacada'
+                              : 'Featured Movie'}
+                          </span>
+                          <span className="text-zinc-500" aria-hidden="true">
+                            ·
+                          </span>
+                          <span className="tabular-nums">{heroItem.year || '2025'}</span>
+                          {heroItem.rating && (
+                            <>
+                              <span className="text-zinc-500" aria-hidden="true">
+                                ·
+                              </span>
+                              <span className="font-mono tabular-nums text-zinc-100">
+                                ★ {heroItem.rating}
+                              </span>
+                            </>
+                          )}
+                          <span className="text-zinc-500" aria-hidden="true">
+                            ·
+                          </span>
+                          <span className="text-zinc-300">Castellano · VO 1080p</span>
+                        </div>
+
+                        <h2 className="font-display font-bold text-2xl sm:text-4xl lg:text-5xl text-white tracking-tight leading-[1.06] text-balance">
+                          {heroItem.title}
+                        </h2>
+
+                        {heroItem.overview && (
+                          <p className="text-xs sm:text-sm text-zinc-300/95 line-clamp-2 max-w-[58ch] leading-relaxed">
+                            {heroItem.overview}
+                          </p>
+                        )}
+
+                        <div className="pt-2 flex flex-wrap items-center gap-2.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('success');
+                              if (isTv && heroItem.tmdbId) {
+                                openSeriesDetails(heroItem.tmdbId, 1, heroItem);
+                              } else {
+                                onPlayMovie(heroItem, 'ES');
+                              }
+                            }}
+                            className="min-h-[46px] px-6 rounded-full bg-white hover:bg-zinc-200 text-[#050507] text-xs sm:text-sm font-bold flex items-center gap-2 shadow-[0_8px_28px_rgba(255,255,255,0.22)] transition-all active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
+                          >
+                            {loadingItemId === heroItem.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Play className="w-4 h-4 fill-current" />
+                            )}
+                            <span>
+                              {isTv
+                                ? lang === 'es'
+                                  ? 'Ver Episodios'
+                                  : 'Browse Episodes'
+                                : lang === 'es'
+                                ? 'Reproducir'
+                                : 'Play Movie'}
+                            </span>
+                          </button>
+
+                          {!isTv && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                setPreviewItem(heroItem);
+                              }}
+                              className="min-h-[46px] px-5 rounded-full liquid-glass-pill hover:bg-white/[0.14] text-xs sm:text-sm font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                            >
+                              <Info className="w-4 h-4" />
+                              <span>{lang === 'es' ? 'Idioma y Ficha' : 'Audio & Info'}</span>
+                            </button>
+                          )}
+
+                          <button
+                            type="button"
+                            onClick={(e) => handleToggleBookmark(heroItem, e)}
+                            aria-label="Guardar en Mi Lista"
+                            className="min-h-[46px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.14] text-xs sm:text-sm font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                          >
+                            {heroSaved ? (
+                              <Check className="w-4 h-4 text-white" />
+                            ) : (
+                              <Plus className="w-4 h-4 text-white" />
+                            )}
+                            <span>{heroSaved ? 'En Mi Lista' : 'Mi Lista'}</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Discreet Apple TV Carousel Controls */}
+                      {homeHeroSlides.length > 1 && (
+                        <div className="flex items-center gap-2 self-end shrink-0">
+                          <div className="flex items-center gap-1.5 mr-1">
+                            {homeHeroSlides.map((slide, idx) => (
+                              <button
+                                key={slide.id}
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic('light');
+                                  setHeroSlideIndex(idx);
+                                }}
+                                aria-label={`Ir a destacado ${idx + 1}`}
+                                className={`h-1.5 rounded-full transition-all cursor-pointer ${
+                                  idx === safeIdx
+                                    ? 'w-6 bg-white'
+                                    : 'w-1.5 bg-white/30 hover:bg-white/55'
+                                }`}
+                              />
+                            ))}
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setHeroSlideIndex(
+                                (prev) =>
+                                  (prev - 1 + homeHeroSlides.length) % homeHeroSlides.length
+                              );
+                            }}
+                            aria-label="Destacado anterior"
+                            className="w-9 h-9 rounded-full liquid-glass-pill hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer transition-colors"
+                          >
+                            <ChevronLeft className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setHeroSlideIndex((prev) => (prev + 1) % homeHeroSlides.length);
+                            }}
+                            aria-label="Siguiente destacado"
+                            className="w-9 h-9 rounded-full liquid-glass-pill hover:bg-white/[0.16] text-white flex items-center justify-center cursor-pointer transition-colors"
+                          >
+                            <ChevronRight className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
                     </div>
-                    <div className="font-display font-bold text-xl sm:text-2xl text-white">
-                      Anime
-                    </div>
-                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
-                      Crunchyroll · AnimeBox · JKAnime · AnimeFLV
-                    </p>
-                  </div>
-                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-[#F47521] group-hover:text-[#120902] text-white flex items-center justify-center shrink-0 transition-colors">
-                    <ChevronRight className="w-5 h-5" />
-                  </div>
-                </button>
-              </div>
+                  </section>
+                );
+              })()}
 
               {/* ============================================================ */}
-              {/* ROW 1B: FEATURED LANGUAGE HUBS (TODO EN CASTELLANO · CATALÀ) */}
+              {/* 2. SEGUIR VIENDO ("UP NEXT")                                 */}
               {/* ============================================================ */}
-              <div className="grid grid-cols-1 @md:grid-cols-2 gap-3.5 sm:gap-4">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFocusedHub('all');
-                    setCastellanoKind('all');
-                    setCastellanoProvider('all');
-                    setCastellanoCategory('trending');
-                    setCastellanoQuery('');
-                    setCastellanoPage(1);
-                    onChangeSection('castellano');
-                  }}
-                  className="group min-h-[108px] sm:min-h-[120px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-amber-500/20 via-[#17100B] to-[#0B0C12] border border-white/[0.1] hover:border-amber-400/60 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all"
-                >
-                  <div className="space-y-1.5 min-w-0">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-amber-300">
-                      <span className="font-mono font-bold">ES</span>
-                      <span aria-hidden="true">·</span>
-                      <span>Español de España</span>
-                    </div>
-                    <div className="font-display font-bold text-lg sm:text-2xl text-white">
-                      Todo en Castellano
-                    </div>
-                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
-                      From, Reina Roja, HBO, Netflix, Movistar+ y Cine en Castellano HD
-                    </p>
-                  </div>
-                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-amber-400 group-hover:text-[#140E02] text-white flex items-center justify-center shrink-0 transition-colors">
-                    <ChevronRight className="w-5 h-5" />
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFocusedHub('all');
-                    setCatalaCategory('all');
-                    setCatalaQuery('');
-                    onChangeSection('catala');
-                  }}
-                  className="group min-h-[108px] sm:min-h-[120px] p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-rose-500/22 via-[#180E12] to-[#0B0C12] border border-white/[0.1] hover:border-rose-400/65 text-left flex items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all"
-                >
-                  <div className="space-y-1.5 min-w-0">
-                    <div className="flex items-center gap-2 text-xs font-semibold text-rose-300">
-                      <span className="font-mono font-bold">CAT</span>
-                      <span aria-hidden="true">·</span>
-                      <span>Tot en un sol lloc</span>
-                    </div>
-                    <div className="font-display font-bold text-lg sm:text-2xl text-white">
-                      Anime en Català
-                    </div>
-                    <p className="text-xs sm:text-sm text-zinc-300 line-clamp-1">
-                      Bola de Drac, Sakura, Detectiu Conan, Dr. Slump, Evangelion, SX3 i TV3
-                    </p>
-                  </div>
-                  <div className="w-11 h-11 rounded-2xl bg-white/[0.08] group-hover:bg-[#E11D48] text-white flex items-center justify-center shrink-0 transition-colors">
-                    <ChevronRight className="w-5 h-5" />
-                  </div>
-                </button>
-              </div>
+              {renderContinueWatchingStrip()}
 
               {/* ============================================================ */}
-              {/* ROW 2: BIG PLATFORMS & LIVE TV GRID                          */}
-              {/* Netflix · HBO Max · Disney+ · Prime Video · Movistar+ · DAZN · TDT */}
+              {/* 3. APPLE TV CHANNELS & PLATFORMS DOCK (MINIMALIST GLASS)     */}
               {/* ============================================================ */}
               <section className="space-y-3">
-                <h3 className="font-display font-semibold text-sm sm:text-base text-zinc-200 px-0.5">
-                  {lang === 'es'
-                    ? 'Plataformas y Televisión en Directo'
-                    : 'Streaming Platforms & Live TV'}
-                </h3>
+                <div className="flex items-center justify-between gap-2 px-0.5">
+                  <h3 className="font-display font-bold text-base sm:text-lg text-white tracking-tight">
+                    {lang === 'es' ? 'Canales y Plataformas' : 'Channels & Apps'}
+                  </h3>
+                  <div className="flex items-center gap-3 text-xs font-semibold text-zinc-400">
+                    <button
+                      type="button"
+                      onClick={enterGeneralMovies}
+                      className="hover:text-white transition-colors cursor-pointer"
+                    >
+                      {lang === 'es' ? 'Todo el Cine' : 'All Movies'}
+                    </button>
+                    <span className="text-zinc-700" aria-hidden="true">
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      onClick={enterGeneralSeries}
+                      className="hover:text-white transition-colors cursor-pointer"
+                    >
+                      {lang === 'es' ? 'Todas las Series' : 'All Series'}
+                    </button>
+                  </div>
+                </div>
 
-                <div className="grid grid-cols-2 @sm:grid-cols-3 @lg:grid-cols-4 gap-3.5 sm:gap-4">
-                  {/* NETFLIX */}
-                  <button
-                    type="button"
-                    onClick={() => enterStreamingPlatform('netflix', 'movies')}
-                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#E50914]/22 via-[#15090D] to-[#0B0C12] border border-white/[0.09] hover:border-[#E50914]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="h-9 min-w-9 px-2.5 rounded-xl bg-[#E50914] text-white font-display font-black text-base flex items-center justify-center shadow-md">
-                        N
+                <div className="grid grid-cols-3 @sm:grid-cols-4 @md:grid-cols-6 gap-2.5 sm:gap-3">
+                  {[
+                    {
+                      id: 'netflix',
+                      label: 'Netflix',
+                      mark: 'NETFLIX',
+                      markClass: 'text-[#E50914] tracking-tighter text-sm sm:text-base font-black',
+                      onClick: () => enterStreamingPlatform('netflix', 'movies'),
+                    },
+                    {
+                      id: 'hbomax',
+                      label: 'HBO Max',
+                      mark: 'MAX',
+                      markClass: 'text-white tracking-widest text-sm sm:text-base font-black',
+                      onClick: () => enterStreamingPlatform('hbomax', 'movies'),
+                    },
+                    {
+                      id: 'disney',
+                      label: 'Disney+',
+                      mark: 'Disney+',
+                      markClass: 'text-[#60A5FA] tracking-tight text-sm sm:text-base font-extrabold',
+                      onClick: () => enterStreamingPlatform('disney', 'movies'),
+                    },
+                    {
+                      id: 'prime',
+                      label: 'Prime Video',
+                      mark: 'prime',
+                      markClass: 'text-[#38BDF8] tracking-tight text-sm sm:text-base font-extrabold',
+                      onClick: () => enterStreamingPlatform('prime', 'movies'),
+                    },
+                    {
+                      id: 'apple',
+                      label: 'Apple TV+',
+                      mark: 'tv+',
+                      markClass: 'text-white tracking-tight text-base sm:text-lg font-black',
+                      onClick: () => enterStreamingPlatform('apple', 'movies'),
+                    },
+                    {
+                      id: 'movistar',
+                      label: 'Movistar+',
+                      mark: 'M+',
+                      markClass: 'text-[#019DF4] tracking-tight text-base sm:text-lg font-black',
+                      onClick: () => enterMovistarHub('live'),
+                    },
+                    {
+                      id: 'dazn',
+                      label: 'DAZN Vivo',
+                      mark: 'DAZN',
+                      markClass: 'text-white tracking-tighter text-sm sm:text-base font-black',
+                      onClick: enterDaznLiveHub,
+                    },
+                    {
+                      id: 'tdt',
+                      label: 'TDT España',
+                      mark: 'TDT',
+                      markClass: 'text-emerald-400 tracking-tight text-sm sm:text-base font-black',
+                      onClick: enterSpanishTdtHub,
+                    },
+                    {
+                      id: 'anime',
+                      label: 'Anime Hub',
+                      mark: 'ANIME',
+                      markClass: 'text-[#FB923C] tracking-wider text-xs sm:text-sm font-black',
+                      onClick: () => enterAnimeHub('anime_all', 'series'),
+                    },
+                    {
+                      id: 'castellano',
+                      label: 'Castellano',
+                      mark: 'ES · HD',
+                      markClass: 'text-amber-300 tracking-tight text-xs sm:text-sm font-black',
+                      onClick: () => {
+                        triggerHaptic('light');
+                        setFocusedHub('all');
+                        setCastellanoKind('all');
+                        setCastellanoProvider('all');
+                        setCastellanoCategory('trending');
+                        setCastellanoQuery('');
+                        setCastellanoPage(1);
+                        onChangeSection('castellano');
+                      },
+                    },
+                    {
+                      id: 'catala',
+                      label: 'Anime Català',
+                      mark: 'CAT · SX3',
+                      markClass: 'text-rose-300 tracking-tight text-xs sm:text-sm font-black',
+                      onClick: () => {
+                        triggerHaptic('light');
+                        setFocusedHub('all');
+                        setCatalaCategory('all');
+                        setCatalaQuery('');
+                        onChangeSection('catala');
+                      },
+                    },
+                    {
+                      id: 'youtube',
+                      label: 'YouTube Sala',
+                      mark: 'YT',
+                      markClass: 'text-white tracking-tight text-sm sm:text-base font-black',
+                      onClick: () => {
+                        triggerHaptic('light');
+                        setFocusedHub('all');
+                        onChangeSection('youtube');
+                      },
+                    },
+                  ].map((tile) => (
+                    <button
+                      key={tile.id}
+                      type="button"
+                      onClick={tile.onClick}
+                      className="group h-[74px] sm:h-[82px] px-3 rounded-2xl bg-[#0B0C12]/90 hover:bg-[#141622] border border-white/[0.08] hover:border-white/25 flex flex-col items-center justify-center gap-1 text-center cursor-pointer transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]"
+                    >
+                      <span className={`font-display leading-none ${tile.markClass}`}>
+                        {tile.mark}
                       </span>
-                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
-                    </div>
-                    <div>
-                      <div className="font-display font-bold text-base sm:text-lg text-white">
-                        Netflix
-                      </div>
-                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
-                        {lang === 'es' ? 'Películas y Series' : 'Movies & Series'}
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* HBO MAX */}
-                  <button
-                    type="button"
-                    onClick={() => enterStreamingPlatform('hbomax', 'movies')}
-                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#6D28D9]/25 via-[#120D22] to-[#0B0C12] border border-white/[0.09] hover:border-[#8B5CF6]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="h-9 px-2.5 rounded-xl bg-[#6D28D9] text-white font-display font-black text-xs tracking-wider flex items-center justify-center shadow-md">
-                        MAX
+                      <span className="text-[11px] font-medium text-zinc-400 group-hover:text-zinc-200 truncate max-w-full transition-colors">
+                        {tile.label}
                       </span>
-                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
-                    </div>
-                    <div>
-                      <div className="font-display font-bold text-base sm:text-lg text-white">
-                        HBO Max
-                      </div>
-                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
-                        {lang === 'es' ? 'Películas y Series' : 'Movies & Series'}
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* DISNEY+ */}
-                  <button
-                    type="button"
-                    onClick={() => enterStreamingPlatform('disney', 'movies')}
-                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#0063E5]/25 via-[#091224] to-[#0B0C12] border border-white/[0.09] hover:border-[#3B82F6]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="h-9 px-2.5 rounded-xl bg-[#0063E5] text-white font-display font-black text-sm flex items-center justify-center shadow-md">
-                        D+
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
-                    </div>
-                    <div>
-                      <div className="font-display font-bold text-base sm:text-lg text-white">
-                        Disney+
-                      </div>
-                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
-                        {lang === 'es' ? 'Disney, Marvel y Star Wars' : 'Disney, Marvel & Star Wars'}
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* PRIME VIDEO */}
-                  <button
-                    type="button"
-                    onClick={() => enterStreamingPlatform('prime', 'movies')}
-                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#00A8E1]/22 via-[#081620] to-[#0B0C12] border border-white/[0.09] hover:border-[#00A8E1]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="h-9 px-2.5 rounded-xl bg-[#00A8E1] text-[#041118] font-display font-black text-[11px] tracking-tight flex items-center justify-center shadow-md">
-                        PRIME
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
-                    </div>
-                    <div>
-                      <div className="font-display font-bold text-base sm:text-lg text-white">
-                        Prime Video
-                      </div>
-                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
-                        {lang === 'es' ? 'Películas y Series' : 'Movies & Series'}
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* MOVISTAR+ */}
-                  <button
-                    type="button"
-                    onClick={() => enterMovistarHub('live')}
-                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-[#019DF4]/24 via-[#081624] to-[#0B0C12] border border-white/[0.09] hover:border-[#019DF4]/65 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="h-9 px-2.5 rounded-xl bg-[#019DF4] text-white font-display font-black text-sm flex items-center justify-center shadow-md">
-                        M+
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
-                    </div>
-                    <div>
-                      <div className="font-display font-bold text-base sm:text-lg text-white">
-                        Movistar+
-                      </div>
-                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
-                        {lang === 'es'
-                          ? 'Canales en Vivo · Cine y Series'
-                          : 'Live Channels · Movies & Series'}
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* DAZN EN VIVO */}
-                  <button
-                    type="button"
-                    onClick={enterDaznLiveHub}
-                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-zinc-200/15 via-[#12131A] to-[#0B0C12] border border-white/[0.09] hover:border-white/45 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="h-9 px-2.5 rounded-xl bg-white text-[#050508] font-display font-black text-xs tracking-tight flex items-center justify-center shadow-md">
-                        DAZN
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
-                    </div>
-                    <div>
-                      <div className="font-display font-bold text-base sm:text-lg text-white">
-                        DAZN en Vivo
-                      </div>
-                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
-                        {lang === 'es' ? 'LaLiga, F1, MotoGP y DAZN 1–4' : 'LaLiga, F1, MotoGP Live'}
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* TDT ESPAÑA EN VIVO */}
-                  <button
-                    type="button"
-                    onClick={enterSpanishTdtHub}
-                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-emerald-500/20 via-[#091815] to-[#0B0C12] border border-white/[0.09] hover:border-emerald-400/55 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="h-9 px-2.5 rounded-xl bg-emerald-500 text-[#04130E] font-display font-black text-xs tracking-tight flex items-center justify-center shadow-md">
-                        TDT
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
-                    </div>
-                    <div>
-                      <div className="font-display font-bold text-base sm:text-lg text-white">
-                        TDT España
-                      </div>
-                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
-                        {lang === 'es'
-                          ? 'La 1, Antena 3, Telecinco, laSexta...'
-                          : 'National Spanish TV Live'}
-                      </div>
-                    </div>
-                  </button>
-
-                  {/* PARTIDOS Y AGENDA DEPORTIVA */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setFocusedHub('all');
-                      onChangeSection('sports');
-                    }}
-                    className="group min-h-[124px] p-4 sm:p-5 rounded-3xl bg-gradient-to-br from-amber-500/20 via-[#181309] to-[#0B0C12] border border-white/[0.09] hover:border-amber-400/55 text-left flex flex-col justify-between gap-3 cursor-pointer active:scale-[0.98] transition-all"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="h-9 w-9 rounded-xl bg-amber-400 text-[#140E02] flex items-center justify-center shadow-md">
-                        <Trophy className="w-4 h-4" />
-                      </span>
-                      <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white transition-colors" />
-                    </div>
-                    <div>
-                      <div className="font-display font-bold text-base sm:text-lg text-white">
-                        {lang === 'es' ? 'Partidos en Vivo' : 'Live Matches'}
-                      </div>
-                      <div className="text-xs text-zinc-400 mt-0.5 line-clamp-1">
-                        {lang === 'es'
-                          ? 'Agenda de hoy y marcadores'
-                          : "Today's schedule & scores"}
-                      </div>
-                    </div>
-                  </button>
+                    </button>
+                  ))}
                 </div>
               </section>
 
               {/* ============================================================ */}
-              {/* ROW 3: SECONDARY UTILITIES (YouTube · Mi Lista · Apple · URL)*/}
+              {/* 4. EN DIRECTO AHORA · TV, MOVISTAR+ Y DAZN (EPG EN VIVO)     */}
               {/* ============================================================ */}
-              <div className="grid grid-cols-2 @sm:grid-cols-4 gap-3">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFocusedHub('all');
-                    onChangeSection('youtube');
-                  }}
-                  className="min-h-[60px] px-4 py-3 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.06] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer transition-colors"
-                >
-                  <Youtube className="w-5 h-5 text-[#E11D48] shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-xs sm:text-sm font-bold text-white truncate">YouTube</div>
-                    <div className="text-[11px] text-zinc-400 truncate">
-                      {lang === 'es' ? 'Vídeos en sala' : 'Watch together'}
+              {homeFeaturedLiveChannels.length > 0 && (
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-2 px-0.5">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                      <h3 className="font-display font-bold text-base sm:text-lg text-white tracking-tight truncate">
+                        {lang === 'es' ? 'En Directo Ahora' : 'Live TV Right Now'}
+                      </h3>
+                      {epgMadridClock && (
+                        <span className="text-xs font-mono tabular-nums text-zinc-500 hidden sm:inline">
+                          · {epgMadridClock} ES
+                        </span>
+                      )}
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setFocusedHub('all');
+                        setTdtCategory('all');
+                        onChangeSection('tdt');
+                      }}
+                      className="text-xs font-semibold text-zinc-400 hover:text-white flex items-center gap-0.5 shrink-0 cursor-pointer transition-colors"
+                    >
+                      <span>{lang === 'es' ? 'Ver guía completa' : 'Full TV Guide'}</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
-                </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFocusedHub('all');
-                    setStreamingProvider('all');
-                    setShowWatchlistOnly(true);
-                    onChangeSection('movies');
-                  }}
-                  className="min-h-[60px] px-4 py-3 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.06] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer transition-colors"
-                >
-                  <Heart className="w-5 h-5 text-[#FB7185] shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-xs sm:text-sm font-bold text-white truncate">
-                      {lang === 'es' ? 'Mi Lista' : 'My List'} ({cleanWatchlist.length})
-                    </div>
-                    <div className="text-[11px] text-zinc-400 truncate">
-                      {lang === 'es' ? 'Tus guardados' : 'Saved titles'}
-                    </div>
+                  <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-1 min-w-0">
+                    {homeFeaturedLiveChannels.map((ch) => {
+                      const chEpg = getChannelLiveEpg(ch.id);
+                      const isPlayingThis = ch.channels.some(
+                        (sig) => activeVideoRawUrl && activeVideoRawUrl === sig.sourceUrl
+                      );
+
+                      return (
+                        <button
+                          key={`hlive-${ch.id}`}
+                          type="button"
+                          disabled={Boolean(loadingItemId)}
+                          onClick={() => {
+                            triggerHaptic('success');
+                            onPlayTdtChannel(ch, 0, chEpg?.now?.title);
+                          }}
+                          className={`group w-[236px] sm:w-[264px] shrink-0 p-3.5 rounded-2xl bg-[#0B0C12] hover:bg-[#131521] border text-left flex flex-col justify-between gap-3 cursor-pointer transition-all duration-200 hover:-translate-y-0.5 ${
+                            isPlayingThis
+                              ? 'border-white/55 ring-1 ring-white/25'
+                              : 'border-white/[0.08] hover:border-white/25'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-2.5">
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div
+                                className="w-10 h-10 rounded-xl shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-[11px] text-white"
+                                style={{
+                                  background: `linear-gradient(145deg, ${ch.brandTone}30 0%, #08090F 100%)`,
+                                }}
+                              >
+                                {ch.shortMark}
+                              </div>
+                              <div className="min-w-0">
+                                <div className="font-display font-bold text-xs sm:text-sm text-white truncate">
+                                  {ch.name}
+                                </div>
+                                <div className="text-[11px] text-zinc-400 truncate tabular-nums">
+                                  {chEpg?.now
+                                    ? `${chEpg.now.startLabel} – ${chEpg.now.stopLabel}`
+                                    : `Dial ${ch.dial} · ${ch.network}`}
+                                </div>
+                              </div>
+                            </div>
+
+                            <span className="w-8 h-8 rounded-full bg-white text-[#050507] flex items-center justify-center shrink-0 shadow-sm">
+                              <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                            </span>
+                          </div>
+
+                          <div className="space-y-1.5">
+                            <div className="text-xs font-semibold text-zinc-100 line-clamp-1">
+                              {chEpg?.now ? chEpg.now.title : ch.description}
+                            </div>
+                            <div className="h-1 w-full rounded-full bg-white/[0.08] overflow-hidden">
+                              <div
+                                className="h-full w-full bg-white/90 rounded-full origin-left"
+                                style={{
+                                  transform: `scaleX(${
+                                    chEpg?.now
+                                      ? Math.max(0.06, Math.min(1, chEpg.progressPct / 100))
+                                      : 0.35
+                                  })`,
+                                }}
+                              />
+                            </div>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
-                </button>
+                </section>
+              )}
 
-                <button
-                  type="button"
-                  onClick={() => enterStreamingPlatform('apple', 'movies')}
-                  className="min-h-[60px] px-4 py-3 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.06] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer transition-colors"
-                >
-                  <span className="h-7 px-2 rounded-lg bg-zinc-100 text-[#050508] font-display font-black text-xs flex items-center justify-center shrink-0">
-                    tv+
-                  </span>
-                  <div className="min-w-0">
-                    <div className="text-xs sm:text-sm font-bold text-white truncate">Apple TV+</div>
-                    <div className="text-[11px] text-zinc-400 truncate">
-                      {lang === 'es' ? 'Cine y Series' : 'Originals'}
-                    </div>
+              {/* ============================================================ */}
+              {/* 5. TOP 10 PELÍCULAS HOY (CLEAN POSTER ARTWORK)               */}
+              {/* ============================================================ */}
+              {homeShowcaseMovies.length > 0 && (
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-2 px-0.5">
+                    <h3 className="font-display font-bold text-base sm:text-lg text-white tracking-tight">
+                      {lang === 'es' ? 'Top 10 Películas Hoy' : 'Top 10 Movies Today'}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={enterGeneralMovies}
+                      className="text-xs font-semibold text-zinc-400 hover:text-white flex items-center gap-0.5 shrink-0 cursor-pointer transition-colors"
+                    >
+                      <span>{lang === 'es' ? 'Ver todas' : 'See all'}</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
                   </div>
-                </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFocusedHub('all');
-                    onChangeSection('direct');
-                  }}
-                  className="min-h-[60px] px-4 py-3 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.06] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer transition-colors"
-                >
-                  <Link2 className="w-5 h-5 text-sky-400 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="text-xs sm:text-sm font-bold text-white truncate">
-                      {lang === 'es' ? 'Enlace y Cola' : 'Link & Queue'}
-                    </div>
-                    <div className="text-[11px] text-zinc-400 truncate">
-                      {roomQueue.length > 0
-                        ? `${roomQueue.length} en cola`
-                        : lang === 'es'
-                        ? 'Pegar URL directa'
-                        : 'Paste direct URL'}
-                    </div>
+                  <div className="flex items-stretch gap-3.5 overflow-x-auto no-scrollbar pb-1 min-w-0">
+                    {homeShowcaseMovies.slice(0, 10).map((movie, idx) => {
+                      const imgBroken = brokenPosters[`htop-${movie.id}`];
+                      return (
+                        <div
+                          key={`htop-${movie.id}`}
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setPreviewItem(movie);
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') setPreviewItem(movie);
+                          }}
+                          className="group relative w-[148px] sm:w-[168px] shrink-0 aspect-[2/3] rounded-2xl overflow-hidden bg-[#0B0C12] border border-white/[0.08] hover:border-white/25 cursor-pointer transition-all duration-200 hover:-translate-y-0.5"
+                        >
+                          {!imgBroken && movie.poster ? (
+                            <img
+                              src={movie.poster}
+                              alt={movie.title}
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              onError={() =>
+                                setBrokenPosters((prev) => ({
+                                  ...prev,
+                                  [`htop-${movie.id}`]: true,
+                                }))
+                              }
+                              className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full p-4 flex flex-col items-center justify-center text-center">
+                              <Film className="w-7 h-7 text-zinc-500 mb-2" />
+                              <span className="text-xs font-semibold text-white line-clamp-2">
+                                {movie.title}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="absolute top-2 left-2.5 font-display font-black text-2xl sm:text-3xl text-white/95 drop-shadow-[0_2px_10px_rgba(0,0,0,0.9)] tabular-nums select-none">
+                            {idx + 1}
+                          </div>
+
+                          <div className="absolute inset-x-0 bottom-0 pt-14 pb-2.5 px-3 bg-gradient-to-t from-black/95 via-black/65 to-transparent">
+                            <h4 className="font-display font-bold text-xs sm:text-[13px] text-white line-clamp-1">
+                              {movie.title}
+                            </h4>
+                            <div className="text-[11px] text-zinc-300 mt-0.5 tabular-nums">
+                              {movie.year || 'HD'}
+                              {movie.rating ? ` · ★ ${movie.rating}` : ''}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
-                </button>
-              </div>
+                </section>
+              )}
 
-              {/* Continue Watching Strip right below the main launcher grid */}
-              {renderContinueWatchingStrip()}
+              {/* ============================================================ */}
+              {/* 6. SERIES IMPRESCINDIBLES (16:9 PANORAMIC APPLE TV CARDS)    */}
+              {/* ============================================================ */}
+              {homeShowcaseSeries.length > 0 && (
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between gap-2 px-0.5">
+                    <h3 className="font-display font-bold text-base sm:text-lg text-white tracking-tight">
+                      {lang === 'es' ? 'Series Imprescindibles' : 'Essential Series'}
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={enterGeneralSeries}
+                      className="text-xs font-semibold text-zinc-400 hover:text-white flex items-center gap-0.5 shrink-0 cursor-pointer transition-colors"
+                    >
+                      <span>{lang === 'es' ? 'Ver todas' : 'See all'}</span>
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-stretch gap-3.5 overflow-x-auto no-scrollbar pb-1 min-w-0">
+                    {homeShowcaseSeries.slice(0, 10).map((show) => {
+                      const art = show.backdrop || show.poster;
+                      const imgBroken = brokenPosters[`hser-${show.id}`];
+                      return (
+                        <div
+                          key={`hser-${show.id}`}
+                          onClick={() => {
+                            if (!show.tmdbId) return;
+                            triggerHaptic('light');
+                            openSeriesDetails(show.tmdbId, 1, { ...show, mediaType: 'tv' });
+                          }}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && show.tmdbId) {
+                              openSeriesDetails(show.tmdbId, 1, { ...show, mediaType: 'tv' });
+                            }
+                          }}
+                          className="group relative w-[238px] sm:w-[276px] shrink-0 aspect-[16/9] rounded-2xl overflow-hidden bg-[#0B0C12] border border-white/[0.08] hover:border-white/25 cursor-pointer transition-all duration-200 hover:-translate-y-0.5"
+                        >
+                          {!imgBroken && art ? (
+                            <img
+                              src={art}
+                              alt={show.title}
+                              loading="lazy"
+                              referrerPolicy="no-referrer"
+                              onError={() =>
+                                setBrokenPosters((prev) => ({
+                                  ...prev,
+                                  [`hser-${show.id}`]: true,
+                                }))
+                              }
+                              className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                            />
+                          ) : (
+                            <div className="w-full h-full p-4 flex flex-col items-center justify-center text-center">
+                              <Tv className="w-7 h-7 text-zinc-500 mb-2" />
+                              <span className="text-xs font-semibold text-white line-clamp-1">
+                                {show.title}
+                              </span>
+                            </div>
+                          )}
+
+                          <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+
+                          <div className="absolute bottom-3 left-3.5 right-3.5 flex items-end justify-between gap-2">
+                            <div className="min-w-0">
+                              <h4 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-1">
+                                {show.title}
+                              </h4>
+                              <div className="text-[11px] text-zinc-300 mt-0.5 tabular-nums">
+                                Serie · {show.year || 'TV'}
+                                {show.rating ? ` · ★ ${show.rating}` : ''}
+                              </div>
+                            </div>
+                            <span className="w-8 h-8 rounded-full bg-white/95 text-[#050507] flex items-center justify-center shrink-0 opacity-90 group-hover:opacity-100 transition-opacity shadow-md">
+                              <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              )}
             </>
           )}
         </div>
@@ -3509,7 +4010,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       ? 'Televisión en Directo'
                       : 'Live TV'
                     : activeSection === 'sports'
-                    ? lang === 'es'
+                    ? sportFilter === 'soccer'
+                      ? lang === 'es'
+                        ? 'Fútbol en Vivo'
+                        : 'Live Football'
+                      : lang === 'es'
                       ? 'Partidos en Directo'
                       : 'Live Sports'
                     : activeSection === 'youtube'
@@ -3742,15 +4247,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       type="button"
                       onClick={() => {
                         triggerHaptic('light');
+                        setSportFilter('soccer');
                         onChangeSection('sports');
                       }}
                       className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                         activeSection === 'sports'
-                          ? 'bg-white text-[#050508]'
+                          ? 'bg-[#FFBD0F] text-[#11131A]'
                           : 'text-zinc-400 hover:text-white'
                       }`}
                     >
-                      {lang === 'es' ? 'Partidos Hoy' : 'Live Matches'}
+                      {lang === 'es' ? 'Fútbol' : 'Football'}
                     </button>
                   </div>
                 )}
@@ -3970,43 +4476,41 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 <div className="pt-1.5 flex flex-wrap items-center gap-2.5">
                   <button
                     type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setPreviewItem(spotlightMovie);
-                    }}
-                    className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center gap-2 shadow-lg shadow-[#E11D48]/30 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                  >
-                    <Info className="w-4 h-4 text-white" />
-                    <span>
-                      {lang === 'es' ? 'Elegir Idioma y Ver' : 'Select Language & Watch'}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
                     disabled={Boolean(loadingItemId)}
                     onClick={() => {
                       triggerHaptic('success');
                       onPlayMovie(spotlightMovie, activeSection === 'vose' ? 'EN' : 'ES');
                     }}
-                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                    className="min-h-[44px] px-5 rounded-full bg-white hover:bg-zinc-200 text-xs sm:text-sm font-bold text-[#050507] flex items-center gap-2 shadow-lg transition-colors whitespace-nowrap shrink-0 cursor-pointer"
                   >
                     {loadingItemId === spotlightMovie.id ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <Play className="w-4 h-4 fill-current text-[#E11D48]" />
+                      <Play className="w-4 h-4 fill-current" />
                     )}
-                    <span>{lang === 'es' ? 'Reproducir directo' : 'Quick Play'}</span>
+                    <span>{lang === 'es' ? 'Reproducir' : 'Play'}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setPreviewItem(spotlightMovie);
+                    }}
+                    className="min-h-[44px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.14] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  >
+                    <Info className="w-4 h-4 text-white" />
+                    <span>{lang === 'es' ? 'Idioma y Ficha' : 'Audio & Info'}</span>
                   </button>
 
                   <button
                     type="button"
                     onClick={(e) => handleToggleBookmark(spotlightMovie, e)}
-                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                    className="min-h-[44px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.14] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   >
                     <Heart
                       className={`w-4 h-4 ${
-                        isBookmarked(spotlightMovie) ? 'fill-current text-[#E11D48]' : ''
+                        isBookmarked(spotlightMovie) ? 'fill-current text-white' : ''
                       }`}
                     />
                     <span>{isBookmarked(spotlightMovie) ? 'Guardada' : 'Mi Lista'}</span>
@@ -4092,7 +4596,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     <div
                       key={favKey}
                       onClick={() => {
-                        if (loadingItemId) return;
                         triggerHaptic('light');
                         if (movie.mediaType === 'tv' && movie.tmdbId) {
                           setShowWatchlistOnly(false);
@@ -4104,7 +4607,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       role="button"
                       tabIndex={0}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !loadingItemId) {
+                        if (e.key === 'Enter') {
                           if (movie.mediaType === 'tv' && movie.tmdbId) {
                             setShowWatchlistOnly(false);
                             openSeriesDetails(movie.tmdbId, 1, movie);
@@ -4204,7 +4707,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           type="button"
                           onClick={(e) => {
                             e.stopPropagation();
-                            if (loadingItemId) return;
                             triggerHaptic('success');
                             if (movie.mediaType === 'tv' && movie.tmdbId) {
                               openSeriesDetails(movie.tmdbId, 1, movie);
@@ -4218,7 +4720,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               : 'Reproducir directamente en la sala'
                           }
                           aria-label="Reproducir"
-                          className="w-9 h-9 rounded-full bg-[#E11D48] hover:bg-[#F43F5E] text-white flex items-center justify-center shrink-0 shadow-md cursor-pointer transition-colors"
+                          className="w-9 h-9 rounded-full bg-white hover:bg-zinc-200 text-[#050507] flex items-center justify-center shrink-0 shadow-md cursor-pointer transition-colors"
                         >
                           <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                         </button>
@@ -4227,7 +4729,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       {watchedPct > 0 && watchedPct < 90 && (
                         <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20 pointer-events-none">
                           <div
-                            className="h-full bg-[#E11D48]"
+                            className="h-full bg-white"
                             style={{ width: `${watchedPct}%` }}
                           />
                         </div>
@@ -5368,10 +5870,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   onChange={(e) => setTdtSearch(e.target.value)}
                   placeholder={
                     tdtCategory === 'dazn'
-                      ? 'Buscar canal de DAZN (LaLiga, F1, MotoGP...)'
+                      ? 'Buscar canal o emisión en DAZN (F1, LaLiga, MotoGP...)'
                       : tdtCategory === 'movistar'
-                      ? 'Buscar canal de Movistar+ (LaLiga, Campeones, F1...)'
-                      : t.searchTdtPlaceholder
+                      ? 'Buscar canal o programa en Movistar+ (LaLiga, Cine...)'
+                      : 'Buscar canal o qué emiten ahora en la Guía EPG...'
                   }
                   className="w-full h-11 pl-10 pr-9 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
                 />
@@ -5391,11 +5893,15 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 onClick={() => {
                   triggerHaptic('light');
                   fetchTdtCatalog();
+                  fetchLiveEpg(true);
                 }}
-                aria-label="Actualizar canales"
+                aria-label="Actualizar canales y Guía EPG"
+                title="Actualizar canales y Guía EPG en tiempo real"
                 className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#16161E] border border-white/[0.08] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer transition-colors"
               >
-                <RefreshCw className={`w-4 h-4 ${loadingTdt ? 'animate-spin' : ''}`} />
+                <RefreshCw
+                  className={`w-4 h-4 ${loadingTdt || loadingEpg ? 'animate-spin' : ''}`}
+                />
               </button>
             </div>
 
@@ -5442,6 +5948,77 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               </div>
             ) : null}
           </div>
+
+          {/* Real-Time EPG Control Bar (Guía EPG en Tiempo Real + Quick Program Filters) */}
+          <div className="flex flex-col @md:flex-row @md:items-center justify-between gap-2.5 pb-3 border-b border-white/[0.07]">
+            <div className="flex items-center gap-2 text-xs text-zinc-300 min-w-0 flex-wrap">
+              <Calendar className="w-4 h-4 text-rose-400 shrink-0" />
+              <span className="font-display font-bold text-white">
+                {lang === 'es' ? 'Guía EPG en Tiempo Real' : 'Real-Time EPG Guide'}
+              </span>
+              {epgMadridClock && (
+                <>
+                  <span className="text-zinc-600" aria-hidden="true">
+                    ·
+                  </span>
+                  <span className="font-mono tabular-nums text-zinc-400">
+                    {lang === 'es'
+                      ? `${epgMadridClock} h (España)`
+                      : `${epgMadridClock} CET`}
+                  </span>
+                </>
+              )}
+              <span className="text-zinc-600 hidden sm:inline" aria-hidden="true">
+                ·
+              </span>
+              <span className="text-zinc-400 hidden sm:inline">
+                {lang === 'es'
+                  ? 'Pulsa Guía en cualquier canal para ver toda su programación de hoy'
+                  : 'Tap Guide on any channel for full schedule'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              {(
+                [
+                  {
+                    id: 'all',
+                    es: 'Toda la emisión',
+                    en: 'All Airing',
+                  },
+                  {
+                    id: 'sports_now',
+                    es: 'Deporte ahora',
+                    en: 'Live Sports Now',
+                  },
+                  {
+                    id: 'cinema_now',
+                    es: 'Cine y Series ahora',
+                    en: 'Movies & Series Now',
+                  },
+                ] as const
+              ).map((flt) => {
+                const active = epgFilter === flt.id;
+                return (
+                  <button
+                    key={flt.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setEpgFilter(flt.id);
+                    }}
+                     className={`min-h-[40px] px-3.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                       active
+                         ? 'bg-white text-[#050507]'
+                         : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                     }`}
+                   >
+                     {lang === 'es' ? flt.es : flt.en}
+                   </button>
+                 );
+               })}
+             </div>
+           </div>
 
           {/* Saved Favorite Channels Quick Bar */}
           {favoriteChannels.length > 0 && focusedHub === 'all' && (
@@ -5525,7 +6102,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               {Array.from({ length: 9 }).map((_, idx) => (
                 <div
                   key={idx}
-                  className="h-36 rounded-2xl bg-white/[0.04] border border-white/[0.07] skeleton-shimmer"
+                  className="h-44 rounded-2xl bg-white/[0.04] border border-white/[0.07] skeleton-shimmer"
                 />
               ))}
             </div>
@@ -5541,12 +6118,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 type="button"
                 onClick={() => {
                   setTdtSearch('');
+                  setEpgFilter('all');
                   if (focusedHub === 'tdt_es') setTdtCategory('tdt_all');
                   else if (focusedHub === 'all') setTdtCategory('all');
                 }}
-                className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
+                className="min-h-[44px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
               >
-                {lang === 'es' ? 'Limpiar búsqueda' : 'Reset filter'}
+                {lang === 'es' ? 'Restablecer filtros' : 'Reset filter'}
               </button>
             </div>
           ) : (
@@ -5558,35 +6136,37 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 );
                 const favId = buildChannelFavId(ch.name, primarySignal?.sourceUrl || ch.id);
                 const isFav = isChannelFavorited(favId);
+                const chEpg = getChannelLiveEpg(ch.id);
 
                 return (
                   <div
                     key={ch.id}
-                    className={`group relative rounded-2xl p-4 bg-[#0D0E15] border transition-colors flex flex-col justify-between gap-3.5 ${
+                    className={`group relative rounded-2xl p-4 bg-[#0D0E15] border transition-colors flex flex-col justify-between gap-3 ${
                       isPlayingThis
                         ? 'border-white/60 ring-1 ring-white/25'
                         : 'border-white/[0.08] hover:border-white/20'
                     }`}
                   >
+                    {/* Top Row: Channel Dial + Identity + Multiview/Favorite Actions */}
                     <div className="flex items-start justify-between gap-3">
                       <button
                         type="button"
                         disabled={Boolean(loadingItemId)}
                         onClick={() => {
                           triggerHaptic('medium');
-                          onPlayTdtChannel(ch, 0);
+                          onPlayTdtChannel(ch, 0, chEpg?.now?.title);
                         }}
-                        className="flex items-center gap-3.5 min-w-0 text-left flex-1 cursor-pointer"
+                        className="flex items-center gap-3 min-w-0 text-left flex-1 cursor-pointer"
                       >
                         <div
-                          className="w-13 h-13 rounded-2xl shrink-0 flex flex-col items-center justify-center border border-white/15 shadow-inner relative overflow-hidden"
+                          className="w-12 h-12 rounded-2xl shrink-0 flex flex-col items-center justify-center border border-white/15 shadow-inner relative overflow-hidden"
                           style={{
                             background: `linear-gradient(145deg, ${ch.brandTone}2E 0%, #090A10 100%)`,
                           }}
                         >
                           <span
                             className={`font-display font-extrabold tracking-tight text-white leading-none px-0.5 text-center ${
-                              ch.shortMark.length > 4 ? 'text-[10.5px]' : 'text-sm'
+                              ch.shortMark.length > 4 ? 'text-[10px]' : 'text-xs'
                             }`}
                           >
                             {ch.shortMark}
@@ -5597,16 +6177,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <h3 className="font-display font-bold text-sm sm:text-base text-white truncate">
-                              {ch.name}
-                            </h3>
-                            {isPlayingThis && (
-                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0" />
-                            )}
-                          </div>
+                          <h3 className="font-display font-bold text-sm sm:text-base text-white truncate">
+                            {ch.name}
+                          </h3>
                           <div className="mt-0.5 text-[11px] text-zinc-400 truncate">
-                            <span className="text-emerald-400 font-semibold">En directo</span>
+                            <span className="text-emerald-400 font-semibold">
+                              {isPlayingThis ? 'En pantalla' : 'En directo'}
+                            </span>
                             <span className="mx-1.5 text-zinc-600" aria-hidden="true">
                               ·
                             </span>
@@ -5618,9 +6195,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               {ch.quality || '1080p'}
                             </span>
                           </div>
-                          <p className="mt-1 text-xs text-zinc-400 line-clamp-1">
-                            {ch.description}
-                          </p>
                         </div>
                       </button>
 
@@ -5636,12 +6210,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                 onPlaySecondaryChannel({
                                   sourceUrl: primarySignal.sourceUrl,
                                   title: ch.name,
-                                  subtitle: `TV en Directo · ${ch.network}`,
+                                  subtitle: chEpg?.now?.title
+                                    ? `${chEpg.now.title} · ${ch.network}`
+                                    : `TV en Directo · ${ch.network}`,
                                 });
                               }}
                               title="Ver en 2ª pantalla simultánea"
                               aria-label={`Ver ${ch.name} en 2ª pantalla`}
-                              className="w-10 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.08] text-sky-400 flex items-center justify-center cursor-pointer transition-colors"
+                              className="min-h-[44px] min-w-[44px] rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.08] text-sky-400 flex items-center justify-center cursor-pointer transition-colors"
                             >
                               <Columns2 className="w-4 h-4" />
                             </button>
@@ -5662,7 +6238,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               });
                             }}
                             aria-label={`Favorito ${ch.name}`}
-                            className={`w-10 h-10 rounded-xl border flex items-center justify-center cursor-pointer transition-colors ${
+                            className={`min-h-[44px] min-w-[44px] rounded-xl border flex items-center justify-center cursor-pointer transition-colors ${
                               isFav
                                 ? 'bg-amber-400/15 border-amber-400/40 text-amber-300'
                                 : 'bg-white/[0.04] hover:bg-white/[0.1] border-white/[0.08] text-zinc-400 hover:text-white'
@@ -5674,8 +6250,97 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-2 pt-1 border-t border-white/[0.06]">
-                      {ch.channels.map((sig, sIdx) => {
+                    {/* Middle Row: Real-Time EPG Now & Next Block */}
+                    {chEpg?.now ? (
+                      <div
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setSelectedEpgChannel(ch);
+                        }}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setSelectedEpgChannel(ch);
+                          }
+                        }}
+                        className="pt-2.5 border-t border-white/[0.06] space-y-1.5 cursor-pointer group/epg"
+                      >
+                        <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-400">
+                          <div className="flex items-center gap-1.5 min-w-0 truncate">
+                            <span className="font-semibold text-rose-400">Ahora</span>
+                            <span className="text-zinc-600" aria-hidden="true">
+                              ·
+                            </span>
+                            <span className="font-mono tabular-nums text-zinc-300">
+                              {chEpg.now.startLabel} – {chEpg.now.stopLabel}
+                            </span>
+                            {chEpg.now.category && (
+                              <>
+                                <span className="text-zinc-600" aria-hidden="true">
+                                  ·
+                                </span>
+                                <span className="truncate text-zinc-400">
+                                  {chEpg.now.category}
+                                </span>
+                              </>
+                            )}
+                          </div>
+                          {chEpg.remainingMin > 0 && (
+                            <span className="font-mono tabular-nums text-[11px] text-zinc-400 shrink-0">
+                              {lang === 'es'
+                                ? `${chEpg.remainingMin} min rest.`
+                                : `${chEpg.remainingMin}m left`}
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="text-xs sm:text-[13px] font-semibold text-white line-clamp-1 group-hover/epg:text-zinc-200 transition-colors">
+                          {chEpg.now.title}
+                        </div>
+
+                        <div className="h-1 w-full rounded-full bg-white/[0.08] overflow-hidden">
+                          <div
+                            className="h-full w-full bg-white/90 rounded-full origin-left"
+                            style={{
+                              transform: `scaleX(${Math.max(
+                                0.04,
+                                Math.min(1, chEpg.progressPct / 100)
+                              )})`,
+                            }}
+                          />
+                        </div>
+
+                        {chEpg.next && (
+                          <div className="text-[11px] text-zinc-400 truncate pt-0.5">
+                            <span className="text-zinc-500">
+                              {lang === 'es' ? 'Luego' : 'Next'}
+                            </span>
+                            <span className="mx-1.5 text-zinc-600" aria-hidden="true">
+                              ·
+                            </span>
+                            <span className="font-mono tabular-nums text-zinc-300">
+                              {chEpg.next.startLabel}
+                            </span>
+                            <span className="mx-1.5 text-zinc-600" aria-hidden="true">
+                              ·
+                            </span>
+                            <span className="text-zinc-300">{chEpg.next.title}</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="pt-2.5 border-t border-white/[0.06]">
+                        <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                          {ch.description}
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Bottom Action Bar: Primary Stream + Backup Signals + Full EPG Guide Trigger */}
+                    <div className="flex items-center gap-1.5 pt-1 border-t border-white/[0.06] overflow-x-auto no-scrollbar">
+                      {ch.channels.slice(0, 2).map((sig, sIdx) => {
                         const sigActive = activeVideoRawUrl === sig.sourceUrl;
                         const sigLoading = loadingItemId === `tdt-${ch.id}-${sIdx}`;
                         const isPrimary = sIdx === 0;
@@ -5687,13 +6352,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             disabled={Boolean(loadingItemId)}
                             onClick={() => {
                               triggerHaptic('success');
-                              onPlayTdtChannel(ch, sIdx);
+                              onPlayTdtChannel(ch, sIdx, chEpg?.now?.title);
                             }}
-                            className={`min-h-[42px] px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                            className={`min-h-[44px] px-3.5 rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                               sigActive
-                                ? 'flex-1 bg-white text-[#050508]'
+                                ? 'flex-1 bg-emerald-400 text-[#04130E]'
                                 : isPrimary
-                                ? 'flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white'
+                                ? 'flex-1 bg-white hover:bg-zinc-200 text-[#050507]'
                                 : 'bg-white/[0.05] hover:bg-white/[0.11] border border-white/[0.09] text-zinc-200'
                             }`}
                           >
@@ -5705,17 +6370,32 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             <span>
                               {sigActive
                                 ? lang === 'es'
-                                  ? 'Viendo en sala'
-                                  : 'Live in room'
+                                  ? 'Viendo'
+                                  : 'Live'
                                 : isPrimary
                                 ? lang === 'es'
                                   ? 'Ver en directo'
                                   : 'Watch Live'
-                                : sig.label}
+                                : lang === 'es'
+                                ? `Señal ${sIdx + 1}`
+                                : `Signal ${sIdx + 1}`}
                             </span>
                           </button>
                         );
                       })}
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setSelectedEpgChannel(ch);
+                        }}
+                        aria-label={`Abrir Guía EPG de ${ch.name}`}
+                        className="min-h-[44px] px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.09] text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                      >
+                        <Calendar className="w-3.5 h-3.5 text-rose-400" />
+                        <span>{lang === 'es' ? 'Guía' : 'EPG'}</span>
+                      </button>
                     </div>
                   </div>
                 );
@@ -5729,50 +6409,52 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* SECTION 4: LIVE SPORTS & 24/7 MULTIPLEX CHANNELS                   */}
       {/* ================================================================== */}
       {activeSection === 'sports' && (
-        <div className="space-y-5">
+        <div className="space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2 w-full sm:max-w-md">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={sportsSearch}
-                  onChange={(e) => setSportsSearch(e.target.value)}
-                  placeholder={t.searchSportsPlaceholder}
-                  className="w-full h-11 pl-10 pr-9 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
-                />
-                {sportsSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setSportsSearch('')}
-                    aria-label="Limpiar búsqueda"
-                    className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
+            {sportFilter !== 'soccer' && sportFilter !== 'all' && (
+              <div className="flex items-center gap-2 w-full sm:max-w-md">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="text"
+                    value={sportsSearch}
+                    onChange={(e) => setSportsSearch(e.target.value)}
+                    placeholder={t.searchSportsPlaceholder}
+                    className="w-full h-11 pl-10 pr-9 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
+                  />
+                  {sportsSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setSportsSearch('')}
+                      aria-label="Limpiar búsqueda"
+                      className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    fetchSportsAgenda();
+                  }}
+                  aria-label="Actualizar agenda deportiva"
+                  className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#16161E] border border-white/[0.08] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer transition-colors"
+                >
+                  <RefreshCw className={`w-4 h-4 ${loadingSports ? 'animate-spin' : ''}`} />
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  fetchSportsAgenda();
-                }}
-                aria-label="Actualizar agenda deportiva"
-                className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#16161E] border border-white/[0.08] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer transition-colors"
-              >
-                <RefreshCw className={`w-4 h-4 ${loadingSports ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
+            )}
 
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
               {(
                 [
-                  { id: 'all', label: t.allSports },
-                  { id: 'soccer', label: t.soccer },
-                  { id: 'motor', label: t.motor },
+                  { id: 'soccer', label: lang === 'es' ? 'Fútbol' : 'Football' },
                   { id: 'basketball', label: t.basketball },
                   { id: 'tennis', label: t.tennis },
+                  { id: 'motor', label: t.motor },
+                  { id: 'all', label: t.allSports },
                 ] as const
               ).map((cat) => (
                 <button
@@ -5784,8 +6466,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   }}
                   className={`min-h-[42px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
                     sportFilter === cat.id
-                      ? 'bg-white text-[#050508]'
-                      : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.08]'
+                      ? cat.id === 'soccer'
+                        ? 'bg-[#FFBD0F] text-[#11131A] shadow-sm'
+                        : 'bg-white text-[#050508]'
+                      : 'bg-[#242833] hover:bg-[#2E3442] text-zinc-200 border border-white/[0.08]'
                   }`}
                 >
                   {cat.label}
@@ -5794,8 +6478,36 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </div>
           </div>
 
-          {/* Live Match Scoreboards */}
-          {liveScores.length > 0 && (
+          {/* RBTV+ Dark Football Matchboard with Official Country Flags, Club Crests, Direct Signals & Live Stats */}
+          {(sportFilter === 'soccer' || sportFilter === 'all') && (
+            <FootballMatchboard
+              lang={lang}
+              searchQuery={sportsSearch}
+              onSearchQueryChange={setSportsSearch}
+              activeVideoRawUrl={activeVideoRawUrl}
+              loadingItemId={loadingItemId}
+              onPlaySportsMatch={onPlaySportsMatch}
+              onPlaySecondaryChannel={
+                onPlaySecondaryChannel
+                  ? (match, chIdx) => {
+                      const ch = match.channels[chIdx] || match.channels[0];
+                      if (ch?.sourceUrl) {
+                        onPlaySecondaryChannel({
+                          sourceUrl: ch.sourceUrl,
+                          title: `${match.title} · ${ch.label}`,
+                          subtitle: match.competition,
+                        });
+                      }
+                    }
+                  : undefined
+              }
+              isChannelFavorited={isChannelFavorited}
+              onToggleChannelFavorite={onToggleChannelFavorite}
+            />
+          )}
+
+          {/* Non-soccer Match Scoreboards */}
+          {sportFilter !== 'soccer' && sportFilter !== 'all' && liveScores.length > 0 && (
             <section className="rounded-3xl bg-white/[0.02] border border-white/[0.07] p-3.5 sm:p-4 space-y-2.5">
               <div className="flex items-center justify-between gap-2 text-xs">
                 <div className="font-display font-bold text-white">
@@ -5811,12 +6523,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
               <div className="flex items-stretch gap-2.5 overflow-x-auto no-scrollbar pb-0.5">
                 {liveScores
-                  .filter(
-                    (sc) =>
-                      sportFilter === 'all' ||
-                      (sportFilter === 'soccer' && sc.sport === 'soccer') ||
-                      (sportFilter === 'basketball' && sc.sport === 'basketball')
-                  )
+                  .filter((sc) => sportFilter === 'basketball' && sc.sport === 'basketball')
                   .map((sc) => (
                     <div
                       key={sc.id}
@@ -6740,39 +7447,52 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </h3>
                 </div>
                 <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-4 gap-3">
-                  {catalaLiveChannels.map((ch) => (
-                    <button
-                      key={ch.id}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('success');
-                        onPlayTdtChannel(ch, 0);
-                      }}
-                      className="min-h-[76px] p-3.5 rounded-2xl bg-[#0D0E15] hover:bg-[#141724] border border-white/[0.08] hover:border-rose-400/50 flex items-center justify-between gap-3 text-left cursor-pointer transition-colors"
-                    >
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          className="w-11 h-11 rounded-xl shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-xs text-white"
-                          style={{
-                            background: `linear-gradient(145deg, ${ch.brandTone}40 0%, #090A10 100%)`,
-                          }}
-                        >
-                          {ch.shortMark}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-display font-bold text-sm text-white truncate">
-                            {ch.name}
+                  {catalaLiveChannels.map((ch) => {
+                    const chEpg = getChannelLiveEpg(ch.id);
+                    return (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('success');
+                          onPlayTdtChannel(ch, 0, chEpg?.now?.title);
+                        }}
+                        className="min-h-[76px] p-3.5 rounded-2xl bg-[#0D0E15] hover:bg-[#141724] border border-white/[0.08] hover:border-rose-400/50 flex items-center justify-between gap-3 text-left cursor-pointer transition-colors"
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className="w-11 h-11 rounded-xl shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-xs text-white"
+                            style={{
+                              background: `linear-gradient(145deg, ${ch.brandTone}40 0%, #090A10 100%)`,
+                            }}
+                          >
+                            {ch.shortMark}
                           </div>
-                          <div className="text-xs text-zinc-400 truncate">
-                            Directe HD · {ch.network}
+                          <div className="min-w-0">
+                            <div className="font-display font-bold text-sm text-white truncate">
+                              {ch.name}
+                            </div>
+                            {chEpg?.now ? (
+                              <div className="text-xs text-zinc-300 truncate">
+                                <span className="font-mono tabular-nums text-rose-300">
+                                  {chEpg.now.startLabel}
+                                </span>
+                                <span className="mx-1 text-zinc-500">·</span>
+                                <span>{chEpg.now.title}</span>
+                              </div>
+                            ) : (
+                              <div className="text-xs text-zinc-400 truncate">
+                                Directe HD · {ch.network}
+                              </div>
+                            )}
                           </div>
                         </div>
-                      </div>
-                      <span className="w-9 h-9 rounded-full bg-[#E11D48] text-white flex items-center justify-center shrink-0">
-                        <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-                      </span>
-                    </button>
-                  ))}
+                        <span className="w-9 h-9 rounded-full bg-[#E11D48] text-white flex items-center justify-center shrink-0">
+                          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               </section>
             )}
@@ -6899,6 +7619,197 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           )}
         </div>
       )}
+
+      {/* ================================================================== */}
+      {/* REAL-TIME CHANNEL EPG DRAWER / MODAL (TDT · MOVISTAR+ · DAZN)      */}
+      {/* ================================================================== */}
+      {selectedEpgChannel &&
+        (() => {
+          const modalEpg = getChannelLiveEpg(selectedEpgChannel.id);
+          const scheduleList = modalEpg?.upcoming || [];
+
+          return (
+            <div
+              className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4"
+              onClick={() => setSelectedEpgChannel(null)}
+            >
+              <div
+                className="w-full sm:max-w-xl max-h-[86vh] rounded-t-3xl sm:rounded-3xl bg-[#0B0C12] border-t sm:border border-white/[0.12] flex flex-col overflow-hidden shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                {/* Mobile Drag Handle */}
+                <div className="sm:hidden w-10 h-1.5 bg-zinc-700 rounded-full mx-auto mt-3" />
+
+                {/* Modal Header */}
+                <div className="p-4 sm:p-5 border-b border-white/[0.08] flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div
+                      className="w-12 h-12 rounded-2xl shrink-0 flex flex-col items-center justify-center border border-white/15"
+                      style={{
+                        background: `linear-gradient(145deg, ${selectedEpgChannel.brandTone}38 0%, #090A10 100%)`,
+                      }}
+                    >
+                      <span className="font-display font-extrabold text-xs text-white leading-none">
+                        {selectedEpgChannel.shortMark}
+                      </span>
+                      <span className="mt-1 text-[10px] font-mono tabular-nums text-zinc-400 leading-none">
+                        DIAL {selectedEpgChannel.dial}
+                      </span>
+                    </div>
+                    <div className="min-w-0">
+                      <h3 className="font-display font-bold text-base sm:text-lg text-white truncate">
+                        {selectedEpgChannel.name}
+                      </h3>
+                      <div className="text-xs text-zinc-400 truncate">
+                        <span>Guía EPG en Tiempo Real</span>
+                        <span className="mx-1.5 text-zinc-600" aria-hidden="true">
+                          ·
+                        </span>
+                        <span>{selectedEpgChannel.network}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedEpgChannel(null)}
+                    aria-label="Cerrar Guía EPG"
+                    className="min-h-[44px] min-w-[44px] rounded-2xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer transition-colors shrink-0"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Schedule Scroll Body */}
+                <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-3">
+                  {scheduleList.length === 0 ? (
+                    <div className="py-8 text-center space-y-2">
+                      <Clock className="w-7 h-7 text-zinc-500 mx-auto" />
+                      <p className="text-sm font-semibold text-white">
+                        {selectedEpgChannel.description}
+                      </p>
+                      <p className="text-xs text-zinc-400">
+                        {loadingEpg
+                          ? 'Sincronizando parrilla en directo...'
+                          : 'Emisión continua 24/7 en directo disponible para reproducir ahora.'}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-white/[0.07]">
+                      {scheduleList.map((prog, idx) => {
+                        const isCurrent =
+                          prog.startMs <= epgClockMs && prog.stopMs > epgClockMs;
+
+                        return (
+                          <div
+                            key={`${prog.startMs}-${idx}`}
+                            className={`py-3.5 first:pt-0 last:pb-0 space-y-1.5 ${
+                              isCurrent ? 'text-white' : 'text-zinc-300'
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 text-xs">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span
+                                  className={`font-mono tabular-nums font-semibold ${
+                                    isCurrent ? 'text-rose-400' : 'text-zinc-400'
+                                  }`}
+                                >
+                                  {prog.startLabel} – {prog.stopLabel}
+                                </span>
+                                {isCurrent && (
+                                  <>
+                                    <span className="text-zinc-600" aria-hidden="true">
+                                      ·
+                                    </span>
+                                    <span className="font-semibold text-emerald-400">
+                                      En emisión ahora
+                                    </span>
+                                  </>
+                                )}
+                                {prog.category && (
+                                  <>
+                                    <span className="text-zinc-600" aria-hidden="true">
+                                      ·
+                                    </span>
+                                    <span className="text-zinc-400 truncate">
+                                      {prog.category}
+                                    </span>
+                                  </>
+                                )}
+                              </div>
+
+                              {prog.rating && (
+                                <span className="font-mono tabular-nums text-[11px] text-zinc-500 shrink-0">
+                                  {prog.rating}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="font-display font-bold text-sm sm:text-[15px] text-white leading-snug">
+                              {prog.title}
+                            </div>
+
+                            {isCurrent && modalEpg && (
+                              <div className="h-1 w-full rounded-full bg-white/[0.08] overflow-hidden">
+                                <div
+                                  className="h-full w-full bg-[#E11D48] rounded-full origin-left"
+                                  style={{
+                                    transform: `scaleX(${Math.max(
+                                      0.04,
+                                      Math.min(1, modalEpg.progressPct / 100)
+                                    )})`,
+                                  }}
+                                />
+                              </div>
+                            )}
+
+                            {prog.description && (
+                              <p className="text-xs text-zinc-400 line-clamp-2 leading-relaxed">
+                                {prog.description}
+                              </p>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {/* Sticky Bottom Action Bar: Primary Stream + Alternate Signals */}
+                <div className="p-4 border-t border-white/[0.08] bg-[#090A10] flex items-center gap-2 overflow-x-auto no-scrollbar">
+                  {selectedEpgChannel.channels.map((sig, sIdx) => {
+                    const isPrimary = sIdx === 0;
+                    return (
+                      <button
+                        key={sig.id}
+                        type="button"
+                        onClick={() => {
+                          const target = selectedEpgChannel;
+                          const hint = modalEpg?.now?.title;
+                          setSelectedEpgChannel(null);
+                          triggerHaptic('success');
+                          onPlayTdtChannel(target, sIdx, hint);
+                        }}
+                        className={`min-h-[46px] px-4 rounded-xl text-xs sm:text-sm font-bold flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                          isPrimary
+                            ? 'flex-1 bg-[#E11D48] hover:bg-[#BE123C] text-white'
+                            : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-zinc-200'
+                        }`}
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>
+                          {isPrimary
+                            ? `Ver ${selectedEpgChannel.name} en directo`
+                            : `Señal ${sIdx + 1}`}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
     </div>
   );
 };

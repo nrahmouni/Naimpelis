@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Download, Smartphone, X, Share, MoreVertical, Monitor } from 'lucide-react';
+import { Download, Smartphone, X, Share, MoreVertical, Monitor, Tv } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { useOnlineStatus, usePWAInstall } from '../utils/usePWAInstall';
 import { NaimBrandLogo } from './NaimBrandLogo';
@@ -137,18 +137,32 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
 
         <div
           className={`flex ${
-            isDesktop ? 'flex-row items-center shrink-0' : 'flex-col items-stretch w-full'
+            isDesktop ? 'flex-row flex-wrap items-center shrink-0' : 'flex-col items-stretch w-full'
           } gap-2.5`}
         >
+          <a
+            href="/NAIM-CINE-TV.apk?v=8"
+            download="NAIM-CINE-TV.apk"
+            onClick={() => triggerHaptic('success')}
+            className="min-h-11 px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all shadow-[0_12px_32px_rgba(225,29,72,0.34)]"
+          >
+            <Tv className="w-4 h-4 text-white shrink-0" />
+            <span>
+              {lang === 'es'
+                ? 'APK Google TV / Chromecast'
+                : 'Google TV / Chromecast APK'}
+            </span>
+          </a>
+
           <a
             href="/NAIM-CINE.apk"
             download="NAIM-CINE.apk"
             onClick={() => triggerHaptic('success')}
-            className="min-h-11 px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all shadow-[0_12px_32px_rgba(225,29,72,0.32)]"
+            className="min-h-11 px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all"
           >
-            <Download className="w-4 h-4 text-white shrink-0" />
+            <Download className="w-4 h-4 text-[#FB7185] shrink-0" />
             <span>
-              {lang === 'es' ? 'Descargar APK (Android)' : 'Download APK (Android)'}
+              {lang === 'es' ? 'APK Móvil Android' : 'Android Phone APK'}
             </span>
           </a>
 
@@ -159,7 +173,7 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
           >
             <Smartphone className="w-4 h-4 text-[#050507] shrink-0" />
             <span>
-              {lang === 'es' ? 'Instalar en iPhone / PC' : 'Install on iPhone / PC'}
+              {lang === 'es' ? 'iPhone / PC' : 'iPhone / PC'}
             </span>
           </button>
         </div>
@@ -236,29 +250,45 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
             <p className="text-xs text-zinc-300 leading-relaxed">
               {lang === 'es' ? (
                 <>
-                  <strong>Opción directa Android (.apk):</strong> Descarga el instalador firmado{' '}
-                  <span className="font-mono text-white">NAIM-CINE.apk</span>, ábrelo y pulsa{' '}
-                  <strong>Instalar</strong> (si tu móvil pregunta, acepta «Permitir de esta fuente»).
+                  <strong>Google TV &amp; Chromecast (Mando físico TV):</strong> Descarga{' '}
+                  <span className="font-mono text-white">NAIM-CINE-TV.apk</span> y envíalo a tu tele (Send Files to TV / USB / Downloader{' '}
+                  <span className="font-mono text-[#FB7185]">
+                    {typeof window !== 'undefined' ? `${window.location.host}/tv.apk` : '/tv.apk'}
+                  </span>
+                  ).
                 </>
               ) : (
                 <>
-                  <strong>Direct Android (.apk):</strong> Download signed{' '}
-                  <span className="font-mono text-white">NAIM-CINE.apk</span>, open it, and tap{' '}
-                  <strong>Install</strong>.
+                  <strong>Google TV &amp; Chromecast (Physical TV Remote):</strong> Download{' '}
+                  <span className="font-mono text-white">NAIM-CINE-TV.apk</span> and sideload to your TV.
                 </>
               )}
             </p>
             <a
-              href="/NAIM-CINE.apk"
-              download="NAIM-CINE.apk"
+              href="/NAIM-CINE-TV.apk?v=8"
+              download="NAIM-CINE-TV.apk"
               onClick={() => triggerHaptic('success')}
               className="w-full min-h-[44px] px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
             >
-              <Download className="w-4 h-4 shrink-0" />
+              <Tv className="w-4 h-4 shrink-0" />
               <span>
                 {lang === 'es'
-                  ? 'Descargar NAIM-CINE.apk (1.2 MB)'
-                  : 'Download NAIM-CINE.apk (1.2 MB)'}
+                  ? 'Descargar APK Google TV / Chromecast'
+                  : 'Download Google TV / Chromecast APK'}
+              </span>
+            </a>
+
+            <a
+              href="/NAIM-CINE.apk"
+              download="NAIM-CINE.apk"
+              onClick={() => triggerHaptic('success')}
+              className="w-full min-h-[42px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/12 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            >
+              <Download className="w-4 h-4 text-[#FB7185] shrink-0" />
+              <span>
+                {lang === 'es'
+                  ? 'Descargar APK Móvil Android (NAIM-CINE.apk)'
+                  : 'Download Android Mobile APK (NAIM-CINE.apk)'}
               </span>
             </a>
           </div>

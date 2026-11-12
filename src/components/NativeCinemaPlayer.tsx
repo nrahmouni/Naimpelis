@@ -1102,6 +1102,30 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   // ============================================================================
   // DIRECT GOOGLE CHROMECAST + REMOTE PLAYBACK + AIRPLAY ENGINE (VIDEO + AUDIO)
   // ============================================================================
+  const buildCastCompatibleStreamUrl = useCallback(
+    (rawUrl: string, mode: string) => {
+      const absUrl = new URL(rawUrl, window.location.origin).href;
+      if (mode !== 'hls') {
+        return absUrl;
+      }
+      // Ensure external CDN HLS manifests (RTVE, 3Cat, Akamai, etc.) always pass through
+      // same-origin CORS-enabled /api/hls-proxy so Chromecast CAF (Origin: gstatic.com)
+      // and Android RemotePlayback never reject live channels due to missing CORS headers!
+      try {
+        const parsed = new URL(absUrl);
+        if (parsed.origin !== window.location.origin) {
+          return `${window.location.origin}/api/hls-proxy/stream.m3u8?url=${encodeURIComponent(
+            absUrl
+          )}&referer=${encodeURIComponent(parsed.origin + '/')}`;
+        }
+      } catch {
+        // ignore
+      }
+      return absUrl;
+    },
+    []
+  );
+
   const syncBridgeVideoSource = useCallback(() => {
     const bridgeVid = castBridgeVideoRef.current;
     const mainVid = videoRef.current;
@@ -1113,7 +1137,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       return '';
     }
     try {
-      const absUrl = new URL(videoState.url, window.location.origin).href;
+      const absUrl = buildCastCompatibleStreamUrl(videoState.url, videoState.mode);
       if (bridgeVid.getAttribute('src') !== absUrl) {
         bridgeVid.setAttribute('src', absUrl);
         bridgeVid.load();
@@ -1129,7 +1153,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     } catch {
       return videoState.url;
     }
-  }, [videoState.mode, videoState.url, videoState.isLive]);
+  }, [videoState.mode, videoState.url, videoState.isLive, buildCastCompatibleStreamUrl]);
 
   const switchMainVideoToDirectCastUrl = useCallback(() => {
     const mainVid = videoRef.current;
@@ -1141,7 +1165,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       return;
     }
     try {
-      const absUrl = new URL(videoState.url, window.location.origin).href;
+      const absUrl = buildCastCompatibleStreamUrl(videoState.url, videoState.mode);
       const savedTime = !videoState.isLive ? mainVid.currentTime || videoState.currentTime || 0 : 0;
       if (hlsRef.current) {
         hlsRef.current.destroy();
@@ -1167,7 +1191,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     } catch {
       // ignore
     }
-  }, [videoState.mode, videoState.url, videoState.isLive, videoState.currentTime]);
+  }, [
+    videoState.mode,
+    videoState.url,
+    videoState.isLive,
+    videoState.currentTime,
+    buildCastCompatibleStreamUrl,
+  ]);
 
   const loadStreamIntoCastSession = useCallback(
     async (session: any) => {
@@ -1181,7 +1211,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       }
 
       try {
-        const absoluteStreamUrl = new URL(videoState.url, window.location.origin).href;
+        const absoluteStreamUrl = buildCastCompatibleStreamUrl(videoState.url, videoState.mode);
         const contentType =
           videoState.mode === 'direct' ? 'video/mp4' : 'application/x-mpegurl';
         const mediaInfo = new window.chrome.cast.media.MediaInfo(
@@ -1193,25 +1223,20 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           ? window.chrome.cast.media.StreamType.LIVE
           : window.chrome.cast.media.StreamType.BUFFERED;
 
-        // Explicitly declare HLS video + audio segment formats so Chromecast CAF Shaka Player
-        // always initializes the H.264 video decoder and never plays audio-only!
-        if (videoState.mode === 'hls') {
-          const isFmp4 = /\.m4s|\.mp4/i.test(videoState.rawSourceUrl || videoState.url);
+        // Only force FMP4 hint when explicitly fMP4; for live HLS let CAF Shaka Player
+        // auto-probe master & variant playlists so live channels never fail codec init!
+        if (videoState.mode === 'hls' && /\.m4s|\.cmfv/i.test(videoState.rawSourceUrl || videoState.url)) {
           if (window.chrome.cast.media.HlsSegmentFormat) {
-            mediaInfo.hlsSegmentFormat = isFmp4
-              ? window.chrome.cast.media.HlsSegmentFormat.FMP4
-              : window.chrome.cast.media.HlsSegmentFormat.TS;
+            mediaInfo.hlsSegmentFormat = window.chrome.cast.media.HlsSegmentFormat.FMP4;
           }
           if (window.chrome.cast.media.HlsVideoSegmentFormat) {
-            mediaInfo.hlsVideoSegmentFormat = isFmp4
-              ? window.chrome.cast.media.HlsVideoSegmentFormat.FMP4
-              : window.chrome.cast.media.HlsVideoSegmentFormat.MPEG2_TS;
+            mediaInfo.hlsVideoSegmentFormat = window.chrome.cast.media.HlsVideoSegmentFormat.FMP4;
           }
         }
 
         const metadata = new window.chrome.cast.media.GenericMediaMetadata();
         metadata.title = videoState.title || 'NAIM CINE';
-        metadata.subtitle = videoState.subtitle || 'Proyección Directa 1080p';
+        metadata.subtitle = videoState.subtitle || (videoState.isLive ? 'TV en Directo HD' : 'Proyección Directa 1080p');
         if (videoState.poster && /^https?:\/\//i.test(videoState.poster)) {
           metadata.images = [new window.chrome.cast.Image(videoState.poster)];
         }
@@ -1219,9 +1244,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
         const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
         request.autoplay = true;
-        request.currentTime = videoState.isLive
-          ? 0
-          : Math.floor(videoRef.current?.currentTime || videoState.currentTime || 0);
+        // CRITICAL: Never set currentTime = 0 on LIVE HLS streams (causes CAF Shaka to seek
+        // outside the live sliding window and abort live channel playback!)
+        if (!videoState.isLive) {
+          request.currentTime = Math.floor(
+            videoRef.current?.currentTime || videoState.currentTime || 0
+          );
+        }
 
         await session.loadMedia(request);
 
@@ -1253,6 +1282,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       videoState.currentTime,
       lang,
       showTransientToast,
+      buildCastCompatibleStreamUrl,
     ]
   );
 
@@ -1691,19 +1721,28 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
-        backBufferLength: 60,
+        startPosition: targetResumeSec > 3 ? targetResumeSec : videoState.isLive ? 0 : -1,
+        liveSyncDurationCount: 4,
+        liveMaxLatencyDurationCount: 14,
+        maxLiveSyncPlaybackRate: 1,
+        backBufferLength: 30,
         maxBufferLength: 60,
         maxMaxBufferLength: 120,
-        maxBufferHole: 0.5,
-        highBufferWatchdogPeriod: 3,
-        nudgeMaxRetry: 6,
-        manifestLoadingTimeOut: 15000,
-        manifestLoadingMaxRetry: 4,
-        levelLoadingTimeOut: 15000,
-        levelLoadingMaxRetry: 4,
-        fragLoadingTimeOut: 20000,
-        fragLoadingMaxRetry: 5,
+        maxBufferHole: 2.5,
+        maxFragLookUpTolerance: 0.5,
+        highBufferWatchdogPeriod: 1,
+        nudgeOffset: 0.35,
+        nudgeMaxRetry: 20,
+        abrEwmaDefaultEstimate: 2_200_000,
+        manifestLoadingTimeOut: 20000,
+        manifestLoadingMaxRetry: 8,
+        manifestLoadingRetryDelay: 1000,
+        levelLoadingTimeOut: 20000,
+        levelLoadingMaxRetry: 8,
+        levelLoadingRetryDelay: 1000,
+        fragLoadingTimeOut: 25000,
+        fragLoadingMaxRetry: 8,
+        fragLoadingRetryDelay: 1000,
       });
       hlsRef.current = hls;
 
@@ -1718,13 +1757,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         setQualityLevels(levels);
         startPlaybackSafely();
 
-        // Watchdog: if audio plays for 3s but videoWidth is 0 (black screen / audio-only MSE glitch),
-        // automatically recover media decoder or switch to native hardware HLS!
+        // Watchdog: if audio plays for 4s but videoWidth is 0 (black screen / audio-only MSE glitch),
+        // automatically recover media decoder on the SAME signal without switching channels
         if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
         videoWatchdogTimer = setTimeout(() => {
           if (cancelled || !video) return;
-          if (!video.paused && video.currentTime > 0.5 && video.videoWidth === 0) {
-            if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        if (!video.paused && video.currentTime > 0.5 && video.videoWidth === 0) {
+            const uaWatch = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+            const isRealAppleHls =
+              Boolean(video.canPlayType('application/vnd.apple.mpegurl')) &&
+              /iPhone|iPad|iPod|Macintosh|AppleTV/i.test(uaWatch) &&
+              !/Chrome|CriOS|FxiOS|EdgiOS|Android/i.test(uaWatch);
+            if (isRealAppleHls) {
               const savedT = video.currentTime;
               hls.destroy();
               hlsRef.current = null;
@@ -1747,21 +1791,36 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               hls.recoverMediaError();
             }
           }
-        }, 3200);
+        }, 4200);
       });
 
       let mediaRecoveries = 0;
       let networkRecoveries = 0;
 
+      hls.on(Hls.Events.FRAG_BUFFERED, () => {
+        networkRecoveries = 0;
+        setStreamError(null);
+      });
+
       hls.on(Hls.Events.ERROR, (_evt, data) => {
         if (!data.fatal) return;
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 2) {
+        const uaErr = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+        const isRealAppleHls =
+          Boolean(video.canPlayType('application/vnd.apple.mpegurl')) &&
+          /iPhone|iPad|iPod|Macintosh|AppleTV/i.test(uaErr) &&
+          !/Chrome|CriOS|FxiOS|EdgiOS|Android/i.test(uaErr);
+
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 6) {
           networkRecoveries += 1;
-          hls.startLoad();
-        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 2) {
+          setTimeout(() => {
+            if (!cancelled && hlsRef.current === hls) {
+              hls.startLoad();
+            }
+          }, 1200);
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 4) {
           mediaRecoveries += 1;
           hls.recoverMediaError();
-        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        } else if (isRealAppleHls) {
           hls.destroy();
           hlsRef.current = null;
           video.src = videoState.url;
@@ -1773,27 +1832,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             },
             { once: true }
           );
-        } else if (
-          videoState.isLive &&
-          videoState.tracks.length > 1 &&
-          canControlRoom &&
-          !isTvMode
-        ) {
-          const nextIdx = (videoState.activeTrackIndex + 1) % videoState.tracks.length;
-          const nextTrack = videoState.tracks[nextIdx];
-          setIsBuffering(false);
-          showTransientToast(
-            `⚡ Señal ocupada · Saltando automáticamente a ${
-              nextTrack?.label || `Señal ${nextIdx + 1}`
-            }...`
-          );
-          onSelectTrack(nextIdx, 0);
         } else {
+          if (!video.paused && video.readyState >= 3) return;
           setIsBuffering(false);
           setStreamError(
             lang === 'es'
-              ? 'La señal actual tardó en responder. Prueba otra pista o canal debajo del reproductor.'
-              : 'This stream timed out. Try switching to another track or channel below.'
+              ? 'Esta señal no responde ahora mismo. Pulsa Reintentar o elige tú otra señal debajo del reproductor.'
+              : 'This stream is not responding right now. Press Retry or choose another signal below.'
           );
         }
       });
@@ -3227,7 +3272,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               const ct = e.currentTarget.currentTime;
               const dur = e.currentTarget.duration || 0;
               setCurrentTime(ct);
-              if (isBuffering && !e.currentTarget.paused) {
+              if (!e.currentTarget.paused) {
                 clearBufferingIndicator();
               }
               if (
@@ -3244,15 +3289,49 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             onCanPlay={clearBufferingIndicator}
             onCanPlayThrough={clearBufferingIndicator}
             onWaiting={() => {
+              const vNow = videoRef.current;
+              const waitAtTime = vNow ? vNow.currentTime : 0;
+
+              // Immediately jump any tiny MSE segment-boundary micro-gap (< 2.5s) if future data is already buffered!
+              if (vNow && !vNow.paused && vNow.buffered.length > 0) {
+                for (let i = 0; i < vNow.buffered.length; i++) {
+                  const bStart = vNow.buffered.start(i);
+                  const bEnd = vNow.buffered.end(i);
+                  if (bStart > waitAtTime && bStart - waitAtTime <= 2.5 && bEnd - bStart >= 0.4) {
+                    try {
+                      vNow.currentTime = bStart + 0.06;
+                      return;
+                    } catch {
+                      // ignore
+                    }
+                  }
+                }
+              }
+
               if (bufferingDelayTimerRef.current) {
                 clearTimeout(bufferingDelayTimerRef.current);
               }
               bufferingDelayTimerRef.current = setTimeout(() => {
                 const v = videoRef.current;
-                if (v && !v.paused && v.readyState < 3) {
+                if (!v || v.paused) return;
+                // Check again if a buffered range appeared right ahead of a gap before showing spinner
+                for (let i = 0; i < v.buffered.length; i++) {
+                  const bStart = v.buffered.start(i);
+                  const bEnd = v.buffered.end(i);
+                  if (bStart > v.currentTime && bStart - v.currentTime <= 3.0 && bEnd - bStart >= 0.4) {
+                    try {
+                      v.currentTime = bStart + 0.06;
+                      v.play().catch(() => {});
+                      return;
+                    } catch {
+                      // ignore
+                    }
+                  }
+                }
+                if (v.readyState < 3 && Math.abs((v.currentTime || 0) - waitAtTime) < 0.08) {
                   setIsBuffering(true);
                 }
-              }, 1200);
+              }, 1600);
             }}
             onPlaying={() => {
               clearBufferingIndicator();
@@ -3305,7 +3384,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             preload="metadata"
             playsInline
             muted
-            crossOrigin="anonymous"
             x-webkit-airplay="allow"
             className="fixed bottom-0 right-0 w-[2px] h-[2px] opacity-[0.01] pointer-events-none -z-10"
           />

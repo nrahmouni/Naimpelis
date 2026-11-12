@@ -182,8 +182,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   if (!item) return null;
 
   const isSeries = (details?.mediaType || item.mediaType) === 'tv';
-  const title = details?.title || item.title;
-  const year = details?.year || item.year;
+  const title = item.title || details?.title || 'Película';
+  const year = (item.year && item.year !== 'HD' ? item.year : details?.year) || item.year || 'HD';
   const rating = details?.rating || item.rating;
   const overview = details?.overview || item.overview;
   const backdrop = details?.backdrop || item.backdrop || item.poster;

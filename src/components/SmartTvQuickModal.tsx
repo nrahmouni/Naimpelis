@@ -10,6 +10,7 @@ import {
   Copy,
   ChevronDown,
   ChevronUp,
+  Download,
 } from 'lucide-react';
 import { AppLanguage, TvRemoteCommandType } from '../types';
 import {
@@ -200,6 +201,27 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               <Cast className="w-4 h-4" />
               <span>Enviar a TV</span>
             </PrimaryButton>
+          </div>
+
+          {/* Direct Native APK for Google TV / Chromecast (Physical Remote) */}
+          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-[#E11D48]/30 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                <Tv className="w-3.5 h-3.5 text-[#E11D48]" />
+                <span>App Nativa Google TV &amp; Chromecast (.APK)</span>
+              </div>
+              <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
+                Funciona 100% con el mando físico de tu tele sin usar el móvil.
+              </p>
+            </div>
+            <a
+              href="/NAIM-CINE-TV.apk?v=8"
+              download="NAIM-CINE-TV.apk"
+              className="min-h-[42px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
+            >
+              <Download className="w-4 h-4 shrink-0" />
+              <span>Descargar APK</span>
+            </a>
           </div>
 
           {/* 2. 1-Step 4-Digit Smart TV Code Pairing */}

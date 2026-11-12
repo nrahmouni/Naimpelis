@@ -211,8 +211,10 @@ export interface CatalaEpisodeItem {
   still: string;
   runtime?: number;
   streamUrl?: string;
+  youtubeVideoId?: string;
   ccmaVideoId?: string;
-  sourceType: 'archive_mp4' | 'ccma_3cat';
+  audioNote?: string;
+  sourceType: 'archive_mp4' | 'ccma_3cat' | 'youtube';
   tracks?: StreamTrack[];
 }
 
@@ -308,6 +310,74 @@ export interface SportsMatch {
   channels: StreamTrack[];
 }
 
+export interface FootballMatchboardItem {
+  id: string;
+  eventId: string;
+  leagueSlug: string;
+  regionName: string;
+  leagueName: string;
+  groupTitle: string;
+  regionFlagUrl: string;
+  leagueLogoUrl?: string;
+  kickoffIso: string;
+  kickoffTime: string;
+  statusState: 'live' | 'upcoming' | 'finished';
+  statusLabel: string;
+  homeTeam: string;
+  awayTeam: string;
+  homeShort: string;
+  awayShort: string;
+  homeLogo?: string;
+  awayLogo?: string;
+  homeScore: string;
+  awayScore: string;
+  channels: StreamTrack[];
+}
+
+export interface FootballMatchStatItem {
+  key: string;
+  label: string;
+  homeValue: string;
+  awayValue: string;
+  homePct: number;
+  awayPct: number;
+}
+
+export interface FootballMatchTimelineEvent {
+  id: string;
+  clock: string;
+  type: 'goal' | 'yellow-card' | 'red-card' | 'substitution' | 'other';
+  typeLabel: string;
+  playerName: string;
+  assistOrSubName?: string;
+  side: 'home' | 'away' | 'neutral';
+  detailText?: string;
+}
+
+export interface FootballMatchLineupPlayer {
+  id: string;
+  jersey: string;
+  name: string;
+  position: string;
+  starter: boolean;
+}
+
+export interface FootballMatchLineupTeam {
+  teamName: string;
+  formation?: string;
+  starters: FootballMatchLineupPlayer[];
+  substitutes: FootballMatchLineupPlayer[];
+}
+
+export interface FootballMatchDetails {
+  eventId: string;
+  venue?: string;
+  stats: FootballMatchStatItem[];
+  events: FootballMatchTimelineEvent[];
+  homeLineup?: FootballMatchLineupTeam;
+  awayLineup?: FootballMatchLineupTeam;
+}
+
 export type TdtCategory =
   | 'movistar'
   | 'dazn'
@@ -328,6 +398,29 @@ export interface SpanishTdtChannel {
   quality: string;
   description: string;
   channels: StreamTrack[];
+}
+
+export interface EpgProgramItem {
+  title: string;
+  subtitle?: string;
+  description?: string;
+  category?: string;
+  rating?: string;
+  icon?: string;
+  startMs: number;
+  stopMs: number;
+  startLabel: string;
+  stopLabel: string;
+  isLiveSport?: boolean;
+}
+
+export interface ChannelLiveEpg {
+  channelId: string;
+  now: EpgProgramItem | null;
+  next: EpgProgramItem | null;
+  upcoming: EpgProgramItem[];
+  progressPct: number;
+  remainingMin: number;
 }
 
 export interface FavoriteChannelItem {

@@ -8,6 +8,8 @@ const RESERVED_PATH_SEGMENTS = new Set([
   'favicon',
   'manifest',
   'tv',
+  'ads',
+  'naimcine-ads',
 ]);
 
 const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
@@ -27,15 +29,16 @@ export function generateShortRoomCode(length = 4): string {
 
 /**
  * Reads room code from either clean short URL path (`/k8x4` or `/s/k8x4`),
- * legacy query parameter (`?room=k8x4`), or the Smart TV 4-digit pairing route (`/tv`).
+ * legacy query parameter (`?room=k8x4`), Smart TV route (`/tv`), or promo page (`/ads`).
  */
 export function parseRoomFromWindow(): {
   roomId: string;
   isTvMode: boolean;
   isTvPairLobby: boolean;
+  isAdsPage?: boolean;
 } {
   if (typeof window === 'undefined') {
-    return { roomId: '', isTvMode: false, isTvPairLobby: false };
+    return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: false };
   }
 
   const params = new URLSearchParams(window.location.search);
@@ -47,15 +50,24 @@ export function parseRoomFromWindow(): {
     .filter(Boolean);
 
   if (
+    params.get('ads') === '1' ||
+    (segments.length === 1 &&
+      (decodeURIComponent(segments[0]).toLowerCase() === 'ads' ||
+        decodeURIComponent(segments[0]).toLowerCase() === 'naimcine-ads'))
+  ) {
+    return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: true };
+  }
+
+  if (
     params.get('tvpair') === '1' ||
     (segments.length === 1 && decodeURIComponent(segments[0]).toLowerCase() === 'tv')
   ) {
-    return { roomId: '', isTvMode: false, isTvPairLobby: true };
+    return { roomId: '', isTvMode: false, isTvPairLobby: true, isAdsPage: false };
   }
 
   const queryRoom = params.get('room')?.trim().toLowerCase();
   if (queryRoom && /^[a-z0-9-_]{2,32}$/.test(queryRoom)) {
-    return { roomId: queryRoom, isTvMode, isTvPairLobby: false };
+    return { roomId: queryRoom, isTvMode, isTvPairLobby: false, isAdsPage: false };
   }
 
   if (segments.length === 1) {
@@ -65,16 +77,16 @@ export function parseRoomFromWindow(): {
       !RESERVED_PATH_SEGMENTS.has(candidate) &&
       /^[a-z0-9-_]{2,32}$/.test(candidate)
     ) {
-      return { roomId: candidate, isTvMode, isTvPairLobby: false };
+      return { roomId: candidate, isTvMode, isTvPairLobby: false, isAdsPage: false };
     }
   } else if (segments.length === 2 && (segments[0] === 's' || segments[0] === 'r')) {
     const candidate = decodeURIComponent(segments[1]).toLowerCase();
     if (!candidate.includes('.') && /^[a-z0-9-_]{2,32}$/.test(candidate)) {
-      return { roomId: candidate, isTvMode, isTvPairLobby: false };
+      return { roomId: candidate, isTvMode, isTvPairLobby: false, isAdsPage: false };
     }
   }
 
-  return { roomId: '', isTvMode: false, isTvPairLobby: false };
+  return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: false };
 }
 
 /**
