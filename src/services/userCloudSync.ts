@@ -1,6 +1,7 @@
 import {
   onAuthStateChanged,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   User,
 } from 'firebase/auth';
@@ -31,12 +32,20 @@ import {
   CloudSavedRoom,
   FavoriteChannelItem,
   RoomQueueItem,
+  SavedFriend,
   WatchHistoryItem,
 } from '../types';
 import {
+  canonicalizeHistoryItemId,
+  deriveFriendCode,
   getCatalogFavoriteKey,
+  isSameCatalogItem,
+  isSameHistoryItem,
+  mergeCatalogItemMetadata,
+  normalizeCatalogTitle,
   sanitizeItemKey,
   StoredProfile,
+  stripMediaPrefix,
 } from '../utils/storage';
 
 // ============================================================================
@@ -109,7 +118,10 @@ function isNotFoundError(error: unknown): boolean {
 // Track which composite document IDs are confirmed to exist in Firestore
 const knownHistoryDocIds = new Set<string>();
 const knownFavoriteDocIds = new Set<string>();
+const knownFavoriteTitleKeys = new Set<string>();
+const favoriteTitleToRawFavIds = new Map<string, Set<string>>();
 const knownSavedRoomDocIds = new Set<string>();
+const knownFriendDocIds = new Set<string>();
 
 // Per-document write queue to eliminate concurrent create/update race conditions
 const pendingDocQueues = new Map<string, Promise<void>>();
@@ -163,6 +175,13 @@ export async function signInWithGoogleAccount(): Promise<User | null> {
     ) {
       return null;
     }
+    if (
+      code === 'auth/popup-blocked' ||
+      code === 'auth/operation-not-supported-in-this-environment'
+    ) {
+      await signInWithRedirect(auth, googleProvider);
+      return null;
+    }
     throw err;
   }
 }
@@ -171,6 +190,7 @@ export async function signOutGoogleAccount(): Promise<void> {
   knownHistoryDocIds.clear();
   knownFavoriteDocIds.clear();
   knownSavedRoomDocIds.clear();
+  knownFriendDocIds.clear();
   pendingDocQueues.clear();
   await signOut(auth);
 }
@@ -183,6 +203,7 @@ export function subscribeAuthState(
       knownHistoryDocIds.clear();
       knownFavoriteDocIds.clear();
       knownSavedRoomDocIds.clear();
+      knownFriendDocIds.clear();
       pendingDocQueues.clear();
     }
     onChange(user);
@@ -293,7 +314,7 @@ export async function updateCloudUserProfile(
 // WATCH HISTORY & EXACT TIMESTAMP SYNC (/watchHistory/{historyId})
 // ============================================================================
 function buildWatchHistoryFields(uid: string, item: WatchHistoryItem) {
-  const itemId = sanitizeItemKey(item.id);
+  const itemId = canonicalizeHistoryItemId(item);
   const mediaType = item.mediaType === 'tv' ? 'tv' : 'movie';
   const preferLang = item.preferLang === 'EN' ? 'EN' : 'ES';
   const safePoster = clampString(item.poster, 600, '/icon.svg');
@@ -495,8 +516,9 @@ export async function upsertCloudCatalogFavorite(
   const user = auth.currentUser;
   if (!user || !user.emailVerified) return;
 
-  const favId = getCatalogFavoriteKey(item);
-  const kind = item.mediaType === 'tv' ? 'series' : 'movie';
+  const canonical = mergeCatalogItemMetadata(item);
+  const favId = getCatalogFavoriteKey(canonical);
+  const kind = canonical.mediaType === 'tv' ? 'series' : 'movie';
   const docId = `${user.uid}_${favId}`;
   const path = `favorites/${docId}`;
   const docRef = doc(db, 'favorites', docId);
@@ -505,23 +527,32 @@ export async function upsertCloudCatalogFavorite(
     uid: user.uid,
     favId,
     kind,
-    title: clampString(item.title, 200, 'Favorito'),
+    title: clampString(canonical.title, 200, 'Favorito'),
     subtitle: clampString(
-      item.year || (kind === 'series' ? 'Serie TV' : 'HD'),
+      canonical.year || (kind === 'series' ? 'Serie TV' : 'HD'),
       240,
       'HD'
     ),
-    poster: clampString(item.poster, 600, '/icon.svg'),
+    poster: clampString(canonical.poster, 600, '/icon.svg'),
   };
 
-  const tmdbId = clampOptionalPositiveInt(item.tmdbId, 1, 999999999);
+  const tmdbId = clampOptionalPositiveInt(canonical.tmdbId, 1, 999999999);
   if (tmdbId !== undefined) base.tmdbId = tmdbId;
-  const backdrop = optionalClampedString(item.backdrop, 600);
+  const backdrop = optionalClampedString(canonical.backdrop, 600);
   if (backdrop) base.backdrop = backdrop;
-  const year = optionalClampedString(item.year, 16);
+  const year = optionalClampedString(canonical.year, 16);
   if (year) base.year = year;
-  const rating = optionalClampedString(item.rating, 16);
+  const rating = optionalClampedString(canonical.rating, 16);
   if (rating) base.rating = rating;
+
+  // Store movidyUrl or bingetrixUrl in the whitelisted optional channelUrl field so Movidy movies play from any device
+  const sourceMediaUrl = optionalClampedString(
+    canonical.movidyUrl || canonical.bingetrixUrl,
+    600
+  );
+  if (sourceMediaUrl) {
+    base.channelUrl = sourceMediaUrl;
+  }
 
   const mutable: Record<string, unknown> = { ...base, updatedAt: serverTimestamp() };
   delete mutable.uid;
@@ -704,6 +735,41 @@ export async function deleteCloudFavoriteById(rawFavId: string): Promise<void> {
       handleFirestoreError(error, OperationType.DELETE, path);
     }
   });
+}
+
+export async function deleteCloudCatalogFavoriteAndDuplicates(
+  item: CatalogMovie,
+  extraRawKeys: string[] = []
+): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const keysToDelete = new Set<string>();
+  keysToDelete.add(getCatalogFavoriteKey(item));
+  if (item.id) {
+    keysToDelete.add(sanitizeItemKey(item.id));
+    keysToDelete.add(sanitizeItemKey(`movie-${item.id}`));
+    keysToDelete.add(sanitizeItemKey(`series-${item.id}`));
+  }
+  for (const k of extraRawKeys) {
+    if (k) keysToDelete.add(sanitizeItemKey(k));
+  }
+
+  const titleKey = `${item.mediaType === 'tv' ? 'tv' : 'movie'}:${normalizeCatalogTitle(item.title)}`;
+  const knownRawIdsForTitle = favoriteTitleToRawFavIds.get(titleKey);
+  if (knownRawIdsForTitle) {
+    for (const rawId of knownRawIdsForTitle) {
+      keysToDelete.add(sanitizeItemKey(rawId));
+    }
+    favoriteTitleToRawFavIds.delete(titleKey);
+  }
+  knownFavoriteTitleKeys.delete(titleKey);
+
+  await Promise.all(
+    Array.from(keysToDelete).map((favKey) =>
+      deleteCloudFavoriteById(favKey).catch(() => {})
+    )
+  );
 }
 
 // ============================================================================
@@ -890,6 +956,125 @@ export async function deleteCloudSavedRoom(rawRoomCode: string): Promise<void> {
 }
 
 // ============================================================================
+// SAVED FRIENDS SYNC (/friends/{friendDocId})
+// ============================================================================
+export async function upsertCloudFriend(friend: SavedFriend): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const cleanFriendId = sanitizeItemKey(friend.friendId);
+  if (!cleanFriendId || cleanFriendId === user.uid) return;
+
+  const docId = `${user.uid}_${cleanFriendId}`;
+  const path = `friends/${docId}`;
+  const docRef = doc(db, 'friends', docId);
+
+  const safeFriendName = clampString(friend.name, 40, 'Amigo');
+  const safeFriendAvatar = clampString(friend.avatar || '🍿', 16, '🍿');
+  const safeFriendColor = sanitizeHexColor(friend.color);
+  const safeFriendCode = clampString(
+    (friend.friendCode || deriveFriendCode(cleanFriendId)).replace(/[^a-zA-Z0-9_-]/g, ''),
+    24,
+    deriveFriendCode(cleanFriendId)
+  );
+
+  const updatePayload: Record<string, unknown> = {
+    friendName: safeFriendName,
+    friendAvatar: safeFriendAvatar,
+    friendColor: safeFriendColor,
+    friendCode: safeFriendCode,
+    updatedAt: serverTimestamp(),
+  };
+
+  return enqueueDocWrite(path, async () => {
+    if (!auth.currentUser || auth.currentUser.uid !== user.uid) return;
+
+    if (knownFriendDocIds.has(docId)) {
+      try {
+        await updateDoc(docRef, updatePayload);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownFriendDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    let existsOnServer = false;
+    try {
+      const existingSnap = await getDoc(docRef);
+      existsOnServer = existingSnap.exists();
+    } catch (error) {
+      handleFirestoreError(error, OperationType.GET, path);
+    }
+
+    if (existsOnServer) {
+      knownFriendDocIds.add(docId);
+      try {
+        await updateDoc(docRef, updatePayload);
+        return;
+      } catch (error) {
+        if (isNotFoundError(error)) {
+          knownFriendDocIds.delete(docId);
+        } else {
+          handleFirestoreError(error, OperationType.UPDATE, path);
+        }
+      }
+    }
+
+    const createPayload: Record<string, unknown> = {
+      uid: user.uid,
+      friendId: cleanFriendId,
+      friendName: safeFriendName,
+      friendAvatar: safeFriendAvatar,
+      friendColor: safeFriendColor,
+      friendCode: safeFriendCode,
+      createdAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+    };
+
+    try {
+      await setDoc(docRef, createPayload);
+      knownFriendDocIds.add(docId);
+    } catch (createError) {
+      try {
+        const retrySnap = await getDoc(docRef);
+        if (retrySnap.exists()) {
+          knownFriendDocIds.add(docId);
+          await updateDoc(docRef, updatePayload);
+          return;
+        }
+      } catch {
+        // Fall through
+      }
+      handleFirestoreError(createError, OperationType.CREATE, path);
+    }
+  });
+}
+
+export async function deleteCloudFriend(rawFriendId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified) return;
+
+  const cleanFriendId = sanitizeItemKey(rawFriendId);
+  if (!cleanFriendId) return;
+
+  const docId = `${user.uid}_${cleanFriendId}`;
+  const path = `friends/${docId}`;
+
+  return enqueueDocWrite(path, async () => {
+    try {
+      await deleteDoc(doc(db, 'friends', docId));
+      knownFriendDocIds.delete(docId);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, path);
+    }
+  });
+}
+
+// ============================================================================
 // REAL-TIME CLOUD LISTENERS + LOCAL DATA MIGRATION ON SIGN-IN
 // ============================================================================
 export function subscribeUserCloudCollections(
@@ -901,6 +1086,7 @@ export function subscribeUserCloudCollections(
       channels: FavoriteChannelItem[]
     ) => void;
     onSavedRooms?: (rooms: CloudSavedRoom[]) => void;
+    onFriends?: (friends: SavedFriend[]) => void;
   }
 ): () => void {
   const historyQuery = query(
@@ -918,17 +1104,23 @@ export function subscribeUserCloudCollections(
     where('uid', '==', uid),
     limit(30)
   );
+  const friendsQuery = query(
+    collection(db, 'friends'),
+    where('uid', '==', uid),
+    limit(80)
+  );
 
   const unsubHistory = onSnapshot(
     historyQuery,
     (snapshot) => {
       knownHistoryDocIds.clear();
-      const items: WatchHistoryItem[] = [];
+      const rawDocs: { rawItemId: string; item: WatchHistoryItem }[] = [];
       snapshot.forEach((docSnap) => {
         knownHistoryDocIds.add(docSnap.id);
         const d = docSnap.data();
-        items.push({
-          id: String(d.itemId || ''),
+        const rawItemId = String(d.itemId || '');
+        const candidate: WatchHistoryItem = {
+          id: rawItemId,
           mediaType: d.mediaType === 'tv' ? 'tv' : 'movie',
           tmdbId: typeof d.tmdbId === 'number' ? d.tmdbId : undefined,
           title: String(d.title || ''),
@@ -946,11 +1138,60 @@ export function subscribeUserCloudCollections(
             typeof d.resumeTimeSec === 'number' ? d.resumeTimeSec : 0,
           durationSec: typeof d.durationSec === 'number' ? d.durationSec : 0,
           watchedAt: toMillis(d.updatedAt || d.createdAt),
-        });
+        };
+        rawDocs.push({ rawItemId, item: candidate });
       });
 
-      items.sort((a, b) => b.watchedAt - a.watchedAt);
-      callbacks.onWatchHistory(items);
+      rawDocs.sort((a, b) => b.item.watchedAt - a.item.watchedAt);
+
+      const dedupedHistory: WatchHistoryItem[] = [];
+      for (const entry of rawDocs) {
+        const canonicalId = canonicalizeHistoryItemId(entry.item);
+        const strippedSlug = stripMediaPrefix(entry.item.id || '');
+        const inferredMovidy =
+          entry.item.movidyUrl ||
+          (strippedSlug.startsWith('movidy-')
+            ? `https://movidy.pw/ver/${strippedSlug.replace(/^movidy-/, '')}`
+            : undefined);
+        const normalized: WatchHistoryItem = {
+          ...entry.item,
+          id: canonicalId,
+          movidyUrl: inferredMovidy,
+        };
+
+        const existingIdx = dedupedHistory.findIndex((x) =>
+          isSameHistoryItem(x, normalized)
+        );
+        if (existingIdx !== -1) {
+          // Duplicate history entry in Firestore -> merge progress & auto-delete duplicate doc
+          const prev = dedupedHistory[existingIdx];
+          dedupedHistory[existingIdx] = {
+            ...normalized,
+            ...prev,
+            id: canonicalId,
+            tmdbId: prev.tmdbId || normalized.tmdbId,
+            movidyUrl: prev.movidyUrl || normalized.movidyUrl,
+            bingetrixUrl: prev.bingetrixUrl || normalized.bingetrixUrl,
+            resumeTimeSec: Math.max(
+              prev.resumeTimeSec || 0,
+              normalized.resumeTimeSec || 0
+            ),
+            durationSec: Math.max(prev.durationSec || 0, normalized.durationSec || 0),
+          };
+          if (entry.rawItemId) {
+            deleteCloudWatchHistoryItem(entry.rawItemId).catch(() => {});
+          }
+        } else {
+          dedupedHistory.push(normalized);
+          if (entry.rawItemId && entry.rawItemId !== canonicalId) {
+            // Migrate legacy movie-movie-... history doc to clean canonical ID
+            deleteCloudWatchHistoryItem(entry.rawItemId).catch(() => {});
+            upsertCloudWatchHistory(normalized).catch(() => {});
+          }
+        }
+      }
+
+      callbacks.onWatchHistory(dedupedHistory);
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'watchHistory');
@@ -961,18 +1202,26 @@ export function subscribeUserCloudCollections(
     favoritesQuery,
     (snapshot) => {
       knownFavoriteDocIds.clear();
-      const watchlist: { item: CatalogMovie; updatedAtMs: number }[] = [];
-      const channels: FavoriteChannelItem[] = [];
+      knownFavoriteTitleKeys.clear();
+      favoriteTitleToRawFavIds.clear();
+
+      const rawCatalogDocs: {
+        rawFavId: string;
+        updatedAtMs: number;
+        item: CatalogMovie;
+      }[] = [];
+      const rawChannelDocs: FavoriteChannelItem[] = [];
 
       snapshot.forEach((docSnap) => {
         knownFavoriteDocIds.add(docSnap.id);
         const d = docSnap.data();
         const updatedAtMs = toMillis(d.updatedAt || d.createdAt);
+        const rawFavId = String(d.favId || '');
 
         if (d.kind === 'channel') {
           if (d.channelUrl) {
-            channels.push({
-              favId: String(d.favId || ''),
+            rawChannelDocs.push({
+              favId: rawFavId,
               title: String(d.title || ''),
               channelLabel: String(d.channelLabel || d.title || 'Canal HD'),
               channelUrl: String(d.channelUrl),
@@ -990,11 +1239,30 @@ export function subscribeUserCloudCollections(
           }
         } else {
           const isSeries = d.kind === 'series';
-          watchlist.push({
+          const cleanBaseId = stripMediaPrefix(rawFavId);
+          const storedUrl = typeof d.channelUrl === 'string' ? d.channelUrl.trim() : '';
+          const tmdbId = typeof d.tmdbId === 'number' ? d.tmdbId : undefined;
+
+          const movidyUrl =
+            storedUrl.includes('movidy.')
+              ? storedUrl
+              : cleanBaseId.startsWith('movidy-')
+              ? `https://movidy.pw/ver/${cleanBaseId.replace(/^movidy-/, '')}`
+              : undefined;
+
+          const bingetrixUrl =
+            storedUrl.includes('bingetrix')
+              ? storedUrl
+              : tmdbId && !isSeries
+              ? `https://bingetrix.sc/watch/${tmdbId}`
+              : undefined;
+
+          rawCatalogDocs.push({
+            rawFavId,
             updatedAtMs,
             item: {
-              id: String(d.favId || ''),
-              tmdbId: typeof d.tmdbId === 'number' ? d.tmdbId : undefined,
+              id: cleanBaseId || rawFavId,
+              tmdbId,
               mediaType: isSeries ? 'tv' : 'movie',
               title: String(d.title || ''),
               year: String(d.year || (isSeries ? 'TV' : 'HD')),
@@ -1002,18 +1270,71 @@ export function subscribeUserCloudCollections(
               overview: '',
               poster: String(d.poster || ''),
               backdrop: String(d.backdrop || d.poster || ''),
-              languages: [],
+              movidyUrl,
+              bingetrixUrl,
+              languages: ['Castellano', 'Latino', 'EN'],
             },
           });
         }
       });
 
-      watchlist.sort((a, b) => b.updatedAtMs - a.updatedAtMs);
-      channels.sort((a, b) => b.addedAt - a.addedAt);
-      callbacks.onFavorites(
-        watchlist.map((w) => w.item),
-        channels
-      );
+      // Sort newest first so we keep the latest item and purge older duplicates
+      rawCatalogDocs.sort((a, b) => b.updatedAtMs - a.updatedAtMs);
+      rawChannelDocs.sort((a, b) => b.addedAt - a.addedAt);
+
+      const dedupedWatchlist: CatalogMovie[] = [];
+      for (const entry of rawCatalogDocs) {
+        const canonicalItem = mergeCatalogItemMetadata(entry.item);
+        const canonicalFavId = getCatalogFavoriteKey(canonicalItem);
+        const titleKey = `${canonicalItem.mediaType === 'tv' ? 'tv' : 'movie'}:${normalizeCatalogTitle(canonicalItem.title)}`;
+
+        let idSet = favoriteTitleToRawFavIds.get(titleKey);
+        if (!idSet) {
+          idSet = new Set<string>();
+          favoriteTitleToRawFavIds.set(titleKey, idSet);
+        }
+        if (entry.rawFavId) idSet.add(entry.rawFavId);
+        idSet.add(canonicalFavId);
+
+        const existingIdx = dedupedWatchlist.findIndex((x) =>
+          isSameCatalogItem(x, canonicalItem)
+        );
+
+        if (existingIdx !== -1) {
+          // Found a duplicate in Firestore! Merge any rich metadata and automatically delete the duplicate doc from Firestore
+          dedupedWatchlist[existingIdx] = mergeCatalogItemMetadata(
+            dedupedWatchlist[existingIdx],
+            canonicalItem
+          );
+          if (entry.rawFavId) {
+            deleteCloudFavoriteById(entry.rawFavId).catch(() => {});
+          }
+        } else {
+          dedupedWatchlist.push(canonicalItem);
+          knownFavoriteTitleKeys.add(titleKey);
+
+          // If this single item had a corrupted recursive ID like movie-movie-movidy-..., replace it in Firestore with the clean canonical ID
+          if (entry.rawFavId && entry.rawFavId !== canonicalFavId) {
+            deleteCloudFavoriteById(entry.rawFavId).catch(() => {});
+            upsertCloudCatalogFavorite(canonicalItem).catch(() => {});
+          }
+        }
+      }
+
+      // Deduplicate channels by favId or channelUrl
+      const dedupedChannels: FavoriteChannelItem[] = [];
+      const seenChannelKeys = new Set<string>();
+      for (const ch of rawChannelDocs) {
+        const key = `${sanitizeItemKey(ch.favId)}|${ch.channelUrl}`;
+        if (seenChannelKeys.has(key)) {
+          deleteCloudFavoriteById(ch.favId).catch(() => {});
+          continue;
+        }
+        seenChannelKeys.add(key);
+        dedupedChannels.push(ch);
+      }
+
+      callbacks.onFavorites(dedupedWatchlist, dedupedChannels);
     },
     (error) => {
       handleFirestoreError(error, OperationType.LIST, 'favorites');
@@ -1070,10 +1391,39 @@ export function subscribeUserCloudCollections(
     }
   );
 
+  const unsubFriends = onSnapshot(
+    friendsQuery,
+    (snapshot) => {
+      knownFriendDocIds.clear();
+      const friendsList: SavedFriend[] = [];
+      snapshot.forEach((docSnap) => {
+        knownFriendDocIds.add(docSnap.id);
+        const d = docSnap.data();
+        const fId = String(d.friendId || '');
+        if (!fId) return;
+        friendsList.push({
+          friendId: fId,
+          name: String(d.friendName || 'Amigo'),
+          avatar: String(d.friendAvatar || '🍿'),
+          color: sanitizeHexColor(d.friendColor),
+          friendCode: d.friendCode ? String(d.friendCode) : deriveFriendCode(fId),
+          addedAt: toMillis(d.updatedAt || d.createdAt),
+        });
+      });
+
+      friendsList.sort((a, b) => b.addedAt - a.addedAt);
+      callbacks.onFriends?.(friendsList);
+    },
+    (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'friends');
+    }
+  );
+
   return () => {
     unsubHistory();
     unsubFavorites();
     unsubSavedRooms();
+    unsubFriends();
   };
 }
 
@@ -1081,21 +1431,25 @@ export async function migrateLocalStateToCloud(params: {
   localHistory: WatchHistoryItem[];
   localWatchlist: CatalogMovie[];
   localChannels: FavoriteChannelItem[];
+  localFriends?: SavedFriend[];
 }): Promise<void> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified) return;
 
   for (const h of params.localHistory.slice(0, 15)) {
-    const docId = `${user.uid}_${sanitizeItemKey(h.id)}`;
+    const canonicalId = canonicalizeHistoryItemId(h);
+    const docId = `${user.uid}_${canonicalId}`;
     if (!knownHistoryDocIds.has(docId)) {
-      await upsertCloudWatchHistory(h);
+      await upsertCloudWatchHistory({ ...h, id: canonicalId });
     }
   }
 
   for (const m of params.localWatchlist.slice(0, 25)) {
-    const docId = `${user.uid}_${getCatalogFavoriteKey(m)}`;
-    if (!knownFavoriteDocIds.has(docId)) {
-      await upsertCloudCatalogFavorite(m);
+    const canonical = mergeCatalogItemMetadata(m);
+    const docId = `${user.uid}_${getCatalogFavoriteKey(canonical)}`;
+    const titleKey = `${canonical.mediaType === 'tv' ? 'tv' : 'movie'}:${normalizeCatalogTitle(canonical.title)}`;
+    if (!knownFavoriteDocIds.has(docId) && !knownFavoriteTitleKeys.has(titleKey)) {
+      await upsertCloudCatalogFavorite(canonical);
     }
   }
 
@@ -1103,6 +1457,13 @@ export async function migrateLocalStateToCloud(params: {
     const docId = `${user.uid}_${sanitizeItemKey(ch.favId)}`;
     if (!knownFavoriteDocIds.has(docId)) {
       await upsertCloudChannelFavorite(ch);
+    }
+  }
+
+  for (const fr of (params.localFriends || []).slice(0, 40)) {
+    const docId = `${user.uid}_${sanitizeItemKey(fr.friendId)}`;
+    if (!knownFriendDocIds.has(docId)) {
+      await upsertCloudFriend(fr);
     }
   }
 }

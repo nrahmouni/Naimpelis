@@ -9,7 +9,12 @@ export interface Participant {
   joinedAt: number;
 }
 
-export type PlaybackEngineMode = 'idle' | 'hls' | 'direct' | 'youtube' | 'cloud';
+export type PlaybackEngineMode =
+  | 'idle'
+  | 'hls'
+  | 'direct'
+  | 'youtube'
+  | 'cloud';
 
 export interface StreamTrack {
   id: string;
@@ -176,7 +181,7 @@ export interface RoomQueueItem {
   episode?: number;
   youtubeId?: string;
   url?: string;
-  preferLang?: 'ES' | 'EN';
+  preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN';
   addedBy: string;
 }
 
@@ -285,7 +290,7 @@ export interface WatchHistoryItem {
   season?: number;
   episode?: number;
   episodeTitle?: string;
-  preferLang: 'ES' | 'EN';
+  preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN';
   bingetrixUrl?: string;
   movidyUrl?: string;
   resumeTimeSec?: number;
@@ -329,6 +334,51 @@ export interface LanguageNoticePopup {
   subtitle?: string;
 }
 
+export interface SavedFriend {
+  friendId: string;
+  name: string;
+  avatar: string;
+  color: string;
+  friendCode?: string;
+  addedAt: number;
+}
+
+export interface OnlineAppUser {
+  userId: string;
+  name: string;
+  avatar: string;
+  color: string;
+  friendCode: string;
+  roomId?: string;
+  roomName?: string;
+  mediaTitle?: string;
+  lastSeen: number;
+}
+
+export interface IncomingRoomInvite {
+  id: string;
+  fromUserId: string;
+  fromUserName: string;
+  fromUserAvatar: string;
+  fromUserColor: string;
+  fromFriendCode?: string;
+  roomId: string;
+  roomName: string;
+  mediaTitle?: string;
+  inviteAuthToken?: string;
+  timestamp: number;
+}
+
+export interface IncomingFriendAddedNotice {
+  id: string;
+  fromUserId: string;
+  fromUserName: string;
+  fromUserAvatar: string;
+  fromUserColor: string;
+  fromFriendCode: string;
+  timestamp: number;
+}
+
 export interface RoomData {
   id: string;
   name: string;
@@ -343,4 +393,5 @@ export interface RoomData {
   messages: ChatMessage[];
   createdAt: number;
 }
+
 

@@ -229,4 +229,30 @@ export const DIRTY_DOZEN_SECURITY_CASES: DirtyDozenCase[] = [
     },
     expectedResult: 'PERMISSION_DENIED',
   },
+  {
+    id: 15,
+    name: 'Cross-User Friend Contact Read / Existence Probe Attempt',
+    collection: 'friends',
+    docId: 'userB_u-carlos',
+    operation: 'get',
+    auth: { uid: 'userA', email_verified: true },
+    expectedResult: 'PERMISSION_DENIED',
+  },
+  {
+    id: 16,
+    name: 'Composite Key Anti-Squatting Mismatch on FriendContact Create',
+    collection: 'friends',
+    docId: 'userA_u-other',
+    operation: 'create',
+    auth: { uid: 'userA', email_verified: true },
+    payload: {
+      uid: 'userA',
+      friendId: 'u-carlos',
+      friendName: 'Carlos',
+      friendAvatar: '🎬',
+      friendColor: '#E11D48',
+    },
+    expectedResult: 'PERMISSION_DENIED',
+  },
 ];
+

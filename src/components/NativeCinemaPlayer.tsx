@@ -128,6 +128,7 @@ interface NativeCinemaPlayerProps {
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   videoState,
   lang,
+  userName,
   isExtracting,
   extractionLabel,
   extractionError,
@@ -175,6 +176,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const ytContainerId = useRef(`yt-stage-${Math.random().toString(36).slice(2, 8)}`);
   const isApplyingRemoteRef = useRef(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bufferingDelayTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTapRef = useRef<{ time: number; side: 'left' | 'right' } | null>(null);
   const lastProgressEmitRef = useRef<number>(0);
 
@@ -184,14 +186,24 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
+
+  const clearBufferingIndicator = useCallback(() => {
+    if (bufferingDelayTimerRef.current) {
+      clearTimeout(bufferingDelayTimerRef.current);
+      bufferingDelayTimerRef.current = null;
+    }
+    setIsBuffering(false);
+  }, []);
   const [streamError, setStreamError] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [tvAspectMode, setTvAspectMode] = useState<'contain' | 'cover' | 'fill'>('contain');
   const [isInPiP, setIsInPiP] = useState(false);
   const [isHorizontalFullscreen, setIsHorizontalFullscreen] = useState(false);
   const [forceLandscapeRotation, setForceLandscapeRotation] = useState(true);
-  const [isPortraitViewport, setIsPortraitViewport] = useState<boolean>(() =>
-    typeof window !== 'undefined' ? window.innerHeight > window.innerWidth : true
+  const [viewportDims, setViewportDims] = useState<{ w: number; h: number }>(() =>
+    typeof window !== 'undefined'
+      ? { w: window.innerWidth, h: window.innerHeight }
+      : { w: 390, h: 844 }
   );
   const [showControls, setShowControls] = useState(true);
   const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number }[]>(
@@ -309,7 +321,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
   useEffect(() => {
     const updateViewportOrientation = () => {
-      setIsPortraitViewport(window.innerHeight > window.innerWidth);
+      setViewportDims({ w: window.innerWidth, h: window.innerHeight });
     };
     const onFsChange = () => {
       const activeFs = Boolean(document.fullscreenElement);
@@ -323,6 +335,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         }
       }
       updateViewportOrientation();
+      setTimeout(updateViewportOrientation, 120);
+      setTimeout(updateViewportOrientation, 350);
     };
     window.addEventListener('resize', updateViewportOrientation);
     window.addEventListener('orientationchange', updateViewportOrientation);
@@ -333,6 +347,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       document.removeEventListener('fullscreenchange', onFsChange);
     };
   }, []);
+
+  const isStageFullscreen = !isMinimized && (isFullscreen || isHorizontalFullscreen);
+  const shouldRotate90 =
+    isStageFullscreen && forceLandscapeRotation && viewportDims.h > viewportDims.w;
 
   // Listen for Mobile Remote Control commands when running as a Smart TV Receiver
   useEffect(() => {
@@ -885,8 +903,75 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   ]);
 
   // ============================================================================
-  // DIRECT GOOGLE CHROMECAST + REMOTE PLAYBACK + AIRPLAY ENGINE
+  // DIRECT GOOGLE CHROMECAST + REMOTE PLAYBACK + AIRPLAY ENGINE (VIDEO + AUDIO)
   // ============================================================================
+  const syncBridgeVideoSource = useCallback(() => {
+    const bridgeVid = castBridgeVideoRef.current;
+    const mainVid = videoRef.current;
+    if (
+      !bridgeVid ||
+      (videoState.mode !== 'hls' && videoState.mode !== 'direct') ||
+      !videoState.url
+    ) {
+      return '';
+    }
+    try {
+      const absUrl = new URL(videoState.url, window.location.origin).href;
+      if (bridgeVid.getAttribute('src') !== absUrl) {
+        bridgeVid.setAttribute('src', absUrl);
+        bridgeVid.load();
+      }
+      if (!videoState.isLive && mainVid && mainVid.currentTime > 1) {
+        try {
+          bridgeVid.currentTime = mainVid.currentTime;
+        } catch {
+          // ignore
+        }
+      }
+      return absUrl;
+    } catch {
+      return videoState.url;
+    }
+  }, [videoState.mode, videoState.url, videoState.isLive]);
+
+  const switchMainVideoToDirectCastUrl = useCallback(() => {
+    const mainVid = videoRef.current;
+    if (
+      !mainVid ||
+      (videoState.mode !== 'hls' && videoState.mode !== 'direct') ||
+      !videoState.url
+    ) {
+      return;
+    }
+    try {
+      const absUrl = new URL(videoState.url, window.location.origin).href;
+      const savedTime = !videoState.isLive ? mainVid.currentTime || videoState.currentTime || 0 : 0;
+      if (hlsRef.current) {
+        hlsRef.current.destroy();
+        hlsRef.current = null;
+      }
+      if (mainVid.getAttribute('src') !== absUrl) {
+        mainVid.setAttribute('src', absUrl);
+        mainVid.load();
+        if (savedTime > 1) {
+          mainVid.addEventListener(
+            'loadedmetadata',
+            () => {
+              try {
+                mainVid.currentTime = savedTime;
+              } catch {
+                // ignore
+              }
+            },
+            { once: true }
+          );
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }, [videoState.mode, videoState.url, videoState.isLive, videoState.currentTime]);
+
   const loadStreamIntoCastSession = useCallback(
     async (session: any) => {
       if (
@@ -911,9 +996,25 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           ? window.chrome.cast.media.StreamType.LIVE
           : window.chrome.cast.media.StreamType.BUFFERED;
 
+        // Explicitly declare HLS video + audio segment formats so Chromecast CAF Shaka Player
+        // always initializes the H.264 video decoder and never plays audio-only!
+        if (videoState.mode === 'hls') {
+          const isFmp4 = /\.m4s|\.mp4/i.test(videoState.rawSourceUrl || videoState.url);
+          if (window.chrome.cast.media.HlsSegmentFormat) {
+            mediaInfo.hlsSegmentFormat = isFmp4
+              ? window.chrome.cast.media.HlsSegmentFormat.FMP4
+              : window.chrome.cast.media.HlsSegmentFormat.TS;
+          }
+          if (window.chrome.cast.media.HlsVideoSegmentFormat) {
+            mediaInfo.hlsVideoSegmentFormat = isFmp4
+              ? window.chrome.cast.media.HlsVideoSegmentFormat.FMP4
+              : window.chrome.cast.media.HlsVideoSegmentFormat.MPEG2_TS;
+          }
+        }
+
         const metadata = new window.chrome.cast.media.GenericMediaMetadata();
         metadata.title = videoState.title || 'NAIM CINE';
-        metadata.subtitle = videoState.subtitle || 'Proyección Directa';
+        metadata.subtitle = videoState.subtitle || 'Proyección Directa 1080p';
         if (videoState.poster && /^https?:\/\//i.test(videoState.poster)) {
           metadata.images = [new window.chrome.cast.Image(videoState.poster)];
         }
@@ -929,23 +1030,25 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
         if (videoRef.current) {
           videoRef.current.muted = true;
+          videoRef.current.pause();
           setIsMuted(true);
         }
         const friendlyName = session.getCastDevice?.()?.friendlyName || 'Chromecast TV';
         setCastDeviceName(friendlyName);
         setIsCastingToTv(true);
-        showTransientToast(`✓ Transmitiendo en ${friendlyName}`);
+        showTransientToast(`✓ Transmitiendo Vídeo + Audio en ${friendlyName}`);
       } catch {
         showTransientToast(
           lang === 'es'
-            ? '✓ Conectado al televisor, sincronizando señal...'
-            : '✓ Connected to TV, syncing stream...'
+            ? '✓ Conectado al televisor, sincronizando vídeo y audio...'
+            : '✓ Connected to TV, syncing video and audio...'
         );
       }
     },
     [
       videoState.mode,
       videoState.url,
+      videoState.rawSourceUrl,
       videoState.isLive,
       videoState.title,
       videoState.subtitle,
@@ -987,6 +1090,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               if (videoRef.current) {
                 videoRef.current.muted = false;
                 setIsMuted(false);
+                if (videoState.isPlaying) {
+                  videoRef.current.play().catch(() => {});
+                }
               }
             }
           }
@@ -1009,21 +1115,26 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     return () => {
       window.removeEventListener('naim-cast-api-ready', onCastReady);
     };
-  }, []);
+  }, [videoState.isPlaying]);
 
   // Listen to native W3C RemotePlayback & Apple AirPlay 2 state on both video elements
   useEffect(() => {
     const bridgeVid = castBridgeVideoRef.current as any;
     const mainVid = videoRef.current as any;
 
-    const onRemoteConnect = () => {
+    const onRemoteConnect = (ev?: Event) => {
       setIsCastingToTv(true);
       setCastDeviceName('Smart TV (Cast Directo)');
-      if (mainVid) {
-        mainVid.muted = true;
-        setIsMuted(true);
-      }
-      if (bridgeVid) {
+      // If mainVid was connected while using Hls.js blob:, switch it to direct HTTP URL so TV gets video + audio!
+      if (ev?.currentTarget === mainVid && hlsRef.current) {
+        switchMainVideoToDirectCastUrl();
+        mainVid.muted = false;
+        mainVid.play?.().catch(() => {});
+      } else if (bridgeVid && bridgeVid.getAttribute('src')) {
+        if (mainVid) {
+          mainVid.muted = true;
+          setIsMuted(true);
+        }
         try {
           if (!videoState.isLive && mainVid?.currentTime > 1) {
             bridgeVid.currentTime = mainVid.currentTime;
@@ -1034,7 +1145,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           // ignore
         }
       }
-      showTransientToast('✓ Transmitiendo directamente en tu Smart TV');
+      showTransientToast('✓ Transmitiendo Vídeo + Audio en tu Smart TV');
     };
 
     const onRemoteDisconnect = () => {
@@ -1056,9 +1167,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     const onWebkitWirelessChange = (e: Event) => {
       const target = e.currentTarget as any;
       if (target?.webkitCurrentPlaybackTargetIsWireless) {
+        if (target === mainVid && hlsRef.current) {
+          switchMainVideoToDirectCastUrl();
+        }
+        target.muted = false;
+        target.play?.().catch(() => {});
         setIsCastingToTv(true);
         setCastDeviceName('AirPlay TV');
-        showTransientToast('✓ Transmitiendo por AirPlay 2 en tu TV');
+        showTransientToast('✓ Transmitiendo Vídeo + Audio por AirPlay 2 en tu TV');
       } else {
         setIsCastingToTv(false);
         setCastDeviceName('');
@@ -1100,16 +1216,26 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         // ignore
       }
     };
-  }, [videoState.isLive, showTransientToast]);
+  }, [videoState.isLive, showTransientToast, switchMainVideoToDirectCastUrl]);
 
-  // Auto-update Chromecast media when switching movies/channels while already connected
+  // Auto-update Chromecast / Bridge media when switching movies/channels while already connected
   useEffect(() => {
-    if (!isCastingToTv || !castSdkReady || !window.cast?.framework) return;
-    const session = window.cast.framework.CastContext.getInstance().getCurrentSession();
-    if (session && (videoState.mode === 'hls' || videoState.mode === 'direct') && videoState.url) {
-      loadStreamIntoCastSession(session);
+    if (!isCastingToTv) return;
+    syncBridgeVideoSource();
+    if (castSdkReady && window.cast?.framework) {
+      const session = window.cast.framework.CastContext.getInstance().getCurrentSession();
+      if (session && (videoState.mode === 'hls' || videoState.mode === 'direct') && videoState.url) {
+        loadStreamIntoCastSession(session);
+      }
     }
-  }, [isCastingToTv, castSdkReady, videoState.url, videoState.mode, loadStreamIntoCastSession]);
+  }, [
+    isCastingToTv,
+    castSdkReady,
+    videoState.url,
+    videoState.mode,
+    loadStreamIntoCastSession,
+    syncBridgeVideoSource,
+  ]);
 
   const handleDirectCastToTv = useCallback(
     async (e?: React.MouseEvent | Event) => {
@@ -1122,23 +1248,29 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       const hasNativeStream =
         (videoState.mode === 'hls' || videoState.mode === 'direct') && Boolean(videoState.url);
 
-      // Path 1: Native Apple AirPlay 2 Picker (iOS / iPadOS / macOS Safari -> Samsung Smart TV / Apple TV / LG!)
       if (hasNativeStream) {
-        if (bridgeVideo?.webkitShowPlaybackTargetPicker) {
+        syncBridgeVideoSource();
+      }
+
+      // Path 1: Native Apple AirPlay 2 Picker (iOS / iPadOS / macOS Safari -> Samsung Smart TV / Apple TV / LG!)
+      // Use mainVideo first (which on Apple devices uses native HLS so both Video + Audio transmit in 1080p!)
+      if (hasNativeStream) {
+        if (mainVideo?.webkitShowPlaybackTargetPicker) {
           try {
-            if (!videoState.isLive && mainVideo?.currentTime > 1) {
-              bridgeVideo.currentTime = mainVideo.currentTime;
+            if (hlsRef.current) {
+              // Convert from Hls.js blob: to direct HTTP URL before AirPlay so video frames are transmitted!
+              switchMainVideoToDirectCastUrl();
             }
-            bridgeVideo.webkitShowPlaybackTargetPicker();
+            mainVideo.webkitShowPlaybackTargetPicker();
             showTransientToast('Selecciona tu televisor en el menú AirPlay');
             return;
           } catch {
-            // fallback to mainVideo
+            // fallback to bridgeVideo
           }
         }
-        if (mainVideo?.webkitShowPlaybackTargetPicker) {
+        if (bridgeVideo?.webkitShowPlaybackTargetPicker) {
           try {
-            mainVideo.webkitShowPlaybackTargetPicker();
+            bridgeVideo.webkitShowPlaybackTargetPicker();
             showTransientToast('Selecciona tu televisor en el menú AirPlay');
             return;
           } catch {
@@ -1182,10 +1314,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         }
       }
 
-      // Path 3: W3C HTML5 RemotePlayback API using Direct HTTP Bridge Video (Bypasses Hls.js blob: restriction!)
+      // Path 3: W3C HTML5 RemotePlayback API using Direct HTTP URL (Bypasses Hls.js blob: audio-only bug!)
       if (hasNativeStream) {
         if (bridgeVideo?.remote?.prompt) {
           try {
+            syncBridgeVideoSource();
             await bridgeVideo.remote.prompt();
             if (!videoState.isLive && mainVideo?.currentTime > 1) {
               bridgeVideo.currentTime = mainVideo.currentTime;
@@ -1194,11 +1327,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             await bridgeVideo.play().catch(() => {});
             if (mainVideo) {
               mainVideo.muted = true;
+              mainVideo.pause?.();
               setIsMuted(true);
             }
             setIsCastingToTv(true);
             setCastDeviceName('Smart TV (Cast Directo)');
-            showTransientToast('✓ Transmitiendo directamente en tu TV');
+            showTransientToast('✓ Transmitiendo Vídeo + Audio directamente en tu TV');
             return;
           } catch (err: any) {
             if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
@@ -1209,10 +1343,15 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
         if (mainVideo?.remote?.prompt) {
           try {
+            if (hlsRef.current) {
+              switchMainVideoToDirectCastUrl();
+            }
             await mainVideo.remote.prompt();
+            mainVideo.muted = false;
+            await mainVideo.play?.().catch(() => {});
             setIsCastingToTv(true);
             setCastDeviceName('Smart TV (Cast Directo)');
-            showTransientToast('✓ Transmitiendo directamente en tu TV');
+            showTransientToast('✓ Transmitiendo Vídeo + Audio directamente en tu TV');
             return;
           } catch (err: any) {
             if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
@@ -1248,6 +1387,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       loadStreamIntoCastSession,
       onOpenSmartTvModal,
       showTransientToast,
+      syncBridgeVideoSource,
+      switchMainVideoToDirectCastUrl,
     ]
   );
 
@@ -1270,7 +1411,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   }, [cloudState?.url, videoState.mode, videoState.url]);
 
   // ============================================================================
-  // ENGINE 1: NATIVE HTML5 + HLS.JS ENGINE
+  // ENGINE 1: NATIVE HTML5 + HLS.JS ENGINE (WITH APPLE NATIVE HLS + VIDEO WATCHDOG)
   // ============================================================================
   useEffect(() => {
     const video = videoRef.current;
@@ -1294,6 +1435,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     if (!videoState.url) return;
 
     let cancelled = false;
+    let videoWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
     setIsBuffering(true);
 
     const targetResumeSec =
@@ -1347,69 +1489,146 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       }
     };
 
-    if (videoState.mode === 'hls') {
-      if (Hls.isSupported()) {
-        const hls = new Hls({
-          enableWorker: true,
-          lowLatencyMode: false,
-          startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
-          backBufferLength: 60,
-          maxBufferLength: 45,
-          maxMaxBufferLength: 90,
-          manifestLoadingTimeOut: 15000,
-          manifestLoadingMaxRetry: 4,
-          levelLoadingTimeOut: 15000,
-          levelLoadingMaxRetry: 4,
-          fragLoadingTimeOut: 20000,
-          fragLoadingMaxRetry: 5,
-        });
-        hlsRef.current = hls;
+    const attachHlsJs = () => {
+      if (!Hls.isSupported() || cancelled) return false;
+      const hls = new Hls({
+        enableWorker: true,
+        lowLatencyMode: false,
+        startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
+        backBufferLength: 60,
+        maxBufferLength: 60,
+        maxMaxBufferLength: 120,
+        maxBufferHole: 0.5,
+        highBufferWatchdogPeriod: 3,
+        nudgeMaxRetry: 6,
+        manifestLoadingTimeOut: 15000,
+        manifestLoadingMaxRetry: 4,
+        levelLoadingTimeOut: 15000,
+        levelLoadingMaxRetry: 4,
+        fragLoadingTimeOut: 20000,
+        fragLoadingMaxRetry: 5,
+      });
+      hlsRef.current = hls;
 
-        hls.loadSource(videoState.url);
-        hls.attachMedia(video);
+      hls.loadSource(videoState.url);
+      hls.attachMedia(video);
 
-        hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
-          setIsBuffering(false);
-          const levels = (data.levels || [])
-            .map((lvl, idx) => ({ index: idx, height: lvl.height || 0 }))
-            .filter((l) => l.height > 0);
-          setQualityLevels(levels);
-          startPlaybackSafely();
-        });
+      hls.on(Hls.Events.MANIFEST_PARSED, (_evt, data) => {
+        clearBufferingIndicator();
+        const levels = (data.levels || [])
+          .map((lvl, idx) => ({ index: idx, height: lvl.height || 0 }))
+          .filter((l) => l.height > 0);
+        setQualityLevels(levels);
+        startPlaybackSafely();
 
-        let mediaRecoveries = 0;
-        let networkRecoveries = 0;
-
-        hls.on(Hls.Events.ERROR, (_evt, data) => {
-          if (!data.fatal) return;
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 3) {
-            networkRecoveries += 1;
-            hls.startLoad();
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 3) {
-            mediaRecoveries += 1;
-            hls.recoverMediaError();
-          } else {
-            setIsBuffering(false);
-            setStreamError(
-              lang === 'es'
-                ? 'La señal actual tardó en responder. Prueba otra pista o canal debajo del reproductor.'
-                : 'This stream timed out. Try switching to another track or channel below.'
-            );
+        // Watchdog: if audio plays for 3s but videoWidth is 0 (black screen / audio-only MSE glitch),
+        // automatically recover media decoder or switch to native hardware HLS!
+        if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
+        videoWatchdogTimer = setTimeout(() => {
+          if (cancelled || !video) return;
+          if (!video.paused && video.currentTime > 0.5 && video.videoWidth === 0) {
+            if (video.canPlayType('application/vnd.apple.mpegurl')) {
+              const savedT = video.currentTime;
+              hls.destroy();
+              hlsRef.current = null;
+              video.src = videoState.url;
+              video.addEventListener(
+                'loadedmetadata',
+                () => {
+                  if (savedT > 1) {
+                    try {
+                      video.currentTime = savedT;
+                    } catch {
+                      // ignore
+                    }
+                  }
+                  video.play().catch(() => {});
+                },
+                { once: true }
+              );
+            } else {
+              hls.recoverMediaError();
+            }
           }
-        });
-      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        }, 3200);
+      });
+
+      let mediaRecoveries = 0;
+      let networkRecoveries = 0;
+
+      hls.on(Hls.Events.ERROR, (_evt, data) => {
+        if (!data.fatal) return;
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 3) {
+          networkRecoveries += 1;
+          hls.startLoad();
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 3) {
+          mediaRecoveries += 1;
+          hls.recoverMediaError();
+        } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          hls.destroy();
+          hlsRef.current = null;
+          video.src = videoState.url;
+          video.addEventListener(
+            'loadedmetadata',
+            () => {
+              setIsBuffering(false);
+              startPlaybackSafely();
+            },
+            { once: true }
+          );
+        } else {
+          setIsBuffering(false);
+          setStreamError(
+            lang === 'es'
+              ? 'La señal actual tardó en responder. Prueba otra pista o canal debajo del reproductor.'
+              : 'This stream timed out. Try switching to another track or channel below.'
+          );
+        }
+      });
+      return true;
+    };
+
+    if (videoState.mode === 'hls') {
+      // On iOS / iPadOS / macOS Safari, prefer Native Apple HLS first so AirPlay 2 always sends
+      // full 1080p Video + Audio to the TV (Hls.js blob: MediaSource only sends audio over AirPlay!).
+      const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
+      const isAppleSafariOrIos =
+        Boolean(video.canPlayType('application/vnd.apple.mpegurl')) &&
+        /iPhone|iPad|iPod|Macintosh|AppleTV/i.test(ua) &&
+        !/Chrome|CriOS|FxiOS|EdgiOS|Android/i.test(ua);
+
+      if (
+        isAppleSafariOrIos ||
+        (isCastingToTv && Boolean(video.canPlayType('application/vnd.apple.mpegurl')))
+      ) {
         video.src = videoState.url;
-        video.addEventListener(
-          'loadedmetadata',
-          () => {
+        const onNativeLoaded = () => {
+          setIsBuffering(false);
+          startPlaybackSafely();
+        };
+        const onNativeError = () => {
+          video.removeEventListener('loadedmetadata', onNativeLoaded);
+          if (!attachHlsJs()) {
             setIsBuffering(false);
-            startPlaybackSafely();
-          },
-          { once: true }
-        );
-      } else {
-        setIsBuffering(false);
-        setStreamError('HLS not supported on this browser');
+          }
+        };
+        video.addEventListener('loadedmetadata', onNativeLoaded, { once: true });
+        video.addEventListener('error', onNativeError, { once: true });
+      } else if (!attachHlsJs()) {
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+          video.src = videoState.url;
+          video.addEventListener(
+            'loadedmetadata',
+            () => {
+              setIsBuffering(false);
+              startPlaybackSafely();
+            },
+            { once: true }
+          );
+        } else {
+          setIsBuffering(false);
+          setStreamError('HLS not supported on this browser');
+        }
       }
     } else if (videoState.mode === 'direct') {
       video.src = videoState.url;
@@ -1425,6 +1644,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
     return () => {
       cancelled = true;
+      if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -1445,7 +1665,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
     if (!videoState.isLive && Number.isFinite(videoState.currentTime)) {
       const drift = Math.abs((video.currentTime || 0) - videoState.currentTime);
-      if (drift > 2.6 && video.readyState >= 1) {
+      // Only seek if drift is substantial (> 6 seconds) so minor network jitter never triggers buffering stalls
+      if (drift > 6 && video.readyState >= 1) {
         try {
           video.currentTime = videoState.currentTime;
         } catch {
@@ -1501,6 +1722,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       if (cancelled || !window.YT?.Player) return;
       if (ytPlayerRef.current?.loadVideoById) {
         ytPlayerRef.current.loadVideoById(videoState.url, videoState.currentTime || 0);
+        try {
+          ytPlayerRef.current.unMute?.();
+          ytPlayerRef.current.setVolume?.(100);
+          setIsMuted(false);
+          setVolume(1);
+        } catch {
+          // ignore
+        }
         return;
       }
 
@@ -1508,6 +1737,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         videoId: videoState.url,
         playerVars: {
           autoplay: 1,
+          mute: 0,
           controls: 1,
           rel: 0,
           modestbranding: 1,
@@ -1516,6 +1746,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         },
         events: {
           onReady: (e: any) => {
+            try {
+              e.target.unMute?.();
+              e.target.setVolume?.(100);
+              setIsMuted(false);
+              setVolume(1);
+            } catch {
+              // ignore
+            }
             if (videoState.isPlaying) {
               e.target.playVideo();
             } else {
@@ -1523,6 +1761,19 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             }
           },
           onStateChange: (e: any) => {
+            if (e.data === 1) {
+              try {
+                if (e.target.isMuted?.()) {
+                  e.target.unMute?.();
+                }
+                if ((e.target.getVolume?.() ?? 100) === 0) {
+                  e.target.setVolume?.(100);
+                }
+                setIsMuted(Boolean(e.target.isMuted?.()));
+              } catch {
+                // ignore
+              }
+            }
             if (isApplyingRemoteRef.current) return;
             if (e.data === 1) {
               setLocalPlaying(true);
@@ -1680,14 +1931,15 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
   const handleVideoSurfaceTap = (e: React.MouseEvent<HTMLElement>) => {
     if (isMinimized) {
-      onToggleMinimize?.();
       return;
     }
 
     // Double-tap left/right side on VOD to skip -10s / +10s like Netflix/YouTube
     if (!videoState.isLive && (videoState.mode === 'hls' || videoState.mode === 'direct')) {
       const rect = e.currentTarget.getBoundingClientRect();
-      const relX = (e.clientX - rect.left) / Math.max(1, rect.width);
+      const relX = shouldRotate90
+        ? (e.clientY - rect.top) / Math.max(1, rect.height)
+        : (e.clientX - rect.left) / Math.max(1, rect.width);
       const side: 'left' | 'right' | null =
         relX < 0.34 ? 'left' : relX > 0.66 ? 'right' : null;
       const now = Date.now();
@@ -1719,6 +1971,24 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const handleToggleMute = (e: React.MouseEvent) => {
     e.stopPropagation();
     triggerHaptic('light');
+    if (videoState.mode === 'youtube' && ytPlayerRef.current) {
+      try {
+        const currentlyMuted = Boolean(ytPlayerRef.current.isMuted?.()) || isMuted;
+        if (currentlyMuted) {
+          ytPlayerRef.current.unMute?.();
+          ytPlayerRef.current.setVolume?.(100);
+          ytPlayerRef.current.playVideo?.();
+          setIsMuted(false);
+          setVolume(1);
+        } else {
+          ytPlayerRef.current.mute?.();
+          setIsMuted(true);
+        }
+      } catch {
+        // ignore
+      }
+      return;
+    }
     const video = videoRef.current;
     if (!video) return;
     const nextMuted = !video.muted;
@@ -1731,8 +2001,23 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   };
 
   const handleVolumeSlider = (val: number) => {
-    const video = videoRef.current;
     setVolume(val);
+    if (videoState.mode === 'youtube' && ytPlayerRef.current) {
+      try {
+        ytPlayerRef.current.setVolume?.(Math.round(val * 100));
+        if (val > 0) {
+          ytPlayerRef.current.unMute?.();
+          setIsMuted(false);
+        } else {
+          ytPlayerRef.current.mute?.();
+          setIsMuted(true);
+        }
+      } catch {
+        // ignore
+      }
+      return;
+    }
+    const video = videoRef.current;
     if (!video) return;
     video.volume = val;
     video.muted = val === 0;
@@ -1770,6 +2055,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           // ignore
         }
       }
+      setTimeout(() => {
+        setViewportDims({ w: window.innerWidth, h: window.innerHeight });
+      }, 120);
       return;
     }
 
@@ -1777,6 +2065,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     setForceLandscapeRotation(true);
     setIsHorizontalFullscreen(true);
     setIsFullscreen(true);
+    setViewportDims({ w: window.innerWidth, h: window.innerHeight });
 
     try {
       if (container?.requestFullscreen) {
@@ -1793,12 +2082,19 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         await (window.screen.orientation as any).lock('landscape');
       }
     } catch {
-      // When OS portrait lock or browser blocks native lock, our CSS 90deg landscape stage handles it automatically
+      // When OS portrait lock or browser blocks native lock, our inner 90deg landscape stage handles it automatically
     }
+
+    setTimeout(() => {
+      setViewportDims({ w: window.innerWidth, h: window.innerHeight });
+    }, 120);
+    setTimeout(() => {
+      setViewportDims({ w: window.innerWidth, h: window.innerHeight });
+    }, 350);
 
     showTransientToast(
       lang === 'es'
-        ? 'Pantalla completa horizontal activada'
+        ? 'Pantalla completa horizontal (16:9) activada'
         : 'Landscape fullscreen enabled'
     );
   };
@@ -2000,45 +2296,48 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         ref={stageWrapperRef}
         onMouseMove={revealControls}
         style={
-          !isMinimized &&
-          (isFullscreen || isHorizontalFullscreen) &&
-          forceLandscapeRotation &&
-          isPortraitViewport
-            ? {
-                position: 'fixed',
-                top: '50%',
-                left: '50%',
-                width: '100dvh',
-                height: '100dvw',
-                maxWidth: '100dvh',
-                maxHeight: '100dvw',
-                transform: 'translate(-50%, -50%) rotate(90deg)',
-                zIndex: 250,
-                borderRadius: 0,
-              }
-            : !isMinimized && (isFullscreen || isHorizontalFullscreen)
+          isStageFullscreen
             ? {
                 position: 'fixed',
                 inset: 0,
-                width: '100dvw',
-                height: '100dvh',
+                width: '100vw',
+                height: '100vh',
                 zIndex: 250,
                 borderRadius: 0,
               }
             : undefined
         }
         className={`relative w-full bg-black overflow-hidden select-none transition-all duration-300 ${
-          isTvMode || isFullscreen || isHorizontalFullscreen
+          isTvMode || isStageFullscreen
             ? 'h-full'
             : compactVideoForMobileKeyboard
             ? 'h-[122px] sm:aspect-video'
             : 'aspect-video'
         } ${
-          isCinemaMode && !isMinimized && !isTvMode
+          isCinemaMode && !isMinimized && !isTvMode && !isStageFullscreen
             ? 'z-50 lg:rounded-2xl ring-1 ring-white/15 shadow-[0_24px_90px_rgba(0,0,0,0.96)]'
             : ''
         }`}
       >
+        {/* Inner rotatable stage container (immune to Chrome :fullscreen UA transform override) */}
+        <div
+          style={
+            shouldRotate90
+              ? {
+                  position: 'absolute',
+                  top: '50%',
+                  left: '50%',
+                  width: `${viewportDims.h}px`,
+                  height: `${viewportDims.w}px`,
+                  maxWidth: `${viewportDims.h}px`,
+                  maxHeight: `${viewportDims.w}px`,
+                  transform: 'translate(-50%, -50%) rotate(90deg)',
+                  transformOrigin: 'center center',
+                }
+              : undefined
+          }
+          className="relative w-full h-full overflow-hidden select-none"
+        >
         {/* Floating Reactions Layer (Hidden when docked in tiny miniplayer) */}
         {!isMinimized && (
           <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
@@ -2277,7 +2576,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         )}
 
         {/* Top Bar Inside Player: Title + Floating Chat + El Menú Mágico + Close */}
-        {!isMinimized && videoState.mode !== 'idle' && videoState.mode !== 'cloud' && (
+        {!isMinimized &&
+          videoState.mode !== 'idle' &&
+          videoState.mode !== 'cloud' && (
           <div
             className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-3 sm:px-5 pt-3 pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent flex items-start justify-between gap-3 transition-opacity duration-300 ${
               showControls || !localPlaying ? 'opacity-100' : 'opacity-0'
@@ -2361,6 +2662,26 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   <span className="hidden sm:inline">Menú Mágico</span>
                 </button>
               )}
+
+              {/* 4. 1-Tap Internal Floating 16:9 Mini-Player (Draggable 4-Corner PiP) */}
+              {!isTvMode &&
+                !isFullscreen &&
+                !isHorizontalFullscreen &&
+                onToggleMinimize && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('light');
+                      onToggleMinimize();
+                    }}
+                    title="Mini-Player flotante arrastrable (16:9)"
+                    aria-label="Activar Mini-Player flotante"
+                    className="min-h-[44px] min-w-[44px] rounded-2xl bg-black/60 hover:bg-black/85 backdrop-blur-xl border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Minimize2 className="w-4 h-4" />
+                  </button>
+                )}
 
               {/* Accessible Fullscreen & Exit buttons when playing in TV Receiver Mode */}
               {isTvMode && (
@@ -2589,6 +2910,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               const ct = e.currentTarget.currentTime;
               const dur = e.currentTarget.duration || 0;
               setCurrentTime(ct);
+              if (isBuffering && !e.currentTarget.paused) {
+                clearBufferingIndicator();
+              }
               if (
                 onProgressUpdate &&
                 !videoState.isLive &&
@@ -2600,9 +2924,21 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               }
             }}
             onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
-            onWaiting={() => setIsBuffering(true)}
+            onCanPlay={clearBufferingIndicator}
+            onCanPlayThrough={clearBufferingIndicator}
+            onWaiting={() => {
+              if (bufferingDelayTimerRef.current) {
+                clearTimeout(bufferingDelayTimerRef.current);
+              }
+              bufferingDelayTimerRef.current = setTimeout(() => {
+                const v = videoRef.current;
+                if (v && !v.paused && v.readyState < 3) {
+                  setIsBuffering(true);
+                }
+              }, 1200);
+            }}
             onPlaying={() => {
-              setIsBuffering(false);
+              clearBufferingIndicator();
               setLocalPlaying(true);
               setStreamError(null);
             }}
@@ -2637,14 +2973,15 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             } bg-black cursor-pointer`}
           />
 
-          {/* Hidden Direct HTTP Video Bridge for W3C RemotePlayback & AirPlay 2 (only populated on Cast tap) */}
+          {/* Direct HTTP Video Bridge for W3C RemotePlayback & AirPlay 2 (non-zero 2x2px dimensions so browser never disables video decoding track!) */}
           <video
             ref={castBridgeVideoRef}
-            preload="none"
+            preload="metadata"
             playsInline
             muted
+            crossOrigin="anonymous"
             x-webkit-airplay="allow"
-            className="sr-only pointer-events-none w-0 h-0 opacity-0"
+            className="fixed bottom-0 right-0 w-[2px] h-[2px] opacity-[0.01] pointer-events-none -z-10"
           />
 
           {secondaryStream &&
@@ -2828,57 +3165,33 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {videoState.mode === 'youtube' && (
           <div className="relative w-full h-full bg-black">
             <div id={ytContainerId.current} className="w-full h-full" />
-            {/* Modo Cine, Minimize & Close quick controls on YouTube stage */}
-            {!isMinimized &&
-              !isTvMode &&
-              (onToggleCinemaMode || onToggleMinimize || onClosePlayer) && (
-                <div className="absolute top-2.5 right-2.5 z-30 flex items-center gap-1.5">
-                  {onToggleCinemaMode && (
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={isCinemaMode}
-                      onClick={onToggleCinemaMode}
-                      className={`h-9 px-2.5 rounded-xl border text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
-                        isCinemaMode
-                          ? 'bg-amber-400/25 border-amber-400/55 text-amber-200'
-                          : 'bg-black/75 hover:bg-black border-white/15 text-white'
-                      }`}
-                    >
-                      {isCinemaMode ? (
-                        <Sun className="w-3.5 h-3.5 text-amber-300" />
-                      ) : (
-                        <Moon className="w-3.5 h-3.5 text-amber-300" />
-                      )}
-                      <span className="hidden sm:inline">
-                        {lang === 'es' ? 'Modo Cine' : 'Cinema Mode'}
-                      </span>
-                    </button>
+            {/* 1-Tap Sound Unlock / Mute Toggle Pill for YouTube Stage */}
+            {!isMinimized && (
+              <div className="absolute bottom-12 left-3 z-30 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleToggleMute}
+                  className={`min-h-[38px] px-3.5 rounded-2xl border text-xs font-bold flex items-center gap-1.5 backdrop-blur-md cursor-pointer active:scale-95 transition-all shadow-lg ${
+                    isMuted
+                      ? 'bg-[#E11D48] border-[#E11D48] text-white'
+                      : 'bg-black/75 hover:bg-black border-white/20 text-white'
+                  }`}
+                  title={isMuted ? 'Activar sonido de YouTube' : 'Silenciar YouTube'}
+                >
+                  {isMuted ? (
+                    <>
+                      <VolumeX className="w-4 h-4" />
+                      <span>{lang === 'es' ? 'Activar Sonido' : 'Unmute'}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-4 h-4 text-emerald-400" />
+                      <span>{lang === 'es' ? 'Sonido Activo' : 'Sound On'}</span>
+                    </>
                   )}
-                  {onToggleMinimize && (
-                    <button
-                      type="button"
-                      onClick={onToggleMinimize}
-                      className="h-9 px-2.5 rounded-xl bg-black/75 hover:bg-black border border-white/15 text-xs font-medium text-white flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <Minimize2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">
-                        {lang === 'es' ? 'Minimizar' : 'Minimize'}
-                      </span>
-                    </button>
-                  )}
-                  {onClosePlayer && (
-                    <button
-                      type="button"
-                      onClick={onClosePlayer}
-                      aria-label="Cerrar reproductor"
-                      className="w-9 h-9 rounded-xl bg-black/75 hover:bg-rose-600 border border-white/15 flex items-center justify-center text-white cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-              )}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -2984,26 +3297,32 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* ================================================================== */}
         {/* BUFFERING / EXTRACTION / ERROR OVERLAYS                            */}
         {/* ================================================================== */}
-        {(isExtracting ||
-          (isBuffering && (videoState.mode === 'hls' || videoState.mode === 'direct'))) && (
-          <div className="pointer-events-none absolute inset-0 z-25 bg-black/60 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-center">
+        {isExtracting && (
+          <div className="pointer-events-none absolute inset-0 z-25 bg-black/65 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-center">
             <Loader2 className="w-7 h-7 sm:w-9 sm:h-9 animate-spin text-[#E11D48] mb-2" />
             {!isMinimized && (
               <>
                 <p className="font-display font-semibold text-xs sm:text-base text-white max-w-md">
-                  {isExtracting
-                    ? extractionLabel || t.extractingTitle
-                    : 'Sincronizando señal HD...'}
+                  {extractionLabel || t.extractingTitle}
                 </p>
-                {isExtracting && (
-                  <p className="text-[11px] sm:text-xs text-zinc-300 mt-1 max-w-sm">
-                    {t.extractingSub}
-                  </p>
-                )}
+                <p className="text-[11px] sm:text-xs text-zinc-300 mt-1 max-w-sm">
+                  {t.extractingSub}
+                </p>
               </>
             )}
           </div>
         )}
+
+        {!isExtracting &&
+          isBuffering &&
+          (videoState.mode === 'hls' || videoState.mode === 'direct') && (
+            <div className="pointer-events-none absolute top-3 left-3 z-25 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center gap-1.5">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#E11D48]" />
+              {!isMinimized && (
+                <span className="text-[10px] font-medium text-zinc-300">Cargando buffer...</span>
+              )}
+            </div>
+          )}
 
         {streamError && !isExtracting && !isMinimized && (
           <div className="absolute inset-0 z-30 bg-black/85 flex flex-col items-center justify-center p-5 text-center gap-3">
@@ -3046,10 +3365,29 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               showControls || !localPlaying ? 'opacity-100' : 'opacity-0'
             }`}
           >
-            {/* Protected Legible Timeline Scrubber */}
+            {/* Protected Legible Timeline Scrubber (Rotation-aware for 90deg Landscape) */}
             {!videoState.isLive && duration > 0 && (
               <div
-                onClick={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!shouldRotate90) return;
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ratio = Math.max(
+                    0,
+                    Math.min(1, (e.clientY - rect.top) / Math.max(1, rect.height))
+                  );
+                  handleScrub(Math.round(ratio * duration));
+                }}
+                onTouchMove={(e) => {
+                  if (!shouldRotate90 || !e.touches[0]) return;
+                  e.stopPropagation();
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const ratio = Math.max(
+                    0,
+                    Math.min(1, (e.touches[0].clientY - rect.top) / Math.max(1, rect.height))
+                  );
+                  handleScrub(Math.round(ratio * duration));
+                }}
                 className={`h-6 flex items-center px-1 mb-0.5 ${
                   showControls || !localPlaying ? 'pointer-events-auto' : 'pointer-events-none'
                 }`}
@@ -3213,68 +3551,117 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             </div>
           </div>
         )}
-      </div>
+        {/* ================================================================== */}
+        {/* FLOATING 16:9 DRAGGABLE MINI-PLAYER HUD OVERLAY (WHEN MINIMIZED)   */}
+        {/* ================================================================== */}
+        {isMinimized && (
+          <div className="pointer-events-none absolute inset-0 z-40 flex flex-col justify-between p-2 bg-gradient-to-b from-black/75 via-transparent to-black/80">
+            {/* Top Row: Drag Grip + Title + Expand & Close Buttons */}
+            <div className="flex items-center justify-between gap-1.5">
+              <div className="flex items-center gap-1.5 min-w-0 px-2 py-0.5 rounded-full bg-black/65 backdrop-blur-md border border-white/15">
+                <span className="text-[10px] text-[#FB7185] font-bold leading-none">⠿</span>
+                <span className="font-display font-bold text-[10px] text-white truncate max-w-[115px] sm:max-w-[155px]">
+                  {videoState.title}
+                </span>
+              </div>
 
-      {/* ==================================================================== */}
-      {/* FLOATING DOCKED MINI-PLAYER CONTROL STRIP (WHEN MINIMIZED)           */}
-      {/* ==================================================================== */}
-      {isMinimized && (
-        <div className="bg-[#0D0D12] border-t border-white/[0.08] px-3 py-2 flex items-center justify-between gap-2">
-          <button
-            type="button"
-            onClick={onToggleMinimize}
-            className="min-w-0 flex-1 text-left cursor-pointer"
-          >
-            <div className="font-display font-semibold text-xs text-white truncate">
-              {videoState.title}
-            </div>
-            <div className="text-[10px] text-zinc-400 truncate">
-              {lang === 'es' ? 'Toca para ampliar' : 'Tap to expand'}
-            </div>
-          </button>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {(canUseNativePiPOrCast || videoState.mode === 'youtube') && (
-              <button
-                type="button"
-                onClick={handleTogglePlay}
-                className="w-9 h-9 rounded-xl bg-white/[0.08] hover:bg-white/15 flex items-center justify-center text-white cursor-pointer"
-                aria-label={localPlaying ? 'Pausar' : 'Reproducir'}
+              <div
+                onPointerDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                className="pointer-events-auto flex items-center gap-1 shrink-0"
               >
-                {localPlaying ? (
-                  <Pause className="w-4 h-4 fill-current" />
-                ) : (
-                  <Play className="w-4 h-4 fill-current" />
+                {onToggleMinimize && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('light');
+                      onToggleMinimize();
+                    }}
+                    className="w-7 h-7 rounded-full bg-[#E11D48] hover:bg-[#BE123C] flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform cursor-pointer"
+                    title={lang === 'es' ? 'Ampliar reproductor' : 'Expand player'}
+                    aria-label="Ampliar reproductor"
+                  >
+                    <Maximize2 className="w-3.5 h-3.5" />
+                  </button>
                 )}
-              </button>
-            )}
 
-            {onToggleMinimize && (
-              <button
-                type="button"
-                onClick={onToggleMinimize}
-                className="w-9 h-9 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] flex items-center justify-center text-white cursor-pointer"
-                title={lang === 'es' ? 'Ampliar reproductor' : 'Expand player'}
-                aria-label="Ampliar reproductor"
-              >
-                <Maximize2 className="w-4 h-4" />
-              </button>
-            )}
+                {onClosePlayer && (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      triggerHaptic('light');
+                      onClosePlayer();
+                    }}
+                    className="w-7 h-7 rounded-full bg-black/75 hover:bg-rose-600 border border-white/20 flex items-center justify-center text-zinc-200 hover:text-white active:scale-90 transition-transform cursor-pointer"
+                    title={lang === 'es' ? 'Cerrar reproductor' : 'Close player'}
+                    aria-label="Cerrar reproductor"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
 
-            {onClosePlayer && (
-              <button
-                type="button"
-                onClick={onClosePlayer}
-                className="w-9 h-9 rounded-xl bg-white/[0.08] hover:bg-rose-600 flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer"
-                title={lang === 'es' ? 'Cerrar reproductor' : 'Close player'}
-                aria-label="Cerrar reproductor"
+            {/* Bottom Row: Play/Pause + Mute/Unmute + Corner Hint */}
+            <div className="flex items-center justify-between gap-1.5">
+              <div
+                onPointerDown={(e) => e.stopPropagation()}
+                onTouchStart={(e) => e.stopPropagation()}
+                className="pointer-events-auto flex items-center gap-1"
               >
-                <X className="w-4 h-4" />
-              </button>
+                {(canUseNativePiPOrCast || videoState.mode === 'youtube') && (
+                  <button
+                    type="button"
+                    onClick={handleTogglePlay}
+                    className="w-7 h-7 rounded-full bg-black/75 hover:bg-black border border-white/20 flex items-center justify-center text-white active:scale-90 transition-transform cursor-pointer"
+                    aria-label={localPlaying ? 'Pausar' : 'Reproducir'}
+                  >
+                    {localPlaying ? (
+                      <Pause className="w-3.5 h-3.5 fill-current" />
+                    ) : (
+                      <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                    )}
+                  </button>
+                )}
+
+                {(canUseNativePiPOrCast || videoState.mode === 'youtube') && (
+                  <button
+                    type="button"
+                    onClick={handleToggleMute}
+                    className="w-7 h-7 rounded-full bg-black/75 hover:bg-black border border-white/20 flex items-center justify-center text-white active:scale-90 transition-transform cursor-pointer"
+                    aria-label="Silenciar"
+                  >
+                    {isMuted || volume === 0 ? (
+                      <VolumeX className="w-3.5 h-3.5 text-rose-400" />
+                    ) : (
+                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                    )}
+                  </button>
+                )}
+              </div>
+
+              <span className="text-[9px] font-semibold text-zinc-300/90 bg-black/55 px-2 py-0.5 rounded-full backdrop-blur-sm">
+                {lang === 'es' ? 'Arrastra a 4 esquinas' : 'Drag to 4 corners'}
+              </span>
+            </div>
+
+            {/* Thin Bottom Playback Progress Line */}
+            {!videoState.isLive && duration > 0 && (
+              <div className="absolute bottom-0 inset-x-0 h-[3px] bg-white/20">
+                <div
+                  className="h-full bg-[#E11D48]"
+                  style={{
+                    width: `${Math.min(100, Math.max(4, Math.round((currentTime / duration) * 100)))}%`,
+                  }}
+                />
+              </div>
             )}
           </div>
+        )}
         </div>
-      )}
+      </div>
 
       {/* ==================================================================== */}
       {/* SLEEK BELOW-VIDEO STRIP: QUICK AUDIO PILLS + MENÚ MÁGICO TRIGGER     */}

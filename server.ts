@@ -137,11 +137,13 @@ interface ExtractedStreamResult {
 const extractionCache = new Map<string, ExtractedStreamResult>();
 
 function buildHlsProxyUrl(rawM3u8Url: string, referer: string): string {
-  return `/api/hls-proxy?url=${encodeURIComponent(rawM3u8Url)}&referer=${encodeURIComponent(referer)}`;
+  return `/api/hls-proxy/stream.m3u8?url=${encodeURIComponent(rawM3u8Url)}&referer=${encodeURIComponent(referer)}`;
 }
 
 function buildTsProxyUrl(rawMediaUrl: string, referer: string): string {
-  return `/api/ts-proxy?url=${encodeURIComponent(rawMediaUrl)}&referer=${encodeURIComponent(referer)}`;
+  const isMp4Segment = /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(rawMediaUrl);
+  const ext = isMp4Segment ? 'segment.m4s' : 'segment.ts';
+  return `/api/ts-proxy/${ext}?url=${encodeURIComponent(rawMediaUrl)}&referer=${encodeURIComponent(referer)}`;
 }
 
 // ============================================================================
@@ -857,31 +859,78 @@ function normalizeTitleForMatch(raw: string): string {
 
 async function findMovidyUrlByTitle(title: string): Promise<string | null> {
   try {
-    const clean = title.replace(/\s*\([^)]*\)/g, '').trim();
-    if (!clean || clean.length < 2) return null;
-    const searchUrl = `https://movidy.pw/?s=${encodeURIComponent(clean)}`;
-    const res = await fetch(searchUrl, {
-      headers: { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-      signal: AbortSignal.timeout(3800),
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
+    const rawClean = String(title || '').trim();
+    const clean = rawClean.replace(/\s*\([^)]*\)/g, '').trim();
+    const parenPart = (rawClean.match(/\(([^)]+)\)/)?.[1] || '').trim();
+    const queryTerm = clean || rawClean;
+    if (!queryTerm || queryTerm.length < 2) return null;
+
+    const searchUrl = `https://movidy.pw/?s=${encodeURIComponent(queryTerm)}`;
+    let html = '';
+    try {
+      const res = await fetch(searchUrl, {
+        headers: { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
+        signal: AbortSignal.timeout(3800),
+      });
+      if (res.ok) html = await res.text();
+    } catch {
+      const fb = await curlGetText(
+        searchUrl,
+        { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
+        5
+      ).catch(() => ({ text: '' }));
+      html = fb.text;
+    }
+    if (!html) return null;
 
     const itemRe =
-      /<li>\s*<a\s+href="(https:\/\/movidy\.pw\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>/gi;
-    const normTarget = normalizeTitleForMatch(clean);
-    let firstCandidate: string | null = null;
+      /<li>\s*<a\s+href="((?:https?:\/\/movidy\.[a-z]+)?\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>/gi;
+    const normTarget = normalizeTitleForMatch(clean || rawClean);
+    const normParenTarget = normalizeTitleForMatch(parenPart);
+
+    let bestUrl: string | null = null;
+    let bestScore = 0;
     let m: RegExpExecArray | null;
 
     while ((m = itemRe.exec(html)) !== null) {
-      const url = m[1];
-      const itemTitle = normalizeTitleForMatch(m[2]);
-      if (!firstCandidate) firstCandidate = url;
-      if (itemTitle === normTarget || itemTitle.includes(normTarget) || normTarget.includes(itemTitle)) {
-        return url;
+      const rawHref = String(m[1] || '').trim();
+      const rawSpanTitle = String(m[2] || '').trim();
+      if (!rawHref || !rawSpanTitle) continue;
+
+      const fullUrl = rawHref.startsWith('http') ? rawHref : `https://movidy.pw${rawHref}`;
+      const fullNorm = normalizeTitleForMatch(rawSpanTitle);
+      const outsideNorm = normalizeTitleForMatch(rawSpanTitle.replace(/\s*\([^)]*\)/g, ''));
+      const insideNorm = normalizeTitleForMatch(rawSpanTitle.match(/\(([^)]+)\)/)?.[1] || '');
+
+      let score = 0;
+      if (
+        fullNorm === normTarget ||
+        (outsideNorm && outsideNorm === normTarget) ||
+        (insideNorm && insideNorm === normTarget) ||
+        (normParenTarget &&
+          (outsideNorm === normParenTarget || insideNorm === normParenTarget))
+      ) {
+        score = 100;
+      } else if (
+        (outsideNorm && outsideNorm.startsWith(`${normTarget} `)) ||
+        (insideNorm && insideNorm.startsWith(`${normTarget} `))
+      ) {
+        score = 80;
+      } else if (
+        fullNorm.split(' ').includes(normTarget) ||
+        fullNorm.includes(normTarget) ||
+        (outsideNorm && normTarget.includes(outsideNorm))
+      ) {
+        score = 55;
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestUrl = fullUrl;
+        if (score === 100) break;
       }
     }
-    return null;
+    return bestUrl;
   } catch {
     return null;
   }
@@ -1328,10 +1377,31 @@ function loadPersistedRoomsFromDisk() {
     const raw = fs.readFileSync(ROOMS_SNAPSHOT_PATH, 'utf8');
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return;
+    const validModes = new Set(['idle', 'hls', 'direct', 'youtube', 'cloud']);
     for (const item of parsed.slice(0, 120)) {
       if (item && typeof item.id === 'string') {
+        const vs = item.videoState;
+        const isInvalidOrGame =
+          !vs ||
+          !validModes.has(vs.mode) ||
+          (typeof vs.url === 'string' && vs.url.startsWith('arcade://'));
         rooms.set(item.id, {
           ...item,
+          videoState: isInvalidOrGame
+            ? {
+                mode: 'idle',
+                url: '',
+                rawSourceUrl: '',
+                title: 'NAIM CINE · Elige película, serie, partido o YouTube',
+                subtitle: 'Proyección sincronizada en alta definición sin anuncios',
+                currentTime: 0,
+                isPlaying: false,
+                isLive: false,
+                tracks: [],
+                activeTrackIndex: 0,
+                lastUpdated: Date.now(),
+              }
+            : vs,
           participants: [],
           activePoll: null,
         });
@@ -1489,11 +1559,112 @@ function serializeRoomForClient(room: RoomRecord) {
 interface ClientMeta {
   ws: WebSocket;
   roomId?: string;
+  roomName?: string;
   userId?: string;
   userName?: string;
+  userAvatar?: string;
+  userColor?: string;
+  friendCode?: string;
+  lastSeen?: number;
 }
 
 const clients = new Map<WebSocket, ClientMeta>();
+const pendingDirectInvites = new Map<string, any[]>();
+
+function deriveServerFriendCode(userId: string): string {
+  const clean = String(userId || 'user').trim();
+  let hash = 2166136261;
+  for (let i = 0; i < clean.length; i += 1) {
+    hash ^= clean.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(36).toUpperCase().padStart(5, '0').slice(-5);
+}
+
+function getOnlineUsersSnapshot() {
+  const byUserId = new Map<
+    string,
+    {
+      userId: string;
+      name: string;
+      avatar: string;
+      color: string;
+      friendCode: string;
+      roomId?: string;
+      roomName?: string;
+      mediaTitle?: string;
+      lastSeen: number;
+    }
+  >();
+
+  clients.forEach((meta, clientWs) => {
+    if (clientWs.readyState !== WebSocket.OPEN || !meta.userId || !meta.userName) {
+      return;
+    }
+    if (meta.userName.includes('(TV)') || meta.userAvatar === '📺') {
+      return;
+    }
+    const activeRoom = meta.roomId ? rooms.get(meta.roomId) : undefined;
+    const activeMedia =
+      activeRoom && activeRoom.videoState.mode !== 'idle'
+        ? activeRoom.videoState.title
+        : undefined;
+
+    byUserId.set(meta.userId, {
+      userId: meta.userId,
+      name: meta.userName,
+      avatar: meta.userAvatar || '🍿',
+      color: meta.userColor || '#E11D48',
+      friendCode: meta.friendCode || deriveServerFriendCode(meta.userId),
+      roomId: meta.roomId,
+      roomName: activeRoom?.name || meta.roomName,
+      mediaTitle: activeMedia,
+      lastSeen: meta.lastSeen || Date.now(),
+    });
+  });
+
+  return Array.from(byUserId.values());
+}
+
+let broadcastPresenceTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleBroadcastOnlineUsers() {
+  if (broadcastPresenceTimer) return;
+  broadcastPresenceTimer = setTimeout(() => {
+    broadcastPresenceTimer = null;
+    const snapshot = getOnlineUsersSnapshot();
+    const packet = JSON.stringify({
+      type: 'ONLINE_USERS_UPDATED',
+      payload: { users: snapshot },
+    });
+    clients.forEach((_meta, clientWs) => {
+      if (clientWs.readyState === WebSocket.OPEN) {
+        try {
+          clientWs.send(packet);
+        } catch {
+          // ignore
+        }
+      }
+    });
+  }, 150);
+}
+
+function flushPendingInvitesForClient(ws: WebSocket, userId: string, friendCode: string) {
+  const now = Date.now();
+  const keys = [userId, friendCode.toUpperCase()];
+  for (const key of keys) {
+    const list = pendingDirectInvites.get(key);
+    if (!list || list.length === 0) continue;
+    const valid = list.filter((inv) => now - inv.timestamp < 90000);
+    pendingDirectInvites.delete(key);
+    for (const inv of valid) {
+      try {
+        ws.send(JSON.stringify({ type: 'INCOMING_ROOM_INVITE', payload: inv }));
+      } catch {
+        // ignore
+      }
+    }
+  }
+}
 
 function finalizeRoomPoll(roomId: string, expectedPollId: string) {
   const timer = roomPollTimers.get(roomId);
@@ -1719,7 +1890,45 @@ wss.on('connection', (ws) => {
       const { type, payload } = data;
 
       if (type === 'PING') {
+        const currentMeta = clients.get(ws);
+        if (currentMeta) {
+          currentMeta.lastSeen = Date.now();
+        }
         ws.send(JSON.stringify({ type: 'PONG', payload: { clientTs: payload?.clientTs || Date.now() } }));
+        return;
+      }
+
+      if (type === 'REGISTER_PRESENCE') {
+        const userObj = payload?.user || {};
+        const userId = String(userObj.id || payload?.userId || '').trim();
+        const userName = String(userObj.name || payload?.userName || '').trim().slice(0, 40);
+        const userAvatar = String(userObj.avatar || payload?.userAvatar || '🍿').slice(0, 16);
+        const userColor = String(userObj.color || payload?.userColor || '#E11D48').slice(0, 16);
+        if (!userId || !userName) return;
+
+        const existingMeta = clients.get(ws) || { ws };
+        const friendCode = deriveServerFriendCode(userId);
+        clients.set(ws, {
+          ...existingMeta,
+          ws,
+          userId,
+          userName,
+          userAvatar,
+          userColor,
+          friendCode,
+          roomId: payload?.roomId ? String(payload.roomId).trim().toLowerCase() : existingMeta.roomId,
+          roomName: payload?.roomName ? String(payload.roomName).trim().slice(0, 60) : existingMeta.roomName,
+          lastSeen: Date.now(),
+        });
+
+        ws.send(
+          JSON.stringify({
+            type: 'ONLINE_USERS_UPDATED',
+            payload: { users: getOnlineUsersSnapshot() },
+          })
+        );
+        flushPendingInvitesForClient(ws, userId, friendCode);
+        scheduleBroadcastOnlineUsers();
         return;
       }
 
@@ -1837,7 +2046,20 @@ wss.on('connection', (ws) => {
           joinedAt: Date.now(),
         });
 
-        clients.set(ws, { ws, roomId, userId, userName });
+        const friendCode = deriveServerFriendCode(userId);
+        clients.set(ws, {
+          ws,
+          roomId,
+          roomName: room.name,
+          userId,
+          userName,
+          userAvatar,
+          userColor,
+          friendCode,
+          lastSeen: Date.now(),
+        });
+        flushPendingInvitesForClient(ws, userId, friendCode);
+        scheduleBroadcastOnlineUsers();
 
         let joinMsg = null;
         if (!alreadyInRoom) {
@@ -1944,6 +2166,9 @@ wss.on('connection', (ws) => {
           },
           action === 'play' || action === 'pause' || action === 'seek' ? ws : undefined
         );
+        if (action === 'change_url') {
+          scheduleBroadcastOnlineUsers();
+        }
       } else if (type === 'QUEUE_ADD') {
         const { roomId, item } = payload || {};
         const room = rooms.get(roomId);
@@ -2044,6 +2269,14 @@ wss.on('connection', (ws) => {
         });
       } else if (type === 'UPDATE_PROFILE') {
         const { roomId, userId, userName, userAvatar, userColor } = payload || {};
+        const currentMeta = clients.get(ws);
+        if (currentMeta && userId) {
+          if (userName) currentMeta.userName = String(userName).slice(0, 40);
+          if (userAvatar) currentMeta.userAvatar = String(userAvatar).slice(0, 16);
+          if (userColor) currentMeta.userColor = String(userColor).slice(0, 16);
+          currentMeta.lastSeen = Date.now();
+          scheduleBroadcastOnlineUsers();
+        }
         const room = rooms.get(roomId);
         if (!room) return;
         const member = room.participants.find((p) => p.id === userId);
@@ -2366,6 +2599,164 @@ wss.on('connection', (ws) => {
             seq: room.lastTvRemoteCommand.seq,
           },
         });
+      } else if (type === 'SEND_ROOM_INVITE') {
+        const senderMeta = clients.get(ws);
+        const fromUser = payload?.fromUser || {};
+        const fromUserId = String(fromUser.id || senderMeta?.userId || '').trim();
+        const fromUserName = String(
+          fromUser.name || senderMeta?.userName || 'Tu amigo'
+        )
+          .trim()
+          .slice(0, 40);
+        const fromUserAvatar = String(
+          fromUser.avatar || senderMeta?.userAvatar || '🍿'
+        ).slice(0, 16);
+        const fromUserColor = String(
+          fromUser.color || senderMeta?.userColor || '#E11D48'
+        ).slice(0, 16);
+
+        const targetRoomId = String(payload?.roomId || senderMeta?.roomId || '')
+          .trim()
+          .toLowerCase();
+        if (!targetRoomId) return;
+
+        const { room } = getOrCreateRoom(targetRoomId, payload?.roomName);
+        const inviteAuthToken = crypto.randomBytes(16).toString('hex');
+        tvAuthTokens.set(inviteAuthToken, {
+          roomId: targetRoomId,
+          expiresAt: Date.now() + 2 * 60 * 60 * 1000,
+        });
+
+        const mediaTitle =
+          payload?.mediaTitle ||
+          (room.videoState.mode !== 'idle' ? room.videoState.title : undefined);
+
+        const inviteObj = {
+          id: `inv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          fromUserId,
+          fromUserName,
+          fromUserAvatar,
+          fromUserColor,
+          fromFriendCode: deriveServerFriendCode(fromUserId),
+          roomId: targetRoomId,
+          roomName: room.name || payload?.roomName || `Sala ${targetRoomId.toUpperCase()}`,
+          mediaTitle,
+          inviteAuthToken,
+          timestamp: Date.now(),
+        };
+
+        const toUserId = String(payload?.toUserId || '').trim();
+        const toFriendCode = String(payload?.toFriendCode || '')
+          .trim()
+          .replace(/^#/, '')
+          .toUpperCase();
+        const toUserNameLower = String(payload?.toUserName || '')
+          .trim()
+          .toLowerCase();
+
+        let deliveredCount = 0;
+        clients.forEach((meta, clientWs) => {
+          if (clientWs.readyState !== WebSocket.OPEN || clientWs === ws) return;
+          if (meta.userId === fromUserId) return;
+
+          const matchById = Boolean(toUserId && meta.userId === toUserId);
+          const matchByCode = Boolean(
+            toFriendCode &&
+              (meta.friendCode === toFriendCode ||
+                deriveServerFriendCode(meta.userId || '') === toFriendCode)
+          );
+          const matchByName = Boolean(
+            toUserNameLower &&
+              meta.userName &&
+              meta.userName.trim().toLowerCase() === toUserNameLower
+          );
+
+          if (matchById || matchByCode || matchByName) {
+            try {
+              clientWs.send(
+                JSON.stringify({
+                  type: 'INCOMING_ROOM_INVITE',
+                  payload: inviteObj,
+                })
+              );
+              deliveredCount += 1;
+            } catch {
+              // ignore
+            }
+          }
+        });
+
+        if (deliveredCount === 0) {
+          const queueKey = toFriendCode || toUserId;
+          if (queueKey) {
+            const existing = pendingDirectInvites.get(queueKey) || [];
+            pendingDirectInvites.set(queueKey, [...existing.slice(-4), inviteObj]);
+          }
+        }
+
+        ws.send(
+          JSON.stringify({
+            type: 'ROOM_INVITE_SENT_ACK',
+            payload: {
+              toUserId,
+              toUserName: payload?.toUserName || 'Amigo',
+              deliveredLive: deliveredCount > 0,
+            },
+          })
+        );
+      } else if (type === 'NOTIFY_FRIEND_ADDED') {
+        const senderMeta = clients.get(ws);
+        const fromUser = payload?.fromUser || {};
+        const fromUserId = String(fromUser.id || senderMeta?.userId || '').trim();
+        const fromUserName = String(
+          fromUser.name || senderMeta?.userName || 'Un amigo'
+        )
+          .trim()
+          .slice(0, 40);
+        const fromUserAvatar = String(
+          fromUser.avatar || senderMeta?.userAvatar || '🍿'
+        ).slice(0, 16);
+        const fromUserColor = String(
+          fromUser.color || senderMeta?.userColor || '#E11D48'
+        ).slice(0, 16);
+        if (!fromUserId) return;
+
+        const toUserId = String(payload?.toUserId || '').trim();
+        const toFriendCode = String(payload?.toFriendCode || '')
+          .trim()
+          .replace(/^#/, '')
+          .toUpperCase();
+
+        const noticeObj = {
+          id: `fadd-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          fromUserId,
+          fromUserName,
+          fromUserAvatar,
+          fromUserColor,
+          fromFriendCode: deriveServerFriendCode(fromUserId),
+          timestamp: Date.now(),
+        };
+
+        clients.forEach((meta, clientWs) => {
+          if (clientWs.readyState !== WebSocket.OPEN || clientWs === ws) return;
+          if (meta.userId === fromUserId) return;
+          const matchById = Boolean(toUserId && meta.userId === toUserId);
+          const matchByCode = Boolean(
+            toFriendCode && meta.friendCode === toFriendCode
+          );
+          if (matchById || matchByCode) {
+            try {
+              clientWs.send(
+                JSON.stringify({
+                  type: 'INCOMING_FRIEND_ADDED',
+                  payload: noticeObj,
+                })
+              );
+            } catch {
+              // ignore
+            }
+          }
+        });
       }
     } catch (err) {
       console.error('WS message handling error:', err);
@@ -2384,6 +2775,7 @@ wss.on('connection', (ws) => {
 
     const meta = clients.get(ws);
     clients.delete(ws);
+    scheduleBroadcastOnlineUsers();
     if (!meta?.roomId || !meta?.userId) return;
 
     const room = rooms.get(meta.roomId);
@@ -2452,13 +2844,16 @@ app.get('/api/img-proxy', async (req, res) => {
   }
 });
 
-app.options(['/api/hls-proxy', '/api/ts-proxy'], (_req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', '*');
-  res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
-  res.status(204).end();
-});
+app.options(
+  ['/api/hls-proxy', '/api/hls-proxy/:filename', '/api/ts-proxy', '/api/ts-proxy/:filename'],
+  (_req, res) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
+    res.status(204).end();
+  }
+);
 
 const tlsFallbackHosts = new Set<string>();
 const vodHlsManifestCache = new Map<string, { manifest: string; ts: number }>();
@@ -2483,7 +2878,7 @@ function markHostNeedsCurlFallback(urlStr: string): void {
   }
 }
 
-app.get('/api/hls-proxy', async (req, res) => {
+app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
   const targetUrl = String(req.query.url || '');
   const referer = String(req.query.referer || '');
   if (!targetUrl) return res.status(400).send('Missing url');
@@ -2619,10 +3014,12 @@ app.get('/api/hls-proxy', async (req, res) => {
   }
 });
 
-app.get('/api/ts-proxy', async (req, res) => {
+app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
   const targetUrl = String(req.query.url || '');
   const referer = String(req.query.referer || '');
   if (!targetUrl) return res.status(400).end();
+
+  const isUrlMp4 = /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(targetUrl);
 
   const headers: Record<string, string> = {
     'User-Agent': CHROME_UA,
@@ -2660,12 +3057,16 @@ app.get('/api/ts-proxy', async (req, res) => {
     res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
 
     const rawCt = (upstream.headers.get('content-type') || '').toLowerCase();
-    const isDisguisedTsSegment =
+    const isDisguisedSegment =
       !rawCt ||
       rawCt.startsWith('text/html') ||
       rawCt.startsWith('text/plain') ||
-      rawCt.startsWith('image/');
-    res.setHeader('Content-Type', isDisguisedTsSegment ? 'video/mp2t' : rawCt);
+      rawCt.startsWith('image/') ||
+      rawCt.startsWith('application/octet-stream');
+    res.setHeader(
+      'Content-Type',
+      isDisguisedSegment ? (isUrlMp4 ? 'video/mp4' : 'video/mp2t') : rawCt
+    );
 
     const cl = upstream.headers.get('content-length');
     if (cl) res.setHeader('Content-Length', cl);
@@ -2689,12 +3090,22 @@ app.get('/api/ts-proxy', async (req, res) => {
         res.status(502).end();
         return;
       }
+      // Sniff fMP4 box magic ('ftyp', 'styp', 'moof', 'sidx') at offset 4 so Cast / AirPlay / Smart TV
+      // hardware video decoders always receive the exact MIME type and never drop the video track!
+      const boxType = buf.length >= 8 ? buf.subarray(4, 8).toString('ascii') : '';
+      const isFmp4Buffer =
+        isUrlMp4 ||
+        boxType === 'ftyp' ||
+        boxType === 'styp' ||
+        boxType === 'moof' ||
+        boxType === 'sidx';
+
       res.status(req.headers.range ? 206 : 200);
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', '*');
       res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
-      res.setHeader('Content-Type', 'video/mp2t');
+      res.setHeader('Content-Type', isFmp4Buffer ? 'video/mp4' : 'video/mp2t');
       res.setHeader('Content-Length', String(buf.length));
       res.end(buf);
     } catch {
@@ -2773,15 +3184,16 @@ async function scrapeMovidyCatalog(opts: {
     if (!html) return { movies: [], hasMore: false };
 
     const itemRe =
-      /<li>\s*<a\s+href="(https:\/\/movidy\.pw\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>\s*<img[^>]+data-src="([^"]+)"/gi;
+      /<li>\s*<a\s+href="((?:https?:\/\/movidy\.[a-z]+)?\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>\s*<img[^>]+data-src="([^"]+)"/gi;
     const movies: any[] = [];
     let m: RegExpExecArray | null;
 
     while ((m = itemRe.exec(html)) !== null) {
-      const movidyUrl = String(m[1] || '').trim();
+      const rawHref = String(m[1] || '').trim();
       const rawTitle = String(m[2] || '').trim();
       const rawPoster = String(m[3] || '').trim();
-      if (!movidyUrl || !rawTitle) continue;
+      if (!rawHref || !rawTitle) continue;
+      const movidyUrl = rawHref.startsWith('http') ? rawHref : `https://movidy.pw${rawHref}`;
 
       const absPoster = rawPoster.startsWith('//')
         ? `https:${rawPoster}`
@@ -2905,7 +3317,7 @@ app.get('/api/catalog/movies', async (req, res) => {
     const category = String(req.query.category || 'trending').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const mergedCacheKey = `merged-es-v2|${category}|${page}|${query}`;
+    const mergedCacheKey = `merged-es-v3|${category}|${page}|${query}`;
     const cachedMerged = movieCatalogCache.get(mergedCacheKey);
     if (cachedMerged && Date.now() - cachedMerged.ts < 5 * 60 * 1000) {
       return res.json({
@@ -2934,13 +3346,29 @@ app.get('/api/catalog/movies', async (req, res) => {
 
     // 1. Place Movidy Spanish catalog movies FIRST so every top Spanish movie has guaranteed Castellano / Latino / VOSE streams
     for (const mv of movidyData.movies) {
-      const k = normalizeTitleForMatch(mv.title);
-      if (k && seenNormTitles.has(k)) continue;
-      if (k) seenNormTitles.add(k);
+      const kFull = normalizeTitleForMatch(mv.title);
+      const kOutside = normalizeTitleForMatch(String(mv.title || '').replace(/\s*\([^)]*\)/g, ''));
+      const kInside = normalizeTitleForMatch(String(mv.title || '').match(/\(([^)]+)\)/)?.[1] || '');
 
-      const matchedTmdb = k ? tmdbByNormTitle.get(k) : undefined;
+      if (
+        (kFull && seenNormTitles.has(kFull)) ||
+        (kOutside && seenNormTitles.has(kOutside))
+      ) {
+        continue;
+      }
+      if (kFull) seenNormTitles.add(kFull);
+      if (kOutside) seenNormTitles.add(kOutside);
+      if (kInside) seenNormTitles.add(kInside);
+
+      const matchedTmdb =
+        (kFull ? tmdbByNormTitle.get(kFull) : undefined) ||
+        (kOutside ? tmdbByNormTitle.get(kOutside) : undefined) ||
+        (kInside ? tmdbByNormTitle.get(kInside) : undefined);
+
       if (matchedTmdb) {
+        const kTitle = normalizeTitleForMatch(matchedTmdb.title || '');
         const kOrig = normalizeTitleForMatch(matchedTmdb.originalTitle || '');
+        if (kTitle) seenNormTitles.add(kTitle);
         if (kOrig) seenNormTitles.add(kOrig);
         combinedMovies.push({
           ...matchedTmdb,
@@ -3663,8 +4091,31 @@ app.get('/api/extract/stream', async (req, res) => {
         }
       }
 
-      if (effectiveMediaType === 'movie' && !effectiveMovidyUrl && titleHint) {
-        effectiveMovidyUrl = (await findMovidyUrlByTitle(titleHint)) || '';
+      if (effectiveMediaType === 'movie' && !effectiveMovidyUrl) {
+        if (titleHint) {
+          effectiveMovidyUrl = (await findMovidyUrlByTitle(titleHint)) || '';
+        }
+        if (!effectiveMovidyUrl && resolvedTmdbId) {
+          try {
+            const tmRes = await fetch(
+              `https://api.themoviedb.org/3/movie/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`,
+              { signal: AbortSignal.timeout(3000) }
+            );
+            if (tmRes.ok) {
+              const tmJson: any = await tmRes.json();
+              const esTitle = String(tmJson?.title || '').trim();
+              const origTitle = String(tmJson?.original_title || '').trim();
+              if (esTitle && esTitle.toLowerCase() !== titleHint.toLowerCase()) {
+                effectiveMovidyUrl = (await findMovidyUrlByTitle(esTitle)) || '';
+              }
+              if (!effectiveMovidyUrl && origTitle && origTitle.toLowerCase() !== esTitle.toLowerCase()) {
+                effectiveMovidyUrl = (await findMovidyUrlByTitle(origTitle)) || '';
+              }
+            }
+          } catch {
+            // ignore
+          }
+        }
       }
 
       const [movidyTracks, esTracks, enTracks] = await Promise.all([
@@ -3835,8 +4286,13 @@ const richDetailsCache = new Map<string, { details: any; ts: number }>();
 app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
   try {
     const mediaType = req.params.mediaType === 'tv' ? 'tv' : 'movie';
-    const cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
-    if (!cleanId) return res.status(400).json({ success: false });
+    let cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
+    const titleHint = String(req.query.title || '').trim();
+    if ((!cleanId || cleanId === '0') && titleHint) {
+      const resolved = await resolveTmdbIdByTitle(titleHint, mediaType);
+      if (resolved) cleanId = String(resolved);
+    }
+    if (!cleanId || cleanId === '0') return res.status(400).json({ success: false });
 
     const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
     const cacheKey = `${mediaType}|${cleanId}|${langParam}`;
@@ -4304,6 +4760,53 @@ app.get('/api/rooms/:roomId', (req, res) => {
 });
 
 // ============================================================================
+// SELF-DESTROYING SERVICE WORKER & CACHE PURGE ENDPOINT
+// Ensures any browser that previously cached a Workbox bundle immediately
+// purges its cache and reloads fresh from the live server.
+// ============================================================================
+app.get(['/sw.js', '/service-worker.js'], (_req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.send(`// NAIMCINE Cache-Purging Service Worker v4
+self.addEventListener('install', function () {
+  self.skipWaiting();
+});
+self.addEventListener('activate', function (event) {
+  event.waitUntil(
+    (async function () {
+      try {
+        var keys = await caches.keys();
+        await Promise.all(keys.map(function (k) { return caches.delete(k); }));
+      } catch (e) {}
+      try {
+        await self.registration.unregister();
+      } catch (e) {}
+      try {
+        var clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        for (var i = 0; i < clientList.length; i++) {
+          if ('navigate' in clientList[i]) {
+            await clientList[i].navigate(clientList[i].url);
+          }
+        }
+      } catch (e) {}
+    })()
+  );
+});
+`);
+});
+
+app.get('/registerSW.js', (_req, res) => {
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.send(`if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.getRegistrations().then(function (regs) {
+    regs.forEach(function (r) { r.unregister(); });
+  });
+}
+`);
+});
+
+// ============================================================================
 // VITE + PRODUCTION STATIC MOUNTING
 // ============================================================================
 async function startServer() {
@@ -4323,11 +4826,20 @@ async function startServer() {
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.resolve(__dirname, 'dist')));
+    app.use(
+      express.static(path.resolve(__dirname, 'dist'), {
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith('.html') || filePath.endsWith('sw.js')) {
+            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+          }
+        },
+      })
+    );
     app.get('*', (req, res) => {
       if (req.path === '/tv' || req.path === '/tv/') {
         return sendSmartTvReceiverHtml(res);
       }
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
     });
   }

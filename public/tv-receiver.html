@@ -383,10 +383,14 @@
       }
 
       #tv-video {
+        display: block;
         width: 100%;
         height: 100%;
         background: #000000;
         object-fit: contain;
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+        will-change: transform;
       }
       #tv-video.aspect-cover {
         object-fit: cover;
@@ -919,6 +923,7 @@
         var reactionsLayer = document.getElementById('reactions-layer');
         var toastTimer = null;
         var fsPromptTimer = null;
+        var videoWatchdogTimer = null;
         var aspectModeIndex = 0; // 0 = contain, 1 = cover, 2 = fill
         var immersiveMode = false;
 
@@ -1393,6 +1398,13 @@
           }
         }
 
+        function clearVideoWatchdog() {
+          if (videoWatchdogTimer) {
+            clearTimeout(videoWatchdogTimer);
+            videoWatchdogTimer = null;
+          }
+        }
+
         function applyVideoState(vs, forceReload) {
           if (!vs) return;
           var nextMode = vs.mode || 'idle';
@@ -1408,6 +1420,7 @@
           if (nextMode === 'idle' || !nextUrl) {
             currentMode = 'idle';
             currentUrl = '';
+            clearVideoWatchdog();
             destroyHls();
             try {
               videoEl.pause();
@@ -1462,6 +1475,7 @@
           currentMode = nextMode;
           currentUrl = nextUrl;
           currentIsLive = isLive;
+          clearVideoWatchdog();
           revealHud();
 
           if (nextMode === 'youtube') {
@@ -1495,9 +1509,21 @@
             return;
           }
 
-          // HLS Mode: Prefer Hls.js MSE when supported, with automatic fallback to Samsung Tizen Native HLS!
+          // HLS Mode: Prefer Hls.js MSE when supported, with automatic fallback + Audio-Only Watchdog to Native Hardware HLS!
           if (window.Hls && window.Hls.isSupported()) {
             var fallbackTriggered = false;
+            var switchToNativeHls = function () {
+              if (fallbackTriggered) return;
+              fallbackTriggered = true;
+              clearVideoWatchdog();
+              var resumeT = !isLive && videoEl.currentTime > 1 ? videoEl.currentTime : targetSec;
+              destroyHls();
+              videoEl.src = nextUrl;
+              videoEl.onloadedmetadata = function () {
+                playVideoSafely(resumeT, shouldPlay);
+              };
+            };
+
             var hls = new window.Hls({
               enableWorker: true,
               lowLatencyMode: false,
@@ -1509,6 +1535,19 @@
             hls.attachMedia(videoEl);
             hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
               playVideoSafely(targetSec, shouldPlay);
+              // Watchdog: If after 3.2 seconds audio is playing (currentTime > 0.4) but videoWidth === 0
+              // (meaning MSE decoded audio without video frames), switch to Native Hardware HLS or recover!
+              clearVideoWatchdog();
+              videoWatchdogTimer = setTimeout(function () {
+                if (currentMode !== 'hls' || currentUrl !== nextUrl) return;
+                if (!videoEl.paused && videoEl.currentTime > 0.4 && (!videoEl.videoWidth || videoEl.videoWidth === 0)) {
+                  if (videoEl.canPlayType && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+                    switchToNativeHls();
+                  } else if (hlsInstance && hlsInstance.recoverMediaError) {
+                    hlsInstance.recoverMediaError();
+                  }
+                }
+              }, 3200);
             });
             hls.on(window.Hls.Events.ERROR, function (_ev, data) {
               if (!data || !data.fatal) return;
@@ -1516,13 +1555,8 @@
                 hls.startLoad();
               } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
                 hls.recoverMediaError();
-              } else if (!fallbackTriggered) {
-                fallbackTriggered = true;
-                destroyHls();
-                videoEl.src = nextUrl;
-                videoEl.onloadedmetadata = function () {
-                  playVideoSafely(targetSec, shouldPlay);
-                };
+              } else {
+                switchToNativeHls();
               }
             });
           } else {
@@ -1745,6 +1779,7 @@
           currentRoomId = '';
           currentMode = 'idle';
           currentUrl = '';
+          clearVideoWatchdog();
           if (roomHttpTimer) {
             clearInterval(roomHttpTimer);
             roomHttpTimer = null;

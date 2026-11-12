@@ -1,4 +1,4 @@
-import { CatalogMovie, FavoriteChannelItem, WatchHistoryItem } from '../types';
+import { CatalogMovie, FavoriteChannelItem, SavedFriend, WatchHistoryItem } from '../types';
 
 export interface StoredProfile {
   id: string;
@@ -45,11 +45,127 @@ export function sanitizeItemKey(raw: string): string {
   return cleaned || 'item-1';
 }
 
+export function stripMediaPrefix(raw: string): string {
+  return String(raw || '')
+    .trim()
+    .replace(/^(?:(?:movie|series|tv|es-movie|bingetrix-movie)-)+/i, '');
+}
+
+export function normalizeCatalogTitle(rawTitle: string): string {
+  return String(rawTitle || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s*\([^)]*\)/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 export function getCatalogFavoriteKey(item: CatalogMovie): string {
-  if (item.tmdbId) {
-    return sanitizeItemKey(`${item.mediaType === 'tv' ? 'series' : 'movie'}-${item.tmdbId}`);
+  const prefix = item.mediaType === 'tv' ? 'series' : 'movie';
+  if (item.tmdbId && Number.isFinite(Number(item.tmdbId)) && Number(item.tmdbId) > 0) {
+    return sanitizeItemKey(`${prefix}-${Number(item.tmdbId)}`);
   }
-  return sanitizeItemKey(`${item.mediaType === 'tv' ? 'series' : 'movie'}-${item.id}`);
+  const strippedId = stripMediaPrefix(item.id || '');
+  if (/^\d+$/.test(strippedId)) {
+    return sanitizeItemKey(`${prefix}-${strippedId}`);
+  }
+  if (strippedId) {
+    return sanitizeItemKey(`${prefix}-${strippedId}`);
+  }
+  const normTitle = normalizeCatalogTitle(item.title || 'item').replace(/\s+/g, '-');
+  return sanitizeItemKey(`${prefix}-${normTitle || 'item'}`);
+}
+
+export function isSameCatalogItem(a: CatalogMovie, b: CatalogMovie): boolean {
+  if (!a || !b) return false;
+  const typeA = a.mediaType === 'tv' ? 'tv' : 'movie';
+  const typeB = b.mediaType === 'tv' ? 'tv' : 'movie';
+  if (typeA !== typeB) return false;
+
+  if (
+    a.tmdbId &&
+    b.tmdbId &&
+    Number(a.tmdbId) > 0 &&
+    Number(a.tmdbId) === Number(b.tmdbId)
+  ) {
+    return true;
+  }
+
+  if (getCatalogFavoriteKey(a) === getCatalogFavoriteKey(b)) {
+    return true;
+  }
+
+  const titleA = normalizeCatalogTitle(a.title);
+  const titleB = normalizeCatalogTitle(b.title);
+  if (titleA && titleB && titleA === titleB) {
+    return true;
+  }
+
+  return false;
+}
+
+export function mergeCatalogItemMetadata(
+  primary: CatalogMovie,
+  secondary?: CatalogMovie
+): CatalogMovie {
+  const cleanId = stripMediaPrefix(primary.id || secondary?.id || '') || getCatalogFavoriteKey(primary);
+  const inferredMovidy =
+    primary.movidyUrl ||
+    secondary?.movidyUrl ||
+    (cleanId.startsWith('movidy-')
+      ? `https://movidy.pw/ver/${cleanId.replace(/^movidy-/, '')}`
+      : undefined);
+  const resolvedTmdbId = primary.tmdbId || secondary?.tmdbId;
+  const inferredBingetrix =
+    primary.bingetrixUrl ||
+    secondary?.bingetrixUrl ||
+    (resolvedTmdbId && (primary.mediaType || secondary?.mediaType) !== 'tv'
+      ? `https://bingetrix.sc/watch/${resolvedTmdbId}`
+      : undefined);
+
+  return {
+    ...secondary,
+    ...primary,
+    id: cleanId,
+    tmdbId: resolvedTmdbId,
+    mediaType: (primary.mediaType || secondary?.mediaType) === 'tv' ? 'tv' : 'movie',
+    title: primary.title || secondary?.title || 'Película',
+    year:
+      primary.year && primary.year !== 'HD' && primary.year !== 'TV'
+        ? primary.year
+        : secondary?.year || primary.year || 'HD',
+    rating: primary.rating || secondary?.rating || '',
+    overview: primary.overview || secondary?.overview || '',
+    poster: primary.poster || secondary?.poster || '',
+    backdrop: primary.backdrop || secondary?.backdrop || primary.poster || '',
+    movidyUrl: inferredMovidy,
+    bingetrixUrl: inferredBingetrix,
+    languages:
+      primary.languages && primary.languages.length > 0
+        ? primary.languages
+        : secondary?.languages && secondary.languages.length > 0
+        ? secondary.languages
+        : ['Castellano', 'Latino', 'EN'],
+  };
+}
+
+export function deduplicateWatchlist(items: CatalogMovie[]): CatalogMovie[] {
+  if (!Array.isArray(items)) return [];
+  const result: CatalogMovie[] = [];
+
+  for (const rawItem of items) {
+    if (!rawItem || typeof rawItem !== 'object' || !rawItem.title) continue;
+    const normalized = mergeCatalogItemMetadata(rawItem);
+    const existingIdx = result.findIndex((x) => isSameCatalogItem(x, normalized));
+    if (existingIdx === -1) {
+      result.push(normalized);
+    } else {
+      result[existingIdx] = mergeCatalogItemMetadata(result[existingIdx], normalized);
+    }
+  }
+
+  return result.slice(0, 80);
 }
 
 export function buildChannelFavId(channelUrl: string, channelLabel: string): string {
@@ -191,7 +307,13 @@ export function getWatchlist(): CatalogMovie[] {
     const raw = localStorage.getItem(WATCHLIST_KEY);
     if (raw) {
       const list = JSON.parse(raw);
-      if (Array.isArray(list)) return list;
+      if (Array.isArray(list)) {
+        const deduped = deduplicateWatchlist(list);
+        if (deduped.length !== list.length) {
+          localStorage.setItem(WATCHLIST_KEY, JSON.stringify(deduped));
+        }
+        return deduped;
+      }
     }
   } catch {
     // ignore
@@ -200,30 +322,55 @@ export function getWatchlist(): CatalogMovie[] {
 }
 
 export function saveWatchlist(items: CatalogMovie[]): CatalogMovie[] {
-  if (typeof window === 'undefined') return items;
-  const trimmed = items.slice(0, 80);
+  const deduped = deduplicateWatchlist(items);
+  if (typeof window === 'undefined') return deduped;
   try {
-    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(trimmed));
+    localStorage.setItem(WATCHLIST_KEY, JSON.stringify(deduped));
   } catch {
     // ignore
   }
-  return trimmed;
+  return deduped;
 }
 
 export function toggleWatchlistItem(item: CatalogMovie): {
   list: CatalogMovie[];
   added: boolean;
+  canonicalItem: CatalogMovie;
+  removedKeys: string[];
 } {
-  if (typeof window === 'undefined') return { list: [], added: false };
+  const canonicalItem = mergeCatalogItemMetadata(item);
+  if (typeof window === 'undefined') {
+    return { list: [], added: false, canonicalItem, removedKeys: [] };
+  }
   const current = getWatchlist();
-  const key = getCatalogFavoriteKey(item);
-  const exists = current.some((x) => getCatalogFavoriteKey(x) === key);
+  const matchingItems = current.filter((x) => isSameCatalogItem(x, canonicalItem));
+  const exists = matchingItems.length > 0;
+
+  const removedKeySet = new Set<string>();
+  if (exists) {
+    removedKeySet.add(getCatalogFavoriteKey(canonicalItem));
+    if (item.id) removedKeySet.add(sanitizeItemKey(item.id));
+    for (const m of matchingItems) {
+      removedKeySet.add(getCatalogFavoriteKey(m));
+      if (m.id) {
+        removedKeySet.add(sanitizeItemKey(m.id));
+        removedKeySet.add(sanitizeItemKey(`movie-${m.id}`));
+        removedKeySet.add(sanitizeItemKey(`series-${m.id}`));
+      }
+    }
+  }
+
   const next = exists
-    ? current.filter((x) => getCatalogFavoriteKey(x) !== key)
-    : [item, ...current].slice(0, 80);
+    ? current.filter((x) => !isSameCatalogItem(x, canonicalItem))
+    : deduplicateWatchlist([canonicalItem, ...current]);
 
   saveWatchlist(next);
-  return { list: next, added: !exists };
+  return {
+    list: next,
+    added: !exists,
+    canonicalItem,
+    removedKeys: Array.from(removedKeySet),
+  };
 }
 
 // ============================================================================
@@ -284,13 +431,110 @@ export function toggleFavoriteChannel(
 // ============================================================================
 // WATCH HISTORY & EXACT RESUME TIMESTAMPS ('SEGUIR VIENDO')
 // ============================================================================
+export function canonicalizeHistoryItemId(item: {
+  id: string;
+  mediaType?: 'movie' | 'tv';
+  tmdbId?: number;
+  season?: number;
+  episode?: number;
+}): string {
+  if (item.mediaType === 'tv' && item.tmdbId) {
+    return sanitizeItemKey(
+      `tv-${item.tmdbId}-${item.season || 1}-${item.episode || 1}`
+    );
+  }
+  if (item.tmdbId && Number(item.tmdbId) > 0) {
+    return sanitizeItemKey(`movie-${Number(item.tmdbId)}`);
+  }
+  const stripped = stripMediaPrefix(item.id || '');
+  return sanitizeItemKey(
+    `${item.mediaType === 'tv' ? 'tv' : 'movie'}-${stripped || 'item'}`
+  );
+}
+
+export function isSameHistoryItem(a: WatchHistoryItem, b: WatchHistoryItem): boolean {
+  if (!a || !b) return false;
+  if (a.mediaType !== b.mediaType) return false;
+  if (canonicalizeHistoryItemId(a) === canonicalizeHistoryItemId(b)) return true;
+  if (a.mediaType === 'tv') {
+    if (
+      a.tmdbId &&
+      b.tmdbId &&
+      a.tmdbId === b.tmdbId &&
+      (a.season || 1) === (b.season || 1) &&
+      (a.episode || 1) === (b.episode || 1)
+    ) {
+      return true;
+    }
+    return false;
+  }
+  if (a.tmdbId && b.tmdbId && a.tmdbId === b.tmdbId) return true;
+  const tA = normalizeCatalogTitle(a.title);
+  const tB = normalizeCatalogTitle(b.title);
+  return Boolean(tA && tB && tA === tB);
+}
+
+export function deduplicateWatchHistory(items: WatchHistoryItem[]): WatchHistoryItem[] {
+  if (!Array.isArray(items)) return [];
+  const result: WatchHistoryItem[] = [];
+  for (const raw of items) {
+    if (
+      !raw ||
+      typeof raw !== 'object' ||
+      !raw.title ||
+      String(raw.movidyUrl || '').startsWith('arcade://') ||
+      String(raw.bingetrixUrl || '').startsWith('arcade://') ||
+      String(raw.id || '').startsWith('arcade')
+    ) {
+      continue;
+    }
+    const cleanId = canonicalizeHistoryItemId(raw);
+    const strippedSlug = stripMediaPrefix(raw.id || '');
+    const inferredMovidy =
+      raw.movidyUrl ||
+      (strippedSlug.startsWith('movidy-')
+        ? `https://movidy.pw/ver/${strippedSlug.replace(/^movidy-/, '')}`
+        : undefined);
+    const normalized: WatchHistoryItem = {
+      ...raw,
+      id: cleanId,
+      movidyUrl: inferredMovidy,
+    };
+    const existingIdx = result.findIndex((x) => isSameHistoryItem(x, normalized));
+    if (existingIdx === -1) {
+      result.push(normalized);
+    } else {
+      const prev = result[existingIdx];
+      result[existingIdx] = {
+        ...normalized,
+        ...prev,
+        id: cleanId,
+        tmdbId: prev.tmdbId || normalized.tmdbId,
+        movidyUrl: prev.movidyUrl || normalized.movidyUrl,
+        bingetrixUrl: prev.bingetrixUrl || normalized.bingetrixUrl,
+        resumeTimeSec: Math.max(prev.resumeTimeSec || 0, normalized.resumeTimeSec || 0),
+        durationSec: Math.max(prev.durationSec || 0, normalized.durationSec || 0),
+        watchedAt: Math.max(prev.watchedAt || 0, normalized.watchedAt || 0),
+      };
+    }
+  }
+  return result.slice(0, 30);
+}
+
 export function getWatchHistory(): WatchHistoryItem[] {
   if (typeof window === 'undefined') return [];
   try {
+    localStorage.removeItem('naim_arcade_save_v1');
     const raw = localStorage.getItem(WATCH_HISTORY_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) return parsed.slice(0, 30);
+      if (Array.isArray(parsed)) {
+        const deduped = deduplicateWatchHistory(parsed);
+        if (deduped.length !== parsed.length) {
+          localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(deduped));
+        }
+        return deduped;
+      }
     }
   } catch {
     // ignore
@@ -299,26 +543,43 @@ export function getWatchHistory(): WatchHistoryItem[] {
 }
 
 export function saveWatchHistory(items: WatchHistoryItem[]): WatchHistoryItem[] {
-  if (typeof window === 'undefined') return items;
-  const trimmed = items.slice(0, 30);
+  const deduped = deduplicateWatchHistory(items);
+  if (typeof window === 'undefined') return deduped;
   try {
-    localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(trimmed));
+    localStorage.setItem(WATCH_HISTORY_KEY, JSON.stringify(deduped));
   } catch {
     // ignore
   }
-  return trimmed;
+  return deduped;
 }
 
 export function addWatchHistoryItem(
   entry: Omit<WatchHistoryItem, 'watchedAt'>
 ): { list: WatchHistoryItem[]; item: WatchHistoryItem } {
-  const cleanId = sanitizeItemKey(entry.id);
+  const cleanId = canonicalizeHistoryItemId(entry);
   const current = getWatchHistory();
-  const existing = current.find((i) => sanitizeItemKey(i.id) === cleanId);
-
-  const mergedItem: WatchHistoryItem = {
+  const tempCandidate: WatchHistoryItem = {
     ...entry,
     id: cleanId,
+    watchedAt: Date.now(),
+  };
+  const existing = current.find((i) => isSameHistoryItem(i, tempCandidate));
+
+  const strippedSlug = stripMediaPrefix(entry.id || '');
+  const inferredMovidy =
+    entry.movidyUrl ||
+    existing?.movidyUrl ||
+    (strippedSlug.startsWith('movidy-')
+      ? `https://movidy.pw/ver/${strippedSlug.replace(/^movidy-/, '')}`
+      : undefined);
+
+  const mergedItem: WatchHistoryItem = {
+    ...existing,
+    ...entry,
+    id: cleanId,
+    tmdbId: entry.tmdbId || existing?.tmdbId,
+    movidyUrl: inferredMovidy,
+    bingetrixUrl: entry.bingetrixUrl || existing?.bingetrixUrl,
     resumeTimeSec:
       entry.resumeTimeSec !== undefined
         ? entry.resumeTimeSec
@@ -334,9 +595,8 @@ export function addWatchHistoryItem(
     return { list: [mergedItem], item: mergedItem };
   }
 
-  const filtered = current.filter((item) => sanitizeItemKey(item.id) !== cleanId);
-  const next: WatchHistoryItem[] = [mergedItem, ...filtered].slice(0, 30);
-  saveWatchHistory(next);
+  const filtered = current.filter((item) => !isSameHistoryItem(item, mergedItem));
+  const next: WatchHistoryItem[] = saveWatchHistory([mergedItem, ...filtered]);
   return { list: next, item: mergedItem };
 }
 
@@ -394,3 +654,96 @@ export function clearWatchHistory(): WatchHistoryItem[] {
   }
   return [];
 }
+
+// ============================================================================
+// SAVED FRIENDS & FRIEND CODE HELPERS ('MIS AMIGOS')
+// ============================================================================
+const SAVED_FRIENDS_KEY = 'naimcine_friends_v1';
+
+export function deriveFriendCode(userId: string): string {
+  const clean = String(userId || 'user').trim();
+  let hash = 2166136261;
+  for (let i = 0; i < clean.length; i += 1) {
+    hash ^= clean.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  const code = (hash >>> 0).toString(36).toUpperCase().padStart(5, '0').slice(-5);
+  return code;
+}
+
+export function getSavedFriends(): SavedFriend[] {
+  if (typeof window === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(SAVED_FRIENDS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) return parsed.slice(0, 80);
+    }
+  } catch {
+    // ignore
+  }
+  return [];
+}
+
+export function saveFriendsList(items: SavedFriend[]): SavedFriend[] {
+  if (typeof window === 'undefined') return items;
+  const trimmed = items.slice(0, 80);
+  try {
+    localStorage.setItem(SAVED_FRIENDS_KEY, JSON.stringify(trimmed));
+  } catch {
+    // ignore
+  }
+  return trimmed;
+}
+
+export function upsertLocalFriend(
+  entry: Omit<SavedFriend, 'addedAt'>
+): { list: SavedFriend[]; friend: SavedFriend; isNew: boolean } {
+  const cleanId = sanitizeItemKey(entry.friendId);
+  const current = getSavedFriends();
+  const existing = current.find(
+    (f) =>
+      sanitizeItemKey(f.friendId) === cleanId ||
+      (entry.friendCode &&
+        f.friendCode &&
+        f.friendCode.toUpperCase() === entry.friendCode.toUpperCase())
+  );
+
+  const friend: SavedFriend = {
+    friendId: cleanId,
+    name: (entry.name || 'Amigo').trim().slice(0, 40) || 'Amigo',
+    avatar: (entry.avatar || '🍿').trim().slice(0, 16) || '🍿',
+    color: /^#[0-9a-fA-F]{3,8}$/.test((entry.color || '').trim())
+      ? entry.color.trim()
+      : '#E11D48',
+    friendCode:
+      entry.friendCode?.trim().toUpperCase() ||
+      existing?.friendCode ||
+      deriveFriendCode(cleanId),
+    addedAt: existing?.addedAt || Date.now(),
+  };
+
+  const filtered = current.filter(
+    (f) =>
+      sanitizeItemKey(f.friendId) !== cleanId &&
+      !(
+        friend.friendCode &&
+        f.friendCode &&
+        f.friendCode.toUpperCase() === friend.friendCode.toUpperCase()
+      )
+  );
+  const next = [friend, ...filtered].slice(0, 80);
+  saveFriendsList(next);
+  return { list: next, friend, isNew: !existing };
+}
+
+export function removeLocalFriend(friendId: string): SavedFriend[] {
+  if (typeof window === 'undefined') return [];
+  const cleanId = sanitizeItemKey(friendId);
+  const next = getSavedFriends().filter(
+    (f) => sanitizeItemKey(f.friendId) !== cleanId && f.friendCode !== friendId.toUpperCase()
+  );
+  saveFriendsList(next);
+  return next;
+}
+

@@ -26,6 +26,7 @@ import {
   Maximize2,
   LogOut,
   UserCheck,
+  UserPlus,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -34,9 +35,12 @@ import {
   RoomPollState,
   AppLanguage,
   TvRemoteCommandType,
+  SavedFriend,
+  OnlineAppUser,
 } from '../types';
 import { UI_COPY } from '../utils/i18n';
 import { buildShortInviteUrl } from '../utils/shortLink';
+import { deriveFriendCode } from '../utils/storage';
 import {
   EffectiveViewMode,
   ViewModeSwitchButton,
@@ -95,6 +99,22 @@ interface PartySidebarProps {
   hideInternalTabs?: boolean;
   isKeyboardOpen?: boolean;
   onOpenFloatingChatOnVideo?: () => void;
+  savedFriends?: SavedFriend[];
+  onlineUsers?: OnlineAppUser[];
+  onOpenFriendsModal?: () => void;
+  onAddFriend?: (entry: {
+    friendId: string;
+    name: string;
+    avatar: string;
+    color: string;
+    friendCode?: string;
+  }) => void;
+  onSendDirectRoomInvite?: (friend: {
+    friendId: string;
+    name: string;
+    friendCode?: string;
+  }) => void;
+  inviteSentFeedback?: string | null;
   onSendMessage: (text: string) => void;
   onSendReaction: (emoji: string) => void;
   onTransferHost: (newHostId: string) => void;
@@ -140,6 +160,12 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   openQueueTrigger,
   hideInternalTabs = false,
   onOpenFloatingChatOnVideo,
+  savedFriends = [],
+  onlineUsers = [],
+  onOpenFriendsModal,
+  onAddFriend,
+  onSendDirectRoomInvite,
+  inviteSentFeedback,
   onSendMessage,
   onSendReaction,
   onTransferHost,
@@ -287,25 +313,41 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             className="flex-1"
             value={activeTab}
             onChange={setActiveTab}
-            options={[
-              {
-                id: 'chat',
-                label: t.tabChat,
-                icon: <MessageSquare className="w-3.5 h-3.5" />,
-              },
-              {
-                id: 'queue',
-                label: lang === 'es' ? 'Cola' : 'Queue',
-                icon: <ListVideo className="w-3.5 h-3.5" />,
-                badge: roomQueue.length,
-              },
-              {
-                id: 'room',
-                label: t.tabRoom,
-                icon: <Users className="w-3.5 h-3.5" />,
-                badge: participants.length,
-              },
-            ]}
+            options={
+              effectiveView === 'mobile'
+                ? [
+                    {
+                      id: 'chat',
+                      label: t.tabChat,
+                      icon: <MessageSquare className="w-4 h-4 shrink-0" />,
+                    },
+                    {
+                      id: 'queue',
+                      label: lang === 'es' ? 'Cola' : 'Queue',
+                      icon: <ListVideo className="w-4 h-4 shrink-0" />,
+                      badge: roomQueue.length,
+                    },
+                  ]
+                : [
+                    {
+                      id: 'chat',
+                      label: t.tabChat,
+                      icon: <MessageSquare className="w-4 h-4 shrink-0" />,
+                    },
+                    {
+                      id: 'queue',
+                      label: lang === 'es' ? 'Cola' : 'Queue',
+                      icon: <ListVideo className="w-4 h-4 shrink-0" />,
+                      badge: roomQueue.length,
+                    },
+                    {
+                      id: 'room',
+                      label: t.tabRoom,
+                      icon: <Users className="w-4 h-4 shrink-0" />,
+                      badge: participants.length,
+                    },
+                  ]
+            }
           />
 
           {onOpenFloatingChatOnVideo && (
@@ -319,18 +361,24 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             </IconButton>
           )}
 
-          <IconButton
-            onClick={handleShareInvite}
-            variant={copiedLink ? 'crimson' : 'glass'}
-            title={t.invite}
-            aria-label={t.invite}
-          >
-            {copiedLink ? (
-              <Check className="w-4 h-4 text-white" />
-            ) : (
-              <Share2 className="w-4 h-4" />
-            )}
-          </IconButton>
+          {effectiveView === 'desktop' && (
+            <IconButton
+              onClick={onOpenFriendsModal || handleShareInvite}
+              variant={copiedLink ? 'crimson' : 'glass'}
+              title={
+                onOpenFriendsModal
+                  ? 'Amigos e Invitación Directa'
+                  : t.invite
+              }
+              aria-label={t.invite}
+            >
+              {copiedLink ? (
+                <Check className="w-4 h-4 text-white" />
+              ) : (
+                <UserPlus className="w-4 h-4 text-[#FB7185]" />
+              )}
+            </IconButton>
+          )}
         </div>
       )}
 
@@ -343,7 +391,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {activePoll && !activePoll.isClosed && (
             <div className="mx-3 mt-2.5 p-3.5 rounded-2xl bg-[#12121A]/95 border border-[#E11D48]/35 space-y-2.5 shrink-0 shadow-lg">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-[#FB7185]">
+                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#FB7185]">
                   <BarChart2 className="w-3.5 h-3.5" />
                   <span>Encuesta en Vivo</span>
                 </div>
@@ -351,7 +399,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   <button
                     type="button"
                     onClick={() => onClosePoll(activePoll.id)}
-                    className="text-[11px] text-zinc-400 hover:text-white cursor-pointer"
+                    className="text-xs text-zinc-400 hover:text-white cursor-pointer"
                   >
                     Cerrar
                   </button>
@@ -382,7 +430,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                         <span className="font-semibold text-white truncate">
                           {opt.item.title}
                         </span>
-                        <span className="text-[10px] font-mono text-zinc-300 shrink-0">
+                        <span className="text-xs font-mono text-zinc-300 shrink-0">
                           {pct}% ({votes})
                         </span>
                       </div>
@@ -406,7 +454,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 if (msg.isSystem) {
                   return (
                     <div key={msg.id} className="flex justify-center py-0.5">
-                      <span className="text-[11px] text-zinc-500 text-center leading-snug px-2">
+                      <span className="text-xs text-zinc-500 text-center leading-snug px-2">
                         {msg.text}
                       </span>
                     </div>
@@ -439,7 +487,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                         >
                           {msg.senderName}
                         </span>
-                        <span className="text-[10px] font-mono text-zinc-600 shrink-0">
+                        <span className="text-[0.68rem] font-mono text-zinc-500 shrink-0">
                           {formatTime(msg.timestamp)}
                         </span>
                       </div>
@@ -456,7 +504,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
           {/* FLOATING REACTION PILL (Hovering above the chat input) */}
           {showFloatingReactions && (
-            <div className="absolute left-3 right-3 bottom-[68px] z-20 flex justify-center pointer-events-none animate-fade-in">
+            <div className="absolute left-3 right-3 bottom-17 z-20 flex justify-center pointer-events-none animate-fade-in">
               <div className="pointer-events-auto inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#12121A]/85 backdrop-blur-2xl border border-white/[0.12] shadow-[0_12px_32px_rgba(0,0,0,0.75)] max-w-full overflow-x-auto no-scrollbar">
                 {QUICK_REACTIONS.map((emoji) => (
                   <button
@@ -530,7 +578,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               <h4 className="text-sm font-bold text-white">
                 {lang === 'es' ? 'Cola de Reproducción' : 'Playback Queue'}
               </h4>
-              <p className="text-[11px] text-zinc-400">
+              <p className="text-xs text-zinc-400">
                 {roomQueue.length} {roomQueue.length === 1 ? 'vídeo en lista' : 'vídeos en lista'}
               </p>
             </div>
@@ -578,7 +626,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                       </div>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/75 to-transparent flex items-end p-1.5">
-                      <span className="text-[9px] font-mono font-bold text-white">
+                      <span className="text-[0.65rem] font-mono font-bold text-white">
                         #{idx + 1}
                       </span>
                     </div>
@@ -588,7 +636,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     <div className="text-xs font-bold text-white truncate">
                       {item.title}
                     </div>
-                    <div className="text-[11px] text-zinc-400 truncate mt-0.5">
+                    <div className="text-xs text-zinc-400 truncate mt-0.5">
                       Añadido por {item.addedBy}
                     </div>
                   </div>
@@ -623,120 +671,279 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       {/* ==================================================================== */}
       {activeTab === 'room' && (
         <div className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar">
-          {/* Primary Action Card: Room Info + 3 Clean Actions */}
+          {/* Primary Action Card: Room Info + Share Link & TV Remote */}
           <div className="p-4 rounded-3xl bg-white/[0.03] border border-white/[0.08] space-y-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
-                  <h4 className="text-sm font-bold text-white truncate">{roomName}</h4>
-                  {hasPin && <KeyRound className="w-3.5 h-3.5 text-amber-400 shrink-0" />}
+                  <h4 className="text-base font-bold text-white truncate">{roomName}</h4>
+                  {hasPin && <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />}
                 </div>
                 <p className="text-xs text-zinc-400 font-mono mt-0.5">
                   Código: <span className="text-white font-bold">{roomId}</span>
                 </p>
               </div>
 
-              <IconButton
-                onClick={() => setShowRoomSettingsSheet(true)}
-                title="Ajustes de Sala"
-                aria-label="Ajustes de Sala"
-              >
-                <SlidersHorizontal className="w-4 h-4" />
-              </IconButton>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <IconButton
+                  onClick={() => setShowQrInviteSheet(true)}
+                  title="Ver Código QR de la Sala"
+                  aria-label="Código QR"
+                >
+                  <QrCode className="w-4 h-4 text-[#FB7185]" />
+                </IconButton>
+                <IconButton
+                  onClick={() => setShowRoomSettingsSheet(true)}
+                  title="Ajustes de Sala"
+                  aria-label="Ajustes de Sala"
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                </IconButton>
+              </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2">
-              <PrimaryButton onClick={handleShareInvite} fullWidth>
+            <div className="grid grid-cols-2 gap-2.5">
+              <SecondaryButton onClick={handleShareInvite} fullWidth>
                 {copiedLink ? (
                   <>
-                    <Check className="w-4 h-4" />
+                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
                     <span>{t.copied}</span>
                   </>
                 ) : (
                   <>
-                    <Share2 className="w-4 h-4" />
-                    <span>{t.invite}</span>
+                    <Share2 className="w-4 h-4 text-[#FB7185] shrink-0" />
+                    <span>Compartir enlace</span>
                   </>
                 )}
-              </PrimaryButton>
+              </SecondaryButton>
 
               <SecondaryButton
                 onClick={() => setShowTvRemoteSheet(true)}
                 active={hasConnectedSmartTv}
                 fullWidth
               >
-                <Tv className="w-4 h-4 text-[#E11D48]" />
+                <Tv className="w-4 h-4 text-[#E11D48] shrink-0" />
                 <span>{hasConnectedSmartTv ? 'Mando TV Activo' : 'Mando TV'}</span>
               </SecondaryButton>
             </div>
           </div>
 
+          {inviteSentFeedback && (
+            <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-xs font-semibold flex items-center gap-2 animate-fade-in">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{inviteSentFeedback}</span>
+            </div>
+          )}
+
           {/* Participants List */}
-          <div className="space-y-2">
+          <div className="space-y-2.5">
             <div className="flex items-center justify-between px-1">
               <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
                 {t.participants} ({participants.length})
               </span>
-              <button
-                type="button"
-                onClick={() => setShowQrInviteSheet(true)}
-                className="text-xs font-semibold text-[#FB7185] hover:underline flex items-center gap-1 cursor-pointer"
-              >
-                <QrCode className="w-3.5 h-3.5" />
-                <span>Ver QR</span>
-              </button>
+              <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                Sala en vivo
+              </span>
             </div>
 
             <div className="space-y-2">
-              {participants.map((p) => (
-                <div
-                  key={p.id}
-                  className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06]"
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white border border-white/15 shrink-0"
-                      style={{ backgroundColor: p.color || '#E11D48' }}
-                    >
-                      {p.avatar && p.avatar.length <= 2 ? p.avatar : getInitials(p.name)}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-sm font-bold text-white truncate">
-                          {p.name}
-                        </span>
-                        {p.id === currentUser.id && (
-                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/10 text-zinc-300 font-semibold">
-                            {t.you}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs text-emerald-400 flex items-center gap-1 mt-0.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                        Sincronizado
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    {p.isHost || p.id === hostId ? (
-                      <span className="px-2.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-300 text-[10px] font-bold flex items-center gap-1">
-                        <Crown className="w-3 h-3" />
-                        {t.hostLabel}
-                      </span>
-                    ) : isHost ? (
-                      <button
-                        type="button"
-                        onClick={() => onTransferHost(p.id)}
-                        className="min-h-9 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[10px] font-semibold text-zinc-300 cursor-pointer"
-                        title={t.makeHost}
+              {participants.map((p) => {
+                const isSelf = p.id === currentUser.id;
+                const isTvDevice = p.name.includes('(TV)') || p.avatar === '📺';
+                const pCode = deriveFriendCode(p.id);
+                const alreadyFriend = savedFriends.some(
+                  (f) => f.friendId === p.id || f.friendCode === pCode
+                );
+
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold text-white border border-white/15 shrink-0"
+                        style={{ backgroundColor: p.color || '#E11D48' }}
                       >
-                        {t.makeHost}
-                      </button>
-                    ) : null}
+                        {p.avatar && p.avatar.length <= 2 ? p.avatar : getInitials(p.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-white truncate">
+                            {p.name}
+                          </span>
+                          {isSelf && (
+                            <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/12 text-zinc-200 font-semibold leading-tight">
+                              {t.you}
+                            </span>
+                          )}
+                        </div>
+                        <span className="text-xs text-emerald-400 flex items-center gap-1.5 mt-0.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                          Sincronizado
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {!isSelf && !isTvDevice && onAddFriend && (
+                        alreadyFriend ? (
+                          <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs font-bold flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>Amigo</span>
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onAddFriend({
+                                friendId: p.id,
+                                name: p.name,
+                                avatar: p.avatar,
+                                color: p.color,
+                                friendCode: pCode,
+                              })
+                            }
+                            className="min-h-9 px-3 rounded-xl bg-[#E11D48]/15 hover:bg-[#E11D48]/25 border border-[#E11D48]/35 text-xs font-bold text-[#FB7185] flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                            title="Guardar en tu lista de amigos"
+                          >
+                            <UserPlus className="w-3.5 h-3.5" />
+                            <span>+ Amigo</span>
+                          </button>
+                        )
+                      )}
+
+                      {p.isHost || p.id === hostId ? (
+                        <span className="px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/35 text-amber-300 text-xs font-bold flex items-center gap-1.5 leading-tight">
+                          <Crown className="w-3.5 h-3.5 shrink-0" />
+                          <span>{t.hostLabel}</span>
+                        </span>
+                      ) : isHost ? (
+                        <button
+                          type="button"
+                          onClick={() => onTransferHost(p.id)}
+                          className="min-h-9 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-semibold text-zinc-300 cursor-pointer"
+                          title={t.makeHost}
+                        >
+                          {t.makeHost}
+                        </button>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
+          </div>
+
+          {/* Saved Friends & Direct In-App Invite Section (Single Unified Entry Point) */}
+          <div className="space-y-2.5 pt-1">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                Mis Amigos ({savedFriends.length})
+              </span>
+              {onOpenFriendsModal && (
+                <button
+                  type="button"
+                  onClick={onOpenFriendsModal}
+                  className="text-xs font-semibold text-[#FB7185] hover:underline flex items-center gap-1.5 cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>Buscar o añadir amigos</span>
+                </button>
+              )}
+            </div>
+
+            {savedFriends.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-3">
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  Añade a tus amigos por su código o desde la sala para invitarlos con 1 toque sin salir de la app.
+                </p>
+                {onOpenFriendsModal && (
+                  <PrimaryButton onClick={onOpenFriendsModal} fullWidth>
+                    <UserPlus className="w-4 h-4 shrink-0" />
+                    <span>Añadir e Invitar Amigos</span>
+                  </PrimaryButton>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {savedFriends.slice(0, 6).map((friend) => {
+                  const inCurrentRoom = participants.some(
+                    (p) =>
+                      p.id === friend.friendId ||
+                      deriveFriendCode(p.id) === friend.friendCode
+                  );
+                  const liveStatus = onlineUsers.find(
+                    (u) =>
+                      u.userId === friend.friendId ||
+                      u.friendCode === friend.friendCode
+                  );
+                  const isOnline = Boolean(liveStatus) || inCurrentRoom;
+
+                  return (
+                    <div
+                      key={friend.friendId}
+                      className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="relative shrink-0">
+                          <div
+                            className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white border border-white/15"
+                            style={{ backgroundColor: friend.color || '#E11D48' }}
+                          >
+                            {friend.avatar && friend.avatar.length <= 2
+                              ? friend.avatar
+                              : getInitials(friend.name)}
+                          </div>
+                          <span
+                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#08080C] ${
+                              isOnline ? 'bg-emerald-400' : 'bg-zinc-600'
+                            }`}
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-white truncate">
+                            {friend.name}
+                          </div>
+                          <div className="text-xs truncate mt-0.5">
+                            {inCurrentRoom ? (
+                              <span className="text-emerald-400 font-semibold">
+                                Ya está en tu sala
+                              </span>
+                            ) : isOnline ? (
+                              <span className="text-emerald-400 font-medium">
+                                🟢 En línea en la app
+                              </span>
+                            ) : (
+                              <span className="text-zinc-500">
+                                Desconectado · #{friend.friendCode}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {!inCurrentRoom && onSendDirectRoomInvite && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSendDirectRoomInvite({
+                              friendId: friend.friendId,
+                              name: friend.name,
+                              friendCode: friend.friendCode,
+                            })
+                          }
+                          className="min-h-9 px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shrink-0"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>Invitar</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="pt-2">

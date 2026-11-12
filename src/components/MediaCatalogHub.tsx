@@ -37,7 +37,13 @@ import {
 } from '../types';
 import { UI_COPY } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
-import { buildChannelFavId, getCatalogFavoriteKey, sanitizeItemKey } from '../utils/storage';
+import {
+  buildChannelFavId,
+  deduplicateWatchlist,
+  getCatalogFavoriteKey,
+  isSameCatalogItem,
+  sanitizeItemKey,
+} from '../utils/storage';
 import { MediaDetailsModal } from './MediaDetailsModal';
 import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.jpg';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
@@ -111,7 +117,7 @@ interface MediaCatalogHubProps {
   onToggleCatalogFavorite: (item: CatalogMovie) => void;
   onToggleChannelFavorite: (entry: Omit<FavoriteChannelItem, 'addedAt'>) => void;
   onPlayFavoriteChannel: (channel: FavoriteChannelItem) => void;
-  onPlayMovie: (movie: CatalogMovie, preferLang: 'ES' | 'EN') => void;
+  onPlayMovie: (movie: CatalogMovie, preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN') => void;
   onPlaySeriesEpisode: (
     series: TvSeriesDetails,
     episode: TvEpisodeItem,
@@ -133,6 +139,7 @@ interface MediaCatalogHubProps {
     title: string;
     subtitle?: string;
   }) => void;
+  hasConnectedSmartTv?: boolean;
 }
 
 export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
@@ -413,8 +420,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   };
 
   const isBookmarked = (item: CatalogMovie) => {
-    const key = getCatalogFavoriteKey(item);
-    return watchlist.some((x) => getCatalogFavoriteKey(x) === key);
+    return watchlist.some((x) => isSameCatalogItem(x, item));
   };
 
   const isChannelFavorited = (favId: string) => {
@@ -422,7 +428,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     return favoriteChannels.some((c) => sanitizeItemKey(c.favId) === clean);
   };
 
-  const favoriteSeriesList = watchlist.filter((w) => w.mediaType === 'tv');
+  const cleanWatchlist = React.useMemo(() => deduplicateWatchlist(watchlist), [watchlist]);
+  const favoriteSeriesList = cleanWatchlist.filter((w) => w.mediaType === 'tv');
 
   const filteredSports = sportsEvents.filter((ev) => {
     if (sportFilter !== 'all' && ev.sport !== sportFilter) return false;
@@ -447,7 +454,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     onPlayCustomUrl(customUrl.trim());
   };
 
-  const displayedMovies = showWatchlistOnly ? watchlist : movies;
+  const displayedMovies = showWatchlistOnly ? cleanWatchlist : movies;
 
   const showSpotlight =
     (activeSection === 'movies' || activeSection === 'vose') &&
@@ -464,10 +471,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   return (
     <div className="@container w-full min-w-0 max-w-full space-y-5">
-      {/* Netflix-Style Rich Details & 4K Official Trailer Modal */}
+      {/* Netflix-Style Rich Details, Language Selector & 4K Official Trailer Modal */}
       <MediaDetailsModal
         item={previewItem}
         lang={lang}
+        defaultAudioLang={activeSection === 'vose' ? 'EN' : 'ES'}
         isBookmarked={previewItem ? isBookmarked(previewItem) : false}
         onClose={() => setPreviewItem(null)}
         onPlayMovie={(m, pLang) => onPlayMovie(m, pLang)}
@@ -486,7 +494,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* ================================================================== */}
       {isCinemaFamily && (
         <div className="flex items-center justify-between gap-2 overflow-x-auto no-scrollbar pb-0.5">
-          <div className="flex items-center p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] shrink-0">
+          <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
             <button
               type="button"
               onClick={() => {
@@ -495,9 +503,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 setMoviePage(1);
                 if (activeSection === 'series') onChangeSection('movies');
               }}
-              className={`min-h-[36px] px-4 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+              className={`min-h-[36px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 (activeSection === 'movies' || activeSection === 'vose') && !showWatchlistOnly
-                  ? 'bg-[#E11D48] text-white'
+                  ? 'bg-white text-[#050508] shadow-sm'
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
@@ -511,9 +519,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 setShowWatchlistOnly(false);
                 onChangeSection('series');
               }}
-              className={`min-h-[36px] px-4 rounded-xl text-xs font-semibold transition-colors whitespace-nowrap cursor-pointer ${
+              className={`min-h-[36px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
                 activeSection === 'series'
-                  ? 'bg-[#E11D48] text-white'
+                  ? 'bg-white text-[#050508] shadow-sm'
                   : 'text-zinc-400 hover:text-white'
               }`}
             >
@@ -536,7 +544,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           >
             <Heart className={`w-3.5 h-3.5 ${showWatchlistOnly ? 'fill-current text-[#E11D48]' : ''}`} />
             <span>
-              {lang === 'es' ? 'Mi Lista' : 'My List'} ({watchlist.length})
+              {lang === 'es' ? 'Mi Lista' : 'My List'} ({cleanWatchlist.length})
             </span>
           </button>
         </div>
@@ -827,10 +835,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         setMovieCategory(cat.id);
                         setMoviePage(1);
                       }}
-                      className={`min-h-[42px] px-4 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                      className={`min-h-[38px] px-4 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
                         movieCategory === cat.id
-                          ? 'bg-[#E11D48] text-white shadow-[0_6px_20px_rgba(225,29,72,0.35)]'
-                          : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.08]'
+                          ? 'bg-white text-[#050508] shadow-[0_6px_18px_rgba(255,255,255,0.16)]'
+                          : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
                       }`}
                     >
                       {lang === 'es' ? cat.es : cat.en}
@@ -890,6 +898,22 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 <div className="pt-1.5 flex flex-wrap items-center gap-2.5">
                   <button
                     type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setPreviewItem(spotlightMovie);
+                    }}
+                    className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.98] text-xs sm:text-sm font-bold text-white flex items-center gap-2 shadow-lg shadow-[#E11D48]/30 transition-all whitespace-nowrap cursor-pointer"
+                  >
+                    <Info className="w-4 h-4 text-white" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Ver Ficha y Elegir Idioma'
+                        : 'Details & Select Language'}
+                    </span>
+                  </button>
+
+                  <button
+                    type="button"
                     disabled={Boolean(loadingItemId)}
                     onClick={() => {
                       triggerHaptic('success');
@@ -898,28 +922,18 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         activeSection === 'vose' ? 'EN' : 'ES'
                       );
                     }}
-                    className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.98] text-xs sm:text-sm font-bold text-white flex items-center gap-2 shadow-lg shadow-[#E11D48]/30 transition-all whitespace-nowrap cursor-pointer"
+                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
                   >
                     {loadingItemId === spotlightMovie.id ? (
                       <Loader2 className="w-4 h-4 animate-spin" />
                     ) : (
-                      <Play className="w-4 h-4 fill-current" />
+                      <Play className="w-4 h-4 fill-current text-[#E11D48]" />
                     )}
                     <span>
-                      {lang === 'es' ? 'Proyectar en la Sala' : 'Screen in Room'}
+                      {lang === 'es'
+                        ? `Reproducir directo (${activeSection === 'vose' ? 'VOSE' : 'ES'})`
+                        : 'Quick Play'}
                     </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setPreviewItem(spotlightMovie);
-                    }}
-                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
-                  >
-                    <Info className="w-4 h-4 text-zinc-200" />
-                    <span>{lang === 'es' ? 'Tráiler y Ficha' : 'Trailer & Info'}</span>
                   </button>
 
                   <button
@@ -971,13 +985,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             <>
               <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
                 {gridMovies.map((movie) => {
-                  const isExtractingThis = loadingItemId === movie.id;
+                  const favKey = getCatalogFavoriteKey(movie);
+                  const isExtractingThis = loadingItemId === movie.id || loadingItemId === favKey;
                   const saved = isBookmarked(movie);
-                  const imgBroken = brokenPosters[movie.id];
+                  const imgBroken = brokenPosters[favKey] || brokenPosters[movie.id];
 
                   return (
                     <div
-                      key={movie.id}
+                      key={favKey}
                       onClick={() => {
                         if (loadingItemId) return;
                         triggerHaptic('light');
@@ -987,11 +1002,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           openSeriesDetails(movie.tmdbId, 1);
                           return;
                         }
-                        if (activeVideoRawUrl && movie.tmdbId) {
-                          setPreviewItem(movie);
-                          return;
-                        }
-                        onPlayMovie(movie, activeSection === 'vose' ? 'EN' : 'ES');
+                        // Always open the Movie Detail Sheet (Ficha + Language Selector + Trailer) first
+                        setPreviewItem(movie);
                       }}
                       role="button"
                       tabIndex={0}
@@ -1003,11 +1015,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             openSeriesDetails(movie.tmdbId, 1);
                             return;
                           }
-                          if (activeVideoRawUrl && movie.tmdbId) {
-                            setPreviewItem(movie);
-                            return;
-                          }
-                          onPlayMovie(movie, activeSection === 'vose' ? 'EN' : 'ES');
+                          setPreviewItem(movie);
                         }
                       }}
                       className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0D0D12] border border-white/[0.08] hover:border-white/25 active:scale-[0.98] transition-all cursor-pointer shadow-[0_12px_30px_rgba(0,0,0,0.6)]"
@@ -1019,7 +1027,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           loading="lazy"
                           referrerPolicy="no-referrer"
                           onError={() =>
-                            setBrokenPosters((prev) => ({ ...prev, [movie.id]: true }))
+                            setBrokenPosters((prev) => ({ ...prev, [favKey]: true, [movie.id]: true }))
                           }
                           className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
                         />
@@ -1032,96 +1040,74 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         </div>
                       )}
 
-                      {/* Top Action Targets (44x44px Hitboxes) */}
-                      {movie.tmdbId && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            triggerHaptic('light');
-                            setPreviewItem(movie);
-                          }}
-                          title={lang === 'es' ? 'Ver Tráiler y Ficha' : 'Watch Trailer & Info'}
-                          aria-label="Ver ficha y tráiler"
-                          className="absolute top-2 left-2 z-10 w-10 h-10 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/15 flex items-center justify-center text-zinc-100 hover:text-white active:scale-90 transition-all cursor-pointer"
-                        >
-                          <Info className="w-4 h-4" />
-                        </button>
-                      )}
-
-                      <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={(e) => handleToggleBookmark(movie, e)}
-                          aria-label="Guardar en Mi Lista"
-                          className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/15 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
-                        >
-                          <Heart
-                            className={`w-4 h-4 ${
-                              saved ? 'fill-current text-[#E11D48]' : 'text-zinc-200'
-                            }`}
-                          />
-                        </button>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            triggerHaptic('success');
-                            onAddToQueue({
-                              kind: 'movie',
-                              title: movie.title,
-                              subtitle: `${movie.year} · ${activeSection === 'vose' ? 'VOSE 1080p' : 'Español'}`,
-                              poster: movie.poster,
-                              tmdbId: movie.tmdbId,
-                              url: movie.bingetrixUrl || movie.movidyUrl,
-                              preferLang: activeSection === 'vose' ? 'EN' : 'ES',
-                            });
-                          }}
-                          aria-label="Añadir a la cola"
-                          title="Añadir a la cola"
-                          className="w-10 h-10 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/15 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
-                        >
-                          <Plus className="w-4 h-4" />
-                        </button>
-                      </div>
-
-                      {/* Center Play Indicator */}
-                      <div
-                        className={`absolute inset-0 bg-black/45 flex items-center justify-center transition-opacity pointer-events-none ${
-                          isExtractingThis
-                            ? 'opacity-100'
-                            : 'opacity-0 sm:group-hover:opacity-100'
+                      {/* Single Discreet Top-Right Favorite Button */}
+                      <button
+                        type="button"
+                        onClick={(e) => handleToggleBookmark(movie, e)}
+                        aria-label="Guardar en Mi Lista"
+                        className={`absolute top-2.5 right-2.5 z-10 w-8 h-8 rounded-full backdrop-blur-md border flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+                          saved
+                            ? 'bg-black/75 border-[#E11D48]/50 text-[#E11D48]'
+                            : 'bg-black/45 hover:bg-black/75 border-white/10 text-white/80 hover:text-white'
                         }`}
                       >
-                        <div className="w-12 h-12 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-2xl">
-                          {isExtractingThis ? (
-                            <Loader2 className="w-5 h-5 animate-spin" />
-                          ) : (
-                            <Play className="w-5 h-5 fill-current ml-0.5" />
-                          )}
-                        </div>
-                      </div>
+                        <Heart className={`w-3.5 h-3.5 ${saved ? 'fill-current' : ''}`} />
+                      </button>
 
-                      {/* Edge-to-Edge Bottom Dark Gradient Overlay */}
-                      <div className="absolute inset-x-0 bottom-0 pt-16 pb-3 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent flex flex-col justify-end pointer-events-none">
-                        <h3 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug drop-shadow">
-                          {movie.title}
-                        </h3>
-                        <div className="text-[11px] text-zinc-300 truncate mt-1 flex items-center gap-1.5">
-                          <span>{movie.year || 'HD'}</span>
-                          {movie.rating && (
-                            <>
-                              <span className="text-zinc-500">·</span>
-                              <span className="text-amber-400 font-mono font-bold">
-                                ★ {movie.rating}
-                              </span>
-                            </>
-                          )}
-                          <span className="text-zinc-500">·</span>
-                          <span className="text-[#FB7185] font-semibold">
-                            {activeSection === 'vose' ? 'VOSE' : 'ES'}
-                          </span>
+                      {/* Center Extracting / Hover Play Indicator */}
+                      {isExtractingThis && (
+                        <div className="absolute inset-0 bg-black/55 flex items-center justify-center pointer-events-none">
+                          <div className="w-11 h-11 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-2xl">
+                            <Loader2 className="w-5 h-5 animate-spin" />
+                          </div>
                         </div>
+                      )}
+
+                      {/* Editorial Bottom Overlay + 1-Tap Quick Play Pill */}
+                      <div className="absolute inset-x-0 bottom-0 pt-16 pb-2.5 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent flex items-end justify-between gap-2">
+                        <div className="min-w-0 flex-1 pointer-events-none">
+                          <h3 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug drop-shadow">
+                            {movie.title}
+                          </h3>
+                          <div className="text-[10px] text-zinc-300 truncate mt-1 flex items-center gap-1.5">
+                            <span>{movie.year || 'HD'}</span>
+                            {movie.rating && (
+                              <>
+                                <span className="text-zinc-500">·</span>
+                                <span className="text-amber-400 font-mono font-bold">
+                                  ★ {movie.rating}
+                                </span>
+                              </>
+                            )}
+                            <span className="text-zinc-500">·</span>
+                            <span className="text-zinc-200 font-semibold">
+                              {activeSection === 'vose' ? 'VOSE' : 'ES'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (loadingItemId) return;
+                            triggerHaptic('success');
+                            if (movie.mediaType === 'tv' && movie.tmdbId) {
+                              openSeriesDetails(movie.tmdbId, 1);
+                              return;
+                            }
+                            onPlayMovie(movie, activeSection === 'vose' ? 'EN' : 'ES');
+                          }}
+                          title={
+                            lang === 'es'
+                              ? 'Reproducir directamente en la sala'
+                              : 'Play directly in room'
+                          }
+                          aria-label="Reproducir directamente"
+                          className="w-8 h-8 rounded-full bg-[#E11D48] hover:bg-[#F43F5E] text-white flex items-center justify-center shrink-0 shadow-[0_4px_14px_rgba(225,29,72,0.45)] active:scale-90 transition-all cursor-pointer"
+                        >
+                          <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                        </button>
                       </div>
                     </div>
                   );
@@ -1152,67 +1138,54 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       )}
 
       {/* ================================================================== */}
-      {/* SECTION 3: TV SERIES CATALOG + INTERACTIVE SEASON/EPISODE DRAWER   */}
+      {/* DEDICATED SERIES EPISODE BROWSER MODAL / BOTTOM SHEET (Z-65)       */}
+      {/* Preserves catalog scroll position and works from any section       */}
       {/* ================================================================== */}
-      {activeSection === 'series' && (
-        <div className="space-y-4">
-          {selectedSeries ? (
-            /* Series Episode Browser View */
-            <div className="rounded-3xl bg-[#12141D] border border-white/[0.09] overflow-hidden">
-              <div className="relative p-5 sm:p-7 bg-gradient-to-b from-[#1C1F2E] to-[#12141D] border-b border-white/[0.08] space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
+      {selectedSeries && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={selectedSeries.title}
+          onClick={() => setSelectedSeries(null)}
+          className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full sm:max-w-[880px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#08090E]/98 backdrop-blur-2xl border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden"
+          >
+            {/* Mobile Grab Handle */}
+            <div className="sm:hidden pt-2.5 flex justify-center shrink-0">
+              <div className="w-10 h-1 rounded-full bg-white/25" />
+            </div>
+
+            {/* Series Header & Season Selector */}
+            <div className="relative p-4 sm:p-6 bg-gradient-to-b from-[#141622] to-[#08090E] border-b border-white/[0.08] space-y-3.5 shrink-0">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
                   <button
                     type="button"
-                    onClick={() => setSelectedSeries(null)}
-                    className="min-h-[42px] px-3.5 rounded-xl bg-[#090A0F] hover:bg-white/10 border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
+                    onClick={(e) =>
+                      handleToggleBookmark(
+                        {
+                          id: `series-${selectedSeries.tmdbId}`,
+                          tmdbId: selectedSeries.tmdbId,
+                          mediaType: 'tv',
+                          title: selectedSeries.title,
+                          year: selectedSeries.year,
+                          rating: selectedSeries.rating,
+                          overview: selectedSeries.overview,
+                          poster: selectedSeries.poster,
+                          backdrop: selectedSeries.backdrop,
+                          languages: [],
+                        },
+                        e
+                      )
+                    }
+                    className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>{lang === 'es' ? 'Volver a Series' : 'Back to Series'}</span>
-                  </button>
-
-                  {/* Favorite Series + Audio Language Preference Toggle */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={(e) =>
-                        handleToggleBookmark(
-                          {
-                            id: `series-${selectedSeries.tmdbId}`,
-                            tmdbId: selectedSeries.tmdbId,
-                            mediaType: 'tv',
-                            title: selectedSeries.title,
-                            year: selectedSeries.year,
-                            rating: selectedSeries.rating,
-                            overview: selectedSeries.overview,
-                            poster: selectedSeries.poster,
-                            backdrop: selectedSeries.backdrop,
-                            languages: [],
-                          },
-                          e
-                        )
-                      }
-                      className="min-h-[40px] px-3.5 rounded-xl bg-[#090A0F] hover:bg-white/10 border border-white/12 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors"
-                    >
-                      <Heart
-                        className={`w-4 h-4 ${
-                          isBookmarked({
-                            id: `series-${selectedSeries.tmdbId}`,
-                            tmdbId: selectedSeries.tmdbId,
-                            mediaType: 'tv',
-                            title: selectedSeries.title,
-                            year: selectedSeries.year,
-                            rating: selectedSeries.rating,
-                            overview: '',
-                            poster: selectedSeries.poster,
-                            backdrop: selectedSeries.backdrop,
-                            languages: [],
-                          })
-                            ? 'fill-current text-[#FB7185]'
-                            : 'text-zinc-300'
-                        }`}
-                      />
-                      <span>
-                        {isBookmarked({
+                    <Heart
+                      className={`w-3.5 h-3.5 ${
+                        isBookmarked({
                           id: `series-${selectedSeries.tmdbId}`,
                           tmdbId: selectedSeries.tmdbId,
                           mediaType: 'tv',
@@ -1224,468 +1197,528 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           backdrop: selectedSeries.backdrop,
                           languages: [],
                         })
-                          ? lang === 'es'
-                            ? 'Serie Favorita'
-                            : 'Favorited'
-                          : lang === 'es'
-                          ? 'Guardar Serie'
-                          : 'Favorite Series'}
-                      </span>
-                    </button>
-
-                    <div className="flex items-center p-1 rounded-xl bg-[#090A0F] border border-white/10">
-                      <button
-                        type="button"
-                        onClick={() => setSeriesLangMode('ES')}
-                        className={`min-h-[34px] px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                          seriesLangMode === 'ES'
-                            ? 'bg-[#E11D48] text-white'
-                            : 'text-zinc-400 hover:text-white'
-                        }`}
-                      >
-                        Español · LAT
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSeriesLangMode('EN')}
-                        className={`min-h-[34px] px-3 rounded-lg text-xs font-semibold cursor-pointer ${
-                          seriesLangMode === 'EN'
-                            ? 'bg-[#E11D48] text-white'
-                            : 'text-zinc-400 hover:text-white'
-                        }`}
-                      >
-                        Bingetrix · EN
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1.5 max-w-2xl">
-                  <div className="text-xs text-[#FB7185] font-medium">
-                    <span>{selectedSeries.year}</span>
-                    {selectedSeries.rating && (
-                      <>
-                        <span className="mx-1.5 text-zinc-600">·</span>
-                        <span className="text-amber-400 font-mono">★ {selectedSeries.rating}</span>
-                      </>
-                    )}
-                    <span className="mx-1.5 text-zinc-600">·</span>
+                          ? 'fill-current text-[#E11D48]'
+                          : 'text-zinc-300'
+                      }`}
+                    />
                     <span>
-                      {selectedSeries.seasons.length}{' '}
-                      {lang === 'es' ? 'Temporadas' : 'Seasons'}
+                      {isBookmarked({
+                        id: `series-${selectedSeries.tmdbId}`,
+                        tmdbId: selectedSeries.tmdbId,
+                        mediaType: 'tv',
+                        title: selectedSeries.title,
+                        year: selectedSeries.year,
+                        rating: selectedSeries.rating,
+                        overview: '',
+                        poster: selectedSeries.poster,
+                        backdrop: selectedSeries.backdrop,
+                        languages: [],
+                      })
+                        ? lang === 'es'
+                          ? 'En Mi Lista'
+                          : 'Saved'
+                        : lang === 'es'
+                        ? 'Guardar Serie'
+                        : 'Save Series'}
                     </span>
-                  </div>
-                  <h3 className="font-display font-bold text-xl sm:text-2xl text-white">
-                    {selectedSeries.title}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-zinc-300 line-clamp-2">
-                    {selectedSeries.overview}
-                  </p>
-                </div>
+                  </button>
 
-                {/* Season Selector Strip */}
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1">
-                  {selectedSeries.seasons.map((s) => (
+                  <div className="flex items-center p-1 rounded-xl bg-black/60 border border-white/10">
                     <button
-                      key={s.seasonNumber}
                       type="button"
-                      disabled={loadingSeriesDetails}
-                      onClick={() => {
-                        triggerHaptic('light');
-                        openSeriesDetails(selectedSeries.tmdbId, s.seasonNumber);
-                      }}
-                      className={`min-h-[40px] px-4 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                        selectedSeries.activeSeason === s.seasonNumber
-                          ? 'bg-white text-[#090A0F]'
-                          : 'bg-[#090A0F] hover:bg-white/10 text-zinc-300 border border-white/10'
+                      onClick={() => setSeriesLangMode('ES')}
+                      className={`min-h-7 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                        seriesLangMode === 'ES'
+                          ? 'bg-white text-[#050508]'
+                          : 'text-zinc-400 hover:text-white'
                       }`}
                     >
-                      {lang === 'es' ? `Temporada ${s.seasonNumber}` : `Season ${s.seasonNumber}`}
+                      Español
                     </button>
-                  ))}
+                    <button
+                      type="button"
+                      onClick={() => setSeriesLangMode('EN')}
+                      className={`min-h-7 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                        seriesLangMode === 'EN'
+                          ? 'bg-white text-[#050508]'
+                          : 'text-zinc-400 hover:text-white'
+                      }`}
+                    >
+                      VOSE · EN
+                    </button>
+                  </div>
                 </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSelectedSeries(null)}
+                  aria-label="Cerrar episodios"
+                  className="w-9 h-9 rounded-xl bg-white/[0.08] hover:bg-[#E11D48] text-white flex items-center justify-center cursor-pointer transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
 
-              {/* Episodes Grid */}
-              <div className="p-4 sm:p-6">
-                {loadingSeriesDetails ? (
-                  <div className="py-10 flex items-center justify-center gap-2 text-sm text-zinc-400">
-                    <Loader2 className="w-5 h-5 animate-spin text-[#E11D48]" />
-                    <span>Cargando episodios...</span>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 @md:grid-cols-2 gap-3">
-                    {selectedSeries.episodes.map((ep) => {
-                      const epLoadId = `tv-${selectedSeries.tmdbId}-${ep.seasonNumber}-${ep.episodeNumber}`;
-                      const isExtractingEp = loadingItemId === epLoadId;
-                      const stillBroken = brokenEpisodeImgs[ep.id];
-                      const epHistory = watchHistory.find(
-                        (h) => sanitizeItemKey(h.id) === sanitizeItemKey(epLoadId)
-                      );
-                      const epResume = epHistory?.resumeTimeSec || 0;
-                      const epDur = epHistory?.durationSec || 0;
-                      const epProgressPct =
-                        epResume > 5
-                          ? epDur > 60
-                            ? Math.min(96, Math.max(8, Math.round((epResume / epDur) * 100)))
-                            : 30
-                          : 0;
+              <div className="space-y-1 max-w-2xl">
+                <div className="text-xs text-zinc-400 font-medium flex items-center gap-1.5">
+                  <span className="text-[#E11D48] font-bold uppercase tracking-wider">Serie TV</span>
+                  <span>·</span>
+                  <span className="text-zinc-200">{selectedSeries.year}</span>
+                  {selectedSeries.rating && (
+                    <>
+                      <span>·</span>
+                      <span className="text-amber-400 font-mono font-bold">
+                        ★ {selectedSeries.rating}
+                      </span>
+                    </>
+                  )}
+                  <span>·</span>
+                  <span>
+                    {selectedSeries.seasons.length}{' '}
+                    {lang === 'es' ? 'Temporadas' : 'Seasons'}
+                  </span>
+                </div>
+                <h3 className="font-display font-bold text-xl sm:text-2xl text-white">
+                  {selectedSeries.title}
+                </h3>
+                <p className="text-xs text-zinc-300 line-clamp-2">
+                  {selectedSeries.overview}
+                </p>
+              </div>
 
-                      return (
-                        <button
-                          key={ep.id}
-                          type="button"
-                          disabled={Boolean(loadingItemId)}
-                          onClick={() => {
-                            triggerHaptic('success');
-                            onPlaySeriesEpisode(selectedSeries, ep, seriesLangMode);
-                          }}
-                          className="group text-left rounded-2xl bg-[#090A0F] hover:bg-[#191C28] border border-white/[0.08] hover:border-white/25 p-3 flex items-center gap-3.5 transition-all cursor-pointer"
-                        >
-                          <div className="relative w-28 sm:w-36 aspect-video rounded-xl overflow-hidden bg-[#191C28] shrink-0">
-                            {!stillBroken && (ep.still || selectedSeries.backdrop) ? (
-                              <img
-                                src={ep.still || selectedSeries.backdrop}
-                                alt={ep.title}
-                                loading="lazy"
-                                referrerPolicy="no-referrer"
-                                onError={() =>
-                                  setBrokenEpisodeImgs((prev) => ({ ...prev, [ep.id]: true }))
-                                }
-                                className="w-full h-full object-cover"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center bg-[#191C28]">
-                                <Tv className="w-5 h-5 text-zinc-500" />
-                              </div>
-                            )}
-                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                              <div className="w-9 h-9 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-md">
-                                {isExtractingEp ? (
-                                  <Loader2 className="w-4 h-4 animate-spin" />
-                                ) : (
-                                  <Play className="w-4 h-4 fill-current ml-0.5" />
-                                )}
-                              </div>
-                            </div>
-                            {epProgressPct > 0 && (
-                              <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
-                                <div
-                                  className={`h-full ${
-                                    epProgressPct >= 88 ? 'bg-emerald-400' : 'bg-[#E11D48]'
-                                  }`}
-                                  style={{ width: `${epProgressPct >= 88 ? 100 : epProgressPct}%` }}
-                                />
-                              </div>
-                            )}
-                          </div>
-
-                          <div className="min-w-0 flex-1 space-y-1">
-                            <div className="text-[11px] font-mono text-[#FB7185] flex items-center gap-1.5 flex-wrap">
-                              <span>
-                                {ep.seasonNumber}x{String(ep.episodeNumber).padStart(2, '0')}
-                                {ep.runtime ? ` · ${ep.runtime}m` : ''}
-                              </span>
-                              {epProgressPct >= 88 ? (
-                                <span className="inline-flex items-center gap-0.5 text-emerald-400 font-semibold">
-                                  <Check className="w-3 h-3" />
-                                  <span>{lang === 'es' ? 'Visto' : 'Watched'}</span>
-                                </span>
-                              ) : epResume > 5 ? (
-                                <span className="text-amber-300">
-                                  · {lang === 'es' ? 'Seguir' : 'Resume'} {formatShortTime(epResume)}
-                                </span>
-                              ) : null}
-                            </div>
-                            <h4 className="font-display font-semibold text-xs sm:text-sm text-white line-clamp-1">
-                              {ep.title}
-                            </h4>
-                            <p className="text-[11px] text-zinc-400 line-clamp-2">
-                              {ep.overview || 'Reproducir episodio en alta definición sin anuncios.'}
-                            </p>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
+              {/* Season Selector Strip */}
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-0.5">
+                {selectedSeries.seasons.map((s) => (
+                  <button
+                    key={s.seasonNumber}
+                    type="button"
+                    disabled={loadingSeriesDetails}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      openSeriesDetails(selectedSeries.tmdbId, s.seasonNumber);
+                    }}
+                    className={`min-h-9 px-4 rounded-full text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
+                      selectedSeries.activeSeason === s.seasonNumber
+                        ? 'bg-white text-[#050508] shadow-sm'
+                        : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/10'
+                    }`}
+                  >
+                    {lang === 'es' ? `Temporada ${s.seasonNumber}` : `Season ${s.seasonNumber}`}
+                  </button>
+                ))}
               </div>
             </div>
-          ) : (
-            /* Series Browse & Search Grid */
-            <>
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={seriesQuery}
-                    onChange={(e) => setSeriesQuery(e.target.value)}
-                    placeholder={t.searchSeriesPlaceholder}
-                    className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
-                  />
-                  {seriesQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setSeriesQuery('')}
-                      aria-label="Limpiar búsqueda"
-                      className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
 
-                <div className="flex items-center p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSeriesLangMode('ES');
-                      setSeriesPage(1);
-                    }}
-                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-semibold cursor-pointer ${
-                      seriesLangMode === 'ES' ? 'bg-[#E11D48] text-white' : 'text-zinc-400'
-                    }`}
-                  >
-                    Español
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSeriesLangMode('EN');
-                      setSeriesPage(1);
-                    }}
-                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-semibold cursor-pointer ${
-                      seriesLangMode === 'EN' ? 'bg-[#E11D48] text-white' : 'text-zinc-400'
-                    }`}
-                  >
-                    VOSE · EN
-                  </button>
+            {/* Scrollable Episodes Grid */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+              {loadingSeriesDetails ? (
+                <div className="py-12 flex items-center justify-center gap-2 text-sm text-zinc-400">
+                  <Loader2 className="w-5 h-5 animate-spin text-[#E11D48]" />
+                  <span>Cargando episodios...</span>
                 </div>
-              </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {selectedSeries.episodes.map((ep) => {
+                    const epLoadId = `tv-${selectedSeries.tmdbId}-${ep.seasonNumber}-${ep.episodeNumber}`;
+                    const isExtractingEp = loadingItemId === epLoadId;
+                    const stillBroken = brokenEpisodeImgs[ep.id];
+                    const epHistory = watchHistory.find(
+                      (h) => sanitizeItemKey(h.id) === sanitizeItemKey(epLoadId)
+                    );
+                    const epResume = epHistory?.resumeTimeSec || 0;
+                    const epDur = epHistory?.durationSec || 0;
+                    const epProgressPct =
+                      epResume > 5
+                        ? epDur > 60
+                          ? Math.min(96, Math.max(8, Math.round((epResume / epDur) * 100)))
+                          : 30
+                        : 0;
 
-              {!debouncedSeriesQuery && (
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                  {SERIES_CATEGORIES.map((cat) => (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setSeriesCategory(cat.id);
-                        setSeriesPage(1);
-                      }}
-                      className={`min-h-[42px] px-4 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
-                        seriesCategory === cat.id
-                          ? 'bg-[#E11D48] text-white shadow-[0_6px_20px_rgba(225,29,72,0.35)]'
-                          : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.08]'
-                      }`}
-                    >
-                      {lang === 'es' ? cat.es : cat.en}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Quick-Access Favorite TV Series Rail (Edge-to-Edge) */}
-              {!debouncedSeriesQuery && favoriteSeriesList.length > 0 && (
-                <section className="rounded-3xl bg-white/[0.02] border border-white/[0.07] p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <Heart className="w-4 h-4 fill-current text-[#FB7185] shrink-0" />
-                    <h3 className="font-display font-bold text-xs sm:text-sm text-white">
-                      {lang === 'es' ? 'Mis Series Favoritas' : 'My Favorite Series'} (
-                      {favoriteSeriesList.length})
-                    </h3>
-                  </div>
-                  <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-0.5 min-w-0">
-                    {favoriteSeriesList.map((favShow) => (
+                    return (
                       <div
-                        key={favShow.id}
+                        key={ep.id}
                         onClick={() => {
-                          if (!favShow.tmdbId) return;
-                          triggerHaptic('light');
-                          openSeriesDetails(favShow.tmdbId, 1);
+                          if (loadingItemId) return;
+                          triggerHaptic('success');
+                          onPlaySeriesEpisode(selectedSeries, ep, seriesLangMode);
+                          setSelectedSeries(null);
                         }}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter' && favShow.tmdbId) {
-                            openSeriesDetails(favShow.tmdbId, 1);
+                          if (e.key === 'Enter' && !loadingItemId) {
+                            onPlaySeriesEpisode(selectedSeries, ep, seriesLangMode);
+                            setSelectedSeries(null);
                           }
                         }}
-                        className="group relative w-[136px] sm:w-[152px] aspect-[2/3] shrink-0 rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-[#FB7185]/60 active:scale-[0.98] transition-all cursor-pointer"
+                        className="group text-left rounded-2xl bg-[#0E1017] hover:bg-[#151824] border border-white/[0.08] hover:border-white/25 p-3 flex items-center gap-3 transition-all cursor-pointer"
                       >
-                        {favShow.poster ? (
-                          <img
-                            src={favShow.poster}
-                            alt={favShow.title}
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                            className="w-full h-full object-cover"
-                          />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <Tv className="w-6 h-6 text-zinc-500" />
-                          </div>
-                        )}
-                        <button
-                          type="button"
-                          onClick={(e) => handleToggleBookmark(favShow, e)}
-                          aria-label="Quitar de series favoritas"
-                          className="w-9 h-9 rounded-full bg-black/65 hover:bg-black/90 text-[#FB7185] flex items-center justify-center absolute top-2 right-2 z-10 cursor-pointer"
-                        >
-                          <Heart className="w-4 h-4 fill-current" />
-                        </button>
-                        <div className="absolute inset-x-0 bottom-0 pt-10 pb-2.5 px-2.5 bg-gradient-to-t from-black/95 via-black/70 to-transparent">
-                          <div className="font-display font-bold text-xs text-white line-clamp-2 leading-tight">
-                            {favShow.title}
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-              )}
-
-              {loadingSeries || loadingSeriesDetails ? (
-                <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
-                  {Array.from({ length: 10 }).map((_, i) => (
-                    <div
-                      key={i}
-                      className="aspect-[2/3] rounded-2xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer"
-                    />
-                  ))}
-                </div>
-              ) : (
-                <>
-                  <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
-                    {seriesList.map((show) => {
-                      const seriesItem: CatalogMovie = { ...show, mediaType: 'tv' };
-                      const savedSeries = isBookmarked(seriesItem);
-                      const imgBroken = brokenPosters[show.id];
-                      return (
-                        <div
-                          key={show.id}
-                          onClick={() => {
-                            if (!show.tmdbId) return;
-                            triggerHaptic('light');
-                            openSeriesDetails(show.tmdbId, 1);
-                          }}
-                          role="button"
-                          tabIndex={0}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter' && show.tmdbId) {
-                              openSeriesDetails(show.tmdbId, 1);
-                            }
-                          }}
-                          className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0D0D12] border border-white/[0.08] hover:border-white/25 active:scale-[0.98] transition-all cursor-pointer shadow-[0_12px_30px_rgba(0,0,0,0.6)]"
-                        >
-                          {!imgBroken && show.poster ? (
+                        <div className="relative w-28 sm:w-32 aspect-video rounded-xl overflow-hidden bg-[#191C28] shrink-0">
+                          {!stillBroken && (ep.still || selectedSeries.backdrop) ? (
                             <img
-                              src={show.poster}
-                              alt={show.title}
+                              src={ep.still || selectedSeries.backdrop}
+                              alt={ep.title}
                               loading="lazy"
                               referrerPolicy="no-referrer"
                               onError={() =>
-                                setBrokenPosters((prev) => ({ ...prev, [show.id]: true }))
+                                setBrokenEpisodeImgs((prev) => ({ ...prev, [ep.id]: true }))
                               }
-                              className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                              className="w-full h-full object-cover"
                             />
                           ) : (
-                            <div className="w-full h-full p-4 flex flex-col items-center justify-center text-center bg-gradient-to-br from-[#1F2437] to-[#12141D]">
-                              <Tv className="w-8 h-8 text-zinc-500 mb-2" />
-                              <span className="font-display font-semibold text-xs text-zinc-200 line-clamp-3">
-                                {show.title}
-                              </span>
+                            <div className="w-full h-full flex items-center justify-center bg-[#191C28]">
+                              <Tv className="w-5 h-5 text-zinc-500" />
                             </div>
                           )}
-
-                          {/* Series Trailer & Info Button (44x44px Hitbox) */}
-                          {show.tmdbId && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                triggerHaptic('light');
-                                setPreviewItem(seriesItem);
-                              }}
-                              title={lang === 'es' ? 'Ver Tráiler y Ficha' : 'Watch Trailer & Info'}
-                              aria-label="Ver tráiler de la serie"
-                              className="absolute top-2 left-2 z-10 w-10 h-10 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/15 flex items-center justify-center text-sky-300 hover:text-white active:scale-90 transition-all cursor-pointer"
-                            >
-                              <Info className="w-4 h-4" />
-                            </button>
-                          )}
-
-                          {/* Favorite Series Heart Toggle (44x44px Hitbox) */}
-                          <button
-                            type="button"
-                            onClick={(e) => handleToggleBookmark(seriesItem, e)}
-                            aria-label="Marcar serie como favorita"
-                            title={
-                              savedSeries
-                                ? 'Quitar de Series Favoritas'
-                                : 'Añadir a Series Favoritas'
-                            }
-                            className="absolute top-2 right-2 z-10 w-10 h-10 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/15 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
-                          >
-                            <Heart
-                              className={`w-4 h-4 ${
-                                savedSeries ? 'fill-current text-[#FB7185]' : 'text-zinc-200'
-                              }`}
-                            />
-                          </button>
-
-                          <div className="absolute inset-0 bg-black/45 opacity-0 sm:group-hover:opacity-100 flex items-center justify-center transition-opacity pointer-events-none">
-                            <div className="px-4 py-2 rounded-2xl bg-[#E11D48] text-white text-xs font-bold flex items-center gap-1.5 shadow-xl">
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                              <span>{lang === 'es' ? 'Episodios' : 'Episodes'}</span>
-                            </div>
-                          </div>
-
-                          {/* Edge-to-Edge Bottom Dark Gradient Overlay */}
-                          <div className="absolute inset-x-0 bottom-0 pt-16 pb-3 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent flex flex-col justify-end pointer-events-none">
-                            <h3 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug drop-shadow">
-                              {show.title}
-                            </h3>
-                            <div className="text-[11px] text-zinc-300 truncate mt-1 flex items-center gap-1.5">
-                              <span>{show.year || 'TV'}</span>
-                              <span className="text-zinc-500">·</span>
-                              <span className="text-sky-300 font-semibold">Serie</span>
-                              {show.rating && (
-                                <>
-                                  <span className="text-zinc-500">·</span>
-                                  <span className="text-amber-400 font-mono font-bold">
-                                    ★ {show.rating}
-                                  </span>
-                                </>
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <div className="w-8 h-8 rounded-full bg-[#E11D48] text-white flex items-center justify-center shadow-md">
+                              {isExtractingEp ? (
+                                <Loader2 className="w-4 h-4 animate-spin" />
+                              ) : (
+                                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                               )}
                             </div>
                           </div>
+                          {epProgressPct > 0 && (
+                            <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
+                              <div
+                                className={`h-full ${
+                                  epProgressPct >= 88 ? 'bg-emerald-400' : 'bg-[#E11D48]'
+                                }`}
+                                style={{ width: `${epProgressPct >= 88 ? 100 : epProgressPct}%` }}
+                              />
+                            </div>
+                          )}
                         </div>
-                      );
-                    })}
-                  </div>
 
-                  {hasMoreSeries && (
-                    <div className="pt-3 flex justify-center">
+                        <div className="min-w-0 flex-1 space-y-1">
+                          <div className="text-[11px] font-mono text-[#FB7185] flex items-center gap-1.5 flex-wrap">
+                            <span>
+                              {ep.seasonNumber}x{String(ep.episodeNumber).padStart(2, '0')}
+                              {ep.runtime ? ` · ${ep.runtime}m` : ''}
+                            </span>
+                            {epProgressPct >= 88 ? (
+                              <span className="inline-flex items-center gap-0.5 text-emerald-400 font-semibold">
+                                <Check className="w-3 h-3" />
+                                <span>{lang === 'es' ? 'Visto' : 'Watched'}</span>
+                              </span>
+                            ) : epResume > 5 ? (
+                              <span className="text-amber-300">
+                                · {lang === 'es' ? 'Seguir' : 'Resume'} {formatShortTime(epResume)}
+                              </span>
+                            ) : null}
+                          </div>
+                          <h4 className="font-display font-semibold text-xs sm:text-sm text-white line-clamp-1">
+                            {ep.title}
+                          </h4>
+                          <p className="text-[11px] text-zinc-400 line-clamp-2">
+                            {ep.overview || 'Reproducir episodio en alta definición.'}
+                          </p>
+                        </div>
+
+                        {/* 1-Tap Add Episode to Room Queue */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            triggerHaptic('success');
+                            onAddToQueue({
+                              kind: 'tv',
+                              title: `${selectedSeries.title} · ${ep.seasonNumber}x${String(
+                                ep.episodeNumber
+                              ).padStart(2, '0')}`,
+                              subtitle: `${ep.title} (${seriesLangMode})`,
+                              poster: ep.still || selectedSeries.poster,
+                              tmdbId: selectedSeries.tmdbId,
+                              season: ep.seasonNumber,
+                              episode: ep.episodeNumber,
+                              preferLang: seriesLangMode,
+                            });
+                          }}
+                          title={lang === 'es' ? 'Añadir episodio a la cola' : 'Add episode to queue'}
+                          aria-label="Añadir episodio a la cola"
+                          className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.15] border border-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* SECTION 3: TV SERIES CATALOG                                       */}
+      {/* ================================================================== */}
+      {activeSection === 'series' && (
+        <div className="space-y-4">
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                type="text"
+                value={seriesQuery}
+                onChange={(e) => setSeriesQuery(e.target.value)}
+                placeholder={t.searchSeriesPlaceholder}
+                className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
+              />
+              {seriesQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSeriesQuery('')}
+                  aria-label="Limpiar búsqueda"
+                  className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setSeriesLangMode('ES');
+                  setSeriesPage(1);
+                }}
+                className={`flex-1 sm:flex-initial min-h-[34px] px-3.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                  seriesLangMode === 'ES'
+                    ? 'bg-white text-[#050508]'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                Español
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSeriesLangMode('EN');
+                  setSeriesPage(1);
+                }}
+                className={`flex-1 sm:flex-initial min-h-[34px] px-3.5 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                  seriesLangMode === 'EN'
+                    ? 'bg-white text-[#050508]'
+                    : 'text-zinc-400 hover:text-white'
+                }`}
+              >
+                VOSE · EN
+              </button>
+            </div>
+          </div>
+
+          {!debouncedSeriesQuery && (
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+              {SERIES_CATEGORIES.map((cat) => (
+                <button
+                  key={cat.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setSeriesCategory(cat.id);
+                    setSeriesPage(1);
+                  }}
+                  className={`min-h-[38px] px-4 rounded-full text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer active:scale-95 ${
+                    seriesCategory === cat.id
+                      ? 'bg-white text-[#050508] shadow-[0_6px_18px_rgba(255,255,255,0.16)]'
+                      : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                  }`}
+                >
+                  {lang === 'es' ? cat.es : cat.en}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Quick-Access Favorite TV Series Rail (Edge-to-Edge) */}
+          {!debouncedSeriesQuery && favoriteSeriesList.length > 0 && (
+            <section className="rounded-3xl bg-white/[0.02] border border-white/[0.07] p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Heart className="w-4 h-4 fill-current text-[#E11D48] shrink-0" />
+                <h3 className="font-display font-bold text-xs sm:text-sm text-white">
+                  {lang === 'es' ? 'Mis Series Favoritas' : 'My Favorite Series'} (
+                  {favoriteSeriesList.length})
+                </h3>
+              </div>
+              <div className="flex items-stretch gap-3 overflow-x-auto no-scrollbar pb-0.5 min-w-0">
+                {favoriteSeriesList.map((favShow) => (
+                  <div
+                    key={favShow.id}
+                    onClick={() => {
+                      if (!favShow.tmdbId) return;
+                      triggerHaptic('light');
+                      openSeriesDetails(favShow.tmdbId, 1);
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && favShow.tmdbId) {
+                        openSeriesDetails(favShow.tmdbId, 1);
+                      }
+                    }}
+                    className="group relative w-[136px] sm:w-[152px] aspect-[2/3] shrink-0 rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-white/30 active:scale-[0.98] transition-all cursor-pointer"
+                  >
+                    {favShow.poster ? (
+                      <img
+                        src={favShow.poster}
+                        alt={favShow.title}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center">
+                        <Tv className="w-6 h-6 text-zinc-500" />
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => handleToggleBookmark(favShow, e)}
+                      aria-label="Quitar de series favoritas"
+                      className="w-8 h-8 rounded-full bg-black/65 hover:bg-black/90 text-[#E11D48] flex items-center justify-center absolute top-2 right-2 z-10 cursor-pointer"
+                    >
+                      <Heart className="w-3.5 h-3.5 fill-current" />
+                    </button>
+                    <div className="absolute inset-x-0 bottom-0 pt-10 pb-2.5 px-2.5 bg-gradient-to-t from-black/95 via-black/70 to-transparent">
+                      <div className="font-display font-bold text-xs text-white line-clamp-2 leading-tight">
+                        {favShow.title}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {loadingSeries ? (
+            <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
+              {Array.from({ length: 10 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="aspect-[2/3] rounded-2xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer"
+                />
+              ))}
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 @sm:gap-4">
+                {seriesList.map((show) => {
+                  const seriesItem: CatalogMovie = { ...show, mediaType: 'tv' };
+                  const savedSeries = isBookmarked(seriesItem);
+                  const imgBroken = brokenPosters[show.id];
+                  return (
+                    <div
+                      key={show.id}
+                      onClick={() => {
+                        if (!show.tmdbId) return;
+                        triggerHaptic('light');
+                        openSeriesDetails(show.tmdbId, 1);
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && show.tmdbId) {
+                          openSeriesDetails(show.tmdbId, 1);
+                        }
+                      }}
+                      className="group relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0D0D12] border border-white/[0.08] hover:border-white/25 active:scale-[0.98] transition-all cursor-pointer shadow-[0_12px_30px_rgba(0,0,0,0.6)]"
+                    >
+                      {!imgBroken && show.poster ? (
+                        <img
+                          src={show.poster}
+                          alt={show.title}
+                          loading="lazy"
+                          referrerPolicy="no-referrer"
+                          onError={() =>
+                            setBrokenPosters((prev) => ({ ...prev, [show.id]: true }))
+                          }
+                          className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                        />
+                      ) : (
+                        <div className="w-full h-full p-4 flex flex-col items-center justify-center text-center bg-gradient-to-br from-[#1F2437] to-[#12141D]">
+                          <Tv className="w-8 h-8 text-zinc-500 mb-2" />
+                          <span className="font-display font-semibold text-xs text-zinc-200 line-clamp-3">
+                            {show.title}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Discreet Favorite Heart Button */}
                       <button
                         type="button"
-                        disabled={loadingMoreSeries}
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setSeriesPage((p) => p + 1);
-                        }}
-                        className="min-h-[46px] px-6 rounded-2xl bg-[#12141D] hover:bg-[#191C28] border border-white/12 text-xs sm:text-sm font-semibold text-white flex items-center gap-2 transition-colors cursor-pointer"
+                        onClick={(e) => handleToggleBookmark(seriesItem, e)}
+                        aria-label="Marcar serie como favorita"
+                        className={`absolute top-2.5 right-2.5 z-10 w-8 h-8 rounded-full backdrop-blur-md border flex items-center justify-center active:scale-90 transition-all cursor-pointer ${
+                          savedSeries
+                            ? 'bg-black/75 border-[#E11D48]/50 text-[#E11D48]'
+                            : 'bg-black/45 hover:bg-black/75 border-white/10 text-white/80 hover:text-white'
+                        }`}
                       >
-                        {loadingMoreSeries && (
-                          <Loader2 className="w-4 h-4 animate-spin text-[#E11D48]" />
-                        )}
-                        <span>{lang === 'es' ? 'Cargar más series' : 'Load more series'}</span>
+                        <Heart className={`w-3.5 h-3.5 ${savedSeries ? 'fill-current' : ''}`} />
                       </button>
+
+                      {/* Editorial Bottom Overlay */}
+                      <div className="absolute inset-x-0 bottom-0 pt-16 pb-2.5 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent flex items-end justify-between gap-2">
+                        <div className="min-w-0 flex-1 pointer-events-none">
+                          <h3 className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug drop-shadow">
+                            {show.title}
+                          </h3>
+                          <div className="text-[10px] text-zinc-300 truncate mt-1 flex items-center gap-1.5">
+                            <span>{show.year || 'TV'}</span>
+                            {show.rating && (
+                              <>
+                                <span className="text-zinc-500">·</span>
+                                <span className="text-amber-400 font-mono font-bold">
+                                  ★ {show.rating}
+                                </span>
+                              </>
+                            )}
+                            <span className="text-zinc-500">·</span>
+                            <span className="text-zinc-200 font-semibold">Serie</span>
+                          </div>
+                        </div>
+
+                        {show.tmdbId && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              triggerHaptic('light');
+                              setPreviewItem(seriesItem);
+                            }}
+                            title={lang === 'es' ? 'Ver Ficha y Tráiler' : 'Details & Trailer'}
+                            aria-label="Ver ficha de la serie"
+                            className="w-8 h-8 rounded-full bg-white/15 hover:bg-white/25 backdrop-blur-md border border-white/15 text-white flex items-center justify-center shrink-0 active:scale-90 transition-all cursor-pointer"
+                          >
+                            <Info className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  )}
-                </>
+                  );
+                })}
+              </div>
+
+              {hasMoreSeries && (
+                <div className="pt-3 flex justify-center">
+                  <button
+                    type="button"
+                    disabled={loadingMoreSeries}
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setSeriesPage((p) => p + 1);
+                    }}
+                    className="min-h-[46px] px-6 rounded-2xl bg-[#12141D] hover:bg-[#191C28] border border-white/12 text-xs sm:text-sm font-semibold text-white flex items-center gap-2 transition-colors cursor-pointer"
+                  >
+                    {loadingMoreSeries && (
+                      <Loader2 className="w-4 h-4 animate-spin text-[#E11D48]" />
+                    )}
+                    <span>{lang === 'es' ? 'Cargar más series' : 'Load more series'}</span>
+                  </button>
+                </div>
               )}
             </>
           )}

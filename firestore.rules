@@ -215,6 +215,37 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
+    function isValidFriendContact(data) {
+      return data.keys().hasAll([
+          'uid',
+          'friendId',
+          'friendName',
+          'friendAvatar',
+          'friendColor',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid',
+          'friendId',
+          'friendName',
+          'friendAvatar',
+          'friendColor',
+          'friendCode',
+          'createdAt',
+          'updatedAt'
+        ]) &&
+        data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.uid == request.auth.uid &&
+        data.friendId is string && data.friendId.size() >= 1 && data.friendId.size() <= 96 && data.friendId.matches('^[a-zA-Z0-9_\\-]+$') &&
+        data.friendName is string && data.friendName.size() >= 1 && data.friendName.size() <= 40 &&
+        data.friendAvatar is string && data.friendAvatar.size() >= 1 && data.friendAvatar.size() <= 16 &&
+        data.friendColor is string && data.friendColor.size() >= 4 && data.friendColor.size() <= 16 && data.friendColor.matches('^#[0-9a-fA-F]{3,8}$') &&
+        (!('friendCode' in data) || (data.friendCode is string && data.friendCode.size() >= 2 && data.friendCode.size() <= 24 && data.friendCode.matches('^[a-zA-Z0-9_\\-]+$'))) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
     // =========================================================================
     // 4. COLLECTION RULES (ALL COLLECTIONS IN firebase-blueprint.json)
     // =========================================================================
@@ -419,6 +450,53 @@ service cloud.firestore {
         (
           (resource == null && isOwnCompositeDocId(savedRoomId)) ||
           (resource != null && existing().uid == request.auth.uid && savedRoomId == request.auth.uid + '_' + existing().roomCode)
+        );
+    }
+
+    // Saved Friends: strictly owner-only friend contacts with anti-squatting composite ID binding
+    match /friends/{friendDocId} {
+      allow get: if isVerified() &&
+        isValidId(friendDocId) &&
+        (
+          (resource == null && isOwnCompositeDocId(friendDocId)) ||
+          (resource != null && existing().uid == request.auth.uid && friendDocId == request.auth.uid + '_' + existing().friendId)
+        );
+
+      allow list: if isVerified() &&
+        existing().uid == request.auth.uid;
+
+      allow create: if isVerified() &&
+        isValidId(friendDocId) &&
+        isValidFriendContact(incoming()) &&
+        friendDocId == request.auth.uid + '_' + incoming().friendId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerified() &&
+        isValidId(friendDocId) &&
+        isValidFriendContact(incoming()) &&
+        existing().uid == request.auth.uid &&
+        friendDocId == request.auth.uid + '_' + existing().friendId &&
+        incoming().uid == existing().uid &&
+        incoming().friendId == existing().friendId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          // Action: UpdateFriendDetails
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'friendName',
+            'friendAvatar',
+            'friendColor',
+            'friendCode',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerified() &&
+        isValidId(friendDocId) &&
+        (
+          (resource == null && isOwnCompositeDocId(friendDocId)) ||
+          (resource != null && existing().uid == request.auth.uid && friendDocId == request.auth.uid + '_' + existing().friendId)
         );
     }
   }

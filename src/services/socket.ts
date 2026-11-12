@@ -65,14 +65,20 @@ class SocketService {
 
       socket.onopen = () => {
         this.reconnectAttempts = 0;
-        this.send('JOIN_ROOM', {
-          roomId: this.roomId,
-          roomName: this.roomName,
-          user: this.user,
-          pin: this.connectOptions.pin,
-          tvAuthToken: this.connectOptions.tvAuthToken,
-          restoredBlueprint: this.connectOptions.restoredBlueprint,
-        });
+        if (this.roomId) {
+          this.send('JOIN_ROOM', {
+            roomId: this.roomId,
+            roomName: this.roomName,
+            user: this.user,
+            pin: this.connectOptions.pin,
+            tvAuthToken: this.connectOptions.tvAuthToken,
+            restoredBlueprint: this.connectOptions.restoredBlueprint,
+          });
+        } else if (this.user) {
+          this.send('REGISTER_PRESENCE', {
+            user: this.user,
+          });
+        }
         this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: true } });
         this.startHeartbeat();
       };
@@ -100,6 +106,8 @@ class SocketService {
           this.reconnectTimer = setTimeout(() => {
             if (this.roomId && this.user) {
               this.connect(this.roomId, this.user, this.roomName, this.connectOptions);
+            } else if (this.user) {
+              this.connectPresenceOnly(this.user);
             }
           }, delay);
         }
@@ -111,6 +119,19 @@ class SocketService {
     } catch (err) {
       console.error('Failed to open WebSocket:', err);
     }
+  }
+
+  connectPresenceOnly(user: Participant) {
+    this.user = user;
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.send('REGISTER_PRESENCE', {
+        user,
+        roomId: this.roomId || undefined,
+        roomName: this.roomName || undefined,
+      });
+      return;
+    }
+    this.connect('', user, '');
   }
 
   private startHeartbeat() {
@@ -130,6 +151,8 @@ class SocketService {
 
   disconnect() {
     this.intentionalClose = true;
+    this.roomId = '';
+    this.roomName = '';
     this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -346,6 +369,27 @@ class SocketService {
       senderName,
     });
   }
+
+  sendRoomInvite(params: {
+    toUserId: string;
+    toFriendCode?: string;
+    toUserName?: string;
+    fromUser: { id: string; name: string; avatar: string; color: string };
+    roomId: string;
+    roomName: string;
+    mediaTitle?: string;
+  }) {
+    this.send('SEND_ROOM_INVITE', params);
+  }
+
+  notifyFriendAdded(params: {
+    toUserId: string;
+    toFriendCode?: string;
+    fromUser: { id: string; name: string; avatar: string; color: string };
+  }) {
+    this.send('NOTIFY_FRIEND_ADDED', params);
+  }
 }
 
 export const socketService = new SocketService();
+

@@ -34,8 +34,8 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
 }) => {
   const sizeClass =
     size === 'lg'
-      ? 'min-h-[50px] px-6 py-3 text-sm sm:text-base rounded-2xl'
-      : 'min-h-[44px] px-4 py-2.5 text-xs sm:text-sm rounded-2xl';
+      ? 'min-h-12 px-6 py-3 text-sm rounded-2xl'
+      : 'min-h-11 px-4 py-2.5 text-xs rounded-2xl';
   return (
     <button
       {...props}
@@ -65,8 +65,8 @@ export const SecondaryButton: React.FC<SecondaryButtonProps> = ({
 }) => {
   const sizeClass =
     size === 'lg'
-      ? 'min-h-[50px] px-6 py-3 text-sm sm:text-base rounded-2xl'
-      : 'min-h-[44px] px-4 py-2.5 text-xs sm:text-sm rounded-2xl';
+      ? 'min-h-12 px-6 py-3 text-sm rounded-2xl'
+      : 'min-h-11 px-4 py-2.5 text-xs rounded-2xl';
   return (
     <button
       {...props}
@@ -108,7 +108,7 @@ export const IconButton: React.FC<IconButtonProps> = ({
   return (
     <button
       {...props}
-      className={`min-h-[44px] min-w-[44px] rounded-2xl inline-flex items-center justify-center active:scale-90 transition-all duration-150 select-none cursor-pointer shrink-0 ${variantClasses} ${className}`}
+      className={`min-h-11 min-w-11 rounded-2xl inline-flex items-center justify-center active:scale-90 transition-all duration-150 select-none cursor-pointer shrink-0 ${variantClasses} ${className}`}
     >
       {children}
     </button>
@@ -135,9 +135,9 @@ export const StandardInput: React.FC<StandardInputProps> = ({
       )}
       <input
         {...props}
-        className={`w-full min-h-[46px] ${icon ? 'pl-10' : 'pl-4'} ${
+        className={`w-full min-h-11 ${icon ? 'pl-10' : 'pl-4'} ${
           rightElement ? 'pr-12' : 'pr-4'
-        } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.08] border border-white/[0.09] focus:border-[#E11D48] text-base sm:text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all ${className}`}
+        } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.08] border border-white/[0.09] focus:border-[#E11D48] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all ${className}`}
       />
       {rightElement && (
         <div className="absolute right-1.5 flex items-center justify-center">
@@ -179,7 +179,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
       onClick={onClose}
     >
       <div
-        className={`w-full ${maxWidth} rounded-t-[28px] sm:rounded-[28px] bg-[#0B0B11]/95 backdrop-blur-2xl border-t sm:border border-white/[0.11] shadow-[0_-20px_70px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[88dvh] animate-sheet-up`}
+        className={`w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#0B0B11]/95 backdrop-blur-2xl border-t sm:border border-white/[0.11] shadow-[0_-20px_70px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[88dvh] animate-sheet-up`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Drag handle for mobile feel */}
@@ -253,7 +253,7 @@ export function SegmentedControl<T extends string>({
             key={option.id}
             type="button"
             onClick={() => onChange(option.id)}
-            className={`flex-1 min-h-[42px] px-3 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5 select-none cursor-pointer active:scale-[0.98] ${
+            className={`flex-1 min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5 select-none cursor-pointer active:scale-[0.98] ${
               isActive
                 ? 'bg-[#E11D48] text-white shadow-[0_4px_16px_rgba(225,29,72,0.35)]'
                 : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.04]'
@@ -263,8 +263,8 @@ export function SegmentedControl<T extends string>({
             <span className="truncate">{option.label}</span>
             {option.badge !== undefined && option.badge !== 0 && option.badge !== '0' && (
               <span
-                className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono leading-none ${
-                  isActive ? 'bg-black/25 text-white' : 'bg-white/10 text-zinc-300'
+                className={`px-2 py-0.5 rounded-full text-[0.7rem] font-mono font-bold leading-none ${
+                  isActive ? 'bg-black/30 text-white' : 'bg-white/10 text-zinc-200'
                 }`}
               >
                 {option.badge}

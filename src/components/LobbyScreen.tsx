@@ -224,16 +224,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         </header>
 
         {/* ==================================================================== */}
-        {/* HERO LAUNCH CONSOLE (Clean, Tactile, Progressive Disclosure)         */}
+        {/* HERO LAUNCH CONSOLE (1-Screen Zero-Scroll Mobile Design)             */}
         {/* ==================================================================== */}
         <section
-          className={`relative z-10 w-full max-w-2xl mx-auto ${
-            isDesktop ? 'px-6 pt-8 pb-14' : 'px-4 pt-3 pb-10'
+          className={`relative z-10 w-full max-w-xl mx-auto ${
+            isDesktop ? 'px-6 pt-6 pb-12' : 'px-4 pt-2 pb-6'
           }`}
         >
-          <div className="text-center space-y-2.5 mb-6">
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.04] border border-white/[0.08] text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-300">
-              <Sparkles className="w-3 h-3 text-[#E11D48]" />
+          <div className="text-center space-y-2 mb-4 sm:mb-6">
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.05] text-xs font-semibold tracking-wide text-zinc-300">
+              <Sparkles className="w-3.5 h-3.5 text-[#E11D48]" />
               <span>
                 {lang === 'es'
                   ? 'Cine · Series · Fútbol · Smart TV'
@@ -248,17 +248,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             >
               {t.heroHeadline}
             </h1>
-
-            <p className="text-xs sm:text-sm text-zinc-400 max-w-md mx-auto leading-relaxed">
-              {lang === 'es'
-                ? 'Entra con tu alias, invita con un toque y disfruta en sincronía milimétrica.'
-                : 'Enter your alias, invite with one tap, and watch in frame-accurate sync.'}
-            </p>
           </div>
 
           {/* Smart TV Auto-Detection Banner */}
           {onOpenTvPairLobby && isSmartTvBrowser() && (
-            <div className="mb-5 p-4 rounded-3xl bg-[#E11D48]/15 border border-[#E11D48]/50 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3.5 shadow-[0_20px_50px_rgba(225,29,72,0.25)]">
+            <div className="mb-4 p-4 rounded-3xl bg-[#E11D48]/15 border border-[#E11D48]/40 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shadow-[0_20px_50px_rgba(225,29,72,0.25)]">
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-2xl bg-[#E11D48] flex items-center justify-center text-white shrink-0">
                   <Tv className="w-5 h-5" />
@@ -281,79 +275,238 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             </div>
           )}
 
-          {/* Main Glass Launch Card */}
-          <div className="rounded-[28px] glass-panel shadow-[0_28px_80px_rgba(0,0,0,0.85)] p-5 sm:p-7 space-y-5">
-            {/* Alias Input */}
-            <div className="space-y-2">
-              <label
-                htmlFor="lobby-nickname"
-                className="block text-xs font-semibold text-zinc-300"
-              >
-                {t.nicknameLabel}
-              </label>
-              <div className="flex items-center gap-2">
-                <div
-                  aria-hidden="true"
-                  className="w-12 h-12 rounded-2xl bg-[#E11D48]/15 border border-[#E11D48]/35 flex items-center justify-center font-display font-bold text-sm text-white shrink-0"
-                >
-                  {getMonogramInitials(name)}
+          {/* Main OLED Cinema Launch Card */}
+          <div className="rounded-3xl bg-[#0E0F16]/90 backdrop-blur-2xl shadow-[inset_0_1px_0_rgba(255,255,255,0.09),0_28px_80px_rgba(0,0,0,0.85)] p-5 sm:p-6 space-y-4">
+            {/* 0. INSTANT 1-TAP RECENT ROOMS AT THE VERY TOP */}
+            {recentRooms.length > 0 && (
+              <div className="space-y-2 pb-3 border-b border-white/[0.06]">
+                <div className="flex items-center justify-between text-xs text-zinc-400">
+                  <span className="font-semibold flex items-center gap-1.5 text-zinc-300">
+                    <Clock className="w-3.5 h-3.5 text-[#E11D48]" />
+                    {lang === 'es' ? 'Entrar directo a tus salas:' : 'Jump back into your rooms:'}
+                  </span>
                 </div>
-                <input
-                  id="lobby-nickname"
-                  type="text"
-                  value={name}
-                  onChange={(e) => {
-                    setName(e.target.value);
-                    if (nameError) setNameError(false);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault();
-                      handleCreateRoom();
+                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
+                  {recentRooms.slice(0, 4).map((room, idx) => (
+                    <button
+                      key={room.id}
+                      type="button"
+                      onClick={() => {
+                        const profile = buildProfile();
+                        if (profile) {
+                          onEnterRoom(room.id, profile, room.name);
+                        }
+                      }}
+                      className={`min-h-10 px-3.5 rounded-2xl flex items-center gap-2 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                        idx === 0
+                          ? 'bg-white text-[#050508] shadow-md'
+                          : 'bg-white/[0.06] hover:bg-white/[0.11] text-zinc-200'
+                      }`}
+                    >
+                      <Play className="w-3 h-3 fill-current shrink-0" />
+                      <span className="truncate max-w-36">{room.name}</span>
+                      <ChevronRight className="w-3.5 h-3.5 opacity-60 shrink-0" />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 1. TOP PRIMARY OPTION: GOOGLE SIGN-IN OR SYNCED ACCOUNT */}
+            {!authUser ? (
+              <button
+                type="button"
+                disabled={authLoading}
+                onClick={() => {
+                  triggerHaptic('medium');
+                  onSignIn();
+                }}
+                className="w-full min-h-13 px-5 rounded-2xl bg-white hover:bg-zinc-100 active:scale-[0.98] disabled:opacity-60 text-[#050508] font-display font-bold text-sm flex items-center justify-center gap-3 shadow-[0_12px_32px_rgba(255,255,255,0.14)] transition-all cursor-pointer"
+              >
+                <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    fill="#4285F4"
+                    d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+                  />
+                  <path
+                    fill="#34A853"
+                    d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
+                  />
+                  <path
+                    fill="#FBBC05"
+                    d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
+                  />
+                  <path
+                    fill="#EA4335"
+                    d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+                  />
+                </svg>
+                <span>
+                  {authLoading
+                    ? lang === 'es'
+                      ? 'Conectando con Google...'
+                      : 'Connecting to Google...'
+                    : lang === 'es'
+                    ? 'Continuar con Google (Sincronizar Todo)'
+                    : 'Continue with Google'}
+                </span>
+              </button>
+            ) : (
+              <div className="p-3.5 rounded-2xl bg-white/[0.04] space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-white flex items-center justify-center shrink-0 shadow">
+                      <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+                        <path
+                          fill="#4285F4"
+                          d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+                        />
+                        <path
+                          fill="#34A853"
+                          d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
+                        />
+                        <path
+                          fill="#FBBC05"
+                          d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
+                        />
+                        <path
+                          fill="#EA4335"
+                          d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+                        />
+                      </svg>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-white truncate">
+                        {authUser.displayName || authUser.email}
+                      </div>
+                      <div className="text-xs text-emerald-400 truncate">
+                        {lang === 'es'
+                          ? 'Cuenta sincronizada ✓'
+                          : 'Account synced ✓'}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={onSignOut}
+                    className="px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-300 cursor-pointer shrink-0"
+                  >
+                    {lang === 'es' ? 'Cambiar' : 'Switch'}
+                  </button>
+                </div>
+
+                <PrimaryButton
+                  type="button"
+                  onClick={() => {
+                    const googleName =
+                      authUser.displayName?.trim() || name.trim() || 'Cineasta';
+                    const profile: StoredProfile = {
+                      id: initialProfile.id,
+                      name: googleName.slice(0, 24),
+                      avatar: initialProfile.avatar || '🎬',
+                      color: initialProfile.color || '#E11D48',
+                      isCustomized: true,
+                    };
+                    if (recentRooms.length > 0) {
+                      onEnterRoom(recentRooms[0].id, profile, recentRooms[0].name);
+                    } else {
+                      const code = generateShortRoomCode(4);
+                      onEnterRoom(code, profile, `Sala de ${profile.name}`);
                     }
                   }}
-                  placeholder={t.nicknamePlaceholder}
-                  maxLength={24}
-                  className={`flex-1 min-w-0 min-h-[48px] px-4 rounded-2xl bg-white/[0.04] border ${
-                    nameError
-                      ? 'border-[#E11D48]'
-                      : 'border-white/[0.1] focus:border-[#E11D48]'
-                  } text-base sm:text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition-colors`}
-                />
-                <IconButton
-                  type="button"
-                  onClick={handleRandomName}
-                  title={lang === 'es' ? 'Generar alias aleatorio' : 'Random alias'}
-                  aria-label="Generar alias aleatorio"
-                  className="w-12 h-12"
+                  fullWidth
+                  size="lg"
                 >
-                  <Shuffle className="w-4 h-4" />
-                </IconButton>
+                  <Play className="w-4 h-4 fill-current shrink-0" />
+                  <span>
+                    {lang === 'es'
+                      ? `Entrar a mi Sala (${
+                          authUser.displayName?.split(' ')[0] || 'Directo'
+                        })`
+                      : 'Enter My Room'}
+                  </span>
+                  <ArrowRight className="w-4 h-4 shrink-0" />
+                </PrimaryButton>
               </div>
-            </div>
+            )}
 
-            {/* Primary CTA: Create Room */}
-            <PrimaryButton
-              type="button"
-              onClick={handleCreateRoom}
-              fullWidth
-              size="lg"
-            >
-              <Play className="w-4 h-4 fill-current shrink-0" />
-              <span>{t.createRoomBtn}</span>
-              <ArrowRight className="w-4 h-4 shrink-0" />
-            </PrimaryButton>
+            {/* 2. FAST ALIAS ENTRY (Only shown prominently if not signed in, or compact) */}
+            {!authUser && (
+              <>
+                <div className="relative flex items-center py-0.5">
+                  <div className="flex-grow border-t border-white/[0.06]" />
+                  <span className="shrink-0 px-3 text-xs font-medium text-zinc-500">
+                    {lang === 'es' ? 'o entra rápido con tu alias' : 'or quick guest entry'}
+                  </span>
+                  <div className="flex-grow border-t border-white/[0.06]" />
+                </div>
 
-            {/* Secondary Actions (Progressive Disclosure: Join by code or Recent Room) */}
-            <div className="pt-3 border-t border-white/[0.07] space-y-3">
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <div
+                      aria-hidden="true"
+                      className="w-11 h-11 rounded-2xl bg-white/[0.06] flex items-center justify-center font-display font-bold text-sm text-white shrink-0"
+                    >
+                      {getMonogramInitials(name)}
+                    </div>
+                    <input
+                      id="lobby-nickname"
+                      type="text"
+                      value={name}
+                      onChange={(e) => {
+                        setName(e.target.value);
+                        if (nameError) setNameError(false);
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleCreateRoom();
+                        }
+                      }}
+                      placeholder={t.nicknamePlaceholder}
+                      maxLength={24}
+                      className={`flex-1 min-w-0 min-h-11 px-4 rounded-2xl bg-white/[0.05] border ${
+                        nameError
+                          ? 'border-[#E11D48]'
+                          : 'border-white/[0.08] focus:border-white/30'
+                      } text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition-colors`}
+                    />
+                    <IconButton
+                      type="button"
+                      onClick={handleRandomName}
+                      title={lang === 'es' ? 'Generar alias aleatorio' : 'Random alias'}
+                      aria-label="Generar alias aleatorio"
+                    >
+                      <Shuffle className="w-4 h-4" />
+                    </IconButton>
+                  </div>
+
+                  <PrimaryButton
+                    type="button"
+                    onClick={handleCreateRoom}
+                    fullWidth
+                    size="lg"
+                  >
+                    <Play className="w-4 h-4 fill-current shrink-0" />
+                    <span>
+                      {lang === 'es' ? 'Entrar a la Sala' : t.createRoomBtn}
+                    </span>
+                    <ArrowRight className="w-4 h-4 shrink-0" />
+                  </PrimaryButton>
+                </div>
+              </>
+            )}
+
+            {/* Secondary Actions: Join by Code or Settings/APK */}
+            <div className="pt-2 border-t border-white/[0.06]">
               {!showJoinDrawer ? (
-                <div className="grid grid-cols-2 gap-2.5">
+                <div className="grid grid-cols-2 gap-2">
                   <SecondaryButton
                     type="button"
                     onClick={() => setShowJoinDrawer(true)}
                     fullWidth
                   >
-                    <span>{lang === 'es' ? 'Tengo un código' : 'Join with code'}</span>
+                    <span>{lang === 'es' ? 'Unirse con código' : 'Join with code'}</span>
                   </SecondaryButton>
 
                   <SecondaryButton
@@ -361,20 +514,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     onClick={() => setShowLobbyOptionsSheet(true)}
                     fullWidth
                   >
-                    <Cloud className={`w-4 h-4 ${authUser ? 'text-emerald-400' : 'text-zinc-400'}`} />
+                    <Download className="w-4 h-4 text-zinc-300" />
                     <span className="truncate">
-                      {authUser
-                        ? authUser.displayName?.split(' ')[0] || 'Conectado'
-                        : lang === 'es'
-                        ? 'Cuenta y APK'
-                        : 'Account & App'}
+                      {lang === 'es' ? 'App y Ajustes' : 'App & Settings'}
                     </span>
                   </SecondaryButton>
                 </div>
               ) : (
                 <form
                   onSubmit={handleJoinByCode}
-                  className="space-y-2.5 animate-fade-in"
+                  className="space-y-2 animate-fade-in"
                 >
                   <div className="flex items-center justify-between">
                     <label
@@ -399,7 +548,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       onChange={(e) => setRoomCode(e.target.value)}
                       placeholder={t.roomCodePlaceholder}
                       autoFocus
-                      className="flex-1 min-w-0 min-h-[46px] px-4 rounded-2xl bg-white/[0.05] border border-white/[0.1] focus:border-[#E11D48] text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none font-mono"
+                      className="flex-1 min-w-0 min-h-11 px-4 rounded-2xl bg-white/[0.05] border border-white/[0.1] focus:border-white/30 text-sm text-white placeholder:text-zinc-500 outline-none font-mono"
                     />
                     <PrimaryButton
                       type="submit"
@@ -412,75 +561,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   </div>
                 </form>
               )}
-
-              {/* Fluid Horizontal Pills for Recent Rooms */}
-              {recentRooms.length > 0 && (
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-1">
-                  <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-zinc-500 shrink-0">
-                    <Clock className="w-3.5 h-3.5" />
-                    {lang === 'es' ? 'Recientes:' : 'Recent:'}
-                  </span>
-                  {recentRooms.slice(0, 4).map((room) => (
-                    <button
-                      key={room.id}
-                      type="button"
-                      onClick={() => {
-                        const profile = buildProfile();
-                        if (profile) {
-                          onEnterRoom(room.id, profile, room.name);
-                        }
-                      }}
-                      className="min-h-[38px] px-3.5 rounded-full bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] flex items-center gap-1.5 text-xs font-medium text-zinc-200 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
-                    >
-                      <span className="truncate max-w-36">{room.name}</span>
-                      <ChevronRight className="w-3.5 h-3.5 text-zinc-500 shrink-0" />
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Compact Visual Feature Pills (Replaces Long Manual Text) */}
-          <div className="mt-6 grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-            <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-[#E11D48]/15 flex items-center justify-center text-[#E11D48] shrink-0">
-                <Film className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-white truncate">Cine 1080p</div>
-                <div className="text-[10px] text-zinc-400 truncate">Español y VOSE</div>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-sky-500/15 flex items-center justify-center text-sky-400 shrink-0">
-                <Tv className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-white truncate">Series HD</div>
-                <div className="text-[10px] text-zinc-400 truncate">Guarda el minuto</div>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-emerald-500/15 flex items-center justify-center text-emerald-400 shrink-0">
-                <Trophy className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-white truncate">Deportes</div>
-                <div className="text-[10px] text-zinc-400 truncate">Directo + Multiview</div>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center gap-3">
-              <div className="w-9 h-9 rounded-xl bg-amber-500/15 flex items-center justify-center text-amber-400 shrink-0">
-                <Youtube className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-white truncate">Watch Party</div>
-                <div className="text-[10px] text-zinc-400 truncate">Chat y Mando TV</div>
-              </div>
             </div>
           </div>
         </section>

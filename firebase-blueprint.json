@@ -348,6 +348,72 @@
         "createdAt",
         "updatedAt"
       ]
+    },
+    "FriendContact": {
+      "title": "FriendContact",
+      "description": "Owner-only saved friend contact for 1-tap in-app room invitations and online presence.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Owner Firebase Auth UID.",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "friendId": {
+          "type": "string",
+          "description": "Sanitized friend user ID or friend tag.",
+          "minLength": 1,
+          "maxLength": 96,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "friendName": {
+          "type": "string",
+          "description": "Display nickname of the friend.",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "friendAvatar": {
+          "type": "string",
+          "description": "Emoji avatar of the friend.",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "friendColor": {
+          "type": "string",
+          "description": "Hex accent color of the friend.",
+          "minLength": 4,
+          "maxLength": 16,
+          "pattern": "^#[0-9a-fA-F]{3,8}$"
+        },
+        "friendCode": {
+          "type": "string",
+          "description": "Optional short friend code.",
+          "minLength": 2,
+          "maxLength": 24,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the friend was saved."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the friend was last updated."
+        }
+      },
+      "required": [
+        "uid",
+        "friendId",
+        "friendName",
+        "friendAvatar",
+        "friendColor",
+        "createdAt",
+        "updatedAt"
+      ]
     }
   },
   "firestore": {
@@ -366,6 +432,10 @@
     "/savedRooms/{savedRoomId}": {
       "schema": "SavedRoom",
       "description": "Owner-only permanent cloud rooms with optional 4-digit PIN and persisted queue."
+    },
+    "/friends/{friendDocId}": {
+      "schema": "FriendContact",
+      "description": "Owner-only saved friend contacts for direct in-app room invitations."
     }
   }
 }

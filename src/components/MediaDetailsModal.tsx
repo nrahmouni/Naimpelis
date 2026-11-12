@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   X,
   Play,
@@ -10,6 +10,8 @@ import {
   Youtube,
   Users,
   Globe,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -19,21 +21,67 @@ import {
 } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 
+export type MovieAudioLangPreference = 'ES' | 'LAT' | 'VOSE' | 'EN';
+
 interface MediaDetailsModalProps {
   item: CatalogMovie | null;
   lang: AppLanguage;
+  defaultAudioLang?: MovieAudioLangPreference;
   isBookmarked: boolean;
   onClose: () => void;
-  onPlayMovie: (movie: CatalogMovie, preferLang: 'ES' | 'EN') => void;
+  onPlayMovie: (movie: CatalogMovie, preferLang: MovieAudioLangPreference) => void;
   onOpenSeriesEpisodes: (tmdbId: number) => void;
   onToggleBookmark: (movie: CatalogMovie) => void;
   onAddToQueue: (item: Omit<RoomQueueItem, 'id' | 'addedBy'>) => void;
   onSelectSimilar: (movie: CatalogMovie) => void;
 }
 
+const AUDIO_LANGUAGE_OPTIONS: {
+  code: MovieAudioLangPreference;
+  flag: string;
+  labelEs: string;
+  labelEn: string;
+  subEs: string;
+  subEn: string;
+}[] = [
+  {
+    code: 'ES',
+    flag: '🇪🇸',
+    labelEs: 'Castellano',
+    labelEn: 'Spanish (Spain)',
+    subEs: 'Audio España HD',
+    subEn: 'Castilian HD',
+  },
+  {
+    code: 'LAT',
+    flag: '🇲🇽',
+    labelEs: 'Español Latino',
+    labelEn: 'Latin Spanish',
+    subEs: 'Audio Latino HD',
+    subEn: 'LatAm HD',
+  },
+  {
+    code: 'VOSE',
+    flag: '💬',
+    labelEs: 'Subtitulado (VOSE)',
+    labelEn: 'Subtitled (VOSE)',
+    subEs: 'V.O. + Subtítulos ES',
+    subEn: 'Original + ES Subs',
+  },
+  {
+    code: 'EN',
+    flag: '🇬🇧',
+    labelEs: 'Inglés Original',
+    labelEn: 'Original English',
+    subEs: 'Audio V.O. 1080p',
+    subEn: 'Original 1080p',
+  },
+];
+
 export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   item,
   lang,
+  defaultAudioLang = 'ES',
   isBookmarked,
   onClose,
   onPlayMovie,
@@ -45,10 +93,45 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const [details, setDetails] = useState<MediaRichDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [playTrailer, setPlayTrailer] = useState(false);
+  const [trailerMuted, setTrailerMuted] = useState(false);
   const [queuedFeedback, setQueuedFeedback] = useState(false);
+  const [selectedAudioLang, setSelectedAudioLang] =
+    useState<MovieAudioLangPreference>(defaultAudioLang);
+  const trailerIframeRef = useRef<HTMLIFrameElement | null>(null);
+
+  const sendTrailerCommand = useCallback((func: string, args: any[] = []) => {
+    const win = trailerIframeRef.current?.contentWindow;
+    if (!win) return;
+    try {
+      win.postMessage(JSON.stringify({ event: 'command', func, args }), '*');
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const unmuteAndPlayTrailer = useCallback(() => {
+    sendTrailerCommand('unMute', []);
+    sendTrailerCommand('setVolume', [100]);
+    sendTrailerCommand('playVideo', []);
+    setTrailerMuted(false);
+  }, [sendTrailerCommand]);
+
+  const handleToggleTrailerMute = useCallback(() => {
+    triggerHaptic('light');
+    if (trailerMuted) {
+      unmuteAndPlayTrailer();
+    } else {
+      sendTrailerCommand('mute', []);
+      setTrailerMuted(true);
+    }
+  }, [trailerMuted, unmuteAndPlayTrailer, sendTrailerCommand]);
 
   useEffect(() => {
-    if (!item?.tmdbId) {
+    setSelectedAudioLang(defaultAudioLang);
+  }, [defaultAudioLang, item?.id]);
+
+  useEffect(() => {
+    if (!item) {
       setDetails(null);
       return;
     }
@@ -58,14 +141,16 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     setQueuedFeedback(false);
 
     const mediaType = item.mediaType === 'tv' ? 'tv' : 'movie';
-    fetch(`/api/catalog/details/${mediaType}/${item.tmdbId}?lang=${lang}`)
+    const idSegment = item.tmdbId || 0;
+    fetch(
+      `/api/catalog/details/${mediaType}/${idSegment}?lang=${lang}&title=${encodeURIComponent(
+        item.title || ''
+      )}`
+    )
       .then((r) => r.json())
       .then((data) => {
         if (!cancelled && data?.success && data?.details) {
           setDetails(data.details);
-          if (data.details.trailerKey) {
-            setPlayTrailer(true);
-          }
         }
       })
       .catch(() => {})
@@ -76,7 +161,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [item?.tmdbId, item?.mediaType, lang]);
+  }, [item?.id, item?.tmdbId, item?.mediaType, item?.title, lang]);
 
   useEffect(() => {
     if (!item) return;
@@ -112,10 +197,18 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
         <div className="relative w-full aspect-video max-h-[36dvh] sm:max-h-[380px] bg-black shrink-0 overflow-hidden">
           {playTrailer && details?.trailerKey ? (
             <iframe
+              ref={trailerIframeRef}
               title={`${title} Trailer`}
-              src={`https://www.youtube.com/embed/${details.trailerKey}?autoplay=1&rel=0&modestbranding=1&playsinline=1`}
+              src={`https://www.youtube.com/embed/${details.trailerKey}?enablejsapi=1&autoplay=1&mute=0&rel=0&modestbranding=1&playsinline=1&origin=${encodeURIComponent(
+                typeof window !== 'undefined' ? window.location.origin : ''
+              )}`}
               allow="autoplay; encrypted-media; picture-in-picture"
               allowFullScreen
+              onLoad={() => {
+                unmuteAndPlayTrailer();
+                setTimeout(unmuteAndPlayTrailer, 350);
+                setTimeout(unmuteAndPlayTrailer, 950);
+              }}
               className="w-full h-full border-0"
             />
           ) : backdrop ? (
@@ -126,7 +219,21 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#0D0D12] via-[#0D0D12]/40 to-black/30" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#08090E] via-[#08090E]/35 to-black/30" />
+              {details?.trailerKey && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setTrailerMuted(false);
+                    setPlayTrailer(true);
+                  }}
+                  className="absolute left-4 bottom-4 z-20 min-h-10 px-4 rounded-full bg-black/75 hover:bg-black/90 border border-white/20 text-xs font-bold text-white flex items-center gap-2 backdrop-blur-xl shadow-xl cursor-pointer transition-all active:scale-95"
+                >
+                  <Youtube className="w-4 h-4 text-[#E11D48]" />
+                  <span>{lang === 'es' ? '▶ Ver Tráiler 4K' : '▶ Watch 4K Trailer'}</span>
+                </button>
+              )}
             </>
           ) : (
             <div className="w-full h-full flex items-center justify-center bg-[#121218]">
@@ -145,10 +252,40 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
           {/* Top Floating Controls */}
           <div className="absolute top-3 right-3 z-20 flex items-center gap-2">
+            {playTrailer && details?.trailerKey && (
+              <button
+                type="button"
+                onClick={handleToggleTrailerMute}
+                className={`min-h-[36px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 backdrop-blur-md cursor-pointer transition-colors ${
+                  trailerMuted
+                    ? 'bg-[#E11D48] border-[#E11D48] text-white'
+                    : 'bg-black/75 hover:bg-black border-white/20 text-white'
+                }`}
+                title={trailerMuted ? 'Activar sonido del tráiler' : 'Silenciar tráiler'}
+              >
+                {trailerMuted ? (
+                  <>
+                    <VolumeX className="w-3.5 h-3.5" />
+                    <span>{lang === 'es' ? 'Activar sonido' : 'Unmute'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>{lang === 'es' ? 'Sonido' : 'Sound'}</span>
+                  </>
+                )}
+              </button>
+            )}
             {details?.trailerKey && (
               <button
                 type="button"
-                onClick={() => setPlayTrailer((v) => !v)}
+                onClick={() => {
+                  setPlayTrailer((v) => {
+                    const next = !v;
+                    if (next) setTrailerMuted(false);
+                    return next;
+                  });
+                }}
                 className="min-h-[36px] px-3 rounded-xl bg-black/75 hover:bg-black border border-white/20 text-xs font-semibold text-white flex items-center gap-1.5 backdrop-blur-md cursor-pointer transition-colors"
               >
                 <Youtube className="w-3.5 h-3.5 text-[#E11D48]" />
@@ -225,18 +362,80 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               </p>
             )}
 
+            {/* Pre-Screening Audio & Language Selector (For Movies) */}
+            {!isSeries && (
+              <div className="pt-2 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
+                    <Globe className="w-3.5 h-3.5 text-[#E11D48]" />
+                    <span>
+                      {lang === 'es'
+                        ? '1. Elige el idioma antes de proyectar'
+                        : '1. Choose audio language before screening'}
+                    </span>
+                  </span>
+                  <span className="text-[11px] font-semibold text-[#FB7185]">
+                    {
+                      AUDIO_LANGUAGE_OPTIONS.find((o) => o.code === selectedAudioLang)?.[
+                        lang === 'es' ? 'labelEs' : 'labelEn'
+                      ]
+                    }
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {AUDIO_LANGUAGE_OPTIONS.map((opt) => {
+                    const active = selectedAudioLang === opt.code;
+                    return (
+                      <button
+                        key={opt.code}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setSelectedAudioLang(opt.code);
+                        }}
+                        className={`min-h-[52px] px-3 py-2 rounded-2xl border text-left transition-all cursor-pointer active:scale-[0.98] flex items-center gap-2.5 ${
+                          active
+                            ? 'bg-white text-[#050508] border-white shadow-[0_8px_24px_rgba(255,255,255,0.16)]'
+                            : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
+                        }`}
+                      >
+                        <span className="text-lg shrink-0">{opt.flag}</span>
+                        <div className="min-w-0 flex-1">
+                          <div
+                            className={`text-xs font-bold truncate ${
+                              active ? 'text-[#050508]' : 'text-white'
+                            }`}
+                          >
+                            {lang === 'es' ? opt.labelEs : opt.labelEn}
+                          </div>
+                          <div
+                            className={`text-[10px] truncate ${
+                              active ? 'text-zinc-700 font-medium' : 'text-zinc-400'
+                            }`}
+                          >
+                            {lang === 'es' ? opt.subEs : opt.subEn}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Action Buttons Row */}
-            <div className="pt-1.5 flex flex-wrap items-center gap-2">
-              {isSeries && item.tmdbId ? (
+            <div className="pt-2 flex flex-wrap items-center gap-2.5">
+              {isSeries && (item.tmdbId || details?.tmdbId) ? (
                 <button
                   type="button"
                   onClick={() => {
                     triggerHaptic('success');
-                    const id = item.tmdbId!;
+                    const id = (item.tmdbId || details?.tmdbId)!;
                     onClose();
                     onOpenSeriesEpisodes(id);
                   }}
-                  className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-semibold text-white flex items-center gap-2 cursor-pointer transition-colors shadow-lg shadow-[#E11D48]/25"
+                  className="min-h-[48px] px-6 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-lg shadow-[#E11D48]/30"
                 >
                   <Play className="w-4 h-4 fill-current" />
                   <span>
@@ -244,35 +443,32 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   </span>
                 </button>
               ) : (
-                <>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('success');
-                      onClose();
-                      onPlayMovie(item, 'ES');
-                    }}
-                    className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-semibold text-white flex items-center gap-2 cursor-pointer transition-colors shadow-lg shadow-[#E11D48]/25"
-                  >
-                    <Play className="w-4 h-4 fill-current" />
-                    <span>
-                      {lang === 'es' ? 'Proyectar ahora (ES)' : 'Play Spanish HD'}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('success');
-                      onClose();
-                      onPlayMovie(item, 'EN');
-                    }}
-                    className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs sm:text-sm font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors"
-                  >
-                    <Globe className="w-3.5 h-3.5 text-zinc-300" />
-                    <span>VOSE 1080p</span>
-                  </button>
-                </>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('success');
+                    const enrichedMovie: CatalogMovie = {
+                      ...item,
+                      tmdbId: item.tmdbId || details?.tmdbId,
+                    };
+                    onClose();
+                    onPlayMovie(enrichedMovie, selectedAudioLang);
+                  }}
+                  className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-lg shadow-[#E11D48]/30"
+                >
+                  <Play className="w-4 h-4 fill-current shrink-0" />
+                  <span>
+                    {lang === 'es'
+                      ? `Proyectar en ${
+                          AUDIO_LANGUAGE_OPTIONS.find((o) => o.code === selectedAudioLang)
+                            ?.labelEs || 'Sala'
+                        } (${selectedAudioLang})`
+                      : `Screen in ${
+                          AUDIO_LANGUAGE_OPTIONS.find((o) => o.code === selectedAudioLang)
+                            ?.labelEn || 'Room'
+                        }`}
+                  </span>
+                </button>
               )}
 
               {!isSeries && (
@@ -283,26 +479,26 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     onAddToQueue({
                       kind: 'movie',
                       title: item.title,
-                      subtitle: `${year || 'HD'} · Cine`,
-                      poster: item.poster,
-                      tmdbId: item.tmdbId,
+                      subtitle: `${year || 'HD'} · ${selectedAudioLang}`,
+                      poster: item.poster || details?.poster,
+                      tmdbId: item.tmdbId || details?.tmdbId,
                       url: item.bingetrixUrl || item.movidyUrl,
-                      preferLang: 'ES',
+                      preferLang: selectedAudioLang,
                     });
                     setQueuedFeedback(true);
                     setTimeout(() => setQueuedFeedback(false), 1800);
                   }}
-                  className="min-h-[44px] px-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+                  className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <Plus className="w-4 h-4" />
                   <span>
                     {queuedFeedback
                       ? lang === 'es'
-                        ? 'En la cola ✓'
-                        : 'Queued ✓'
+                        ? `En cola (${selectedAudioLang}) ✓`
+                        : `Queued (${selectedAudioLang}) ✓`
                       : lang === 'es'
-                      ? 'Añadir a Cola'
-                      : 'Add to Queue'}
+                      ? `Añadir a Cola (${selectedAudioLang})`
+                      : `Add to Queue (${selectedAudioLang})`}
                   </span>
                 </button>
               )}
@@ -313,7 +509,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   triggerHaptic('light');
                   onToggleBookmark(item);
                 }}
-                className="min-h-[44px] px-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer transition-colors"
+                className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer transition-colors"
               >
                 <Heart
                   className={`w-4 h-4 ${
