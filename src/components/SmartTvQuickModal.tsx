@@ -19,6 +19,7 @@ import {
   SecondaryButton,
   HapticTvRemote,
 } from './ui/DesignSystem';
+import { buildTvPairingUrl, getDisplayAppHost } from '../utils/shortLink';
 
 interface SmartTvQuickModalProps {
   isOpen: boolean;
@@ -51,6 +52,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
   const [tvCodeInput, setTvCodeInput] = useState('');
   const [showTvGuide, setShowTvGuide] = useState(false);
   const [copiedUrl, setCopiedUrl] = useState(false);
+  const [copiedIptv, setCopiedIptv] = useState<'m3u' | 'epg' | null>(null);
   const [showWirelessDrawer, setShowWirelessDrawer] = useState(false);
   const [forceShowRemote, setForceShowRemote] = useState(false);
   const [pairedCodeLabel, setPairedCodeLabel] = useState<string | null>(null);
@@ -58,7 +60,11 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
   if (!isOpen) return null;
 
   const showRemoteView = hasConnectedSmartTv || forceShowRemote || Boolean(pairedCodeLabel);
-  const tvUrl = `${window.location.origin}/tv`;
+  const publicHost = getDisplayAppHost();
+  const publicOrigin = `https://${publicHost}`;
+  const tvUrl = buildTvPairingUrl();
+  const iptvM3uUrl = `${publicOrigin}/naim-cine.m3u`;
+  const iptvEpgUrl = `${publicOrigin}/epg.xml`;
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&bgcolor=050508&color=FFFFFF&data=${encodeURIComponent(
     tvUrl
   )}`;
@@ -78,6 +84,16 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
       await navigator.clipboard.writeText(tvUrl);
       setCopiedUrl(true);
       setTimeout(() => setCopiedUrl(false), 2000);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleCopyIptvLink = async (kind: 'm3u' | 'epg') => {
+    try {
+      await navigator.clipboard.writeText(kind === 'm3u' ? iptvM3uUrl : iptvEpgUrl);
+      setCopiedIptv(kind);
+      setTimeout(() => setCopiedIptv(null), 2000);
     } catch {
       // ignore
     }
@@ -215,7 +231,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               </p>
             </div>
             <a
-              href="/NAIM-CINE-TV.apk?v=8"
+              href="/NAIM-CINE-TV.apk?v=14"
               download="NAIM-CINE-TV.apk"
               className="min-h-[42px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
             >
@@ -232,17 +248,78 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 <span>App Nativa Móvil Android (.APK)</span>
               </div>
               <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
-                Reproductor ExoPlayer HD nativo, Fútbol RBTV+, beIN, ESPN 1-7, DSports, TDT, Cine y Series.
+                Buscador de Cine y Series, motor ExoPlayer HD, Fútbol RBTV+, beIN ES/Árabe, ESPN 1-7, DSports y TDT.
               </p>
             </div>
             <a
-              href="/NAIM-CINE.apk?v=11"
+              href="/NAIM-CINE.apk?v=14"
               download="NAIM-CINE.apk"
               className="min-h-[42px] px-3.5 rounded-xl bg-white/[0.1] hover:bg-white/[0.16] border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
             >
               <Download className="w-4 h-4 text-[#FB7185] shrink-0" />
               <span>APK Móvil</span>
             </a>
+          </div>
+
+          {/* Samsung Smart TV IPTV (.M3U Playlist + XMLTV EPG) */}
+          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-sky-500/25 space-y-2.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
+                  <Tv className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Samsung Smart TV · Lista IPTV (.M3U + EPG)</span>
+                </div>
+                <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
+                  Los 86 canales en directo (TDT, Movistar+, DAZN, beIN Español y Árabe 1-9, ESPN 1-7, DSports) listos para OTTplayer, IPTV Smarters, Smart IPTV o SS IPTV.
+                </p>
+              </div>
+              <a
+                href="/naim-cine.m3u?download=1"
+                download="NAIM-CINE-Samsung-TV.m3u"
+                className="min-h-[40px] px-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-zinc-950 text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span>.M3U</span>
+              </a>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleCopyIptvLink('m3u')}
+                className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-semibold text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              >
+                {copiedIptv === 'm3u' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>URL IPTV Copiada</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Copiar URL .M3U</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleCopyIptvLink('epg')}
+                className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-semibold text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              >
+                {copiedIptv === 'epg' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>URL EPG Copiada</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-zinc-300" />
+                    <span>Copiar Guía EPG</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* 2. 1-Step 4-Digit Smart TV Code Pairing */}

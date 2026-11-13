@@ -150,18 +150,47 @@ interface ExtractedStreamResult {
 
 const extractionCache = new Map<string, ExtractedStreamResult>();
 
-function buildHlsProxyUrl(rawM3u8Url: string, referer: string, transcodeAudio = false): string {
-  const needsAac = transcodeAudio || isDvbHeadendStream(rawM3u8Url);
-  return `/api/hls-proxy/stream.m3u8?url=${encodeURIComponent(rawM3u8Url)}&referer=${encodeURIComponent(referer)}${needsAac ? '&aac=1' : ''}`;
+function getPublicOrigin(req: express.Request): string {
+  const overrideOrigin = String(req.query.origin || '').trim();
+  if (/^https?:\/\/[a-z0-9.-]+(:\d+)?$/i.test(overrideOrigin)) {
+    return overrideOrigin.replace(/\/+$/, '');
+  }
+  const rawProto = String(req.headers['x-forwarded-proto'] || req.protocol || 'http')
+    .split(',')[0]
+    .trim();
+  const rawHost = String(req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000')
+    .split(',')[0]
+    .trim();
+  if (/^ais-dev-/i.test(rawHost)) {
+    return 'https://naimcine.ai.studio';
+  }
+  const proto =
+    rawHost.endsWith('.run.app') || rawHost.endsWith('.ai.studio') ? 'https' : rawProto;
+  return `${proto}://${rawHost}`;
 }
 
-function buildTsProxyUrl(rawMediaUrl: string, referer: string, transcodeAudio = false): string {
+function buildHlsProxyUrl(
+  rawM3u8Url: string,
+  referer: string,
+  transcodeAudio = false,
+  originPrefix = ''
+): string {
+  const needsAac = transcodeAudio || isDvbHeadendStream(rawM3u8Url);
+  return `${originPrefix}/api/hls-proxy/stream.m3u8?url=${encodeURIComponent(rawM3u8Url)}&referer=${encodeURIComponent(referer)}${needsAac ? '&aac=1' : ''}${originPrefix ? '&abs=1' : ''}`;
+}
+
+function buildTsProxyUrl(
+  rawMediaUrl: string,
+  referer: string,
+  transcodeAudio = false,
+  originPrefix = ''
+): string {
   const isMp4Segment =
     /\.(m4s|mp4|cmfv|cmfa)(\?|$)/i.test(rawMediaUrl) ||
     /\/segs\/[^/]+\/init\./i.test(rawMediaUrl);
   const ext = isMp4Segment ? 'segment.m4s' : 'segment.ts';
   const needsAac = !isMp4Segment && (transcodeAudio || isDvbHeadendStream(rawMediaUrl));
-  return `/api/ts-proxy/${ext}?url=${encodeURIComponent(rawMediaUrl)}&referer=${encodeURIComponent(referer)}${needsAac ? '&aac=1' : ''}`;
+  return `${originPrefix}/api/ts-proxy/${ext}?url=${encodeURIComponent(rawMediaUrl)}&referer=${encodeURIComponent(referer)}${needsAac ? '&aac=1' : ''}`;
 }
 
 // ============================================================================
@@ -4951,6 +4980,15 @@ app.options(
     '/api/hls-proxy/:filename',
     '/api/ts-proxy',
     '/api/ts-proxy/:filename',
+    '/naim-cine.m3u',
+    '/NAIM-CINE-Samsung-TV.m3u',
+    '/iptv.m3u',
+    '/naim-cine.m3u8',
+    '/api/iptv/playlist.m3u',
+    '/api/iptv/live/:channelId',
+    '/api/iptv/logo/:channelId',
+    '/epg.xml',
+    '/api/iptv/epg.xml',
   ],
   (_req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -4992,9 +5030,12 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
   const targetUrl = String(req.query.url || '');
   const referer = String(req.query.referer || '');
   const forceAac = req.query.aac === '1' || isDvbHeadendStream(targetUrl);
+  const useAbs = req.query.abs === '1';
+  const originPrefix = useAbs ? getPublicOrigin(req) : '';
+  const vodCacheKey = useAbs ? `${originPrefix}|${targetUrl}` : targetUrl;
   if (!targetUrl) return res.status(400).send('Missing url');
 
-  const cachedVod = !forceAac ? vodHlsManifestCache.get(targetUrl) : undefined;
+  const cachedVod = !forceAac ? vodHlsManifestCache.get(vodCacheKey) : undefined;
   if (cachedVod && Date.now() - cachedVod.ts < 2 * 60 * 60 * 1000) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
@@ -5072,9 +5113,9 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
             try {
               const absUri = new URL(uriVal, baseUrl).href;
               if (trimmed.startsWith('#EXT-X-MEDIA') || absUri.includes('.m3u8')) {
-                return `URI="${buildHlsProxyUrl(absUri, effectiveReferer, forceAac)}"`;
+                return `URI="${buildHlsProxyUrl(absUri, effectiveReferer, forceAac, originPrefix)}"`;
               }
-              return `URI="${buildTsProxyUrl(absUri, effectiveReferer, forceAac)}"`;
+              return `URI="${buildTsProxyUrl(absUri, effectiveReferer, forceAac, originPrefix)}"`;
             } catch {
               return _match;
             }
@@ -5096,8 +5137,8 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
         }
 
         return isPlaylist
-          ? buildHlsProxyUrl(absUrl, effectiveReferer, forceAac)
-          : buildTsProxyUrl(absUrl, effectiveReferer, forceAac);
+          ? buildHlsProxyUrl(absUrl, effectiveReferer, forceAac, originPrefix)
+          : buildTsProxyUrl(absUrl, effectiveReferer, forceAac, originPrefix);
       } catch {
         nextLineIsVariantPlaylist = false;
         return line;
@@ -5132,7 +5173,7 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
                   seq: baseSeq + segOffset,
                   extinf: pendingExtinf,
                   absUrl: abs,
-                  proxiedUrl: buildTsProxyUrl(abs, effectiveReferer, true),
+                  proxiedUrl: buildTsProxyUrl(abs, effectiveReferer, true, originPrefix),
                   ts: nowMs,
                 });
                 segOffset++;
@@ -5143,7 +5184,8 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
           }
 
           if (currentSegs.length > 0) {
-            const prevHistory = dvbRollingPlaylistMap.get(targetUrl) || [];
+            const dvbCacheKey = useAbs ? `${originPrefix}|${targetUrl}` : targetUrl;
+            const prevHistory = dvbRollingPlaylistMap.get(dvbCacheKey) || [];
             const bySeq = new Map<number, RollingDvbSeg>();
             for (const oldSeg of prevHistory) {
               if (nowMs - oldSeg.ts < 65_000 && dvbAacSegmentCache.has(oldSeg.absUrl)) {
@@ -5162,7 +5204,7 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
               if (!found) break;
               contiguous.unshift(found);
             }
-            dvbRollingPlaylistMap.set(targetUrl, contiguous);
+            dvbRollingPlaylistMap.set(dvbCacheKey, contiguous);
 
             if (dvbRollingPlaylistMap.size > 40) {
               const oldestChannel = dvbRollingPlaylistMap.keys().next().value;
@@ -5199,7 +5241,7 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
         const oldestKey = vodHlsManifestCache.keys().next().value;
         if (oldestKey) vodHlsManifestCache.delete(oldestKey);
       }
-      vodHlsManifestCache.set(targetUrl, { manifest: finalManifest, ts: Date.now() });
+      vodHlsManifestCache.set(vodCacheKey, { manifest: finalManifest, ts: Date.now() });
     }
 
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -7979,6 +8021,267 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     ],
   },
   // ==========================================================================
+  // BEIN SPORTS ÁRABE EN VIVO (beIN SPORTS MENA 1–9 + XTRA · AUDIO ÁRABE HD)
+  // ==========================================================================
+  {
+    id: 'bein-ar-1',
+    dial: 90,
+    name: 'beIN SPORTS 1 (Árabe)',
+    shortMark: 'beIN AR1',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS 1 MENA en directo con comentarios en árabe: Champions League, Premier League y LaLiga',
+    channels: [
+      {
+        id: 'beinar1-hd',
+        label: 'Señal Principal beIN 1 Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/7.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'beinar1-sd',
+        label: 'Señal 2 Respaldo beIN 1 Árabe',
+        lang: 'AR',
+        quality: 'SD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/1.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-ar-2',
+    dial: 91,
+    name: 'beIN SPORTS 2 (Árabe)',
+    shortMark: 'beIN AR2',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS 2 MENA en directo con comentarios en árabe: fútbol inglés, español y torneos UEFA',
+    channels: [
+      {
+        id: 'beinar2-hd',
+        label: 'Señal Principal beIN 2 Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/8.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'beinar2-sd',
+        label: 'Señal 2 Respaldo beIN 2 Árabe',
+        lang: 'AR',
+        quality: 'SD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/2.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-ar-3',
+    dial: 92,
+    name: 'beIN SPORTS 3 (Árabe)',
+    shortMark: 'beIN AR3',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS 3 MENA en árabe: LaLiga, Serie A, Ligue 1 y competiciones internacionales en vivo',
+    channels: [
+      {
+        id: 'beinar3-hd',
+        label: 'Señal Principal beIN 3 Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/9.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'beinar3-sd',
+        label: 'Señal 2 Respaldo beIN 3 Árabe',
+        lang: 'AR',
+        quality: 'SD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/3.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-ar-4',
+    dial: 93,
+    name: 'beIN SPORTS 4 (Árabe)',
+    shortMark: 'beIN AR4',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS 4 MENA en árabe: partidos simultáneos de UEFA Champions League, Europa League y NBA',
+    channels: [
+      {
+        id: 'beinar4-hd',
+        label: 'Señal Principal beIN 4 Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/10.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'beinar4-sd',
+        label: 'Señal 2 Respaldo beIN 4 Árabe',
+        lang: 'AR',
+        quality: 'SD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/4.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-ar-5',
+    dial: 94,
+    name: 'beIN SPORTS 5 (Árabe)',
+    shortMark: 'beIN AR5',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS 5 MENA en árabe: cobertura multicanal de ligas europeas, AFCON y fútbol mundial',
+    channels: [
+      {
+        id: 'beinar5-hd',
+        label: 'Señal Principal beIN 5 Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/11.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'beinar5-sd',
+        label: 'Señal 2 Respaldo beIN 5 Árabe',
+        lang: 'AR',
+        quality: 'SD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/5.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-ar-6',
+    dial: 95,
+    name: 'beIN SPORTS 6 (Árabe)',
+    shortMark: 'beIN AR6',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS 6 MENA en árabe: partidos simultáneos europeos y tenis ATP/WTA en directo',
+    channels: [
+      {
+        id: 'beinar6-hd',
+        label: 'Señal Principal beIN 6 Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/12.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'beinar6-sd',
+        label: 'Señal 2 Respaldo beIN 6 Árabe',
+        lang: 'AR',
+        quality: 'SD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/6.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-ar-7',
+    dial: 96,
+    name: 'beIN SPORTS 7 (Árabe)',
+    shortMark: 'beIN AR7',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS 7 MENA en árabe: jornadas europeas simultáneas, eliminatorias y motor en directo',
+    channels: [
+      {
+        id: 'beinar7-hd',
+        label: 'Señal Directa beIN 7 Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/14.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-ar-8',
+    dial: 97,
+    name: 'beIN SPORTS 8 (Árabe)',
+    shortMark: 'beIN AR8',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS 8 MENA en árabe: fútbol internacional y competiciones AFC/CAF en vivo',
+    channels: [
+      {
+        id: 'beinar8-hd',
+        label: 'Señal Directa beIN 8 Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/16.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-ar-9',
+    dial: 98,
+    name: 'beIN SPORTS 9 (Árabe)',
+    shortMark: 'beIN AR9',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS 9 MENA en árabe: eventos deportivos simultáneos 24/7 en alta definición',
+    channels: [
+      {
+        id: 'beinar9-hd',
+        label: 'Señal Directa beIN 9 Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/17.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-ar-xtra',
+    dial: 99,
+    name: 'beIN SPORTS XTRA (Árabe)',
+    shortMark: 'beIN ARX',
+    brandTone: '#5B21B6',
+    network: 'beIN SPORTS Árabe',
+    category: 'beinsports',
+    quality: 'HD Directo',
+    description: 'beIN SPORTS XTRA / beINSPIRED MENA en árabe: fútbol especial, Champions y eventos extra en directo',
+    channels: [
+      {
+        id: 'beinarx-hd',
+        label: 'Señal Directa beIN XTRA Árabe HD',
+        lang: 'AR',
+        quality: 'HD',
+        sourceUrl: 'https://vg162.adcdsd123321.shop/13.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  // ==========================================================================
   // ESPN EN VIVO (ESPN, ESPN 2, ESPN 3, ESPN 4, ESPN 5, ESPN 6, ESPN 7, PREMIUM)
   // ==========================================================================
   {
@@ -9582,6 +9885,35 @@ async function resolveTmdbIdByTitle(
   }
 }
 
+function formatExtractResponseForClient(
+  req: express.Request,
+  payload: ExtractedStreamResult
+): ExtractedStreamResult {
+  if (String(req.query.abs || '') !== '1') return payload;
+  const publicOrigin = getPublicOrigin(req);
+  const absProxyUrl = (u?: string): string | undefined => {
+    if (!u) return u;
+    if (u.startsWith('/api/hls-proxy/')) {
+      const full = `${publicOrigin}${u}`;
+      return full.includes('abs=1') ? full : `${full}&abs=1`;
+    }
+    if (u.startsWith('/api/ts-proxy/')) {
+      return `${publicOrigin}${u}`;
+    }
+    return u;
+  };
+  return {
+    ...payload,
+    streamUrl: absProxyUrl(payload.streamUrl) || payload.streamUrl,
+    tracks: Array.isArray(payload.tracks)
+      ? payload.tracks.map((tr) => ({
+          ...tr,
+          resolvedStreamUrl: absProxyUrl(tr.resolvedStreamUrl),
+        }))
+      : payload.tracks,
+  };
+}
+
 app.get('/api/extract/stream', async (req, res) => {
   const rawInput = String(req.query.url || '').trim();
   const movidyUrlParam = String(req.query.movidyUrl || '').trim();
@@ -9601,7 +9933,7 @@ app.get('/api/extract/stream', async (req, res) => {
   const cacheKey = `${mediaTypeParam}|${tmdbIdParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${rawInput}|${movidyUrlParam}|${titleHint}`;
   const cached = extractionCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    return res.json(cached);
+    return res.json(formatExtractResponseForClient(req, cached));
   }
 
   try {
@@ -9660,7 +9992,7 @@ app.get('/api/extract/stream', async (req, res) => {
         expiresAt: Date.now() + 4 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
-      return res.json(result);
+      return res.json(formatExtractResponseForClient(req, result));
     }
 
     // CASE 1A: Direct Vidhide / Embed69 Spanish/Latino/VOSE track switch
@@ -9679,7 +10011,7 @@ app.get('/api/extract/stream', async (req, res) => {
         expiresAt: Date.now() + 12 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
-      return res.json(result);
+      return res.json(formatExtractResponseForClient(req, result));
     }
 
     // CASE 1A-2: Moe / Embed Sniff track switch (VOE / Streamwish / Filelions fallback)
@@ -9701,7 +10033,7 @@ app.get('/api/extract/stream', async (req, res) => {
         expiresAt: Date.now() + 12 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
-      return res.json(result);
+      return res.json(formatExtractResponseForClient(req, result));
     }
 
     // CASE 1B: Direct Movidy base64 track (`nupload.my`)
@@ -9721,7 +10053,7 @@ app.get('/api/extract/stream', async (req, res) => {
           expiresAt: Date.now() + 15 * 60 * 1000,
         };
         extractionCache.set(cacheKey, result);
-        return res.json(result);
+        return res.json(formatExtractResponseForClient(req, result));
       }
       return res.status(404).json({
         success: false,
@@ -9742,7 +10074,7 @@ app.get('/api/extract/stream', async (req, res) => {
         expiresAt: Date.now() + 30 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
-      return res.json(result);
+      return res.json(formatExtractResponseForClient(req, result));
     }
 
     // CASE 2: YouTube URL
@@ -9757,7 +10089,7 @@ app.get('/api/extract/stream', async (req, res) => {
         expiresAt: Date.now() + 60 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
-      return res.json(result);
+      return res.json(formatExtractResponseForClient(req, result));
     }
 
     // CASE 3: Direct .m3u8 or .mp4 URL
@@ -9771,7 +10103,7 @@ app.get('/api/extract/stream', async (req, res) => {
         expiresAt: Date.now() + 15 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
-      return res.json(result);
+      return res.json(formatExtractResponseForClient(req, result));
     }
 
     if (resolverType === 'direct_mp4' || /\.(mp4|webm|mkv)(\?|$)/i.test(rawInput)) {
@@ -9789,7 +10121,7 @@ app.get('/api/extract/stream', async (req, res) => {
         expiresAt: Date.now() + 20 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
-      return res.json(result);
+      return res.json(formatExtractResponseForClient(req, result));
     }
 
     // CASE 4: UNIFIED MOVIE & TV SERIES MULTI-ENGINE (MOVIDY ES/LAT/VOSE + EMBED69/SERIESKAO ES/LAT/VOSE + BINGETRIX EN 1080P)
@@ -10109,7 +10441,7 @@ app.get('/api/extract/stream', async (req, res) => {
           expiresAt: Date.now() + 8 * 60 * 1000,
         };
         extractionCache.set(cacheKey, result);
-        return res.json(result);
+        return res.json(formatExtractResponseForClient(req, result));
       }
 
       // ======================================================================
@@ -10386,7 +10718,7 @@ app.get('/api/extract/stream', async (req, res) => {
           expiresAt: Date.now() + 10 * 60 * 1000,
         };
         extractionCache.set(cacheKey, fallbackResult);
-        return res.json(fallbackResult);
+        return res.json(formatExtractResponseForClient(req, fallbackResult));
       }
     }
 
@@ -10447,7 +10779,7 @@ app.get('/api/extract/stream', async (req, res) => {
           expiresAt: Date.now() + 3 * 60 * 1000,
         };
         extractionCache.set(cacheKey, result);
-        return res.json(result);
+        return res.json(formatExtractResponseForClient(req, result));
       }
 
       // If no raw HLS/MP4 stream was sniffed, check if the external source allows clean iframe embedding;
@@ -13900,6 +14232,671 @@ app.get('/api/extract/catala-3cat', async (req, res) => {
     });
   } catch {
     return res.status(500).json({ success: false });
+  }
+});
+
+// ============================================================================
+// SAMSUNG SMART TV IPTV SUITE (.M3U PLAYLIST + LIVE HLS RESOLVER + XMLTV EPG + PNG BADGES)
+// Compatible with IPTV Smarters Pro, Smart IPTV (SIPTV), SS IPTV, IBO Player, OttPlayer & Flix IPTV
+// ============================================================================
+const IPTV_GROUP_TITLES: Record<string, string> = {
+  generalistas: 'TDT Generalistas',
+  movistar: 'Fútbol · Movistar+',
+  dazn: 'Fútbol · DAZN',
+  beinsports: 'Fútbol · beIN SPORTS',
+  espn: 'Fútbol · ESPN 1-7',
+  dsports: 'Fútbol · DSports',
+  tnt_space: 'Deportes · TNT y Space',
+  cine_series: 'Cine y Series',
+  entretenimiento: 'Entretenimiento',
+  noticias_deportes: 'Noticias y Deporte',
+  infantil_autonomicas: 'Infantil y Autonómicas',
+};
+
+const IPTV_EPG_ID_ALIASES: Record<string, string> = {
+  'cat-sx3-live': 'cat-sx3',
+  'cat-tv3-live': 'cat-tv3',
+  'cat-324-live': 'cat-324',
+  'bein-ar-1': 'beINSports1.qa@MENA',
+  'bein-ar-2': 'beINSports2.qa@MENA',
+  'bein-ar-3': 'beINSports3.qa@MENA',
+  'bein-ar-4': 'beINSports4.qa@MENA',
+  'bein-ar-5': 'beINSports5.qa@MENA',
+  'bein-ar-6': 'beINSports6.qa@MENA',
+  'bein-ar-7': 'beINSports7.qa@MENA',
+  'bein-ar-8': 'beINSports8.qa@MENA',
+  'bein-ar-9': 'beINSports9.qa@MENA',
+  'bein-ar-xtra': 'beINSportsXTRA1.qa@MENA',
+};
+
+function getAllIptvChannels(): any[] {
+  const seen = new Set<string>();
+  const combined: any[] = [];
+  for (const ch of [...SPANISH_TDT_CHANNELS, ...CATALA_LIVE_CHANNELS]) {
+    if (!ch?.id || seen.has(ch.id)) continue;
+    seen.add(ch.id);
+    combined.push(ch);
+  }
+  return combined;
+}
+
+function getIptvEpgId(channelId: string): string {
+  return IPTV_EPG_ID_ALIASES[channelId] || channelId;
+}
+
+function escapeXmlText(val: string): string {
+  return String(val || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function formatXmltvUtcTime(ms: number): string {
+  const d = new Date(ms);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getUTCFullYear()}${pad(d.getUTCMonth() + 1)}${pad(d.getUTCDate())}${pad(
+    d.getUTCHours()
+  )}${pad(d.getUTCMinutes())}${pad(d.getUTCSeconds())} +0000`;
+}
+
+// Pure-Node 96x96 PNG Channel Badge Encoder (zero native deps, cached per channel)
+const iptvPngLogoCache = new Map<string, Buffer>();
+const PNG_CRC32_TABLE = (() => {
+  const tbl = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    }
+    tbl[n] = c >>> 0;
+  }
+  return tbl;
+})();
+
+function pngCrc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c = PNG_CRC32_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+function makePngChunk(type: string, data: Buffer): Buffer {
+  const len = Buffer.alloc(4);
+  len.writeUInt32BE(data.length, 0);
+  const typeBuf = Buffer.from(type, 'ascii');
+  const crcBuf = Buffer.alloc(4);
+  const combined = Buffer.concat([typeBuf, data]);
+  crcBuf.writeUInt32BE(pngCrc32(combined), 0);
+  return Buffer.concat([len, combined, crcBuf]);
+}
+
+const MINI_FONT_3X5: Record<string, string[]> = {
+  A: ['010', '101', '111', '101', '101'],
+  B: ['110', '101', '110', '101', '110'],
+  C: ['011', '100', '100', '100', '011'],
+  D: ['110', '101', '101', '101', '110'],
+  E: ['111', '100', '110', '100', '111'],
+  F: ['111', '100', '110', '100', '100'],
+  G: ['011', '100', '101', '101', '011'],
+  H: ['101', '101', '111', '101', '101'],
+  I: ['111', '010', '010', '010', '111'],
+  J: ['001', '001', '001', '101', '010'],
+  K: ['101', '101', '110', '101', '101'],
+  L: ['100', '100', '100', '100', '111'],
+  M: ['101', '111', '111', '101', '101'],
+  N: ['101', '111', '111', '111', '101'],
+  O: ['010', '101', '101', '101', '010'],
+  P: ['110', '101', '110', '100', '100'],
+  Q: ['010', '101', '101', '111', '011'],
+  R: ['110', '101', '110', '101', '101'],
+  S: ['011', '100', '010', '001', '110'],
+  T: ['111', '010', '010', '010', '010'],
+  U: ['101', '101', '101', '101', '111'],
+  V: ['101', '101', '101', '101', '010'],
+  W: ['101', '101', '111', '111', '101'],
+  X: ['101', '101', '010', '101', '101'],
+  Y: ['101', '101', '010', '010', '010'],
+  Z: ['111', '001', '010', '100', '111'],
+  '0': ['111', '101', '101', '101', '111'],
+  '1': ['010', '110', '010', '010', '111'],
+  '2': ['110', '001', '010', '100', '111'],
+  '3': ['110', '001', '010', '001', '110'],
+  '4': ['101', '101', '111', '001', '001'],
+  '5': ['111', '100', '110', '001', '110'],
+  '6': ['011', '100', '111', '101', '111'],
+  '7': ['111', '001', '010', '010', '010'],
+  '8': ['111', '101', '111', '101', '111'],
+  '9': ['111', '101', '111', '001', '110'],
+  '+': ['000', '010', '111', '010', '000'],
+  '-': ['000', '000', '111', '000', '000'],
+};
+
+function renderIptvChannelPng(shortMark: string, hexColor: string): Buffer {
+  const cleanMark = (shortMark || 'TV').toUpperCase().replace(/[^A-Z0-9+-]/g, '').slice(0, 4) || 'TV';
+  const cacheKey = `${cleanMark}|${hexColor}`;
+  const existing = iptvPngLogoCache.get(cacheKey);
+  if (existing) return existing;
+
+  const cleanHex = /^#[0-9a-fA-F]{6}$/.test(hexColor) ? hexColor.slice(1) : 'E11D48';
+  const r = parseInt(cleanHex.slice(0, 2), 16);
+  const g = parseInt(cleanHex.slice(2, 4), 16);
+  const b = parseInt(cleanHex.slice(4, 6), 16);
+
+  const w = 96;
+  const h = 96;
+  const raw = Buffer.alloc(h * (1 + w * 4));
+
+  for (let y = 0; y < h; y++) {
+    const rowOff = y * (1 + w * 4);
+    raw[rowOff] = 0; // filter none
+    for (let x = 0; x < w; x++) {
+      const pxOff = rowOff + 1 + x * 4;
+      // Outer dark margin (8px) with rounded badge
+      const inInner = x >= 6 && x < w - 6 && y >= 6 && y < h - 6;
+      if (!inInner) {
+        raw[pxOff] = 10;
+        raw[pxOff + 1] = 12;
+        raw[pxOff + 2] = 18;
+        raw[pxOff + 3] = 255;
+      } else {
+        const shade = Math.max(0.55, 1 - (y / h) * 0.38);
+        raw[pxOff] = Math.round(r * shade);
+        raw[pxOff + 1] = Math.round(g * shade);
+        raw[pxOff + 2] = Math.round(b * shade);
+        raw[pxOff + 3] = 255;
+      }
+    }
+  }
+
+  // Draw crisp centered bitmap text
+  const scale = cleanMark.length <= 2 ? 5 : cleanMark.length === 3 ? 4 : 3;
+  const glyphW = 3 * scale;
+  const gap = scale;
+  const totalW = cleanMark.length * glyphW + (cleanMark.length - 1) * gap;
+  const totalH = 5 * scale;
+  const startX = Math.floor((w - totalW) / 2);
+  const startY = Math.floor((h - totalH) / 2);
+
+  for (let ci = 0; ci < cleanMark.length; ci++) {
+    const glyph = MINI_FONT_3X5[cleanMark[ci]] || MINI_FONT_3X5['T'];
+    const gx0 = startX + ci * (glyphW + gap);
+    for (let gy = 0; gy < 5; gy++) {
+      for (let gx = 0; gx < 3; gx++) {
+        if (glyph[gy][gx] !== '1') continue;
+        for (let sy = 0; sy < scale; sy++) {
+          for (let sx = 0; sx < scale; sx++) {
+            const px = gx0 + gx * scale + sx;
+            const py = startY + gy * scale + sy;
+            if (px >= 0 && px < w && py >= 0 && py < h) {
+              const pxOff = py * (1 + w * 4) + 1 + px * 4;
+              raw[pxOff] = 255;
+              raw[pxOff + 1] = 255;
+              raw[pxOff + 2] = 255;
+              raw[pxOff + 3] = 255;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(w, 0);
+  ihdr.writeUInt32BE(h, 4);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // RGBA
+  ihdr[10] = 0;
+  ihdr[11] = 0;
+  ihdr[12] = 0;
+
+  const compressed = zlib.deflateSync(raw);
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const png = Buffer.concat([
+    sig,
+    makePngChunk('IHDR', ihdr),
+    makePngChunk('IDAT', compressed),
+    makePngChunk('IEND', Buffer.alloc(0)),
+  ]);
+  iptvPngLogoCache.set(cacheKey, png);
+  return png;
+}
+
+const iptvChannelResolveCache = new Map<
+  string,
+  {
+    rawM3u8Url: string;
+    referer: string;
+    forceAac: boolean;
+    isPublicCorsCdn: boolean;
+    ts: number;
+  }
+>();
+
+async function fetchUpstreamManifestText(
+  targetUrl: string,
+  referer: string,
+  forceAac: boolean
+): Promise<{ text: string; finalUrl: string } | null> {
+  const headers: Record<string, string> = {
+    'User-Agent': isDvbHeadendStream(targetUrl) || forceAac ? TDT_DVB_UA : CHROME_UA,
+    Accept: '*/*',
+  };
+  if (referer) {
+    headers['Referer'] = referer;
+    try {
+      headers['Origin'] = new URL(referer).origin;
+    } catch {
+      // ignore
+    }
+  }
+
+  if (!shouldBypassNodeFetch(targetUrl)) {
+    try {
+      const resp = await fetch(targetUrl, {
+        headers,
+        signal: AbortSignal.timeout(3500),
+      });
+      if (resp.ok) {
+        const text = await resp.text();
+        if (text.includes('#EXTM3U')) {
+          return { text, finalUrl: resp.url || targetUrl };
+        }
+      }
+    } catch {
+      markHostNeedsCurlFallback(targetUrl);
+    }
+  }
+
+  const fb = await curlGetText(targetUrl, headers, 6).catch(() => ({
+    text: '',
+    effectiveUrl: targetUrl,
+  }));
+  if (fb.text && fb.text.includes('#EXTM3U')) {
+    return { text: fb.text, finalUrl: fb.effectiveUrl || targetUrl };
+  }
+  return null;
+}
+
+async function unwrapMasterPlaylistForIptv(
+  manifestObj: { text: string; finalUrl: string },
+  referer: string,
+  forceAac: boolean
+): Promise<{ text: string; finalUrl: string }> {
+  const txt = manifestObj.text || '';
+  if (!txt.includes('#EXT-X-STREAM-INF')) {
+    return manifestObj;
+  }
+
+  // Only unwrap when the default audio track is muxed inside the video .ts segments
+  // (either no TYPE=AUDIO at all, or DEFAULT=YES audio line without an external URI="...").
+  const lines = txt.split(/\r?\n/);
+  let hasExternalOnlyDefaultAudio = false;
+  let hasAnyAudioMedia = false;
+  let hasMuxedDefaultAudio = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (line.startsWith('#EXT-X-MEDIA') && line.includes('TYPE=AUDIO')) {
+      hasAnyAudioMedia = true;
+      const isDefault = /DEFAULT=YES/i.test(line);
+      const hasUri = /URI="/i.test(line);
+      if (isDefault && !hasUri) hasMuxedDefaultAudio = true;
+      if (isDefault && hasUri) hasExternalOnlyDefaultAudio = true;
+    }
+  }
+  if (hasAnyAudioMedia && hasExternalOnlyDefaultAudio && !hasMuxedDefaultAudio) {
+    return manifestObj;
+  }
+
+  let bestUrl = '';
+  let bestBw = -1;
+  let pendingBw = 0;
+  let expectingUrl = false;
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) continue;
+    if (line.startsWith('#EXT-X-STREAM-INF')) {
+      const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+      pendingBw = bwMatch ? parseInt(bwMatch[1], 10) || 0 : 0;
+      expectingUrl = true;
+      continue;
+    }
+    if (line.startsWith('#')) {
+      continue;
+    }
+    if (expectingUrl) {
+      expectingUrl = false;
+      try {
+        const absVariant = new URL(line, manifestObj.finalUrl).href;
+        if (pendingBw >= bestBw) {
+          bestBw = pendingBw;
+          bestUrl = absVariant;
+        }
+      } catch {
+        // ignore invalid variant URI
+      }
+    }
+  }
+
+  if (!bestUrl) return manifestObj;
+  const sub = await fetchUpstreamManifestText(bestUrl, referer, forceAac);
+  return sub || manifestObj;
+}
+
+function rewriteManifestForSamsungIptv(
+  manifestText: string,
+  baseUrl: string,
+  referer: string,
+  forceAac: boolean,
+  isPublicCorsCdn: boolean,
+  publicOrigin: string
+): string {
+  const effectiveReferer = referer || new URL(baseUrl).origin + '/';
+  const lines = manifestText.split(/\r?\n/);
+  let nextLineIsVariantPlaylist = false;
+
+  return lines
+    .map((line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return line;
+
+      if (trimmed.startsWith('#')) {
+        if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
+          nextLineIsVariantPlaylist = true;
+        }
+        if (trimmed.includes('URI="')) {
+          return line.replace(/URI="([^"]+)"/g, (_match, uriVal) => {
+            try {
+              const absUri = new URL(uriVal, baseUrl).href;
+              if (isPublicCorsCdn) {
+                return `URI="${absUri}"`;
+              }
+              if (trimmed.startsWith('#EXT-X-MEDIA') || absUri.includes('.m3u8')) {
+                return `URI="${buildHlsProxyUrl(absUri, effectiveReferer, forceAac, publicOrigin)}"`;
+              }
+              return `URI="${buildTsProxyUrl(absUri, effectiveReferer, forceAac, publicOrigin)}"`;
+            } catch {
+              return _match;
+            }
+          });
+        }
+        return line;
+      }
+
+      try {
+        const absUrl = new URL(trimmed, baseUrl).href;
+        const isPlaylist =
+          nextLineIsVariantPlaylist ||
+          /\.m3u8(\?|$)/i.test(absUrl) ||
+          absUrl.includes('stream_tv=');
+        nextLineIsVariantPlaylist = false;
+
+        if (isPublicCorsCdn) {
+          return absUrl;
+        }
+        if (!isPlaylist && forceAac) {
+          remuxDvbTsToAac(absUrl, effectiveReferer, false).catch(() => {});
+        }
+        return isPlaylist
+          ? buildHlsProxyUrl(absUrl, effectiveReferer, forceAac, publicOrigin)
+          : buildTsProxyUrl(absUrl, effectiveReferer, forceAac, publicOrigin);
+      } catch {
+        nextLineIsVariantPlaylist = false;
+        return line;
+      }
+    })
+    .join('\n');
+}
+
+app.get(
+  [
+    '/naim-cine.m3u',
+    '/NAIM-CINE-Samsung-TV.m3u',
+    '/iptv.m3u',
+    '/naim-cine.m3u8',
+    '/api/iptv/playlist.m3u',
+  ],
+  (req, res) => {
+    const publicOrigin = getPublicOrigin(req);
+    const channels = getAllIptvChannels();
+    const lines: string[] = [
+      `#EXTM3U x-tvg-url="${publicOrigin}/epg.xml" url-tvg="${publicOrigin}/epg.xml"`,
+    ];
+
+    channels.forEach((ch, idx) => {
+      const groupTitle = ch.id.startsWith('bein-ar-')
+        ? 'Fútbol · beIN SPORTS Árabe'
+        : IPTV_GROUP_TITLES[ch.category] || 'TDT y Directo';
+      const epgId = getIptvEpgId(ch.id);
+      const chno = ch.dial ? String(ch.dial) : String(idx + 1);
+      const logoUrl = `${publicOrigin}/api/iptv/logo/${encodeURIComponent(ch.id)}.png`;
+      const streamUrl = `${publicOrigin}/api/iptv/live/${encodeURIComponent(ch.id)}.m3u8`;
+      const safeName = String(ch.name || ch.id).replace(/[\r\n,]+/g, ' ').trim();
+
+      lines.push(
+        `#EXTINF:-1 tvg-id="${epgId}" tvg-name="${safeName}" tvg-chno="${chno}" tvg-logo="${logoUrl}" group-title="${groupTitle}",${safeName}`
+      );
+      lines.push(streamUrl);
+    });
+
+    const playlistBody = lines.join('\n') + '\n';
+    const forceDownload = req.query.download === '1';
+
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', '*');
+    res.setHeader('Content-Type', 'audio/x-mpegurl; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    if (forceDownload) {
+      res.setHeader('Content-Disposition', 'attachment; filename="NAIM-CINE-Samsung-TV.m3u"');
+    }
+    res.send(playlistBody);
+  }
+);
+
+app.get('/api/iptv/logo/:channelId', (req, res) => {
+  const rawId = String(req.params.channelId || '').replace(/\.png$/i, '');
+  const ch = getAllIptvChannels().find((c) => c.id === rawId);
+  const png = renderIptvChannelPng(ch?.shortMark || rawId.slice(0, 3), ch?.brandTone || '#E11D48');
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Content-Type', 'image/png');
+  res.setHeader('Cache-Control', 'public, max-age=86400');
+  res.setHeader('Content-Length', String(png.length));
+  res.end(png);
+});
+
+app.get('/api/iptv/live/:channelId', async (req, res) => {
+  const rawId = String(req.params.channelId || '').replace(/\.m3u8$/i, '');
+  const channel = getAllIptvChannels().find((c) => c.id === rawId);
+  if (!channel) {
+    return res.status(404).send('Channel not found');
+  }
+
+  const publicOrigin = getPublicOrigin(req);
+  const cached = iptvChannelResolveCache.get(channel.id);
+  if (cached && Date.now() - cached.ts < 45_000) {
+    const manifestObj = await fetchUpstreamManifestText(
+      cached.rawM3u8Url,
+      cached.referer,
+      cached.forceAac
+    );
+    if (manifestObj) {
+      const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, cached.referer, cached.forceAac);
+      const rewritten = rewriteManifestForSamsungIptv(
+        unwrapped.text,
+        unwrapped.finalUrl,
+        cached.referer,
+        cached.forceAac,
+        false,
+        publicOrigin
+      );
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.send(rewritten);
+    }
+    iptvChannelResolveCache.delete(channel.id);
+  }
+
+  const tracks: TrackRecord[] = Array.isArray(channel.channels) ? channel.channels : [];
+  for (const track of tracks) {
+    try {
+      const sourceUrl = String(track?.sourceUrl || '').trim();
+      if (!sourceUrl) continue;
+
+      const isDirectHls =
+        track.resolverType === 'tdt_hls' ||
+        track.resolverType === 'direct_hls' ||
+        /\.m3u8(\?|$)/i.test(sourceUrl);
+
+      if (isDirectHls) {
+        const cleanUrl = sourceUrl.replace(/[?&]profile=(hd|fast)\b/gi, '');
+        const referer = new URL(cleanUrl).origin + '/';
+        const forceAac = isDvbHeadendStream(cleanUrl);
+
+        const manifestObj = await fetchUpstreamManifestText(cleanUrl, referer, forceAac);
+        if (!manifestObj) continue;
+
+        const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, referer, forceAac);
+
+        iptvChannelResolveCache.set(channel.id, {
+          rawM3u8Url: unwrapped.finalUrl,
+          referer,
+          forceAac,
+          isPublicCorsCdn: false,
+          ts: Date.now(),
+        });
+
+        const rewritten = rewriteManifestForSamsungIptv(
+          unwrapped.text,
+          unwrapped.finalUrl,
+          referer,
+          forceAac,
+          false,
+          publicOrigin
+        );
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+        res.setHeader('Access-Control-Allow-Headers', '*');
+        res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return res.send(rewritten);
+      }
+
+      // Sports / Embed track -> fast crypto resolve + fallback sniff
+      const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
+      let directSports = await extractLiveSportsHlsDirect(fullTarget);
+      if (directSports?.isBrokenGreenFeed) continue;
+
+      const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTarget);
+      if (!directSports && !isKnownDirectMirror) {
+        directSports = await sniffStreamWithHeadless(fullTarget);
+      }
+      if (!directSports || !directSports.streamUrl || directSports.isDirectMp4) continue;
+
+      const manifestObj = await fetchUpstreamManifestText(
+        directSports.streamUrl,
+        directSports.referer,
+        false
+      );
+      if (!manifestObj) continue;
+
+      const clean = await verifyM3u8HasCleanVideoFrame(
+        manifestObj.text,
+        directSports.streamUrl,
+        directSports.referer
+      );
+      if (!clean) continue;
+
+      iptvChannelResolveCache.set(channel.id, {
+        rawM3u8Url: directSports.streamUrl,
+        referer: directSports.referer,
+        forceAac: false,
+        isPublicCorsCdn: false,
+        ts: Date.now(),
+      });
+
+      const rewritten = rewriteManifestForSamsungIptv(
+        manifestObj.text,
+        manifestObj.finalUrl,
+        directSports.referer,
+        false,
+        false,
+        publicOrigin
+      );
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+      return res.send(rewritten);
+    } catch {
+      // try next backup track
+    }
+  }
+
+  return res.status(503).send('Canal temporalmente sin señal disponible');
+});
+
+app.get(['/epg.xml', '/api/iptv/epg.xml'], async (req, res) => {
+  try {
+    const publicOrigin = getPublicOrigin(req);
+    const store = await loadSpanishEpgSchedule();
+    const channels = getAllIptvChannels();
+    const xmlParts: string[] = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<tv generator-info-name="NAIMCINE IPTV EPG" generator-info-url="' +
+        escapeXmlText(publicOrigin) +
+        '">',
+    ];
+
+    const emittedChannelIds = new Set<string>();
+    for (const ch of channels) {
+      const epgId = getIptvEpgId(ch.id);
+      if (emittedChannelIds.has(epgId)) continue;
+      emittedChannelIds.add(epgId);
+      const logoUrl = `${publicOrigin}/api/iptv/logo/${encodeURIComponent(ch.id)}.png`;
+      xmlParts.push(`  <channel id="${escapeXmlText(epgId)}">`);
+      xmlParts.push(`    <display-name lang="es">${escapeXmlText(ch.name)}</display-name>`);
+      xmlParts.push(`    <icon src="${escapeXmlText(logoUrl)}" />`);
+      xmlParts.push('  </channel>');
+    }
+
+    for (const epgId of emittedChannelIds) {
+      const events = store.get(epgId) || [];
+      for (const ev of events) {
+        xmlParts.push(
+          `  <programme start="${formatXmltvUtcTime(ev.startMs)}" stop="${formatXmltvUtcTime(
+            ev.stopMs
+          )}" channel="${escapeXmlText(epgId)}">`
+        );
+        xmlParts.push(`    <title lang="es">${escapeXmlText(ev.title)}</title>`);
+        if (ev.subtitle) {
+          xmlParts.push(`    <sub-title lang="es">${escapeXmlText(ev.subtitle)}</sub-title>`);
+        }
+        if (ev.description) {
+          xmlParts.push(`    <desc lang="es">${escapeXmlText(ev.description)}</desc>`);
+        }
+        if (ev.category) {
+          xmlParts.push(`    <category lang="es">${escapeXmlText(ev.category)}</category>`);
+        }
+        xmlParts.push('  </programme>');
+      }
+    }
+
+    xmlParts.push('</tv>');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Cache-Control', 'public, max-age=300');
+    res.send(xmlParts.join('\n'));
+  } catch (err) {
+    console.warn('/epg.xml error:', err);
+    res.status(500).type('application/xml').send('<tv></tv>');
   }
 });
 

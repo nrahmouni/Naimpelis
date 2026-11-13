@@ -1605,14 +1605,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       }
       if (footballLiveBrand !== 'all' && ch.category !== footballLiveBrand) return false;
       if (sportsSearch.trim()) {
-        const q = sportsSearch.toLowerCase();
+        const norm = (s: string) =>
+          s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+        const q = norm(sportsSearch);
         const matchesCh =
-          ch.name.toLowerCase().includes(q) ||
-          ch.shortMark.toLowerCase().includes(q) ||
-          ch.network.toLowerCase().includes(q);
+          norm(ch.name).includes(q) ||
+          norm(ch.shortMark).includes(q) ||
+          norm(ch.network).includes(q);
         // Only filter the channel strip by sportsSearch if user typed a channel name; otherwise keep strip visible
         if (
-          /bein|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
+          /bein|arab|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
             q
           )
         ) {
@@ -1681,13 +1683,15 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     }
 
     if (tdtSearch.trim()) {
-      const q = tdtSearch.toLowerCase();
+      const norm = (s: string) =>
+        s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const q = norm(tdtSearch);
       return (
-        ch.name.toLowerCase().includes(q) ||
-        ch.shortMark.toLowerCase().includes(q) ||
-        ch.network.toLowerCase().includes(q) ||
-        ch.description.toLowerCase().includes(q) ||
-        epgHaystack.includes(q) ||
+        norm(ch.name).includes(q) ||
+        norm(ch.shortMark).includes(q) ||
+        norm(ch.network).includes(q) ||
+        norm(ch.description).includes(q) ||
+        norm(epgHaystack).includes(q) ||
         String(ch.dial) === q.trim()
       );
     }
@@ -1696,16 +1700,18 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   const homeMatchingChannels = React.useMemo(() => {
     if (!debouncedHomeQuery || debouncedHomeQuery.length < 2) return [];
-    const q = debouncedHomeQuery.toLowerCase();
+    const norm = (s: string) =>
+      s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const q = norm(debouncedHomeQuery);
     return tdtChannels
       .filter((ch) => {
         const chEpg = getChannelLiveEpg(ch.id);
         return (
-          ch.name.toLowerCase().includes(q) ||
-          ch.shortMark.toLowerCase().includes(q) ||
-          ch.network.toLowerCase().includes(q) ||
-          (chEpg?.now?.title || '').toLowerCase().includes(q) ||
-          (chEpg?.next?.title || '').toLowerCase().includes(q)
+          norm(ch.name).includes(q) ||
+          norm(ch.shortMark).includes(q) ||
+          norm(ch.network).includes(q) ||
+          norm(chEpg?.now?.title || '').includes(q) ||
+          norm(chEpg?.next?.title || '').includes(q)
         );
       })
       .slice(0, 6);
@@ -6314,9 +6320,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         </div>
 
                         <div className="min-w-0 flex-1">
-                          <h3 className="font-display font-bold text-sm sm:text-base text-white truncate">
-                            {ch.name}
-                          </h3>
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            <h3 className="font-display font-bold text-sm sm:text-base text-white truncate">
+                              {ch.name}
+                            </h3>
+                            {ch.channels?.[0]?.lang === 'AR' && (
+                              <span className="px-1.5 py-0.5 rounded bg-violet-500/20 border border-violet-400/35 text-[9px] font-bold uppercase tracking-wide text-violet-200 shrink-0">
+                                Árabe
+                              </span>
+                            )}
+                          </div>
                           <div className="mt-0.5 text-[11px] text-zinc-400 truncate">
                             <span className="text-emerald-400 font-semibold">
                               {isPlayingThis ? 'En pantalla' : 'En directo'}
@@ -6703,14 +6716,21 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             {ch.shortMark}
                           </div>
                           <div className="min-w-0 flex-1">
-                            <div className="font-display font-bold text-xs text-white truncate">
-                              {ch.name}
+                            <div className="flex items-center gap-1 min-w-0">
+                              <span className="font-display font-bold text-xs text-white truncate">
+                                {ch.name}
+                              </span>
+                              {ch.channels?.[0]?.lang === 'AR' && (
+                                <span className="px-1 py-0.5 rounded bg-violet-500/25 text-[8px] font-black uppercase text-violet-200 shrink-0">
+                                  AR
+                                </span>
+                              )}
                             </div>
                             <div className="text-[10px] text-zinc-400 truncate">
                               {isPlayingThis ? (
                                 <span className="text-[#FFBD0F] font-semibold">En reproducción</span>
                               ) : (
-                                <span>{ch.network} · 1080p</span>
+                                <span>{ch.network} · {ch.quality || '1080p'}</span>
                               )}
                             </div>
                           </div>

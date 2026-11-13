@@ -129,8 +129,8 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
 
             <p className="text-xs text-zinc-400 leading-relaxed">
               {lang === 'es'
-                ? 'Descarga el nuevo APK nativo para Móvil Android (con motor ExoPlayer HD, Fútbol RBTV+, beIN, ESPN 1-7, DSports, TDT, Cine y Series) o la versión para Google TV / Chromecast.'
-                : 'Download the native Android Mobile APK (ExoPlayer HD engine, Live Football, Sports, Live TV, Movies & Series) or the Google TV / Chromecast APK.'}
+                ? 'Descarga el nuevo APK nativo para Móvil Android (con buscador de Cine y Series, motor ExoPlayer HD, Fútbol RBTV+, beIN ES/Árabe, ESPN 1-7, DSports y TDT) o la versión para Google TV / Chromecast.'
+                : 'Download the native Android Mobile APK (Movie & Series search, ExoPlayer HD engine, Live Football, Sports, Live TV, Movies & Series) or the Google TV / Chromecast APK.'}
             </p>
           </div>
         </div>
@@ -141,7 +141,7 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
           } gap-2.5`}
         >
           <a
-            href="/NAIM-CINE.apk?v=11"
+            href="/NAIM-CINE.apk?v=14"
             download="NAIM-CINE.apk"
             onClick={() => triggerHaptic('success')}
             className="min-h-11 px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all shadow-[0_12px_32px_rgba(225,29,72,0.34)]"
@@ -153,7 +153,7 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
           </a>
 
           <a
-            href="/NAIM-CINE-TV.apk?v=8"
+            href="/NAIM-CINE-TV.apk?v=14"
             download="NAIM-CINE-TV.apk"
             onClick={() => triggerHaptic('success')}
             className="min-h-11 px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all"
@@ -265,7 +265,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
               )}
             </p>
             <a
-              href="/NAIM-CINE.apk?v=11"
+              href="/NAIM-CINE.apk?v=14"
               download="NAIM-CINE.apk"
               onClick={() => triggerHaptic('success')}
               className="w-full min-h-[44px] px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
@@ -279,7 +279,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
             </a>
 
             <a
-              href="/NAIM-CINE-TV.apk?v=8"
+              href="/NAIM-CINE-TV.apk?v=14"
               download="NAIM-CINE-TV.apk"
               onClick={() => triggerHaptic('success')}
               className="w-full min-h-[42px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/12 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
