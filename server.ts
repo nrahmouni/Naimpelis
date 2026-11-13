@@ -2312,8 +2312,9 @@ async function verifyM3u8HasCleanVideoFrame(
       .filter((l) => l && !l.startsWith('#'));
     if (segLines.length === 0) return false;
 
-    // Pick the freshest segment near the live edge
-    const chosenRel = segLines[segLines.length - 1] || segLines[0];
+    // Pick second-to-last segment (already fully written on origin CDN)
+    const chosenRel =
+      segLines.length >= 2 ? segLines[segLines.length - 2] : segLines[segLines.length - 1];
     const segUrl = new URL(chosenRel, m3uUrl).href;
 
     // If nested variant playlist, follow one level
@@ -2326,7 +2327,7 @@ async function verifyM3u8HasCleanVideoFrame(
     }
 
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 3500);
+    const timer = setTimeout(() => ctrl.abort(), 4200);
     const chunks: Buffer[] = [];
     let totalBytes = 0;
 
@@ -2335,7 +2336,7 @@ async function verifyM3u8HasCleanVideoFrame(
         headers: {
           Referer: referer,
           'User-Agent': CHROME_UA,
-          Range: 'bytes=0-380000',
+          Range: 'bytes=0-520000',
         },
         signal: ctrl.signal,
       });
@@ -2346,7 +2347,7 @@ async function verifyM3u8HasCleanVideoFrame(
       }
 
       const reader = resp.body.getReader();
-      while (totalBytes < 380_000) {
+      while (totalBytes < 520_000) {
         const { done, value } = await reader.read();
         if (done || !value) break;
         chunks.push(Buffer.from(value));
@@ -2360,7 +2361,18 @@ async function verifyM3u8HasCleanVideoFrame(
     }
 
     const sampleBuf = Buffer.concat(chunks);
-    if (sampleBuf.length < 16_000) {
+    if (sampleBuf.length < 4_096) {
+      liveFrameHealthCache.set(m3uUrl, { ok: false, ts: now });
+      return false;
+    }
+
+    // Check valid MPEG-TS (0x47 sync every 188 bytes) or fMP4 box signature
+    const hasMpegTsSync =
+      (sampleBuf[0] === 0x47 && sampleBuf.length > 188 && sampleBuf[188] === 0x47) ||
+      sampleBuf.indexOf(0x47) !== -1;
+    const hasMp4Box =
+      sampleBuf.includes(Buffer.from('ftyp')) || sampleBuf.includes(Buffer.from('moof'));
+    if (!hasMpegTsSync && !hasMp4Box) {
       liveFrameHealthCache.set(m3uUrl, { ok: false, ts: now });
       return false;
     }
@@ -2390,7 +2402,7 @@ async function verifyM3u8HasCleanVideoFrame(
         } catch {
           // ignore
         }
-      }, 2200);
+      }, 2400);
       ff.stdout.on('data', (c: Buffer) => {
         outChunks.push(c);
       });
@@ -2407,29 +2419,19 @@ async function verifyM3u8HasCleanVideoFrame(
       ff.stdin.end(sampleBuf);
     });
 
-    if (ffmpegSpawnFailed) {
-      // Never block valid live streams if FFmpeg binary cannot spawn in container
+    const expectedBytes = 160 * 90 * 3;
+    if (ffmpegSpawnFailed || rawFrame.length < expectedBytes) {
+      // High-bitrate 1080p segments may not contain an IDR keyframe in the first 520KB slice;
+      // since HTTP 200 + MPEG-TS/fMP4 sync is already verified, allow playback instead of false-rejecting!
       liveFrameHealthCache.set(m3uUrl, { ok: true, ts: now });
       return true;
     }
 
-    const expectedBytes = 160 * 90 * 3;
-    if (rawFrame.length < expectedBytes) {
-      liveFrameHealthCache.set(m3uUrl, { ok: false, ts: now });
-      return false;
-    }
-
-    // Pixel-level guard against scrambled/corrupted satellite feeds:
-    // 1) Detect YUV (0,0,0) uninitialized decoder-green (`G > 95 && R < 45 && B < 45 && G > R + 55 && G > B + 55`),
-    //    including top-25%-rainbow-garbled + bottom-75%-green feeds that fool JPEG size checks!
-    // 2) Detect dead black/flat static feeds via luma standard deviation.
     const totalPixels = 160 * 90;
     const bottomStartY = 45;
     const bottomPixels = 160 * (90 - bottomStartY);
     let decoderGreenAll = 0;
     let decoderGreenBottom = 0;
-    let lumaSum = 0;
-    let lumaSqSum = 0;
 
     for (let y = 0; y < 90; y++) {
       for (let x = 0; x < 160; x++) {
@@ -2444,28 +2446,40 @@ async function verifyM3u8HasCleanVideoFrame(
           decoderGreenAll++;
           if (y >= bottomStartY) decoderGreenBottom++;
         }
-
-        const luma = 0.299 * r + 0.587 * g + 0.114 * b;
-        lumaSum += luma;
-        lumaSqSum += luma * luma;
       }
     }
 
     const greenAllRatio = decoderGreenAll / totalPixels;
     const greenBottomRatio = decoderGreenBottom / bottomPixels;
-    const meanLuma = lumaSum / totalPixels;
-    const lumaVariance = Math.max(0, lumaSqSum / totalPixels - meanLuma * meanLuma);
-    const lumaStdDev = Math.sqrt(lumaVariance);
-
-    const isClean =
-      greenBottomRatio < 0.08 &&
-      greenAllRatio < 0.10 &&
-      lumaStdDev >= 4.0;
+    const isClean = greenBottomRatio < 0.18 && greenAllRatio < 0.20;
 
     liveFrameHealthCache.set(m3uUrl, { ok: isClean, ts: now });
     return isClean;
   } catch {
     return false;
+  }
+}
+
+function decodeStreamXhdPlaybackUrl(html: string): string | null {
+  try {
+    const blockMatch = html.match(
+      /var\s+playbackURL\s*=\s*""[\s\S]*?function\s+([A-Za-z0-9_$]+)\s*\(\)\s*\{\s*return\s+(\d+)\s*;\s*\}\s*function\s+([A-Za-z0-9_$]+)\s*\(\)\s*\{\s*return\s+(\d+)\s*;\s*\}/
+    );
+    if (!blockMatch) return null;
+    const k = Number(blockMatch[2]) + Number(blockMatch[4]);
+    const arrMatch = blockMatch[0].match(/\[\s*\[\s*\d+\s*,\s*"[^"]+"\s*\][\s\S]*?\]\s*\]/);
+    if (!arrMatch) return null;
+    const arr: [number, string][] = JSON.parse(arrMatch[0]);
+    arr.sort((a, b) => a[0] - b[0]);
+    let out = '';
+    for (const [, b64] of arr) {
+      const digits = Buffer.from(b64, 'base64').toString('utf8').replace(/\D/g, '');
+      if (!digits) continue;
+      out += String.fromCharCode(parseInt(digits, 10) - k);
+    }
+    return out.startsWith('http') ? out : null;
+  } catch {
+    return null;
   }
 }
 
@@ -2531,6 +2545,23 @@ async function extractLiveSportsHlsDirect(
     currentUrl = healUpstreamSportsDomain(currentUrl);
     const html = await fetchSportsHtmlHop(currentUrl, currentReferer);
     if (!html) break;
+
+    // 0. StreamXHD (`streamxhd.sbs` / `.st` / `.click`) pure JS char-code array decode (<200ms)
+    if (html.includes('var playbackURL=')) {
+      const streamXhdM3u = decodeStreamXhdPlaybackUrl(html);
+      if (streamXhdM3u) {
+        const refOrigin = new URL(currentUrl).origin + '/';
+        const checkM3u = await fetchSportsHtmlHop(streamXhdM3u, refOrigin);
+        if (checkM3u.includes('#EXTM3U')) {
+          return {
+            streamUrl: streamXhdM3u,
+            referer: refOrigin,
+            isDirectMp4: false,
+          };
+        }
+      }
+      return null;
+    }
 
     // 1. Playstream / Footunder `window._econfig` pure crypto decode + green-screen guard!
     const econfigMatch = html.match(/window\._econfig\s*=\s*['"]([^'"]+)['"]/);
@@ -2827,7 +2858,7 @@ app.get(['/NAIM-CINE-TV.apk', '/tv.apk', '/googletv.apk', '/api/download/apk-tv'
   res.sendFile(target);
 });
 
-app.get(['/NAIM-CINE.apk', '/naimcine.apk', '/api/download/apk'], (_req, res) => {
+app.get(['/NAIM-CINE.apk', '/naimcine.apk', '/movil.apk', '/api/download/apk'], (_req, res) => {
   const pubApk = path.resolve(__dirname, 'public', 'NAIM-CINE.apk');
   const distApk = path.resolve(__dirname, 'dist', 'NAIM-CINE.apk');
   const target = fs.existsSync(pubApk) ? pubApk : distApk;
@@ -2836,7 +2867,7 @@ app.get(['/NAIM-CINE.apk', '/naimcine.apk', '/api/download/apk'], (_req, res) =>
   }
   res.setHeader('Content-Type', 'application/vnd.android.package-archive');
   res.setHeader('Content-Disposition', 'attachment; filename="NAIM-CINE.apk"');
-  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   res.sendFile(target);
 });
 
@@ -6771,130 +6802,138 @@ function getPermanent247SportsMatches() {
     },
     {
       id: 'mux-f1-motor',
-      title: 'DAZN F1, MotoGP & Motorsport · Circuito 24/7',
-      competition: 'Fórmula 1 · MotoGP · WEC',
+      title: 'DAZN F1, DSports Motor & Motorsport · Circuito 24/7',
+      competition: 'Fórmula 1 · MotoGP · Automovilismo',
       sport: 'motor',
       time: 'EN DIRECTO',
       isLive: true,
       is247Channel: true,
       channels: [
         {
-          id: 'ch-f1-rb',
-          label: 'Red Bull Motorsport 1080p',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8',
-          resolverType: 'tdt_hls',
-        },
-        {
-          id: 'ch-f1-euro2',
-          label: 'Eurosport 2 Motor HD',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/232',
-          resolverType: 'sports_channel',
-        },
-        {
           id: 'ch-f1-1',
-          label: 'F1 Circuito 24/7 HD',
+          label: 'DAZN F1 HD',
           lang: 'ES',
           quality: '1080p',
           sourceUrl: 'https://pig.footunder.online/stream/60',
           resolverType: 'sports_channel',
         },
         {
-          id: 'ch-f1-tdp',
-          label: 'Teledeporte Motor 1080p',
+          id: 'ch-dsp-mot',
+          label: 'DSports Motor HD',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+          sourceUrl: 'https://pig.footunder.online/stream/96',
+          resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-f1-rb',
+          label: 'Red Bull TV Motor 1080p',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8',
           resolverType: 'tdt_hls',
         },
       ],
     },
     {
       id: 'mux-champions',
-      title: 'Movistar Liga de Campeones & Fútbol Europeo · 24/7',
-      competition: 'UEFA Champions · Europa League',
+      title: 'Champions, Libertadores & Internacional · beIN · ESPN · DSports · TNT',
+      competition: 'UEFA Champions · Libertadores · Ligas',
       sport: 'soccer',
       time: 'EN DIRECTO',
       isLive: true,
       is247Channel: true,
       channels: [
         {
-          id: 'ch-ucl-gol',
-          label: 'GOL Fútbol Abierto 1080p',
+          id: 'ch-ucl-1',
+          label: 'M+ Liga de Campeones HD',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
+          sourceUrl: 'https://footunder.online/tvtodo/mligacampeones.php',
+          resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-bein-es',
+          label: 'beIN SPORTS Ñ 1080p',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://dc1644a9jazgj.cloudfront.net/beIN_Sports_Xtra_Espanol.m3u8',
           resolverType: 'tdt_hls',
         },
         {
-          id: 'ch-ucl-ll',
-          label: 'Fútbol en Directo M+ HD',
+          id: 'ch-espn-1',
+          label: 'ESPN En Vivo 1080p',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+          sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espn',
           resolverType: 'sports_channel',
         },
         {
-          id: 'ch-ucl-1',
-          label: 'M+ Liga de Campeones',
+          id: 'ch-dsports-1',
+          label: 'DSports En Vivo 1080p',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/435',
+          sourceUrl: 'https://streamxhd.sbs/live2.php?stream=dsports',
           resolverType: 'sports_channel',
         },
         {
-          id: 'ch-ucl-2',
-          label: 'DAZN Fútbol Europeo HD',
+          id: 'ch-tntsp-1',
+          label: 'TNT Sports HD',
           lang: 'ES',
           quality: '1080p',
-          sourceUrl: 'https://footunder.online/tvtodo/dazn3.php',
+          sourceUrl: 'https://streamxhd.sbs/live2.php?stream=tntsports',
           resolverType: 'sports_channel',
         },
       ],
     },
     {
       id: 'mux-nba-tennis',
-      title: 'Movistar Deportes, Golf & Eurosport · Arena 24/7',
-      competition: 'ACB · Euroliga · Tenis · Golf',
+      title: 'Baloncesto, Tenis & Combate · Movistar Deportes · ESPN 2 · DSports Fight',
+      competition: 'NBA · ACB · ATP/WTA · Boxeo/UFC',
       sport: 'basketball',
       time: 'EN DIRECTO',
       isLive: true,
       is247Channel: true,
       channels: [
         {
-          id: 'ch-nba-4',
-          label: 'Teledeporte 1080p',
+          id: 'ch-mdep-1',
+          label: 'Movistar Deportes HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://pig.footunder.online/stream/438',
+          resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-espn-2',
+          label: 'ESPN 2 HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espn2',
+          resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-dsp-fight',
+          label: 'DSports Fight HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://pig.footunder.online/stream/98',
+          resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-nba-euro1',
+          label: 'Eurosport 1 HD',
+          lang: 'ES',
+          quality: '1080p',
+          sourceUrl: 'https://pig.footunder.online/stream/231',
+          resolverType: 'sports_channel',
+        },
+        {
+          id: 'ch-nba-tdp',
+          label: 'Teledeporte RTVE 1080p',
           lang: 'ES',
           quality: '1080p',
           sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
           resolverType: 'tdt_hls',
-        },
-        {
-          id: 'ch-nba-euro2',
-          label: 'Eurosport 2 Arena HD',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://pig.footunder.online/stream/232',
-          resolverType: 'sports_channel',
-        },
-        {
-          id: 'ch-nba-e3',
-          label: 'Esport3 Polideportivo HD',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-origin/esport3-hls/master.m3u8',
-          resolverType: 'tdt_hls',
-        },
-        {
-          id: 'ch-nba-1',
-          label: 'Arena Basket & Deportes HD',
-          lang: 'ES',
-          quality: '1080p',
-          sourceUrl: 'https://footunder.online/tvtodo/mligacampeones.php',
-          resolverType: 'sports_channel',
         },
       ],
     },
@@ -6909,171 +6948,209 @@ function detectSportKind(text: string): 'soccer' | 'motor' | 'basketball' | 'ten
   return 'soccer';
 }
 
-function getVerifiedSportBackupChannels(
-  sport: 'soccer' | 'motor' | 'basketball' | 'tennis' | 'other'
-): TrackRecord[] {
-  if (sport === 'motor') {
-    return [
-      {
-        id: 'bk-motor-rb',
-        label: 'Señal Respaldo · Motorsport 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'bk-motor-eu2',
-        label: 'Señal Respaldo · Eurosport 2 HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-    ];
+let cachedLiveAgendaFeeds: {
+  rojaMatches: any[];
+  streamXhdFootball: any[];
+  ts: number;
+} | null = null;
+
+async function fetchLiveSportsAgendaFeeds(): Promise<{
+  rojaMatches: any[];
+  streamXhdFootball: any[];
+}> {
+  if (cachedLiveAgendaFeeds && Date.now() - cachedLiveAgendaFeeds.ts < 90 * 1000) {
+    return cachedLiveAgendaFeeds;
   }
-  if (sport === 'basketball' || sport === 'tennis') {
-    return [
-      {
-        id: 'bk-arena-tdp',
-        label: 'Señal Respaldo · Teledeporte HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'bk-arena-eu2',
-        label: 'Señal Respaldo · Eurosport 2 HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-    ];
-  }
-  return [
-    {
-      id: 'bk-fut-daznll',
-      label: 'Señal Respaldo · Fútbol HD 1',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/538',
-      resolverType: 'sports_channel',
-    },
-    {
-      id: 'bk-fut-mll',
-      label: 'Señal Respaldo · Fútbol HD 2',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
-      resolverType: 'sports_channel',
-    },
-    {
-      id: 'bk-fut-gol',
-      label: 'Señal Respaldo · GOL 1080p',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
-      resolverType: 'tdt_hls',
-    },
-  ];
+
+  const liveGrouped = new Map<string, any>();
+  const streamXhdFootball: any[] = [];
+
+  await Promise.all([
+    // Feed A: StreamXHD structured live events (`eventos.json` — exact teams, logos, and live servers)
+    (async () => {
+      for (const domain of ['https://streamxhd.sbs', 'https://streamxhd.st']) {
+        try {
+          const evRes = await fetch(`${domain}/eventos.json`, {
+            headers: { 'User-Agent': CHROME_UA },
+            signal: AbortSignal.timeout(4000),
+          });
+          if (!evRes.ok) continue;
+          const evJson: any = await evRes.json();
+          for (const sp of evJson?.sports || []) {
+            const sportId = String(sp?.id || '').toLowerCase();
+            const mappedSport: 'soccer' | 'motor' | 'basketball' | 'tennis' | 'other' =
+              sportId === 'football' || sportId === 'soccer'
+                ? 'soccer'
+                : sportId === 'basketball'
+                ? 'basketball'
+                : sportId === 'tennis'
+                ? 'tennis'
+                : sportId === 'motorsport' || sportId === 'f1'
+                ? 'motor'
+                : detectSportKind(String(sp?.name || ''));
+
+            for (const lg of sp?.leagues || []) {
+              const leagueName = String(lg?.name || 'En Directo').trim();
+              for (const ev of lg?.events || []) {
+                const servers: any[] = Array.isArray(ev?.servers) ? ev.servers : [];
+                const validTracks: TrackRecord[] = [];
+                for (const srv of servers) {
+                  const srvUrl = String(srv?.url || '').trim();
+                  if (!srvUrl.startsWith('http')) continue;
+                  if (validTracks.some((t) => t.sourceUrl === srvUrl)) continue;
+                  validTracks.push({
+                    id: `sxhd-${validTracks.length + 1}`,
+                    label: String(srv?.name || `Señal ${validTracks.length + 1}`).trim(),
+                    lang: 'LIVE',
+                    quality: '1080p',
+                    sourceUrl: srvUrl,
+                    resolverType: 'sports_channel',
+                  });
+                }
+                if (validTracks.length === 0) continue;
+
+                const homeTeam = String(ev?.homeTeam || '').trim();
+                const awayTeam = String(ev?.awayTeam || '').trim();
+                const matchTitle =
+                  homeTeam && awayTeam
+                    ? `${homeTeam} vs ${awayTeam}`
+                    : String(ev?.title || 'Evento en Vivo').trim();
+                const rawTime = String(ev?.time || '').trim();
+                const timeMatch = rawTime.match(/(\d{1,2}:\d{2})/);
+                const timeStr = timeMatch ? timeMatch[1] : 'EN VIVO';
+
+                const key = `sxhd-${matchTitle}`;
+                liveGrouped.set(key, {
+                  id: `live-${Buffer.from(key).toString('base64url').slice(0, 14)}`,
+                  title: matchTitle,
+                  homeTeam,
+                  awayTeam,
+                  competition: leagueName,
+                  sport: mappedSport,
+                  time: timeStr,
+                  isLive: true,
+                  is247Channel: false,
+                  channels: validTracks,
+                });
+
+                if (mappedSport === 'soccer' && homeTeam && awayTeam) {
+                  streamXhdFootball.push({
+                    homeTeam,
+                    awayTeam,
+                    homeLogo: String(ev?.homeLogo || '').trim() || undefined,
+                    awayLogo: String(ev?.awayLogo || '').trim() || undefined,
+                    leagueName,
+                    code: String(ev?.code || '').trim(),
+                    rawTime,
+                    timeStr,
+                    channels: validTracks,
+                  });
+                }
+              }
+            }
+          }
+          break;
+        } catch {
+          // try backup domain
+        }
+      }
+    })(),
+
+    // Feed B: RojaDirecta real-time agenda
+    (async () => {
+      try {
+        const agendaHtml = await fetch('https://www.rojadirectv.live/', {
+          headers: { 'User-Agent': CHROME_UA },
+          signal: AbortSignal.timeout(4500),
+        }).then((r) => (r.ok ? r.text() : ''));
+
+        const rowRegex =
+          /<tr>\s*<td><span class="t">([^<]+)<\/span><\/td>[\s\S]*?<td align="left">([\s\S]*?)<\/td>\s*<\/tr>/gi;
+
+        for (const rowMatch of agendaHtml.matchAll(rowRegex)) {
+          const timeStr = rowMatch[1].trim();
+          const cellHtml = rowMatch[2];
+
+          const titleMatch = cellHtml.match(/<b>([^<]+)<\/b>/i);
+          const compPrefix = cellHtml
+            .split('<a')[0]
+            .replace(/<[^>]+>/g, '')
+            .replace(/:\s*$/, '')
+            .trim();
+          const b64Links = [
+            ...cellHtml.matchAll(/\?r=([A-Za-z0-9+/=]+)"[^>]*class="btn-canal"[^>]*>([^<]+)</gi),
+          ];
+
+          if (!titleMatch || b64Links.length === 0) continue;
+          const matchTitle = titleMatch[1].trim();
+          const key = `${timeStr}-${matchTitle}`;
+
+          if (!liveGrouped.has(key)) {
+            liveGrouped.set(key, {
+              id: `live-${Buffer.from(key).toString('base64url').slice(0, 14)}`,
+              title: matchTitle,
+              competition: compPrefix || 'Agenda en Directo',
+              sport: detectSportKind(`${compPrefix} ${matchTitle}`),
+              time: timeStr,
+              isLive: true,
+              is247Channel: false,
+              channels: [],
+            });
+          }
+
+          const entry = liveGrouped.get(key);
+          for (const link of b64Links) {
+            try {
+              const decodedChannelUrl = Buffer.from(link[1], 'base64').toString('utf8').trim();
+              if (!decodedChannelUrl.startsWith('http')) continue;
+              if (entry.channels.some((c: any) => c.sourceUrl === decodedChannelUrl)) continue;
+              entry.channels.push({
+                id: `live-ch-${entry.channels.length + 1}`,
+                label: link[2].trim() || `Señal ${entry.channels.length + 1}`,
+                lang: 'LIVE',
+                quality: 'HD',
+                sourceUrl: decodedChannelUrl,
+                resolverType: 'sports_channel',
+              });
+            } catch {
+              // skip malformed base64
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('RojaDirecta live scrape warning:', err);
+      }
+    })(),
+  ]);
+
+  const rojaMatches = Array.from(liveGrouped.values()).filter(
+    (ev) => Array.isArray(ev.channels) && ev.channels.length > 0
+  );
+  cachedLiveAgendaFeeds = {
+    rojaMatches,
+    streamXhdFootball,
+    ts: Date.now(),
+  };
+  return cachedLiveAgendaFeeds;
 }
 
 app.get('/api/catalog/sports', async (_req, res) => {
-  if (cachedSportsSchedule && Date.now() - cachedSportsSchedule.ts < 2 * 60 * 1000) {
+  if (cachedSportsSchedule && Date.now() - cachedSportsSchedule.ts < 90 * 1000) {
     return res.json({ success: true, events: cachedSportsSchedule.matches });
   }
 
   const permanentChannels = getPermanent247SportsMatches();
-  const liveGrouped = new Map<string, any>();
+  const { rojaMatches } = await fetchLiveSportsAgendaFeeds();
 
-  try {
-    const agendaHtml = await fetch('https://www.rojadirectv.live/', {
-      headers: { 'User-Agent': CHROME_UA },
-      signal: AbortSignal.timeout(4500),
-    }).then((r) => (r.ok ? r.text() : ''));
-
-    const rowRegex =
-      /<tr>\s*<td><span class="t">([^<]+)<\/span><\/td>[\s\S]*?<td align="left">([\s\S]*?)<\/td>\s*<\/tr>/gi;
-
-    for (const rowMatch of agendaHtml.matchAll(rowRegex)) {
-      const timeStr = rowMatch[1].trim();
-      const cellHtml = rowMatch[2];
-
-      const titleMatch = cellHtml.match(/<b>([^<]+)<\/b>/i);
-      const compPrefix = cellHtml
-        .split('<a')[0]
-        .replace(/<[^>]+>/g, '')
-        .replace(/:\s*$/, '')
-        .trim();
-      const b64Links = [
-        ...cellHtml.matchAll(/\?r=([A-Za-z0-9+/=]+)"[^>]*class="btn-canal"[^>]*>([^<]+)</gi),
-      ];
-
-      if (!titleMatch || b64Links.length === 0) continue;
-      const matchTitle = titleMatch[1].trim();
-      const key = `${timeStr}-${matchTitle}`;
-
-      if (!liveGrouped.has(key)) {
-        liveGrouped.set(key, {
-          id: `live-${Buffer.from(key).toString('base64url').slice(0, 14)}`,
-          title: matchTitle,
-          competition: compPrefix || 'Agenda en Directo',
-          sport: detectSportKind(`${compPrefix} ${matchTitle}`),
-          time: timeStr,
-          isLive: true,
-          is247Channel: false,
-          channels: [],
-        });
-      }
-
-      const entry = liveGrouped.get(key);
-      for (const link of b64Links) {
-        try {
-          const decodedChannelUrl = Buffer.from(link[1], 'base64').toString('utf8').trim();
-          if (!decodedChannelUrl.startsWith('http')) continue;
-          if (entry.channels.some((c: any) => c.sourceUrl === decodedChannelUrl)) continue;
-          entry.channels.push({
-            id: `live-ch-${entry.channels.length + 1}`,
-            label: link[2].trim() || `Señal ${entry.channels.length + 1}`,
-            lang: 'LIVE',
-            quality: 'HD',
-            sourceUrl: decodedChannelUrl,
-            resolverType: 'sports_channel',
-          });
-        } catch {
-          // skip malformed base64
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('RojaDirecta live scrape fallback to 24/7 channels:', err);
-  }
-
-  // Ensure every scraped match has verified clean HD fallback signals so a single scrambled satellite feed never dead-ends!
-  const scrapedEvents = Array.from(liveGrouped.values())
-    .slice(0, 28)
-    .map((ev) => {
-      const backups = getVerifiedSportBackupChannels(ev.sport);
-      const existingUrls = new Set(ev.channels.map((c: any) => c.sourceUrl));
-      return {
-        ...ev,
-        channels: [
-          ...ev.channels,
-          ...backups.filter((bk) => !existingUrls.has(bk.sourceUrl)),
-        ],
-      };
-    });
-
-  const combined = [...permanentChannels, ...scrapedEvents];
+  // Keep ONLY authentic event-specific channels on each match — never append unrelated 24/7 channels!
+  const combined = [...permanentChannels, ...rojaMatches.slice(0, 40)];
   cachedSportsSchedule = { matches: combined, ts: Date.now() };
 
   res.json({ success: true, events: combined });
 });
 
 // ============================================================================
-// REST API: TELEVISIÓN ESPAÑOLA EN VIVO (TDT NACIONAL 1080P + AUDIO AAC)
+// REST API: TELEVISIÓN EN VIVO (TDT · MOVISTAR+ · DAZN · BEIN · ESPN · DSPORTS · TNT)
 // ============================================================================
 interface SpanishTdtChannelDef {
   id: string;
@@ -7085,6 +7162,10 @@ interface SpanishTdtChannelDef {
   category:
     | 'movistar'
     | 'dazn'
+    | 'beinsports'
+    | 'espn'
+    | 'dsports'
+    | 'tnt_space'
     | 'generalistas'
     | 'cine_series'
     | 'entretenimiento'
@@ -7271,7 +7352,7 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     ],
   },
   // ==========================================================================
-  // MOVISTAR PLUS+ EN VIVO (FÚTBOL, CHAMPIONS, VAMOS, DEPORTES, GOLF, EUROSPORT)
+  // MOVISTAR PLUS+ EN VIVO (SEÑALES 100% DEDICADAS SIN SALTOS ENTRE CANALES)
   // ==========================================================================
   {
     id: 'mplus-canal',
@@ -7285,24 +7366,8 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Canal principal de Movistar Plus+ (#0): partido de la jornada, cine, series y programas propios',
     channels: [
       {
-        id: 'mplus-1',
-        label: 'Señal Principal M+ 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'mplus-2',
-        label: 'Señal Alternativa M+ HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
-        resolverType: 'sports_channel',
-      },
-      {
         id: 'mplus-sat',
-        label: 'Señal Satélite M+',
+        label: 'Señal Movistar Plus+ HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/531',
@@ -7323,23 +7388,15 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'mvamos-1',
-        label: 'Señal Directo Fútbol 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'mvamos-2',
-        label: 'Señal Multideporte HD',
+        label: 'Señal Principal Vamos HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/529',
         resolverType: 'sports_channel',
       },
       {
-        id: 'mvamos-sat',
-        label: 'Señal Satélite Vamos',
+        id: 'mvamos-2',
+        label: 'Señal 2 Vamos HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/526',
@@ -7359,14 +7416,6 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'LaLiga EA Sports en directo, previas, postpartidos y resúmenes oficiales 24/7',
     channels: [
       {
-        id: 'mlaliga-fast',
-        label: 'Señal Directa LaLiga 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/538',
-        resolverType: 'sports_channel',
-      },
-      {
         id: 'mlaliga-1',
         label: 'Señal Principal M+ LaLiga HD',
         lang: 'ES',
@@ -7375,28 +7424,12 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
         resolverType: 'sports_channel',
       },
       {
-        id: 'mlaliga-2',
-        label: 'Señal Alternativa LaLiga HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/522',
-        resolverType: 'sports_channel',
-      },
-      {
         id: 'mlaliga-sat',
-        label: 'Señal Satélite M+ LaLiga',
+        label: 'Señal 2 M+ LaLiga HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/84',
         resolverType: 'sports_channel',
-      },
-      {
-        id: 'mlaliga-gol',
-        label: 'Señal Respaldo Fútbol TDT 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
-        resolverType: 'tdt_hls',
       },
     ],
   },
@@ -7413,7 +7446,7 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'mhyper-1',
-        label: 'Señal 24/7 Hypermotion HD',
+        label: 'Señal Principal Hypermotion HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/522',
@@ -7421,7 +7454,7 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
       },
       {
         id: 'mhyper-ev',
-        label: 'Señal Evento 2 HD',
+        label: 'Señal 2 Hypermotion HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://footunder.online/tvtodo/laliga2.php',
@@ -7441,24 +7474,16 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'UEFA Champions League, Europa League, Conference League y fútbol europeo en vivo',
     channels: [
       {
-        id: 'mucl-gol',
-        label: 'Señal Directo Fútbol 1080p',
+        id: 'mucl-1',
+        label: 'Señal Principal M+ Campeones HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'mucl-ll',
-        label: 'Señal Fútbol M+ HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
+        sourceUrl: 'https://footunder.online/tvtodo/mligacampeones.php',
         resolverType: 'sports_channel',
       },
       {
-        id: 'mucl-1',
-        label: 'Señal Satélite Champions HD',
+        id: 'mucl-2',
+        label: 'Señal 2 M+ Liga de Campeones HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/435',
@@ -7478,24 +7503,8 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Liga Endesa ACB, Euroliga, NBA, ATP Masters 1000, Wimbledon, Rugby y NFL en directo',
     channels: [
       {
-        id: 'mdep1-eu2',
-        label: 'Señal Arena Deportes HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'mdep1-tdp',
-        label: 'Señal Polideportivo 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
         id: 'mdep1-sat',
-        label: 'Señal Satélite M+ Deportes',
+        label: 'Señal Movistar Deportes HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/438',
@@ -7515,24 +7524,8 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Multideporte en directo: baloncesto ACB/Euroliga, tenis Grand Slam y atletismo',
     channels: [
       {
-        id: 'mdep2-1',
-        label: 'Señal Directo Deportes 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'mdep2-2',
-        label: 'Señal Arena 2 HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-      {
         id: 'mdep2-sat',
-        label: 'Señal Satélite M+ Dep 2',
+        label: 'Señal Movistar Deportes 2 HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/527',
@@ -7552,24 +7545,8 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'PGA Tour, DP World Tour, Ryder Cup, Masters de Augusta y LIV Golf 24 horas en vivo',
     channels: [
       {
-        id: 'mgolf-eu2',
-        label: 'Señal Directo Deportes HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'mgolf-tdp',
-        label: 'Señal Polideportivo 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
         id: 'mgolf-1',
-        label: 'Señal Satélite M+ Golf HD',
+        label: 'Señal Movistar Golf HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/528',
@@ -7589,24 +7566,8 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Roland Garros, Open de Australia, Tour de Francia, La Vuelta, UFC y JJ.OO.',
     channels: [
       {
-        id: 'euro1-2',
-        label: 'Señal Eurosport Directo HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'euro1-tdp',
-        label: 'Señal Respaldo 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
         id: 'euro1-1',
-        label: 'Señal Satélite Eurosport 1',
+        label: 'Señal Eurosport 1 HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/231',
@@ -7627,18 +7588,10 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'euro2-1',
-        label: 'Señal 24/7 Eurosport 2 HD',
+        label: 'Señal Eurosport 2 HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'euro2-2',
-        label: 'Señal Motor WEC HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/525',
         resolverType: 'sports_channel',
       },
     ],
@@ -7659,18 +7612,10 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     channels: [
       {
         id: 'daznll-1',
-        label: 'Señal 24/7 DAZN LaLiga HD',
+        label: 'Señal DAZN LaLiga HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/538',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'daznll-ev',
-        label: 'Señal Evento 2 HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
         resolverType: 'sports_channel',
       },
     ],
@@ -7687,27 +7632,19 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Mundial de Fórmula 1 24/7: libres, clasificación, sprint, carreras y cámaras onboard',
     channels: [
       {
-        id: 'daznf1-rb',
-        label: 'Red Bull Motorsport 1080p',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'daznf1-eu2',
-        label: 'Señal Circuito Motor HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-      {
         id: 'daznf1-1',
-        label: 'Señal Satélite F1 HD',
+        label: 'Señal DAZN F1 HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/60',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'daznf1-2',
+        label: 'Señal 2 DAZN F1 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/525',
         resolverType: 'sports_channel',
       },
     ],
@@ -7724,27 +7661,11 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Premier League, MotoGP, Serie A, Bundesliga, Liga F y boxeo mundial en directo',
     channels: [
       {
-        id: 'dazn1-ll',
-        label: 'Señal Directo DAZN HD',
+        id: 'dazn1-sat',
+        label: 'Señal DAZN 1 HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/538',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'dazn1-eu2',
-        label: 'Señal Motor & Deportes HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'dazn1-1',
-        label: 'Señal Satélite DAZN 1',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/dazn3.php',
+        sourceUrl: 'https://pig.footunder.online/stream/445',
         resolverType: 'sports_channel',
       },
     ],
@@ -7761,24 +7682,8 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Segundo canal lineal DAZN España: Premier League, Moto2/Moto3, Serie A y ciclismo',
     channels: [
       {
-        id: 'dazn2-1',
-        label: 'Señal 24/7 Multideporte HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'dazn2-ev',
-        label: 'Señal Fútbol En Vivo HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
-        resolverType: 'sports_channel',
-      },
-      {
         id: 'dazn2-sat',
-        label: 'Señal Satélite DAZN 2',
+        label: 'Señal DAZN 2 HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://pig.footunder.online/stream/446',
@@ -7798,35 +7703,19 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Canal multievento DAZN 3 para jornadas simultáneas de fútbol europeo y motor',
     channels: [
       {
-        id: 'dazn3-ll',
-        label: 'Señal DAZN Multievento HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/522',
-        resolverType: 'sports_channel',
-      },
-      {
-        id: 'dazn3-eu2',
-        label: 'Señal Motor & Arena HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/232',
-        resolverType: 'sports_channel',
-      },
-      {
         id: 'dazn3-1',
-        label: 'Señal 24/7 DAZN 3 HD',
+        label: 'Señal Principal DAZN 3 HD',
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://footunder.online/tvtodo/dazn3.php',
         resolverType: 'sports_channel',
       },
       {
-        id: 'dazn3-2',
-        label: 'Señal Circuito F1 HD',
+        id: 'dazn3-sat',
+        label: 'Señal 2 DAZN 3 HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://pig.footunder.online/stream/60',
+        sourceUrl: 'https://pig.footunder.online/stream/447',
         resolverType: 'sports_channel',
       },
     ],
@@ -7843,20 +7732,810 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     description: 'Cuarto canal lineal DAZN España para retransmisiones simultáneas en alta definición',
     channels: [
       {
-        id: 'dazn4-1',
-        label: 'Señal DAZN Motorsport 1080p',
+        id: 'dazn4-sat',
+        label: 'Señal DAZN 4 HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://rbmn-live.akamaized.net/hls/live/590964/BoRB-AT/master.m3u8',
+        sourceUrl: 'https://pig.footunder.online/stream/448',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  // ==========================================================================
+  // BEIN SPORTS EN VIVO (TODOS LOS CANALES BEIN SPORTS)
+  // ==========================================================================
+  {
+    id: 'bein-es-n',
+    dial: 80,
+    name: 'beIN SPORTS en Español (Ñ)',
+    shortMark: 'beIN Ñ',
+    brandTone: '#7C3AED',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'Ligue 1, Copa Libertadores, Copa Sudamericana, Copa Africana y fútbol internacional en español',
+    channels: [
+      {
+        id: 'beines-1',
+        label: 'Señal Principal beIN Español 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://dc1644a9jazgj.cloudfront.net/beIN_Sports_Xtra_Espanol.m3u8',
         resolverType: 'tdt_hls',
       },
       {
-        id: 'dazn4-2',
-        label: 'Señal Arena Multievento HD',
+        id: 'beines-2',
+        label: 'Señal 2 beIN SPORTS Ñ HD',
         lang: 'ES',
         quality: '1080p',
-        sourceUrl: 'https://footunder.online/tvtodo/mligacampeones.php',
+        sourceUrl: 'https://footunder.online/tvtodo/bein-sports.php',
         resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'bein-xtra-hd',
+    dial: 81,
+    name: 'beIN SPORTS XTRA',
+    shortMark: 'beIN XTRA',
+    brandTone: '#6D28D9',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'Partidos en vivo 24/7, Ligue 1, Süper Lig, resúmenes oficiales y fútbol europeo',
+    channels: [
+      {
+        id: 'beinxtra-1',
+        label: 'Señal Directa beIN XTRA 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://bein-xtra-bein.amagi.tv/playlist.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'bein-usa',
+    dial: 82,
+    name: 'beIN SPORTS USA',
+    shortMark: 'beIN USA',
+    brandTone: '#8B5CF6',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'Canal principal de beIN SPORTS USA con fútbol europeo, sudamericano y motor en vivo',
+    channels: [
+      {
+        id: 'beinusa-1',
+        label: 'Señal Directa beIN USA HD',
+        lang: 'EN',
+        quality: 'HD',
+        sourceUrl: 'https://tvsen6.aynaott.com/beinsports/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'beinusa-2',
+        label: 'Señal 2 beIN SPORTS USA',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/61',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'bein-1',
+    dial: 83,
+    name: 'beIN SPORTS 1',
+    shortMark: 'beIN 1',
+    brandTone: '#7C3AED',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'UEFA Champions League, LaLiga, Premier League y Ligue 1 en directo 24/7',
+    channels: [
+      {
+        id: 'bein1-1',
+        label: 'Señal Principal beIN SPORTS 1 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/116',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'bein1-2',
+        label: 'Señal 2 beIN SPORTS 1',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/173',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'bein-2',
+    dial: 84,
+    name: 'beIN SPORTS 2',
+    shortMark: 'beIN 2',
+    brandTone: '#7C3AED',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'Segundo canal lineal beIN SPORTS: Champions League, LaLiga, Bundesliga y Serie A',
+    channels: [
+      {
+        id: 'bein2-1',
+        label: 'Señal beIN SPORTS 2 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/117',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'bein-3',
+    dial: 85,
+    name: 'beIN SPORTS 3',
+    shortMark: 'beIN 3',
+    brandTone: '#7C3AED',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'Tercer canal beIN SPORTS: fútbol europeo simultáneo, NBA y tenis ATP/WTA',
+    channels: [
+      {
+        id: 'bein3-1',
+        label: 'Señal beIN SPORTS 3 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/118',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'bein-4',
+    dial: 86,
+    name: 'beIN SPORTS 4',
+    shortMark: 'beIN 4',
+    brandTone: '#6D28D9',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'beIN SPORTS 4 / MAX 4: partidos simultáneos de ligas europeas y torneos UEFA',
+    channels: [
+      {
+        id: 'bein4-1',
+        label: 'Señal beIN SPORTS 4 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/494',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'bein-5',
+    dial: 87,
+    name: 'beIN SPORTS 5',
+    shortMark: 'beIN 5',
+    brandTone: '#6D28D9',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'beIN SPORTS 5 / MAX 5: cobertura multievento de fútbol internacional en vivo',
+    channels: [
+      {
+        id: 'bein5-1',
+        label: 'Señal beIN SPORTS 5 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/495',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'bein-6',
+    dial: 88,
+    name: 'beIN SPORTS 6',
+    shortMark: 'beIN 6',
+    brandTone: '#6D28D9',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'beIN SPORTS 6 / MAX 6: jornadas completas europeas y eliminatorias en directo',
+    channels: [
+      {
+        id: 'bein6-1',
+        label: 'Señal beIN SPORTS 6 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/496',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'bein-7',
+    dial: 89,
+    name: 'beIN SPORTS 7',
+    shortMark: 'beIN 7',
+    brandTone: '#6D28D9',
+    network: 'beIN SPORTS',
+    category: 'beinsports',
+    quality: '1080p HD',
+    description: 'beIN SPORTS 7 / MAX 7: retransmisiones simultáneas en alta definición',
+    channels: [
+      {
+        id: 'bein7-1',
+        label: 'Señal beIN SPORTS 7 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/498',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  // ==========================================================================
+  // ESPN EN VIVO (ESPN, ESPN 2, ESPN 3, ESPN 4, ESPN 5, ESPN 6, ESPN 7, PREMIUM)
+  // ==========================================================================
+  {
+    id: 'espn-1',
+    dial: 101,
+    name: 'ESPN',
+    shortMark: 'ESPN',
+    brandTone: '#DC2626',
+    network: 'ESPN En Vivo',
+    category: 'espn',
+    quality: '1080p HD',
+    description: 'UEFA Champions League, Premier League, Serie A, Copa Libertadores y SportsCenter en vivo',
+    channels: [
+      {
+        id: 'espn1-sxhd',
+        label: 'Señal Principal ESPN 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espn',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'espn1-hls',
+        label: 'Señal 2 ESPN HD Directa',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://barinaslive1.boldmss.com/ESPN/ESPN.isml/ESPN.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'espn1-ar',
+        label: 'Señal 3 ESPN Sur HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live1.php?stream=espnar',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'espn1-tvtodo',
+        label: 'Señal 4 ESPN Satélite',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/espn.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'espn-2',
+    dial: 102,
+    name: 'ESPN 2',
+    shortMark: 'ESPN 2',
+    brandTone: '#DC2626',
+    network: 'ESPN En Vivo',
+    category: 'espn',
+    quality: '1080p HD',
+    description: 'Fútbol europeo, LaLiga, Bundesliga, NBA, tenis Grand Slam y debate futbolero en directo',
+    channels: [
+      {
+        id: 'espn2-sxhd',
+        label: 'Señal Principal ESPN 2 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espn2',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'espn2-hls',
+        label: 'Señal 2 ESPN 2 HD Directa',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://barinaslive1.boldmss.com/ESPN_2/ESPN_2.isml/ESPN_2.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'espn2-tvtodo',
+        label: 'Señal 3 ESPN 2 Satélite',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/espn-2.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'espn-3',
+    dial: 103,
+    name: 'ESPN 3',
+    shortMark: 'ESPN 3',
+    brandTone: '#B91C1C',
+    network: 'ESPN En Vivo',
+    category: 'espn',
+    quality: '1080p HD',
+    description: 'Europa League, Conference League, ciclismo, motor y fútbol internacional en vivo',
+    channels: [
+      {
+        id: 'espn3-sxhd',
+        label: 'Señal Principal ESPN 3 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espn3',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'espn3-hls',
+        label: 'Señal 2 ESPN 3 HD Directa',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://barinaslive1.boldmss.com/ESPN_3/ESPN_3.isml/ESPN_3.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'espn3-tvtodo',
+        label: 'Señal 3 ESPN 3 Satélite',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/espn-3.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'espn-4',
+    dial: 104,
+    name: 'ESPN 4',
+    shortMark: 'ESPN 4',
+    brandTone: '#B91C1C',
+    network: 'ESPN En Vivo',
+    category: 'espn',
+    quality: '1080p HD',
+    description: 'Fórmula 1, MotoGP, Ligue 1, Eredivisie y grandes partidos europeos en directo',
+    channels: [
+      {
+        id: 'espn4-sxhd',
+        label: 'Señal Principal ESPN 4 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espn4',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'espn4-hls',
+        label: 'Señal 2 ESPN 4 HD Directa',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://barinaslive1.boldmss.com/ESPN_4/ESPN_4.isml/ESPN_4.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'espn4-tvtodo',
+        label: 'Señal 3 ESPN 4 Satélite',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/espn-4.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'espn-5',
+    dial: 105,
+    name: 'ESPN 5',
+    shortMark: 'ESPN 5',
+    brandTone: '#991B1B',
+    network: 'ESPN En Vivo',
+    category: 'espn',
+    quality: '1080p HD',
+    description: 'Quinto canal ESPN en vivo: fútbol sudamericano, europeo, boxeo y UFC',
+    channels: [
+      {
+        id: 'espn5-sxhd',
+        label: 'Señal Principal ESPN 5 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espn5',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'espn5-hls',
+        label: 'Señal 2 ESPN 5 HD Directa',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://barinaslive1.boldmss.com/ESPN_5/ESPN_5.isml/ESPN_5.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'espn5-tvtodo',
+        label: 'Señal 3 ESPN 5 Satélite',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/espn-5.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'espn-6',
+    dial: 106,
+    name: 'ESPN 6',
+    shortMark: 'ESPN 6',
+    brandTone: '#991B1B',
+    network: 'ESPN En Vivo',
+    category: 'espn',
+    quality: '1080p HD',
+    description: 'Sexto canal ESPN en vivo para jornadas simultáneas de Champions, Libertadores y ligas',
+    channels: [
+      {
+        id: 'espn6-sxhd',
+        label: 'Señal Principal ESPN 6 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espn6',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'espn6-hls',
+        label: 'Señal 2 ESPN 6 HD Directa',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://barinaslive1.boldmss.com/ESPN_6/ESPN_6.isml/ESPN_6.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'espn6-tvtodo',
+        label: 'Señal 3 ESPN 6 Satélite',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/espn-6.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'espn-7',
+    dial: 107,
+    name: 'ESPN 7',
+    shortMark: 'ESPN 7',
+    brandTone: '#7F1D1D',
+    network: 'ESPN En Vivo',
+    category: 'espn',
+    quality: '1080p HD',
+    description: 'Séptimo canal ESPN en directo: multievento de fútbol internacional, tenis y rugby',
+    channels: [
+      {
+        id: 'espn7-sxhd',
+        label: 'Señal Principal ESPN 7 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espn7',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'espn7-hls',
+        label: 'Señal 2 ESPN 7 HD Directa',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://barinaslive1.boldmss.com/ESPN_7/ESPN_7.isml/ESPN_7.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'espn7-tvtodo',
+        label: 'Señal 3 ESPN 7 Satélite',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/espn-7.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'espn-premium',
+    dial: 108,
+    name: 'ESPN Premium',
+    shortMark: 'ESPN+',
+    brandTone: '#F59E0B',
+    network: 'ESPN En Vivo',
+    category: 'espn',
+    quality: '1080p HD',
+    description: 'Liga Profesional Argentina, superclásicos y fútbol exclusivo en alta definición 24/7',
+    channels: [
+      {
+        id: 'espnp-sxhd',
+        label: 'Señal Principal ESPN Premium 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=espnpremium',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'espnp-hls',
+        label: 'Señal 2 ESPN Premium HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://158.172.155.130:8000/play/a0ao/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'espnp-tvtodo',
+        label: 'Señal 3 ESPN Premium Satélite',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/espnpremiun.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  // ==========================================================================
+  // DSPORTS EN VIVO (DSPORTS, DSPORTS 2, DSPORTS+, DSPORTS MOTOR, DSPORTS FIGHT)
+  // ==========================================================================
+  {
+    id: 'dsports-1',
+    dial: 110,
+    name: 'DSports',
+    shortMark: 'DSPORTS',
+    brandTone: '#0284C7',
+    network: 'DirecTV Sports',
+    category: 'dsports',
+    quality: '1080p HD',
+    description: 'LaLiga EA Sports, Copa Sudamericana, Copa del Rey, Eliminatorias y Fútbol Total en vivo',
+    channels: [
+      {
+        id: 'dsp1-sxhd',
+        label: 'Señal Principal DSports 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=dsports',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'dsp1-tvtodo',
+        label: 'Señal 2 DSports HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/directv-sports.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'dsports-2',
+    dial: 111,
+    name: 'DSports 2',
+    shortMark: 'DSP 2',
+    brandTone: '#0369A1',
+    network: 'DirecTV Sports',
+    category: 'dsports',
+    quality: '1080p HD',
+    description: 'Segundo canal DSports en vivo: LaLiga, Copa Sudamericana, baloncesto FIBA y ciclismo',
+    channels: [
+      {
+        id: 'dsp2-sxhd',
+        label: 'Señal Principal DSports 2 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=dsports2',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'dsp2-tvtodo',
+        label: 'Señal 2 DSports 2 HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/directv-2.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'dsports-plus',
+    dial: 112,
+    name: 'DSports+',
+    shortMark: 'DSP+',
+    brandTone: '#0EA5E9',
+    network: 'DirecTV Sports',
+    category: 'dsports',
+    quality: '1080p HD',
+    description: 'DSports Plus en directo: partidos exclusivos simultáneos de fútbol europeo y sudamericano',
+    channels: [
+      {
+        id: 'dspp-sxhd',
+        label: 'Señal Principal DSports+ 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=dsportsplus',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'dspp-tvtodo',
+        label: 'Señal 2 DSports+ HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/directv-plus.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'dsports-motor',
+    dial: 113,
+    name: 'DSports Motor',
+    shortMark: 'DSP MOT',
+    brandTone: '#EA580C',
+    network: 'DirecTV Sports',
+    category: 'dsports',
+    quality: '1080p HD',
+    description: 'Automovilismo mundial 24/7: Fórmula E, IndyCar, Superbike, Rally y especiales de motor',
+    channels: [
+      {
+        id: 'dspmot-1',
+        label: 'Señal Principal DSports Motor HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/96',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'dspmot-2',
+        label: 'Señal 2 DSports Motor',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=dsportsmotor',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'dsports-fight',
+    dial: 114,
+    name: 'DSports Fight',
+    shortMark: 'DSP FGT',
+    brandTone: '#E11D48',
+    network: 'DirecTV Sports',
+    category: 'dsports',
+    quality: '1080p HD',
+    description: 'Boxeo internacional, MMA, PFL, kickboxing y deportes de combate las 24 horas',
+    channels: [
+      {
+        id: 'dspfgt-1',
+        label: 'Señal Principal DSports Fight HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/98',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'dspfgt-2',
+        label: 'Señal 2 DSports Fight',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=dsportsfight',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  // ==========================================================================
+  // TNT, TNT SPORTS & SPACE EN VIVO
+  // ==========================================================================
+  {
+    id: 'tnt-sports',
+    dial: 115,
+    name: 'TNT Sports',
+    shortMark: 'TNT SP',
+    brandTone: '#EC4899',
+    network: 'TNT Sports',
+    category: 'tnt_space',
+    quality: '1080p HD',
+    description: 'UEFA Champions League, Liga Profesional, Primera División y grandes finales en directo',
+    channels: [
+      {
+        id: 'tntsp-1',
+        label: 'Señal Principal TNT Sports 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=tntsports',
+        resolverType: 'sports_channel',
+      },
+      {
+        id: 'tntsp-2',
+        label: 'Señal 2 TNT Sports HD Directa',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://45.184.109.10/live/69393EAE6ADBC65A68F942022362A202/86.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'tntsp-3',
+        label: 'Señal 3 TNT Sports Satélite',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://footunder.online/tvtodo/tnt-sports.php',
+        resolverType: 'sports_channel',
+      },
+    ],
+  },
+  {
+    id: 'tnt-vivo',
+    dial: 116,
+    name: 'TNT',
+    shortMark: 'TNT',
+    brandTone: '#DB2777',
+    network: 'Warner · TNT Sports',
+    category: 'tnt_space',
+    quality: '1080p HD',
+    description: 'Champions League en vivo, eventos especiales, estrenos de Hollywood y gala de premios',
+    channels: [
+      {
+        id: 'tnt-1',
+        label: 'Señal Principal TNT 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://45.171.64.30:6060/play/a03i/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'tnt-2',
+        label: 'Señal 2 TNT HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://45.134.141.161:2200/ARG/TNT/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'tnt-3',
+        label: 'Señal 3 TNT Sur 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://181.78.211.244:8005/play/a09g/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'space-vivo',
+    dial: 117,
+    name: 'Space',
+    shortMark: 'SPACE',
+    brandTone: '#FACC15',
+    network: 'Warner · Space',
+    category: 'tnt_space',
+    quality: '1080p HD',
+    description: 'UEFA Champions League, Combate Space (boxeo en vivo), cine de acción y adrenalina 24/7',
+    channels: [
+      {
+        id: 'space-1',
+        label: 'Señal Principal Space 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'http://45.171.64.30:6060/play/a04n/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'space-2',
+        label: 'Señal 2 Space Sur HD',
+        lang: 'ES',
+        quality: '720p',
+        sourceUrl: 'https://bantel-cdn1.iptvperu.tv:1936/btnscrtn/space.stream/playlist.m3u8',
+        resolverType: 'tdt_hls',
       },
     ],
   },
@@ -8003,14 +8682,6 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/50/index.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'paramount-bom',
-        label: 'Señal Cine Alternativa HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'http://90.163.85.113:8093/stream/35/index.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
@@ -9732,13 +10403,13 @@ app.get('/api/extract/stream', async (req, res) => {
         });
       }
 
-      // For sports_channel tracks on known mirrors (footunder / tilinhd), skip slow headless Chrome if direct HTTP failed
-      const isKnownDirectMirror = /footunder\.online|tilinhd\./i.test(fullTargetUrl);
+      // For sports_channel tracks on known mirrors (footunder / tilinhd / streamxhd), skip slow headless Chrome if direct HTTP failed
+      const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTargetUrl);
       if (!directSports && resolverType === 'sports_channel' && isKnownDirectMirror) {
         return res.status(404).json({
           success: false,
           canUseCloudBrowser: false,
-          error: 'Esta señal alternativa no está activa ahora mismo; saltando a otra pista.',
+          error: 'Esta señal no está activa en este instante. Elige otra señal o canal.',
         });
       }
 
@@ -10531,14 +11202,160 @@ function resolveTeamBadgeUrl(teamObj: any, isInternational: boolean): string | u
   return undefined;
 }
 
+const BILINGUAL_TEAM_ALIASES: Record<string, string[]> = {
+  espana: ['espana', 'spain'],
+  francia: ['francia', 'france'],
+  italia: ['italia', 'italy'],
+  inglaterra: ['inglaterra', 'england'],
+  alemania: ['alemania', 'germany'],
+  paises_bajos: ['paises bajos', 'holanda', 'netherlands'],
+  escocia: ['escocia', 'scotland'],
+  gales: ['gales', 'wales'],
+  suiza: ['suiza', 'switzerland'],
+  suecia: ['suecia', 'sweden'],
+  dinamarca: ['dinamarca', 'denmark'],
+  noruega: ['noruega', 'norway'],
+  polonia: ['polonia', 'poland'],
+  turquia: ['turquia', 'turkey', 'turkiye'],
+  grecia: ['grecia', 'greece'],
+  hungria: ['hungria', 'hungary'],
+  belgica: ['belgica', 'belgium'],
+  croacia: ['croacia', 'croatia'],
+  republica_checa: ['republica checa', 'chequia', 'czech', 'czechia'],
+  letonia: ['letonia', 'latvia'],
+  finlandia: ['finlandia', 'finland'],
+  bielorrusia: ['bielorrusia', 'belarus'],
+  eslovaquia: ['eslovaquia', 'slovakia'],
+  eslovenia: ['eslovenia', 'slovenia'],
+  islandia: ['islandia', 'iceland'],
+  irlanda: ['irlanda', 'ireland'],
+  ucrania: ['ucrania', 'ukraine'],
+  rumania: ['rumania', 'romania'],
+  rusia: ['rusia', 'russia'],
+  chipre: ['chipre', 'cyprus'],
+  estados_unidos: ['estados unidos', 'usa', 'united states'],
+  brasil: ['brasil', 'brazil'],
+  marruecos: ['marruecos', 'morocco'],
+  argelia: ['argelia', 'algeria'],
+  egipto: ['egipto', 'egypt'],
+  tunez: ['tunez', 'tunisia'],
+  camerun: ['camerun', 'cameroon'],
+  costa_de_marfil: ['costa de marfil', 'ivory coast', 'cote divoire'],
+  sudafrica: ['sudafrica', 'south africa'],
+  japon: ['japon', 'japan'],
+  corea_del_sur: ['corea del sur', 'south korea', 'korea'],
+};
+
+const GENERIC_TEAM_STOPWORDS = new Set([
+  'fc',
+  'cf',
+  'sc',
+  'ac',
+  'cd',
+  'ud',
+  'sd',
+  'ca',
+  'rc',
+  'rcd',
+  'club',
+  'real',
+  'united',
+  'city',
+  'sporting',
+  'atletico',
+  'deportivo',
+  'nacional',
+  'union',
+  'america',
+  'racing',
+  'independiente',
+  'republica',
+  'san',
+  'santa',
+  'st',
+  'al',
+  'de',
+  'del',
+  'la',
+  'el',
+  'los',
+  'las',
+  'women',
+  'femenino',
+  'fem',
+  'u21',
+  'u20',
+  'u19',
+]);
+
+function doesSingleTeamMatchCandidate(boardTeamRaw: string, candidateSideRaw: string): boolean {
+  const boardSlug = normalizeTeamToken(boardTeamRaw);
+  const candSpace = normalizeTeamToken(candidateSideRaw).replace(/_/g, ' ');
+  const boardSpace = boardSlug.replace(/_/g, ' ');
+  if (!boardSpace || !candSpace) return false;
+  if (candSpace === boardSpace || candSpace.includes(boardSpace) || boardSpace.includes(candSpace)) {
+    // Guard against matching a single generic stopword like "real" or "united"
+    if (GENERIC_TEAM_STOPWORDS.has(candSpace) || GENERIC_TEAM_STOPWORDS.has(boardSpace)) {
+      return candSpace === boardSpace;
+    }
+    return true;
+  }
+
+  const aliases = BILINGUAL_TEAM_ALIASES[boardSlug];
+  if (aliases && aliases.some((al) => candSpace.includes(al) || al.includes(candSpace))) {
+    return true;
+  }
+
+  const distinctiveTokens = boardSpace
+    .split(' ')
+    .filter((w) => w.length >= 4 && !GENERIC_TEAM_STOPWORDS.has(w));
+  if (distinctiveTokens.length === 0) return false;
+  return distinctiveTokens.some((tok) => {
+    const aliasList = BILINGUAL_TEAM_ALIASES[tok] || [tok];
+    return aliasList.some((al) => candSpace.includes(al));
+  });
+}
+
+function doesScrapedEventMatchFixture(
+  homeTeam: string,
+  awayTeam: string,
+  scrapedEvent: { title?: string; homeTeam?: string; awayTeam?: string }
+): boolean {
+  if (scrapedEvent.homeTeam && scrapedEvent.awayTeam) {
+    return (
+      (doesSingleTeamMatchCandidate(homeTeam, scrapedEvent.homeTeam) &&
+        doesSingleTeamMatchCandidate(awayTeam, scrapedEvent.awayTeam)) ||
+      (doesSingleTeamMatchCandidate(homeTeam, scrapedEvent.awayTeam) &&
+        doesSingleTeamMatchCandidate(awayTeam, scrapedEvent.homeTeam))
+    );
+  }
+
+  const rawTitle = String(scrapedEvent.title || '');
+  const parts = rawTitle.split(/\s+(?:vs\.?|v\.?|-|contra)\s+/i);
+  if (parts.length >= 2) {
+    const sideA = parts[0].trim();
+    const sideB = parts.slice(1).join(' ').trim();
+    return (
+      (doesSingleTeamMatchCandidate(homeTeam, sideA) &&
+        doesSingleTeamMatchCandidate(awayTeam, sideB)) ||
+      (doesSingleTeamMatchCandidate(homeTeam, sideB) &&
+        doesSingleTeamMatchCandidate(awayTeam, sideA))
+    );
+  }
+  return false;
+}
+
 function buildFootballMatchChannels(params: {
   matchId: string;
   homeTeam: string;
   awayTeam: string;
+  statusState: 'live' | 'upcoming' | 'finished';
   league: SoccerLeagueFeedDef;
   scrapedMatches: any[];
 }): TrackRecord[] {
-  const { matchId, homeTeam, awayTeam, league, scrapedMatches } = params;
+  const { matchId, homeTeam, awayTeam, statusState, league, scrapedMatches } = params;
+  if (statusState === 'finished') return [];
+
   const channels: TrackRecord[] = [];
   const seenUrls = new Set<string>();
 
@@ -10548,40 +11365,10 @@ function buildFootballMatchChannels(params: {
     channels.push(track);
   };
 
-  const homeNorm = normalizeTeamToken(homeTeam).replace(/_/g, ' ');
-  const awayNorm = normalizeTeamToken(awayTeam).replace(/_/g, ' ');
-  const isSpainTeam =
-    /\bespana\b|\bspain\b/i.test(homeNorm) || /\bespana\b|\bspain\b/i.test(awayNorm);
-
-  // 1. If Selección Española or Copa del Rey is playing, put La 1 RTVE HD & Teledeporte HD first!
-  if (isSpainTeam || league.broadcasterProfile === 'copa_rey') {
-    pushTrack({
-      id: `${matchId}-la1`,
-      label: 'La 1 RTVE HD',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8',
-      resolverType: 'tdt_hls',
-    });
-    pushTrack({
-      id: `${matchId}-tdp`,
-      label: 'Teledeporte HD',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
-      resolverType: 'tdt_hls',
-    });
-  }
-
-  // 2. Match any live scraped direct match channels from our sports agenda!
-  const homeWords = homeNorm.split(' ').filter((w) => w.length >= 4);
-  const awayWords = awayNorm.split(' ').filter((w) => w.length >= 4);
+  // 1. Strict BOTH-teams match against real-time live event feeds (StreamXHD + RojaDirecta)
   for (const sm of scrapedMatches) {
     if (sm.is247Channel) continue;
-    const smTitle = normalizeTeamToken(sm.title || '').replace(/_/g, ' ');
-    const hitHome = homeWords.some((w) => smTitle.includes(w));
-    const hitAway = awayWords.some((w) => smTitle.includes(w));
-    if (hitHome || hitAway) {
+    if (doesScrapedEventMatchFixture(homeTeam, awayTeam, sm)) {
       for (const ch of sm.channels || []) {
         pushTrack({
           id: `${matchId}-live-${channels.length + 1}`,
@@ -10595,119 +11382,28 @@ function buildFootballMatchChannels(params: {
     }
   }
 
-  // 3. Competition-tailored broadcasters so every match has instant multi-server buttons
-  if (league.broadcasterProfile === 'laliga') {
+  // 2. Official RTVE La 1 ONLY when España senior national team is playing
+  const homeNorm = normalizeTeamToken(homeTeam);
+  const awayNorm = normalizeTeamToken(awayTeam);
+  const isSpainNationalMatch =
+    (homeNorm === 'espana' || homeNorm === 'spain' || awayNorm === 'espana' || awayNorm === 'spain') &&
+    (league.slug.startsWith('uefa.nations') ||
+      league.slug.startsWith('uefa.euro') ||
+      league.slug.startsWith('fifa.'));
+
+  if (isSpainNationalMatch) {
     pushTrack({
-      id: `${matchId}-mll`,
-      label: 'Movistar LaLiga',
+      id: `${matchId}-la1`,
+      label: 'La 1 RTVE HD',
       lang: 'ES',
       quality: '1080p',
-      sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-daznll`,
-      label: 'DAZN LaLiga',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/538',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-hyper`,
-      label: 'LaLiga TV 2',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/522',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-gol`,
-      label: 'GOL Play HD',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
-      resolverType: 'tdt_hls',
-    });
-  } else if (league.broadcasterProfile === 'uefa' || league.broadcasterProfile === 'spain_nt') {
-    pushTrack({
-      id: `${matchId}-mlc`,
-      label: 'Movistar Campeones',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/435',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-dazneu`,
-      label: 'DAZN Europa',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://footunder.online/tvtodo/dazn3.php',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-mplus`,
-      label: 'Movistar Fútbol',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
-      resolverType: 'sports_channel',
-    });
-    if (league.slug === 'uefa.wchampions') {
-      pushTrack({
-        id: `${matchId}-esport3`,
-        label: 'Esport3 HD',
-        lang: 'ES',
-        quality: '1080p',
-        sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-origin/esport3-hls/master.m3u8',
-        resolverType: 'tdt_hls',
-      });
-    }
-    pushTrack({
-      id: `${matchId}-tdp-bk`,
-      label: 'Teledeporte HD',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
-      resolverType: 'tdt_hls',
-    });
-  } else {
-    pushTrack({
-      id: `${matchId}-dazn1`,
-      label: 'DAZN Fútbol HD',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/538',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-mplus-int`,
-      label: 'Movistar Fútbol',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/435',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-gol-int`,
-      label: 'GOL Play HD',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'http://90.163.85.113:8093/stream/38/index.m3u8',
-      resolverType: 'tdt_hls',
-    });
-    pushTrack({
-      id: `${matchId}-tdp-int`,
-      label: 'Teledeporte HD',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+      sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8',
       resolverType: 'tdt_hls',
     });
   }
 
-  return channels.slice(0, 7);
+  // Never pad unrelated 24/7 channels onto matches — clicking a match must ONLY play THAT match!
+  return channels.slice(0, 8);
 }
 
 let cachedFootballBoard: { dateKey: string; matches: any[]; ts: number } | null = null;
@@ -10730,7 +11426,7 @@ app.get('/api/sports/football-board', async (req, res) => {
   }
 
   try {
-    const scrapedMatches = cachedSportsSchedule?.matches || [];
+    const isToday = dateKey === madridToday;
     const madridTimeFmt = new Intl.DateTimeFormat('es-ES', {
       timeZone: 'Europe/Madrid',
       hour: '2-digit',
@@ -10738,8 +11434,11 @@ app.get('/api/sports/football-board', async (req, res) => {
       hour12: false,
     });
 
-    const responses = await Promise.all(
-      SOCCER_BOARD_LEAGUES.map((league) =>
+    const [liveFeeds, ...responses] = await Promise.all([
+      isToday
+        ? fetchLiveSportsAgendaFeeds()
+        : Promise.resolve({ rojaMatches: [], streamXhdFootball: [] }),
+      ...SOCCER_BOARD_LEAGUES.map((league) =>
         fetch(
           `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.slug}/scoreboard?dates=${dateKey}&lang=es&region=es`,
           { signal: AbortSignal.timeout(4500) }
@@ -10747,9 +11446,10 @@ app.get('/api/sports/football-board', async (req, res) => {
           .then((r) => (r.ok ? r.json() : null))
           .then((json) => ({ league, json }))
           .catch(() => ({ league, json: null }))
-      )
-    );
+      ),
+    ]);
 
+    const scrapedMatches = liveFeeds.rojaMatches;
     const items: any[] = [];
     const seenEventIds = new Set<string>();
 
@@ -10805,6 +11505,7 @@ app.get('/api/sports/football-board', async (req, res) => {
           matchId: `fb-${eventId}`,
           homeTeam,
           awayTeam,
+          statusState,
           league,
           scrapedMatches,
         });
@@ -10833,6 +11534,63 @@ app.get('/api/sports/football-board', async (req, res) => {
           homeScore: statusState === 'upcoming' ? '-' : String(home.score ?? '0'),
           awayScore: statusState === 'upcoming' ? '-' : String(away.score ?? '0'),
           channels,
+        });
+      }
+    }
+
+    // Also include any live/today football matches from StreamXHD (`eventos.json`) not already in ESPN's feed
+    if (isToday && liveFeeds.streamXhdFootball.length > 0) {
+      for (let idx = 0; idx < liveFeeds.streamXhdFootball.length; idx++) {
+        const sx = liveFeeds.streamXhdFootball[idx];
+        const alreadyInBoard = items.some((it) =>
+          doesScrapedEventMatchFixture(it.homeTeam, it.awayTeam, sx)
+        );
+        if (alreadyInBoard) continue;
+
+        const sxId = `sxhd-${idx + 1}-${normalizeTeamToken(sx.homeTeam).slice(0, 8)}`;
+        const codeUpper = String(sx.code || '').toUpperCase();
+        const flagIso =
+          codeUpper === 'COL'
+            ? 'co'
+            : codeUpper === 'ARG'
+            ? 'ar'
+            : codeUpper === 'MEX'
+            ? 'mx'
+            : codeUpper === 'CHL' || codeUpper === 'CHI'
+            ? 'cl'
+            : codeUpper === 'PER'
+            ? 'pe'
+            : codeUpper === 'BRA'
+            ? 'br'
+            : codeUpper === 'URU'
+            ? 'uy'
+            : codeUpper === 'ECU'
+            ? 'ec'
+            : 'un';
+
+        items.push({
+          id: `fb-${sxId}`,
+          eventId: sxId,
+          leagueSlug: `live.${normalizeTeamToken(sx.leagueName || 'directo')}`,
+          regionName: codeUpper || 'Internacional',
+          leagueName: sx.leagueName || 'Fútbol en Vivo',
+          groupTitle: `${codeUpper || 'En Vivo'}: ${sx.leagueName || 'Fútbol en Directo'}`,
+          regionFlagUrl: `https://flagcdn.com/w40/${flagIso}.png`,
+          priority: 12,
+          kickoffIso: new Date().toISOString(),
+          kickoffTime: sx.timeStr || 'EN VIVO',
+          kickoffMs: Date.now(),
+          statusState: 'live',
+          statusLabel: 'EN VIVO',
+          homeTeam: sx.homeTeam,
+          awayTeam: sx.awayTeam,
+          homeShort: sx.homeTeam.slice(0, 3).toUpperCase(),
+          awayShort: sx.awayTeam.slice(0, 3).toUpperCase(),
+          homeLogo: sx.homeLogo,
+          awayLogo: sx.awayLogo,
+          homeScore: '•',
+          awayScore: '•',
+          channels: sx.channels,
         });
       }
     }

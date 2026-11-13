@@ -220,7 +220,28 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               className="min-h-[42px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
             >
               <Download className="w-4 h-4 shrink-0" />
-              <span>Descargar APK</span>
+              <span>APK TV</span>
+            </a>
+          </div>
+
+          {/* Direct Native APK for Android Mobile */}
+          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-white/12 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                <Download className="w-3.5 h-3.5 text-[#FB7185]" />
+                <span>App Nativa Móvil Android (.APK)</span>
+              </div>
+              <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
+                Reproductor ExoPlayer HD nativo, Fútbol RBTV+, beIN, ESPN 1-7, DSports, TDT, Cine y Series.
+              </p>
+            </div>
+            <a
+              href="/NAIM-CINE.apk?v=11"
+              download="NAIM-CINE.apk"
+              className="min-h-[42px] px-3.5 rounded-xl bg-white/[0.1] hover:bg-white/[0.16] border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
+            >
+              <Download className="w-4 h-4 text-[#FB7185] shrink-0" />
+              <span>APK Móvil</span>
             </a>
           </div>
 

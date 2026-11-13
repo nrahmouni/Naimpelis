@@ -2004,20 +2004,30 @@ export function App() {
   const handlePlaySportsMatch = async (
     match: SportsMatch,
     channelIndex: number,
-    failedIndices: Set<number> = new Set()
+    failedIndices: Set<number> = new Set(),
+    activeExtraction?: { reqSeq: number; signal: AbortSignal },
+    allowSameMatchMirrorFallback = channelIndex === 0 && failedIndices.size === 0
   ) => {
     if (!canControlRoom) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
-    const channel = match.channels[channelIndex] || match.channels[0];
-    if (!channel) return;
+    const channel = match.channels[channelIndex];
+    if (!channel) {
+      setExtractionError('Este partido aún no tiene señal directa activa.');
+      return;
+    }
+
+    const extraction = activeExtraction || beginMediaExtraction();
+    const { reqSeq, signal } = extraction;
 
     scrollDesktopToPlayer();
     setIsExtracting(true);
+    isExtractingRef.current = true;
     setLoadingItemId(`${match.id}-${channelIndex}`);
     setExtractionError(null);
-    setExtractionLabel(`${match.title} · Verificando ${channel.label} HD...`);
+    setExtractionLabel(`${match.title} · Conectando ${channel.label}...`);
+    activeHistoryIdRef.current = null;
 
     try {
       const params = new URLSearchParams({
@@ -2025,33 +2035,41 @@ export function App() {
         resolverType: channel.resolverType || 'sports_channel',
         title: match.title,
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`);
-      const data = await res.json();
+      const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
+      const data = await res.json().catch(() => null);
+      if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        const nextFailed = new Set(failedIndices);
-        nextFailed.add(channelIndex);
-
-        const nextIdx = match.channels.findIndex((_, idx) => !nextFailed.has(idx));
-        if (nextIdx !== -1) {
-          await handlePlaySportsMatch(match, nextIdx, nextFailed);
-          return;
+        if (allowSameMatchMirrorFallback && !match.is247Channel && match.channels.length > 1) {
+          const nextFailed = new Set(failedIndices);
+          nextFailed.add(channelIndex);
+          const nextIdx = match.channels.findIndex((_, idx) => !nextFailed.has(idx));
+          if (nextIdx !== -1) {
+            await handlePlaySportsMatch(match, nextIdx, nextFailed, extraction, true);
+            return;
+          }
         }
 
-        // Never open scrambled satellite mirrors (canUseCloudBrowser === false) in Cloud Browser!
-        if (data?.canUseCloudBrowser === false || /footunder\.online|tilinhd/i.test(channel.sourceUrl)) {
+        if (
+          data?.canUseCloudBrowser === false ||
+          /footunder\.online|tilinhd|streamxhd|rojadirectv/i.test(channel.sourceUrl)
+        ) {
           setExtractionError(
-            'Las señales satélite de este encuentro están en mantenimiento temporal. Prueba otro canal en directo.'
+            data?.error ||
+              `La señal "${channel.label}" de ${match.title} no está disponible en este momento. Elige otra opción del partido o canal.`
           );
           return;
         }
 
-        socketService.startCloudBrowser(channel.sourceUrl, profile.name);
+        setExtractionError(
+          data?.error ||
+            `La señal "${channel.label}" no responde en este instante. Prueba otra opción disponible.`
+        );
         return;
       }
 
       if (data.mode === 'cloud') {
-        if (/footunder\.online|tilinhd/i.test(data.streamUrl || channel.sourceUrl)) {
+        if (/footunder\.online|tilinhd|streamxhd/i.test(data.streamUrl || channel.sourceUrl)) {
           setExtractionError('Señal temporalmente fuera de servicio.');
           return;
         }
@@ -2059,7 +2077,6 @@ export function App() {
         return;
       }
 
-      // Prune any channels that already failed verification so dead/green pills disappear from the player bar!
       const healthyChannels = match.channels
         .map((c, idx) => (idx === channelIndex ? { ...c, resolvedStreamUrl: data.streamUrl } : c))
         .filter((_, idx) => !failedIndices.has(idx));
@@ -2084,21 +2101,28 @@ export function App() {
         updatedBy: profile.name,
       };
 
+      videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
-    } catch {
-      setExtractionError('No se pudo conectar con la señal en directo.');
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || reqSeq !== extractionReqSeqRef.current) return;
+      setExtractionError('No se pudo conectar con la señal seleccionada.');
     } finally {
-      setIsExtracting(false);
-      setLoadingItemId(null);
+      if (reqSeq === extractionReqSeqRef.current) {
+        isExtractingRef.current = false;
+        setIsExtracting(false);
+        setLoadingItemId(null);
+      }
     }
   };
 
   const handlePlayTdtChannel = async (
     tdtCh: SpanishTdtChannel,
     signalIndex = 0,
-    liveProgramHint?: string
+    liveProgramHint?: string,
+    activeExtraction?: { reqSeq: number; signal: AbortSignal },
+    allowSameChannelBackup = signalIndex === 0
   ) => {
     if (!canControlRoom) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
@@ -2107,14 +2131,18 @@ export function App() {
     const chosenSignal = tdtCh.channels[signalIndex] || tdtCh.channels[0];
     if (!chosenSignal) return;
 
+    const extraction = activeExtraction || beginMediaExtraction();
+    const { reqSeq, signal } = extraction;
+
     scrollDesktopToPlayer();
     setIsExtracting(true);
+    isExtractingRef.current = true;
     setLoadingItemId(`tdt-${tdtCh.id}-${signalIndex}`);
     setExtractionError(null);
     setExtractionLabel(
       liveProgramHint
         ? `${tdtCh.name} · ${liveProgramHint}...`
-        : `${tdtCh.name} · Conectando emisión en directo HD...`
+        : `${tdtCh.name} · Conectando ${chosenSignal.label}...`
     );
     activeHistoryIdRef.current = null;
 
@@ -2127,7 +2155,13 @@ export function App() {
         title: tdtCh.name,
       });
       const ctrl = new AbortController();
-      const timeoutId = setTimeout(() => ctrl.abort(), 7500);
+      const onParentAbort = () => ctrl.abort();
+      if (signal.aborted) {
+        ctrl.abort();
+      } else {
+        signal.addEventListener('abort', onParentAbort, { once: true });
+      }
+      const timeoutId = setTimeout(() => ctrl.abort(), 9500);
       let res: Response | null = null;
       let data: any = null;
       try {
@@ -2135,17 +2169,24 @@ export function App() {
         data = await res.json().catch(() => null);
       } finally {
         clearTimeout(timeoutId);
+        signal.removeEventListener('abort', onParentAbort);
       }
 
+      if (reqSeq !== extractionReqSeqRef.current) return;
+
       if (!res || !res.ok || !data?.success || !data?.streamUrl) {
-        if (signalIndex + 1 < tdtCh.channels.length) {
-          setIsExtracting(false);
-          setLoadingItemId(null);
-          await handlePlayTdtChannel(tdtCh, signalIndex + 1, liveProgramHint);
+        if (allowSameChannelBackup && signalIndex + 1 < tdtCh.channels.length) {
+          await handlePlayTdtChannel(
+            tdtCh,
+            signalIndex + 1,
+            liveProgramHint,
+            extraction,
+            true
+          );
           return;
         }
         setExtractionError(
-          data?.error || `La emisión de ${tdtCh.name} no responde en este instante.`
+          data?.error || `La emisión de ${tdtCh.name} (${chosenSignal.label}) no responde en este instante.`
         );
         return;
       }
@@ -2178,20 +2219,29 @@ export function App() {
         updatedBy: profile.name,
       };
 
+      videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
     } catch {
-      if (signalIndex + 1 < tdtCh.channels.length) {
-        setIsExtracting(false);
-        setLoadingItemId(null);
-        await handlePlayTdtChannel(tdtCh, signalIndex + 1, liveProgramHint);
+      if (signal.aborted || reqSeq !== extractionReqSeqRef.current) return;
+      if (allowSameChannelBackup && signalIndex + 1 < tdtCh.channels.length) {
+        await handlePlayTdtChannel(
+          tdtCh,
+          signalIndex + 1,
+          liveProgramHint,
+          extraction,
+          true
+        );
         return;
       }
       setExtractionError(`No se pudo conectar con ${tdtCh.name}.`);
     } finally {
-      setIsExtracting(false);
-      setLoadingItemId(null);
+      if (reqSeq === extractionReqSeqRef.current) {
+        isExtractingRef.current = false;
+        setIsExtracting(false);
+        setLoadingItemId(null);
+      }
     }
   };
 
@@ -2200,11 +2250,15 @@ export function App() {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
+    const { reqSeq, signal } = beginMediaExtraction();
+
     scrollDesktopToPlayer();
     setIsExtracting(true);
+    isExtractingRef.current = true;
     setLoadingItemId(`favch-${favCh.favId}`);
     setExtractionError(null);
     setExtractionLabel(`${favCh.channelLabel} · Conectando canal favorito...`);
+    activeHistoryIdRef.current = null;
 
     const isDirectTdtHls = /\.m3u8(\?|$)/i.test(favCh.channelUrl);
     const favResolver: StreamTrack['resolverType'] = isDirectTdtHls
@@ -2217,10 +2271,17 @@ export function App() {
         resolverType: favResolver,
         title: favCh.title || favCh.channelLabel,
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`);
-      const data = await res.json();
+      const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
+      const data = await res.json().catch(() => null);
+      if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
+        if (/footunder\.online|tilinhd|streamxhd|rojadirectv/i.test(favCh.channelUrl)) {
+          setExtractionError(
+            data?.error || `El canal "${favCh.channelLabel}" no responde en este instante.`
+          );
+          return;
+        }
         socketService.startCloudBrowser(favCh.channelUrl, profile.name);
         return;
       }
@@ -2255,14 +2316,19 @@ export function App() {
         updatedBy: profile.name,
       };
 
+      videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
-    } catch {
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || reqSeq !== extractionReqSeqRef.current) return;
       setExtractionError('No se pudo conectar con el canal favorito.');
     } finally {
-      setIsExtracting(false);
-      setLoadingItemId(null);
+      if (reqSeq === extractionReqSeqRef.current) {
+        isExtractingRef.current = false;
+        setIsExtracting(false);
+        setLoadingItemId(null);
+      }
     }
   };
 
@@ -2271,6 +2337,10 @@ export function App() {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
+    beginMediaExtraction();
+    isExtractingRef.current = false;
+    setIsExtracting(false);
+    setLoadingItemId(null);
     scrollDesktopToPlayer();
     setExtractionError(null);
     activeHistoryIdRef.current = null;
@@ -2291,6 +2361,7 @@ export function App() {
       lastUpdated: Date.now(),
       updatedBy: profile.name,
     };
+    videoStateUrlRef.current = nextState.url;
     setVideoState(nextState);
     socketService.syncVideoState('change_url', nextState, profile.name);
     playCinemaSound('play');
@@ -2310,14 +2381,18 @@ export function App() {
     activeHistoryIdRef.current = null;
 
     if (episode.sourceType === 'ccma_3cat' && episode.ccmaVideoId) {
+      const { reqSeq, signal } = beginMediaExtraction();
       setIsExtracting(true);
+      isExtractingRef.current = true;
       setLoadingItemId(episode.id);
       setExtractionLabel(`${series.title} · Carregant senyal 3Cat en català...`);
       try {
         const res = await fetch(
-          `/api/extract/catala-3cat?vidId=${encodeURIComponent(episode.ccmaVideoId)}`
+          `/api/extract/catala-3cat?vidId=${encodeURIComponent(episode.ccmaVideoId)}`,
+          { signal }
         );
         const data = await res.json();
+        if (reqSeq !== extractionReqSeqRef.current) return;
         if (!res.ok || !data?.success || !data?.streamUrl) {
           setExtractionError('Aquest capítol de 3Cat no està disponible ara mateix.');
           return;
@@ -2347,16 +2422,24 @@ export function App() {
         setVideoState(nextState);
         socketService.syncVideoState('change_url', nextState, profile.name);
         playCinemaSound('play');
-      } catch {
+      } catch (err: any) {
+        if (err?.name === 'AbortError' || reqSeq !== extractionReqSeqRef.current) return;
         setExtractionError('Error en connectar amb el servidor de 3Cat.');
       } finally {
-        setIsExtracting(false);
-        setLoadingItemId(null);
+        if (reqSeq === extractionReqSeqRef.current) {
+          isExtractingRef.current = false;
+          setIsExtracting(false);
+          setLoadingItemId(null);
+        }
       }
       return;
     }
 
     if (episode.sourceType === 'youtube' && (episode.youtubeVideoId || episode.streamUrl)) {
+      beginMediaExtraction();
+      isExtractingRef.current = false;
+      setIsExtracting(false);
+      setLoadingItemId(null);
       const ytId = episode.youtubeVideoId || episode.streamUrl || '';
       const nextState: VideoState = {
         mode: 'youtube',
@@ -2399,6 +2482,11 @@ export function App() {
       setExtractionError('Capítol sense flux directe disponible.');
       return;
     }
+
+    beginMediaExtraction();
+    isExtractingRef.current = false;
+    setIsExtracting(false);
+    setLoadingItemId(null);
 
     const tracks: StreamTrack[] =
       Array.isArray(episode.tracks) && episode.tracks.length > 0
@@ -2462,6 +2550,9 @@ export function App() {
     const resumeAt = videoState.isLive ? 0 : resumeTimeSec;
 
     if (targetTrack.resolvedStreamUrl) {
+      beginMediaExtraction();
+      isExtractingRef.current = false;
+      setIsExtracting(false);
       const nextMode = resolveTrackPlaybackMode(targetTrack, videoState.mode);
       const instantState: VideoState = {
         ...videoState,
@@ -2475,6 +2566,7 @@ export function App() {
         lastUpdated: Date.now(),
         updatedBy: profile.name,
       };
+      videoStateUrlRef.current = instantState.url;
       setVideoState(instantState);
       socketService.syncVideoState('change_url', instantState, profile.name);
       showLanguageNotice({
@@ -2490,13 +2582,21 @@ export function App() {
       return;
     }
 
+    const { reqSeq, signal } = beginMediaExtraction();
     setIsExtracting(true);
+    isExtractingRef.current = true;
     setExtractionError(null);
-    setExtractionLabel(`Cambiando idioma a ${targetTrack.label}...`);
+    setExtractionLabel(
+      videoState.isLive
+        ? `Conectando señal: ${targetTrack.label}...`
+        : `Cambiando idioma a ${targetTrack.label}...`
+    );
     showLanguageNotice({
       type: 'success',
-      title: `⏳ Cargando idioma: ${targetTrack.label}...`,
-      subtitle: 'Conectando servidor de audio HD...',
+      title: videoState.isLive
+        ? `⏳ Conectando señal: ${targetTrack.label}...`
+        : `⏳ Cargando idioma: ${targetTrack.label}...`,
+      subtitle: 'Conectando servidor HD...',
     });
 
     try {
@@ -2506,10 +2606,21 @@ export function App() {
         preferLang: String(targetTrack.lang || 'ES').toUpperCase(),
         title: videoState.title,
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`);
-      const data = await res.json();
+      const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
+      const data = await res.json().catch(() => null);
+      if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
+        // For live TV / football signals: NEVER auto-jump to a different track! Inform the user and keep current playback.
+        if (videoState.isLive) {
+          showLanguageNotice({
+            type: 'warning',
+            title: `⚠️ Señal no disponible: ${targetTrack.label}`,
+            subtitle: 'Mantenemos tu emisión actual. Puedes elegir otra señal manualmente.',
+          });
+          return;
+        }
+
         const requestedLang = String(targetTrack.lang || '').toUpperCase();
         const prunedTracks = videoState.tracks.filter((_, idx) => idx !== trackIndex);
         const prunedActiveIdx = Math.max(
@@ -2531,13 +2642,10 @@ export function App() {
           (tr, idx) =>
             idx !== trackIndex && String(tr.lang || '').toUpperCase() === requestedLang
         );
-        const anyLiveIdx = videoState.isLive
-          ? videoState.tracks.findIndex((_, idx) => idx !== trackIndex)
-          : -1;
-        const backupIdxInOriginal = sameLangIdx !== -1 ? sameLangIdx : anyLiveIdx;
-        if (backupIdxInOriginal !== -1) {
+        if (sameLangIdx !== -1) {
           const adjustedBackupIdx =
-            backupIdxInOriginal > trackIndex ? backupIdxInOriginal - 1 : backupIdxInOriginal;
+            sameLangIdx > trackIndex ? sameLangIdx - 1 : sameLangIdx;
+          isExtractingRef.current = false;
           setIsExtracting(false);
           setTimeout(() => {
             handleSelectTrack(adjustedBackupIdx, resumeAt);
@@ -2573,22 +2681,31 @@ export function App() {
         updatedBy: profile.name,
       };
 
+      videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       showLanguageNotice({
         type: 'success',
-        title: `✓ Idioma cambiado a: ${targetTrack.label}`,
-        subtitle: 'Audio actualizado correctamente en la sala',
+        title: `✓ Fuente activa: ${targetTrack.label}`,
+        subtitle: videoState.isLive
+          ? 'Señal en directo actualizada'
+          : 'Audio actualizado correctamente en la sala',
       });
-    } catch {
-      setExtractionError('Error al cambiar de idioma.');
+    } catch (err: any) {
+      if (err?.name === 'AbortError' || reqSeq !== extractionReqSeqRef.current) return;
+      if (!videoState.isLive) {
+        setExtractionError('Error al cambiar de fuente.');
+      }
       showLanguageNotice({
         type: 'error',
-        title: `⚠️ Error al cambiar a ${targetTrack.label}`,
-        subtitle: 'No se pudo conectar con el servidor de este idioma.',
+        title: `⚠️ Error al conectar ${targetTrack.label}`,
+        subtitle: 'No se pudo conectar con ese servidor.',
       });
     } finally {
-      setIsExtracting(false);
+      if (reqSeq === extractionReqSeqRef.current) {
+        isExtractingRef.current = false;
+        setIsExtracting(false);
+      }
     }
   };
 

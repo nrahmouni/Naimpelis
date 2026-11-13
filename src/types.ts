@@ -381,6 +381,10 @@ export interface FootballMatchDetails {
 export type TdtCategory =
   | 'movistar'
   | 'dazn'
+  | 'beinsports'
+  | 'espn'
+  | 'dsports'
+  | 'tnt_space'
   | 'generalistas'
   | 'cine_series'
   | 'entretenimiento'

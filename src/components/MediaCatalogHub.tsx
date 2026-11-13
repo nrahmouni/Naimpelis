@@ -99,6 +99,10 @@ type FocusedHubMode =
   | 'skyshowtime'
   | 'movistar'
   | 'dazn'
+  | 'beinsports'
+  | 'espn'
+  | 'dsports'
+  | 'tnt_space'
   | 'tdt_es';
 
 const TDT_NATIONAL_CATEGORIES: {
@@ -116,9 +120,13 @@ const TDT_NATIONAL_CATEGORIES: {
 
 const ALL_LIVE_CATEGORIES: { id: 'all' | 'tdt_all' | TdtCategory; es: string; en: string }[] = [
   { id: 'all', es: 'Todos en Vivo', en: 'All Live TV' },
-  { id: 'tdt_all', es: 'TDT España', en: 'Spain TDT' },
+  { id: 'beinsports', es: 'beIN SPORTS', en: 'beIN SPORTS' },
+  { id: 'espn', es: 'ESPN (1–7)', en: 'ESPN (1–7)' },
+  { id: 'dsports', es: 'DSports', en: 'DSports' },
+  { id: 'tnt_space', es: 'TNT y Space', en: 'TNT & Space' },
   { id: 'movistar', es: 'Movistar+', en: 'Movistar+' },
   { id: 'dazn', es: 'DAZN', en: 'DAZN' },
+  { id: 'tdt_all', es: 'TDT España', en: 'Spain TDT' },
   { id: 'generalistas', es: 'La 1 · A3 · T5 · laSexta', en: 'Main Channels (1–6)' },
 ];
 
@@ -555,6 +563,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [sportFilter, setSportFilter] = useState<
     'all' | 'soccer' | 'motor' | 'basketball' | 'tennis'
   >('soccer');
+  const [footballLiveBrand, setFootballLiveBrand] = useState<
+    'all' | 'beinsports' | 'espn' | 'dsports' | 'tnt_space' | 'movistar' | 'dazn'
+  >('all');
   const [sportsSearch, setSportsSearch] = useState('');
   const [brokenHeroImgs, setBrokenHeroImgs] = useState<Record<string, boolean>>({});
 
@@ -794,7 +805,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   );
 
   useEffect(() => {
-    if ((activeSection === 'home' || activeSection === 'tdt') && tdtChannels.length === 0) {
+    if (
+      (activeSection === 'home' || activeSection === 'tdt' || activeSection === 'sports') &&
+      tdtChannels.length === 0
+    ) {
       fetchTdtCatalog();
     }
   }, [activeSection, tdtChannels.length]);
@@ -878,18 +892,18 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const homeFeaturedLiveChannels = React.useMemo(() => {
     if (tdtChannels.length === 0) return [];
     const priorityIds = [
+      'bein-es-n',
+      'espn-1',
+      'dsports-1',
+      'tnt-sports',
       'mplus-laliga',
       'dazn-laliga',
-      'dazn-f1',
       'mplus-campeones',
-      'mplus-plus',
-      'mplus-estrenos',
+      'tnt-vivo',
+      'space-vivo',
       'la1',
       'antena3',
-      'cuatro',
-      'telecinco',
       'lasexta',
-      'dazn-1',
     ];
     const picked: SpanishTdtChannel[] = [];
     for (const pid of priorityIds) {
@@ -1536,6 +1550,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     onChangeSection('tdt');
   };
 
+  const enterLiveSportsBrandHub = (
+    brand: 'beinsports' | 'espn' | 'dsports' | 'tnt_space'
+  ) => {
+    triggerHaptic('light');
+    setFocusedHub(brand);
+    setTdtCategory(brand);
+    setTdtSearch('');
+    onChangeSection('tdt');
+  };
+
   const enterSpanishTdtHub = () => {
     triggerHaptic('light');
     setFocusedHub('tdt_es');
@@ -1562,9 +1586,55 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const cleanWatchlist = React.useMemo(() => deduplicateWatchlist(watchlist), [watchlist]);
   const favoriteSeriesList = cleanWatchlist.filter((w) => w.mediaType === 'tv');
 
+  const footballSectionLiveChannels = React.useMemo(() => {
+    const allowedCats = new Set([
+      'beinsports',
+      'espn',
+      'dsports',
+      'tnt_space',
+      'movistar',
+      'dazn',
+    ]);
+    return tdtChannels.filter((ch) => {
+      if (!allowedCats.has(ch.category)) return false;
+      if (
+        ch.category === 'movistar' &&
+        (ch.id === 'mplus-estrenos' || ch.id === 'mplus-accion' || ch.id === 'mplus-series')
+      ) {
+        return false;
+      }
+      if (footballLiveBrand !== 'all' && ch.category !== footballLiveBrand) return false;
+      if (sportsSearch.trim()) {
+        const q = sportsSearch.toLowerCase();
+        const matchesCh =
+          ch.name.toLowerCase().includes(q) ||
+          ch.shortMark.toLowerCase().includes(q) ||
+          ch.network.toLowerCase().includes(q);
+        // Only filter the channel strip by sportsSearch if user typed a channel name; otherwise keep strip visible
+        if (
+          /bein|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
+            q
+          )
+        ) {
+          return matchesCh;
+        }
+      }
+      return true;
+    });
+  }, [tdtChannels, footballLiveBrand, sportsSearch]);
+
   const filteredTdtChannels = tdtChannels.filter((ch) => {
     if (tdtCategory === 'tdt_all') {
-      if (ch.category === 'movistar' || ch.category === 'dazn') return false;
+      if (
+        ch.category === 'movistar' ||
+        ch.category === 'dazn' ||
+        ch.category === 'beinsports' ||
+        ch.category === 'espn' ||
+        ch.category === 'dsports' ||
+        ch.category === 'tnt_space'
+      ) {
+        return false;
+      }
     } else if (tdtCategory !== 'all' && ch.category !== tdtCategory) {
       return false;
     }
@@ -1577,8 +1647,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     if (epgFilter === 'sports_now') {
       const isSportsChannel =
         ch.category === 'dazn' ||
+        ch.category === 'beinsports' ||
+        ch.category === 'espn' ||
+        ch.category === 'dsports' ||
+        ch.id === 'tnt-sports' ||
         ch.id.includes('laliga') ||
         ch.id.includes('champions') ||
+        ch.id.includes('campeones') ||
         ch.id.includes('deportes') ||
         ch.id.includes('vamos') ||
         ch.id.includes('golf') ||
@@ -1593,6 +1668,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     } else if (epgFilter === 'cinema_now') {
       const isCinemaChannel =
         ch.category === 'cine_series' ||
+        ch.id === 'tnt-vivo' ||
+        ch.id === 'space-vivo' ||
         ch.id === 'mplus-estrenos' ||
         ch.id === 'mplus-accion' ||
         ch.id === 'mplus-series';
@@ -3558,6 +3635,34 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       onClick: enterDaznLiveHub,
                     },
                     {
+                      id: 'beinsports',
+                      label: 'beIN SPORTS',
+                      mark: 'beIN',
+                      markClass: 'text-violet-400 tracking-tight text-sm sm:text-base font-black',
+                      onClick: () => enterLiveSportsBrandHub('beinsports'),
+                    },
+                    {
+                      id: 'espn',
+                      label: 'ESPN 1–7 Vivo',
+                      mark: 'ESPN',
+                      markClass: 'text-red-500 tracking-tight text-sm sm:text-base font-black',
+                      onClick: () => enterLiveSportsBrandHub('espn'),
+                    },
+                    {
+                      id: 'dsports',
+                      label: 'DSports Vivo',
+                      mark: 'DSP+',
+                      markClass: 'text-sky-400 tracking-tight text-sm sm:text-base font-black',
+                      onClick: () => enterLiveSportsBrandHub('dsports'),
+                    },
+                    {
+                      id: 'tnt_space',
+                      label: 'TNT & Space',
+                      mark: 'TNT',
+                      markClass: 'text-pink-400 tracking-tight text-sm sm:text-base font-black',
+                      onClick: () => enterLiveSportsBrandHub('tnt_space'),
+                    },
+                    {
                       id: 'tdt',
                       label: 'TDT España',
                       mark: 'TDT',
@@ -3947,6 +4052,30 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </span>
                 )}
 
+                {activeSection === 'tdt' && tdtCategory === 'beinsports' && (
+                  <span className="h-7 px-2 rounded-lg bg-violet-600 text-white text-xs font-black flex items-center justify-center shrink-0">
+                    beIN
+                  </span>
+                )}
+
+                {activeSection === 'tdt' && tdtCategory === 'espn' && (
+                  <span className="h-7 px-2 rounded-lg bg-red-600 text-white text-xs font-black flex items-center justify-center shrink-0">
+                    ESPN
+                  </span>
+                )}
+
+                {activeSection === 'tdt' && tdtCategory === 'dsports' && (
+                  <span className="h-7 px-2 rounded-lg bg-sky-600 text-white text-xs font-black flex items-center justify-center shrink-0">
+                    DSP
+                  </span>
+                )}
+
+                {activeSection === 'tdt' && tdtCategory === 'tnt_space' && (
+                  <span className="h-7 px-2 rounded-lg bg-pink-600 text-white text-xs font-black flex items-center justify-center shrink-0">
+                    TNT
+                  </span>
+                )}
+
                 {activeSection === 'anime' && (
                   <span
                     className={`h-7 px-2 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
@@ -4004,6 +4133,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       ? 'Movistar+'
                       : tdtCategory === 'dazn'
                       ? 'DAZN en Vivo'
+                      : tdtCategory === 'beinsports'
+                      ? 'beIN SPORTS en Vivo'
+                      : tdtCategory === 'espn'
+                      ? 'ESPN en Vivo (1–7 + Premium)'
+                      : tdtCategory === 'dsports'
+                      ? 'DSports en Vivo'
+                      : tdtCategory === 'tnt_space'
+                      ? 'TNT, TNT Sports y Space en Vivo'
                       : tdtCategory === 'tdt_all' || focusedHub === 'tdt_es'
                       ? 'TDT España en Vivo'
                       : lang === 'es'
@@ -6477,6 +6614,175 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               ))}
             </div>
           </div>
+
+          {/* DIRECT LIVE SPORTS CHANNELS IN FÚTBOL SECTION: beIN SPORTS · ESPN 1-7 · DSports · TNT & Space · Movistar+ · DAZN */}
+          {(sportFilter === 'soccer' || sportFilter === 'all') && (
+            <section className="rounded-2xl bg-[#171A23] border border-white/[0.08] p-3 sm:p-4 space-y-3 shadow-lg">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                  <h3 className="font-display font-bold text-xs sm:text-sm text-white truncate">
+                    {lang === 'es'
+                      ? 'Canales de Fútbol y Deportes en Vivo (24/7)'
+                      : '24/7 Live Football & Sports Channels'}
+                  </h3>
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+                  {(
+                    [
+                      { id: 'all', label: lang === 'es' ? 'Todos' : 'All' },
+                      { id: 'beinsports', label: 'beIN SPORTS' },
+                      { id: 'espn', label: 'ESPN (1–7)' },
+                      { id: 'dsports', label: 'DSports' },
+                      { id: 'tnt_space', label: 'TNT y Space' },
+                      { id: 'movistar', label: 'Movistar+' },
+                      { id: 'dazn', label: 'DAZN' },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setFootballLiveBrand(tab.id);
+                      }}
+                      className={`min-h-[34px] px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        footballLiveBrand === tab.id
+                          ? 'bg-[#FFBD0F] text-[#141720]'
+                          : 'bg-[#242833] hover:bg-[#2E3442] text-zinc-200 border border-white/[0.06]'
+                      }`}
+                    >
+                      {tab.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {footballSectionLiveChannels.length > 0 ? (
+                <div
+                  className={
+                    footballLiveBrand === 'all'
+                      ? 'flex items-stretch gap-2.5 overflow-x-auto no-scrollbar pb-1'
+                      : 'grid grid-cols-2 @sm:grid-cols-3 @lg:grid-cols-4 gap-2.5'
+                  }
+                >
+                  {footballSectionLiveChannels.map((ch) => {
+                    const isPlayingThis = ch.channels.some(
+                      (sig) => activeVideoRawUrl && activeVideoRawUrl === sig.sourceUrl
+                    );
+                    const isLoadingThis = Boolean(loadingItemId?.startsWith(`tdt-${ch.id}-`));
+                    const primarySig = ch.channels[0];
+
+                    return (
+                      <div
+                        key={`fblive-${ch.id}`}
+                        className={`${
+                          footballLiveBrand === 'all' ? 'w-[188px] sm:w-[206px] shrink-0' : ''
+                        } rounded-xl p-2.5 bg-[#242833] hover:bg-[#2B303E] border transition-colors flex flex-col justify-between gap-2 ${
+                          isPlayingThis
+                            ? 'border-[#FFBD0F] ring-1 ring-[#FFBD0F]/40'
+                            : 'border-white/[0.07] hover:border-white/20'
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          disabled={Boolean(loadingItemId)}
+                          onClick={() => {
+                            triggerHaptic('success');
+                            onPlayTdtChannel(ch, 0);
+                          }}
+                          className="flex items-center gap-2.5 min-w-0 text-left w-full cursor-pointer"
+                        >
+                          <div
+                            className="w-9 h-9 rounded-lg shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-[10px] text-white leading-none text-center px-0.5"
+                            style={{
+                              background: `linear-gradient(145deg, ${ch.brandTone}45 0%, #11131C 100%)`,
+                            }}
+                          >
+                            {ch.shortMark}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="font-display font-bold text-xs text-white truncate">
+                              {ch.name}
+                            </div>
+                            <div className="text-[10px] text-zinc-400 truncate">
+                              {isPlayingThis ? (
+                                <span className="text-[#FFBD0F] font-semibold">En reproducción</span>
+                              ) : (
+                                <span>{ch.network} · 1080p</span>
+                              )}
+                            </div>
+                          </div>
+                          {isLoadingThis ? (
+                            <Loader2 className="w-4 h-4 animate-spin text-[#FFBD0F] shrink-0" />
+                          ) : (
+                            <Play className="w-3.5 h-3.5 fill-current text-[#FFBD0F] shrink-0" />
+                          )}
+                        </button>
+
+                        {ch.channels.length > 1 && (
+                          <div className="flex items-center gap-1 pt-1.5 border-t border-white/[0.06] overflow-x-auto no-scrollbar">
+                            {ch.channels.slice(0, 3).map((sig, sIdx) => {
+                              const sigActive = activeVideoRawUrl === sig.sourceUrl;
+                              return (
+                                <button
+                                  key={sig.id}
+                                  type="button"
+                                  disabled={Boolean(loadingItemId)}
+                                  onClick={() => {
+                                    triggerHaptic('light');
+                                    onPlayTdtChannel(ch, sIdx);
+                                  }}
+                                  className={`min-h-[26px] px-2 rounded-md text-[10px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                                    sigActive
+                                      ? 'bg-[#FFBD0F] text-[#141720]'
+                                      : 'bg-[#191C26] hover:bg-[#313748] text-zinc-300'
+                                  }`}
+                                >
+                                  {`Opción ${sIdx + 1}`}
+                                </button>
+                              );
+                            })}
+                            {activeVideoRawUrl &&
+                              !isPlayingThis &&
+                              primarySig &&
+                              onPlaySecondaryChannel && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    triggerHaptic('light');
+                                    onPlaySecondaryChannel({
+                                      sourceUrl: primarySig.sourceUrl,
+                                      title: ch.name,
+                                      subtitle: ch.network,
+                                    });
+                                  }}
+                                  title="Abrir en segunda pantalla Multiview"
+                                  aria-label={`Multiview ${ch.name}`}
+                                  className="min-h-[26px] px-2 rounded-md bg-[#191C26] hover:bg-[#313748] text-sky-300 flex items-center justify-center ml-auto shrink-0 cursor-pointer"
+                                >
+                                  <Columns2 className="w-3 h-3" />
+                                </button>
+                              )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : loadingTdt ? (
+                <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar">
+                  {Array.from({ length: 5 }).map((_, idx) => (
+                    <div
+                      key={idx}
+                      className="w-[188px] h-16 rounded-xl bg-[#242833] animate-pulse shrink-0"
+                    />
+                  ))}
+                </div>
+              ) : null}
+            </section>
+          )}
 
           {/* RBTV+ Dark Football Matchboard with Official Country Flags, Club Crests, Direct Signals & Live Stats */}
           {(sportFilter === 'soccer' || sportFilter === 'all') && (
