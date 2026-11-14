@@ -127,7 +127,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
         userId: p.id,
         name: p.name,
         avatar: p.avatar || '🍿',
-        color: p.color || '#E11D48',
+        color: p.color || '#9146FF',
         friendCode: deriveFriendCode(p.id),
         inMyRoom: true,
         roomName,
@@ -140,7 +140,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
         userId: u.userId,
         name: u.name,
         avatar: u.avatar || '🍿',
-        color: u.color || '#E11D48',
+        color: u.color || '#9146FF',
         friendCode: u.friendCode || deriveFriendCode(u.userId),
         inMyRoom: u.roomId === roomId,
         roomName: u.roomName,
@@ -211,7 +211,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
         friendId: generatedId,
         name: rawName || `Amigo #${rawCode}`,
         avatar: '🎬',
-        color: '#E11D48',
+        color: '#9146FF',
         friendCode: rawCode || deriveFriendCode(generatedId),
       });
     }
@@ -244,7 +244,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[540px] max-h-[90dvh] rounded-t-3xl sm:rounded-3xl bg-[#0D0E14]/98 border-t sm:border border-white/[0.12] shadow-[0_30px_100px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
+        className="w-full sm:max-w-[540px] max-h-[90dvh] rounded-t-3xl sm:rounded-3xl bg-[#18181B]/98 border-t sm:border border-white/[0.12] shadow-[0_30px_100px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
       >
         {/* Mobile grab handle */}
         <div className="sm:hidden pt-2.5 flex justify-center">
@@ -254,7 +254,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
         {/* Header */}
         <div className="px-5 pt-4 pb-3.5 border-b border-white/[0.08] flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-10 h-10 rounded-2xl bg-[#E11D48]/18 border border-[#E11D48]/40 flex items-center justify-center text-[#FB7185] shrink-0">
+            <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/18 border border-[#9146FF]/45 flex items-center justify-center text-[#BF94FF] shrink-0">
               <Users className="w-5 h-5" />
             </div>
             <div className="min-w-0">
@@ -298,7 +298,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                 </span>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-sm font-bold text-white">{currentUser.name}</span>
-                  <span className="px-2 py-0.5 rounded-lg bg-[#E11D48]/20 border border-[#E11D48]/40 font-mono text-xs font-bold text-[#FB7185]">
+                  <span className="px-2 py-0.5 rounded-lg bg-[#9146FF]/20 border border-[#9146FF]/45 font-mono text-xs font-bold text-[#BF94FF]">
                     #{myFriendCode}
                   </span>
                 </div>
@@ -363,7 +363,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                 </>
               ) : (
                 <>
-                  <Share2 className="w-4 h-4 text-[#FB7185]" />
+                  <Share2 className="w-4 h-4 text-[#BF94FF]" />
                   <span>Compartir enlace de la sala (WhatsApp / Copiar)</span>
                 </>
               )}
@@ -413,14 +413,14 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                         <div className="relative shrink-0">
                           <div
                             className="w-10 h-10 rounded-full flex items-center justify-center text-sm font-bold text-white border border-white/15"
-                            style={{ backgroundColor: friend.color || '#E11D48' }}
+                            style={{ backgroundColor: friend.color || '#9146FF' }}
                           >
                             {friend.avatar && friend.avatar.length <= 2
                               ? friend.avatar
                               : friend.name.slice(0, 2).toUpperCase()}
                           </div>
                           <span
-                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#0D0E14] ${
+                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#18181B] ${
                               onlineInfo || isInSameRoom
                                 ? 'bg-emerald-400'
                                 : 'bg-zinc-600'
@@ -477,7 +477,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                             className={`min-h-9 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
                               justInvited
                                 ? 'bg-emerald-500 text-white'
-                                : 'bg-[#E11D48] hover:bg-[#F43F5E] text-white shadow-[0_6px_18px_rgba(225,29,72,0.35)]'
+                                : 'bg-[#9146FF] hover:bg-[#772CE8] text-white shadow-[0_6px_18px_rgba(145,70,255,0.35)]'
                             }`}
                           >
                             {justInvited ? (
@@ -540,7 +540,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
           {discoverableUsers.length > 0 && (
             <div className="space-y-2.5 pt-2 border-t border-white/[0.07]">
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-[#FB7185]" />
+                <Sparkles className="w-3.5 h-3.5 text-[#BF94FF]" />
                 <span>Personas Conectadas Ahora ({discoverableUsers.length})</span>
               </h3>
 
@@ -556,7 +556,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                       <div className="flex items-center gap-2.5 min-w-0">
                         <div
                           className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                          style={{ backgroundColor: u.color || '#E11D48' }}
+                          style={{ backgroundColor: u.color || '#9146FF' }}
                         >
                           {u.avatar && u.avatar.length <= 2
                             ? u.avatar
@@ -590,7 +590,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                                 friendCode: u.friendCode,
                               })
                             }
-                            className="min-h-8 px-2.5 rounded-xl bg-[#E11D48] hover:bg-[#F43F5E] text-[11px] font-bold text-white flex items-center gap-1 cursor-pointer"
+                            className="min-h-8 px-2.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-[11px] font-bold text-white flex items-center gap-1 cursor-pointer"
                           >
                             <Send className="w-3 h-3" />
                             <span>{justInvited ? 'Enviada' : 'Invitar'}</span>
@@ -617,7 +617,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                             }}
                             className="min-h-8 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 text-[11px] font-semibold text-white flex items-center gap-1 cursor-pointer"
                           >
-                            <UserPlus className="w-3.5 h-3.5 text-[#FB7185]" />
+                            <UserPlus className="w-3.5 h-3.5 text-[#BF94FF]" />
                             <span>+ Guardar</span>
                           </button>
                         )}
@@ -635,7 +635,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
             className="p-3 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-2"
           >
             <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-              <UserPlus className="w-3.5 h-3.5 text-[#E11D48]" />
+              <UserPlus className="w-3.5 h-3.5 text-[#BF94FF]" />
               <span>Añadir amigo por Nombre o #Código</span>
             </label>
             <div className="flex items-center gap-2">
@@ -655,12 +655,12 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                   }
                 }}
                 placeholder="Ej: Carlos o #A8F92B"
-                className="flex-1 h-10 px-3.5 rounded-xl bg-black/70 border border-white/10 focus:border-[#E11D48] text-xs text-white placeholder:text-zinc-500 outline-none"
+                className="flex-1 h-10 px-3.5 rounded-xl bg-[#26262C] border border-white/10 focus:border-[#9146FF] text-xs text-white placeholder:text-[#ADADB8] outline-none"
               />
               <button
                 type="submit"
                 disabled={!manualNameInput.trim() && !manualCodeInput.trim()}
-                className="h-10 px-4 rounded-xl bg-white text-[#050508] hover:bg-zinc-200 disabled:opacity-35 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shrink-0 transition-colors"
+                className="h-10 px-4 rounded-xl bg-[#9146FF] text-white hover:bg-[#772CE8] disabled:opacity-35 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shrink-0 transition-colors"
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 <span>Guardar</span>
@@ -701,12 +701,12 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
   return (
     <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[95] w-[calc(100%-20px)] max-w-[440px] space-y-2 pointer-events-none">
       {invite && (
-        <div className="pointer-events-auto p-3.5 rounded-3xl bg-[#11121A]/98 backdrop-blur-2xl border-2 border-[#E11D48]/60 shadow-[0_24px_70px_rgba(225,29,72,0.45)] flex flex-col gap-3 animate-fade-in">
+        <div className="pointer-events-auto p-3.5 rounded-3xl bg-[#18181B]/98 backdrop-blur-2xl border-2 border-[#9146FF]/65 shadow-[0_24px_70px_rgba(145,70,255,0.4)] flex flex-col gap-3 animate-fade-in">
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex items-center gap-3 min-w-0">
               <div
                 className="w-11 h-11 rounded-2xl flex items-center justify-center text-base font-bold text-white border border-white/20 shrink-0 shadow-md"
-                style={{ backgroundColor: invite.fromUserColor || '#E11D48' }}
+                style={{ backgroundColor: invite.fromUserColor || '#9146FF' }}
               >
                 {invite.fromUserAvatar && invite.fromUserAvatar.length <= 2
                   ? invite.fromUserAvatar
@@ -714,7 +714,7 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <span className="px-2 py-0.5 rounded-full bg-[#E11D48]/25 text-[#FB7185] text-[10px] font-bold uppercase tracking-wider">
+                  <span className="px-2 py-0.5 rounded-full bg-[#9146FF]/25 text-[#BF94FF] text-[10px] font-bold uppercase tracking-wider">
                     Invitación en Directo
                   </span>
                 </div>
@@ -742,7 +742,7 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
             <button
               type="button"
               onClick={() => onAcceptInvite(invite)}
-              className="min-h-10 px-4 rounded-2xl bg-[#E11D48] hover:bg-[#F43F5E] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-[0_8px_24px_rgba(225,29,72,0.4)] cursor-pointer transition-all"
+              className="min-h-10 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-[0_8px_24px_rgba(145,70,255,0.4)] cursor-pointer transition-all"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
               <span>Unirme a la sala</span>
@@ -760,11 +760,11 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
       )}
 
       {friendAddedNotice && (
-        <div className="pointer-events-auto p-3 rounded-2xl bg-[#11121A]/95 backdrop-blur-2xl border border-emerald-500/45 shadow-2xl flex items-center justify-between gap-2.5 animate-fade-in">
+        <div className="pointer-events-auto p-3 rounded-2xl bg-[#18181B]/95 backdrop-blur-2xl border border-emerald-500/45 shadow-2xl flex items-center justify-between gap-2.5 animate-fade-in">
           <div className="flex items-center gap-2.5 min-w-0">
             <div
               className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-              style={{ backgroundColor: friendAddedNotice.fromUserColor || '#E11D48' }}
+              style={{ backgroundColor: friendAddedNotice.fromUserColor || '#9146FF' }}
             >
               {friendAddedNotice.fromUserAvatar || '👋'}
             </div>

@@ -58,7 +58,7 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
   const renderCategoryIcon = (cat: AppNotificationItem['category']) => {
     switch (cat) {
       case 'invite':
-        return <Users className="w-4 h-4 text-[#e11d48]" />;
+        return <Users className="w-4 h-4 text-[#BF94FF]" />;
       case 'football':
         return <Trophy className="w-4 h-4 text-emerald-400" />;
       case 'series':
@@ -91,8 +91,8 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                 onClick={() => setActiveFilter(tab.id)}
                 className={`min-h-9 px-3 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
                   active
-                    ? 'bg-[#e11d48] text-white'
-                    : 'bg-white/[0.06] text-zinc-300 hover:bg-white/[0.11]'
+                    ? 'bg-[#9146FF] text-white'
+                    : 'bg-[#26262C] text-[#EFEFF1] hover:bg-white/[0.14]'
                 }`}
               >
                 {tab.label}
@@ -118,8 +118,8 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
             onClick={() => setShowSettings((prev) => !prev)}
             className={`min-h-9 min-w-9 px-2.5 rounded-xl text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
               showSettings
-                ? 'bg-[#e11d48]/20 text-white border border-[#e11d48]/40'
-                : 'bg-white/[0.06] text-zinc-300 hover:bg-white/[0.11]'
+                ? 'bg-[#9146FF]/20 text-white border border-[#9146FF]/45'
+                : 'bg-[#26262C] text-[#EFEFF1] hover:bg-white/[0.14]'
             }`}
             aria-label="Preferencias de notificaciones"
           >
@@ -210,17 +210,17 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
               className={`p-3.5 rounded-2xl border transition-colors flex items-start justify-between gap-3 ${
                 item.read
                   ? 'bg-white/[0.02] border-white/[0.06]'
-                  : 'bg-[#e11d48]/[0.08] border-[#e11d48]/30'
+                  : 'bg-[#9146FF]/[0.12] border-[#9146FF]/35'
               }`}
             >
               <div className="flex items-start gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                <div className="w-9 h-9 rounded-xl bg-[#26262C] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
                   {renderCategoryIcon(item.category)}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h4 className="text-xs font-bold text-white truncate">{item.title}</h4>
-                    {!item.read && <span className="w-2 h-2 rounded-full bg-[#e11d48] shrink-0" />}
+                    {!item.read && <span className="w-2 h-2 rounded-full bg-[#9146FF] shrink-0" />}
                   </div>
                   <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{item.body}</p>
                   <div className="flex items-center gap-3 mt-2">
@@ -239,7 +239,7 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                           onActionNotification(item);
                           onClose();
                         }}
-                        className="text-xs font-bold text-[#e11d48] hover:underline cursor-pointer"
+                        className="text-xs font-bold text-[#BF94FF] hover:underline cursor-pointer"
                       >
                         {item.actionLabel} →
                       </button>

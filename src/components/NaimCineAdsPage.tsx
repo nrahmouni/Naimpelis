@@ -22,7 +22,7 @@ import {
 import { NaimBrandLogo } from './NaimBrandLogo';
 import { getDisplayAppHost } from '../utils/shortLink';
 import { triggerHaptic } from '../utils/haptics';
-import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.jpg';
+import stadiumBackdrop from '../assets/images/esports_arena_live_1794673806740.jpg';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
 import cinemaHeroBackdrop from '../assets/images/cinema_hero_lobby_1794353709142.jpg';
 
@@ -39,9 +39,9 @@ const BrandTile: React.FC<{
   children: React.ReactNode;
 }> = ({ name, sub, accent, children }) => (
   <div
-    className="relative rounded-2xl p-4 bg-[#0B0C12] border border-white/[0.09] flex flex-col justify-between gap-3 overflow-hidden"
+    className="relative rounded-2xl p-4 bg-[#18181B] border border-white/[0.09] flex flex-col justify-between gap-3 overflow-hidden"
     style={{
-      background: `linear-gradient(155deg, ${accent}1A 0%, #0A0B11 58%, #06070B 100%)`,
+      background: `linear-gradient(155deg, ${accent}1A 0%, #1F1F23 58%, #0E0E10 100%)`,
     }}
   >
     <div className="h-10 flex items-center">{children}</div>
@@ -62,7 +62,7 @@ const ProAdLogoPill: React.FC<{
   name: string;
   detail: string;
 }> = ({ bg, textColor = '#FFFFFF', badge, name, detail }) => (
-  <div className="p-2.5 rounded-2xl bg-[#0B0D15]/95 border border-white/[0.11] flex items-center gap-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.45)]">
+  <div className="p-2.5 rounded-2xl bg-[#1F1F23]/95 border border-white/[0.11] flex items-center gap-2.5 shadow-[0_8px_20px_rgba(0,0,0,0.45)]">
     <div
       className="w-9 h-9 rounded-xl shrink-0 flex items-center justify-center font-display font-black text-[11px] tracking-tight shadow-inner"
       style={{ backgroundColor: bg, color: textColor }}
@@ -106,7 +106,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
       const scaleFactor = format === 'poster' || format === 'story' ? 2.5 : 2;
       const dataUrl = await domToPng(captureRef.current, {
         scale: scaleFactor,
-        backgroundColor: '#050507',
+        backgroundColor: '#0E0E10',
         quality: 1,
       });
 
@@ -136,7 +136,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
   };
 
   return (
-    <div className="min-h-screen w-full bg-[#030305] text-[#F5F5F7] overflow-y-auto selection:bg-white selection:text-black">
+    <div className="min-h-screen w-full bg-[#0E0E10] text-[#EFEFF1] overflow-y-auto selection:bg-[#9146FF] selection:text-white">
       {/* ==================================================================== */}
       {/* FLOATING STUDIO TOOLBAR (NOT INCLUDED IN EXPORTED PNG)               */}
       {/* ==================================================================== */}
@@ -184,7 +184,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                       setFormat(tab.id);
                     }}
                     className={`h-8 px-3.5 rounded-full text-xs font-semibold transition-all cursor-pointer whitespace-nowrap ${
-                      active ? 'bg-white text-[#050507] shadow-sm' : 'text-zinc-300 hover:text-white'
+                      active ? 'bg-[#9146FF] text-white shadow-sm' : 'text-zinc-300 hover:text-white'
                     }`}
                   >
                     {tab.label}
@@ -197,7 +197,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
               type="button"
               disabled={exporting}
               onClick={handleExportPng}
-              className="min-h-[42px] px-4 sm:px-5 rounded-full bg-white hover:bg-zinc-200 text-[#050507] text-xs sm:text-sm font-bold flex items-center gap-2 shadow-[0_8px_30px_rgba(255,255,255,0.22)] transition-all active:scale-95 cursor-pointer whitespace-nowrap"
+              className="min-h-[42px] px-4 sm:px-5 rounded-full bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-[0_8px_30px_rgba(145,70,255,0.35)] transition-all active:scale-95 cursor-pointer whitespace-nowrap"
             >
               {exporting ? (
                 <>
@@ -240,7 +240,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                 }}
                 className={`h-8 px-3.5 rounded-full text-xs font-semibold transition-all cursor-pointer whitespace-nowrap shrink-0 ${
                   active
-                    ? 'bg-white text-[#050507]'
+                    ? 'bg-[#9146FF] text-white'
                     : 'bg-white/[0.06] text-zinc-300 border border-white/[0.08]'
                 }`}
               >
@@ -262,7 +262,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
           <div className="w-full flex justify-center">
             <div
               ref={captureRef}
-              className="w-[540px] max-w-full rounded-[28px] bg-[#050507] border border-white/[0.15] p-7 sm:p-8 flex flex-col justify-between gap-6 relative overflow-hidden shadow-[0_40px_130px_rgba(0,0,0,0.96)]"
+              className="w-[540px] max-w-full rounded-[28px] bg-[#0E0E10] border border-white/[0.15] p-7 sm:p-8 flex flex-col justify-between gap-6 relative overflow-hidden shadow-[0_40px_130px_rgba(0,0,0,0.96)]"
             >
               {/* Layered Atmospheric Cinema + Stadium Backdrops */}
               <div className="pointer-events-none absolute inset-x-0 top-0 h-[360px] overflow-hidden">
@@ -271,14 +271,14 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                   alt=""
                   className="w-full h-full object-cover opacity-30 scale-105"
                 />
-                <div className="absolute inset-0 bg-gradient-to-b from-[#050507]/40 via-[#050507]/85 to-[#050507]" />
+                <div className="absolute inset-0 bg-gradient-to-b from-[#0E0E10]/40 via-[#0E0E10]/85 to-[#0E0E10]" />
               </div>
 
               <div
                 className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[480px] h-[300px] rounded-full opacity-50 blur-[95px]"
                 style={{
                   background:
-                    'radial-gradient(circle, rgba(225,29,72,0.72) 0%, rgba(1,157,244,0.34) 52%, transparent 78%)',
+                    'radial-gradient(circle, rgba(145,70,255,0.68) 0%, rgba(1,157,244,0.28) 52%, transparent 78%)',
                 }}
               />
 
@@ -297,7 +297,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                 </div>
 
                 <div className="text-right">
-                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-[#050507] font-display font-black text-[11px] tracking-tight shadow-lg">
+                  <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#9146FF] text-white font-display font-black text-[11px] tracking-tight shadow-lg">
                     <span>100% GRATIS · SIN ANUNCIOS</span>
                   </div>
                 </div>
@@ -305,7 +305,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
 
               {/* 2. HIGH-IMPACT COMMERCIAL HEADLINE */}
               <div className="relative z-10 space-y-3 pt-1">
-                <div className="text-[11px] font-mono uppercase tracking-[0.18em] text-rose-400 font-bold">
+                <div className="text-[11px] font-mono uppercase tracking-[0.18em] text-[#BF94FF] font-bold">
                   Toda la Televisión y el Streaming Mundial
                 </div>
                 <h1 className="font-display font-extrabold text-[34px] sm:text-[38px] text-white leading-[1.03] tracking-[-0.03em]">
@@ -356,7 +356,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                   />
                   <ProAdLogoPill
                     bg="#F4F4F5"
-                    textColor="#050507"
+                    textColor="#0E0E10"
                     badge="tv+"
                     name="Apple TV+"
                     detail="Exclusivas"
@@ -369,7 +369,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                   />
                   <ProAdLogoPill
                     bg="#FFFFFF"
-                    textColor="#050507"
+                    textColor="#0E0E10"
                     badge="DAZN"
                     name="DAZN Vivo"
                     detail="LaLiga & F1"
@@ -395,7 +395,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                     detail="España 1080p"
                   />
                   <ProAdLogoPill
-                    bg="#E11D48"
+                    bg="#9146FF"
                     badge="SX3"
                     name="En Català"
                     detail="3Cat & Anime"
@@ -412,7 +412,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
               {/* 4. 4 PRO PILLARS STRIP */}
               <div className="relative z-10 grid grid-cols-2 gap-2.5">
                 <div className="p-3 rounded-2xl bg-white/[0.04] border border-white/[0.09] flex items-start gap-2.5">
-                  <Users className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                  <Users className="w-4 h-4 text-[#BF94FF] shrink-0 mt-0.5" />
                   <div>
                     <div className="font-display font-bold text-xs text-white">
                       Salas con Amigos
@@ -465,7 +465,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                 className="relative z-10 rounded-3xl p-5 border border-white/[0.18] flex items-center justify-between gap-5 shadow-[0_20px_50px_rgba(0,0,0,0.8)]"
                 style={{
                   background:
-                    'linear-gradient(135deg, rgba(255,255,255,0.11) 0%, rgba(16,18,28,0.96) 55%, rgba(225,29,72,0.18) 100%)',
+                    'linear-gradient(135deg, rgba(145,70,255,0.22) 0%, rgba(24,24,27,0.96) 55%, rgba(145,70,255,0.14) 100%)',
                 }}
               >
                 {/* Huge High-Contrast Scannable QR */}
@@ -475,7 +475,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                     size={138}
                     level="H"
                     bgColor="#FFFFFF"
-                    fgColor="#050507"
+                    fgColor="#0E0E10"
                   />
                 </div>
 
@@ -512,19 +512,19 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
           <div className="w-full flex justify-center">
             <div
               ref={captureRef}
-              className="w-[450px] max-w-full aspect-[9/16] rounded-[32px] bg-[#050507] border border-white/[0.15] p-6 sm:p-7 flex flex-col justify-between relative overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.95)]"
+              className="w-[450px] max-w-full aspect-[9/16] rounded-[32px] bg-[#0E0E10] border border-white/[0.15] p-6 sm:p-7 flex flex-col justify-between relative overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.95)]"
             >
               <img
                 src={stadiumBackdrop}
                 alt=""
                 className="absolute inset-0 w-full h-full object-cover opacity-25"
               />
-              <div className="absolute inset-0 bg-gradient-to-b from-[#050507]/80 via-[#050507]/90 to-[#050507]" />
+              <div className="absolute inset-0 bg-gradient-to-b from-[#0E0E10]/80 via-[#0E0E10]/90 to-[#0E0E10]" />
               <div
                 className="pointer-events-none absolute -top-20 left-1/2 -translate-x-1/2 w-[380px] h-[300px] rounded-full opacity-45 blur-[90px]"
                 style={{
                   background:
-                    'radial-gradient(circle, rgba(225,29,72,0.7) 0%, rgba(1,157,244,0.32) 55%, transparent 80%)',
+                    'radial-gradient(circle, rgba(145,70,255,0.68) 0%, rgba(1,157,244,0.28) 55%, transparent 80%)',
                 }}
               />
 
@@ -541,7 +541,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                     </div>
                   </div>
                 </div>
-                <span className="text-[10px] font-display font-black text-[#050507] px-2.5 py-1 rounded-lg bg-white">
+                <span className="text-[10px] font-display font-black text-white px-2.5 py-1 rounded-lg bg-[#9146FF]">
                   GRATIS · 1080p
                 </span>
               </div>
@@ -564,12 +564,12 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                     { mark: 'TDT', sub: 'Guía EPG Real', color: '#34D399' },
                     { mark: 'ANIME', sub: 'Crunchy & Más', color: '#FB923C' },
                     { mark: 'ES · HD', sub: 'Castellano', color: '#FBBF24' },
-                    { mark: 'CAT · SX3', sub: 'Anime Català', color: '#FB7185' },
+                    { mark: 'CAT · SX3', sub: 'Anime Català', color: '#BF94FF' },
                     { mark: 'YOUTUBE', sub: 'Watch Party', color: '#F87171' },
                   ].map((b) => (
                     <div
                       key={b.mark}
-                      className="py-2 px-1.5 rounded-xl bg-[#0B0C13]/95 border border-white/[0.1] flex flex-col items-center justify-center text-center"
+                      className="py-2 px-1.5 rounded-xl bg-[#18181B]/95 border border-white/[0.1] flex flex-col items-center justify-center text-center"
                     >
                       <span
                         className="font-display font-black text-[11px] leading-none"
@@ -623,13 +623,13 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
         {format === 'full' && (
           <div
             ref={captureRef}
-            className="w-full max-w-[1160px] rounded-[36px] bg-[#050507] border border-white/[0.1] overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.92)] relative"
+            className="w-full max-w-[1160px] rounded-[36px] bg-[#0E0E10] border border-white/[0.1] overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.92)] relative"
           >
             <div
               className="pointer-events-none absolute -top-36 left-1/2 -translate-x-1/2 w-[880px] h-[420px] rounded-full opacity-35 blur-[120px]"
               style={{
                 background:
-                  'radial-gradient(circle, rgba(225,29,72,0.55) 0%, rgba(56,189,248,0.22) 48%, rgba(5,5,7,0) 75%)',
+                  'radial-gradient(circle, rgba(145,70,255,0.55) 0%, rgba(56,189,248,0.22) 48%, rgba(14,14,16,0) 75%)',
               }}
             />
 
@@ -856,7 +856,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                       x="21"
                       y="21.5"
                       textAnchor="middle"
-                      fill="#050507"
+                      fill="#0E0E10"
                       fontFamily="Plus Jakarta Sans, sans-serif"
                       fontWeight="900"
                       fontSize="14"
@@ -918,7 +918,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                       x="25"
                       y="20.5"
                       textAnchor="middle"
-                      fill="#050507"
+                      fill="#0E0E10"
                       fontFamily="Plus Jakarta Sans, sans-serif"
                       fontWeight="900"
                       fontSize="12"
@@ -1026,10 +1026,10 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                 <BrandTile
                   name="Anime en Català"
                   sub="SX3 · 3Cat · TV3 · Bola de Drac, Conan, Sakura i clàssics"
-                  accent="#F43F5E"
+                  accent="#9146FF"
                 >
                   <svg viewBox="0 0 148 32" className="h-7 w-auto">
-                    <rect width="48" height="32" rx="8" fill="#E11D48" />
+                    <rect width="48" height="32" rx="8" fill="#9146FF" />
                     <text
                       x="24"
                       y="21"
@@ -1044,7 +1044,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                     <text
                       x="57"
                       y="22"
-                      fill="#FDA4AF"
+                      fill="#E9D5FF"
                       fontFamily="Plus Jakarta Sans, sans-serif"
                       fontWeight="800"
                       fontSize="15"
@@ -1079,13 +1079,13 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
 
             <section className="px-7 sm:px-14 py-12 border-b border-white/[0.07] space-y-6">
               <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-                <div className="md:col-span-7 relative rounded-3xl overflow-hidden border border-white/[0.1] bg-[#090A10] min-h-[250px] p-6 sm:p-7 flex flex-col justify-between">
+                <div className="md:col-span-7 relative rounded-3xl overflow-hidden border border-white/[0.1] bg-[#18181B] min-h-[250px] p-6 sm:p-7 flex flex-col justify-between">
                   <img
                     src={stadiumBackdrop}
                     alt="Deportes en vivo"
                     className="absolute inset-0 w-full h-full object-cover opacity-35"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#050507] via-[#050507]/75 to-[#050507]/30" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0E0E10] via-[#0E0E10]/75 to-[#0E0E10]/30" />
                   <div className="relative z-10 flex items-center justify-between gap-2">
                     <div className="inline-flex items-center gap-2 text-xs font-semibold text-emerald-400">
                       <Radio className="w-4 h-4" />
@@ -1106,13 +1106,13 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                   </div>
                 </div>
 
-                <div className="md:col-span-5 relative rounded-3xl overflow-hidden border border-white/[0.1] bg-[#0B0C13] min-h-[250px] p-6 sm:p-7 flex flex-col justify-between">
+                <div className="md:col-span-5 relative rounded-3xl overflow-hidden border border-white/[0.1] bg-[#18181B] min-h-[250px] p-6 sm:p-7 flex flex-col justify-between">
                   <img
                     src={f1Backdrop}
                     alt="Smart TV"
                     className="absolute inset-0 w-full h-full object-cover opacity-25"
                   />
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#050507] via-[#050507]/85 to-[#050507]/40" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#0E0E10] via-[#0E0E10]/85 to-[#0E0E10]/40" />
                   <div className="relative z-10 flex items-center gap-2 text-xs font-semibold text-sky-300">
                     <Tv className="w-4 h-4" />
                     <span>Modo Receptor Smart TV (/tv)</span>
@@ -1130,7 +1130,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
               </div>
             </section>
 
-            <footer className="px-7 sm:px-14 py-10 bg-[#07080D] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
+            <footer className="px-7 sm:px-14 py-10 bg-[#18181B] flex flex-col sm:flex-row items-start sm:items-center justify-between gap-6">
               <div className="space-y-2 max-w-xl">
                 <div className="flex items-center gap-3">
                   <NaimBrandLogo size={42} />
@@ -1174,14 +1174,14 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
           <div className="w-full overflow-x-auto pb-4 flex justify-center">
             <div
               ref={captureRef}
-              className="w-[1120px] min-w-[1120px] aspect-[16/9] rounded-[32px] bg-[#050507] border border-white/[0.12] p-11 flex flex-col justify-between relative overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.92)]"
+              className="w-[1120px] min-w-[1120px] aspect-[16/9] rounded-[32px] bg-[#0E0E10] border border-white/[0.12] p-11 flex flex-col justify-between relative overflow-hidden shadow-[0_40px_120px_rgba(0,0,0,0.92)]"
             >
               <img
                 src={stadiumBackdrop}
                 alt=""
                 className="absolute inset-0 w-full h-full object-cover opacity-20"
               />
-              <div className="absolute inset-0 bg-gradient-to-r from-[#050507] via-[#050507]/90 to-[#050507]/70" />
+              <div className="absolute inset-0 bg-gradient-to-r from-[#0E0E10] via-[#0E0E10]/90 to-[#0E0E10]/70" />
 
               <div className="relative z-10 flex items-center justify-between">
                 <div className="flex items-center gap-3.5">
@@ -1234,12 +1234,12 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                     { mark: 'TDT', sub: 'TV + Guía EPG', color: '#34D399' },
                     { mark: 'ANIME', sub: 'Crunchy & Más', color: '#FB923C' },
                     { mark: 'ES · HD', sub: 'Todo Castellano', color: '#FBBF24' },
-                    { mark: 'CAT · SX3', sub: 'Anime Català', color: '#FB7185' },
+                    { mark: 'CAT · SX3', sub: 'Anime Català', color: '#BF94FF' },
                     { mark: 'YOUTUBE', sub: 'Sala Común', color: '#EF4444' },
                   ].map((b) => (
                     <div
                       key={b.mark}
-                      className="p-3 rounded-2xl bg-[#0B0C13]/95 border border-white/[0.1] flex flex-col items-center justify-center text-center"
+                      className="p-3 rounded-2xl bg-[#18181B]/95 border border-white/[0.1] flex flex-col items-center justify-center text-center"
                     >
                       <span
                         className="font-display font-black text-sm tracking-tight leading-none"

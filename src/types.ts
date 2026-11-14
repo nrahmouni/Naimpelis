@@ -33,6 +33,7 @@ export interface StreamTrack {
   resolverType:
     | 'movidy_embed'
     | 'vidhide_hls'
+    | 'vest_hls'
     | 'embed_sniff'
     | 'bingetrix_en'
     | 'sports_channel'
@@ -72,6 +73,7 @@ export interface VideoState {
   isLive: boolean;
   tracks: StreamTrack[];
   activeTrackIndex: number;
+  subtitles?: SubtitleTrackItem[];
   seriesMeta?: ActiveSeriesContext;
   lastUpdated: number;
   updatedBy?: string;
@@ -121,6 +123,7 @@ export interface CatalogMovie {
   poster: string;
   backdrop: string;
   movidyUrl?: string;
+  vestUrl?: string;
   bingetrixUrl?: string;
   languages: string[];
   platform?: string;
@@ -269,6 +272,7 @@ export interface RoomQueueItem {
   episode?: number;
   youtubeId?: string;
   url?: string;
+  vestUrl?: string;
   preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN';
   addedBy: string;
   voterIds?: string[];
@@ -603,6 +607,7 @@ export interface WatchHistoryItem {
   preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN';
   bingetrixUrl?: string;
   movidyUrl?: string;
+  vestUrl?: string;
   resumeTimeSec?: number;
   durationSec?: number;
   watchedAt: number;

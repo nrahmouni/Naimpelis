@@ -619,7 +619,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                 }`}
               >
                 {'liveDot' in tab && tab.liveDot && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                  <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400]" />
                 )}
                 <span>{lang === 'es' ? tab.labelEs : tab.labelEn}</span>
               </button>

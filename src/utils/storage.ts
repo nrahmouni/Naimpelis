@@ -140,6 +140,7 @@ export function mergeCatalogItemMetadata(
     poster: primary.poster || secondary?.poster || '',
     backdrop: primary.backdrop || secondary?.backdrop || primary.poster || '',
     movidyUrl: inferredMovidy,
+    vestUrl: primary.vestUrl || secondary?.vestUrl,
     bingetrixUrl: inferredBingetrix,
     languages:
       primary.languages && primary.languages.length > 0
@@ -192,7 +193,7 @@ export function getStoredProfile(): StoredProfile {
       id: fallbackId,
       name: fallbackName,
       avatar: '🍿',
-      color: '#e11d48',
+      color: '#9146FF',
       isCustomized: false,
     };
   }
@@ -208,7 +209,7 @@ export function getStoredProfile(): StoredProfile {
           id: parsed.id || fallbackId,
           name: parsed.name,
           avatar: parsed.avatar,
-          color: parsed.color || '#e11d48',
+          color: parsed.color || '#9146FF',
           isCustomized: Boolean(parsed.isCustomized),
         };
       }
@@ -221,7 +222,7 @@ export function getStoredProfile(): StoredProfile {
     id: fallbackId,
     name: fallbackName,
     avatar: '🍿',
-    color: '#e11d48',
+    color: '#9146FF',
     isCustomized: false,
   };
   saveStoredProfile(initial, false);
@@ -579,6 +580,7 @@ export function addWatchHistoryItem(
     id: cleanId,
     tmdbId: entry.tmdbId || existing?.tmdbId,
     movidyUrl: inferredMovidy,
+    vestUrl: entry.vestUrl || existing?.vestUrl,
     bingetrixUrl: entry.bingetrixUrl || existing?.bingetrixUrl,
     resumeTimeSec:
       entry.resumeTimeSec !== undefined
@@ -715,7 +717,7 @@ export function upsertLocalFriend(
     avatar: (entry.avatar || '🍿').trim().slice(0, 16) || '🍿',
     color: /^#[0-9a-fA-F]{3,8}$/.test((entry.color || '').trim())
       ? entry.color.trim()
-      : '#E11D48',
+      : '#9146FF',
     friendCode:
       entry.friendCode?.trim().toUpperCase() ||
       existing?.friendCode ||

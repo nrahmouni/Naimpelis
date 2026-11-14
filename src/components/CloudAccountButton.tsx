@@ -86,7 +86,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
             className="w-6 h-6 rounded-full object-cover shrink-0 ring-1 ring-white/20"
           />
         ) : (
-          <span className="w-6 h-6 rounded-full bg-[#E11D48]/20 border border-[#E11D48]/45 text-white flex items-center justify-center text-[0.65rem] font-display font-bold shrink-0">
+          <span className="w-6 h-6 rounded-full bg-[#9146FF]/20 border border-[#9146FF]/50 text-white flex items-center justify-center text-[0.65rem] font-display font-bold shrink-0">
             {displayName ? getMonogramInitials(displayName) : <UserIcon className="w-3.5 h-3.5" />}
           </span>
         )}
@@ -143,7 +143,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
       onClick={handleLoginClick}
       className="min-h-[32px] px-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
     >
-      <span className="w-6 h-6 rounded-full bg-[#E11D48]/20 border border-[#E11D48]/40 text-white flex items-center justify-center text-xs font-bold shrink-0">
+      <span className="w-6 h-6 rounded-full bg-[#9146FF]/20 border border-[#9146FF]/45 text-white flex items-center justify-center text-xs font-bold shrink-0">
         {shortName.slice(0, 1).toUpperCase()}
       </span>
       {isDesktop && <span className="max-w-24 truncate">{shortName}</span>}

@@ -45,7 +45,7 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
     e.preventDefault();
     const finalName = draftName.trim() || currentName;
     triggerHaptic('success');
-    onSaveIdentity(finalName.slice(0, 24), currentAvatar || '🎬', currentColor || '#E11D48');
+    onSaveIdentity(finalName.slice(0, 24), currentAvatar || '🎬', currentColor || '#9146FF');
   };
 
   const previewName = draftName.trim() || currentName;
@@ -53,11 +53,11 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
   return (
     <aside
       aria-label={lang === 'es' ? 'Personalizar tu nombre en la sala' : 'Set your display name'}
-      className="fixed bottom-[68px] inset-x-3 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[360px] z-30 rounded-2xl bg-[#0E0F16]/95 backdrop-blur-xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.9)] p-4 animate-room-warp"
+      className="fixed bottom-[68px] inset-x-3 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[360px] z-30 rounded-2xl bg-[#18181B]/95 backdrop-blur-xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.9)] p-4 animate-room-warp"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-10 h-10 rounded-xl bg-[#E11D48]/15 border border-[#E11D48]/35 flex items-center justify-center font-display font-bold text-xs text-white shrink-0">
+          <div className="w-10 h-10 rounded-xl bg-[#9146FF]/20 border border-[#9146FF]/45 flex items-center justify-center font-display font-bold text-xs text-white shrink-0">
             {getMonogramInitials(previewName)}
           </div>
           <div className="min-w-0">
@@ -93,11 +93,11 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
             lang === 'es' ? `Tu nombre (o ${currentName})` : `Your name (or ${currentName})`
           }
           maxLength={24}
-          className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#090A0F] border border-white/12 focus:border-[#E11D48] text-base sm:text-xs text-white placeholder:text-zinc-500 outline-none transition-colors"
+          className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#26262C] border border-white/12 focus:border-[#9146FF] text-base sm:text-xs text-white placeholder:text-[#ADADB8] outline-none transition-colors"
         />
         <button
           type="submit"
-          className="h-11 px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-95 text-xs font-semibold text-white flex items-center gap-1.5 shrink-0 cursor-pointer transition-all"
+          className="h-11 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] active:scale-95 text-xs font-semibold text-white flex items-center gap-1.5 shrink-0 cursor-pointer transition-all"
         >
           <Check className="w-3.5 h-3.5" />
           <span>{lang === 'es' ? 'Guardar' : 'Save'}</span>

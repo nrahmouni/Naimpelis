@@ -28,14 +28,14 @@ export class AppErrorBoundary extends React.Component<
     const isQuota = this.state.message.toLowerCase().includes('quota exceeded');
 
     return (
-      <div className="min-h-full w-full bg-[#050508] text-[#F4F5F8] flex items-center justify-center p-6">
-        <div className="max-w-md w-full rounded-3xl bg-[#0E0F16] border border-white/12 p-6 text-center space-y-4">
+      <div className="min-h-full w-full bg-[#0E0E10] text-[#EFEFF1] flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-3xl bg-[#18181B] border border-white/12 p-6 text-center space-y-4">
           <h2 className="font-display font-bold text-lg text-white">
             {isQuota
               ? 'Límite diario de sincronización en la nube alcanzado'
               : 'Se produjo una interrupción temporal'}
           </h2>
-          <p className="text-xs sm:text-sm text-zinc-400 leading-relaxed">
+          <p className="text-xs sm:text-sm text-[#ADADB8] leading-relaxed">
             {isQuota
               ? 'La cuota gratuita diaria de lectura/escritura en la nube se restablecerá mañana. Tus salas en vivo y reproducción siguen operativas.'
               : 'Recarga la sala para continuar viendo contenido con normalidad.'}
@@ -43,7 +43,7 @@ export class AppErrorBoundary extends React.Component<
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="min-h-[44px] px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-semibold text-white inline-flex items-center gap-2 cursor-pointer"
+            className="min-h-[44px] px-5 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] text-xs sm:text-sm font-semibold text-white inline-flex items-center gap-2 cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
             <span>Recargar NAIM CINE</span>

@@ -74,7 +74,7 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
         {/* Live Theme & Mode Switcher */}
         <section className="p-5 rounded-3xl bg-[var(--nc-bg-elevated)] border border-[var(--nc-border)] space-y-4">
           <div className="flex items-center gap-2 text-sm font-bold">
-            <Palette className="w-4 h-4 text-[#e11d48]" />
+            <Palette className="w-4 h-4 text-[#BF94FF]" />
             <span>Temas Semánticos & Rendimiento</span>
           </div>
 
@@ -86,13 +86,13 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
                 onClick={() => setTheme(opt.id)}
                 className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
                   theme === opt.id
-                    ? 'border-[#e11d48] bg-[#e11d48]/12'
+                    ? 'border-[#9146FF] bg-[#9146FF]/15'
                     : 'border-white/10 bg-white/[0.03] hover:bg-white/[0.06]'
                 }`}
               >
                 <div className="flex items-center justify-between text-xs font-bold">
                   <span>{opt.label}</span>
-                  {theme === opt.id && <Check className="w-4 h-4 text-[#e11d48]" />}
+                  {theme === opt.id && <Check className="w-4 h-4 text-[#BF94FF]" />}
                 </div>
                 <p className="text-[11px] text-[var(--nc-text-secondary)] mt-1">{opt.desc}</p>
               </button>
@@ -133,7 +133,7 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
               ['Elevated', 'var(--nc-bg-elevated)'],
               ['Surface', 'var(--nc-bg-surface)'],
               ['Subtle', 'var(--nc-bg-subtle)'],
-              ['Accent Crimson', 'var(--nc-accent)'],
+              ['Accent Broadcast', 'var(--nc-accent)'],
             ].map(([name, token]) => (
               <div
                 key={name}
@@ -187,7 +187,7 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
           {sampleTab === 'cards' && (
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="apple-card p-3 space-y-2">
-                <div className="aspect-[2/3] rounded-xl bg-gradient-to-br from-[#e11d48]/30 to-zinc-900 flex items-end p-3">
+                <div className="aspect-[2/3] rounded-xl bg-gradient-to-br from-[#9146FF]/35 to-zinc-900 flex items-end p-3">
                   <span className="px-2 py-0.5 rounded bg-black/75 text-[11px] font-bold">
                     4K · ES
                   </span>
@@ -197,7 +197,7 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
               <div className="apple-card p-3 space-y-2 sm:col-span-2">
                 <div className="aspect-video rounded-xl bg-gradient-to-br from-sky-500/20 to-zinc-900 flex items-end p-3 relative overflow-hidden">
                   <div className="absolute inset-x-0 bottom-0 h-1 bg-white/15">
-                    <div className="h-full w-2/3 bg-[#e11d48]" />
+                    <div className="h-full w-2/3 bg-[#9146FF]" />
                   </div>
                   <span className="px-2 py-0.5 rounded bg-black/75 text-[11px] font-bold">
                     16:9 · Progreso 66%

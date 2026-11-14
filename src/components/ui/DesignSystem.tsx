@@ -40,7 +40,7 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-2 font-bold text-white bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.97] transition-all duration-150 shadow-[0_8px_24px_rgba(225,29,72,0.28)] disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer ${
+      className={`inline-flex items-center justify-center gap-2 font-bold text-white bg-[#9146FF] hover:bg-[#772CE8] active:scale-[0.97] transition-all duration-150 shadow-[0_8px_24px_rgba(145,70,255,0.3)] disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer ${
         fullWidth ? 'w-full' : ''
       } ${sizeClass} ${className}`}
     >
@@ -73,7 +73,7 @@ export const SecondaryButton: React.FC<SecondaryButtonProps> = ({
       {...props}
       className={`inline-flex items-center justify-center gap-2 font-semibold backdrop-blur-xl active:scale-[0.97] transition-all duration-150 disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer border ${
         active
-          ? 'bg-[#E11D48]/18 border-[#E11D48]/50 text-white shadow-[0_0_20px_rgba(225,29,72,0.2)]'
+          ? 'bg-[#9146FF]/18 border-[#9146FF]/55 text-white shadow-[0_0_20px_rgba(145,70,255,0.24)]'
           : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.09] text-zinc-100 hover:text-white'
       } ${fullWidth ? 'w-full' : ''} ${sizeClass} ${className}`}
     >
@@ -97,13 +97,13 @@ export const IconButton: React.FC<IconButtonProps> = ({
 }) => {
   const variantClasses =
     variant === 'crimson'
-      ? 'bg-[#E11D48] hover:bg-[#BE123C] text-white border border-[#E11D48]/50 shadow-[0_8px_20px_rgba(225,29,72,0.3)]'
+      ? 'bg-[#9146FF] hover:bg-[#772CE8] text-white border border-[#9146FF]/55 shadow-[0_8px_20px_rgba(145,70,255,0.32)]'
       : variant === 'ghost'
       ? active
         ? 'bg-white/15 text-white'
         : 'bg-transparent hover:bg-white/[0.08] text-zinc-300 hover:text-white'
       : active
-      ? 'bg-[#E11D48]/20 border border-[#E11D48]/50 text-white shadow-[0_0_16px_rgba(225,29,72,0.25)]'
+      ? 'bg-[#9146FF]/22 border border-[#9146FF]/55 text-white shadow-[0_0_16px_rgba(145,70,255,0.28)]'
       : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-200 hover:text-white backdrop-blur-xl';
 
   return (
@@ -135,7 +135,7 @@ export const StandardInput = React.forwardRef<HTMLInputElement, StandardInputPro
           {...props}
           className={`w-full min-h-11 ${icon ? 'pl-10' : 'pl-4'} ${
             rightElement ? 'pr-12' : 'pr-4'
-          } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.08] border border-white/[0.09] focus:border-[#E11D48] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all ${className}`}
+          } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.08] border border-white/[0.09] focus:border-[#9146FF] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all ${className}`}
         />
         {rightElement && (
           <div className="absolute right-1.5 flex items-center justify-center">
@@ -179,7 +179,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
       onClick={onClose}
     >
       <div
-        className={`w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#0B0B11]/95 backdrop-blur-2xl border-t sm:border border-white/[0.11] shadow-[0_-20px_70px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[88dvh] animate-sheet-up`}
+        className={`w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#18181B]/96 backdrop-blur-2xl border-t sm:border border-white/[0.11] shadow-[0_-20px_70px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[88dvh] animate-sheet-up`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Drag handle for mobile feel */}
@@ -191,7 +191,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
         <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             {icon && (
-              <div className="w-10 h-10 rounded-2xl bg-[#E11D48]/15 border border-[#E11D48]/30 flex items-center justify-center text-[#E11D48] shrink-0">
+              <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0">
                 {icon}
               </div>
             )}
@@ -255,7 +255,7 @@ export function SegmentedControl<T extends string>({
             onClick={() => onChange(option.id)}
             className={`flex-1 min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5 select-none cursor-pointer active:scale-[0.98] ${
               isActive
-                ? 'bg-[#E11D48] text-white shadow-[0_4px_16px_rgba(225,29,72,0.35)]'
+                ? 'bg-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.38)]'
                 : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.04]'
             }`}
           >
@@ -327,7 +327,7 @@ export const EmptyStateCard: React.FC<EmptyStateCardProps> = ({
 }) => {
   return (
     <div className="py-12 px-6 rounded-3xl bg-white/[0.02] border border-white/[0.06] text-center max-w-md mx-auto my-4 flex flex-col items-center">
-      <div className="w-14 h-14 rounded-2xl bg-[#E11D48]/12 border border-[#E11D48]/25 flex items-center justify-center text-[#E11D48] mb-3.5 shadow-inner">
+      <div className="w-14 h-14 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/30 flex items-center justify-center text-[#BF94FF] mb-3.5 shadow-inner">
         {icon}
       </div>
       <h4 className="text-base font-bold text-white tracking-tight">{title}</h4>
@@ -480,8 +480,8 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
       {/* Status Pill */}
       <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25">
         <div className="flex items-center gap-2.5">
-          <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-          <span className="text-xs font-bold text-emerald-300">
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+          <span className="text-xs font-bold text-emerald-300 tabular-nums">
             TV Conectada · #{pairedTvCode}
           </span>
         </div>
@@ -513,7 +513,7 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
 
           <div className="flex flex-col items-center gap-1.5">
             <div className="w-12 h-12 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-zinc-200">
-              <Hand className="w-5 h-5 text-[#E11D48]" />
+              <Hand className="w-5 h-5 text-[#BF94FF]" />
             </div>
             <span className="text-xs font-bold text-zinc-200 tracking-tight">
               Trackpad Táctil
@@ -531,7 +531,7 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
 
         {/* Live Haptic Feedback Toast inside Trackpad */}
         {touchFeedback && (
-          <div className="absolute inset-x-8 bottom-3 py-1.5 px-3 rounded-full bg-[#E11D48] text-white text-xs font-bold text-center shadow-lg animate-fade-in">
+          <div className="absolute inset-x-8 bottom-3 py-1.5 px-3 rounded-full bg-[#9146FF] text-white text-xs font-bold text-center shadow-lg animate-fade-in">
             {touchFeedback}
           </div>
         )}
@@ -602,7 +602,7 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
             max={100}
             value={isMuted ? 0 : volume}
             onChange={handleVolumeSlider}
-            className="w-full h-2 rounded-full accent-[#E11D48] bg-white/15 cursor-pointer"
+            className="w-full h-2 rounded-full accent-[#9146FF] bg-white/15 cursor-pointer"
           />
         </div>
       </div>
@@ -616,7 +616,7 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
           }}
           fullWidth
         >
-          <Maximize2 className="w-4 h-4 text-[#E11D48]" />
+          <Maximize2 className="w-4 h-4 text-[#BF94FF]" />
           <span>Pantalla Completa TV</span>
         </SecondaryButton>
 

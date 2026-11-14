@@ -120,31 +120,56 @@ import {
 import { NaimBrandLogo } from './components/NaimBrandLogo';
 import { CloudAccountButton } from './components/CloudAccountButton';
 import { useViewLayoutMode } from './components/MobileViewportGuard';
-import {
-  ProfileHubTab,
-  UserProfileHubModal,
-} from './components/UserProfileHubModal';
 import { OfflineIndicator } from './components/PWAInstallPrompt';
-import { NaimcineIntro } from './components/NaimcineIntro';
-import { LobbyScreen } from './components/LobbyScreen';
-import { GuestWelcomePopup } from './components/GuestWelcomePopup';
-import { NativeCinemaPlayer } from './components/NativeCinemaPlayer';
-import { LiveMatchCenter } from './components/LiveMatchCenter';
-import { CatalogSection, MediaCatalogHub } from './components/MediaCatalogHub';
-import { PartySidebar } from './components/PartySidebar';
-import { TvReceiverPairingScreen } from './components/TvReceiverPairingScreen';
-import { RoomPinPromptModal } from './components/RoomPinPromptModal';
-import { SmartTvQuickModal } from './components/SmartTvQuickModal';
 import {
   FriendsInviteModal,
   GlobalIncomingInviteBanner,
 } from './components/FriendsInviteModal';
-import { NaimCineAdsPage } from './components/NaimCineAdsPage';
-import { NotificationCenterSheet } from './components/NotificationCenterSheet';
-import { CommandSearchModal } from './components/CommandSearchModal';
-import { SurpriseMeModal } from './components/SurpriseMeModal';
-import { LegalPrivacyModal } from './components/LegalPrivacyModal';
-import { DesignSystemShowcase } from './components/DesignSystemShowcase';
+import type { ProfileHubTab } from './components/UserProfileHubModal';
+
+const UserProfileHubModal = React.lazy(() =>
+  import('./components/UserProfileHubModal').then((m) => ({ default: m.UserProfileHubModal }))
+);
+const GuestWelcomePopup = React.lazy(() =>
+  import('./components/GuestWelcomePopup').then((m) => ({ default: m.GuestWelcomePopup }))
+);
+const LiveMatchCenter = React.lazy(() =>
+  import('./components/LiveMatchCenter').then((m) => ({ default: m.LiveMatchCenter }))
+);
+const TvReceiverPairingScreen = React.lazy(() =>
+  import('./components/TvReceiverPairingScreen').then((m) => ({ default: m.TvReceiverPairingScreen }))
+);
+const RoomPinPromptModal = React.lazy(() =>
+  import('./components/RoomPinPromptModal').then((m) => ({ default: m.RoomPinPromptModal }))
+);
+const SmartTvQuickModal = React.lazy(() =>
+  import('./components/SmartTvQuickModal').then((m) => ({ default: m.SmartTvQuickModal }))
+);
+const NaimCineAdsPage = React.lazy(() =>
+  import('./components/NaimCineAdsPage').then((m) => ({ default: m.NaimCineAdsPage }))
+);
+const NotificationCenterSheet = React.lazy(() =>
+  import('./components/NotificationCenterSheet').then((m) => ({ default: m.NotificationCenterSheet }))
+);
+const CommandSearchModal = React.lazy(() =>
+  import('./components/CommandSearchModal').then((m) => ({ default: m.CommandSearchModal }))
+);
+const SurpriseMeModal = React.lazy(() =>
+  import('./components/SurpriseMeModal').then((m) => ({ default: m.SurpriseMeModal }))
+);
+const LegalPrivacyModal = React.lazy(() =>
+  import('./components/LegalPrivacyModal').then((m) => ({ default: m.LegalPrivacyModal }))
+);
+const DesignSystemShowcase = React.lazy(() =>
+  import('./components/DesignSystemShowcase').then((m) => ({ default: m.DesignSystemShowcase }))
+);
+
+import { NaimcineIntro } from './components/NaimcineIntro';
+import { LobbyScreen } from './components/LobbyScreen';
+import { NativeCinemaPlayer } from './components/NativeCinemaPlayer';
+import { CatalogSection, MediaCatalogHub } from './components/MediaCatalogHub';
+import { PartySidebar } from './components/PartySidebar';
+import { TwitchChannelRail, FastChannelItem } from './components/TwitchChannelRail';
 import { useThemeStore } from './store/useThemeStore';
 import { useAppStore } from './store/useAppStore';
 import { useNotificationStore } from './store/useNotificationStore';
@@ -533,7 +558,7 @@ export function App() {
     id: profile.id,
     name: isTvMode ? `${profile.name} (TV)` : profile.name,
     avatar: isTvMode ? '📺' : profile.avatar || '🎬',
-    color: profile.color || '#E11D48',
+    color: profile.color || '#9146FF',
     isHost: hostId === profile.id,
     joinedAt: Date.now(),
   };
@@ -1067,7 +1092,7 @@ export function App() {
           id: profile.id,
           name: profile.name,
           avatar: profile.avatar || '🎬',
-          color: profile.color || '#E11D48',
+          color: profile.color || '#9146FF',
         },
       });
       if (inviteFeedbackTimerRef.current) clearTimeout(inviteFeedbackTimerRef.current);
@@ -1104,7 +1129,7 @@ export function App() {
           id: profile.id,
           name: profile.name,
           avatar: profile.avatar || '🎬',
-          color: profile.color || '#E11D48',
+          color: profile.color || '#9146FF',
         },
       });
       if (inviteFeedbackTimerRef.current) clearTimeout(inviteFeedbackTimerRef.current);
@@ -1125,7 +1150,7 @@ export function App() {
       id: profile.id,
       name: profile.name,
       avatar: profile.avatar || '🎬',
-      color: profile.color || '#E11D48',
+      color: profile.color || '#9146FF',
       isHost: false,
       joinedAt: Date.now(),
     });
@@ -1208,7 +1233,7 @@ export function App() {
       id: profile.id,
       name: isTvMode ? `${profile.name} (TV)` : profile.name,
       avatar: isTvMode ? '📺' : profile.avatar || '🎬',
-      color: profile.color || '#E11D48',
+      color: profile.color || '#9146FF',
       isHost: false,
       joinedAt: Date.now(),
     };
@@ -1725,8 +1750,9 @@ export function App() {
       const params = new URLSearchParams({
         mediaType: 'movie',
         tmdbId: movie.tmdbId ? String(movie.tmdbId) : '',
-        url: movie.bingetrixUrl || movie.movidyUrl || '',
+        url: movie.bingetrixUrl || movie.movidyUrl || movie.vestUrl || '',
         movidyUrl: movie.movidyUrl || '',
+        vestUrl: movie.vestUrl || '',
         preferLang,
         title: movie.title,
       });
@@ -1782,7 +1808,7 @@ export function App() {
       const nextState: VideoState = {
         mode: data.mode || 'hls',
         url: data.streamUrl,
-        rawSourceUrl: movie.bingetrixUrl || movie.movidyUrl || movie.id,
+        rawSourceUrl: movie.bingetrixUrl || movie.movidyUrl || movie.vestUrl || movie.id,
         title: movie.title,
         subtitle: `${movie.year || 'HD'} · ${activeLabel}`,
         poster: movie.poster,
@@ -1792,6 +1818,7 @@ export function App() {
         isLive: false,
         tracks,
         activeTrackIndex: activeIdx,
+        subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
         seriesMeta: undefined,
         lastUpdated: Date.now(),
         updatedBy: profile.name,
@@ -1809,6 +1836,7 @@ export function App() {
         preferLang,
         bingetrixUrl: movie.bingetrixUrl,
         movidyUrl: movie.movidyUrl,
+        vestUrl: movie.vestUrl,
         resumeTimeSec: resumeAtSec,
       });
       setWatchHistory(list);
@@ -1943,6 +1971,7 @@ export function App() {
         isLive: false,
         tracks,
         activeTrackIndex: activeIdx,
+        subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
         seriesMeta: {
           tmdbId: series.tmdbId,
           seriesTitle: series.title,
@@ -2065,6 +2094,7 @@ export function App() {
           isLive: false,
           tracks,
           activeTrackIndex: activeIdx,
+          subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
           seriesMeta: {
             tmdbId: item.tmdbId,
             seriesTitle: item.title,
@@ -2115,6 +2145,7 @@ export function App() {
         backdrop: item.backdrop || item.poster,
         bingetrixUrl: item.bingetrixUrl,
         movidyUrl: item.movidyUrl,
+        vestUrl: item.vestUrl,
         languages: [],
       },
       item.preferLang || 'ES',
@@ -2230,6 +2261,7 @@ export function App() {
         isLive: false,
         tracks,
         activeTrackIndex: activeIdx,
+        subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
         seriesMeta: {
           ...meta,
           season: nextSeason,
@@ -3088,12 +3120,20 @@ export function App() {
               ? 'YouTube Sincronizado'
               : data.mode === 'embed'
               ? 'Reproductor Web Integrado'
-              : 'Flujo Nativo Sin Anuncios',
+              : data.resolvedLabel || 'Flujo Nativo Sin Anuncios',
+          poster: data.poster || undefined,
+          backdrop: data.backdrop || data.poster || undefined,
           currentTime: 0,
           isPlaying: true,
           isLive: false,
           tracks: data.tracks || [],
-          activeTrackIndex: 0,
+          activeTrackIndex: Math.max(
+            0,
+            Array.isArray(data.tracks)
+              ? data.tracks.findIndex((tr: StreamTrack) => tr.resolvedStreamUrl === data.streamUrl)
+              : 0
+          ),
+          subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
           seriesMeta: undefined,
           lastUpdated: Date.now(),
           updatedBy: profile.name,
@@ -3185,6 +3225,7 @@ export function App() {
           poster: qItem.poster || '',
           backdrop: qItem.poster || '',
           bingetrixUrl: qItem.url,
+          vestUrl: qItem.vestUrl,
           languages: [],
         },
         qItem.preferLang || 'ES'
@@ -3699,7 +3740,7 @@ export function App() {
       id: profile.id,
       name: nextName,
       avatar: nextAvatar || profile.avatar || '🎬',
-      color: nextColor || profile.color || '#E11D48',
+      color: nextColor || profile.color || '#9146FF',
       isCustomized: true,
     };
     saveStoredProfile(updated, true);
@@ -3794,18 +3835,20 @@ export function App() {
 
   if (showDesignSystem) {
     return (
-      <DesignSystemShowcase
-        onClose={() => {
-          setShowDesignSystem(false);
-          if (
-            typeof window !== 'undefined' &&
-            window.location.pathname.toLowerCase().includes('/design-system')
-          ) {
-            const backPath = inRoom && roomId ? `/${roomId}` : '/';
-            window.history.replaceState({}, '', backPath);
-          }
-        }}
-      />
+      <React.Suspense fallback={null}>
+        <DesignSystemShowcase
+          onClose={() => {
+            setShowDesignSystem(false);
+            if (
+              typeof window !== 'undefined' &&
+              window.location.pathname.toLowerCase().includes('/design-system')
+            ) {
+              const backPath = inRoom && roomId ? `/${roomId}` : '/';
+              window.history.replaceState({}, '', backPath);
+            }
+          }}
+        />
+      </React.Suspense>
     );
   }
 
@@ -3814,19 +3857,21 @@ export function App() {
   // ============================================================================
   if (isAdsPageOpen) {
     return (
-      <NaimCineAdsPage
-        onBack={() => {
-          setIsAdsPageOpen(false);
-          if (
-            typeof window !== 'undefined' &&
-            (/^\/(ads|naimcine-ads)\b/i.test(window.location.pathname) ||
-              window.location.search.includes('ads=1'))
-          ) {
-            const backPath = inRoom && roomId ? `/${roomId}` : '/';
-            window.history.replaceState({}, '', backPath);
-          }
-        }}
-      />
+      <React.Suspense fallback={null}>
+        <NaimCineAdsPage
+          onBack={() => {
+            setIsAdsPageOpen(false);
+            if (
+              typeof window !== 'undefined' &&
+              (/^\/(ads|naimcine-ads)\b/i.test(window.location.pathname) ||
+                window.location.search.includes('ads=1'))
+            ) {
+              const backPath = inRoom && roomId ? `/${roomId}` : '/';
+              window.history.replaceState({}, '', backPath);
+            }
+          }}
+        />
+      </React.Suspense>
     );
   }
 
@@ -3835,24 +3880,26 @@ export function App() {
   // ============================================================================
   if (isTvPairLobby) {
     return (
-      <TvReceiverPairingScreen
-        lang={lang}
-        onPaired={({ roomId: pairedCode, roomName: pairedTitle, tvAuthToken: token }) => {
-          manualLobbyStayRef.current = false;
-          setTvAuthToken(token);
-          setIsTvPairLobby(false);
-          setIsTvMode(true);
-          setRoomId(pairedCode);
-          setRoomName(pairedTitle || `Sala ${pairedCode.toUpperCase()}`);
-          setInRoom(true);
-        }}
-        onExitTvLobby={() => {
-          setIsTvPairLobby(false);
-          if (typeof window !== 'undefined') {
-            window.history.replaceState({}, '', '/');
-          }
-        }}
-      />
+      <React.Suspense fallback={null}>
+        <TvReceiverPairingScreen
+          lang={lang}
+          onPaired={({ roomId: pairedCode, roomName: pairedTitle, tvAuthToken: token }) => {
+            manualLobbyStayRef.current = false;
+            setTvAuthToken(token);
+            setIsTvPairLobby(false);
+            setIsTvMode(true);
+            setRoomId(pairedCode);
+            setRoomName(pairedTitle || `Sala ${pairedCode.toUpperCase()}`);
+            setInRoom(true);
+          }}
+          onExitTvLobby={() => {
+            setIsTvPairLobby(false);
+            if (typeof window !== 'undefined') {
+              window.history.replaceState({}, '', '/');
+            }
+          }}
+        />
+      </React.Suspense>
     );
   }
 
@@ -4122,13 +4169,13 @@ export function App() {
           ? { height: `${visualViewportHeight}px` }
           : undefined
       }
-      className="h-full w-full max-w-[100vw] bg-[#050507] text-[#F5F5F7] overflow-hidden"
+      className="h-full w-full max-w-[100vw] bg-[#0E0E10] text-[#EFEFF1] overflow-hidden"
     >
       <div
         className={`h-full w-full flex flex-col overflow-hidden pt-safe animate-room-warp ${
           isFramedMobileOnPc
-            ? 'max-w-[27rem] mx-auto bg-[#050507] border-x border-white/[0.08] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
-            : 'bg-[#050507]'
+            ? 'max-w-[27rem] mx-auto bg-[#0E0E10] border-x border-white/[0.08] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
+            : 'bg-[#0E0E10]'
         }`}
       >
         <OfflineIndicator lang={lang} />
@@ -4190,106 +4237,108 @@ export function App() {
           />
         )}
 
-        {/* Private Room 4-Digit PIN Unlock Gate */}
-        <RoomPinPromptModal
-          isOpen={pinPromptState.open}
-          roomName={pinPromptState.roomName}
-          roomCode={roomId}
-          invalidAttempt={pinPromptState.invalidAttempt}
-          lang={lang}
-          onSubmitPin={handleSubmitGuestPin}
-          onLeaveProtectedRoom={handleLeaveRoom}
-        />
-
-        {/* Quick 1-Tap Smart TV Pairing & Mobile Remote Modal (Samsung / LG / AirPlay / Cast) */}
-        <SmartTvQuickModal
-          isOpen={smartTvModalOpen}
-          onClose={() => setSmartTvModalOpen(false)}
-          lang={lang}
-          roomId={roomId}
-          hasConnectedSmartTv={hasConnectedSmartTv}
-          onClaimTvCode={handleClaimTvCode}
-          tvClaimStatus={tvClaimStatus}
-          isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
-          onRemoteTogglePlay={handleRemoteTogglePlay}
-          onRemoteSeekDelta={handleRemoteSeekDelta}
-          onSendTvRemoteCommand={handleSendTvRemoteCommand}
-          onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
-          onTriggerAirPlayPicker={() => {
-            const v = document.querySelector('video') as
-              | (HTMLVideoElement & { webkitShowPlaybackTargetPicker?: () => void })
-              | null;
-            if (v?.webkitShowPlaybackTargetPicker) {
-              try {
-                v.webkitShowPlaybackTargetPicker();
-                return true;
-              } catch {
-                return false;
-              }
-            }
-            return false;
-          }}
-        />
-
-        {/* Dedicated Mi Perfil Hub (History, Resume, Favorite Movies/Series, Favorite Channels & Permanent Rooms) */}
-        <UserProfileHubModal
-          isOpen={profileHubOpen}
-          initialTab={profileHubTab}
-          onClose={() => setProfileHubOpen(false)}
-          lang={lang}
-          onChangeLang={setLang}
-          onOpenLegalModal={() => {
-            setProfileHubOpen(false);
-            setShowLegalModal(true);
-          }}
-          onOpenDesignSystem={() => {
-            setProfileHubOpen(false);
-            setShowDesignSystem(true);
-          }}
-          authUser={authUser}
-          authLoading={authLoading}
-          displayName={profile.name}
-          roomId={roomId}
-          roomName={roomName}
-          recentRooms={recentRooms}
-          watchHistory={watchHistory}
-          watchlist={watchlist}
-          favoriteChannels={favoriteChannels}
-          effectiveView={effectiveView}
-          onToggleViewMode={toggleViewMode}
-          onSignIn={handleGoogleSignIn}
-          onSignOut={handleGoogleSignOut}
-          onUpdateDisplayName={(newName) =>
-            handleUpdateProfile(newName, profile.avatar, profile.color)
-          }
-          onReplayHistoryItem={handleReplayHistoryItem}
-          onRemoveHistoryItem={handleRemoveHistoryItem}
-          onClearHistory={handleClearAllHistory}
-          onPlayCatalogItem={handlePlayFromProfileCatalog}
-          onToggleCatalogFavorite={handleToggleCatalogFavorite}
-          onPlayFavoriteChannel={handlePlayFavoriteChannel}
-          onRemoveFavoriteChannel={(ch) => handleToggleChannelFavorite(ch)}
-          onCreateNewRoom={handleCreateFreshRoom}
-          onSwitchRoom={handleSwitchActiveRoom}
-          savedRooms={savedRooms}
-          isCurrentRoomPermanent={isCurrentRoomPermanent}
-          onToggleCurrentRoomPermanent={handleTogglePermanentRoom}
-          onDeleteSavedRoom={handleDeleteSavedRoom}
-          onLeaveRoom={handleLeaveRoom}
-        />
-
-        {/* Non-intrusive Guest Welcome Card when entering via invite link */}
-        {showGuestPopup && !showIntro && !authUser && !pinPromptState.open && (
-          <GuestWelcomePopup
-            currentName={profile.name}
-            currentAvatar={profile.avatar}
-            currentColor={profile.color}
-            roomName={roomName || `Sala ${roomId.toUpperCase()}`}
+        <React.Suspense fallback={null}>
+          {/* Private Room 4-Digit PIN Unlock Gate */}
+          <RoomPinPromptModal
+            isOpen={pinPromptState.open}
+            roomName={pinPromptState.roomName}
+            roomCode={roomId}
+            invalidAttempt={pinPromptState.invalidAttempt}
             lang={lang}
-            onSaveIdentity={handleUpdateProfile}
-            onDismissKeepRandom={handleDismissGuestPopup}
+            onSubmitPin={handleSubmitGuestPin}
+            onLeaveProtectedRoom={handleLeaveRoom}
           />
-        )}
+
+          {/* Quick 1-Tap Smart TV Pairing & Mobile Remote Modal (Samsung / LG / AirPlay / Cast) */}
+          <SmartTvQuickModal
+            isOpen={smartTvModalOpen}
+            onClose={() => setSmartTvModalOpen(false)}
+            lang={lang}
+            roomId={roomId}
+            hasConnectedSmartTv={hasConnectedSmartTv}
+            onClaimTvCode={handleClaimTvCode}
+            tvClaimStatus={tvClaimStatus}
+            isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
+            onRemoteTogglePlay={handleRemoteTogglePlay}
+            onRemoteSeekDelta={handleRemoteSeekDelta}
+            onSendTvRemoteCommand={handleSendTvRemoteCommand}
+            onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
+            onTriggerAirPlayPicker={() => {
+              const v = document.querySelector('video') as
+                | (HTMLVideoElement & { webkitShowPlaybackTargetPicker?: () => void })
+                | null;
+              if (v?.webkitShowPlaybackTargetPicker) {
+                try {
+                  v.webkitShowPlaybackTargetPicker();
+                  return true;
+                } catch {
+                  return false;
+                }
+              }
+              return false;
+            }}
+          />
+
+          {/* Dedicated Mi Perfil Hub (History, Resume, Favorite Movies/Series, Favorite Channels & Permanent Rooms) */}
+          <UserProfileHubModal
+            isOpen={profileHubOpen}
+            initialTab={profileHubTab}
+            onClose={() => setProfileHubOpen(false)}
+            lang={lang}
+            onChangeLang={setLang}
+            onOpenLegalModal={() => {
+              setProfileHubOpen(false);
+              setShowLegalModal(true);
+            }}
+            onOpenDesignSystem={() => {
+              setProfileHubOpen(false);
+              setShowDesignSystem(true);
+            }}
+            authUser={authUser}
+            authLoading={authLoading}
+            displayName={profile.name}
+            roomId={roomId}
+            roomName={roomName}
+            recentRooms={recentRooms}
+            watchHistory={watchHistory}
+            watchlist={watchlist}
+            favoriteChannels={favoriteChannels}
+            effectiveView={effectiveView}
+            onToggleViewMode={toggleViewMode}
+            onSignIn={handleGoogleSignIn}
+            onSignOut={handleGoogleSignOut}
+            onUpdateDisplayName={(newName) =>
+              handleUpdateProfile(newName, profile.avatar, profile.color)
+            }
+            onReplayHistoryItem={handleReplayHistoryItem}
+            onRemoveHistoryItem={handleRemoveHistoryItem}
+            onClearHistory={handleClearAllHistory}
+            onPlayCatalogItem={handlePlayFromProfileCatalog}
+            onToggleCatalogFavorite={handleToggleCatalogFavorite}
+            onPlayFavoriteChannel={handlePlayFavoriteChannel}
+            onRemoveFavoriteChannel={(ch) => handleToggleChannelFavorite(ch)}
+            onCreateNewRoom={handleCreateFreshRoom}
+            onSwitchRoom={handleSwitchActiveRoom}
+            savedRooms={savedRooms}
+            isCurrentRoomPermanent={isCurrentRoomPermanent}
+            onToggleCurrentRoomPermanent={handleTogglePermanentRoom}
+            onDeleteSavedRoom={handleDeleteSavedRoom}
+            onLeaveRoom={handleLeaveRoom}
+          />
+
+          {/* Non-intrusive Guest Welcome Card when entering via invite link */}
+          {showGuestPopup && !showIntro && !authUser && !pinPromptState.open && (
+            <GuestWelcomePopup
+              currentName={profile.name}
+              currentAvatar={profile.avatar}
+              currentColor={profile.color}
+              roomName={roomName || `Sala ${roomId.toUpperCase()}`}
+              lang={lang}
+              onSaveIdentity={handleUpdateProfile}
+              onDismissKeepRandom={handleDismissGuestPopup}
+            />
+          )}
+        </React.Suspense>
 
         {/* ================================================================== */}
         {/* MODO CINE DARK OPACITY OVERLAY (bg-black/80 OVER ENTIRE APP)       */}
@@ -4301,15 +4350,15 @@ export function App() {
           />
         )}
 
-        {/* Top Bar (Apple TV+ Liquid Glass 3-Zone Navigation) */}
+        {/* Top Bar (Twitch Broadcast 3-Zone Navigation) */}
         <header
           className={`${
             isMobileChatWithKeyboard || isAutoImmersiveLandscape
               ? 'hidden'
               : isDesktopLayout
-              ? 'h-11 px-4 flex'
-              : 'h-10 px-2 flex'
-          } glass-bar border-b border-white/[0.06] items-center justify-between gap-2 shrink-0 z-30`}
+              ? 'h-[52px] px-4 flex'
+              : 'h-11 px-2.5 flex'
+          } bg-[#18181B]/95 backdrop-blur-xl border-b border-white/[0.08] items-center justify-between gap-2 shrink-0 z-30`}
         >
           {/* Zone 1: Clean Brand Lockup */}
           <div className="flex items-center gap-2.5 min-w-0">
@@ -4361,10 +4410,10 @@ export function App() {
             </button>
           </div>
 
-          {/* Zone 2: Floating Liquid Glass Capsule Tabs (Desktop Mode) */}
+          {/* Zone 2: Clean Single-Line Architectural Tabs (Desktop Mode) */}
           {isDesktopLayout && (
             <nav
-              className="liquid-glass-pill rounded-full p-1 flex items-center gap-1 overflow-x-auto no-scrollbar"
+              className="flex items-center gap-5 overflow-x-auto no-scrollbar h-full"
               aria-label="Catálogo NAIM CINE"
             >
               {(
@@ -4435,10 +4484,10 @@ export function App() {
                   key={navItem.id}
                   type="button"
                   onClick={navItem.onClick}
-                  className={`min-h-[28px] px-2.5 rounded-full text-[11px] font-semibold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`h-full px-1 border-b-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center ${
                     navItem.isActive
-                      ? 'bg-white text-[#050507] shadow-sm'
-                      : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
+                      ? 'border-[#9146FF] text-[#BF94FF]'
+                      : 'border-transparent text-[#ADADB8] hover:text-white'
                   }`}
                 >
                   <span>{navItem.label}</span>
@@ -4447,8 +4496,24 @@ export function App() {
             </nav>
           )}
 
-          {/* Zone 3: Minimal Smoked Glass & Pure White Actions */}
-           <div className="flex items-center gap-1.5 shrink-0">
+          {/* Zone 3: Compact Search + Actions */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {isDesktopLayout && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setShowCommandSearch(true);
+                }}
+                title="Búsqueda rápida (Ctrl/⌘ + K)"
+                aria-label="Búsqueda rápida"
+                className="h-8 px-2.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-300 hover:text-white text-xs font-medium flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+              >
+                <Search className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden xl:inline text-[11px] font-mono text-zinc-400">⌘K</span>
+              </button>
+            )}
+
             {isDesktopLayout && (
               <button
                 type="button"
@@ -4476,7 +4541,7 @@ export function App() {
             >
               <Bell className="w-3.5 h-3.5 shrink-0" />
               {unreadNotificationsCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-[#e11d48] text-white text-[10px] font-bold flex items-center justify-center tabular-nums shadow-sm">
+                <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-[#9146FF] text-white text-[10px] font-bold flex items-center justify-center tabular-nums shadow-sm">
                   {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
                 </span>
               )}
@@ -4495,8 +4560,8 @@ export function App() {
               }
               className={`min-h-[32px] px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all relative ${
                 hasConnectedSmartTv
-                  ? 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/40 text-emerald-200'
-                  : 'bg-white/[0.07] hover:bg-white/[0.13] border-white/[0.1] text-zinc-200'
+                  ? 'bg-[#00F593]/15 hover:bg-[#00F593]/25 border-[#00F593]/40 text-[#00F593]'
+                  : 'bg-[#26262C] hover:bg-white/[0.14] border-white/[0.1] text-[#EFEFF1]'
               }`}
             >
               <Tv className="w-3.5 h-3.5 text-zinc-100 shrink-0" />
@@ -4507,7 +4572,7 @@ export function App() {
               type="button"
               onClick={handleShareOrCopyHeaderInvite}
               title="Amigos e Invitación Directa a la Sala"
-              className="min-h-[32px] px-3 rounded-lg bg-white hover:bg-zinc-200 active:scale-95 text-xs font-bold text-[#050507] flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-sm relative"
+              className="min-h-[32px] px-3 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-sm relative"
             >
               {copiedHeaderInvite ? (
                 <>
@@ -4519,7 +4584,7 @@ export function App() {
                   <UserPlus className="w-3.5 h-3.5 shrink-0" />
                   <span>{isDesktopLayout ? 'Invitar' : t.invite}</span>
                   {onlineSavedFriendsCount > 0 && (
-                    <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-[#050507] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                    <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-[#0E0E10] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                       {onlineSavedFriendsCount}
                     </span>
                   )}
@@ -4536,8 +4601,8 @@ export function App() {
                 }}
                 className={`min-h-[32px] px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all relative whitespace-nowrap shrink-0 ${
                   sidebarOpen
-                    ? 'bg-white text-[#050507] border-white'
-                    : 'bg-white/[0.07] hover:bg-white/[0.13] border-white/[0.1] text-zinc-200'
+                    ? 'bg-[#9146FF]/20 text-[#BF94FF] border-[#9146FF]/50'
+                    : 'bg-[#26262C] hover:bg-white/[0.14] border-white/[0.1] text-[#EFEFF1]'
                 }`}
                 title={sidebarOpen ? 'Ocultar Sala y Chat' : 'Abrir Sala, Cola y Chat'}
                 aria-label="Alternar Sala y Chat"
@@ -4545,7 +4610,7 @@ export function App() {
                 <MessageSquare className="w-3.5 h-3.5" />
                 <span>Sala</span>
                 {!sidebarOpen && unreadChatCount + roomQueue.length > 0 && (
-                  <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-white text-[#050507] text-[10px] font-bold flex items-center justify-center tabular-nums">
+                  <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-[#9146FF] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                     {unreadChatCount + roomQueue.length > 9
                       ? '9+'
                       : unreadChatCount + roomQueue.length}
@@ -4573,7 +4638,7 @@ export function App() {
               <button
                 type="button"
                 onClick={handleLeaveRoom}
-                className="w-8 h-8 ml-0.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+                className="w-8 h-8 ml-0.5 rounded-lg bg-[#26262C] hover:bg-white/[0.14] border border-white/[0.09] text-[#ADADB8] hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
                 title={t.leaveRoom}
                 aria-label={t.leaveRoom}
               >
@@ -4583,12 +4648,48 @@ export function App() {
           </div>
         </header>
 
-        {/* Main Workspace (Single Mounted NativeCinemaPlayer Instance!) */}
+        {/* Main 3-Pane Twitch Broadcast Workspace (Left Rail + Center Stage + Right Chat Dock) */}
         <div
           className={`flex-1 min-h-0 min-w-0 flex ${
             isDesktopLayout ? 'flex-row' : 'flex-col'
           } overflow-hidden`}
         >
+          {isDesktopLayout && (
+            <TwitchChannelRail
+              lang={lang}
+              recentRooms={recentRooms}
+              favoriteChannels={favoriteChannels}
+              activeRoomId={roomId}
+              activeVideoUrl={videoState.rawSourceUrl || videoState.url}
+              catalogSection={catalogSection}
+              onSelectRoom={(targetCode, targetName) =>
+                handleSwitchActiveRoom(targetCode, targetName)
+              }
+              onSelectFastChannel={(ch: FastChannelItem) => {
+                if (ch.mode === 'youtube' && ch.youtubeId) {
+                  handlePlayYouTubeVideo({
+                    id: ch.id,
+                    videoId: ch.youtubeId,
+                    title: ch.name,
+                    channel: ch.quality,
+                    duration: 'LIVE',
+                    views: '24/7',
+                    thumbnail: `https://i.ytimg.com/vi/${ch.youtubeId}/hqdefault.jpg`,
+                    url: ch.streamUrl,
+                  });
+                } else {
+                  handlePlayCustomUrl(ch.streamUrl);
+                }
+              }}
+              onSelectFavoriteChannel={handlePlayFavoriteChannel}
+              onChangeCatalogSection={(sec) => {
+                setShowWatchlistOnly(false);
+                setCatalogSection(sec);
+                mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onOpenTvModal={() => setSmartTvModalOpen(true)}
+            />
+          )}
           <div
             ref={mainScrollRef}
             onScroll={isDesktopLayout ? handleCatalogOrWorkspaceScroll : undefined}
@@ -4740,8 +4841,8 @@ export function App() {
 
                 {/* 1-Tap Quick Multiview Bar if secondary stream active */}
                 {isPlayerActive && !isDockedMini && !isExtracting && secondaryStream && (
-                  <div className="px-3 py-1.5 bg-[#08080C] border-t border-white/[0.06] flex items-center justify-between gap-2">
-                    <span className="text-[11px] font-semibold text-zinc-300 truncate">
+                  <div className="px-3 py-1.5 bg-[#18181B] border-t border-white/[0.08] flex items-center justify-between gap-2">
+                    <span className="text-[11px] font-semibold text-[#EFEFF1] truncate">
                       📺 2ª Pantalla Activa: {secondaryStream.title}
                     </span>
                     <button
@@ -4750,7 +4851,7 @@ export function App() {
                         triggerHaptic('light');
                         handleCloseSecondaryStream();
                       }}
-                      className="min-h-7 px-2.5 rounded-full bg-[#E11D48]/20 border border-[#E11D48]/40 text-[11px] font-bold text-[#FB7185] whitespace-nowrap cursor-pointer hover:bg-[#E11D48]/30 transition-colors"
+                      className="min-h-7 px-2.5 rounded-full bg-[#9146FF]/20 border border-[#9146FF]/45 text-[11px] font-bold text-[#BF94FF] whitespace-nowrap cursor-pointer hover:bg-[#9146FF]/35 transition-colors"
                     >
                       Cerrar 2ª Pantalla
                     </button>
@@ -4761,7 +4862,7 @@ export function App() {
 
             {/* Host Lock Non-Intrusive Toast */}
             {lockNoticeToast && (
-              <div className="fixed top-17 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-2xl bg-[#141722]/95 backdrop-blur-md border border-amber-500/40 text-amber-200 text-xs font-semibold shadow-2xl flex items-center gap-2 pointer-events-none animate-fade-in">
+              <div className="fixed top-17 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-2xl bg-[#18181B]/95 backdrop-blur-md border border-amber-500/40 text-amber-200 text-xs font-semibold shadow-2xl flex items-center gap-2 pointer-events-none animate-fade-in">
                 <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                 <span>{lockNoticeToast}</span>
               </div>
@@ -4769,9 +4870,9 @@ export function App() {
 
             {/* Added-to-Queue Instant Confirmation Toast with 1-Tap "Ver Cola" */}
             {queueAddedNotice && (
-              <div className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[60] w-[calc(100%-1.5rem)] max-w-md px-3.5 py-2.5 rounded-2xl bg-[#101015]/95 backdrop-blur-xl border border-white/15 text-white text-xs shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex items-center justify-between gap-2.5 animate-fade-in">
+              <div className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[60] w-[calc(100%-1.5rem)] max-w-md px-3.5 py-2.5 rounded-2xl bg-[#18181B]/95 backdrop-blur-xl border border-white/15 text-white text-xs shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex items-center justify-between gap-2.5 animate-fade-in">
                 <div className="flex items-center gap-2 min-w-0">
-                  <ListVideo className="w-4 h-4 text-[#E11D48] shrink-0" />
+                  <ListVideo className="w-4 h-4 text-[#BF94FF] shrink-0" />
                   <span className="truncate font-medium">
                     {lang === 'es' ? 'En la cola:' : 'Queued:'}{' '}
                     <strong className="text-white">{queueAddedNotice}</strong>
@@ -4780,7 +4881,7 @@ export function App() {
                 <button
                   type="button"
                   onClick={handleOpenRoomQueueView}
-                  className="min-h-9 px-3 rounded-xl bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+                  className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-semibold text-white whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
                 >
                   {lang === 'es'
                     ? `Ver Cola (${roomQueue.length})`
@@ -4903,25 +5004,27 @@ export function App() {
                   !isAutoImmersiveLandscape &&
                   activeSportsMatch && (
                     showLiveMatchDock ? (
-                      <LiveMatchCenter
-                        variant="docked"
-                        lang={lang}
-                        details={activeMatchDetails}
-                        loading={loadingActiveMatchDetails}
-                        homeTeam={activeSportsMatch.homeTeam}
-                        awayTeam={activeSportsMatch.awayTeam}
-                        homeShort={activeSportsMatch.homeShort}
-                        awayShort={activeSportsMatch.awayShort}
-                        homeLogo={activeSportsMatch.homeLogo}
-                        awayLogo={activeSportsMatch.awayLogo}
-                        homeScore={activeSportsMatch.homeScore}
-                        awayScore={activeSportsMatch.awayScore}
-                        statusState={activeSportsMatch.statusState}
-                        statusLabel={activeSportsMatch.statusLabel}
-                        competition={activeSportsMatch.competition}
-                        onRefresh={() => refreshActiveMatchDetails(true)}
-                        onCloseDock={() => setShowLiveMatchDock(false)}
-                      />
+                      <React.Suspense fallback={null}>
+                        <LiveMatchCenter
+                          variant="docked"
+                          lang={lang}
+                          details={activeMatchDetails}
+                          loading={loadingActiveMatchDetails}
+                          homeTeam={activeSportsMatch.homeTeam}
+                          awayTeam={activeSportsMatch.awayTeam}
+                          homeShort={activeSportsMatch.homeShort}
+                          awayShort={activeSportsMatch.awayShort}
+                          homeLogo={activeSportsMatch.homeLogo}
+                          awayLogo={activeSportsMatch.awayLogo}
+                          homeScore={activeSportsMatch.homeScore}
+                          awayScore={activeSportsMatch.awayScore}
+                          statusState={activeSportsMatch.statusState}
+                          statusLabel={activeSportsMatch.statusLabel}
+                          competition={activeSportsMatch.competition}
+                          onRefresh={() => refreshActiveMatchDetails(true)}
+                          onCloseDock={() => setShowLiveMatchDock(false)}
+                        />
+                      </React.Suspense>
                     ) : (
                       <div className="flex items-center justify-between gap-3 px-4 py-2.5 rounded-2xl bg-[#161922] border border-white/[0.08]">
                         <span className="text-xs font-bold text-zinc-200 truncate">
@@ -4944,9 +5047,9 @@ export function App() {
 
                 {/* If user closed their local player while friends are still watching in room */}
                 {isPlayerClosedLocally && videoState.mode !== 'idle' && (
-                  <div className="p-3.5 rounded-2xl bg-[#0D0D12] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
+                  <div className="p-3.5 rounded-2xl bg-[#18181B] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-xs font-medium text-[#E11D48]">
+                      <div className="text-xs font-medium text-[#BF94FF]">
                         {lang === 'es' ? 'Reproduciendo en la sala' : 'Playing in room'}
                       </div>
                       <div className="text-xs sm:text-sm font-semibold text-white truncate">
@@ -4960,7 +5063,7 @@ export function App() {
                           setIsPlayerClosedLocally(false);
                           setIsPlayerMinimized(false);
                         }}
-                        className="min-h-11 px-4 rounded-xl bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                        className="min-h-11 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
                         <span>{lang === 'es' ? 'Volver a abrir' : 'Reopen'}</span>
@@ -5053,8 +5156,8 @@ export function App() {
                 />
 
                 {/* Footer with Legal/GDPR, Design System & naimcine ads */}
-                <footer className="mt-14 pt-6 pb-4 border-t border-white/[0.04] flex flex-wrap items-center justify-center gap-4 text-[11px] text-zinc-500">
-                  <span>NAIM CINE · Apple TV+ Edition</span>
+                <footer className="mt-14 pt-6 pb-4 border-t border-white/[0.06] flex flex-wrap items-center justify-center gap-4 text-[11px] text-[#ADADB8]">
+                  <span>NAIM CINE · Web · Android · Google TV</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -5169,11 +5272,11 @@ export function App() {
           )}
         </div>
 
-        {/* Apple TV+ Floating Liquid Glass Mobile Tab Bar */}
+        {/* Twitch-Style Bottom Navigation Bar (Mobile / Android) */}
         {!isDesktopLayout && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-          <div className="shrink-0 px-2 pt-1 pb-[max(0.2rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#050507] via-[#050507]/90 to-transparent z-30">
+          <div className="shrink-0 px-2 pt-1 pb-[max(0.2rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#0E0E10] via-[#0E0E10]/95 to-transparent z-30">
             <nav
-              className="liquid-glass rounded-full p-1 grid grid-cols-5 gap-0.5"
+              className="bg-[#18181B]/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-1 grid grid-cols-5 gap-0.5 shadow-[0_12px_32px_rgba(0,0,0,0.65)]"
               aria-label="Navegación móvil NAIM CINE"
             >
               {(
@@ -5272,16 +5375,16 @@ export function App() {
                       triggerHaptic('light');
                       item.onSelect();
                     }}
-                    className={`min-h-[36px] py-0.5 rounded-full flex flex-col items-center justify-center gap-0 relative active:scale-95 transition-all cursor-pointer ${
+                    className={`min-h-[38px] py-1 rounded-xl flex flex-col items-center justify-center gap-0.5 relative active:scale-95 transition-all cursor-pointer ${
                       active
-                        ? 'bg-white text-[#050507] shadow-sm'
-                        : 'text-zinc-400 hover:text-zinc-200'
+                        ? 'bg-[#9146FF] text-white shadow-sm'
+                        : 'text-[#ADADB8] hover:text-white'
                     }`}
                   >
                     <div className="relative flex items-center justify-center">
                       <Icon
                         className={`w-3.5 h-3.5 shrink-0 ${
-                          active ? 'text-[#050507]' : 'text-zinc-400'
+                          active ? 'text-white' : 'text-[#ADADB8]'
                         }`}
                         strokeWidth={2.2}
                       />
@@ -5289,8 +5392,8 @@ export function App() {
                         <span
                           className={`absolute -top-1 -right-2 min-w-3.5 h-3.5 px-0.5 rounded-full text-[0.55rem] font-bold flex items-center justify-center tabular-nums shadow-sm ${
                             active
-                              ? 'bg-[#050507] text-white'
-                              : 'bg-white text-[#050507]'
+                              ? 'bg-[#0E0E10] text-white'
+                              : 'bg-[#9146FF] text-white'
                           }`}
                         >
                           {item.badge > 9 ? '9+' : item.badge}
@@ -5299,7 +5402,7 @@ export function App() {
                     </div>
                     <span
                       className={`text-[0.6rem] leading-none tracking-tight whitespace-nowrap shrink-0 ${
-                        active ? 'font-bold text-[#050507]' : 'font-medium text-zinc-400'
+                        active ? 'font-bold text-white' : 'font-medium text-[#ADADB8]'
                       }`}
                     >
                       {item.label}
@@ -5312,14 +5415,14 @@ export function App() {
         )}
         {/* Service Worker Non-Disruptive Update Toast */}
         {swUpdate && (
-          <div className="fixed bottom-20 sm:bottom-6 right-4 z-[70] max-w-xs px-4 py-3 rounded-2xl bg-[#101018]/95 backdrop-blur-xl border border-white/15 shadow-2xl flex items-center justify-between gap-3">
+          <div className="fixed bottom-20 sm:bottom-6 right-4 z-[70] max-w-xs px-4 py-3 rounded-2xl bg-[#18181B]/95 backdrop-blur-xl border border-[#9146FF]/40 shadow-2xl flex items-center justify-between gap-3">
             <div className="text-xs text-white font-semibold">
               Nueva versión de NAIM CINE disponible
             </div>
             <button
               type="button"
               onClick={applySwUpdateNow}
-              className="min-h-8 px-3 rounded-xl bg-[#e11d48] hover:bg-[#f43f5e] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+              className="min-h-8 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
             >
               <RefreshCw className="w-3.5 h-3.5" />
               <span>Actualizar</span>
@@ -5327,52 +5430,54 @@ export function App() {
           </div>
         )}
 
-        {/* Unified F4/F5 Feature Sheets & Modals */}
-        <NotificationCenterSheet
-          isOpen={showNotificationCenter}
-          onClose={() => setShowNotificationCenter(false)}
-          onActionNotification={(item) => {
-            setShowNotificationCenter(false);
-            if (item.roomId && item.roomId !== roomId) {
-              handleSwitchActiveRoom(item.roomId);
-            }
-          }}
-        />
+        <React.Suspense fallback={null}>
+          {/* Unified F4/F5 Feature Sheets & Modals */}
+          <NotificationCenterSheet
+            isOpen={showNotificationCenter}
+            onClose={() => setShowNotificationCenter(false)}
+            onActionNotification={(item) => {
+              setShowNotificationCenter(false);
+              if (item.roomId && item.roomId !== roomId) {
+                handleSwitchActiveRoom(item.roomId);
+              }
+            }}
+          />
 
-        <CommandSearchModal
-          isOpen={showCommandSearch}
-          onClose={() => setShowCommandSearch(false)}
-          movies={quickPool.movies}
-          series={quickPool.series}
-          tdtChannels={quickPool.tdt}
-          onSelectCatalogItem={(item) => {
-            if (item.mediaType === 'tv') {
-              setCatalogSection('series');
-            } else {
-              handlePlayMovie(item, 'ES');
-            }
-          }}
-          onSelectChannel={(ch) => handlePlayTdtChannel(ch, 0)}
-        />
+          <CommandSearchModal
+            isOpen={showCommandSearch}
+            onClose={() => setShowCommandSearch(false)}
+            movies={quickPool.movies}
+            series={quickPool.series}
+            tdtChannels={quickPool.tdt}
+            onSelectCatalogItem={(item) => {
+              if (item.mediaType === 'tv') {
+                setCatalogSection('series');
+              } else {
+                handlePlayMovie(item, 'ES');
+              }
+            }}
+            onSelectChannel={(ch) => handlePlayTdtChannel(ch, 0)}
+          />
 
-        <SurpriseMeModal
-          isOpen={showSurpriseModal}
-          onClose={() => setShowSurpriseModal(false)}
-          movies={quickPool.movies}
-          series={quickPool.series}
-          onPlayItem={(item) => {
-            if (item.mediaType === 'tv') {
-              setCatalogSection('series');
-            } else {
-              handlePlayMovie(item, 'ES');
-            }
-          }}
-        />
+          <SurpriseMeModal
+            isOpen={showSurpriseModal}
+            onClose={() => setShowSurpriseModal(false)}
+            movies={quickPool.movies}
+            series={quickPool.series}
+            onPlayItem={(item) => {
+              if (item.mediaType === 'tv') {
+                setCatalogSection('series');
+              } else {
+                handlePlayMovie(item, 'ES');
+              }
+            }}
+          />
 
-        <LegalPrivacyModal
-          isOpen={showLegalModal}
-          onClose={() => setShowLegalModal(false)}
-        />
+          <LegalPrivacyModal
+            isOpen={showLegalModal}
+            onClose={() => setShowLegalModal(false)}
+          />
+        </React.Suspense>
       </div>
     </div>
   );

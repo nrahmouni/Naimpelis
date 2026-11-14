@@ -123,7 +123,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
 
       ctx.globalCompositeOperation = 'lighter';
 
-      // 2. Overhead IMAX Volumetric Projector Cone (God-Rays)
+      // 2. Overhead Volumetric Broadcast Cone (God-Rays)
       const beamAlpha = (0.06 + 0.11 * ignition) * masterFade * (1 - warpOut * 0.4);
       if (beamAlpha > 0.005) {
         const projGrad = ctx.createRadialGradient(
@@ -134,9 +134,9 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
           cy,
           Math.max(width, height) * 0.95
         );
-        projGrad.addColorStop(0, `rgba(255, 244, 246, ${beamAlpha * 1.45})`);
-        projGrad.addColorStop(0.28, `rgba(225, 29, 72, ${beamAlpha * 0.85})`);
-        projGrad.addColorStop(0.62, `rgba(30, 27, 46, ${beamAlpha * 0.35})`);
+        projGrad.addColorStop(0, `rgba(244, 240, 255, ${beamAlpha * 1.45})`);
+        projGrad.addColorStop(0.28, `rgba(145, 70, 255, ${beamAlpha * 0.9})`);
+        projGrad.addColorStop(0.62, `rgba(24, 24, 27, ${beamAlpha * 0.4})`);
         projGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
         ctx.fillStyle = projGrad;
         ctx.beginPath();
@@ -147,7 +147,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
         ctx.closePath();
         ctx.fill();
 
-        // Subtle Shimmering Projector Ray Shafts
+        // Subtle Shimmering Broadcast Ray Shafts
         const rayCount = 5;
         for (let r = 0; r < rayCount; r++) {
           const offset = (r - (rayCount - 1) / 2) * 0.14;
@@ -155,7 +155,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
           const angle = offset + sway;
           const rayGrad = ctx.createLinearGradient(cx, -20, cx + Math.sin(angle) * height, height * 0.85);
           rayGrad.addColorStop(0, `rgba(255, 255, 255, ${beamAlpha * 0.42})`);
-          rayGrad.addColorStop(0.45, `rgba(225, 29, 72, ${beamAlpha * 0.22})`);
+          rayGrad.addColorStop(0.45, `rgba(145, 70, 255, ${beamAlpha * 0.25})`);
           rayGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
 
           ctx.save();
@@ -172,31 +172,31 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
         const prismScale = 1 + warpOut * 3.4;
         const prismAlpha = impact * (1 - warpOut * 0.42) * masterFade;
 
-        // Ambient Center Netflix Scarlet Halo
+        // Ambient Center Electric Violet Broadcast Halo
         const haloR = minDim * (0.36 + 0.1 * Math.sin(elapsed * 0.0022)) * prismScale;
         const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, haloR);
-        halo.addColorStop(0, `rgba(255, 228, 230, ${0.24 * prismAlpha})`);
-        halo.addColorStop(0.3, `rgba(229, 9, 20, ${0.34 * prismAlpha})`);
-        halo.addColorStop(0.68, `rgba(136, 19, 55, ${0.11 * prismAlpha})`);
+        halo.addColorStop(0, `rgba(235, 224, 255, ${0.24 * prismAlpha})`);
+        halo.addColorStop(0.3, `rgba(145, 70, 255, ${0.38 * prismAlpha})`);
+        halo.addColorStop(0.68, `rgba(92, 22, 197, ${0.14 * prismAlpha})`);
         halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
         ctx.fillStyle = halo;
         ctx.fillRect(0, 0, width, height);
 
         // Multi-Filament Vertical Prismatic Spectrum Bars
         const ribbons = [
-          { xOff: -0.28, w: 1.6, h: 0.62, color: '185, 9, 11', a: 0.34 },
-          { xOff: -0.22, w: 2.8, h: 0.78, color: '229, 9, 20', a: 0.48 },
-          { xOff: -0.17, w: 1.5, h: 0.58, color: '245, 158, 11', a: 0.32 },
-          { xOff: -0.125, w: 3.6, h: 0.88, color: '229, 9, 20', a: 0.56 },
+          { xOff: -0.28, w: 1.6, h: 0.62, color: '119, 44, 232', a: 0.34 },
+          { xOff: -0.22, w: 2.8, h: 0.78, color: '145, 70, 255', a: 0.48 },
+          { xOff: -0.17, w: 1.5, h: 0.58, color: '191, 148, 255', a: 0.32 },
+          { xOff: -0.125, w: 3.6, h: 0.88, color: '145, 70, 255', a: 0.56 },
           { xOff: -0.085, w: 1.8, h: 0.68, color: '56, 189, 248', a: 0.28 },
-          { xOff: -0.045, w: 4.2, h: 0.94, color: '255, 36, 52', a: 0.62 },
-          { xOff: 0.0, w: 5.4, h: 1.0, color: '229, 9, 20', a: 0.68 },
-          { xOff: 0.045, w: 4.0, h: 0.92, color: '255, 36, 52', a: 0.58 },
-          { xOff: 0.088, w: 1.8, h: 0.66, color: '251, 191, 36', a: 0.32 },
-          { xOff: 0.13, w: 3.6, h: 0.86, color: '229, 9, 20', a: 0.54 },
+          { xOff: -0.045, w: 4.2, h: 0.94, color: '169, 112, 255', a: 0.62 },
+          { xOff: 0.0, w: 5.4, h: 1.0, color: '145, 70, 255', a: 0.68 },
+          { xOff: 0.045, w: 4.0, h: 0.92, color: '169, 112, 255', a: 0.58 },
+          { xOff: 0.088, w: 1.8, h: 0.66, color: '0, 245, 147', a: 0.24 },
+          { xOff: 0.13, w: 3.6, h: 0.86, color: '145, 70, 255', a: 0.54 },
           { xOff: 0.175, w: 1.6, h: 0.6, color: '226, 232, 240', a: 0.3 },
-          { xOff: 0.225, w: 2.8, h: 0.76, color: '229, 9, 20', a: 0.46 },
-          { xOff: 0.285, w: 1.6, h: 0.62, color: '185, 9, 11', a: 0.34 },
+          { xOff: 0.225, w: 2.8, h: 0.76, color: '145, 70, 255', a: 0.46 },
+          { xOff: 0.285, w: 1.6, h: 0.62, color: '119, 44, 232', a: 0.34 },
         ];
 
         ribbons.forEach((rb, idx) => {
@@ -213,20 +213,20 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
         });
       }
 
-      // 4. Acoustic Sub-Bass Shockwave Ring at +0.46s ("DUM")
+      // 4. Acoustic Sub-Bass Shockwave Ring at +0.46s
       if (elapsed > 450 && elapsed < 1950) {
         const sw = (elapsed - 450) / 1500;
         const easeSw = 1 - Math.pow(1 - sw, 3);
         const ringR = minDim * (0.08 + easeSw * 0.68);
         const ringAlpha = (1 - sw) * 0.36 * masterFade;
-        ctx.strokeStyle = `rgba(251, 113, 133, ${ringAlpha})`;
+        ctx.strokeStyle = `rgba(191, 148, 255, ${ringAlpha})`;
         ctx.lineWidth = Math.max(1, (1 - sw) * 3.2);
         ctx.beginPath();
         ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
         ctx.stroke();
       }
 
-      // 5. Authentic Panavision Horizontal Anamorphic Lens Flare
+      // 5. Horizontal Anamorphic Broadcast Flare
       const flarePeak =
         elapsed < 560
           ? elapsed / 560
@@ -234,24 +234,22 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
       const flareAlpha = Math.min(1, flarePeak) * masterFade;
       if (flareAlpha > 0.01) {
         const streakW = Math.min(width * 0.92, 960) * (0.35 + 0.65 * ignition) * (1 + warpOut * 0.5);
-        // Primary Horizontal Optical Streak (Ice-Cobalt + Crimson Core)
         const streakGrad = ctx.createLinearGradient(cx - streakW * 0.5, cy, cx + streakW * 0.5, cy);
         streakGrad.addColorStop(0, 'rgba(148, 163, 184, 0)');
         streakGrad.addColorStop(0.22, `rgba(186, 230, 253, ${0.16 * flareAlpha})`);
-        streakGrad.addColorStop(0.45, `rgba(251, 113, 133, ${0.48 * flareAlpha})`);
-        streakGrad.addColorStop(0.5, `rgba(255, 255, 255, ${0.82 * flareAlpha})`);
-        streakGrad.addColorStop(0.55, `rgba(251, 113, 133, ${0.48 * flareAlpha})`);
+        streakGrad.addColorStop(0.45, `rgba(191, 148, 255, ${0.52 * flareAlpha})`);
+        streakGrad.addColorStop(0.5, `rgba(255, 255, 255, ${0.84 * flareAlpha})`);
+        streakGrad.addColorStop(0.55, `rgba(191, 148, 255, ${0.52 * flareAlpha})`);
         streakGrad.addColorStop(0.78, `rgba(186, 230, 253, ${0.16 * flareAlpha})`);
         streakGrad.addColorStop(1, 'rgba(148, 163, 184, 0)');
 
         ctx.fillStyle = streakGrad;
         ctx.fillRect(cx - streakW * 0.5, cy - 1.3, streakW, 2.6);
 
-        // Soft Wide Anamorphic Bloom Band
         const softGrad = ctx.createLinearGradient(cx - streakW * 0.38, cy, cx + streakW * 0.38, cy);
-        softGrad.addColorStop(0, 'rgba(225, 29, 72, 0)');
-        softGrad.addColorStop(0.5, `rgba(225, 29, 72, ${0.2 * flareAlpha})`);
-        softGrad.addColorStop(1, 'rgba(225, 29, 72, 0)');
+        softGrad.addColorStop(0, 'rgba(145, 70, 255, 0)');
+        softGrad.addColorStop(0.5, `rgba(145, 70, 255, ${0.24 * flareAlpha})`);
+        softGrad.addColorStop(1, 'rgba(145, 70, 255, 0)');
         ctx.fillStyle = softGrad;
         ctx.fillRect(cx - streakW * 0.38, cy - 14, streakW * 0.76, 28);
       }
@@ -286,9 +284,9 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
 
         const rgb =
           m.hue === 'crimson'
-            ? '251, 113, 133'
+            ? '191, 148, 255'
             : m.hue === 'gold'
-            ? '253, 224, 71'
+            ? '145, 70, 255'
             : '241, 245, 249';
 
         if (isBokeh) {
@@ -387,15 +385,15 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
         className="relative z-20 flex flex-col items-center px-6"
         style={{ perspective: '1200px' }}
       >
-        {/* 3D Folded Netflix-Scarlet "N C" Ribbon Emblem */}
+        {/* 3D Electric Violet Broadcast Emblem */}
         <div className="relative animate-naim-monolith-3d">
-          {/* Sub-Surface Volumetric Scarlet Backlight */}
+          {/* Sub-Surface Volumetric Violet Backlight */}
           <div
             aria-hidden="true"
-            className="absolute -inset-7 rounded-[46px] bg-radial from-[#E50914]/50 via-[#E50914]/14 to-transparent blur-2xl pointer-events-none"
+            className="absolute -inset-7 rounded-[46px] bg-radial from-[#9146FF]/55 via-[#9146FF]/16 to-transparent blur-2xl pointer-events-none"
           />
 
-          <div className="relative rounded-[36px] shadow-[0_30px_90px_rgba(0,0,0,0.95),0_0_85px_rgba(229,9,20,0.42)] overflow-hidden">
+          <div className="relative rounded-[36px] shadow-[0_30px_90px_rgba(0,0,0,0.95),0_0_85px_rgba(145,70,255,0.45)] overflow-hidden">
             <NaimBrandLogo size={168} animated />
 
             {/* Specular Glass Glint Sweeping Across Monolith */}
@@ -406,21 +404,21 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
           </div>
         </div>
 
-        {/* Extruded Brushed-Platinum & Ruby-Chrome Cinema Wordmark */}
+        {/* Extruded Wordmark */}
         <div className="mt-7 sm:mt-8 text-center animate-naim-wordmark-3d">
           <div className="font-display font-extrabold text-3xl sm:text-5xl md:text-6xl tracking-[0.24em] pl-[0.24em] leading-none flex items-center justify-center gap-3 sm:gap-4">
-            <span className="naim-metallic-platinum">NAIM</span>
-            <span className="naim-metallic-ruby">CINE</span>
+            <span className="text-white">NAIM</span>
+            <span className="text-[#A970FF]">CINE</span>
           </div>
 
           {/* Hairline Optical Divider */}
           <div
             aria-hidden="true"
-            className="mx-auto mt-3.5 h-[1px] w-44 sm:w-64 bg-gradient-to-r from-transparent via-white/30 to-transparent"
+            className="mx-auto mt-3.5 h-[1px] w-44 sm:w-64 bg-gradient-to-r from-transparent via-[#9146FF]/60 to-transparent"
           />
 
           <p className="mt-3 text-[10px] sm:text-xs uppercase tracking-[0.28em] text-zinc-300/90 font-medium">
-            {subtitle || 'Private Cinema · 1080p HDR · Real-Time Sync'}
+            {subtitle || 'Live Broadcast · 1080p HDR · Real-Time Sync'}
           </p>
         </div>
       </div>
@@ -436,7 +434,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
             }}
             className="min-h-[38px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-[11px] font-medium text-zinc-300 flex items-center gap-1.5 transition-colors cursor-pointer"
           >
-            <Volume2 className="w-3.5 h-3.5 text-[#E11D48]" />
+            <Volume2 className="w-3.5 h-3.5 text-[#9146FF]" />
             <span>Sonido Cinema</span>
           </button>
         ) : (

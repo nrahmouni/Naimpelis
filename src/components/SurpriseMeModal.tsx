@@ -65,8 +65,8 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
             }}
             className={`min-h-9 px-3 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
               mood === m.id
-                ? 'bg-[#e11d48] text-white'
-                : 'bg-white/[0.06] text-zinc-300 hover:bg-white/[0.11]'
+                ? 'bg-[#9146FF] text-white'
+                : 'bg-[#26262C] text-[#EFEFF1] hover:bg-white/[0.14]'
             }`}
           >
             {m.icon}

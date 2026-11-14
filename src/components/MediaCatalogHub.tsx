@@ -61,6 +61,7 @@ import {
 } from '../utils/storage';
 import { MediaDetailsModal } from './MediaDetailsModal';
 import { FootballMatchboard } from './FootballMatchboard';
+import { ExpandedDiscoverySection } from './ExpandedDiscoverySection';
 import { BottomSheet, PrimaryButton, StandardInput } from './ui/DesignSystem';
 import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.jpg';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
@@ -4185,6 +4186,31 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </div>
                 </section>
               )}
+
+              {/* Expanded Discovery: 24/7 FAST Channels, 6 Editorial Collections & 14-Genre Explorer */}
+              <ExpandedDiscoverySection
+                lang={lang}
+                onSelectItem={(item) => setPreviewItem(item)}
+                onPlayFastChannel={(ch) => {
+                  if (ch.mode === 'youtube' && ch.youtubeId) {
+                    onPlayYouTubeVideo({
+                      id: ch.id,
+                      videoId: ch.youtubeId,
+                      title: ch.name,
+                      channel: ch.quality,
+                      duration: 'LIVE',
+                      views: '24/7',
+                      thumbnail: `https://i.ytimg.com/vi/${ch.youtubeId}/hqdefault.jpg`,
+                      url: ch.streamUrl,
+                    });
+                  } else {
+                    onPlayCustomUrl(ch.streamUrl);
+                  }
+                }}
+                onAddToQueue={onAddToQueue}
+                isBookmarked={isBookmarked}
+                onToggleBookmark={(item) => onToggleCatalogFavorite(item)}
+              />
             </>
           )}
         </div>
@@ -4971,7 +4997,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
                       {isNowInRoom ? (
                         <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-[#E11D48] text-white text-[10px] font-bold flex items-center gap-1 shadow-md">
-                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-white" />
                           <span>En sala</span>
                         </div>
                       ) : watchedPct >= 90 ? (
@@ -5476,7 +5502,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
                       {isSeriesInRoom ? (
                         <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-[#E11D48] text-white text-[10px] font-bold flex items-center gap-1 shadow-md">
-                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-white" />
                           <span>En sala</span>
                         </div>
                       ) : seriesHistory?.season && seriesHistory?.episode ? (
@@ -6111,7 +6137,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
                       {isAnimeInRoom ? (
                         <div className="absolute top-2.5 left-2.5 z-10 px-2 py-0.5 rounded-md bg-[#E11D48] text-white text-[10px] font-bold flex items-center gap-1 shadow-md">
-                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+                          <span className="w-1.5 h-1.5 rounded-full bg-white" />
                           <span>En sala</span>
                         </div>
                       ) : isSeriesCard && animeHistory?.season && animeHistory?.episode ? (

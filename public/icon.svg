@@ -1,11 +1,8 @@
 <svg width="512" height="512" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="2" y="2" width="96" height="96" rx="22" fill="#0B0C10" stroke="#1E2028" stroke-width="2.5" />
-  <!-- Left White Pillar with Diagonal Cut -->
-  <path d="M 21 43.5 L 34.5 63.5 L 34.5 80 L 21 80 Z" fill="#F8FAFC" />
-  <!-- Right White Pillar with Diagonal Cut -->
-  <path d="M 65.5 20 L 79 20 L 79 56.5 L 65.5 36.5 Z" fill="#F8FAFC" />
-  <!-- Center Crimson Diagonal Ribbon -->
-  <path d="M 21 20 L 38.5 20 L 79 80 L 61.5 80 Z" fill="#E11D48" />
-  <!-- Center White Play Triangle -->
-  <path d="M 46.8 44.2 L 56.2 50.0 L 46.8 55.8 Z" fill="#FFFFFF" />
+  <rect x="2" y="2" width="96" height="96" rx="22" fill="#0E0E10" stroke="#27272F" stroke-width="2.5" />
+  <path d="M 22 18 H 82 V 63 L 68 77 H 52 L 40 87 V 77 H 22 V 32 L 22 18 Z" fill="#9146FF" />
+  <path d="M 31 27 H 73 V 58 L 63 68 H 47 L 39 75 V 68 H 31 V 27 Z" fill="#0E0E10" />
+  <rect x="41" y="37" width="5.5" height="17" rx="2.75" fill="#FFFFFF" />
+  <rect x="52" y="37" width="5.5" height="17" rx="2.75" fill="#FFFFFF" />
+  <path d="M 62.5 38.5 L 70 45.5 L 62.5 52.5 Z" fill="#FFFFFF" />
 </svg>

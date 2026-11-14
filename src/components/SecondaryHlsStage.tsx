@@ -105,7 +105,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
       className={
         isSplit
           ? 'relative w-1/2 h-full bg-black border-l border-white/15 overflow-hidden select-none'
-          : `absolute ${cornerClasses} z-35 w-[42%] max-w-[280px] aspect-video rounded-2xl overflow-hidden bg-[#050508] border border-white/20 shadow-[0_14px_40px_rgba(0,0,0,0.95)] select-none transition-all duration-200`
+          : `absolute ${cornerClasses} z-35 w-[42%] max-w-[280px] aspect-video rounded-2xl overflow-hidden bg-[#0E0E10] border border-white/20 shadow-[0_14px_40px_rgba(0,0,0,0.95)] select-none transition-all duration-200`
       }
     >
       <video
@@ -128,7 +128,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
 
       {buffering && (
         <div className="pointer-events-none absolute inset-0 bg-black/60 flex items-center justify-center">
-          <Loader2 className="w-5 h-5 animate-spin text-[#E11D48]" />
+          <Loader2 className="w-5 h-5 animate-spin text-[#9146FF]" />
         </div>
       )}
 
@@ -151,7 +151,7 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
                 ? 'Pasar este partido al principal con sonido'
                 : 'Swap to main screen with audio'
             }
-            className="h-6 px-2 rounded-lg bg-white hover:bg-zinc-200 text-[#050508] text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
+            className="h-6 px-2 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
           >
             <ArrowLeftRight className="w-3 h-3" />
             <span className="hidden sm:inline">

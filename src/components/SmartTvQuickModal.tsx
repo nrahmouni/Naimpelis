@@ -65,7 +65,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
   const tvUrl = buildTvPairingUrl();
   const iptvM3uUrl = `${publicOrigin}/naim-cine.m3u`;
   const iptvEpgUrl = `${publicOrigin}/epg.xml`;
-  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&bgcolor=050508&color=FFFFFF&data=${encodeURIComponent(
+  const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&bgcolor=0E0E10&color=FFFFFF&data=${encodeURIComponent(
     tvUrl
   )}`;
 
@@ -195,9 +195,9 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
         /* ================================================================== */
         <div className="space-y-3.5">
           {/* 1. Instant 1-Tap Direct Cast Banner (Chromecast / AirPlay 2 / Smart View) */}
-          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-white/10 flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-2xl bg-[#18181B] border border-white/10 flex items-center justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-[#FB7185] flex items-center gap-1.5">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF] flex items-center gap-1.5">
                 <Cast className="w-3.5 h-3.5" />
                 <span>Opción A · Cast Directo</span>
               </div>
@@ -222,11 +222,11 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
           {/* 1. Primary Option A: 1-Step 4-Digit Smart TV Code Pairing */}
           <form
             onSubmit={handleSubmit}
-            className="p-4 rounded-2xl bg-white/[0.04] border border-[#E11D48]/30 space-y-3"
+            className="p-4 rounded-2xl bg-white/[0.04] border border-[#9146FF]/35 space-y-3"
           >
             <div className="flex items-center justify-between gap-2">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-wider text-[#FB7185]">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF]">
                   Opción A · Código Smart TV (4 dígitos)
                 </div>
                 <p className="text-xs text-zinc-300 mt-0.5">
@@ -246,7 +246,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                   setTvCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))
                 }
                 placeholder="0000"
-                className="flex-1 h-14 rounded-2xl bg-black/80 border border-white/15 focus:border-[#E11D48] text-center font-mono text-2xl font-bold tracking-[0.4em] text-white placeholder:text-zinc-700 focus:outline-none transition-all"
+                className="flex-1 h-14 rounded-2xl bg-[#0E0E10] border border-white/15 focus:border-[#9146FF] text-center font-mono text-2xl font-bold tracking-[0.4em] text-white placeholder:text-zinc-700 focus:outline-none transition-all"
               />
 
               <PrimaryButton
@@ -268,7 +268,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 className="w-full py-1.5 text-xs font-medium text-zinc-400 hover:text-white flex items-center justify-between cursor-pointer transition-colors"
               >
                 <span className="flex items-center gap-1.5">
-                  <QrCode className="w-3.5 h-3.5 text-[#FB7185]" />
+                  <QrCode className="w-3.5 h-3.5 text-[#BF94FF]" />
                   <span>¿Cómo abro el código en mi televisor? (Enlace y QR)</span>
                 </span>
                 {showTvGuide ? (
@@ -281,7 +281,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               {showTvGuide && (
                 <div className="mt-2.5 p-3 rounded-2xl bg-black/60 border border-white/10 space-y-3 animate-fade-in">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="font-mono text-xs font-bold text-[#FB7185] truncate select-all">
+                    <span className="font-mono text-xs font-bold text-[#BF94FF] truncate select-all">
                       {tvUrl.replace(/^https?:\/\//, '')}
                     </span>
                     <button
@@ -320,34 +320,34 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
           </form>
 
           {/* 2. Option B: Direct Native Google TV & Android Mobile APKs + IPTV */}
-          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-white/12 flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-2xl bg-[#18181B] border border-white/12 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-1.5">
-                <Download className="w-3.5 h-3.5 text-[#FB7185]" />
+                <Download className="w-3.5 h-3.5 text-[#BF94FF]" />
                 <span>Opción B · App Nativa Google TV (.APK)</span>
               </div>
               <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
-                Funciona 100% con el mando físico de tu tele sin usar el móvil.
+                Misma interfaz que la Web, 100% con el mando físico de tu tele.
               </p>
             </div>
             <a
               href="/NAIM-CINE-TV.apk?v=240"
               download="NAIM-CINE-TV.apk"
-              className="min-h-[42px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
+              className="min-h-[42px] px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
             >
               <Download className="w-4 h-4 shrink-0" />
               <span>APK TV</span>
             </a>
           </div>
 
-          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-white/12 flex items-center justify-between gap-3">
+          <div className="p-3.5 rounded-2xl bg-[#18181B] border border-white/12 flex items-center justify-between gap-3">
             <div className="min-w-0">
               <div className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <Download className="w-3.5 h-3.5 text-[#FB7185]" />
+                <Download className="w-3.5 h-3.5 text-[#BF94FF]" />
                 <span>App Nativa Móvil Android (.APK)</span>
               </div>
               <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
-                Buscador de Cine y Series, motor Media3 HD, Fútbol en directo, Deportes y TDT España.
+                Motor Media3 HD, salas en directo, Fútbol, Series y TDT España.
               </p>
             </div>
             <a
@@ -355,13 +355,13 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               download="NAIM-CINE.apk"
               className="min-h-[42px] px-3.5 rounded-xl bg-white/[0.1] hover:bg-white/[0.16] border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
             >
-              <Download className="w-4 h-4 text-[#FB7185] shrink-0" />
+              <Download className="w-4 h-4 text-[#BF94FF] shrink-0" />
               <span>APK Móvil</span>
             </a>
           </div>
 
           {/* Samsung Smart TV IPTV (.M3U Playlist + XMLTV EPG) */}
-          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-sky-500/25 space-y-2.5">
+          <div className="p-3.5 rounded-2xl bg-[#18181B] border border-sky-500/25 space-y-2.5">
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="text-[11px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
@@ -428,7 +428,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               onClick={() => setForceShowRemote(true)}
               fullWidth
             >
-              <Tv className="w-4 h-4 text-[#E11D48]" />
+              <Tv className="w-4 h-4 text-[#BF94FF]" />
               <span>Abrir Mando TV</span>
             </SecondaryButton>
 

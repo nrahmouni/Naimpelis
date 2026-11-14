@@ -4,6 +4,7 @@ import type express from 'express';
 import { ENV, ROOT_DIR } from '../config/env.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { logger } from '../utils/logger.ts';
+import { serviceMesh } from '../gateway/serviceMesh.ts';
 
 export interface QoeSample {
   id: string;
@@ -43,6 +44,21 @@ export function registerOperationalRoutes(
       uptimeSec: stats.uptimeSec,
       rooms: stats.roomsCount,
       clients: stats.connectedClientsCount,
+      microservices: serviceMesh.getAllStatuses().map((s) => ({
+        id: s.id,
+        status: s.status,
+        avgLatencyMs: s.avgLatencyMs,
+        requestsTotal: s.requestsTotal,
+      })),
+      ts: Date.now(),
+    });
+  });
+
+  app.get('/api/services/status', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      services: serviceMesh.getAllStatuses(),
       ts: Date.now(),
     });
   });
@@ -104,9 +120,9 @@ export function registerOperationalRoutes(
         apkUrl: `${origin}/NAIM-CINE.apk?v=${ENV.appVersionCodeMobile}`,
         sizeBytes: mobileBytes,
         changelog: {
-          es: 'Motor Media3/ExoPlayer mejorado, PiP en vivo, interfaz OLED Apple TV+ y avisos en tiempo real.',
-          ca: 'Motor Media3/ExoPlayer millorat, PiP en directe, interfície OLED Apple TV+ i avisos en temps real.',
-          en: 'Upgraded Media3/ExoPlayer engine, live PiP, Apple TV+ OLED UI, and real-time notifications.',
+          es: 'Nueva interfaz en directo estilo Twitch, motor Media3/ExoPlayer mejorado, PiP en vivo y salas en tiempo real.',
+          ca: 'Nova interfície en directe estil Twitch, motor Media3/ExoPlayer millorat, PiP en directe i sales en temps real.',
+          en: 'New live Twitch-style broadcast interface, upgraded Media3/ExoPlayer engine, live PiP, and real-time rooms.',
         },
       },
       tv: {
@@ -118,9 +134,9 @@ export function registerOperationalRoutes(
         apkUrl: `${origin}/NAIM-CINE-TV.apk?v=${ENV.appVersionCodeTv}`,
         sizeBytes: tvBytes,
         changelog: {
-          es: 'Navegación 10-foot con mando físico D-Pad, Watch Next en Google TV y reproducción 4K fluida.',
-          ca: 'Navegació 10-foot amb comandament físic D-Pad, Watch Next a Google TV i reproducció 4K fluida.',
-          en: '10-foot D-Pad navigation, Google TV Watch Next channels, and smooth 4K playback.',
+          es: 'Identidad unificada estilo Twitch para Google TV, navegación 10-foot D-Pad y reproducción 4K fluida.',
+          ca: 'Identitat unificada estil Twitch per a Google TV, navegació 10-foot D-Pad i reproducció 4K fluida.',
+          en: 'Unified Twitch-style Google TV interface, 10-foot D-Pad navigation, and smooth 4K playback.',
         },
       },
     };

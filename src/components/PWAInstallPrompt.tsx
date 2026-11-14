@@ -38,7 +38,7 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         } rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-xs font-semibold text-white flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer`}
         title={lang === 'es' ? 'Descargar App NAIM CINE' : 'Download NAIM CINE App'}
       >
-        <Download className="w-3.5 h-3.5 text-[#E11D48]" />
+        <Download className="w-3.5 h-3.5 text-[#BF94FF]" />
         <span className={compact ? 'hidden md:inline' : 'inline'}>
           {lang === 'es' ? 'Descargar App' : 'Download App'}
         </span>
@@ -90,24 +90,24 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
         aria-label={
           lang === 'es' ? 'Descargar aplicación NAIM CINE' : 'Download NAIM CINE App'
         }
-        className={`rounded-3xl bg-[#0D0D12]/90 backdrop-blur-xl border border-white/[0.09] p-4 ${
+        className={`rounded-3xl bg-[#18181B]/95 backdrop-blur-xl border border-white/[0.09] p-4 ${
           isDesktop ? 'lg:p-5 lg:flex-row lg:items-center' : ''
         } flex flex-col justify-between gap-4 shadow-[0_20px_60px_rgba(0,0,0,0.65)]`}
       >
         <div className="flex items-start gap-3.5 min-w-0">
           <NaimBrandLogo
             size={46}
-            className="shrink-0 shadow-[0_0_24px_rgba(225,29,72,0.22)]"
+            className="shrink-0 shadow-[0_0_24px_rgba(145,70,255,0.28)]"
           />
 
           <div className="min-w-0 space-y-1">
             <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-zinc-400">
               <span className="inline-flex items-center gap-1 text-zinc-200 font-medium">
-                <Smartphone className="w-3.5 h-3.5 text-[#E11D48] shrink-0" />
+                <Smartphone className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
                 <span>APK Android</span>
               </span>
               <span aria-hidden="true">·</span>
-              <span>Android TV Box</span>
+              <span>Google TV</span>
               <span aria-hidden="true">·</span>
               <span>iPhone &amp; iPad</span>
               {isDesktop && (
@@ -123,14 +123,14 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
 
             <h2 className="font-display font-bold text-sm text-white">
               {lang === 'es'
-                ? 'Instala NAIM CINE · Apps Nativas Android Móvil y Google TV'
-                : 'Install NAIM CINE · Native Android Mobile & Google TV Apps'}
+                ? 'Instala NAIM CINE · Misma experiencia en Web, Android y Google TV'
+                : 'Install NAIM CINE · Unified Web, Android Mobile & Google TV Apps'}
             </h2>
 
             <p className="text-xs text-zinc-400 leading-relaxed">
               {lang === 'es'
-                ? 'Descarga el APK nativo para Móvil Android (Cine y Series HD, motor Media3/ExoPlayer, Fútbol en directo, Deportes y TDT) o la versión para Google TV / Chromecast.'
-                : 'Download the native Android Mobile APK (Movie & Series HD, Media3/ExoPlayer engine, Live Football, Sports, Live TV) or the Google TV / Chromecast APK.'}
+                ? 'Descarga el APK para Móvil Android o Google TV / Chromecast con el mismo diseño en directo, motor Media3 HD, Fútbol y TDT.'
+                : 'Download the native Android Mobile or Google TV / Chromecast APK with the exact same live interface, Media3 HD engine, Sports & Live TV.'}
             </p>
           </div>
         </div>
@@ -144,7 +144,7 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
             href="/NAIM-CINE.apk?v=14"
             download="NAIM-CINE.apk"
             onClick={() => triggerHaptic('success')}
-            className="min-h-11 px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all shadow-[0_12px_32px_rgba(225,29,72,0.34)]"
+            className="min-h-11 px-5 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all shadow-[0_12px_32px_rgba(145,70,255,0.34)]"
           >
             <Download className="w-4 h-4 text-white shrink-0" />
             <span>
@@ -158,7 +158,7 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
             onClick={() => triggerHaptic('success')}
             className="min-h-11 px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all"
           >
-            <Tv className="w-4 h-4 text-[#FB7185] shrink-0" />
+            <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
             <span>
               {lang === 'es'
                 ? 'APK Google TV / Chromecast'
@@ -169,9 +169,9 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
           <button
             type="button"
             onClick={handleInstallNow}
-            className="min-h-11 px-4 rounded-2xl bg-white hover:bg-zinc-200 active:scale-[0.98] text-[#050507] font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all"
+            className="min-h-11 px-4 rounded-2xl bg-white hover:bg-zinc-200 active:scale-[0.98] text-[#0E0E10] font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all"
           >
-            <Smartphone className="w-4 h-4 text-[#050507] shrink-0" />
+            <Smartphone className="w-4 h-4 text-[#0E0E10] shrink-0" />
             <span>
               {lang === 'es' ? 'iPhone / PC' : 'iPhone / PC'}
             </span>
@@ -211,7 +211,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-[#101015] border-t sm:border border-white/12 p-6 pb-safe shadow-[0_28px_90px_rgba(0,0,0,0.92)] space-y-4"
+        className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-[#18181B] border-t sm:border border-white/12 p-6 pb-safe shadow-[0_28px_90px_rgba(0,0,0,0.92)] space-y-4"
       >
         <div className="sm:hidden pt-0.5">
           <div className="sheet-handle" />
@@ -246,13 +246,13 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
         </div>
 
         {!isIOS && (
-          <div className="p-3.5 rounded-2xl bg-[#07070A] border border-white/[0.09] space-y-2.5">
+          <div className="p-3.5 rounded-2xl bg-[#0E0E10] border border-white/[0.09] space-y-2.5">
             <p className="text-xs text-zinc-300 leading-relaxed">
               {lang === 'es' ? (
                 <>
                   <strong>Google TV &amp; Chromecast (Mando físico TV):</strong> Descarga{' '}
                   <span className="font-mono text-white">NAIM-CINE-TV.apk</span> y envíalo a tu tele (Send Files to TV / USB / Downloader{' '}
-                  <span className="font-mono text-[#FB7185]">
+                  <span className="font-mono text-[#BF94FF]">
                     {typeof window !== 'undefined' ? `${window.location.host}/tv.apk` : '/tv.apk'}
                   </span>
                   ).
@@ -268,7 +268,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
               href="/NAIM-CINE.apk?v=14"
               download="NAIM-CINE.apk"
               onClick={() => triggerHaptic('success')}
-              className="w-full min-h-[44px] px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
+              className="w-full min-h-[44px] px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
             >
               <Download className="w-4 h-4 shrink-0" />
               <span>
@@ -284,7 +284,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
               onClick={() => triggerHaptic('success')}
               className="w-full min-h-[42px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/12 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
             >
-              <Tv className="w-4 h-4 text-[#FB7185] shrink-0" />
+              <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
               <span>
                 {lang === 'es'
                   ? 'Descargar APK Google TV / Chromecast'
@@ -295,7 +295,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
         )}
 
         {isIOS ? (
-          <div className="space-y-3 text-xs sm:text-sm text-zinc-300 bg-[#07070A] p-4 rounded-2xl border border-white/[0.08]">
+          <div className="space-y-3 text-xs sm:text-sm text-zinc-300 bg-[#0E0E10] p-4 rounded-2xl border border-white/[0.08]">
             <div className="flex items-start gap-2.5">
               <Share className="w-4 h-4 text-white shrink-0 mt-0.5" />
               <p>
@@ -311,7 +311,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
               </p>
             </div>
             <div className="flex items-start gap-2.5">
-              <Download className="w-4 h-4 text-[#E11D48] shrink-0 mt-0.5" />
+              <Download className="w-4 h-4 text-[#9146FF] shrink-0 mt-0.5" />
               <p>
                 {lang === 'es' ? (
                   <>
@@ -326,7 +326,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
             </div>
           </div>
         ) : (
-          <div className="space-y-3 text-xs sm:text-sm text-zinc-300 bg-[#07070A] p-4 rounded-2xl border border-white/[0.08]">
+          <div className="space-y-3 text-xs sm:text-sm text-zinc-300 bg-[#0E0E10] p-4 rounded-2xl border border-white/[0.08]">
             <div className="flex items-start gap-2.5">
               <MoreVertical className="w-4 h-4 text-white shrink-0 mt-0.5" />
               <p>
@@ -367,7 +367,7 @@ export const OfflineIndicator: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
 
   return (
     <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl bg-amber-500/95 px-3.5 py-2 text-xs font-semibold text-zinc-950 shadow-lg">
-      <span className="h-2 w-2 rounded-full bg-zinc-950 animate-pulse" />
+      <span className="h-2 w-2 rounded-full bg-zinc-950" />
       <span>
         {lang === 'es'
           ? 'Sin conexión — Reconectando automáticamente...'

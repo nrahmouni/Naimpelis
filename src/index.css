@@ -1,24 +1,26 @@
 @import "tailwindcss";
+@custom-variant dark (&:where(.dark, .dark *));
 
 /* ==========================================================================
    NAIM CINE — DESIGN SYSTEM TOKENS (@theme + Semantic Variables)
-   Apple TV+ / Infuse Obsidian & Crimson Palette · AA WCAG Audited
+   Twitch-Style Broadcast Dark & Electric Violet Palette · AA WCAG Audited
    ========================================================================== */
 @theme {
-  --color-bg-canvas: #08090d;
-  --color-bg-elevated: #0f1118;
-  --color-bg-surface: #161923;
-  --color-bg-subtle: #1e2230;
-  --color-text-primary: #f4f5f8;
-  --color-text-secondary: #9499a8;
-  --color-text-muted: #707687;
-  --color-accent: #e11d48;
-  --color-accent-hover: #be123c;
+  --color-bg-canvas: #0e0e10;
+  --color-bg-elevated: #18181b;
+  --color-bg-surface: #1f1f23;
+  --color-bg-subtle: #26262c;
+  --color-text-primary: #efeff1;
+  --color-text-secondary: #adadb8;
+  --color-text-muted: #848494;
+  --color-accent: #9146ff;
+  --color-accent-hover: #772ce8;
+  --color-live: #eb0400;
   --color-border-subtle: rgba(255, 255, 255, 0.08);
   --color-border-strong: rgba(255, 255, 255, 0.16);
 
-  --radius-card: 16px;
-  --radius-sheet: 24px;
+  --radius-card: 12px;
+  --radius-sheet: 20px;
   --radius-pill: 9999px;
 
   --shadow-elevation-1: 0 4px 14px rgba(0, 0, 0, 0.45);
@@ -32,50 +34,50 @@
     --font-display: 'Outfit', 'Plus Jakarta Sans', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
 
-    --nc-bg-canvas: #08090d;
-    --nc-bg-elevated: #0f1118;
-    --nc-bg-surface: #161923;
-    --nc-bg-subtle: #1e2230;
-    --nc-text-primary: #f4f5f8;
-    --nc-text-secondary: #9499a8;
-    --nc-accent: #e11d48;
-    --nc-border: rgba(255, 255, 255, 0.085);
-    --ambient-poster-glow: rgba(225, 29, 72, 0.28);
-    --nc-blur: 32px;
+    --nc-bg-canvas: #0e0e10;
+    --nc-bg-elevated: #18181b;
+    --nc-bg-surface: #1f1f23;
+    --nc-bg-subtle: #26262c;
+    --nc-text-primary: #efeff1;
+    --nc-text-secondary: #adadb8;
+    --nc-accent: #9146ff;
+    --nc-border: rgba(255, 255, 255, 0.08);
+    --ambient-poster-glow: rgba(145, 70, 255, 0.28);
+    --nc-blur: 24px;
     --nc-density-pad: 1rem;
   }
 
   /* OLED Pure Black Theme */
   :root[data-theme="oled"] {
     --nc-bg-canvas: #000000;
-    --nc-bg-elevated: #060709;
-    --nc-bg-surface: #0e1117;
-    --nc-bg-subtle: #151922;
-    --nc-text-primary: #f8f9fc;
-    --nc-text-secondary: #8c93a4;
+    --nc-bg-elevated: #0b0b0e;
+    --nc-bg-surface: #141418;
+    --nc-bg-subtle: #1d1d24;
+    --nc-text-primary: #efeff1;
+    --nc-text-secondary: #adadb8;
     --nc-border: rgba(255, 255, 255, 0.08);
   }
 
   /* Soft Dark Theme */
   :root[data-theme="soft-dark"] {
-    --nc-bg-canvas: #10131c;
-    --nc-bg-elevated: #171b28;
-    --nc-bg-surface: #1f2536;
-    --nc-bg-subtle: #283045;
+    --nc-bg-canvas: #121216;
+    --nc-bg-elevated: #1a1a20;
+    --nc-bg-surface: #23232b;
+    --nc-bg-subtle: #2d2d37;
     --nc-text-primary: #f6f7fb;
-    --nc-text-secondary: #a5acc0;
+    --nc-text-secondary: #b4b4c0;
     --nc-border: rgba(255, 255, 255, 0.11);
   }
 
-  /* Dark Theme (Standard) */
+  /* Dark Theme (Standard Twitch Broadcast) */
   :root[data-theme="dark"] {
-    --nc-bg-canvas: #0b0d13;
-    --nc-bg-elevated: #121620;
-    --nc-bg-surface: #1a202c;
-    --nc-bg-subtle: #242c3d;
-    --nc-text-primary: #f1f3f9;
-    --nc-text-secondary: #9aa1b4;
-    --nc-border: rgba(255, 255, 255, 0.09);
+    --nc-bg-canvas: #0e0e10;
+    --nc-bg-elevated: #18181b;
+    --nc-bg-surface: #1f1f23;
+    --nc-bg-subtle: #26262c;
+    --nc-text-primary: #efeff1;
+    --nc-text-secondary: #adadb8;
+    --nc-border: rgba(255, 255, 255, 0.08);
   }
 
   /* Light Theme */
@@ -173,7 +175,7 @@
     border-radius: 9999px;
   }
   .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgba(225, 29, 72, 0.55);
+    background: rgba(145, 70, 255, 0.65);
   }
 
   .no-scrollbar::-webkit-scrollbar {
@@ -379,7 +381,7 @@ html.tv-dpad-active *:focus {
   outline: 3px solid #ffffff !important;
   outline-offset: 3px !important;
   box-shadow:
-    0 0 0 6px rgba(225, 29, 72, 0.78),
+    0 0 0 6px rgba(145, 70, 255, 0.85),
     0 16px 38px rgba(0, 0, 0, 0.85) !important;
   z-index: 30;
   transition:

@@ -334,9 +334,9 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
   const digits = pairingCode ? pairingCode.split('') : ['•', '•', '•', '•'];
 
   return (
-    <div className="min-h-screen w-full bg-[#050507] text-[#F5F5F7] flex flex-col justify-between p-5 sm:p-10 lg:p-12 relative overflow-x-hidden select-none">
-      {/* Ambient Salon Cinema Lighting */}
-      <div className="pointer-events-none fixed -top-48 left-1/2 -translate-x-1/2 w-[780px] h-[360px] rounded-full bg-[#E11D48]/14 blur-[150px]" />
+    <div className="min-h-screen w-full bg-[#0E0E10] text-[#EFEFF1] flex flex-col justify-between p-5 sm:p-10 lg:p-12 relative overflow-x-hidden select-none">
+      {/* Ambient Broadcast Lighting */}
+      <div className="pointer-events-none fixed -top-48 left-1/2 -translate-x-1/2 w-[780px] h-[360px] rounded-full bg-[#9146FF]/16 blur-[150px]" />
 
       {/* Top TV Header */}
       <header className="relative z-10 flex flex-wrap items-center justify-between gap-4">
@@ -344,7 +344,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           <NaimBrandLogo size={46} />
           <div>
             <div className="font-display font-bold text-lg sm:text-2xl tracking-[0.14em] text-white">
-              NAIM <span className="text-[#E11D48]">CINE</span>{' '}
+              NAIM <span className="text-[#9146FF]">CINE</span>{' '}
               <span className="text-zinc-300 font-semibold text-sm sm:text-base tracking-normal ml-1">
                 Smart TV
               </span>
@@ -393,7 +393,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
       <main className="relative z-10 my-auto py-6 max-w-4xl mx-auto w-full flex flex-col items-center text-center space-y-7">
         <div className="space-y-2.5 max-w-2xl">
           <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-zinc-300 tracking-wide uppercase">
-            <Tv className="w-4 h-4 text-[#E11D48]" />
+            <Tv className="w-4 h-4 text-[#9146FF]" />
             <span>
               {lang === 'es'
                 ? 'Código de vinculación rápida para Samsung TV / Smart TV'
@@ -407,17 +407,17 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           </h1>
           <p className="text-sm sm:text-lg text-zinc-400 leading-relaxed">
             {lang === 'es'
-              ? 'En tu móvil entra a tu sala de NAIM CINE, toca el botón 📺 Smart TV (o Cast en el vídeo) y escribe este código:'
-              : 'On your phone, open your NAIM CINE room, tap the 📺 Smart TV button, and enter this code:'}
+              ? 'En tu móvil entra a tu sala de NAIM CINE, toca el botón Smart TV (o Cast en el vídeo) y escribe este código:'
+              : 'On your phone, open your NAIM CINE room, tap the Smart TV button, and enter this code:'}
           </p>
         </div>
 
-        {/* 4 Giant Illuminated Cinema Digit Tiles */}
+        {/* 4 Giant Illuminated Broadcast Digit Tiles */}
         <div className="flex items-center justify-center gap-3 sm:gap-6">
           {digits.map((digit, index) => (
             <div
               key={index}
-              className="w-20 h-28 sm:w-28 sm:h-36 lg:w-36 lg:h-44 rounded-3xl bg-[#0E0E13] border border-white/15 shadow-[0_24px_80px_rgba(0,0,0,0.9),0_0_40px_rgba(225,29,72,0.14)] flex items-center justify-center font-mono font-bold text-5xl sm:text-7xl lg:text-8xl text-white"
+              className="w-20 h-28 sm:w-28 sm:h-36 lg:w-36 lg:h-44 rounded-3xl bg-[#18181B] border-2 border-[#9146FF]/35 shadow-[0_24px_80px_rgba(0,0,0,0.9),0_0_40px_rgba(145,70,255,0.18)] flex items-center justify-center font-mono font-bold text-5xl sm:text-7xl lg:text-8xl text-white tabular-nums"
             >
               {digit}
             </div>
@@ -437,9 +437,9 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                   tvAuthToken: '',
                 });
               }}
-              className="min-h-[58px] px-8 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 font-display font-bold text-base sm:text-lg flex items-center gap-3 cursor-pointer shadow-[0_12px_36px_rgba(255,255,255,0.18)] active:scale-95 transition-all"
+              className="min-h-[58px] px-8 rounded-2xl bg-white text-[#0E0E10] hover:bg-zinc-200 font-display font-bold text-base sm:text-lg flex items-center gap-3 cursor-pointer shadow-[0_12px_36px_rgba(255,255,255,0.18)] active:scale-95 transition-all"
             >
-              <Tv className="w-5 h-5 text-[#E11D48]" />
+              <Tv className="w-5 h-5 text-[#9146FF]" />
               <span>
                 {lang === 'es'
                   ? `Reconectar a ${lastSavedRoom.roomName} (Pulsa OK)`
@@ -450,7 +450,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
         )}
 
         {pairedByBanner ? (
-          <div className="px-6 py-4 rounded-2xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 font-display font-bold text-base sm:text-xl animate-pulse">
+          <div className="px-6 py-4 rounded-2xl bg-emerald-500/20 border border-emerald-400/50 text-emerald-200 font-display font-bold text-base sm:text-xl">
             {pairedByBanner}
           </div>
         ) : (
@@ -462,7 +462,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                 className={`min-h-[52px] px-6 rounded-2xl border font-semibold text-sm sm:text-base flex items-center gap-2.5 cursor-pointer transition-all ${
                   audioUnlocked
                     ? 'bg-emerald-500/18 border-emerald-400/45 text-emerald-200'
-                    : 'bg-[#E11D48] hover:bg-[#BE123C] border-[#E11D48] text-white shadow-[0_12px_36px_rgba(225,29,72,0.38)]'
+                    : 'bg-[#9146FF] hover:bg-[#772CE8] border-[#9146FF] text-white shadow-[0_12px_36px_rgba(145,70,255,0.4)]'
                 }`}
               >
                 {audioUnlocked ? (
@@ -489,7 +489,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
               <button
                 type="button"
                 onClick={toggleTvBrowserFullscreen}
-                className="min-h-[52px] px-5 rounded-2xl bg-white text-[#050507] hover:bg-zinc-200 text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors"
+                className="min-h-[52px] px-5 rounded-2xl bg-white text-[#0E0E10] hover:bg-zinc-200 text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors"
               >
                 {isFullscreen ? (
                   <>
@@ -498,7 +498,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                   </>
                 ) : (
                   <>
-                    <Maximize className="w-4 h-4 text-[#E11D48]" />
+                    <Maximize className="w-4 h-4 text-[#9146FF]" />
                     <span>{lang === 'es' ? 'Pantalla Completa TV' : 'TV Fullscreen'}</span>
                   </>
                 )}
@@ -517,7 +517,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
             {/* Direct Room Entry on TV (Zero Phone Required Fallback!) */}
             <form
               onSubmit={handleDirectRoomEnter}
-              className="mx-auto max-w-lg p-3 rounded-2xl bg-[#0B0B10] border border-white/[0.09] flex flex-col sm:flex-row items-center gap-2.5"
+              className="mx-auto max-w-lg p-3 rounded-2xl bg-[#18181B] border border-white/[0.09] flex flex-col sm:flex-row items-center gap-2.5"
             >
               <span className="text-xs text-zinc-400 shrink-0 px-1">
                 {lang === 'es'
@@ -531,12 +531,12 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                   onChange={(e) => setDirectRoomDraft(e.target.value)}
                   placeholder={lang === 'es' ? 'Ej: k8x4' : 'e.g. k8x4'}
                   maxLength={24}
-                  className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#050507] border border-white/12 focus:border-[#E11D48] text-center font-mono font-bold text-sm uppercase text-white placeholder:text-zinc-600 outline-none"
+                  className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#0E0E10] border border-white/12 focus:border-[#9146FF] text-center font-mono font-bold text-sm uppercase text-white placeholder:text-zinc-600 outline-none"
                 />
                 <button
                   type="submit"
                   disabled={!directRoomDraft.trim()}
-                  className="h-11 px-4 rounded-xl bg-white text-[#050507] hover:bg-zinc-200 disabled:opacity-35 text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                  className="h-11 px-4 rounded-xl bg-white text-[#0E0E10] hover:bg-zinc-200 disabled:opacity-35 text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer disabled:cursor-not-allowed"
                 >
                   <span>{lang === 'es' ? 'Entrar' : 'Join'}</span>
                   <ArrowRight className="w-3.5 h-3.5" />
@@ -549,7 +549,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
 
       {/* Bottom Step-by-Step Salon Guide */}
       <footer className="relative z-10 max-w-4xl mx-auto w-full grid grid-cols-1 sm:grid-cols-3 gap-3 text-left">
-        <div className="p-4 rounded-2xl bg-[#0E0E13] border border-white/[0.08] flex items-start gap-3">
+        <div className="p-4 rounded-2xl bg-[#18181B] border border-white/[0.08] flex items-start gap-3">
           <div className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center font-mono font-bold text-xs text-white shrink-0">
             1
           </div>
@@ -565,13 +565,13 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-[#0E0E13] border border-white/[0.08] flex items-start gap-3">
+        <div className="p-4 rounded-2xl bg-[#18181B] border border-white/[0.08] flex items-start gap-3">
           <div className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center font-mono font-bold text-xs text-white shrink-0">
             2
           </div>
           <div className="text-xs sm:text-sm text-zinc-300">
             <strong className="text-white block mb-0.5">
-              {lang === 'es' ? 'Pulsa 📺 Smart TV o Cast' : 'Tap 📺 Smart TV or Cast'}
+              {lang === 'es' ? 'Pulsa Smart TV o Cast' : 'Tap Smart TV or Cast'}
             </strong>
             {lang === 'es'
               ? 'Arriba en la barra o dentro del reproductor → escribe estos 4 números.'
@@ -579,9 +579,9 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           </div>
         </div>
 
-        <div className="p-4 rounded-2xl bg-[#0E0E13] border border-white/[0.08] flex items-start gap-3">
-          <div className="w-8 h-8 rounded-xl bg-[#E11D48]/15 border border-[#E11D48]/35 flex items-center justify-center shrink-0">
-            <Smartphone className="w-4 h-4 text-[#FB7185]" />
+        <div className="p-4 rounded-2xl bg-[#18181B] border border-white/[0.08] flex items-start gap-3">
+          <div className="w-8 h-8 rounded-xl bg-[#9146FF]/18 border border-[#9146FF]/40 flex items-center justify-center shrink-0">
+            <Smartphone className="w-4 h-4 text-[#BF94FF]" />
           </div>
           <div className="text-xs sm:text-sm text-zinc-300">
             <strong className="text-white block mb-0.5">
