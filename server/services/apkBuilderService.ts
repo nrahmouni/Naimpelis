@@ -3,7 +3,7 @@ import { execFileSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
-import { ROOT_DIR } from '../config/env.ts';
+import { ENV, ROOT_DIR } from '../config/env.ts';
 
 export type ApkFlavor = 'mobile' | 'tv';
 
@@ -189,9 +189,9 @@ interface AxmlNode {
 const ANDROID_NS = 'http://schemas.android.com/apk/res/android';
 
 function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
-  const pkgName = flavor === 'tv' ? 'com.naimcine.tv' : 'com.naimcine.mobile';
-  const versionCode = 240;
-  const versionName = '2.4.0';
+  const pkgName = flavor === 'tv' ? ENV.androidTvPkg : ENV.androidMobilePkg;
+  const versionCode = flavor === 'tv' ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
+  const versionName = ENV.appVersionName;
 
   const manifestChildren: AxmlNode[] = [
     {
@@ -1291,8 +1291,11 @@ function loadAppIconPng(): Buffer {
 
 export function buildSignedApkBuffer(flavor: ApkFlavor, origin: string): Buffer {
   const cleanOrigin = origin.replace(/\/+$/, '');
+  const apkVersionCode = flavor === 'tv' ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
   const launchUrl =
-    flavor === 'tv' ? `${cleanOrigin}/tv` : `${cleanOrigin}/?platform=android&web=1`;
+    flavor === 'tv'
+      ? `${cleanOrigin}/tv?platform=googletv&apkv=${apkVersionCode}`
+      : `${cleanOrigin}/?platform=android&web=1&apkv=${apkVersionCode}`;
   const cacheKey = `${flavor}|${launchUrl}`;
 
   const cached = generatedApkCache.get(cacheKey);

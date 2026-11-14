@@ -121,7 +121,7 @@ export function registerOperationalRoutes(
     const payload = {
       success: true,
       versionName: ENV.appVersionName,
-      releasedAt: '2026-11-14T10:00:00Z',
+      releasedAt: new Date().toISOString().slice(0, 10) + 'T12:00:00Z',
       web: {
         version: ENV.appVersionName,
         minReloadPrompt: false,
@@ -135,9 +135,9 @@ export function registerOperationalRoutes(
         apkUrl: `${origin}/NAIM-CINE.apk?v=${ENV.appVersionCodeMobile}`,
         sizeBytes: mobileBytes,
         changelog: {
-          es: 'Nueva interfaz en directo estilo Twitch, motor Media3/ExoPlayer mejorado, PiP en vivo y salas en tiempo real.',
-          ca: 'Nova interfície en directe estil Twitch, motor Media3/ExoPlayer millorat, PiP en directe i sales en temps real.',
-          en: 'New live Twitch-style broadcast interface, upgraded Media3/ExoPlayer engine, live PiP, and real-time rooms.',
+          es: 'Estética Obsidian & Violeta, auto-actualización automática, anime completo en HD y modo Sorpréndeme instantáneo.',
+          ca: 'Estètica Obsidian & Violeta, auto-actualització automàtica, anime complet en HD i mode Sorprèn-me instantani.',
+          en: 'Obsidian & Violet design, automatic OTA version sync, full HD anime catalog, and instant Surprise Me picker.',
         },
       },
       tv: {
@@ -149,15 +149,15 @@ export function registerOperationalRoutes(
         apkUrl: `${origin}/NAIM-CINE-TV.apk?v=${ENV.appVersionCodeTv}`,
         sizeBytes: tvBytes,
         changelog: {
-          es: 'Identidad unificada estilo Twitch para Google TV, navegación 10-foot D-Pad y reproducción 4K fluida.',
-          ca: 'Identitat unificada estil Twitch per a Google TV, navegació 10-foot D-Pad i reproducció 4K fluida.',
-          en: 'Unified Twitch-style Google TV interface, 10-foot D-Pad navigation, and smooth 4K playback.',
+          es: 'Nueva interfaz personalizada Google TV 10-foot con mando físico D-Pad + vinculación rápida por código de 4 dígitos.',
+          ca: 'Nova interfície personalitzada Google TV 10-foot amb comandament físic D-Pad + vinculació per codi de 4 dígits.',
+          en: 'Custom 10-foot Google TV UI with full physical D-Pad navigation plus 4-digit mobile pairing.',
         },
       },
     };
 
     appReleaseCache.set(cacheKey, payload);
-    res.setHeader('Cache-Control', 'public, max-age=60');
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     return res.json(payload);
   });
 

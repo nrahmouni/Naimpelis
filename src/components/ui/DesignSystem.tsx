@@ -188,7 +188,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="fixed inset-0 z-[190] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4"
+          className="fixed inset-0 z-[190] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 overflow-x-hidden"
           onClick={onClose}
         >
           <motion.div
@@ -196,7 +196,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.97 }}
             transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.9 }}
-            className={`w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl border-t sm:border border-white/[0.12] shadow-[0_-24px_80px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.12)] overflow-hidden flex flex-col max-h-[88dvh]`}
+            className={`w-full min-w-0 max-w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl border-t sm:border border-white/[0.12] shadow-[0_-24px_80px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.12)] overflow-hidden flex flex-col max-h-[88dvh]`}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Drag handle for mobile feel */}
@@ -205,7 +205,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
             </div>
 
             {/* Header */}
-            <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between gap-3 bg-gradient-to-b from-white/[0.03] to-transparent">
+            <div className="px-4 sm:px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between gap-3 bg-gradient-to-b from-white/[0.03] to-transparent min-w-0">
               <div className="flex items-center gap-3 min-w-0">
                 {icon && (
                   <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
@@ -227,7 +227,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
             </div>
 
             {/* Body */}
-            <div className="p-5 overflow-y-auto custom-scrollbar space-y-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden min-w-0 w-full custom-scrollbar space-y-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
               {children}
             </div>
           </motion.div>
@@ -268,7 +268,7 @@ export function SegmentedControl<T extends string>({
 
   return (
     <div
-      className={`p-1 rounded-2xl bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] flex items-center gap-1 ${className}`}
+      className={`w-full min-w-0 p-1 rounded-2xl bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] flex items-center gap-1 overflow-hidden ${className}`}
     >
       {options.map((option) => {
         const isActive = option.id === value;
@@ -277,7 +277,7 @@ export function SegmentedControl<T extends string>({
             key={option.id}
             type="button"
             onClick={() => onChange(option.id)}
-            className={`relative flex-1 min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-colors duration-150 flex items-center justify-center gap-1.5 select-none cursor-pointer active:scale-[0.98] ${
+            className={`relative flex-1 min-w-0 min-h-11 px-1.5 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-colors duration-150 flex items-center justify-center gap-1 sm:gap-1.5 select-none cursor-pointer active:scale-[0.98] ${
               isActive ? 'text-white' : 'text-zinc-400 hover:text-zinc-100'
             }`}
           >
@@ -289,12 +289,12 @@ export function SegmentedControl<T extends string>({
                 aria-hidden="true"
               />
             )}
-            <span className="relative z-10 flex items-center justify-center gap-1.5 min-w-0">
-              {option.icon}
+            <span className="relative z-10 flex items-center justify-center gap-1 sm:gap-1.5 min-w-0 max-w-full">
+              {option.icon && <span className="shrink-0">{option.icon}</span>}
               <span className="truncate">{option.label}</span>
               {option.badge !== undefined && option.badge !== 0 && option.badge !== '0' && (
                 <span
-                  className={`px-2 py-0.5 rounded-full text-[0.7rem] font-mono font-bold leading-none tabular-nums ${
+                  className={`px-1.5 py-0.5 rounded-full text-[0.65rem] font-mono font-bold leading-none tabular-nums shrink-0 ${
                     isActive ? 'bg-black/30 text-white' : 'bg-white/10 text-zinc-200'
                   }`}
                 >

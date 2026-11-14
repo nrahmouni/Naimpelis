@@ -193,7 +193,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
         onChange={setActiveTab}
         options={[
           { id: 'pair', label: 'Vincular TV', icon: <Cast className="w-3.5 h-3.5" /> },
-          { id: 'apps', label: 'Apps APK & IPTV', icon: <Download className="w-3.5 h-3.5" /> },
+          { id: 'apps', label: 'Apps APK', icon: <Download className="w-3.5 h-3.5" /> },
           { id: 'remote', label: 'Mando', icon: <Tv className="w-3.5 h-3.5" /> },
         ]}
       />
@@ -235,15 +235,15 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
       )}
 
       {activeTab === 'pair' && (
-        <div className="space-y-3.5">
+        <div className="space-y-3.5 w-full min-w-0">
           {/* Direct 1-tap Cast */}
-          <div className="p-3.5 rounded-2xl nc-specular-surface border border-white/10 flex items-center justify-between gap-3">
-            <div className="min-w-0">
+          <div className="p-3 sm:p-3.5 rounded-2xl nc-specular-surface border border-white/10 flex items-center justify-between gap-2.5 w-full min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF] flex items-center gap-1.5">
-                <Cast className="w-3.5 h-3.5" />
-                <span>Envío inalámbrico 1 toque</span>
+                <Cast className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">Envío inalámbrico 1 toque</span>
               </div>
-              <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
+              <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
                 Chromecast, AirPlay 2 o Samsung Smart View sin escribir código.
               </p>
             </div>
@@ -257,9 +257,9 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 onClose();
               }}
               size="md"
-              className="shrink-0 whitespace-nowrap"
+              className="shrink-0 whitespace-nowrap !px-3.5 sm:!px-4"
             >
-              <Cast className="w-4 h-4" />
+              <Cast className="w-4 h-4 shrink-0" />
               <span>Enviar</span>
             </PrimaryButton>
           </div>
@@ -267,42 +267,43 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
           {/* 4-Digit Smart TV Pairing */}
           <form
             onSubmit={handleSubmit}
-            className="p-4 rounded-2xl nc-specular-surface border border-[#9146FF]/35 space-y-3"
+            className="p-3.5 sm:p-4 rounded-2xl nc-specular-surface border border-[#9146FF]/35 space-y-3 w-full min-w-0"
           >
-            <div>
+            <div className="min-w-0">
               <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF]">
                 Código Smart TV (4 dígitos)
               </div>
-              <p className="text-xs text-zinc-300 mt-0.5">
+              <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
                 Abre{' '}
-                <span className="font-mono font-bold text-white">
+                <span className="font-mono font-bold text-white break-all">
                   {tvUrl.replace(/^https?:\/\//, '')}
                 </span>{' '}
                 en tu TV e introduce el código:
               </p>
             </div>
 
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2 w-full min-w-0">
               <input
                 type="text"
                 inputMode="numeric"
                 pattern="[0-9]*"
+                size={4}
                 maxLength={4}
                 value={tvCodeInput}
                 onChange={(e) =>
                   setTvCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))
                 }
                 placeholder="0000"
-                className="flex-1 h-14 rounded-2xl bg-[#0B0B0E] border border-white/15 focus:border-[#9146FF] text-center font-mono text-2xl font-bold tracking-[0.4em] text-white placeholder:text-zinc-700 focus:outline-none transition-all tabular-nums"
+                className="w-0 min-w-0 flex-1 h-12 sm:h-14 px-2 rounded-2xl bg-[#0B0B0E] border border-white/15 focus:border-[#9146FF] text-center font-mono text-xl sm:text-2xl font-bold tracking-[0.22em] sm:tracking-[0.4em] text-white placeholder:text-zinc-700 focus:outline-none transition-all tabular-nums"
               />
 
               <PrimaryButton
                 type="submit"
                 disabled={tvCodeInput.length !== 4}
                 size="lg"
-                className="shrink-0 !h-14 !px-5 whitespace-nowrap"
+                className="shrink-0 !h-12 sm:!h-14 !px-3.5 sm:!px-5 whitespace-nowrap"
               >
-                <Sparkles className="w-4 h-4" />
+                <Sparkles className="w-4 h-4 shrink-0" />
                 <span>Vincular</span>
               </PrimaryButton>
             </div>
@@ -366,17 +367,17 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
           </form>
 
           {/* Protocol quick triggers + Receiver Mode */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-1.5 sm:gap-2 w-full min-w-0">
             <SecondaryButton
               type="button"
               onClick={() => {
                 window.dispatchEvent(new Event('naim-trigger-direct-cast'));
                 onClose();
               }}
-              className="flex-col !py-2.5 text-[11px]"
+              className="flex-col !py-2.5 !px-1.5 sm:!px-3 min-w-0 w-full text-[11px]"
             >
-              <Cast className="w-4 h-4 text-sky-400" />
-              <span>Chromecast</span>
+              <Cast className="w-4 h-4 text-sky-400 shrink-0" />
+              <span className="truncate max-w-full">Chromecast</span>
             </SecondaryButton>
 
             <SecondaryButton
@@ -388,20 +389,20 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 window.dispatchEvent(new Event('naim-trigger-direct-cast'));
                 onClose();
               }}
-              className="flex-col !py-2.5 text-[11px]"
+              className="flex-col !py-2.5 !px-1.5 sm:!px-3 min-w-0 w-full text-[11px]"
             >
-              <Airplay className="w-4 h-4 text-zinc-200" />
-              <span>AirPlay 2</span>
+              <Airplay className="w-4 h-4 text-zinc-200 shrink-0" />
+              <span className="truncate max-w-full">AirPlay 2</span>
             </SecondaryButton>
 
             {onSwitchThisDeviceToTvLobby ? (
               <SecondaryButton
                 type="button"
                 onClick={onSwitchThisDeviceToTvLobby}
-                className="flex-col !py-2.5 text-[11px]"
+                className="flex-col !py-2.5 !px-1.5 sm:!px-3 min-w-0 w-full text-[11px]"
               >
-                <MonitorPlay className="w-4 h-4 text-[#BF94FF]" />
-                <span>Modo TV</span>
+                <MonitorPlay className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                <span className="truncate max-w-full">Modo TV</span>
               </SecondaryButton>
             ) : (
               <SecondaryButton
@@ -410,10 +411,10 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                   window.dispatchEvent(new Event('naim-trigger-direct-cast'));
                   onClose();
                 }}
-                className="flex-col !py-2.5 text-[11px]"
+                className="flex-col !py-2.5 !px-1.5 sm:!px-3 min-w-0 w-full text-[11px]"
               >
-                <Smartphone className="w-4 h-4 text-emerald-400" />
-                <span>Smart View</span>
+                <Smartphone className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span className="truncate max-w-full">Smart View</span>
               </SecondaryButton>
             )}
           </div>
@@ -421,23 +422,23 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
       )}
 
       {activeTab === 'apps' && (
-        <div className="space-y-3">
+        <div className="space-y-3 w-full min-w-0">
           {/* Android Mobile Native APK */}
-          <div className="p-3.5 rounded-2xl nc-specular-surface border border-[#9146FF]/35 flex items-center justify-between gap-3">
-            <div className="min-w-0">
+          <div className="p-3 sm:p-3.5 rounded-2xl nc-specular-surface border border-[#9146FF]/35 flex items-center justify-between gap-2.5 w-full min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF] flex items-center gap-1.5">
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>App Nativa Android Móvil (.APK)</span>
+                <Smartphone className="w-3.5 h-3.5 shrink-0" />
+                <span className="truncate">App Android Móvil (.APK)</span>
               </div>
-              <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
-                Mismo diseño Obsidian & Violeta que la Web, barra inferior flotante, Media3 HD y salas en vivo.
+              <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
+                Mismo diseño Obsidian & Violeta, actualización automática y salas en vivo.
               </p>
             </div>
             <a
-              href="/NAIM-CINE.apk?v=240"
+              href="/NAIM-CINE.apk?v=300"
               download="NAIM-CINE.apk"
-              onClick={(e) => handleApkDownload(e, 'mobile', '/NAIM-CINE.apk?v=240', 'NAIM-CINE.apk')}
-              className="min-h-11 px-4 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-all shadow-[0_8px_22px_rgba(145,70,255,0.35)]"
+              onClick={(e) => handleApkDownload(e, 'mobile', '/NAIM-CINE.apk?v=300', 'NAIM-CINE.apk')}
+              className="min-h-11 px-3.5 sm:px-4 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-all shadow-[0_8px_22px_rgba(145,70,255,0.35)]"
             >
               {apkStatus.flavor === 'mobile' && apkStatus.state === 'downloading' ? (
                 <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
@@ -457,21 +458,21 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
           </div>
 
           {/* Google TV Native APK */}
-          <div className="p-3.5 rounded-2xl nc-specular-surface border border-white/12 flex items-center justify-between gap-3">
-            <div className="min-w-0">
+          <div className="p-3 sm:p-3.5 rounded-2xl nc-specular-surface border border-white/12 flex items-center justify-between gap-2.5 w-full min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-1.5">
-                <Tv className="w-3.5 h-3.5 text-[#BF94FF]" />
-                <span>App Nativa Google TV (.APK)</span>
+                <Tv className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+                <span className="truncate">App Google TV (.APK)</span>
               </div>
-              <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
-                Misma estética WebApp adaptada a 10 pies y 100% compatible con mando físico D-pad.
+              <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
+                Interfaz 10-foot navegable con mando físico D-Pad + código 4 dígitos y OTA.
               </p>
             </div>
             <a
-              href="/NAIM-CINE-TV.apk?v=240"
+              href="/NAIM-CINE-TV.apk?v=300"
               download="NAIM-CINE-TV.apk"
-              onClick={(e) => handleApkDownload(e, 'tv', '/NAIM-CINE-TV.apk?v=240', 'NAIM-CINE-TV.apk')}
-              className="min-h-11 px-4 rounded-xl bg-white/[0.1] hover:bg-white/[0.16] border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
+              onClick={(e) => handleApkDownload(e, 'tv', '/NAIM-CINE-TV.apk?v=300', 'NAIM-CINE-TV.apk')}
+              className="min-h-11 px-3.5 sm:px-4 rounded-xl bg-white/[0.1] hover:bg-white/[0.16] border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
             >
               {apkStatus.flavor === 'tv' && apkStatus.state === 'downloading' ? (
                 <Loader2 className="w-4 h-4 text-[#BF94FF] shrink-0 animate-spin" />

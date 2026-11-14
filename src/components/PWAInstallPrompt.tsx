@@ -165,9 +165,9 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
           } gap-2.5`}
         >
           <a
-            href="/NAIM-CINE.apk?v=240"
+            href="/NAIM-CINE.apk?v=300"
             download="NAIM-CINE.apk"
-            onClick={(e) => handleDownloadApk(e, 'mobile', '/NAIM-CINE.apk?v=240', 'NAIM-CINE.apk')}
+            onClick={(e) => handleDownloadApk(e, 'mobile', '/NAIM-CINE.apk?v=300', 'NAIM-CINE.apk')}
             className="min-h-11 px-5 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all shadow-[0_12px_32px_rgba(145,70,255,0.34),inset_0_1px_0_rgba(255,255,255,0.22)]"
           >
             {apkDownloading === 'mobile' ? (
@@ -189,9 +189,9 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
           </a>
 
           <a
-            href="/NAIM-CINE-TV.apk?v=240"
+            href="/NAIM-CINE-TV.apk?v=300"
             download="NAIM-CINE-TV.apk"
-            onClick={(e) => handleDownloadApk(e, 'tv', '/NAIM-CINE-TV.apk?v=240', 'NAIM-CINE-TV.apk')}
+            onClick={(e) => handleDownloadApk(e, 'tv', '/NAIM-CINE-TV.apk?v=300', 'NAIM-CINE-TV.apk')}
             className="min-h-11 px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all"
           >
             {apkDownloading === 'tv' ? (
@@ -317,11 +317,11 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
               )}
             </p>
             <a
-              href="/NAIM-CINE.apk?v=240"
+              href="/NAIM-CINE.apk?v=300"
               download="NAIM-CINE.apk"
               onClick={(e) => {
                 e.preventDefault();
-                void triggerApkDownload('/NAIM-CINE.apk?v=240', 'NAIM-CINE.apk');
+                void triggerApkDownload('/NAIM-CINE.apk?v=300', 'NAIM-CINE.apk');
               }}
               className="w-full min-h-[44px] px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
             >
@@ -334,11 +334,11 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
             </a>
 
             <a
-              href="/NAIM-CINE-TV.apk?v=240"
+              href="/NAIM-CINE-TV.apk?v=300"
               download="NAIM-CINE-TV.apk"
               onClick={(e) => {
                 e.preventDefault();
-                void triggerApkDownload('/NAIM-CINE-TV.apk?v=240', 'NAIM-CINE-TV.apk');
+                void triggerApkDownload('/NAIM-CINE-TV.apk?v=300', 'NAIM-CINE-TV.apk');
               }}
               className="w-full min-h-[42px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/12 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
             >

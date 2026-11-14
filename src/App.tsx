@@ -19,7 +19,13 @@ import {
   Search,
   Sparkles,
   RefreshCw,
+  Download,
 } from 'lucide-react';
+import {
+  checkRemoteAppVersion,
+  type NativeApkUpdateAvailable,
+} from './utils/versionSync';
+import { triggerApkDownload } from './utils/apkDownload';
 import {
   AppLanguage,
   CatalaEpisodeItem,
@@ -298,6 +304,8 @@ export function App() {
     series: CatalogMovie[];
     tdt: SpanishTdtChannel[];
   }>({ movies: [], series: [], tdt: [] });
+  const [quickPoolLoading, setQuickPoolLoading] = useState<boolean>(false);
+  const [nativeApkUpdate, setNativeApkUpdate] = useState<NativeApkUpdateAvailable | null>(null);
 
   const syncDomAttributes = useThemeStore((s) => s.syncDomAttributes);
   const reducedMotion = useThemeStore((s) => s.reducedMotion);
@@ -743,28 +751,84 @@ export function App() {
     };
   }, [syncDomAttributes, setShowCommandSearch]);
 
-  // Lazy-populate catalog pool when Command Search or Sorpréndeme modal opens
+  const loadQuickPool = useCallback(async () => {
+    setQuickPoolLoading(true);
+    try {
+      const apiLang = lang === 'en' ? 'en' : 'es';
+      const [mRes, sRes, tRes, lrRes] = await Promise.all([
+        fetch('/api/catalog/movies?category=trending&page=1').then((r) => (r.ok ? r.json() : null)),
+        fetch(`/api/catalog/series?category=trending&page=1&lang=${apiLang}`).then((r) =>
+          r.ok ? r.json() : null
+        ),
+        fetch('/api/catalog/tdt').then((r) => (r.ok ? r.json() : null)),
+        fetch(`/api/catalog/latest-releases?lang=${apiLang}`).then((r) =>
+          r.ok ? r.json() : null
+        ),
+      ]);
+
+      const rawMovies: CatalogMovie[] = [
+        ...(Array.isArray(mRes?.movies) ? (mRes.movies as CatalogMovie[]) : []),
+        ...(Array.isArray(lrRes?.cinemaReleases) ? (lrRes.cinemaReleases as CatalogMovie[]) : []),
+        ...(Array.isArray(mRes?.results) ? (mRes.results as CatalogMovie[]) : []),
+      ];
+      const rawSeries: CatalogMovie[] = [
+        ...(Array.isArray(sRes?.series) ? (sRes.series as CatalogMovie[]) : []),
+        ...(Array.isArray(lrRes?.newSeasons) ? (lrRes.newSeasons as CatalogMovie[]) : []),
+        ...(Array.isArray(sRes?.results) ? (sRes.results as CatalogMovie[]) : []),
+      ];
+
+      const dedupeById = (items: CatalogMovie[]) => {
+        const seen = new Set<string>();
+        const out: CatalogMovie[] = [];
+        for (const it of items) {
+          if (!it || !it.title) continue;
+          const key = `${it.mediaType || 'movie'}:${it.tmdbId || it.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(it);
+        }
+        return out;
+      };
+
+      setQuickPool({
+        movies: dedupeById(rawMovies),
+        series: dedupeById(rawSeries),
+        tdt: Array.isArray(tRes?.channels) ? (tRes.channels as SpanishTdtChannel[]) : [],
+      });
+    } catch {
+      // keep existing pool
+    } finally {
+      setQuickPoolLoading(false);
+    }
+  }, [lang]);
+
+  // Populate catalog pool eagerly inside rooms & whenever Command Search or Sorpréndeme opens
   useEffect(() => {
-    if ((!showCommandSearch && !showSurpriseModal) || quickPool.movies.length > 0) return;
-    let cancelled = false;
-    Promise.all([
-      fetch('/api/catalog/movies?category=trending&page=1').then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/catalog/series?category=trending&page=1').then((r) => (r.ok ? r.json() : null)),
-      fetch('/api/tdt/channels').then((r) => (r.ok ? r.json() : null)),
-    ])
-      .then(([mRes, sRes, tRes]) => {
-        if (cancelled) return;
-        setQuickPool({
-          movies: Array.isArray(mRes?.results) ? (mRes.results as CatalogMovie[]) : [],
-          series: Array.isArray(sRes?.results) ? (sRes.results as CatalogMovie[]) : [],
-          tdt: Array.isArray(tRes?.channels) ? (tRes.channels as SpanishTdtChannel[]) : [],
-        });
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
+    if (!inRoom && !showCommandSearch && !showSurpriseModal) return;
+    if (quickPool.movies.length > 0 && quickPool.series.length > 0) return;
+    void loadQuickPool();
+  }, [inRoom, showCommandSearch, showSurpriseModal, quickPool.movies.length, quickPool.series.length, loadQuickPool]);
+
+  // Automatic Cross-Platform Version Control & OTA Sync (Web, Android Mobile APK & Google TV)
+  useEffect(() => {
+    const runVersionCheck = () => {
+      void checkRemoteAppVersion((apkUpdate) => {
+        setNativeApkUpdate(apkUpdate);
+      });
     };
-  }, [showCommandSearch, showSurpriseModal, quickPool.movies.length]);
+    runVersionCheck();
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        runVersionCheck();
+      }
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    const interval = window.setInterval(runVersionCheck, 10 * 60 * 1000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.clearInterval(interval);
+    };
+  }, []);
 
   // ============================================================================
   // FIREBASE AUTHENTICATION, CLOUD SYNC & DIRECT ROOM AUTO-ENTRY FOR LOGGED USERS
@@ -5356,20 +5420,38 @@ export function App() {
             </nav>
           </div>
         )}
-        {/* Service Worker Non-Disruptive Update Toast */}
-        {swUpdate && (
+        {/* Service Worker / Cross-Platform Version Update Toast */}
+        {(swUpdate || nativeApkUpdate) && (
           <div className="fixed bottom-20 sm:bottom-6 right-4 z-[70] max-w-xs px-4 py-3 rounded-2xl bg-[#18181B]/95 backdrop-blur-xl border border-[#9146FF]/40 shadow-2xl flex items-center justify-between gap-3">
             <div className="text-xs text-white font-semibold">
-              Nueva versión de NAIM CINE disponible
+              {nativeApkUpdate
+                ? `Nueva APK v${nativeApkUpdate.versionName} lista`
+                : 'Nueva versión de NAIM CINE disponible'}
             </div>
-            <button
-              type="button"
-              onClick={applySwUpdateNow}
-              className="min-h-8 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Actualizar</span>
-            </button>
+            {nativeApkUpdate ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const filename =
+                    nativeApkUpdate.flavor === 'tv' ? 'NAIM-CINE-TV.apk' : 'NAIM-CINE.apk';
+                  void triggerApkDownload(nativeApkUpdate.apkUrl, filename);
+                  setNativeApkUpdate(null);
+                }}
+                className="min-h-8 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Instalar</span>
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={applySwUpdateNow}
+                className="min-h-8 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Actualizar</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -5392,11 +5474,27 @@ export function App() {
             movies={quickPool.movies}
             series={quickPool.series}
             tdtChannels={quickPool.tdt}
-            onSelectCatalogItem={(item) => {
-              if (item.mediaType === 'tv') {
+            onSelectCatalogItem={async (item) => {
+              if (item.mediaType === 'tv' && item.tmdbId) {
                 setCatalogSection('series');
+                try {
+                  const seasonNum = item.seasonNumber || 1;
+                  const res = await fetch(
+                    `/api/catalog/tv/${item.tmdbId}?season=${seasonNum}&lang=${lang}`
+                  );
+                  const data = await res.json();
+                  if (data?.details?.episodes?.length > 0) {
+                    await handlePlaySeriesEpisode(
+                      data.details as TvSeriesDetails,
+                      data.details.episodes[0] as TvEpisodeItem,
+                      'ES'
+                    );
+                  }
+                } catch {
+                  // fallback already focused series section
+                }
               } else {
-                handlePlayMovie(item, 'ES');
+                await handlePlayMovie(item, 'ES');
               }
             }}
             onSelectChannel={(ch) => handlePlayTdtChannel(ch, 0)}
@@ -5407,11 +5505,31 @@ export function App() {
             onClose={() => setShowSurpriseModal(false)}
             movies={quickPool.movies}
             series={quickPool.series}
-            onPlayItem={(item) => {
-              if (item.mediaType === 'tv') {
+            isLoading={quickPoolLoading}
+            onRetryLoad={() => {
+              void loadQuickPool();
+            }}
+            onPlayItem={async (item) => {
+              if (item.mediaType === 'tv' && item.tmdbId) {
                 setCatalogSection('series');
+                try {
+                  const seasonNum = item.seasonNumber || 1;
+                  const res = await fetch(
+                    `/api/catalog/tv/${item.tmdbId}?season=${seasonNum}&lang=${lang}`
+                  );
+                  const data = await res.json();
+                  if (data?.details?.episodes?.length > 0) {
+                    await handlePlaySeriesEpisode(
+                      data.details as TvSeriesDetails,
+                      data.details.episodes[0] as TvEpisodeItem,
+                      'ES'
+                    );
+                  }
+                } catch {
+                  // keep series tab focused
+                }
               } else {
-                handlePlayMovie(item, 'ES');
+                await handlePlayMovie(item, 'ES');
               }
             }}
           />
