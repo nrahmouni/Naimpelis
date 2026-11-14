@@ -96,8 +96,15 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
   if (!isOpen) return null;
 
   const publicHost = getDisplayAppHost();
-  const publicOrigin = `https://${publicHost}`;
   const tvUrl = buildTvPairingUrl();
+  const publicOrigin =
+    typeof window !== 'undefined' &&
+    !(
+      /^ais-dev-/i.test(window.location.hostname || '') &&
+      import.meta.env?.VITE_PUBLIC_APP_HOST
+    )
+      ? window.location.origin
+      : `https://${publicHost}`;
   const iptvM3uUrl = `${publicOrigin}/naim-cine.m3u`;
   const iptvEpgUrl = `${publicOrigin}/epg.xml`;
   const qrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&margin=8&bgcolor=0E0E10&color=FFFFFF&data=${encodeURIComponent(

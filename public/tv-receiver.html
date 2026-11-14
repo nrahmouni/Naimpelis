@@ -15,84 +15,98 @@
       body {
         width: 100%;
         height: 100%;
-        background-color: #0b0b0e;
-        color: #efeff1;
+        background-color: #09090c;
+        color: #f4f4f6;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         overflow: hidden;
         -webkit-user-select: none;
         user-select: none;
+        -webkit-font-smoothing: antialiased;
       }
       button,
       input {
         font-family: inherit;
       }
+
+      /* 10-Foot Crisp Luminous D-Pad Focus Ring */
       button:focus,
       input:focus,
-      .tv-card:focus {
-        outline: 3px solid #bf94ff !important;
-        outline-offset: 3px;
-        box-shadow: 0 0 28px rgba(145, 70, 255, 0.65);
+      .tv-card:focus,
+      .ep-tile-btn:focus {
+        outline: 2.5px solid #ffffff !important;
+        outline-offset: 2px;
+        box-shadow:
+          0 0 0 6px rgba(145, 70, 255, 0.78),
+          0 18px 40px rgba(0, 0, 0, 0.88) !important;
       }
 
-      /* Ambient Aurora Broadcast Glow */
+      /* Cinema Ambient Stage Glow */
       .ambient-glow {
         position: fixed;
-        top: -220px;
-        left: 50%;
-        width: 1040px;
-        height: 460px;
-        margin-left: -520px;
+        top: -240px;
+        left: 28%;
+        width: 980px;
+        height: 480px;
         border-radius: 999px;
-        background: radial-gradient(circle, rgba(145, 70, 255, 0.28) 0%, rgba(56, 189, 248, 0.1) 45%, rgba(11, 11, 14, 0) 72%);
+        background: radial-gradient(
+          circle,
+          rgba(145, 70, 255, 0.22) 0%,
+          rgba(56, 189, 248, 0.08) 42%,
+          rgba(9, 9, 12, 0) 72%
+        );
         pointer-events: none;
         z-index: 0;
       }
 
       /* =================================================================== */
-      /* COMMON TV BUTTONS & BADGES                                          */
+      /* COMMON 10-FOOT CONTROLS                                             */
       /* =================================================================== */
       .tv-btn {
         height: 44px;
-        padding: 0 18px;
-        border-radius: 13px;
+        padding: 0 16px;
+        border-radius: 12px;
         border: 1px solid rgba(255, 255, 255, 0.14);
         background: rgba(255, 255, 255, 0.08);
-        color: #f4f4f5;
+        color: #f4f4f6;
         font-size: 14px;
         font-weight: 700;
         cursor: pointer;
         white-space: nowrap;
-        -webkit-transition: background 0.15s ease, -webkit-transform 0.15s ease;
-        transition: background 0.15s ease, transform 0.15s ease;
+        -webkit-transition: background 0.14s ease, -webkit-transform 0.14s ease;
+        transition: background 0.14s ease, transform 0.14s ease;
       }
       .tv-btn:hover,
       .tv-btn:focus {
-        background: rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.2);
       }
       .tv-btn-primary {
-        height: 48px;
+        height: 46px;
         padding: 0 22px;
-        border-radius: 14px;
-        border: 1px solid rgba(255, 255, 255, 0.22);
-        background: linear-gradient(180deg, #9e5cff 0%, #772ce8 100%);
+        border-radius: 13px;
+        border: 1px solid rgba(255, 255, 255, 0.24);
+        background: linear-gradient(180deg, #a15eff 0%, #772ce8 100%);
         color: #ffffff;
         font-size: 15px;
         font-weight: 800;
         cursor: pointer;
         white-space: nowrap;
-        box-shadow: 0 12px 32px rgba(145, 70, 255, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.24);
+        box-shadow: 0 12px 30px rgba(145, 70, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+      }
+      .tv-btn-primary:hover,
+      .tv-btn-primary:focus {
+        background: linear-gradient(180deg, #b078ff 0%, #8338f5 100%);
       }
       .tv-btn-primary.unlocked {
-        background: rgba(16, 185, 129, 0.22);
-        border-color: rgba(52, 211, 153, 0.55);
+        background: rgba(16, 185, 129, 0.24);
+        border-color: rgba(52, 211, 153, 0.6);
         color: #a7f3d0;
         box-shadow: none;
       }
       .tv-btn-fullscreen {
         height: 44px;
-        padding: 0 18px;
-        border-radius: 13px;
-        border: 2px solid #9146ff;
+        padding: 0 16px;
+        border-radius: 12px;
+        border: 1px solid rgba(191, 148, 255, 0.45);
         background: rgba(145, 70, 255, 0.22);
         color: #ffffff;
         font-size: 14px;
@@ -106,7 +120,7 @@
       }
       .tv-btn-fullscreen.active-fs {
         border-color: rgba(52, 211, 153, 0.65);
-        background: rgba(16, 185, 129, 0.2);
+        background: rgba(16, 185, 129, 0.22);
         color: #a7f3d0;
       }
 
@@ -122,7 +136,7 @@
         display: flex;
         -webkit-flex-direction: column;
         flex-direction: column;
-        padding: 28px 48px 18px 48px;
+        padding: 20px 42px 14px 42px;
       }
       .hub-topbar {
         display: -webkit-flex;
@@ -131,21 +145,33 @@
         align-items: center;
         -webkit-justify-content: space-between;
         justify-content: space-between;
-        margin-bottom: 18px;
+        margin-bottom: 16px;
         -webkit-flex-shrink: 0;
         flex-shrink: 0;
+      }
+      .hub-left-cluster {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-flex: 1;
+        flex: 1;
+        min-width: 0;
       }
       .hub-brand {
         display: -webkit-flex;
         display: flex;
         -webkit-align-items: center;
         align-items: center;
+        margin-right: 22px;
+        -webkit-flex-shrink: 0;
+        flex-shrink: 0;
       }
       .brand-logo-box {
-        width: 46px;
-        height: 46px;
-        border-radius: 14px;
-        background: #18181b;
+        width: 42px;
+        height: 42px;
+        border-radius: 12px;
+        background: #16161c;
         border: 1px solid rgba(255, 255, 255, 0.14);
         display: -webkit-flex;
         display: flex;
@@ -153,65 +179,79 @@
         align-items: center;
         -webkit-justify-content: center;
         justify-content: center;
-        margin-right: 12px;
-        box-shadow: 0 8px 28px rgba(145, 70, 255, 0.28);
+        margin-right: 11px;
+        box-shadow: 0 8px 24px rgba(145, 70, 255, 0.25);
         -webkit-flex-shrink: 0;
         flex-shrink: 0;
       }
       .brand-title {
-        font-size: 21px;
+        font-size: 19px;
         font-weight: 800;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.08em;
         color: #ffffff;
         white-space: nowrap;
       }
       .brand-title .accent {
-        color: #9146ff;
+        color: #a970ff;
       }
       .brand-title .tag {
-        font-size: 13px;
+        font-size: 12px;
         font-weight: 700;
-        letter-spacing: 0;
-        color: #bf94ff;
-        margin-left: 8px;
+        letter-spacing: 0.02em;
+        color: #d4bbff;
+        margin-left: 7px;
       }
       .brand-sub {
-        font-size: 12px;
-        color: #a1a1aa;
+        font-size: 11px;
+        color: #9f9fac;
         margin-top: 2px;
+        white-space: nowrap;
       }
 
+      /* Nav Pills with Search placed right on the LEFT side */
       .hub-nav-pills {
         display: -webkit-flex;
         display: flex;
         -webkit-align-items: center;
         align-items: center;
         padding: 4px;
-        border-radius: 16px;
-        background: rgba(255, 255, 255, 0.045);
-        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: 15px;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255, 255, 255, 0.09);
+        overflow-x: auto;
+      }
+      .hub-nav-pills::-webkit-scrollbar {
+        display: none;
       }
       .hub-tab-btn {
-        height: 40px;
-        padding: 0 15px;
+        height: 38px;
+        padding: 0 14px;
         margin: 0 2px;
-        border-radius: 12px;
+        border-radius: 11px;
         border: none;
         background: transparent;
-        color: #adadb8;
+        color: #b4b4c0;
         font-size: 14px;
         font-weight: 700;
         cursor: pointer;
         white-space: nowrap;
+        -webkit-flex-shrink: 0;
+        flex-shrink: 0;
+      }
+      .hub-tab-btn.search-left-btn {
+        background: rgba(255, 255, 255, 0.09);
+        color: #ffffff;
+        margin-right: 6px;
+        padding: 0 15px;
       }
       .hub-tab-btn.active {
-        background: linear-gradient(180deg, #9e5cff 0%, #772ce8 100%);
+        background: linear-gradient(180deg, #a15eff 0%, #772ce8 100%);
         color: #ffffff;
-        box-shadow: 0 6px 18px rgba(145, 70, 255, 0.4);
+        box-shadow: 0 6px 18px rgba(145, 70, 255, 0.42);
       }
       .hub-tab-btn:focus {
         color: #ffffff;
-        background: rgba(145, 70, 255, 0.35);
+        background: rgba(145, 70, 255, 0.48);
       }
 
       .hub-right-actions {
@@ -219,27 +259,30 @@
         display: flex;
         -webkit-align-items: center;
         align-items: center;
+        -webkit-flex-shrink: 0;
+        flex-shrink: 0;
+        margin-left: 12px;
       }
       .hub-right-actions > * {
         margin-left: 8px;
       }
       .pair-pill-btn {
-        height: 42px;
-        padding: 0 16px;
-        border-radius: 13px;
-        border: 1px solid rgba(191, 148, 255, 0.45);
-        background: rgba(145, 70, 255, 0.18);
+        height: 40px;
+        padding: 0 14px;
+        border-radius: 12px;
+        border: 1px solid rgba(191, 148, 255, 0.42);
+        background: rgba(145, 70, 255, 0.16);
         color: #ffffff;
         font-size: 13px;
-        font-weight: 800;
+        font-weight: 700;
         cursor: pointer;
         white-space: nowrap;
       }
       .pair-pill-btn strong {
-        color: #bf94ff;
+        color: #d4bbff;
         font-family: 'Courier New', Courier, monospace;
-        font-size: 15px;
-        letter-spacing: 0.1em;
+        font-size: 14px;
+        letter-spacing: 0.08em;
         margin-left: 4px;
       }
 
@@ -248,32 +291,31 @@
         flex: 1;
         overflow-y: auto;
         overflow-x: hidden;
-        padding-right: 6px;
-        padding-bottom: 36px;
+        padding: 4px 6px 42px 2px;
       }
       .hub-scroll-body::-webkit-scrollbar {
         width: 6px;
       }
       .hub-scroll-body::-webkit-scrollbar-thumb {
-        background: rgba(145, 70, 255, 0.4);
+        background: rgba(145, 70, 255, 0.42);
         border-radius: 99px;
       }
 
-      /* 10-Foot Featured Hero */
+      /* 10-Foot Featured Cinema Hero */
       .tv-hero {
         position: relative;
         width: 100%;
-        min-height: 250px;
+        min-height: 290px;
         border-radius: 22px;
         overflow: hidden;
-        background: #141418;
+        background: #121217;
         border: 1px solid rgba(255, 255, 255, 0.12);
-        margin-bottom: 24px;
+        margin-bottom: 26px;
         display: -webkit-flex;
         display: flex;
         -webkit-align-items: flex-end;
         align-items: flex-end;
-        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.7);
+        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.72);
       }
       .tv-hero-bg {
         position: absolute;
@@ -282,7 +324,7 @@
         width: 100%;
         height: 100%;
         object-fit: cover;
-        opacity: 0.42;
+        opacity: 0.52;
       }
       .tv-hero-grad {
         position: absolute;
@@ -290,34 +332,37 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: linear-gradient(90deg, rgba(11, 11, 14, 0.96) 0%, rgba(11, 11, 14, 0.72) 52%, rgba(11, 11, 14, 0.28) 100%);
+        background:
+          linear-gradient(90deg, #09090c 0%, rgba(9, 9, 12, 0.88) 46%, rgba(9, 9, 12, 0.18) 100%),
+          linear-gradient(to top, rgba(9, 9, 12, 0.95) 0%, rgba(9, 9, 12, 0) 60%);
       }
       .tv-hero-content {
         position: relative;
         z-index: 2;
-        padding: 26px 32px;
+        padding: 28px 34px;
         max-width: 720px;
       }
       .tv-hero-meta {
         font-size: 13px;
         font-weight: 700;
-        color: #bf94ff;
+        color: #c6a2ff;
         text-transform: uppercase;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.09em;
         margin-bottom: 6px;
       }
       .tv-hero-title {
-        font-size: 34px;
+        font-size: 36px;
         font-weight: 800;
         color: #ffffff;
-        line-height: 1.15;
-        margin-bottom: 8px;
+        line-height: 1.12;
+        margin-bottom: 10px;
+        text-shadow: 0 4px 18px rgba(0, 0, 0, 0.8);
       }
       .tv-hero-desc {
         font-size: 15px;
-        color: #d4d4d8;
+        color: #d4d4dc;
         line-height: 1.45;
-        margin-bottom: 16px;
+        margin-bottom: 18px;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
@@ -333,27 +378,63 @@
         margin-right: 12px;
       }
 
+      /* Filter Pills Row for En Directo / Categorías */
+      .tv-filter-row {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-flex-wrap: wrap;
+        flex-wrap: wrap;
+        -webkit-align-items: center;
+        align-items: center;
+        margin-bottom: 18px;
+      }
+      .tv-filter-pill {
+        height: 38px;
+        padding: 0 15px;
+        margin: 0 8px 8px 0;
+        border-radius: 11px;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        background: rgba(255, 255, 255, 0.06);
+        color: #d4d4dc;
+        font-size: 13px;
+        font-weight: 700;
+        cursor: pointer;
+        white-space: nowrap;
+      }
+      .tv-filter-pill.active {
+        background: linear-gradient(180deg, #a15eff 0%, #772ce8 100%);
+        border-color: #d4bbff;
+        color: #ffffff;
+      }
+      .tv-filter-pill:focus,
+      .tv-filter-pill:hover {
+        background: rgba(145, 70, 255, 0.42);
+        color: #ffffff;
+      }
+
       /* Horizontal TV Rails & Grid */
       .tv-section {
-        margin-bottom: 24px;
+        margin-bottom: 26px;
       }
       .tv-section-head {
         display: -webkit-flex;
         display: flex;
-        -webkit-align-items: center;
-        align-items: center;
+        -webkit-align-items: baseline;
+        align-items: baseline;
         -webkit-justify-content: space-between;
         justify-content: space-between;
         margin-bottom: 12px;
+        padding: 0 2px;
       }
       .tv-section-title {
         font-size: 20px;
         font-weight: 800;
         color: #ffffff;
+        letter-spacing: -0.01em;
       }
       .tv-section-sub {
         font-size: 13px;
-        color: #adadb8;
+        color: #9e9eac;
       }
       .tv-rail {
         display: -webkit-flex;
@@ -362,7 +443,7 @@
         flex-wrap: nowrap;
         overflow-x: auto;
         overflow-y: visible;
-        padding: 6px 4px 14px 4px;
+        padding: 8px 6px 16px 6px;
       }
       .tv-rail::-webkit-scrollbar {
         display: none;
@@ -372,60 +453,74 @@
         display: flex;
         -webkit-flex-wrap: wrap;
         flex-wrap: wrap;
-        padding: 6px 4px 20px 4px;
+        padding: 8px 6px 22px 6px;
       }
 
+      /* Movie / Series 2:3 Poster Cards */
       .tv-card {
         position: relative;
-        width: 176px;
+        width: 174px;
         -webkit-flex-shrink: 0;
         flex-shrink: 0;
         margin-right: 16px;
-        margin-bottom: 14px;
-        border-radius: 16px;
-        background: #141418;
+        margin-bottom: 16px;
+        border-radius: 15px;
+        background: #141419;
         border: 1px solid rgba(255, 255, 255, 0.1);
         overflow: hidden;
         cursor: pointer;
         text-align: left;
         padding: 0;
         color: #ffffff;
-        -webkit-transition: -webkit-transform 0.16s ease, border-color 0.16s ease;
-        transition: transform 0.16s ease, border-color 0.16s ease;
-      }
-      .tv-card.channel-card {
-        width: 224px;
+        -webkit-transition: -webkit-transform 0.15s ease, border-color 0.15s ease;
+        transition: transform 0.15s ease, border-color 0.15s ease;
       }
       .tv-card:focus,
       .tv-card:hover {
-        -webkit-transform: scale(1.05);
-        transform: scale(1.05);
-        border-color: #bf94ff;
-        z-index: 4;
+        -webkit-transform: scale(1.055);
+        transform: scale(1.055);
+        border-color: #ffffff;
+        z-index: 5;
+      }
+      .tv-card-poster-wrap {
+        position: relative;
+        width: 100%;
+        height: 248px;
+        background: linear-gradient(155deg, #211d30 0%, #121218 100%);
+        overflow: hidden;
       }
       .tv-card-poster {
         width: 100%;
-        height: 248px;
+        height: 100%;
         object-fit: cover;
         display: block;
-        background: #1d1d24;
       }
-      .tv-card.channel-card .tv-card-poster {
-        height: 122px;
-        display: -webkit-flex;
-        display: flex;
+      .tv-card-poster-fallback {
+        display: none;
+        width: 100%;
+        height: 100%;
+        padding: 16px;
         -webkit-align-items: center;
         align-items: center;
         -webkit-justify-content: center;
         justify-content: center;
-        font-size: 28px;
+        text-align: center;
+        font-size: 15px;
         font-weight: 800;
-        letter-spacing: 0.04em;
-        background: linear-gradient(145deg, #1e1b2e 0%, #111116 100%);
-        color: #ffffff;
+        color: #e4e4ec;
+        background: linear-gradient(155deg, #27203d 0%, #111116 100%);
+      }
+      .tv-card-poster-grad {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 64px;
+        background: linear-gradient(to top, rgba(20, 20, 25, 0.96) 0%, rgba(20, 20, 25, 0) 100%);
+        pointer-events: none;
       }
       .tv-card-body {
-        padding: 10px 12px 12px 12px;
+        padding: 9px 12px 12px 12px;
       }
       .tv-card-title {
         font-size: 14px;
@@ -437,32 +532,102 @@
       }
       .tv-card-meta {
         font-size: 12px;
-        color: #adadb8;
+        color: #a6a6b4;
         margin-top: 3px;
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
       }
-      .tv-card-badge {
-        position: absolute;
-        top: 8px;
-        left: 8px;
-        padding: 3px 8px;
-        border-radius: 7px;
-        background: rgba(11, 11, 14, 0.88);
-        border: 1px solid rgba(191, 148, 255, 0.45);
-        color: #ded0ff;
+
+      /* Sleek Network-Branded Broadcast Cards for Live TV & Sports */
+      .tv-card.channel-card {
+        width: 246px;
+        background: #131318;
+      }
+      .tv-channel-stage {
+        position: relative;
+        width: 100%;
+        height: 122px;
+        padding: 12px 14px;
+        display: -webkit-flex;
+        display: flex;
+        -webkit-flex-direction: column;
+        flex-direction: column;
+        -webkit-justify-content: space-between;
+        justify-content: space-between;
+        overflow: hidden;
+      }
+      .tv-channel-stage-top {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: space-between;
+        justify-content: space-between;
+      }
+      .tv-channel-dial {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 12px;
+        font-weight: 800;
+        color: rgba(255, 255, 255, 0.88);
+        letter-spacing: 0.06em;
+      }
+      .tv-channel-live {
+        display: -webkit-inline-flex;
+        display: inline-flex;
+        -webkit-align-items: center;
+        align-items: center;
         font-size: 11px;
         font-weight: 800;
+        color: #ffffff;
+        letter-spacing: 0.05em;
+      }
+      .tv-live-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 999px;
+        background: #ff3b30;
+        box-shadow: 0 0 8px #ff3b30;
+        margin-right: 5px;
+      }
+      .tv-channel-mark {
+        font-size: 26px;
+        font-weight: 900;
+        letter-spacing: 0.02em;
+        color: #ffffff;
+        text-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .tv-channel-epg-bar {
+        width: 100%;
+        height: 3px;
+        background: rgba(255, 255, 255, 0.14);
+        border-radius: 99px;
+        overflow: hidden;
+        margin-top: 8px;
+      }
+      .tv-channel-epg-fill {
+        height: 100%;
+        background: #a970ff;
+      }
+      .tv-channel-epg-now {
+        font-size: 12px;
+        color: #d4d4df;
+        margin-top: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
       }
 
       /* TV Search View */
       .tv-search-panel {
-        padding: 18px 20px;
+        padding: 18px 22px;
         border-radius: 18px;
-        background: #141418;
-        border: 1px solid rgba(255, 255, 255, 0.1);
-        margin-bottom: 18px;
+        background: #131318;
+        border: 1px solid rgba(255, 255, 255, 0.11);
+        margin-bottom: 20px;
       }
       .tv-search-row {
         display: -webkit-flex;
@@ -475,10 +640,10 @@
         -webkit-flex: 1;
         flex: 1;
         height: 48px;
-        padding: 0 16px;
+        padding: 0 18px;
         border-radius: 13px;
-        border: 1px solid rgba(255, 255, 255, 0.16);
-        background: #0b0b0e;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: #09090c;
         color: #ffffff;
         font-size: 16px;
         font-weight: 600;
@@ -493,7 +658,7 @@
       .tv-chip-btn {
         height: 38px;
         padding: 0 14px;
-        margin: 4px 6px 4px 0;
+        margin: 4px 7px 4px 0;
         border-radius: 10px;
         border: 1px solid rgba(255, 255, 255, 0.14);
         background: rgba(255, 255, 255, 0.06);
@@ -505,7 +670,7 @@
       .tv-chip-btn:focus,
       .tv-chip-btn:hover {
         background: #9146ff;
-        border-color: #bf94ff;
+        border-color: #ffffff;
       }
 
       /* Series & Episode Modal for D-Pad */
@@ -516,19 +681,19 @@
         left: 0;
         right: 0;
         bottom: 0;
-        background: rgba(6, 6, 9, 0.92);
+        background: rgba(6, 6, 9, 0.94);
         z-index: 40;
-        padding: 36px 52px;
+        padding: 32px 48px;
         overflow-y: auto;
       }
       .series-modal-card {
         max-width: 1120px;
         margin: 0 auto;
-        border-radius: 24px;
-        background: #141418;
+        border-radius: 22px;
+        background: #131318;
         border: 1px solid rgba(255, 255, 255, 0.14);
-        padding: 28px 32px;
-        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.9);
+        padding: 26px 30px;
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.92);
       }
       .series-modal-top {
         display: -webkit-flex;
@@ -549,8 +714,8 @@
         margin-right: 16px;
       }
       .series-modal-poster {
-        width: 120px;
-        height: 174px;
+        width: 116px;
+        height: 170px;
         border-radius: 14px;
         object-fit: cover;
         margin-right: 20px;
@@ -564,7 +729,7 @@
         display: flex;
         -webkit-flex-wrap: wrap;
         flex-wrap: wrap;
-        margin-bottom: 14px;
+        margin-bottom: 12px;
       }
       .series-pill-btn {
         height: 40px;
@@ -580,7 +745,7 @@
       }
       .series-pill-btn.active {
         background: #9146ff;
-        border-color: #bf94ff;
+        border-color: #ffffff;
         color: #ffffff;
       }
       .series-episodes-grid {
@@ -588,31 +753,31 @@
         display: flex;
         -webkit-flex-wrap: wrap;
         flex-wrap: wrap;
-        max-height: 310px;
+        max-height: 320px;
         overflow-y: auto;
-        padding-top: 6px;
+        padding: 6px 4px;
       }
       .ep-tile-btn {
         width: 31.8%;
         margin: 0 1.5% 10px 0;
-        padding: 12px 14px;
+        padding: 13px 15px;
         border-radius: 13px;
         border: 1px solid rgba(255, 255, 255, 0.1);
-        background: rgba(255, 255, 255, 0.05);
+        background: rgba(255, 255, 255, 0.055);
         color: #ffffff;
         text-align: left;
         cursor: pointer;
       }
       .ep-tile-btn:focus,
       .ep-tile-btn:hover {
-        background: rgba(145, 70, 255, 0.35);
-        border-color: #bf94ff;
+        background: rgba(145, 70, 255, 0.36);
+        border-color: #ffffff;
       }
       .ep-tile-num {
         font-size: 12px;
         font-weight: 800;
-        color: #bf94ff;
-        margin-bottom: 3px;
+        color: #c6a2ff;
+        margin-bottom: 4px;
       }
       .ep-tile-title {
         font-size: 14px;
@@ -635,7 +800,7 @@
         flex-direction: column;
         -webkit-justify-content: space-between;
         justify-content: space-between;
-        padding: 32px 52px;
+        padding: 30px 48px;
       }
       .tv-header {
         display: -webkit-flex;
@@ -661,8 +826,8 @@
         margin-left: 10px;
       }
       .status-badge {
-        padding: 9px 15px;
-        border-radius: 13px;
+        padding: 9px 14px;
+        border-radius: 12px;
         font-size: 13px;
         font-weight: 700;
         background: rgba(16, 185, 129, 0.14);
@@ -675,7 +840,7 @@
         color: #fcd34d;
       }
       .center-stage {
-        max-width: 920px;
+        max-width: 900px;
         width: 100%;
         margin: 0 auto;
         text-align: center;
@@ -685,11 +850,11 @@
         font-weight: 700;
         text-transform: uppercase;
         letter-spacing: 0.14em;
-        color: #bf94ff;
-        margin-bottom: 10px;
+        color: #c6a2ff;
+        margin-bottom: 8px;
       }
       .main-heading {
-        font-size: 38px;
+        font-size: 36px;
         font-weight: 800;
         color: #ffffff;
         letter-spacing: -0.02em;
@@ -698,8 +863,8 @@
       .sub-heading {
         font-size: 16px;
         color: #adadb8;
-        max-width: 680px;
-        margin: 0 auto 24px auto;
+        max-width: 660px;
+        margin: 0 auto 22px auto;
         line-height: 1.45;
       }
       .digits-row {
@@ -707,16 +872,16 @@
         display: flex;
         -webkit-justify-content: center;
         justify-content: center;
-        margin-bottom: 24px;
+        margin-bottom: 22px;
       }
       .digit-tile {
-        width: 112px;
-        height: 140px;
+        width: 108px;
+        height: 132px;
         margin: 0 10px;
-        border-radius: 22px;
+        border-radius: 20px;
         background: linear-gradient(160deg, #1b1b24 0%, #111116 100%);
-        border: 2px solid rgba(145, 70, 255, 0.42);
-        box-shadow: 0 24px 64px rgba(0, 0, 0, 0.9), 0 0 40px rgba(145, 70, 255, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.14);
+        border: 2px solid rgba(145, 70, 255, 0.45);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.9), 0 0 38px rgba(145, 70, 255, 0.24), inset 0 1px 0 rgba(255, 255, 255, 0.14);
         display: -webkit-flex;
         display: flex;
         -webkit-align-items: center;
@@ -724,7 +889,7 @@
         -webkit-justify-content: center;
         justify-content: center;
         font-family: 'Courier New', Courier, monospace;
-        font-size: 72px;
+        font-size: 68px;
         font-weight: 800;
         color: #ffffff;
       }
@@ -740,14 +905,14 @@
         margin-bottom: 16px;
       }
       .actions-row > * {
-        margin: 6px 8px;
+        margin: 5px 8px;
       }
       .direct-room-box {
         max-width: 540px;
         margin: 0 auto;
         padding: 12px 16px;
-        border-radius: 16px;
-        background: #18181b;
+        border-radius: 15px;
+        background: #16161c;
         border: 1px solid rgba(255, 255, 255, 0.1);
         display: -webkit-flex;
         display: flex;
@@ -763,12 +928,12 @@
         text-align: left;
       }
       .direct-room-input {
-        width: 145px;
+        width: 140px;
         height: 42px;
         padding: 0 12px;
-        border-radius: 12px;
+        border-radius: 11px;
         border: 1px solid rgba(255, 255, 255, 0.16);
-        background: #0e0e10;
+        background: #09090c;
         color: #ffffff;
         font-size: 16px;
         font-weight: 700;
@@ -779,10 +944,10 @@
       .direct-room-submit {
         height: 42px;
         padding: 0 18px;
-        border-radius: 12px;
+        border-radius: 11px;
         border: none;
         background: #ffffff;
-        color: #0e0e10;
+        color: #09090c;
         font-size: 14px;
         font-weight: 800;
         cursor: pointer;
@@ -792,7 +957,7 @@
         max-width: 640px;
         margin: 0 auto 18px auto;
         padding: 16px 24px;
-        border-radius: 18px;
+        border-radius: 16px;
         background: rgba(16, 185, 129, 0.22);
         border: 1px solid rgba(52, 211, 153, 0.55);
         color: #d1fae5;
@@ -811,10 +976,9 @@
       .step-card {
         width: 32%;
         padding: 14px 16px;
-        border-radius: 16px;
-        background: linear-gradient(160deg, rgba(28, 28, 36, 0.9) 0%, rgba(16, 16, 20, 0.95) 100%);
+        border-radius: 15px;
+        background: linear-gradient(160deg, rgba(26, 26, 34, 0.92) 0%, rgba(15, 15, 19, 0.96) 100%);
         border: 1px solid rgba(255, 255, 255, 0.1);
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
         display: -webkit-flex;
         display: flex;
         -webkit-align-items: flex-start;
@@ -824,8 +988,8 @@
         width: 28px;
         height: 28px;
         border-radius: 9px;
-        background: rgba(145, 70, 255, 0.22);
-        border: 1px solid rgba(145, 70, 255, 0.5);
+        background: rgba(145, 70, 255, 0.24);
+        border: 1px solid rgba(145, 70, 255, 0.55);
         color: #ded0ff;
         font-size: 13px;
         font-weight: 800;
@@ -852,7 +1016,7 @@
       }
 
       /* =================================================================== */
-      /* SCREEN 2: FULL-SCREEN 1080P PLAYER (LOCAL GOOGLE TV & SYNCED ROOM)   */
+      /* SCREEN 2: FULL-SCREEN 1080P PLAYER (HLS + MP4 + YOUTUBE + EMBED)    */
       /* =================================================================== */
       #player-screen {
         display: none;
@@ -881,7 +1045,22 @@
       #tv-video.aspect-fill {
         object-fit: fill;
       }
-      #yt-wrap {
+      /* Completely suppress Android WebView / Chromium giant grey center play icon */
+      #tv-video::-webkit-media-controls,
+      #tv-video::-webkit-media-controls-enclosure,
+      #tv-video::-webkit-media-controls-panel,
+      #tv-video::-webkit-media-controls-overlay-play-button,
+      #tv-video::-webkit-media-controls-start-playback-button {
+        display: none !important;
+        -webkit-appearance: none !important;
+        opacity: 0 !important;
+        width: 0 !important;
+        height: 0 !important;
+        pointer-events: none !important;
+      }
+
+      #yt-wrap,
+      #embed-wrap {
         display: none;
         position: absolute;
         top: 0;
@@ -889,18 +1068,23 @@
         width: 100%;
         height: 100%;
         background: #000000;
+        z-index: 6;
       }
-      #yt-player {
+      #yt-player,
+      #embed-frame {
         width: 100%;
         height: 100%;
+        border: 0;
+        background: #000000;
       }
+
       #standby-overlay {
         position: absolute;
         top: 0;
         left: 0;
         right: 0;
         bottom: 0;
-        background: radial-gradient(circle at center, #18181b 0%, #0e0e10 80%);
+        background: radial-gradient(circle at center, #181820 0%, #09090c 82%);
         display: -webkit-flex;
         display: flex;
         -webkit-flex-direction: column;
@@ -911,39 +1095,58 @@
         justify-content: center;
         text-align: center;
         padding: 36px 52px;
-        z-index: 15;
+        z-index: 18;
+      }
+      .tv-spinner {
+        width: 46px;
+        height: 46px;
+        border-radius: 999px;
+        border: 4px solid rgba(191, 148, 255, 0.22);
+        border-top-color: #a970ff;
+        margin-bottom: 18px;
+        -webkit-animation: tvspin 0.85s linear infinite;
+        animation: tvspin 0.85s linear infinite;
+      }
+      @-webkit-keyframes tvspin {
+        from { -webkit-transform: rotate(0deg); }
+        to { -webkit-transform: rotate(360deg); }
+      }
+      @keyframes tvspin {
+        from { transform: rotate(0deg); }
+        to { transform: rotate(360deg); }
       }
       .room-live-pill {
-        padding: 8px 18px;
-        border-radius: 12px;
-        background: rgba(16, 185, 129, 0.16);
-        border: 1px solid rgba(52, 211, 153, 0.45);
-        color: #6ee7b7;
-        font-size: 15px;
+        padding: 7px 16px;
+        border-radius: 11px;
+        background: rgba(145, 70, 255, 0.16);
+        border: 1px solid rgba(191, 148, 255, 0.42);
+        color: #ded0ff;
+        font-size: 14px;
         font-weight: 700;
-        margin-bottom: 18px;
+        margin-bottom: 14px;
       }
       .standby-title {
-        font-size: 32px;
+        font-size: 30px;
         font-weight: 800;
         color: #ffffff;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
       }
       .standby-sub {
-        font-size: 17px;
-        color: #a1a1aa;
+        font-size: 16px;
+        color: #adadb8;
         max-width: 640px;
         line-height: 1.5;
-        margin-bottom: 24px;
+        margin-bottom: 22px;
       }
 
+      /* Clean Unified Top & Bottom Cinema HUD (No Duplicate Buttons) */
       #player-hud {
         position: absolute;
         top: 0;
         left: 0;
         right: 0;
-        padding: 26px 48px 48px 48px;
-        background: linear-gradient(to bottom, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0) 100%);
+        padding: 24px 42px 44px 42px;
+        background: linear-gradient(to bottom, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0) 100%);
         display: -webkit-flex;
         display: flex;
         -webkit-align-items: center;
@@ -951,20 +1154,34 @@
         -webkit-justify-content: space-between;
         justify-content: space-between;
         z-index: 25;
-        transition: opacity 0.25s ease;
+        transition: opacity 0.22s ease;
       }
       #player-hud.hidden-hud {
         opacity: 0;
         pointer-events: none;
       }
+      .hud-left-cluster {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        min-width: 0;
+      }
+      .hud-left-cluster > * {
+        margin-right: 16px;
+      }
       .hud-meta-title {
-        font-size: 22px;
+        font-size: 21px;
         font-weight: 800;
         color: #ffffff;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 680px;
       }
       .hud-meta-sub {
-        font-size: 14px;
-        color: #d4d4d8;
+        font-size: 13px;
+        color: #d4d4dc;
         margin-top: 3px;
       }
       .hud-controls {
@@ -982,47 +1199,92 @@
         left: 0;
         right: 0;
         bottom: 0;
-        padding: 36px 48px 28px 48px;
-        background: linear-gradient(to top, rgba(0, 0, 0, 0.92) 0%, rgba(0, 0, 0, 0) 100%);
+        padding: 36px 42px 24px 42px;
+        background: linear-gradient(to top, rgba(0, 0, 0, 0.95) 0%, rgba(0, 0, 0, 0.6) 65%, rgba(0, 0, 0, 0) 100%);
         display: -webkit-flex;
         display: flex;
-        -webkit-align-items: center;
-        align-items: center;
-        -webkit-justify-content: center;
-        justify-content: center;
-        -webkit-flex-wrap: wrap;
-        flex-wrap: wrap;
+        -webkit-flex-direction: column;
+        flex-direction: column;
         z-index: 26;
-        transition: opacity 0.25s ease;
+        transition: opacity 0.22s ease;
       }
       #player-bottom-dock.hidden-hud {
         opacity: 0;
         pointer-events: none;
       }
-      #player-bottom-dock > * {
-        margin: 5px 6px;
+      .dock-progress-row {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .dock-time-label {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 13px;
+        font-weight: 700;
+        color: #e4e4ec;
+        min-width: 58px;
+      }
+      .dock-progress-track {
+        -webkit-flex: 1;
+        flex: 1;
+        height: 6px;
+        border-radius: 99px;
+        background: rgba(255, 255, 255, 0.18);
+        margin: 0 12px;
+        overflow: hidden;
+      }
+      .dock-progress-fill {
+        width: 0%;
+        height: 100%;
+        border-radius: 99px;
+        background: linear-gradient(90deg, #9146ff 0%, #d4bbff 100%);
+      }
+      .dock-progress-fill.live-fill {
+        width: 100%;
+        background: linear-gradient(90deg, #eb0400 0%, #ff5c58 100%);
+      }
+      .dock-buttons-row {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: space-between;
+        justify-content: space-between;
+        -webkit-flex-wrap: wrap;
+        flex-wrap: wrap;
+      }
+      .dock-btn-group {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+      }
+      .dock-btn-group > * {
+        margin-right: 8px;
       }
 
       #tv-toast {
         display: none;
         position: absolute;
-        top: 88px;
+        top: 84px;
         left: 50%;
         -webkit-transform: translateX(-50%);
         transform: translateX(-50%);
-        padding: 12px 22px;
-        border-radius: 14px;
-        background: rgba(15, 17, 25, 0.95);
-        border: 1px solid rgba(191, 148, 255, 0.35);
+        padding: 11px 22px;
+        border-radius: 13px;
+        background: rgba(14, 15, 22, 0.96);
+        border: 1px solid rgba(191, 148, 255, 0.42);
         color: #ffffff;
-        font-size: 16px;
+        font-size: 15px;
         font-weight: 700;
         z-index: 55;
       }
       #unmute-banner {
         display: none;
         position: absolute;
-        bottom: 104px;
+        bottom: 120px;
         left: 50%;
         -webkit-transform: translateX(-50%);
         transform: translateX(-50%);
@@ -1041,10 +1303,10 @@
         display: none;
         position: fixed;
         bottom: 20px;
-        right: 48px;
+        right: 42px;
         z-index: 60;
         padding: 12px 18px;
-        border-radius: 16px;
+        border-radius: 14px;
         background: rgba(20, 20, 26, 0.96);
         border: 1px solid rgba(145, 70, 255, 0.55);
         box-shadow: 0 18px 50px rgba(0, 0, 0, 0.85);
@@ -1086,15 +1348,15 @@
       @media (max-width: 960px) {
         #tv-hub-screen,
         #pairing-screen {
-          padding: 18px 20px;
+          padding: 16px 18px;
         }
-        .hub-topbar {
+        .hub-topbar,
+        .hub-left-cluster {
           -webkit-flex-wrap: wrap;
           flex-wrap: wrap;
         }
         .hub-nav-pills {
           margin-top: 10px;
-          overflow-x: auto;
           max-width: 100%;
         }
         .main-heading {
@@ -1130,38 +1392,40 @@
     <!-- =================================================================== -->
     <div id="tv-hub-screen">
       <div class="hub-topbar">
-        <div class="hub-brand">
-          <div class="brand-logo-box">
-            <svg width="32" height="32" viewBox="0 0 100 100" fill="none">
-              <path d="M 18 14 H 86 V 63 L 70 79 H 52 L 38 90 V 79 H 18 V 14 Z" fill="#9146FF" />
-              <path d="M 28 24 H 76 V 58 L 65 69 H 47 L 38 77 V 69 H 28 V 24 Z" fill="#0E0E10" />
-              <rect x="39" y="35" width="6.5" height="19" rx="3.25" fill="#FFFFFF" />
-              <rect x="51" y="35" width="6.5" height="19" rx="3.25" fill="#FFFFFF" />
-              <path d="M 63 36.5 L 71.5 44.5 L 63 52.5 Z" fill="#FFFFFF" />
-            </svg>
-          </div>
-          <div>
-            <div class="brand-title">
-              NAIM <span class="accent">CINE</span>
-              <span class="tag">Google TV</span>
+        <div class="hub-left-cluster">
+          <div class="hub-brand">
+            <div class="brand-logo-box">
+              <svg width="28" height="28" viewBox="0 0 100 100" fill="none">
+                <path d="M 18 14 H 86 V 63 L 70 79 H 52 L 38 90 V 79 H 18 V 14 Z" fill="#9146FF" />
+                <path d="M 28 24 H 76 V 58 L 65 69 H 47 L 38 77 V 69 H 28 V 24 Z" fill="#0E0E10" />
+                <rect x="39" y="35" width="6.5" height="19" rx="3.25" fill="#FFFFFF" />
+                <rect x="51" y="35" width="6.5" height="19" rx="3.25" fill="#FFFFFF" />
+                <path d="M 63 36.5 L 71.5 44.5 L 63 52.5 Z" fill="#FFFFFF" />
+              </svg>
             </div>
-            <div class="brand-sub" id="hub-version-label">Mando D-Pad + Vinculación en vivo</div>
+            <div>
+              <div class="brand-title">
+                NAIM <span class="accent">CINE</span>
+                <span class="tag">Google TV</span>
+              </div>
+              <div class="brand-sub" id="hub-version-label">Google TV · Control D-Pad</div>
+            </div>
           </div>
-        </div>
 
-        <div class="hub-nav-pills" id="hub-nav-tabs">
-          <button type="button" class="hub-tab-btn active" data-tab="home" tabindex="0">Inicio</button>
-          <button type="button" class="hub-tab-btn" data-tab="releases" tabindex="0">Estrenos</button>
-          <button type="button" class="hub-tab-btn" data-tab="movies" tabindex="0">Cine</button>
-          <button type="button" class="hub-tab-btn" data-tab="series" tabindex="0">Series</button>
-          <button type="button" class="hub-tab-btn" data-tab="anime" tabindex="0">Anime</button>
-          <button type="button" class="hub-tab-btn" data-tab="tdt" tabindex="0">TDT Directo</button>
-          <button type="button" class="hub-tab-btn" data-tab="search" tabindex="0">Buscar</button>
+          <div class="hub-nav-pills" id="hub-nav-tabs">
+            <button type="button" class="hub-tab-btn search-left-btn" data-tab="search" tabindex="0">🔍 Buscar</button>
+            <button type="button" class="hub-tab-btn active" data-tab="home" tabindex="0">Inicio</button>
+            <button type="button" class="hub-tab-btn" data-tab="tdt" tabindex="0">TDT Directo</button>
+            <button type="button" class="hub-tab-btn" data-tab="releases" tabindex="0">Estrenos</button>
+            <button type="button" class="hub-tab-btn" data-tab="movies" tabindex="0">Cine</button>
+            <button type="button" class="hub-tab-btn" data-tab="series" tabindex="0">Series</button>
+            <button type="button" class="hub-tab-btn" data-tab="anime" tabindex="0">Anime</button>
+          </div>
         </div>
 
         <div class="hub-right-actions">
           <button type="button" id="btn-go-pairing" class="pair-pill-btn" tabindex="0">
-            📺 Vincular Móvil · <strong id="hub-pair-code">••••</strong>
+            📺 Móvil · <strong id="hub-pair-code">••••</strong>
           </button>
           <button type="button" id="btn-hub-fs" class="tv-btn-fullscreen" tabindex="0">
             ⛶ Pantalla
@@ -1171,7 +1435,7 @@
 
       <div class="hub-scroll-body" id="hub-scroll-body">
         <div id="hub-dynamic-content">
-          <div style="padding: 60px 20px; text-align: center; color: #adadb8; font-size: 18px; font-weight: 700;">
+          <div style="padding: 80px 20px; text-align: center; color: #adadb8; font-size: 18px; font-weight: 700;">
             Cargando cartelera, series, anime y canales en directo...
           </div>
         </div>
@@ -1189,18 +1453,18 @@
             <div>
               <div class="eyebrow" id="sm-badge" style="margin-bottom: 4px;">SERIE HD</div>
               <h2 id="sm-title" style="font-size: 28px; font-weight: 800; color: #ffffff; margin-bottom: 8px;">Cargando...</h2>
-              <p id="sm-overview" style="font-size: 14px; color: #adadb8; line-height: 1.45; max-width: 680px;"></p>
+              <p id="sm-overview" style="font-size: 14px; color: #b4b4c0; line-height: 1.45; max-width: 680px;"></p>
             </div>
           </div>
           <button type="button" id="btn-close-series-modal" class="tv-btn" tabindex="0">
-            ✕ Volver (Atrás)
+            ✕ Volver
           </button>
         </div>
 
         <div class="series-lang-row" id="sm-lang-row">
-          <button type="button" class="series-pill-btn active" data-lang="ES" tabindex="0">🇪🇸 Castellano</button>
-          <button type="button" class="series-pill-btn" data-lang="LAT" tabindex="0">🌎 Latino</button>
-          <button type="button" class="series-pill-btn" data-lang="VOSE" tabindex="0">🇯🇵/🇺🇸 VOSE</button>
+          <button type="button" class="series-pill-btn active" data-lang="ES" tabindex="0">Castellano</button>
+          <button type="button" class="series-pill-btn" data-lang="LAT" tabindex="0">Latino</button>
+          <button type="button" class="series-pill-btn" data-lang="VOSE" tabindex="0">VOSE (Sub ES)</button>
         </div>
 
         <div class="series-season-row" id="sm-seasons-row"></div>
@@ -1215,7 +1479,7 @@
       <div class="tv-header">
         <div class="brand-row">
           <div class="brand-logo-box">
-            <svg width="36" height="36" viewBox="0 0 100 100" fill="none">
+            <svg width="32" height="32" viewBox="0 0 100 100" fill="none">
               <path d="M 18 14 H 86 V 63 L 70 79 H 52 L 38 90 V 79 H 18 V 14 Z" fill="#9146FF" />
               <path d="M 28 24 H 76 V 58 L 65 69 H 47 L 38 77 V 69 H 28 V 24 Z" fill="#0E0E10" />
               <rect x="39" y="35" width="6.5" height="19" rx="3.25" fill="#FFFFFF" />
@@ -1229,15 +1493,15 @@
               <span class="tag">Smart TV</span>
             </div>
             <div class="brand-sub" id="host-url-label">
-              Modo Receptor 1080p · Compatible con Samsung Tizen, LG webOS y Google TV
+              Receptor 1080p · Google TV, Samsung Tizen y LG webOS
             </div>
           </div>
         </div>
 
         <div class="status-row">
           <div id="conn-badge" class="status-badge connecting">Conectando...</div>
-          <button type="button" id="btn-back-to-hub" class="tv-btn-primary" style="height: 44px; font-size: 14px;" tabindex="0">
-            🏠 Explorar con Mando
+          <button type="button" id="btn-back-to-hub" class="tv-btn-primary" style="height: 42px; font-size: 14px;" tabindex="0">
+            ← Volver al Menú TV
           </button>
           <button type="button" id="btn-web-mode" class="tv-btn" tabindex="0">
             Portada Web
@@ -1250,7 +1514,7 @@
         <h1 class="main-heading">Introduce estos 4 números en tu móvil</h1>
         <p class="sub-heading">
           Abre tu sala de <strong>NAIM CINE</strong> en el teléfono, toca el botón
-          <strong>Smart TV</strong> (arriba o el icono Cast del vídeo) y escribe este código:
+          <strong>Smart TV</strong> y escribe este código:
         </p>
 
         <div class="digits-row">
@@ -1265,19 +1529,19 @@
         <div id="pairing-controls">
           <div class="actions-row">
             <button type="button" id="btn-unlock-audio" class="tv-btn-primary" tabindex="0">
-              🔊 Pulsa OK para Sonido + Pantalla Completa
+              🔊 Activar Sonido + Pantalla Completa
             </button>
             <button type="button" id="btn-pairing-fs" class="tv-btn-fullscreen" tabindex="0">
               ⛶ Pantalla Completa TV
             </button>
             <button type="button" id="btn-new-code" class="tv-btn" tabindex="0">
-              Generar otro código
+              Nuevo código
             </button>
           </div>
 
           <form id="direct-room-form" class="direct-room-box">
             <span class="direct-room-label">
-              ¿Prefieres entrar directo con el código de sala?
+              ¿Prefieres entrar directo con código de sala?
             </span>
             <div style="display: -webkit-flex; display: flex; -webkit-align-items: center; align-items: center;">
               <input
@@ -1308,14 +1572,14 @@
           <div class="step-num">2</div>
           <div class="step-text">
             <strong>Pulsa el botón Smart TV</strong>
-            Arriba en la barra o en el botón Cast del vídeo y escribe los 4 dígitos.
+            Arriba en la barra o en el reproductor y escribe los 4 dígitos.
           </div>
         </div>
         <div class="step-card">
           <div class="step-num">3</div>
           <div class="step-text">
             <strong>Tu móvil es el mando</strong>
-            Elige películas, series, fútbol o YouTube y controla Play, Pausa y Volumen.
+            Envía películas, series, fútbol o YouTube al televisor al instante.
           </div>
         </div>
       </div>
@@ -1325,65 +1589,91 @@
     <!-- SCREEN 2: FULL-SCREEN 1080P PLAYER (LOCAL + PAIRED PARTY)           -->
     <!-- =================================================================== -->
     <div id="player-screen">
-      <video id="tv-video" playsinline webkit-playsinline preload="auto"></video>
+      <video
+        id="tv-video"
+        playsinline
+        webkit-playsinline
+        preload="auto"
+        poster="data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs="
+      ></video>
 
       <div id="yt-wrap">
         <div id="yt-player"></div>
       </div>
 
+      <div id="embed-wrap">
+        <iframe
+          id="embed-frame"
+          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+          allowfullscreen
+          referrerpolicy="no-referrer-when-downgrade"
+        ></iframe>
+      </div>
+
       <div id="standby-overlay">
-        <div class="room-live-pill" id="standby-room-pill">✓ Smart TV Conectada</div>
-        <h2 class="standby-title" id="standby-title-text">Televisor listo para proyectar en 1080p</h2>
+        <div class="tv-spinner" id="standby-spinner"></div>
+        <div class="room-live-pill" id="standby-room-pill">Conectando señal HD...</div>
+        <h2 class="standby-title" id="standby-title-text">Preparando reproducción en 1080p</h2>
         <p class="standby-sub" id="standby-sub-text">
-          Elige cualquier película, serie, partido en directo o vídeo desde tu móvil
-          y empezará aquí automáticamente.
+          Cargando servidor de emisión directo para Google TV...
         </p>
         <div style="display: -webkit-flex; display: flex; -webkit-flex-wrap: wrap; flex-wrap: wrap; -webkit-justify-content: center; justify-content: center;">
-          <button type="button" id="btn-standby-fs" class="tv-btn-primary" tabindex="0" style="margin: 6px 8px;">
-            ⛶ Poner TV en Pantalla Completa
+          <button type="button" id="btn-standby-retry" class="tv-btn-primary" style="display: none; margin: 6px 8px;" tabindex="0">
+            ↻ Probar otro servidor
           </button>
-          <button type="button" id="btn-standby-exit" class="tv-btn" tabindex="0" style="margin: 6px 8px;">
-            Volver al Menú Google TV
+          <button type="button" id="btn-standby-exit" class="tv-btn" style="margin: 6px 8px;" tabindex="0">
+            ← Volver al Menú TV
           </button>
         </div>
       </div>
 
       <div id="player-hud">
-        <div>
-          <div class="hud-meta-title" id="hud-title">NAIM CINE Google TV</div>
-          <div class="hud-meta-sub" id="hud-sub">Reproducción HD</div>
+        <div class="hud-left-cluster">
+          <button type="button" id="btn-hud-exit" class="tv-btn" tabindex="0">
+            ← Volver
+          </button>
+          <div style="min-width: 0;">
+            <div class="hud-meta-title" id="hud-title">NAIM CINE Google TV</div>
+            <div class="hud-meta-sub" id="hud-sub">Reproducción HD</div>
+          </div>
         </div>
         <div class="hud-controls">
-          <button type="button" id="btn-hud-fs" class="tv-btn-fullscreen" tabindex="0">
-            ⛶ Pantalla Completa
-          </button>
-          <button type="button" id="btn-hud-aspect" class="tv-btn" tabindex="0">
-            ↔ Ajuste: Original
-          </button>
           <button type="button" id="btn-hud-reload" class="tv-btn" tabindex="0">
-            Resincronizar
-          </button>
-          <button type="button" id="btn-hud-exit" class="tv-btn" tabindex="0">
-            ← Volver TV
+            ↻ Resincronizar
           </button>
         </div>
       </div>
 
       <div id="player-bottom-dock">
-        <button type="button" id="btn-dock-rew" class="tv-btn" tabindex="0">« -15s</button>
-        <button type="button" id="btn-hud-playpause" class="tv-btn-primary" tabindex="0">⏯ Play / Pausa</button>
-        <button type="button" id="btn-dock-ff" class="tv-btn" tabindex="0">+15s »</button>
-        <button type="button" id="btn-dock-audio" class="tv-btn" style="display: none;" tabindex="0">🌐 Pista</button>
-        <button type="button" id="btn-dock-voldown" class="tv-btn" tabindex="0">🔉 Vol -</button>
-        <button type="button" id="btn-dock-mute" class="tv-btn" tabindex="0">🔇 Silenciar</button>
-        <button type="button" id="btn-dock-volup" class="tv-btn" tabindex="0">🔊 Vol +</button>
-        <button type="button" id="btn-dock-aspect" class="tv-btn" tabindex="0">↔ Rellenar</button>
-        <button type="button" id="btn-dock-fs" class="tv-btn-fullscreen" tabindex="0">⛶ Completa</button>
+        <div class="dock-progress-row" id="dock-progress-row">
+          <span class="dock-time-label" id="dock-time-cur">00:00</span>
+          <div class="dock-progress-track">
+            <div class="dock-progress-fill" id="dock-progress-fill"></div>
+          </div>
+          <span class="dock-time-label" id="dock-time-dur" style="text-align: right;">--:--</span>
+        </div>
+        <div class="dock-buttons-row">
+          <div class="dock-btn-group">
+            <button type="button" id="btn-dock-chprev" class="tv-btn" style="display: none;" tabindex="0">‹ Canal Ant.</button>
+            <button type="button" id="btn-dock-rew" class="tv-btn" tabindex="0">« -15s</button>
+            <button type="button" id="btn-hud-playpause" class="tv-btn-primary" tabindex="0">⏸ Pausar</button>
+            <button type="button" id="btn-dock-ff" class="tv-btn" tabindex="0">+15s »</button>
+            <button type="button" id="btn-dock-chnext" class="tv-btn" style="display: none;" tabindex="0">Canal Sig. ›</button>
+            <button type="button" id="btn-dock-audio" class="tv-btn" style="display: none;" tabindex="0">🌐 Pista</button>
+          </div>
+          <div class="dock-btn-group">
+            <button type="button" id="btn-dock-voldown" class="tv-btn" tabindex="0">🔉 -</button>
+            <button type="button" id="btn-dock-mute" class="tv-btn" tabindex="0">🔇 Silenciar</button>
+            <button type="button" id="btn-dock-volup" class="tv-btn" tabindex="0">🔊 +</button>
+            <button type="button" id="btn-dock-aspect" class="tv-btn" tabindex="0">↔ Original</button>
+            <button type="button" id="btn-dock-fs" class="tv-btn-fullscreen" tabindex="0">⛶ Pantalla</button>
+          </div>
+        </div>
       </div>
 
       <div id="unmute-banner">
         <button type="button" id="btn-unmute-now" class="tv-btn-primary" tabindex="0">
-          🔊 Pulsa OK en el mando para activar Sonido
+          🔊 Pulsa OK para activar Sonido
         </button>
       </div>
 
@@ -1393,7 +1683,7 @@
 
     <div id="fs-prompt-banner">
       <button type="button" id="btn-confirm-remote-fs" class="tv-btn-primary" tabindex="0">
-        ⛶ Pulsa OK en el mando de la TV para Pantalla Completa
+        ⛶ Pulsa OK para Pantalla Completa
       </button>
     </div>
 
@@ -1406,12 +1696,11 @@
 
     <script>
       (function () {
-        var TV_WEB_VERSION = '3.0.0';
+        var TV_WEB_VERSION = '3.1.0';
         var TV_APK_STORAGE_KEY = 'naim_tv_native_apk_code_v1';
         var TV_WEB_VER_KEY = 'naim_tv_web_ver_v1';
         var TV_RELOAD_GUARD_KEY = 'naim_tv_reload_ts_v1';
 
-        // 1. Unregister stale PWA workers on TV browsers
         try {
           if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
             navigator.serviceWorker.getRegistrations().then(function (regs) {
@@ -1422,7 +1711,6 @@
           }
         } catch (e) {}
 
-        // Capture ?apkv= native shell versionCode from Google TV APK
         var searchStr = window.location.search || '';
         var installedApkCode = 0;
         try {
@@ -1445,11 +1733,11 @@
           stepDomainEl.textContent = hostLabel;
         }
         if (hubVerLabel) {
-          hubVerLabel.textContent = 'Google TV v' + TV_WEB_VERSION + ' · Navegación D-Pad + Código TV';
+          hubVerLabel.textContent = 'Google TV v' + TV_WEB_VERSION + ' · D-Pad + Código TV';
         }
 
         // Core State
-        var activeScreen = 'hub'; // 'hub' | 'pairing' | 'player'
+        var activeScreen = 'hub';
         var pairingCode = '';
         var isPaired = false;
         var isLocalPlayback = false;
@@ -1466,6 +1754,10 @@
         var hudTimer = null;
         var localTracks = [];
         var localTrackIdx = 0;
+        var activeLiveChannel = null;
+        var activeLiveTrackIdx = 0;
+        var activeLiveFilter = 'all';
+        var lastHubFocusedEl = null;
 
         var pairingWs = null;
         var roomWs = null;
@@ -1477,19 +1769,24 @@
         var pendingYtPlay = true;
 
         var hubScreen = document.getElementById('tv-hub-screen');
+        var hubScrollBody = document.getElementById('hub-scroll-body');
         var hubDynamicContent = document.getElementById('hub-dynamic-content');
         var hubPairCodeEl = document.getElementById('hub-pair-code');
         var pairingScreen = document.getElementById('pairing-screen');
         var playerScreen = document.getElementById('player-screen');
         var standbyOverlay = document.getElementById('standby-overlay');
+        var standbySpinner = document.getElementById('standby-spinner');
         var standbyRoomPill = document.getElementById('standby-room-pill');
         var standbyTitleText = document.getElementById('standby-title-text');
         var standbySubText = document.getElementById('standby-sub-text');
+        var btnStandbyRetry = document.getElementById('btn-standby-retry');
         var connBadge = document.getElementById('conn-badge');
         var pairedBanner = document.getElementById('paired-banner');
         var pairingControls = document.getElementById('pairing-controls');
         var videoEl = document.getElementById('tv-video');
         var ytWrap = document.getElementById('yt-wrap');
+        var embedWrap = document.getElementById('embed-wrap');
+        var embedFrame = document.getElementById('embed-frame');
         var hudEl = document.getElementById('player-hud');
         var bottomDockEl = document.getElementById('player-bottom-dock');
         var fsPromptBanner = document.getElementById('fs-prompt-banner');
@@ -1500,6 +1797,14 @@
         var unmuteBanner = document.getElementById('unmute-banner');
         var reactionsLayer = document.getElementById('reactions-layer');
         var btnDockAudio = document.getElementById('btn-dock-audio');
+        var btnDockRew = document.getElementById('btn-dock-rew');
+        var btnDockFf = document.getElementById('btn-dock-ff');
+        var btnDockChPrev = document.getElementById('btn-dock-chprev');
+        var btnDockChNext = document.getElementById('btn-dock-chnext');
+        var btnPlayPause = document.getElementById('btn-hud-playpause');
+        var dockTimeCur = document.getElementById('dock-time-cur');
+        var dockTimeDur = document.getElementById('dock-time-dur');
+        var dockProgressFill = document.getElementById('dock-progress-fill');
         var seriesModal = document.getElementById('tv-series-modal');
         var otaBanner = document.getElementById('ota-update-banner');
         var otaText = document.getElementById('ota-update-text');
@@ -1510,8 +1815,9 @@
         var videoWatchdogTimer = null;
         var aspectModeIndex = 0;
         var activeHubTab = 'home';
+        var autoFailoverLock = false;
 
-        // Google TV Hub Catalog Store
+        // Google TV Hub Catalog + Live EPG Store
         var catalogData = {
           loaded: false,
           cinemaReleases: [],
@@ -1520,12 +1826,12 @@
           series: [],
           anime: [],
           tdt: [],
+          epg: {},
           searchQuery: '',
           searchResults: [],
           searching: false
         };
 
-        // Series Modal State
         var activeSeriesItem = null;
         var activeSeriesDetails = null;
         var activeSeriesLang = 'ES';
@@ -1539,7 +1845,7 @@
             if (bodyObj) {
               xhr.setRequestHeader('Content-Type', 'application/json;charset=UTF-8');
             }
-            xhr.timeout = 12000;
+            xhr.timeout = 14000;
             xhr.onreadystatechange = function () {
               if (xhr.readyState !== 4) return;
               if (xhr.status >= 200 && xhr.status < 300) {
@@ -1550,7 +1856,12 @@
                   cb(err, null);
                 }
               } else {
-                cb(new Error('HTTP ' + xhr.status), null);
+                var errObj = new Error('HTTP ' + xhr.status);
+                try {
+                  cb(errObj, JSON.parse(xhr.responseText));
+                } catch (e2) {
+                  cb(errObj, null);
+                }
               }
             };
             xhr.ontimeout = function () {
@@ -1565,6 +1876,16 @@
           }
         }
 
+        function formatSecClock(sec) {
+          var total = Math.max(0, Math.floor(sec || 0));
+          var h = Math.floor(total / 3600);
+          var m = Math.floor((total % 3600) / 60);
+          var s = total % 60;
+          var mm = m < 10 ? '0' + m : String(m);
+          var ss = s < 10 ? '0' + s : String(s);
+          return h > 0 ? h + ':' + mm + ':' + ss : mm + ':' + ss;
+        }
+
         function showToast(text) {
           if (!toastEl) return;
           toastEl.textContent = text;
@@ -1572,7 +1893,7 @@
           if (toastTimer) clearTimeout(toastTimer);
           toastTimer = setTimeout(function () {
             toastEl.style.display = 'none';
-          }, 3200);
+          }, 3000);
         }
 
         function isBrowserInFullscreen() {
@@ -1586,15 +1907,12 @@
 
         function syncFullscreenButtons() {
           var active = isBrowserInFullscreen();
-          var label = active ? '✓ Salir Completa' : '⛶ Pantalla Completa';
-          var ids = ['btn-pairing-fs', 'btn-hud-fs', 'btn-dock-fs', 'btn-standby-fs', 'btn-hub-fs'];
+          var ids = ['btn-pairing-fs', 'btn-dock-fs', 'btn-hub-fs'];
           for (var i = 0; i < ids.length; i++) {
             var b = document.getElementById(ids[i]);
             if (b) {
-              b.textContent = ids[i] === 'btn-hub-fs' ? (active ? '✓ TV Full' : '⛶ Pantalla') : label;
-              if (ids[i] !== 'btn-standby-fs') {
-                b.className = active ? 'tv-btn-fullscreen active-fs' : 'tv-btn-fullscreen';
-              }
+              b.textContent = active ? '✓ TV Full' : '⛶ Pantalla';
+              b.className = active ? 'tv-btn-fullscreen active-fs' : 'tv-btn-fullscreen';
             }
           }
           if (active && fsPromptBanner) {
@@ -1623,12 +1941,8 @@
               var res = req.call(root);
               if (res && res.then) {
                 res.then(
-                  function () {
-                    syncFullscreenButtons();
-                  },
-                  function () {
-                    if (fromRemote) showRemoteFullscreenOkPrompt();
-                  }
+                  function () { syncFullscreenButtons(); },
+                  function () { if (fromRemote) showRemoteFullscreenOkPrompt(); }
                 );
               }
             } catch (err) {
@@ -1645,26 +1959,30 @@
           if (fsPromptTimer) clearTimeout(fsPromptTimer);
           fsPromptTimer = setTimeout(function () {
             fsPromptBanner.style.display = 'none';
-          }, 9000);
+          }, 8000);
         }
 
         function cycleVideoAspect() {
           aspectModeIndex = (aspectModeIndex + 1) % 3;
           if (!videoEl) return;
-          var hudAspectBtn = document.getElementById('btn-hud-aspect');
+          var aspectBtn = document.getElementById('btn-dock-aspect');
           if (aspectModeIndex === 0) {
             videoEl.className = '';
-            if (hudAspectBtn) hudAspectBtn.textContent = '↔ Ajuste: Original';
-            showToast('Formato TV · Original');
+            if (aspectBtn) aspectBtn.textContent = '↔ Original';
+            showToast('Formato · Original');
           } else if (aspectModeIndex === 1) {
             videoEl.className = 'aspect-cover';
-            if (hudAspectBtn) hudAspectBtn.textContent = '↔ Ajuste: Rellenar';
-            showToast('Formato TV · Sin bordes negros');
+            if (aspectBtn) aspectBtn.textContent = '↔ Sin bordes';
+            showToast('Formato · Sin bordes negros');
           } else {
             videoEl.className = 'aspect-fill';
-            if (hudAspectBtn) hudAspectBtn.textContent = '↔ Ajuste: 16:9 Total';
-            showToast('Formato TV · 16:9 completo');
+            if (aspectBtn) aspectBtn.textContent = '↔ 16:9 Total';
+            showToast('Formato · 16:9 completo');
           }
+        }
+
+        function isHudVisible() {
+          return Boolean(hudEl && hudEl.className !== 'hidden-hud');
         }
 
         function hideHudImmediately() {
@@ -1685,6 +2003,36 @@
           }, 4800);
         }
 
+        function syncPlayPauseButton() {
+          if (!btnPlayPause) return;
+          if (currentMode === 'hls' || currentMode === 'direct') {
+            btnPlayPause.textContent = videoEl && videoEl.paused ? '▶ Reanudar' : '⏸ Pausar';
+          } else {
+            btnPlayPause.textContent = '⏯ Play / Pausa';
+          }
+        }
+
+        function syncPlayerDockMode(isLiveFlag) {
+          if (btnDockRew) btnDockRew.style.display = isLiveFlag ? 'none' : 'inline-block';
+          if (btnDockFf) btnDockFf.style.display = isLiveFlag ? 'none' : 'inline-block';
+          if (btnDockChPrev) btnDockChPrev.style.display = isLiveFlag && activeLiveChannel ? 'inline-block' : 'none';
+          if (btnDockChNext) btnDockChNext.style.display = isLiveFlag && activeLiveChannel ? 'inline-block' : 'none';
+          if (isLiveFlag) {
+            var chEpg = activeLiveChannel && catalogData.epg ? catalogData.epg[activeLiveChannel.id] : null;
+            if (dockTimeCur) dockTimeCur.textContent = 'EN VIVO';
+            if (dockTimeDur) dockTimeDur.textContent = chEpg && chEpg.now ? chEpg.now.startLabel + '-' + chEpg.now.stopLabel : '24/7 HD';
+            if (dockProgressFill) {
+              dockProgressFill.className = 'dock-progress-fill live-fill';
+              dockProgressFill.style.width = '100%';
+            }
+          } else {
+            if (dockProgressFill) {
+              dockProgressFill.className = 'dock-progress-fill';
+              dockProgressFill.style.width = '0%';
+            }
+          }
+        }
+
         function switchTvScreen(mode) {
           activeScreen = mode;
           hubScreen.style.display = mode === 'hub' ? 'flex' : 'none';
@@ -1692,6 +2040,10 @@
           playerScreen.style.display = mode === 'player' ? 'block' : 'none';
           if (mode === 'hub') {
             setTimeout(function () {
+              if (lastHubFocusedEl && document.body.contains(lastHubFocusedEl) && lastHubFocusedEl.focus) {
+                lastHubFocusedEl.focus();
+                return;
+              }
               var activeTabBtn = document.querySelector('#hub-nav-tabs .hub-tab-btn.active');
               if (activeTabBtn && activeTabBtn.focus) activeTabBtn.focus();
             }, 60);
@@ -1702,9 +2054,11 @@
             }, 60);
           } else if (mode === 'player') {
             setTimeout(function () {
-              var pp = document.getElementById('btn-hud-playpause');
-              if (pp && pp.focus && currentMode !== 'idle') pp.focus();
-            }, 120);
+              var target = standbyOverlay.style.display !== 'none'
+                ? document.getElementById('btn-standby-exit')
+                : document.getElementById('btn-hud-playpause');
+              if (target && target.focus) target.focus();
+            }, 90);
           }
         }
 
@@ -1760,12 +2114,12 @@
           var btnAudio = document.getElementById('btn-unlock-audio');
           if (btnAudio) {
             btnAudio.className = 'tv-btn-primary unlocked';
-            btnAudio.textContent = '✓ Sonido desbloqueado y listo';
+            btnAudio.textContent = '✓ Sonido activado y listo';
           }
         }
 
         // ===================================================================
-        // AUTOMATIC CROSS-PLATFORM VERSION CONTROL & OTA SYNC
+        // AUTOMATIC VERSION CONTROL & OTA SYNC
         // ===================================================================
         function runTvVersionCheck() {
           xhrJson('GET', '/api/app/latest?platform=tv&_=' + Date.now(), null, function (err, data) {
@@ -1793,7 +2147,6 @@
               }
             }
 
-            // Native Google TV APK version check if ?apkv= was passed by the APK shell
             if (installedApkCode > 0 && data.tv && Number(data.tv.versionCode) > installedApkCode) {
               if (otaBanner && otaText && btnOtaInstall) {
                 otaText.textContent = 'Nueva APK Google TV v' + (data.tv.versionName || remoteWebVer) + ' disponible';
@@ -1812,7 +2165,7 @@
         setInterval(runTvVersionCheck, 10 * 60 * 1000);
 
         // ===================================================================
-        // PAIRING ENGINE (WORKS IN BACKGROUND EVEN WHILE USING GOOGLE TV HUB)
+        // PAIRING ENGINE (WORKS IN BACKGROUND)
         // ===================================================================
         function requestPairingCode(forceNew) {
           xhrJson(
@@ -1907,7 +2260,7 @@
         }, 2000);
 
         // ===================================================================
-        // PLAYER ENGINES (HLS.JS / MP4 / YOUTUBE)
+        // PLAYER ENGINES (HLS.JS / MP4 / YOUTUBE / WEB EMBED + FAILOVER)
         // ===================================================================
         function ensureYouTubeApi(cb) {
           if (window.YT && window.YT.Player) {
@@ -1938,6 +2291,7 @@
               if (!pendingYtPlay && ytPlayer.pauseVideo) {
                 setTimeout(function () { ytPlayer.pauseVideo(); }, 400);
               }
+              standbyOverlay.style.display = 'none';
               return;
             }
             ytReady = false;
@@ -1953,12 +2307,16 @@
               events: {
                 onReady: function (ev) {
                   ytReady = true;
+                  standbyOverlay.style.display = 'none';
                   try {
                     ev.target.setVolume(Math.round(currentVolume * 100));
                     if (pendingYtPlay) ev.target.playVideo();
                     else ev.target.pauseVideo();
                   } catch (e) {}
                 },
+                onError: function () {
+                  triggerPlaybackFailover('YouTube error');
+                }
               },
             });
           });
@@ -1971,6 +2329,51 @@
           }
         }
 
+        function clearEmbedFrame() {
+          if (embedWrap) embedWrap.style.display = 'none';
+          if (embedFrame) {
+            try { embedFrame.src = 'about:blank'; } catch (e) {}
+          }
+        }
+
+        function clearVideoWatchdog() {
+          if (videoWatchdogTimer) {
+            clearTimeout(videoWatchdogTimer);
+            videoWatchdogTimer = null;
+          }
+        }
+
+        function markVideoFrameActive() {
+          clearVideoWatchdog();
+          autoFailoverLock = false;
+          if (standbyOverlay && standbyOverlay.style.display !== 'none') {
+            standbyOverlay.style.display = 'none';
+          }
+          syncPlayPauseButton();
+        }
+
+        if (videoEl) {
+          videoEl.addEventListener('playing', markVideoFrameActive);
+          videoEl.addEventListener('pause', syncPlayPauseButton);
+          videoEl.addEventListener('loadeddata', function () {
+            if (videoEl.videoWidth > 0) markVideoFrameActive();
+          });
+          videoEl.addEventListener('timeupdate', function () {
+            if (!currentIsLive && videoEl.duration && !isNaN(videoEl.duration) && videoEl.duration > 0) {
+              if (dockTimeCur) dockTimeCur.textContent = formatSecClock(videoEl.currentTime || 0);
+              if (dockTimeDur) dockTimeDur.textContent = formatSecClock(videoEl.duration);
+              if (dockProgressFill) {
+                var pct = Math.min(100, Math.max(0, (videoEl.currentTime / videoEl.duration) * 100));
+                dockProgressFill.style.width = pct.toFixed(1) + '%';
+              }
+            }
+          });
+          videoEl.addEventListener('error', function () {
+            if (!isLocalPlayback || currentMode === 'idle' || currentMode === 'embed' || currentMode === 'youtube') return;
+            triggerPlaybackFailover('Video decode error');
+          });
+        }
+
         function playVideoSafely(targetResumeSec, shouldPlay) {
           if (targetResumeSec > 3) {
             try {
@@ -1981,6 +2384,7 @@
           }
           if (!shouldPlay) {
             try { videoEl.pause(); } catch (e) {}
+            syncPlayPauseButton();
             return;
           }
           videoEl.muted = false;
@@ -1988,22 +2392,95 @@
           var playPromise = videoEl.play();
           if (playPromise && playPromise.then) {
             playPromise.then(
-              function () { unmuteBanner.style.display = 'none'; },
+              function () {
+                unmuteBanner.style.display = 'none';
+                syncPlayPauseButton();
+              },
               function () {
                 videoEl.muted = true;
                 var p2 = videoEl.play();
                 if (p2 && p2.catch) p2.catch(function () {});
                 unmuteBanner.style.display = 'block';
+                syncPlayPauseButton();
               }
             );
           }
         }
 
-        function clearVideoWatchdog() {
-          if (videoWatchdogTimer) {
-            clearTimeout(videoWatchdogTimer);
-            videoWatchdogTimer = null;
+        function triggerPlaybackFailover(reasonText) {
+          if (!isLocalPlayback || autoFailoverLock) return;
+          autoFailoverLock = true;
+          clearVideoWatchdog();
+
+          // Live TV channel multi-track & IPTV failover
+          if (activeLiveChannel) {
+            var ch = activeLiveChannel;
+            var totalChTracks = ch.channels ? ch.channels.length : 0;
+            if (activeLiveTrackIdx + 1 < totalChTracks) {
+              showToast('Cambiando a señal de respaldo...');
+              setTimeout(function () {
+                autoFailoverLock = false;
+                playTdtChannelOnTv(ch, activeLiveTrackIdx + 1);
+              }, 250);
+              return;
+            }
+            if (ch.id && currentUrl.indexOf('/api/iptv/live/') === -1) {
+              showToast('Conectando vía pasarela IPTV directa...');
+              setTimeout(function () {
+                autoFailoverLock = false;
+                applyVideoState(
+                  {
+                    mode: 'hls',
+                    url: '/api/iptv/live/' + encodeURIComponent(ch.id) + '.m3u8',
+                    title: ch.name,
+                    subtitle: (ch.network || 'TDT / TV') + ' · Respaldo Directo',
+                    isPlaying: true,
+                    isLive: true,
+                    currentTime: 0
+                  },
+                  true
+                );
+              }, 250);
+              return;
+            }
+            showStandbyError(ch.name, 'Señal temporalmente no disponible (' + (reasonText || 'sin respuesta') + '). Pulsa ↑/↓ para cambiar de canal.');
+            return;
           }
+
+          // VOD Movie / Series multi-track failover
+          if (localTracks && localTrackIdx + 1 < localTracks.length) {
+            showToast('Cambiando a servidor alternativo...');
+            setTimeout(function () {
+              autoFailoverLock = false;
+              switchToLocalTrack(localTrackIdx + 1, !currentIsLive ? (videoEl.currentTime || 0) : 0);
+            }, 250);
+            return;
+          }
+
+          showStandbyError(hudTitle.textContent || 'Contenido', 'Ningún servidor respondió para este título en este momento.');
+        }
+
+        function showStandbyError(titleStr, msgStr) {
+          destroyHls();
+          clearEmbedFrame();
+          try {
+            videoEl.pause();
+            videoEl.removeAttribute('src');
+            videoEl.load();
+          } catch (e) {}
+          videoEl.style.display = 'none';
+          if (standbySpinner) standbySpinner.style.display = 'none';
+          if (btnStandbyRetry) {
+            btnStandbyRetry.style.display = (localTracks && localTracks.length > 1) ? 'inline-block' : 'none';
+          }
+          standbyOverlay.style.display = 'flex';
+          standbyRoomPill.textContent = '⚠ Señal temporalmente no disponible';
+          standbyTitleText.textContent = titleStr || 'NAIM CINE';
+          standbySubText.textContent = msgStr || 'Pulsa Volver para elegir otro canal o película.';
+          setTimeout(function () {
+            var exitB = document.getElementById('btn-standby-exit');
+            if (exitB && exitB.focus) exitB.focus();
+          }, 60);
         }
 
         function applyVideoState(vs, forceReload) {
@@ -2016,12 +2493,14 @@
 
           hudTitle.textContent = vs.title || 'NAIM CINE';
           hudSub.textContent = vs.subtitle || (isPaired ? 'Sala ' + currentRoomId.toUpperCase() + ' · 1080p' : 'Google TV HD');
+          syncPlayerDockMode(isLive);
 
           if (nextMode === 'idle' || !nextUrl) {
             currentMode = 'idle';
             currentUrl = '';
             clearVideoWatchdog();
             destroyHls();
+            clearEmbedFrame();
             try {
               videoEl.pause();
               videoEl.removeAttribute('src');
@@ -2032,12 +2511,12 @@
             }
             ytWrap.style.display = 'none';
             videoEl.style.display = 'none';
+            if (standbySpinner) standbySpinner.style.display = 'none';
+            if (btnStandbyRetry) btnStandbyRetry.style.display = 'none';
             standbyOverlay.style.display = 'flex';
             unmuteBanner.style.display = 'none';
             return;
           }
-
-          standbyOverlay.style.display = 'none';
 
           if (!forceReload && nextMode === currentMode && nextUrl === currentUrl) {
             if (nextMode === 'hls' || nextMode === 'direct') {
@@ -2061,11 +2540,14 @@
           currentMode = nextMode;
           currentUrl = nextUrl;
           currentIsLive = isLive;
+          autoFailoverLock = false;
           clearVideoWatchdog();
           revealHud();
 
+          // Mode 1: YouTube Embed
           if (nextMode === 'youtube') {
             destroyHls();
+            clearEmbedFrame();
             try {
               videoEl.pause();
               videoEl.removeAttribute('src');
@@ -2073,16 +2555,61 @@
             } catch (e) {}
             videoEl.style.display = 'none';
             ytWrap.style.display = 'block';
+            if (standbySpinner) standbySpinner.style.display = 'block';
+            standbyOverlay.style.display = 'flex';
             loadYouTubeVideo(nextUrl, targetSec, shouldPlay);
             return;
           }
 
+          // Mode 2: Web Embed (vidlink.pro / vidfast.pro / 111movies / ok.ru / etc.)
+          if (nextMode === 'embed' || nextMode === 'cloud') {
+            destroyHls();
+            try {
+              videoEl.pause();
+              videoEl.removeAttribute('src');
+              videoEl.load();
+            } catch (e) {}
+            if (ytPlayer && ytPlayer.stopVideo) {
+              try { ytPlayer.stopVideo(); } catch (e) {}
+            }
+            ytWrap.style.display = 'none';
+            videoEl.style.display = 'none';
+            if (embedWrap && embedFrame) {
+              embedWrap.style.display = 'block';
+              if (standbySpinner) standbySpinner.style.display = 'block';
+              standbyOverlay.style.display = 'flex';
+              embedFrame.onload = function () {
+                standbyOverlay.style.display = 'none';
+              };
+              embedFrame.src = nextUrl;
+              setTimeout(function () {
+                if (currentMode === 'embed' || currentMode === 'cloud') {
+                  standbyOverlay.style.display = 'none';
+                }
+              }, 2600);
+            }
+            return;
+          }
+
+          // Mode 3 & 4: Native MP4 (`direct`) or HLS (`hls`)
           if (ytPlayer && ytPlayer.stopVideo) {
             try { ytPlayer.stopVideo(); } catch (e) {}
           }
           ytWrap.style.display = 'none';
+          clearEmbedFrame();
           videoEl.style.display = 'block';
+          if (standbySpinner) standbySpinner.style.display = 'block';
+          if (btnStandbyRetry) btnStandbyRetry.style.display = 'none';
+          standbyOverlay.style.display = 'flex';
           destroyHls();
+
+          // Watchdog: if nothing renders after 9s, auto-failover cleanly
+          videoWatchdogTimer = setTimeout(function () {
+            if (currentMode !== nextMode || currentUrl !== nextUrl) return;
+            if (!videoEl.videoWidth || videoEl.videoWidth === 0 || videoEl.readyState < 2) {
+              triggerPlaybackFailover('Tiempo de carga agotado');
+            }
+          }, 9500);
 
           if (nextMode === 'direct') {
             videoEl.src = nextUrl;
@@ -2093,11 +2620,16 @@
           }
 
           if (window.Hls && window.Hls.isSupported()) {
-            var fallbackTriggered = false;
+            var directCorsRetried = false;
+            var fallbackNativeTried = false;
+            var netErrorCount = 0;
+
             var switchToNativeHls = function () {
-              if (fallbackTriggered) return;
-              fallbackTriggered = true;
-              clearVideoWatchdog();
+              if (fallbackNativeTried) {
+                triggerPlaybackFailover('Error de reproducción HLS');
+                return;
+              }
+              fallbackNativeTried = true;
               var resumeT = !isLive && videoEl.currentTime > 1 ? videoEl.currentTime : targetSec;
               destroyHls();
               videoEl.src = nextUrl;
@@ -2105,34 +2637,48 @@
                 playVideoSafely(resumeT, shouldPlay);
               };
             };
+
             var hls = new window.Hls({
               enableWorker: true,
               lowLatencyMode: false,
               backBufferLength: 30,
-              maxBufferLength: 30,
+              maxBufferLength: 35,
+              manifestLoadingTimeOut: 9000,
+              fragLoadingTimeOut: 14000,
+              fragLoadingMaxRetry: 3
             });
             hlsInstance = hls;
             hls.loadSource(nextUrl);
             hls.attachMedia(videoEl);
             hls.on(window.Hls.Events.MANIFEST_PARSED, function () {
               playVideoSafely(targetSec, shouldPlay);
-              clearVideoWatchdog();
-              videoWatchdogTimer = setTimeout(function () {
-                if (currentMode !== 'hls' || currentUrl !== nextUrl) return;
-                if (!videoEl.paused && videoEl.currentTime > 0.4 && (!videoEl.videoWidth || videoEl.videoWidth === 0)) {
-                  if (videoEl.canPlayType && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
-                    switchToNativeHls();
-                  } else if (hlsInstance && hlsInstance.recoverMediaError) {
-                    hlsInstance.recoverMediaError();
-                  }
-                }
-              }, 3200);
             });
             hls.on(window.Hls.Events.ERROR, function (_ev, data) {
               if (!data || !data.fatal) return;
-              if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) hls.startLoad();
-              else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
-              else switchToNativeHls();
+              if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
+                netErrorCount++;
+                // If direct external HTTPS stream blocked by CORS/network on TV WebView, retry through /api/hls-proxy once!
+                if (!directCorsRetried && nextUrl.indexOf('http') === 0 && nextUrl.indexOf('/api/') === -1) {
+                  directCorsRetried = true;
+                  var proxied = '/api/hls-proxy/stream.m3u8?url=' + encodeURIComponent(nextUrl);
+                  currentUrl = proxied;
+                  hls.loadSource(proxied);
+                  return;
+                }
+                if (netErrorCount <= 1) {
+                  hls.startLoad();
+                } else {
+                  triggerPlaybackFailover('Señal de red interrumpida');
+                }
+              } else if (data.type === window.Hls.ErrorTypes.MEDIA_ERROR) {
+                hls.recoverMediaError();
+              } else {
+                if (videoEl.canPlayType && videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+                  switchToNativeHls();
+                } else {
+                  triggerPlaybackFailover('Error de formato HLS');
+                }
+              }
             });
           } else {
             videoEl.src = nextUrl;
@@ -2173,10 +2719,13 @@
           } else if (cmd === 'toggle_aspect') {
             cycleVideoAspect();
           } else if (cmd === 'toggle_hud') {
-            if (hudEl && hudEl.className === 'hidden-hud') revealHud();
+            if (!isHudVisible()) revealHud();
             else hideHudImmediately();
           } else if (cmd === 'reload_tv') {
-            if (currentMode !== 'idle' && currentUrl) {
+            if (activeLiveChannel) {
+              playTdtChannelOnTv(activeLiveChannel, activeLiveTrackIdx);
+              showToast('Resincronizando canal...');
+            } else if (currentMode !== 'idle' && currentUrl) {
               applyVideoState(
                 {
                   mode: currentMode,
@@ -2201,7 +2750,7 @@
           var el = document.createElement('div');
           el.className = 'tv-reaction';
           el.style.left = Math.floor(12 + Math.random() * 75) + '%';
-          el.innerHTML = emoji + '<span>' + (sender || '') + '</span>';
+          el.innerHTML = emoji + '<span>' + escapeHtml(sender || '') + '</span>';
           reactionsLayer.appendChild(el);
           setTimeout(function () {
             el.style.bottom = '170px';
@@ -2221,6 +2770,7 @@
           if (isPaired && currentRoomId === roomId) return;
           isPaired = true;
           isLocalPlayback = false;
+          activeLiveChannel = null;
           localTracks = [];
           if (btnDockAudio) btnDockAudio.style.display = 'none';
           currentRoomId = roomId.toLowerCase();
@@ -2332,10 +2882,12 @@
           var wasPaired = isPaired;
           isPaired = false;
           isLocalPlayback = false;
+          activeLiveChannel = null;
           currentRoomId = '';
           currentMode = 'idle';
           currentUrl = '';
           localTracks = [];
+          autoFailoverLock = false;
           if (btnDockAudio) btnDockAudio.style.display = 'none';
           clearVideoWatchdog();
           if (roomHttpTimer) {
@@ -2348,6 +2900,7 @@
             roomWs = null;
           }
           destroyHls();
+          clearEmbedFrame();
           try {
             videoEl.pause();
             videoEl.removeAttribute('src');
@@ -2372,22 +2925,87 @@
         // ===================================================================
         // GOOGLE TV 10-FOOT DIRECT CATALOG PLAYBACK & SERIES EPISODE PICKER
         // ===================================================================
+        function switchToLocalTrack(trackIdx, resumeSec) {
+          if (!localTracks || !localTracks.length) return;
+          localTrackIdx = trackIdx % localTracks.length;
+          var nextTr = localTracks[localTrackIdx];
+          if (!nextTr) return;
+          if (btnDockAudio) {
+            btnDockAudio.textContent = '🌐 ' + (nextTr.label || 'Servidor ' + (localTrackIdx + 1));
+          }
+          if (nextTr.resolvedStreamUrl && (nextTr.resolvedStreamUrl.indexOf('/api/') === 0 || nextTr.resolvedStreamUrl.indexOf('http') === 0 || nextTr.resolverType === 'youtube')) {
+            var directMode = nextTr.resolverType === 'youtube'
+              ? 'youtube'
+              : (nextTr.resolverType === 'web_embed' ? 'embed' : 'hls');
+            applyVideoState(
+              {
+                mode: directMode,
+                url: nextTr.resolvedStreamUrl,
+                title: hudTitle.textContent,
+                subtitle: nextTr.label || hudSub.textContent,
+                isPlaying: true,
+                isLive: currentIsLive,
+                currentTime: resumeSec || 0
+              },
+              true
+            );
+            return;
+          }
+
+          var rawSource = nextTr.sourceUrl || nextTr.resolvedStreamUrl || '';
+          if (!rawSource) {
+            triggerPlaybackFailover('Pista vacía');
+            return;
+          }
+          standbyOverlay.style.display = 'flex';
+          if (standbySpinner) standbySpinner.style.display = 'block';
+          standbyRoomPill.textContent = '⏳ Probando servidor alternativo...';
+          var q =
+            'resolverType=' + encodeURIComponent(nextTr.resolverType || '') +
+            '&url=' + encodeURIComponent(rawSource) +
+            '&preferLang=' + encodeURIComponent(nextTr.lang || 'ES') +
+            '&title=' + encodeURIComponent(hudTitle.textContent || '');
+          xhrJson('GET', '/api/extract/stream?' + q, null, function (err, data) {
+            if (!isLocalPlayback) return;
+            if (err || !data || !data.success || !data.streamUrl) {
+              triggerPlaybackFailover('Servidor alternativo sin señal');
+              return;
+            }
+            nextTr.resolvedStreamUrl = data.streamUrl;
+            applyVideoState(
+              {
+                mode: data.mode || 'hls',
+                url: data.streamUrl,
+                title: hudTitle.textContent,
+                subtitle: nextTr.label || hudSub.textContent,
+                isPlaying: true,
+                isLive: currentIsLive,
+                currentTime: resumeSec || 0
+              },
+              true
+            );
+          });
+        }
+
         function playLocalStream(itemTitle, itemSub, extractQueryUrl) {
           isLocalPlayback = true;
           isPaired = false;
+          activeLiveChannel = null;
+          autoFailoverLock = false;
           switchTvScreen('player');
+          if (standbySpinner) standbySpinner.style.display = 'block';
+          if (btnStandbyRetry) btnStandbyRetry.style.display = 'none';
           standbyOverlay.style.display = 'flex';
           standbyRoomPill.textContent = '⏳ Cargando señal HD en Google TV...';
           standbyTitleText.textContent = itemTitle;
           standbySubText.textContent = itemSub || 'Conectando con el motor de streaming NAIM CINE...';
+          syncPlayerDockMode(false);
           revealHud();
 
           xhrJson('GET', '/api/extract/stream?' + extractQueryUrl, null, function (err, data) {
             if (!isLocalPlayback) return;
             if (err || !data || !data.success || !data.streamUrl) {
-              standbyRoomPill.textContent = '⚠ Señal no disponible temporalmente';
-              standbyTitleText.textContent = itemTitle;
-              standbySubText.textContent = (data && data.error) || 'Pulsa Volver para elegir otra fuente o idioma.';
+              showStandbyError(itemTitle, (data && data.error) || 'Pulsa Volver para elegir otra fuente o idioma.');
               showToast('Señal temporalmente no disponible');
               return;
             }
@@ -2422,49 +3040,113 @@
           });
         }
 
-        function playTdtChannelOnTv(ch) {
+        function playTdtChannelOnTv(ch, trackIndex) {
           if (!ch || !ch.channels || !ch.channels.length) return;
-          var track = ch.channels[0];
-          var streamUrl = track.resolvedStreamUrl || track.url || '';
-          if (!streamUrl) return;
+          var idx = typeof trackIndex === 'number' ? trackIndex : 0;
+          if (idx >= ch.channels.length) idx = 0;
+          var track = ch.channels[idx];
+          // CRITICAL FIX: Live channels store their endpoint in track.sourceUrl (fallback to resolvedStreamUrl / url)
+          var streamUrl = track.resolvedStreamUrl || track.sourceUrl || track.url || '';
+          if (!streamUrl) {
+            if (idx + 1 < ch.channels.length) {
+              playTdtChannelOnTv(ch, idx + 1);
+            }
+            return;
+          }
+
           isLocalPlayback = true;
           isPaired = false;
+          activeLiveChannel = ch;
+          activeLiveTrackIdx = idx;
           localTracks = ch.channels;
-          localTrackIdx = 0;
+          localTrackIdx = idx;
+          autoFailoverLock = false;
           switchTvScreen('player');
+
           if (btnDockAudio) {
             if (ch.channels.length > 1) {
               btnDockAudio.style.display = 'inline-block';
-              btnDockAudio.textContent = '🌐 ' + (track.label || 'Señal');
+              btnDockAudio.textContent = '📡 ' + (track.label || 'Señal ' + (idx + 1));
             } else {
               btnDockAudio.style.display = 'none';
             }
           }
+
+          var chEpg = catalogData.epg ? catalogData.epg[ch.id] : null;
+          var epgLabel = chEpg && chEpg.now ? chEpg.now.title : (ch.description || ch.network || 'En Directo');
+          var rType = track.resolverType || 'tdt_hls';
           var q =
-            'resolverType=tdt_hls&url=' +
+            'resolverType=' +
+            encodeURIComponent(rType) +
+            '&url=' +
             encodeURIComponent(streamUrl) +
             '&title=' +
             encodeURIComponent(ch.name || 'TV Directo');
+
+          if (standbySpinner) standbySpinner.style.display = 'block';
+          if (btnStandbyRetry) btnStandbyRetry.style.display = 'none';
           standbyOverlay.style.display = 'flex';
           standbyRoomPill.textContent = '📡 Sintonizando canal en directo...';
           standbyTitleText.textContent = ch.name;
-          standbySubText.textContent = ch.description || 'TDT España HD';
+          standbySubText.textContent = epgLabel;
+          syncPlayerDockMode(true);
+
           xhrJson('GET', '/api/extract/stream?' + q, null, function (err, data) {
-            if (!isLocalPlayback) return;
-            var finalUrl = data && data.success && data.streamUrl ? data.streamUrl : streamUrl;
-            applyVideoState(
-              {
-                mode: 'hls',
-                url: finalUrl,
-                title: ch.name,
-                subtitle: (ch.network || 'TDT España') + ' · En Directo',
-                isPlaying: true,
-                isLive: true,
-                currentTime: 0,
-              },
-              true
-            );
+            if (!isLocalPlayback || activeLiveChannel !== ch) return;
+            if (!err && data && data.success && data.streamUrl) {
+              applyVideoState(
+                {
+                  mode: data.mode || 'hls',
+                  url: data.streamUrl,
+                  title: ch.name + (ch.dial ? ' · Dial ' + ch.dial : ''),
+                  subtitle: (chEpg && chEpg.now ? 'Ahora: ' + chEpg.now.title : (ch.network || 'TV En Directo')) + ' · ' + (track.quality || 'HD'),
+                  isPlaying: true,
+                  isLive: true,
+                  currentTime: 0,
+                },
+                true
+              );
+              return;
+            }
+            // Extract failed -> automatically fail over to backup track or /api/iptv/live/:id.m3u8
+            if (idx + 1 < ch.channels.length) {
+              playTdtChannelOnTv(ch, idx + 1);
+            } else if (ch.id) {
+              applyVideoState(
+                {
+                  mode: 'hls',
+                  url: '/api/iptv/live/' + encodeURIComponent(ch.id) + '.m3u8',
+                  title: ch.name + (ch.dial ? ' · Dial ' + ch.dial : ''),
+                  subtitle: (chEpg && chEpg.now ? 'Ahora: ' + chEpg.now.title : (ch.network || 'IPTV HD')),
+                  isPlaying: true,
+                  isLive: true,
+                  currentTime: 0,
+                },
+                true
+              );
+            } else {
+              showStandbyError(ch.name, 'Señal temporalmente sin emisión.');
+            }
           });
+        }
+
+        function zapLiveChannel(step) {
+          if (!activeLiveChannel || !catalogData.tdt.length) return;
+          var pool = filterTdtChannels(activeLiveFilter);
+          if (!pool.length) pool = catalogData.tdt;
+          var curIdx = -1;
+          for (var i = 0; i < pool.length; i++) {
+            if (pool[i].id === activeLiveChannel.id) {
+              curIdx = i;
+              break;
+            }
+          }
+          var nextIdx = curIdx === -1 ? 0 : (curIdx + step + pool.length) % pool.length;
+          var nextCh = pool[nextIdx];
+          if (nextCh) {
+            showToast((nextCh.dial ? 'Dial ' + nextCh.dial + ' · ' : '') + nextCh.name);
+            playTdtChannelOnTv(nextCh, 0);
+          }
         }
 
         function playMovieOnTv(movie) {
@@ -2501,6 +3183,10 @@
 
           if (!item.tmdbId) {
             smEpisodes.innerHTML = '<div style="color:#fda4af;font-size:14px;">Esta serie no tiene TMDB ID vinculado.</div>';
+            setTimeout(function () {
+              var cBtn = document.getElementById('btn-close-series-modal');
+              if (cBtn && cBtn.focus) cBtn.focus();
+            }, 40);
             return;
           }
           loadTvSeriesSeason(item.tmdbId, activeSeriesSeason);
@@ -2555,6 +3241,7 @@
                   '<div class="ep-tile-num">' + ep.seasonNumber + 'x' + epNumStr + '</div>' +
                   '<div class="ep-tile-title">' + escapeHtml(ep.title || 'Episodio ' + ep.episodeNumber) + '</div>';
                 eb.onclick = function () {
+                  unlockAudio();
                   seriesModal.style.display = 'none';
                   var q = [
                     'mediaType=tv',
@@ -2590,6 +3277,44 @@
         }
 
         // ===================================================================
+        // NETWORK BROADCAST VISUALS + LIVE FILTERING
+        // ===================================================================
+        function getChannelBrandGradient(ch) {
+          var id = String(ch.id || '').toLowerCase();
+          var cat = String(ch.category || '').toLowerCase();
+          if (id === 'tdt-la1' || id === 'tdt-24h') return 'linear-gradient(145deg, #0055b8 0%, #091834 100%)';
+          if (id === 'tdt-la2') return 'linear-gradient(145deg, #027c8c 0%, #091f28 100%)';
+          if (id === 'tdt-antena3' || id === 'tdt-neox' || id === 'tdt-mega') return 'linear-gradient(145deg, #d94e0f 0%, #2a120a 100%)';
+          if (id === 'tdt-cuatro') return 'linear-gradient(145deg, #c81938 0%, #240912 100%)';
+          if (id === 'tdt-telecinco' || id === 'tdt-fdf') return 'linear-gradient(145deg, #0284c7 0%, #0a192e 100%)';
+          if (id === 'tdt-lasexta') return 'linear-gradient(145deg, #059669 0%, #092119 100%)';
+          if (cat === 'movistar') return 'linear-gradient(145deg, #0369a1 0%, #0c1424 100%)';
+          if (cat === 'dazn') return 'linear-gradient(145deg, #334155 0%, #0c0d10 100%)';
+          if (cat === 'uk_sports') return 'linear-gradient(145deg, #1d4ed8 0%, #3b0a24 100%)';
+          if (cat === 'espn' || cat === 'dsports' || cat === 'beinsports') return 'linear-gradient(145deg, #991b1b 0%, #160a0d 100%)';
+          if (cat === 'cine_series' || cat === 'tnt_space') return 'linear-gradient(145deg, #6d28d9 0%, #160e26 100%)';
+          if (cat === 'infantil_autonomicas') return 'linear-gradient(145deg, #0f766e 0%, #0e1d20 100%)';
+          return 'linear-gradient(145deg, #3b2472 0%, #121218 100%)';
+        }
+
+        function filterTdtChannels(filterKey) {
+          var all = catalogData.tdt || [];
+          if (!filterKey || filterKey === 'all') return all;
+          var out = [];
+          for (var i = 0; i < all.length; i++) {
+            var c = all[i];
+            var cat = c.category || '';
+            if (filterKey === 'es_tdt' && (cat === 'generalistas' || cat === 'noticias_deportes' || cat === 'entretenimiento')) out.push(c);
+            else if (filterKey === 'es_sports' && (cat === 'movistar' || cat === 'dazn')) out.push(c);
+            else if (filterKey === 'uk_sports' && cat === 'uk_sports') out.push(c);
+            else if (filterKey === 'intl_sports' && (cat === 'espn' || cat === 'dsports' || cat === 'beinsports' || cat === 'tnt_space')) out.push(c);
+            else if (filterKey === 'cine' && cat === 'cine_series') out.push(c);
+            else if (filterKey === 'kids_reg' && cat === 'infantil_autonomicas') out.push(c);
+          }
+          return out;
+        }
+
+        // ===================================================================
         // GOOGLE TV CATALOG RENDERING
         // ===================================================================
         function buildCardButton(item, kind) {
@@ -2599,29 +3324,50 @@
           btn.tabIndex = 0;
 
           if (kind === 'tdt') {
-            var dialText = item.dial ? 'DIAL ' + item.dial : 'DIRECTO';
+            var dialText = item.dial ? 'DIAL ' + item.dial : 'EN VIVO';
+            var grad = getChannelBrandGradient(item);
+            var chEpg = catalogData.epg ? catalogData.epg[item.id] : null;
+            var nowTitle = chEpg && chEpg.now ? chEpg.now.title : (item.network || 'Emisión 24/7 HD');
+            var pct = chEpg && typeof chEpg.progressPct === 'number' ? Math.max(6, Math.min(100, chEpg.progressPct)) : 35;
+
             btn.innerHTML =
-              '<span class="tv-card-badge">' + escapeHtml(dialText) + '</span>' +
-              '<div class="tv-card-poster">' + escapeHtml(item.shortMark || item.name || 'TV') + '</div>' +
+              '<div class="tv-channel-stage" style="background:' + grad + ';">' +
+              '<div class="tv-channel-stage-top">' +
+              '<span class="tv-channel-dial">' + escapeHtml(dialText) + '</span>' +
+              '<span class="tv-channel-live"><span class="tv-live-dot"></span>DIRECTO</span>' +
+              '</div>' +
+              '<div class="tv-channel-mark">' + escapeHtml(item.shortMark || item.name || 'TV') + '</div>' +
+              '</div>' +
               '<div class="tv-card-body">' +
               '<div class="tv-card-title">' + escapeHtml(item.name) + '</div>' +
-              '<div class="tv-card-meta">' + escapeHtml(item.network || item.category || 'TDT HD') + '</div>' +
+              '<div class="tv-channel-epg-now">' + escapeHtml(nowTitle) + '</div>' +
+              '<div class="tv-channel-epg-bar"><div class="tv-channel-epg-fill" style="width:' + pct + '%;"></div></div>' +
               '</div>';
             btn.onclick = function () {
+              lastHubFocusedEl = btn;
               unlockAudio();
-              playTdtChannelOnTv(item);
+              playTdtChannelOnTv(item, 0);
             };
           } else {
             var isTv = item.mediaType === 'tv';
-            var badge = item.seasonNumber ? 'T' + item.seasonNumber : (isTv ? 'SERIE' : (item.rating ? '★ ' + item.rating : 'HD'));
+            var metaParts = [];
+            if (item.seasonNumber) metaParts.push('T' + item.seasonNumber);
+            else metaParts.push(isTv ? 'Serie' : 'Película');
+            if (item.year && item.year !== 'HD') metaParts.push(item.year);
+            if (item.rating) metaParts.push('★ ' + item.rating);
+
             btn.innerHTML =
-              '<span class="tv-card-badge">' + escapeHtml(badge) + '</span>' +
-              '<img class="tv-card-poster" src="' + escapeHtml(item.poster || '/icon.svg') + '" alt="" loading="lazy" />' +
+              '<div class="tv-card-poster-wrap">' +
+              '<img class="tv-card-poster" src="' + escapeHtml(item.poster || '/icon.svg') + '" alt="" loading="lazy" onerror="this.style.display=\'none\';if(this.nextSibling)this.nextSibling.style.display=\'flex\';" />' +
+              '<div class="tv-card-poster-fallback">' + escapeHtml(item.title) + '</div>' +
+              '<div class="tv-card-poster-grad"></div>' +
+              '</div>' +
               '<div class="tv-card-body">' +
               '<div class="tv-card-title">' + escapeHtml(item.title) + '</div>' +
-              '<div class="tv-card-meta">' + escapeHtml((item.year || 'HD') + (item.rating ? ' · ★ ' + item.rating : '')) + '</div>' +
+              '<div class="tv-card-meta">' + escapeHtml(metaParts.join(' · ')) + '</div>' +
               '</div>';
             btn.onclick = function () {
+              lastHubFocusedEl = btn;
               unlockAudio();
               if (isTv) openSeriesModalOnTv(item);
               else playMovieOnTv(item);
@@ -2665,7 +3411,7 @@
             '<h1 class="tv-hero-title">' + escapeHtml(featured.title) + '</h1>' +
             '<p class="tv-hero-desc">' + escapeHtml(featured.overview || 'Reproduce al instante en calidad 1080p desde tu Google TV.') + '</p>' +
             '<div class="tv-hero-btns">' +
-            '<button type="button" class="tv-btn-primary" id="btn-hero-play" tabindex="0">' + (isTv ? '📺 Ver Temporadas y Capítulos' : '▶ Reproducir Película (OK)') + '</button>' +
+            '<button type="button" class="tv-btn-primary" id="btn-hero-play" tabindex="0">' + (isTv ? '📺 Ver Temporadas y Capítulos' : '▶ Reproducir ahora') + '</button>' +
             '<button type="button" class="tv-btn" id="btn-hero-surprise" tabindex="0">🎲 Sorpréndeme</button>' +
             '</div></div>';
 
@@ -2674,6 +3420,7 @@
             var sBtn = document.getElementById('btn-hero-surprise');
             if (pBtn) {
               pBtn.onclick = function () {
+                lastHubFocusedEl = pBtn;
                 unlockAudio();
                 if (isTv) openSeriesModalOnTv(featured);
                 else playMovieOnTv(featured);
@@ -2681,6 +3428,7 @@
             }
             if (sBtn) {
               sBtn.onclick = function () {
+                lastHubFocusedEl = sBtn;
                 unlockAudio();
                 var pool = catalogData.movies.concat(catalogData.series, catalogData.anime, catalogData.cinemaReleases);
                 if (!pool.length) return;
@@ -2711,7 +3459,7 @@
             if (done < 3) return;
             catalogData.searching = false;
             catalogData.searchResults = collected;
-            renderHubContent();
+            renderHubContent(true);
           }
           xhrJson('GET', '/api/catalog/movies?query=' + encodeURIComponent(clean) + '&page=1', null, function (_e, d) {
             if (d && Array.isArray(d.movies)) {
@@ -2729,7 +3477,11 @@
             var low = clean.toLowerCase();
             for (var i = 0; i < catalogData.tdt.length; i++) {
               var ch = catalogData.tdt[i];
-              if ((ch.name && ch.name.toLowerCase().indexOf(low) !== -1) || (ch.network && ch.network.toLowerCase().indexOf(low) !== -1)) {
+              if (
+                (ch.name && ch.name.toLowerCase().indexOf(low) !== -1) ||
+                (ch.network && ch.network.toLowerCase().indexOf(low) !== -1) ||
+                (ch.category && ch.category.toLowerCase().indexOf(low) !== -1)
+              ) {
                 collected.push({ _isTdt: true, tdt: ch });
               }
             }
@@ -2737,7 +3489,7 @@
           }, 0);
         }
 
-        function renderHubContent() {
+        function renderHubContent(focusFirstResult) {
           if (!hubDynamicContent) return;
           hubDynamicContent.innerHTML = '';
 
@@ -2746,18 +3498,18 @@
             panel.className = 'tv-search-panel';
             panel.innerHTML =
               '<form id="tv-search-form" class="tv-search-row">' +
-              '<input type="text" id="tv-search-input" class="tv-search-input" placeholder="Buscar películas, series, anime (ej: Jujutsu Kaisen, From)..." value="' + escapeHtml(catalogData.searchQuery) + '" tabindex="0" />' +
+              '<input type="text" id="tv-search-input" class="tv-search-input" placeholder="Buscar películas, series, anime o canales (Sky Sports, La 1, From...)" value="' + escapeHtml(catalogData.searchQuery) + '" tabindex="0" />' +
               '<button type="submit" class="tv-btn-primary" tabindex="0">🔍 Buscar</button>' +
               '</form>' +
               '<div class="tv-chips-row">' +
-              '<button type="button" class="tv-chip-btn" data-q="Jujutsu Kaisen" tabindex="0">Jujutsu Kaisen</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="From" tabindex="0">From (T1-T4)</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="Solo Leveling" tabindex="0">Solo Leveling</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="Attack on Titan" tabindex="0">Attack on Titan</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="Dragon Ball Z" tabindex="0">Dragon Ball Z</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="One Piece" tabindex="0">One Piece</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="Berserk" tabindex="0">Berserk</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="Sky Sports" tabindex="0">Sky Sports UK</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="DAZN" tabindex="0">DAZN</button>' +
               '<button type="button" class="tv-chip-btn" data-q="La 1" tabindex="0">La 1 HD</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="Jujutsu Kaisen" tabindex="0">Jujutsu Kaisen</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="From" tabindex="0">From</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="Solo Leveling" tabindex="0">Solo Leveling</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="Dragon Ball" tabindex="0">Dragon Ball</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="One Piece" tabindex="0">One Piece</button>' +
               '</div>';
             hubDynamicContent.appendChild(panel);
 
@@ -2778,6 +3530,9 @@
                     runTvSearch(chip.getAttribute('data-q'));
                   };
                 })(chips[c]);
+              }
+              if (!focusFirstResult && sInput && activeScreen === 'hub' && document.activeElement === document.body) {
+                sInput.focus();
               }
             }, 0);
 
@@ -2802,6 +3557,12 @@
               }
               mixedSec.appendChild(grid);
               hubDynamicContent.appendChild(mixedSec);
+              if (focusFirstResult) {
+                setTimeout(function () {
+                  var firstRes = grid.querySelector('.tv-card');
+                  if (firstRes && firstRes.focus) firstRes.focus();
+                }, 40);
+              }
             }
             return;
           }
@@ -2810,31 +3571,83 @@
             var featured = catalogData.cinemaReleases[0] || catalogData.movies[0] || catalogData.newSeasons[0];
             var hero = buildHeroCard(featured);
             if (hero) hubDynamicContent.appendChild(hero);
-            appendSection(hubDynamicContent, '🎬 Últimos Estrenos en Cine', 'Cartelera reciente lista en HD', catalogData.cinemaReleases, 'media', false);
-            appendSection(hubDynamicContent, '🔥 Nuevas Temporadas de Series', 'From T4, Jujutsu Kaisen T3 y estrenos', catalogData.newSeasons, 'media', false);
-            appendSection(hubDynamicContent, '🍿 Cine Destacado', 'Tendencias del día', catalogData.movies, 'media', false);
-            appendSection(hubDynamicContent, '⚡ Anime Imprescindible en HD', 'Jujutsu Kaisen, Solo Leveling, DBZ, AOT...', catalogData.anime, 'media', false);
-            appendSection(hubDynamicContent, '📡 TV España en Directo (TDT)', 'Pulsa OK para sintonizar al instante', catalogData.tdt, 'tdt', false);
+            appendSection(hubDynamicContent, 'TV & Deportes en Directo', 'TDT España, Movistar+, DAZN y Sky Sports UK', catalogData.tdt, 'tdt', false);
+            appendSection(hubDynamicContent, 'Últimos Estrenos en Cine', 'Cartelera reciente lista en HD', catalogData.cinemaReleases, 'media', false);
+            appendSection(hubDynamicContent, 'Nuevas Temporadas de Series', 'Estrenos y capítulos semanales', catalogData.newSeasons, 'media', false);
+            appendSection(hubDynamicContent, 'Cine Destacado', 'Tendencias del día', catalogData.movies, 'media', false);
+            appendSection(hubDynamicContent, 'Anime en HD', 'Jujutsu Kaisen, Solo Leveling, DBZ, AOT', catalogData.anime, 'media', false);
+          } else if (activeHubTab === 'tdt') {
+            var filters = [
+              { key: 'all', label: 'Todos (' + catalogData.tdt.length + ')' },
+              { key: 'es_tdt', label: 'TDT España' },
+              { key: 'es_sports', label: 'Fútbol & Motor ES' },
+              { key: 'uk_sports', label: 'UK Sports (Sky / Eurosport)' },
+              { key: 'intl_sports', label: 'ESPN & Internacional' },
+              { key: 'cine', label: 'Cine & Series' },
+              { key: 'kids_reg', label: 'Autonómicas & Infantil' }
+            ];
+            var filterRow = document.createElement('div');
+            filterRow.className = 'tv-filter-row';
+            for (var f = 0; f < filters.length; f++) {
+              (function (fObj) {
+                var fb = document.createElement('button');
+                fb.type = 'button';
+                fb.className = 'tv-filter-pill' + (activeLiveFilter === fObj.key ? ' active' : '');
+                fb.textContent = fObj.label;
+                fb.tabIndex = 0;
+                fb.setAttribute('data-filter', fObj.key);
+                fb.onclick = function () {
+                  activeLiveFilter = fObj.key;
+                  renderHubContent();
+                  setTimeout(function () {
+                    var activePill = hubDynamicContent.querySelector('.tv-filter-pill[data-filter="' + fObj.key + '"]');
+                    if (activePill && activePill.focus) activePill.focus();
+                  }, 20);
+                };
+                filterRow.appendChild(fb);
+              })(filters[f]);
+            }
+            hubDynamicContent.appendChild(filterRow);
+            var filteredList = filterTdtChannels(activeLiveFilter);
+            appendSection(
+              hubDynamicContent,
+              'Canales en Directo 24/7',
+              filteredList.length + ' canales · Pulsa OK para ver, ↑/↓ en vídeo para zapping',
+              filteredList,
+              'tdt',
+              true
+            );
           } else if (activeHubTab === 'releases') {
             var rHero = buildHeroCard(catalogData.cinemaReleases[0] || catalogData.newSeasons[0]);
             if (rHero) hubDynamicContent.appendChild(rHero);
-            appendSection(hubDynamicContent, '🎬 Últimos Estrenos en Cine', 'Todos los estrenos recientes', catalogData.cinemaReleases, 'media', true);
-            appendSection(hubDynamicContent, '🔥 Nuevas Temporadas Recientes', 'Series recién estrenadas', catalogData.newSeasons, 'media', true);
+            appendSection(hubDynamicContent, 'Últimos Estrenos en Cine', 'Todos los estrenos recientes', catalogData.cinemaReleases, 'media', true);
+            appendSection(hubDynamicContent, 'Nuevas Temporadas Recientes', 'Series recién estrenadas', catalogData.newSeasons, 'media', true);
           } else if (activeHubTab === 'movies') {
             var mHero = buildHeroCard(catalogData.movies[0] || catalogData.cinemaReleases[0]);
             if (mHero) hubDynamicContent.appendChild(mHero);
-            appendSection(hubDynamicContent, '🎬 Catálogo de Cine', 'Navega con las flechas del mando', catalogData.movies, 'media', true);
+            appendSection(hubDynamicContent, 'Catálogo de Cine', 'Navega con las flechas del mando', catalogData.movies, 'media', true);
           } else if (activeHubTab === 'series') {
             var sHero = buildHeroCard(catalogData.series[0] || catalogData.newSeasons[0]);
             if (sHero) hubDynamicContent.appendChild(sHero);
-            appendSection(hubDynamicContent, '📺 Series Completas', 'Elige temporada y episodio', catalogData.series, 'media', true);
+            appendSection(hubDynamicContent, 'Series Completas', 'Elige temporada y episodio', catalogData.series, 'media', true);
           } else if (activeHubTab === 'anime') {
             var aHero = buildHeroCard(catalogData.anime[0]);
             if (aHero) hubDynamicContent.appendChild(aHero);
-            appendSection(hubDynamicContent, '⚡ Anime en HD (Castellano / Sub)', 'Todas las temporadas disponibles', catalogData.anime, 'media', true);
-          } else if (activeHubTab === 'tdt') {
-            appendSection(hubDynamicContent, '📡 Canales TDT España en Directo', 'Emisión en vivo 24/7 sin cortes', catalogData.tdt, 'tdt', true);
+            appendSection(hubDynamicContent, 'Anime en HD', 'Castellano / Sub Español', catalogData.anime, 'media', true);
           }
+        }
+
+        function loadLiveEpg() {
+          xhrJson('GET', '/api/epg/live', null, function (_e, d) {
+            if (d && d.epg) {
+              catalogData.epg = d.epg;
+              if (catalogData.loaded && (activeHubTab === 'tdt' || activeHubTab === 'home')) {
+                if (activeScreen === 'hub' && document.activeElement && !hubDynamicContent.contains(document.activeElement)) {
+                  renderHubContent();
+                }
+              }
+            }
+          });
         }
 
         function loadTvCatalog() {
@@ -2869,10 +3682,12 @@
             if (d && Array.isArray(d.channels)) catalogData.tdt = d.channels;
             checkDone();
           });
+          loadLiveEpg();
+          setInterval(loadLiveEpg, 3 * 60 * 1000);
         }
 
         // ===================================================================
-        // SPATIAL 10-FOOT PHYSICAL D-PAD NAVIGATION ENGINE (UP/DOWN/LEFT/RIGHT)
+        // ROW-AWARE SPATIAL 10-FOOT D-PAD NAVIGATION ENGINE
         // ===================================================================
         function getFocusableRoot() {
           if (seriesModal && seriesModal.style.display === 'block') return seriesModal;
@@ -2892,10 +3707,38 @@
             var rect = el.getBoundingClientRect();
             if (rect.width <= 0 || rect.height <= 0) continue;
             var style = window.getComputedStyle ? window.getComputedStyle(el) : null;
-            if (style && (style.display === 'none' || style.visibility === 'hidden')) continue;
+            if (style && (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none')) continue;
             out.push({ el: el, rect: rect });
           }
           return out;
+        }
+
+        function ensureFocusVisibleInContainer(el) {
+          if (!el) return;
+          try {
+            var parent = el.parentNode;
+            while (parent && parent !== document.body) {
+              if (parent.className && (parent.className.indexOf('tv-rail') !== -1 || parent.className.indexOf('hub-nav-pills') !== -1)) {
+                var pRect = parent.getBoundingClientRect();
+                var eRect = el.getBoundingClientRect();
+                if (eRect.right > pRect.right - 24 || eRect.left < pRect.left + 24) {
+                  parent.scrollLeft += (eRect.left + eRect.width / 2) - (pRect.left + pRect.width / 2);
+                }
+              }
+              parent = parent.parentNode;
+            }
+            if (hubScrollBody && hubDynamicContent && hubDynamicContent.contains(el)) {
+              var sRect = hubScrollBody.getBoundingClientRect();
+              var elRect = el.getBoundingClientRect();
+              if (elRect.bottom > sRect.bottom - 24) {
+                hubScrollBody.scrollTop += (elRect.bottom - sRect.bottom) + 40;
+              } else if (elRect.top < sRect.top + 18) {
+                hubScrollBody.scrollTop -= (sRect.top - elRect.top) + 32;
+              }
+            } else if (el.scrollIntoView) {
+              el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+            }
+          } catch (e) {}
         }
 
         function moveFocusDirection(dir) {
@@ -2911,13 +3754,17 @@
           }
           if (!activeRect) {
             list[0].el.focus();
+            ensureFocusVisibleInContainer(list[0].el);
             return;
           }
 
           var cx = activeRect.left + activeRect.width / 2;
           var cy = activeRect.top + activeRect.height / 2;
-          var best = null;
-          var bestScore = Infinity;
+          var isHorizontal = dir === 'left' || dir === 'right';
+          var bestSameBand = null;
+          var bestSameBandScore = Infinity;
+          var bestAny = null;
+          var bestAnyScore = Infinity;
 
           for (var j = 0; j < list.length; j++) {
             var cand = list[j];
@@ -2934,52 +3781,55 @@
             if (dir === 'left' && dx < -6) {
               valid = true;
               primary = -dx;
-              secondary = Math.abs(dy) * 2.4;
+              secondary = Math.abs(dy) * 2.8;
             } else if (dir === 'right' && dx > 6) {
               valid = true;
               primary = dx;
-              secondary = Math.abs(dy) * 2.4;
+              secondary = Math.abs(dy) * 2.8;
             } else if (dir === 'up' && dy < -6) {
               valid = true;
               primary = -dy;
-              secondary = Math.abs(dx) * 1.8;
+              secondary = Math.abs(dx) * 1.4;
             } else if (dir === 'down' && dy > 6) {
               valid = true;
               primary = dy;
-              secondary = Math.abs(dx) * 1.8;
+              secondary = Math.abs(dx) * 1.4;
             }
             if (!valid) continue;
+
             var score = primary + secondary;
-            if (score < bestScore) {
-              bestScore = score;
-              best = cand.el;
+            if (isHorizontal && Math.abs(dy) < Math.max(activeRect.height, r.height) * 0.75) {
+              if (score < bestSameBandScore) {
+                bestSameBandScore = score;
+                bestSameBand = cand.el;
+              }
+            }
+            if (score < bestAnyScore) {
+              bestAnyScore = score;
+              bestAny = cand.el;
             }
           }
 
-          if (best) {
-            try {
-              best.focus();
-              if (best.scrollIntoView) {
-                best.scrollIntoView({ block: 'nearest', inline: 'center', behavior: 'smooth' });
-              }
-            } catch (e) {
-              best.focus();
-            }
+          var chosen = bestSameBand || bestAny;
+          if (chosen) {
+            chosen.focus();
+            ensureFocusVisibleInContainer(chosen);
           }
         }
 
         // ===================================================================
-        // UI WIRE-UP & REMOTE KEYBOARD EVENTS
+        // UI WIRE-UP & GOOGLE TV REMOTE KEY HANDLERS
         // ===================================================================
         var tabBtns = document.querySelectorAll('#hub-nav-tabs .hub-tab-btn');
         for (var t = 0; t < tabBtns.length; t++) {
           (function (tb) {
             tb.onclick = function () {
               for (var k = 0; k < tabBtns.length; k++) {
-                tabBtns[k].className = 'hub-tab-btn';
+                tabBtns[k].className = tabBtns[k].getAttribute('data-tab') === 'search' ? 'hub-tab-btn search-left-btn' : 'hub-tab-btn';
               }
-              tb.className = 'hub-tab-btn active';
+              tb.className = (tb.getAttribute('data-tab') === 'search' ? 'hub-tab-btn search-left-btn active' : 'hub-tab-btn active');
               activeHubTab = tb.getAttribute('data-tab') || 'home';
+              if (hubScrollBody) hubScrollBody.scrollTop = 0;
               renderHubContent();
             };
           })(tabBtns[t]);
@@ -3001,8 +3851,12 @@
 
         document.getElementById('btn-close-series-modal').onclick = function () {
           seriesModal.style.display = 'none';
+          if (lastHubFocusedEl && lastHubFocusedEl.focus) {
+            setTimeout(function () { lastHubFocusedEl.focus(); }, 30);
+          }
         };
         document.getElementById('btn-go-pairing').onclick = function () {
+          lastHubFocusedEl = document.getElementById('btn-go-pairing');
           switchTvScreen('pairing');
         };
         document.getElementById('btn-back-to-hub').onclick = function () {
@@ -3023,14 +3877,6 @@
           unlockAudio();
           requestTvFullscreen(false);
         };
-        document.getElementById('btn-standby-fs').onclick = function () {
-          unlockAudio();
-          requestTvFullscreen(false);
-        };
-        document.getElementById('btn-hud-fs').onclick = function () {
-          unlockAudio();
-          requestTvFullscreen(false);
-        };
         document.getElementById('btn-dock-fs').onclick = function () {
           unlockAudio();
           requestTvFullscreen(false);
@@ -3042,8 +3888,19 @@
             requestTvFullscreen(false);
           };
         }
-        document.getElementById('btn-hud-aspect').onclick = cycleVideoAspect;
         document.getElementById('btn-dock-aspect').onclick = cycleVideoAspect;
+        if (btnStandbyRetry) {
+          btnStandbyRetry.onclick = function () {
+            autoFailoverLock = false;
+            triggerPlaybackFailover('Cambio manual');
+          };
+        }
+        if (btnDockChPrev) {
+          btnDockChPrev.onclick = function () { zapLiveChannel(-1); };
+        }
+        if (btnDockChNext) {
+          btnDockChNext.onclick = function () { zapLiveChannel(1); };
+        }
         document.getElementById('btn-dock-rew').onclick = function () {
           if (!currentIsLive && (currentMode === 'hls' || currentMode === 'direct')) {
             videoEl.currentTime = Math.max(0, (videoEl.currentTime || 0) - 15);
@@ -3064,25 +3921,16 @@
         };
         if (btnDockAudio) {
           btnDockAudio.onclick = function () {
-            if (localTracks.length < 2) return;
-            localTrackIdx = (localTrackIdx + 1) % localTracks.length;
-            var nextTr = localTracks[localTrackIdx];
-            if (!nextTr || !nextTr.resolvedStreamUrl) return;
-            btnDockAudio.textContent = '🌐 ' + (nextTr.label || 'Pista ' + (localTrackIdx + 1));
-            var resumeT = !currentIsLive && videoEl.currentTime > 2 ? videoEl.currentTime : 0;
-            applyVideoState(
-              {
-                mode: 'hls',
-                url: nextTr.resolvedStreamUrl,
-                title: hudTitle.textContent,
-                subtitle: nextTr.label || hudSub.textContent,
-                isPlaying: true,
-                isLive: currentIsLive,
-                currentTime: resumeT,
-              },
-              true
-            );
-            showToast('Pista cambiada: ' + (nextTr.label || 'Audio ' + (localTrackIdx + 1)));
+            if (!localTracks || localTracks.length < 2) return;
+            var nextIdx = (localTrackIdx + 1) % localTracks.length;
+            if (activeLiveChannel) {
+              showToast('Cambiando señal...');
+              playTdtChannelOnTv(activeLiveChannel, nextIdx);
+            } else {
+              var resumeT = !currentIsLive && videoEl.currentTime > 2 ? videoEl.currentTime : 0;
+              showToast('Cambiando pista...');
+              switchToLocalTrack(nextIdx, resumeT);
+            }
           };
         }
         document.getElementById('btn-dock-voldown').onclick = function () { handleRemoteCommand('vol_down'); };
@@ -3098,6 +3946,7 @@
           if (currentMode === 'hls' || currentMode === 'direct') {
             if (videoEl.paused) videoEl.play();
             else videoEl.pause();
+            syncPlayPauseButton();
           } else if (currentMode === 'youtube' && ytPlayer) {
             var st = ytPlayer.getPlayerState ? ytPlayer.getPlayerState() : -1;
             if (st === 1) ytPlayer.pauseVideo();
@@ -3126,19 +3975,66 @@
 
         document.addEventListener('keydown', function (e) {
           var code = e.keyCode || e.which;
+          var keyName = e.key || '';
           var activeEl = document.activeElement;
           var targetTag = activeEl && activeEl.tagName ? String(activeEl.tagName).toUpperCase() : '';
 
-          // D-Pad directional arrows (Android TV / Google TV / Samsung / Keyboard)
-          if (code === 37 || code === 21) { // Left
+          // Channel Up / Down remote buttons
+          if (keyName === 'ChannelUp' || code === 166) {
+            if (activeScreen === 'player' && activeLiveChannel) {
+              if (e.preventDefault) e.preventDefault();
+              zapLiveChannel(1);
+              return;
+            }
+          }
+          if (keyName === 'ChannelDown' || code === 167) {
+            if (activeScreen === 'player' && activeLiveChannel) {
+              if (e.preventDefault) e.preventDefault();
+              zapLiveChannel(-1);
+              return;
+            }
+          }
+
+          // When HUD is hidden in Player: OK toggles Play/Pause & reveals HUD; Up/Down zaps live TV or reveals HUD
+          if (activeScreen === 'player' && currentMode !== 'idle' && !isHudVisible() && standbyOverlay.style.display === 'none') {
+            if (code === 23 || code === 66 || code === 13 || code === 32) {
+              if (e.preventDefault) e.preventDefault();
+              revealHud();
+              if (currentMode === 'hls' || currentMode === 'direct') {
+                if (videoEl.paused) videoEl.play();
+                else videoEl.pause();
+                syncPlayPauseButton();
+              }
+              return;
+            }
+            if ((code === 38 || code === 19) && activeLiveChannel && keyName !== 'MediaPause') {
+              if (e.preventDefault) e.preventDefault();
+              zapLiveChannel(-1);
+              return;
+            }
+            if ((code === 40 || code === 20) && activeLiveChannel) {
+              if (e.preventDefault) e.preventDefault();
+              zapLiveChannel(1);
+              return;
+            }
+            if (code === 37 || code === 21 || code === 39 || code === 22 || code === 38 || code === 40 || code === 19 || code === 20) {
+              if (e.preventDefault) e.preventDefault();
+              revealHud();
+              if (btnPlayPause && btnPlayPause.focus) btnPlayPause.focus();
+              return;
+            }
+          }
+
+          // Standard D-Pad Spatial Navigation
+          if (code === 37 || code === 21) {
             if (targetTag === 'INPUT' && activeEl.selectionStart > 0) return;
             if (e.preventDefault) e.preventDefault();
             if (activeScreen === 'player') revealHud();
             moveFocusDirection('left');
             return;
           }
-          if (code === 38 || code === 19) { // Up (19 on web KeyboardEvent is Pause, on Android DPad Up is 19 -> handle Pause via key name)
-            if (e.key === 'MediaPause') {
+          if (code === 38 || code === 19) {
+            if (keyName === 'MediaPause') {
               if (activeScreen === 'player' && videoEl && !videoEl.paused) videoEl.pause();
               return;
             }
@@ -3147,20 +4043,20 @@
             moveFocusDirection('up');
             return;
           }
-          if (code === 39 || code === 22) { // Right
+          if (code === 39 || code === 22) {
             if (targetTag === 'INPUT' && activeEl.selectionEnd < (activeEl.value || '').length) return;
             if (e.preventDefault) e.preventDefault();
             if (activeScreen === 'player') revealHud();
             moveFocusDirection('right');
             return;
           }
-          if (code === 40 || code === 20) { // Down
+          if (code === 40 || code === 20) {
             if (e.preventDefault) e.preventDefault();
             if (activeScreen === 'player') revealHud();
             moveFocusDirection('down');
             return;
           }
-          if (code === 23 || code === 66) { // Android KEYCODE_DPAD_CENTER (23) / ENTER (66)
+          if (code === 23 || code === 66 || (code === 13 && targetTag !== 'INPUT')) {
             if (activeEl && activeEl.click) {
               if (e.preventDefault) e.preventDefault();
               activeEl.click();
@@ -3175,6 +4071,7 @@
             if (seriesModal && seriesModal.style.display === 'block') {
               if (e.preventDefault) e.preventDefault();
               seriesModal.style.display = 'none';
+              if (lastHubFocusedEl && lastHubFocusedEl.focus) lastHubFocusedEl.focus();
               return;
             }
             if (activeScreen === 'player') {
@@ -3192,7 +4089,12 @@
 
           if (activeScreen !== 'player') return;
           revealHud();
-          if (code === 415 || code === 126) {
+          if (code === 32 && (currentMode === 'hls' || currentMode === 'direct')) {
+            if (e.preventDefault) e.preventDefault();
+            if (videoEl.paused) videoEl.play();
+            else videoEl.pause();
+            syncPlayPauseButton();
+          } else if (code === 415 || code === 126) {
             if (videoEl.paused) videoEl.play();
           } else if (code === 179 || code === 85) {
             if (videoEl.paused) videoEl.play();

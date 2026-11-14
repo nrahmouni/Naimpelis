@@ -121,12 +121,26 @@ function isDvbHeadendStream(urlStr: string): boolean {
   return urlStr.includes('90.163.85.113:8093');
 }
 
+function resolveKnownUpstreamReferer(urlStr: string, explicitReferer?: string): string {
+  const cleanExplicit = String(explicitReferer || '').trim();
+  if (/^https?:\/\//i.test(cleanExplicit)) return cleanExplicit;
+  try {
+    const u = new URL(urlStr);
+    if (/(\.|^)stmify\.com$/i.test(u.hostname)) return 'https://stmify.com/';
+    if (/(\.|^)footunder\.online$/i.test(u.hostname)) return 'https://footunder.online/';
+  } catch {
+    // ignore
+  }
+  return '';
+}
+
 interface TrackRecord {
   id: string;
   label: string;
   lang: string;
   quality?: string;
   sourceUrl: string;
+  referer?: string;
   resolverType:
     | 'movidy_embed'
     | 'vidhide_hls'
@@ -1702,38 +1716,101 @@ async function curlGetText(
   });
 }
 
-async function curlGetBuffer(
+async function curlGetBufferWithStatus(
   targetUrl: string,
   headers: Record<string, string> = {},
   maxTimeSec = 7
-): Promise<Buffer> {
+): Promise<{ buf: Buffer; status: number }> {
   try {
     const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
-    if (h2.buf.length > 0 && h2.status < 400) {
-      return h2.buf;
+    if (h2.buf.length > 0 && h2.status >= 200 && h2.status < 400) {
+      return { buf: h2.buf, status: h2.status };
     }
   } catch {
     // fallback to curl if available
   }
 
-  return new Promise((resolve, reject) => {
-    const args = ['-sS', '-L', '-k', '--max-time', String(maxTimeSec)];
-    for (const [k, v] of Object.entries(headers)) {
-      if (v) args.push('-H', `${k}: ${v}`);
-    }
-    args.push(targetUrl);
-    execFile(
-      'curl',
-      args,
-      { encoding: 'buffer', maxBuffer: 25 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err && (!stdout || stdout.length === 0)) {
-          return reject(new Error(stderr ? stderr.toString() : err.message));
-        }
-        resolve(Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout));
+  const runCurl = (hdrs: Record<string, string>): Promise<{ buf: Buffer; status: number }> =>
+    new Promise((resolve, reject) => {
+      const marker = Buffer.from('\n__HTTP_STATUS__:');
+      const args = [
+        '-sS',
+        '-L',
+        '-k',
+        '--max-time',
+        String(maxTimeSec),
+        '-w',
+        '\n__HTTP_STATUS__:%{http_code}',
+      ];
+      for (const [k, v] of Object.entries(hdrs)) {
+        if (v) args.push('-H', `${k}: ${v}`);
       }
-    );
-  });
+      args.push(targetUrl);
+      execFile(
+        'curl',
+        args,
+        { encoding: 'buffer', maxBuffer: 25 * 1024 * 1024 },
+        (err, stdout, stderr) => {
+          const outBuf = Buffer.isBuffer(stdout) ? stdout : Buffer.from(stdout || '');
+          const idx = outBuf.lastIndexOf(marker);
+          if (idx !== -1) {
+            const codeStr = outBuf
+              .subarray(idx + marker.length)
+              .toString('utf8')
+              .trim();
+            const status = parseInt(codeStr, 10) || 0;
+            const body = outBuf.subarray(0, idx);
+            if (status >= 200 && status < 400 && body.length > 0) {
+              return resolve({ buf: body, status });
+            }
+            return resolve({ buf: Buffer.alloc(0), status: status || 502 });
+          }
+          if (err && outBuf.length === 0) {
+            return reject(new Error(stderr ? stderr.toString() : err.message));
+          }
+          resolve({ buf: outBuf, status: outBuf.length > 0 ? 200 : 502 });
+        }
+      );
+    });
+
+  const first = await runCurl(headers);
+  if (first.buf.length > 0 && first.status >= 200 && first.status < 400) {
+    return first;
+  }
+
+  // Many CDNs reject segment GETs that include Origin or Chrome UA -> retry stripped headers
+  if (first.status === 400 || first.status === 401 || first.status === 403 || first.status === 406) {
+    const noOriginHeaders: Record<string, string> = {};
+    for (const [k, v] of Object.entries(headers)) {
+      if (k.toLowerCase() !== 'origin') noOriginHeaders[k] = v;
+    }
+    const second = await runCurl(noOriginHeaders).catch(() => ({ buf: Buffer.alloc(0), status: 502 }));
+    if (second.buf.length > 0 && second.status >= 200 && second.status < 400) {
+      return second;
+    }
+    const minimalHeaders: Record<string, string> = headers.Range ? { Range: headers.Range } : {};
+    const third = await runCurl(minimalHeaders).catch(() => ({ buf: Buffer.alloc(0), status: 502 }));
+    if (third.buf.length > 0 && third.status >= 200 && third.status < 400) {
+      return third;
+    }
+  } else if (first.status >= 500 || first.status === 429 || first.status === 0) {
+    await new Promise((r) => setTimeout(r, 200));
+    const retry = await runCurl(headers).catch(() => ({ buf: Buffer.alloc(0), status: 502 }));
+    if (retry.buf.length > 0 && retry.status >= 200 && retry.status < 400) {
+      return retry;
+    }
+  }
+
+  return first;
+}
+
+async function curlGetBuffer(
+  targetUrl: string,
+  headers: Record<string, string> = {},
+  maxTimeSec = 7
+): Promise<Buffer> {
+  const res = await curlGetBufferWithStatus(targetUrl, headers, maxTimeSec);
+  return res.buf;
 }
 
 const wasmModuleCache = new Map<string, Promise<WebAssembly.Module>>();
@@ -5148,7 +5225,7 @@ app.get('/api/dvb-live/:sessionKey/:filename', (req, res) => {
 
 app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
   const targetUrl = String(req.query.url || '');
-  const referer = String(req.query.referer || '');
+  const referer = resolveKnownUpstreamReferer(targetUrl, String(req.query.referer || ''));
   const forceAac = req.query.aac === '1' || isDvbHeadendStream(targetUrl);
   const useAbs = req.query.abs === '1';
   const originPrefix = useAbs ? getPublicOrigin(req) : '';
@@ -5196,11 +5273,14 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
       baseUrl = fallback.effectiveUrl || targetUrl;
       manifestText = fallback.text;
     } else {
+      const hdrCtrl = new AbortController();
+      const hdrTimer = setTimeout(() => hdrCtrl.abort(), 4800);
       try {
         const upstream = await fetch(targetUrl, {
           headers,
-          signal: AbortSignal.timeout(3500),
+          signal: hdrCtrl.signal,
         });
+        clearTimeout(hdrTimer);
         if (!upstream.ok) {
           throw new Error(`HTTP ${upstream.status}`);
         }
@@ -5210,6 +5290,7 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
           throw new Error('Not M3U8');
         }
       } catch {
+        clearTimeout(hdrTimer);
         markHostNeedsCurlFallback(targetUrl);
         let fallback = await curlGetText(targetUrl, headers, 7);
         if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
@@ -5390,7 +5471,7 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
 
 app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
   const targetUrl = String(req.query.url || '');
-  const referer = String(req.query.referer || '');
+  const referer = resolveKnownUpstreamReferer(targetUrl, String(req.query.referer || ''));
   const forceAac = req.query.aac === '1' || isDvbHeadendStream(targetUrl);
   if (!targetUrl) return res.status(400).end();
 
@@ -5401,6 +5482,7 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
   if (forceAac && !isUrlMp4) {
     try {
       const remuxedBuf = await remuxDvbTsToAac(targetUrl, referer, true);
+      if (req.destroyed || res.writableEnded) return;
       res.status(200);
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
@@ -5411,6 +5493,7 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
       res.setHeader('Content-Length', String(remuxedBuf.length));
       return res.end(remuxedBuf);
     } catch {
+      if (req.destroyed || res.writableEnded) return;
       return res.status(502).end();
     }
   }
@@ -5431,16 +5514,52 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
     headers['Range'] = req.headers.range;
   }
 
+  const hdrCtrl = new AbortController();
+  const hdrTimer = setTimeout(() => hdrCtrl.abort(), 9000);
+  req.on('close', () => {
+    if (!res.writableEnded) hdrCtrl.abort();
+  });
+
   try {
     if (shouldBypassNodeFetch(targetUrl)) {
       throw new Error('Use fast curl/h2 fallback');
     }
-    const upstream = await fetch(targetUrl, {
+    let upstream = await fetch(targetUrl, {
       headers,
-      signal: AbortSignal.timeout(3500),
+      signal: hdrCtrl.signal,
     });
+    if (
+      (upstream.status === 400 ||
+        upstream.status === 401 ||
+        upstream.status === 403 ||
+        upstream.status === 406) &&
+      headers['Origin']
+    ) {
+      // Retry without Origin header (many HLS segment CDNs allow Referer or bare GET but reject Origin)
+      const noOriginHeaders: Record<string, string> = { ...headers };
+      delete noOriginHeaders['Origin'];
+      const retryResp = await fetch(targetUrl, {
+        headers: noOriginHeaders,
+        signal: hdrCtrl.signal,
+      }).catch(() => null);
+      if (retryResp && retryResp.ok && retryResp.body) {
+        upstream = retryResp;
+      }
+    } else if (upstream.status >= 500 || upstream.status === 429) {
+      // Brief transient CDN retry before falling back
+      await new Promise((r) => setTimeout(r, 180));
+      if (!hdrCtrl.signal.aborted) {
+        const retryResp = await fetch(targetUrl, {
+          headers,
+          signal: hdrCtrl.signal,
+        }).catch(() => null);
+        if (retryResp && retryResp.ok && retryResp.body) {
+          upstream = retryResp;
+        }
+      }
+    }
+    clearTimeout(hdrTimer);
     if (!upstream.ok || !upstream.body) {
-      markHostNeedsCurlFallback(targetUrl);
       throw new Error(`TS upstream ${upstream.status}`);
     }
 
@@ -5455,7 +5574,11 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
       !rawCt ||
       rawCt.startsWith('text/html') ||
       rawCt.startsWith('text/plain') ||
+      rawCt.startsWith('text/css') ||
       rawCt.startsWith('image/') ||
+      rawCt.startsWith('font/') ||
+      rawCt.includes('woff') ||
+      rawCt.includes('javascript') ||
       rawCt.startsWith('application/octet-stream');
     res.setHeader(
       'Content-Type',
@@ -5472,14 +5595,42 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
     if (ar) res.setHeader('Accept-Ranges', ar);
 
     const nodeStream = Readable.fromWeb(upstream.body as any);
-    nodeStream.on('error', () => res.end());
-    req.on('close', () => nodeStream.destroy());
+    let streamIdleTimer: ReturnType<typeof setTimeout> | null = null;
+    const armIdleTimer = () => {
+      if (streamIdleTimer) clearTimeout(streamIdleTimer);
+      streamIdleTimer = setTimeout(() => {
+        nodeStream.destroy();
+      }, 20_000);
+    };
+    armIdleTimer();
+    nodeStream.on('data', armIdleTimer);
+    nodeStream.once('end', () => {
+      if (streamIdleTimer) clearTimeout(streamIdleTimer);
+    });
+    nodeStream.once('close', () => {
+      if (streamIdleTimer) clearTimeout(streamIdleTimer);
+    });
+    nodeStream.on('error', () => {
+      if (streamIdleTimer) clearTimeout(streamIdleTimer);
+      res.end();
+    });
+    req.on('close', () => {
+      if (streamIdleTimer) clearTimeout(streamIdleTimer);
+      nodeStream.destroy();
+    });
     nodeStream.pipe(res);
-  } catch {
-    markHostNeedsCurlFallback(targetUrl);
+  } catch (err) {
+    clearTimeout(hdrTimer);
+    if (req.destroyed || res.writableEnded) return;
+    const errMsg = err instanceof Error ? err.message : String(err);
+    // Only bypass Node fetch for host when an actual TLS/network failure occurred (not HTTP 4xx/5xx)
+    if (!errMsg.startsWith('TS upstream ') && !errMsg.includes('Use fast curl')) {
+      markHostNeedsCurlFallback(targetUrl);
+    }
     if (res.headersSent) return res.end();
     try {
       const buf = await curlGetBuffer(targetUrl, headers, 18);
+      if (req.destroyed || res.writableEnded) return;
       if (!buf || buf.length === 0) {
         res.status(502).end();
         return;
@@ -5494,14 +5645,30 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
         boxType === 'moof' ||
         boxType === 'sidx';
 
-      res.status(req.headers.range ? 206 : 200);
+      let outBuf = buf;
+      let statusCode = 200;
+      const rangeHdr = String(req.headers.range || '');
+      const rangeMatch = rangeHdr.match(/^bytes=(\d+)-(\d*)$/i);
+      if (rangeMatch) {
+        const start = parseInt(rangeMatch[1], 10);
+        const rawEnd = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : buf.length - 1;
+        if (start >= 0 && start < buf.length) {
+          const end = Math.min(buf.length - 1, Math.max(start, rawEnd));
+          outBuf = buf.subarray(start, end + 1);
+          statusCode = 206;
+          res.setHeader('Content-Range', `bytes ${start}-${end}/${buf.length}`);
+          res.setHeader('Accept-Ranges', 'bytes');
+        }
+      }
+
+      res.status(statusCode);
       res.setHeader('Access-Control-Allow-Origin', '*');
       res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', '*');
       res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
       res.setHeader('Content-Type', isFmp4Buffer ? 'video/mp4' : 'video/mp2t');
-      res.setHeader('Content-Length', String(buf.length));
-      res.end(buf);
+      res.setHeader('Content-Length', String(outBuf.length));
+      res.end(outBuf);
     } catch {
       if (!res.headersSent) res.status(502);
       res.end();
@@ -7341,6 +7508,67 @@ function getPermanent247SportsMatches() {
         },
       ],
     },
+    {
+      id: 'mux-uk-sports',
+      title: 'Sky Sports Premier League · F1 · Eurosport · DAZN UK (English 24/7)',
+      competition: 'UK Sports · Premier League · F1 · Boxing · Golf',
+      sport: 'soccer',
+      time: 'LIVE EN',
+      isLive: true,
+      is247Channel: true,
+      channels: [
+        {
+          id: 'ch-uk-pl',
+          label: 'Sky Sports Premier League (UK)',
+          lang: 'EN',
+          quality: '1080p',
+          sourceUrl: 'https://cdn.stmify.com/out/v1/SKY_SPORTS_PREMIER_LEAGUE/index.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-uk-f1',
+          label: 'Sky Sports F1 (UK)',
+          lang: 'EN',
+          quality: '720p',
+          sourceUrl: 'https://cdn.stmify.com/out/v1/SKY_SPORTS_F1/index.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-uk-action',
+          label: 'Sky Sports Action / NFL (UK)',
+          lang: 'EN',
+          quality: '720p',
+          sourceUrl: 'https://cdn.stmify.com/out/v1/SKY_SPORTS_ACTION/index.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-uk-es1',
+          label: 'Eurosport 1 UK 1080p',
+          lang: 'EN',
+          quality: '1080p',
+          sourceUrl: 'http://85.117.37.43/eurosport1/index.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-uk-mutv',
+          label: 'MUTV (Manchester Utd UK)',
+          lang: 'EN',
+          quality: '720p',
+          sourceUrl:
+            'https://fastly.live.brightcove.com/6374054671112/eu-west-1/6058004203001/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJob3N0IjoiYXplMnp5LmVncmVzcy55ODN1ZWIiLCJhY2NvdW50X2lkIjoiNjA1ODAwNDIwMzAwMSIsImVobiI6ImZhc3RseS5saXZlLmJyaWdodGNvdmUuY29tIiwiaXNzIjoiYmxpdmUtcGxheWJhY2stc291cmNlLWFwaSIsInN1YiI6InBhdGhtYXB0b2tlbiIsImF1ZCI6WyI2MDU4MDA0MjAzMDAxIl0sImp0aSI6IjYzNzQwNTQ2NzExMTIifQ.3FmuTna3DAmY7xlhK5fk6LMrosrtrR5VsU2QOgYO5y4/playlist-hls.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-uk-talk',
+          label: 'talkSPORT UK 1080p',
+          lang: 'EN',
+          quality: '1080p',
+          sourceUrl:
+            'https://af7a8b4e.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/TEctZ2JfdGFsa1NQT1JUX0hMUw/playlist.m3u8',
+          resolverType: 'tdt_hls',
+        },
+      ],
+    },
   ];
 }
 
@@ -7566,6 +7794,7 @@ interface SpanishTdtChannelDef {
   category:
     | 'movistar'
     | 'dazn'
+    | 'uk_sports'
     | 'beinsports'
     | 'espn'
     | 'dsports'
@@ -7627,6 +7856,14 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la2/la2_main.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'la2-rtve-dvr',
+        label: 'Señal Oficial RTVE DVR (La 2)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la2/la2_main_dvr.m3u8',
         resolverType: 'tdt_hls',
       },
       {
@@ -8383,262 +8620,450 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
     ],
   },
   // ==========================================================================
-  // BEIN SPORTS ÁRABE EN VIVO (beIN SPORTS MENA 1–9 + XTRA · AUDIO ÁRABE HD)
+  // UK & ENGLISH SPORTS HUB (SKY SPORTS · EUROSPORT UK · DAZN UK · MUTV)
   // ==========================================================================
   {
-    id: 'bein-ar-1',
-    dial: 90,
-    name: 'beIN SPORTS 1 (Árabe)',
-    shortMark: 'beIN AR1',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS 1 MENA en directo con comentarios en árabe: Champions League, Premier League y LaLiga',
+    id: 'uk-sky-premier',
+    dial: 130,
+    name: 'Sky Sports Premier League (UK)',
+    shortMark: 'SKY PL',
+    brandTone: '#0284C7',
+    network: 'Sky Sports UK (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'Sky Sports Premier League UK live English broadcast · Premier League & News',
     channels: [
       {
-        id: 'beinar1-hd',
-        label: 'Señal Principal beIN 1 Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/7.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'beinar1-sd',
-        label: 'Señal 2 Respaldo beIN 1 Árabe',
-        lang: 'AR',
-        quality: 'SD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/1.m3u8',
+        id: 'uk-sky-pl-1',
+        label: 'Sky Sports Premier League UK HD',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl: 'https://cdn.stmify.com/out/v1/SKY_SPORTS_PREMIER_LEAGUE/index.m3u8',
+        referer: 'https://stmify.com/',
         resolverType: 'tdt_hls',
       },
     ],
   },
   {
-    id: 'bein-ar-2',
-    dial: 91,
-    name: 'beIN SPORTS 2 (Árabe)',
-    shortMark: 'beIN AR2',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS 2 MENA en directo con comentarios en árabe: fútbol inglés, español y torneos UEFA',
+    id: 'uk-sky-f1',
+    dial: 131,
+    name: 'Sky Sports F1 (UK)',
+    shortMark: 'SKY F1',
+    brandTone: '#DC2626',
+    network: 'Sky Sports UK (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'Sky Sports F1 UK live English coverage: Formula 1, F2, F3 and paddock analysis',
     channels: [
       {
-        id: 'beinar2-hd',
-        label: 'Señal Principal beIN 2 Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/8.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'beinar2-sd',
-        label: 'Señal 2 Respaldo beIN 2 Árabe',
-        lang: 'AR',
-        quality: 'SD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/2.m3u8',
+        id: 'uk-sky-f1-1',
+        label: 'Sky Sports F1 UK Direct',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://cdn.stmify.com/out/v1/SKY_SPORTS_F1/index.m3u8',
+        referer: 'https://stmify.com/',
         resolverType: 'tdt_hls',
       },
     ],
   },
   {
-    id: 'bein-ar-3',
-    dial: 92,
-    name: 'beIN SPORTS 3 (Árabe)',
-    shortMark: 'beIN AR3',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS 3 MENA en árabe: LaLiga, Serie A, Ligue 1 y competiciones internacionales en vivo',
+    id: 'uk-sky-action',
+    dial: 132,
+    name: 'Sky Sports Action (UK)',
+    shortMark: 'SKY ACT',
+    brandTone: '#1D4ED8',
+    network: 'Sky Sports UK (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'Sky Sports Action UK live English feed: NFL, Rugby Union, Tennis & Boxing',
     channels: [
       {
-        id: 'beinar3-hd',
-        label: 'Señal Principal beIN 3 Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/9.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'beinar3-sd',
-        label: 'Señal 2 Respaldo beIN 3 Árabe',
-        lang: 'AR',
-        quality: 'SD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/3.m3u8',
+        id: 'uk-sky-act-1',
+        label: 'Sky Sports Action UK Direct',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://cdn.stmify.com/out/v1/SKY_SPORTS_ACTION/index.m3u8',
+        referer: 'https://stmify.com/',
         resolverType: 'tdt_hls',
       },
     ],
   },
   {
-    id: 'bein-ar-4',
-    dial: 93,
-    name: 'beIN SPORTS 4 (Árabe)',
-    shortMark: 'beIN AR4',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS 4 MENA en árabe: partidos simultáneos de UEFA Champions League, Europa League y NBA',
+    id: 'uk-sky-sports-1',
+    dial: 133,
+    name: 'Sky Sports Main / 1 (EN)',
+    shortMark: 'SKY 1',
+    brandTone: '#0369A1',
+    network: 'Sky Sports UK (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'Sky Sports 1 HD live English sports feed: Football, Cricket & Championship',
     channels: [
       {
-        id: 'beinar4-hd',
-        label: 'Señal Principal beIN 4 Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/10.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'beinar4-sd',
-        label: 'Señal 2 Respaldo beIN 4 Árabe',
-        lang: 'AR',
-        quality: 'SD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/4.m3u8',
+        id: 'uk-sky-1-main',
+        label: 'Sky Sports 1 1080p',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl: 'http://45.228.234.9:8000/play/a06b/index.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
   },
   {
-    id: 'bein-ar-5',
-    dial: 94,
-    name: 'beIN SPORTS 5 (Árabe)',
-    shortMark: 'beIN AR5',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS 5 MENA en árabe: cobertura multicanal de ligas europeas, AFCON y fútbol mundial',
+    id: 'uk-sky-sports-2',
+    dial: 134,
+    name: 'Sky Sports Arena / 2 (EN)',
+    shortMark: 'SKY 2',
+    brandTone: '#075985',
+    network: 'Sky Sports UK (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'Sky Sports 2 HD live English broadcast: Rugby, Darts, EFL & Golf',
     channels: [
       {
-        id: 'beinar5-hd',
-        label: 'Señal Principal beIN 5 Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/11.m3u8',
-        resolverType: 'tdt_hls',
-      },
-      {
-        id: 'beinar5-sd',
-        label: 'Señal 2 Respaldo beIN 5 Árabe',
-        lang: 'AR',
-        quality: 'SD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/5.m3u8',
+        id: 'uk-sky-2-main',
+        label: 'Sky Sports 2 1080p',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl: 'http://200.115.120.1:8000/play/ca82266/index.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
   },
   {
-    id: 'bein-ar-6',
-    dial: 95,
-    name: 'beIN SPORTS 6 (Árabe)',
-    shortMark: 'beIN AR6',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS 6 MENA en árabe: partidos simultáneos europeos y tenis ATP/WTA en directo',
+    id: 'uk-eurosport-1',
+    dial: 135,
+    name: 'Eurosport 1 UK',
+    shortMark: 'EUR1 UK',
+    brandTone: '#1E3A8A',
+    network: 'Eurosport UK (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'Eurosport 1 UK in English: Grand Slam Tennis, Cycling, Snooker & Athletics',
     channels: [
       {
-        id: 'beinar6-hd',
-        label: 'Señal Principal beIN 6 Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/12.m3u8',
+        id: 'uk-es1-1080',
+        label: 'Eurosport 1 UK 1080p',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl: 'http://85.117.37.43/eurosport1/index.m3u8',
         resolverType: 'tdt_hls',
       },
       {
-        id: 'beinar6-sd',
-        label: 'Señal 2 Respaldo beIN 6 Árabe',
-        lang: 'AR',
-        quality: 'SD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/6.m3u8',
-        resolverType: 'tdt_hls',
-      },
-    ],
-  },
-  {
-    id: 'bein-ar-7',
-    dial: 96,
-    name: 'beIN SPORTS 7 (Árabe)',
-    shortMark: 'beIN AR7',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS 7 MENA en árabe: jornadas europeas simultáneas, eliminatorias y motor en directo',
-    channels: [
-      {
-        id: 'beinar7-hd',
-        label: 'Señal Directa beIN 7 Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/14.m3u8',
+        id: 'uk-es1-eu',
+        label: 'Eurosport 1 Europe Backup',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://r.eu.cdn-redge.media/livehls/oeu/mt/live/eurosport_1/live.livx/playlist.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
   },
   {
-    id: 'bein-ar-8',
-    dial: 97,
-    name: 'beIN SPORTS 8 (Árabe)',
-    shortMark: 'beIN AR8',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS 8 MENA en árabe: fútbol internacional y competiciones AFC/CAF en vivo',
+    id: 'uk-eurosport-2',
+    dial: 136,
+    name: 'Eurosport 2 UK / Europe',
+    shortMark: 'EUR2 EN',
+    brandTone: '#1E40AF',
+    network: 'Eurosport UK (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'Eurosport 2 live English feed: PGA Golf, Superbike, Motorsport & ATP Tennis',
     channels: [
       {
-        id: 'beinar8-hd',
-        label: 'Señal Directa beIN 8 Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/16.m3u8',
+        id: 'uk-es2-main',
+        label: 'Eurosport 2 HD',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl: 'https://r.eu.cdn-redge.media/livehls/oeu/mt/live/eurosport_2/live.livx/playlist.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
   },
   {
-    id: 'bein-ar-9',
-    dial: 98,
-    name: 'beIN SPORTS 9 (Árabe)',
-    shortMark: 'beIN AR9',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS 9 MENA en árabe: eventos deportivos simultáneos 24/7 en alta definición',
+    id: 'uk-mutv',
+    dial: 137,
+    name: 'MUTV (Manchester Utd UK)',
+    shortMark: 'MUTV',
+    brandTone: '#B91C1C',
+    network: 'UK Club TV (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'Official Manchester United TV in English: matchday build-up, replays & Academy live',
     channels: [
       {
-        id: 'beinar9-hd',
-        label: 'Señal Directa beIN 9 Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/17.m3u8',
+        id: 'uk-mutv-live',
+        label: 'MUTV Official UK Stream',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl:
+          'https://fastly.live.brightcove.com/6374054671112/eu-west-1/6058004203001/eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJob3N0IjoiYXplMnp5LmVncmVzcy55ODN1ZWIiLCJhY2NvdW50X2lkIjoiNjA1ODAwNDIwMzAwMSIsImVobiI6ImZhc3RseS5saXZlLmJyaWdodGNvdmUuY29tIiwiaXNzIjoiYmxpdmUtcGxheWJhY2stc291cmNlLWFwaSIsInN1YiI6InBhdGhtYXB0b2tlbiIsImF1ZCI6WyI2MDU4MDA0MjAzMDAxIl0sImp0aSI6IjYzNzQwNTQ2NzExMTIifQ.3FmuTna3DAmY7xlhK5fk6LMrosrtrR5VsU2QOgYO5y4/playlist-hls.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
   },
   {
-    id: 'bein-ar-xtra',
-    dial: 99,
-    name: 'beIN SPORTS XTRA (Árabe)',
-    shortMark: 'beIN ARX',
-    brandTone: '#5B21B6',
-    network: 'beIN SPORTS Árabe',
-    category: 'beinsports',
-    quality: 'HD Directo',
-    description: 'beIN SPORTS XTRA / beINSPIRED MENA en árabe: fútbol especial, Champions y eventos extra en directo',
+    id: 'uk-talksport',
+    dial: 138,
+    name: 'talkSPORT TV (UK)',
+    shortMark: 'talkSP',
+    brandTone: '#F59E0B',
+    network: 'talkSPORT UK (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'UK live Premier League & Football studio debate, breaking transfer news and match shows',
     channels: [
       {
-        id: 'beinarx-hd',
-        label: 'Señal Directa beIN XTRA Árabe HD',
-        lang: 'AR',
-        quality: 'HD',
-        sourceUrl: 'https://vg162.adcdsd123321.shop/13.m3u8',
+        id: 'uk-talksport-1080',
+        label: 'talkSPORT UK 1080p',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl:
+          'https://af7a8b4e.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/TEctZ2JfdGFsa1NQT1JUX0hMUw/playlist.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-dazn-darts',
+    dial: 139,
+    name: 'DAZN Darts UK (EN)',
+    shortMark: 'DAZN UK',
+    brandTone: '#111827',
+    network: 'DAZN UK (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'DAZN UK PDC Darts tournaments, Premier League Darts & World Championship in English',
+    channels: [
+      {
+        id: 'uk-dazn-darts-1',
+        label: 'DAZN Darts UK HD',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://jmp2.uk/plu-64b67f0424ade50008a3be17.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-dazn-combat',
+    dial: 140,
+    name: 'DAZN Combat (EN)',
+    shortMark: 'DAZN CB',
+    brandTone: '#18181B',
+    network: 'DAZN UK (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'DAZN Combat live English boxing cards, PFL MMA & Matchroom fight nights',
+    channels: [
+      {
+        id: 'uk-dazn-combat-1',
+        label: 'DAZN Combat English HD',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://jmp2.uk/plu-64d626ac9b414d000820e2fc.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-redbull',
+    dial: 141,
+    name: 'Red Bull TV UK (EN)',
+    shortMark: 'RB UK',
+    brandTone: '#DC2626',
+    network: 'Red Bull UK (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'Red Bull TV UK live English motorsport, WRC, MTB & extreme world events',
+    channels: [
+      {
+        id: 'uk-redbull-1080',
+        label: 'Red Bull TV UK 1080p',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl:
+          'https://1a3566cb46914c5499fbc86fbc4ac87e.mediatailor.us-west-2.amazonaws.com/v1/master/ba62fe743df0fe93366eba3a257d792884136c7f/LINEAR-932-WORBUKENFAST-WHALETVPLUS/932/whaletvplus/hls/master/playlist.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-fifa-plus',
+    dial: 142,
+    name: 'FIFA+ Football (EN)',
+    shortMark: 'FIFA+',
+    brandTone: '#0F172A',
+    network: 'FIFA+ UK (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'FIFA+ English live football matches, World Cup classics & documentaries',
+    channels: [
+      {
+        id: 'uk-fifaplus-1',
+        label: 'FIFA+ English 1080p',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl:
+          'https://d2w9q46ikgrcwx.cloudfront.net/v1/master/3722c60a815c199d9c0ef36c5b73da68a62b09d1/cc-of5cbk3sav3w5/v1/sysdata_s_p_a_fifa_7/samsungheadend_us/latest/main/hls/playlist.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'uk-fifaplus-2',
+        label: 'FIFA+ UK Alternate Feed',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://jmp2.uk/plu-660c29b5aec9680008f5b4a4.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-fifa-women',
+    dial: 143,
+    name: 'FIFA+ Women UK (EN)',
+    shortMark: 'FIFA W',
+    brandTone: '#7C3AED',
+    network: 'FIFA+ UK (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'FIFA+ Women UK live English women football competitions and highlights',
+    channels: [
+      {
+        id: 'uk-fifaw-1',
+        label: 'FIFA+ Women UK HD',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl:
+          'https://cffda8ff.wurl.com/master/f36d25e7e52f1ba8d7e56eb859c636563214f541/U2Ftc3VuZy1nYl9GSUZBUGx1c3dvbWVuX0hMUw/playlist.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-bellator-mma',
+    dial: 144,
+    name: 'Bellator MMA (EN)',
+    shortMark: 'MMA EN',
+    brandTone: '#991B1B',
+    network: 'Combat Sports (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'Bellator MMA championship bouts and main events in English 24/7',
+    channels: [
+      {
+        id: 'uk-bellator-1',
+        label: 'Bellator MMA HD',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://jmp2.uk/plu-5ebc8688f3697d00072f7cf8.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-cbs-sports',
+    dial: 145,
+    name: 'CBS Sports HQ (EN)',
+    shortMark: 'CBS HQ',
+    brandTone: '#1D4ED8',
+    network: 'Sports News (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'CBS Sports HQ 24/7 English coverage: UEFA Champions League, NFL, NBA & scores',
+    channels: [
+      {
+        id: 'uk-cbs-1',
+        label: 'CBS Sports HQ English HD',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://jmp2.uk/plu-5e9f2c05172a0f0007db4786.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-strongman',
+    dial: 146,
+    name: 'Strongman Champions UK (EN)',
+    shortMark: 'STRONG',
+    brandTone: '#B45309',
+    network: 'UK Sports (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'UK Strongman Champions League competitions and strength athletics in English',
+    channels: [
+      {
+        id: 'uk-strong-1',
+        label: 'Strongman UK HD',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://rightsboosterltd-scl-1-eu.rakuten.wurl.tv/playlist.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-floracing',
+    dial: 147,
+    name: 'FloRacing Motorsport (EN)',
+    shortMark: 'FLORA',
+    brandTone: '#EA580C',
+    network: 'Motorsport (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'FloRacing English 24/7 oval racing, dirt track, sprint cars & UK/US motorsport',
+    channels: [
+      {
+        id: 'uk-flo-1',
+        label: 'FloRacing 1080p',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl:
+          'https://amg02278-amg02278c1-flosports-worldwide-7592.playouts.now.amagi.tv/playlist.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-sky-racing',
+    dial: 148,
+    name: 'Sky Racing 1 (EN)',
+    shortMark: 'SKYRAC',
+    brandTone: '#047857',
+    network: 'Racing (EN)',
+    category: 'uk_sports',
+    quality: '720p EN',
+    description: 'Sky Racing 1 English live horse racing & thoroughbred coverage',
+    channels: [
+      {
+        id: 'uk-skyrac-1',
+        label: 'Sky Racing 1 HD',
+        lang: 'EN',
+        quality: '720p',
+        sourceUrl: 'https://636ffd31f0e12.streamlock.net/RacingStream1/RacingStream1/playlist.m3u8',
+        resolverType: 'tdt_hls',
+      },
+    ],
+  },
+  {
+    id: 'uk-tsn-ocho',
+    dial: 149,
+    name: 'TSN The Ocho (EN)',
+    shortMark: 'OCHO',
+    brandTone: '#E11D48',
+    network: 'Sports (EN)',
+    category: 'uk_sports',
+    quality: '1080p EN',
+    description: 'TSN The Ocho English live alternative sports, championships & events 24/7',
+    channels: [
+      {
+        id: 'uk-tsn-1',
+        label: 'TSN The Ocho 1080p',
+        lang: 'EN',
+        quality: '1080p',
+        sourceUrl:
+          'https://d3pnbvng3bx2nj.cloudfront.net/v1/master/3722c60a815c199d9c0ef36c5b73da68a62b09d1/cc-rds8g35qfqrnv/TSN_The_Ocho.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
@@ -9622,6 +10047,14 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
         resolverType: 'tdt_hls',
       },
       {
+        id: 'clan-rtve-alt',
+        label: 'Señal Oficial RTVE Respaldo HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://ztnr.rtve.es/ztnr/5466990.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
         id: 'clan-boing-bk',
         label: 'Señal Infantil Alternativa HD',
         lang: 'ES',
@@ -9669,6 +10102,15 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
         lang: 'ES',
         quality: '1080p',
         sourceUrl: 'http://90.163.85.113:8093/stream/34/index.m3u8',
+        resolverType: 'tdt_hls',
+      },
+      {
+        id: 'canalsur-oficial',
+        label: 'Señal Oficial Canal Sur HD',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl:
+          'https://dfk2a268yviz9.cloudfront.net/v1/master/3722c60a815c199d9c0ef36c5b73da68a62b09d1/cc-ddiii1m6jt6of/CanalSurAndaluciaES.m3u8',
         resolverType: 'tdt_hls',
       },
     ],
@@ -10305,10 +10747,19 @@ app.get('/api/extract/stream', async (req, res) => {
     if (resolverType === 'tdt_hls' && rawInput) {
 
       const cleanCheckUrl = rawInput.replace(/[?&]profile=(hd|fast)\b/gi, '');
+      const knownReferer = resolveKnownUpstreamReferer(cleanCheckUrl);
       const checkHeaders: Record<string, string> = {
         'User-Agent': isDvbHeadendStream(cleanCheckUrl) ? TDT_DVB_UA : CHROME_UA,
         Accept: '*/*',
       };
+      if (knownReferer) {
+        checkHeaders['Referer'] = knownReferer;
+        try {
+          checkHeaders['Origin'] = new URL(knownReferer).origin;
+        } catch {
+          // ignore
+        }
+      }
       let isAlive = false;
       try {
         const chk = await fetch(cleanCheckUrl, {
@@ -10331,7 +10782,7 @@ app.get('/api/extract/stream', async (req, res) => {
         });
       }
 
-      const originRef = new URL(cleanCheckUrl).origin + '/';
+      const originRef = knownReferer || new URL(cleanCheckUrl).origin + '/';
       // Official Spanish public broadcaster HTTPS CDNs (`rtvelivestream.rtve.es`, `3catdirectes.cat`, `eitb.eus`)
       // send `Access-Control-Allow-Origin: *` for direct client playback in Spain, whereas proxying them through
       // a non-Spanish Cloud Run datacenter triggers HTTP 403 geo-blocks on `.ts` segments!
@@ -14677,6 +15128,7 @@ const IPTV_GROUP_TITLES: Record<string, string> = {
   generalistas: 'TDT Generalistas',
   movistar: 'Fútbol · Movistar+',
   dazn: 'Fútbol · DAZN',
+  uk_sports: 'Deportes UK · Sky & Eurosport (EN)',
   beinsports: 'Fútbol · beIN SPORTS',
   espn: 'Fútbol · ESPN 1-7',
   dsports: 'Fútbol · DSports',
@@ -14959,64 +15411,70 @@ async function unwrapMasterPlaylistForIptv(
   referer: string,
   forceAac: boolean
 ): Promise<{ text: string; finalUrl: string }> {
-  const txt = manifestObj.text || '';
-  if (!txt.includes('#EXT-X-STREAM-INF')) {
-    return manifestObj;
-  }
+  let current = manifestObj;
 
-  // Only unwrap when the default audio track is muxed inside the video .ts segments
-  // (either no TYPE=AUDIO at all, or DEFAULT=YES audio line without an external URI="...").
-  const lines = txt.split(/\r?\n/);
-  let hasExternalOnlyDefaultAudio = false;
-  let hasAnyAudioMedia = false;
-  let hasMuxedDefaultAudio = false;
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (line.startsWith('#EXT-X-MEDIA') && line.includes('TYPE=AUDIO')) {
-      hasAnyAudioMedia = true;
-      const isDefault = /DEFAULT=YES/i.test(line);
-      const hasUri = /URI="/i.test(line);
-      if (isDefault && !hasUri) hasMuxedDefaultAudio = true;
-      if (isDefault && hasUri) hasExternalOnlyDefaultAudio = true;
+  for (let depth = 0; depth < 3; depth++) {
+    const txt = current.text || '';
+    if (!txt.includes('#EXT-X-STREAM-INF')) {
+      return current;
     }
-  }
-  if (hasAnyAudioMedia && hasExternalOnlyDefaultAudio && !hasMuxedDefaultAudio) {
-    return manifestObj;
-  }
 
-  let bestUrl = '';
-  let bestBw = -1;
-  let pendingBw = 0;
-  let expectingUrl = false;
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) continue;
-    if (line.startsWith('#EXT-X-STREAM-INF')) {
-      const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
-      pendingBw = bwMatch ? parseInt(bwMatch[1], 10) || 0 : 0;
-      expectingUrl = true;
-      continue;
-    }
-    if (line.startsWith('#')) {
-      continue;
-    }
-    if (expectingUrl) {
-      expectingUrl = false;
-      try {
-        const absVariant = new URL(line, manifestObj.finalUrl).href;
-        if (pendingBw >= bestBw) {
-          bestBw = pendingBw;
-          bestUrl = absVariant;
-        }
-      } catch {
-        // ignore invalid variant URI
+    // Preserve master playlist only when default audio is a separate demuxed track URI
+    const lines = txt.split(/\r?\n/);
+    let hasExternalOnlyDefaultAudio = false;
+    let hasAnyAudioMedia = false;
+    let hasMuxedDefaultAudio = false;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (line.startsWith('#EXT-X-MEDIA') && line.includes('TYPE=AUDIO')) {
+        hasAnyAudioMedia = true;
+        const isDefault = /DEFAULT=YES/i.test(line);
+        const hasUri = /URI="/i.test(line);
+        if (isDefault && !hasUri) hasMuxedDefaultAudio = true;
+        if (isDefault && hasUri) hasExternalOnlyDefaultAudio = true;
       }
     }
+    if (hasAnyAudioMedia && hasExternalOnlyDefaultAudio && !hasMuxedDefaultAudio) {
+      return current;
+    }
+
+    let bestUrl = '';
+    let bestBw = -1;
+    let pendingBw = 0;
+    let expectingUrl = false;
+    for (const raw of lines) {
+      const line = raw.trim();
+      if (!line) continue;
+      if (line.startsWith('#EXT-X-STREAM-INF')) {
+        const bwMatch = line.match(/BANDWIDTH=(\d+)/i);
+        pendingBw = bwMatch ? parseInt(bwMatch[1], 10) || 0 : 0;
+        expectingUrl = true;
+        continue;
+      }
+      if (line.startsWith('#')) {
+        continue;
+      }
+      if (expectingUrl) {
+        expectingUrl = false;
+        try {
+          const absVariant = new URL(line, current.finalUrl).href;
+          if (pendingBw >= bestBw) {
+            bestBw = pendingBw;
+            bestUrl = absVariant;
+          }
+        } catch {
+          // ignore invalid variant URI
+        }
+      }
+    }
+
+    if (!bestUrl) return current;
+    const sub = await fetchUpstreamManifestText(bestUrl, referer, forceAac);
+    if (!sub) return current;
+    current = sub;
   }
 
-  if (!bestUrl) return manifestObj;
-  const sub = await fetchUpstreamManifestText(bestUrl, referer, forceAac);
-  return sub || manifestObj;
+  return current;
 }
 
 function rewriteManifestForSamsungIptv(
@@ -15027,7 +15485,7 @@ function rewriteManifestForSamsungIptv(
   isPublicCorsCdn: boolean,
   publicOrigin: string
 ): string {
-  const effectiveReferer = referer || new URL(baseUrl).origin + '/';
+  const effectiveReferer = resolveKnownUpstreamReferer(baseUrl, referer) || new URL(baseUrl).origin + '/';
   const lines = manifestText.split(/\r?\n/);
   let nextLineIsVariantPlaylist = false;
 
@@ -15070,9 +15528,6 @@ function rewriteManifestForSamsungIptv(
         if (isPublicCorsCdn) {
           return absUrl;
         }
-        if (!isPlaylist && forceAac) {
-          remuxDvbTsToAac(absUrl, effectiveReferer, false).catch(() => {});
-        }
         return isPlaylist
           ? buildHlsProxyUrl(absUrl, effectiveReferer, forceAac, publicOrigin)
           : buildTsProxyUrl(absUrl, effectiveReferer, forceAac, publicOrigin);
@@ -15100,9 +15555,7 @@ app.get(
     ];
 
     channels.forEach((ch, idx) => {
-      const groupTitle = ch.id.startsWith('bein-ar-')
-        ? 'Fútbol · beIN SPORTS Árabe'
-        : IPTV_GROUP_TITLES[ch.category] || 'TDT y Directo';
+      const groupTitle = IPTV_GROUP_TITLES[ch.category] || 'TDT y Directo';
       const epgId = getIptvEpgId(ch.id);
       const chno = ch.dial ? String(ch.dial) : String(idx + 1);
       const logoUrl = `${publicOrigin}/api/iptv/logo/${encodeURIComponent(ch.id)}.png`;
@@ -15150,20 +15603,25 @@ app.get('/api/iptv/live/:channelId', async (req, res) => {
   }
 
   const publicOrigin = getPublicOrigin(req);
+  const forceAacOverride = req.query.aac === '1';
   const cached = iptvChannelResolveCache.get(channel.id);
   if (cached && Date.now() - cached.ts < 45_000) {
     const manifestObj = await fetchUpstreamManifestText(
       cached.rawM3u8Url,
       cached.referer,
-      cached.forceAac
+      forceAacOverride || cached.forceAac
     );
     if (manifestObj) {
-      const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, cached.referer, cached.forceAac);
+      const unwrapped = await unwrapMasterPlaylistForIptv(
+        manifestObj,
+        cached.referer,
+        forceAacOverride || cached.forceAac
+      );
       const rewritten = rewriteManifestForSamsungIptv(
         unwrapped.text,
         unwrapped.finalUrl,
         cached.referer,
-        cached.forceAac,
+        forceAacOverride || cached.forceAac,
         false,
         publicOrigin
       );
@@ -15190,8 +15648,9 @@ app.get('/api/iptv/live/:channelId', async (req, res) => {
 
       if (isDirectHls) {
         const cleanUrl = sourceUrl.replace(/[?&]profile=(hd|fast)\b/gi, '');
-        const referer = new URL(cleanUrl).origin + '/';
-        const forceAac = isDvbHeadendStream(cleanUrl);
+        const referer =
+          resolveKnownUpstreamReferer(cleanUrl, track.referer) || new URL(cleanUrl).origin + '/';
+        const forceAac = forceAacOverride;
 
         const manifestObj = await fetchUpstreamManifestText(cleanUrl, referer, forceAac);
         if (!manifestObj) continue;
@@ -15222,7 +15681,7 @@ app.get('/api/iptv/live/:channelId', async (req, res) => {
         return res.send(rewritten);
       }
 
-      // Sports / Embed track -> fast crypto resolve + fallback sniff
+      // Sports / Embed track -> fast crypto resolve + fallback sniff + master unwrapping
       const fullTarget = /^https?:\/\//i.test(sourceUrl) ? sourceUrl : `https://${sourceUrl}`;
       let directSports = await extractLiveSportsHlsDirect(fullTarget);
       if (directSports?.isBrokenGreenFeed) continue;
@@ -15240,26 +15699,28 @@ app.get('/api/iptv/live/:channelId', async (req, res) => {
       );
       if (!manifestObj) continue;
 
+      const unwrapped = await unwrapMasterPlaylistForIptv(manifestObj, directSports.referer, false);
+
       const clean = await verifyM3u8HasCleanVideoFrame(
-        manifestObj.text,
-        directSports.streamUrl,
+        unwrapped.text,
+        unwrapped.finalUrl,
         directSports.referer
       );
       if (!clean) continue;
 
       iptvChannelResolveCache.set(channel.id, {
-        rawM3u8Url: directSports.streamUrl,
+        rawM3u8Url: unwrapped.finalUrl,
         referer: directSports.referer,
-        forceAac: false,
+        forceAac: forceAacOverride,
         isPublicCorsCdn: false,
         ts: Date.now(),
       });
 
       const rewritten = rewriteManifestForSamsungIptv(
-        manifestObj.text,
-        manifestObj.finalUrl,
+        unwrapped.text,
+        unwrapped.finalUrl,
         directSports.referer,
-        false,
+        forceAacOverride,
         false,
         publicOrigin
       );

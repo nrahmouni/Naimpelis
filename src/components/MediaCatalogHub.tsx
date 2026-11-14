@@ -100,6 +100,7 @@ type FocusedHubMode =
   | 'skyshowtime'
   | 'movistar'
   | 'dazn'
+  | 'uk_sports'
   | 'beinsports'
   | 'espn'
   | 'dsports'
@@ -121,6 +122,7 @@ const TDT_NATIONAL_CATEGORIES: {
 
 const ALL_LIVE_CATEGORIES: { id: 'all' | 'tdt_all' | TdtCategory; es: string; en: string }[] = [
   { id: 'all', es: 'Todos en Vivo', en: 'All Live TV' },
+  { id: 'uk_sports', es: 'UK Sports (EN)', en: 'UK Sports (EN)' },
   { id: 'beinsports', es: 'beIN SPORTS', en: 'beIN SPORTS' },
   { id: 'espn', es: 'ESPN (1–7)', en: 'ESPN (1–7)' },
   { id: 'dsports', es: 'DSports', en: 'DSports' },
@@ -710,7 +712,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     'all' | 'soccer' | 'motor' | 'basketball' | 'tennis'
   >('soccer');
   const [footballLiveBrand, setFootballLiveBrand] = useState<
-    'all' | 'beinsports' | 'espn' | 'dsports' | 'tnt_space' | 'movistar' | 'dazn'
+    'all' | 'uk_sports' | 'beinsports' | 'espn' | 'dsports' | 'tnt_space' | 'movistar' | 'dazn'
   >('all');
   const [show247Strip, setShow247Strip] = useState(true);
   const [sportsSearch, setSportsSearch] = useState('');
@@ -1698,7 +1700,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   };
 
   const enterLiveSportsBrandHub = (
-    brand: 'beinsports' | 'espn' | 'dsports' | 'tnt_space'
+    brand: 'uk_sports' | 'beinsports' | 'espn' | 'dsports' | 'tnt_space'
   ) => {
     triggerHaptic('light');
     setFocusedHub(brand);
@@ -1735,6 +1737,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   const footballSectionLiveChannels = React.useMemo(() => {
     const allowedCats = new Set([
+      'uk_sports',
       'beinsports',
       'espn',
       'dsports',
@@ -1761,7 +1764,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           norm(ch.network).includes(q);
         // Only filter the channel strip by sportsSearch if user typed a channel name; otherwise keep strip visible
         if (
-          /bein|arab|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
+          /sky|uk|premier|eurosport|mutv|talksport|fifa|bein|arab|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
             q
           )
         ) {
@@ -1777,6 +1780,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       if (
         ch.category === 'movistar' ||
         ch.category === 'dazn' ||
+        ch.category === 'uk_sports' ||
         ch.category === 'beinsports' ||
         ch.category === 'espn' ||
         ch.category === 'dsports' ||
@@ -1796,6 +1800,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     if (epgFilter === 'sports_now') {
       const isSportsChannel =
         ch.category === 'dazn' ||
+        ch.category === 'uk_sports' ||
         ch.category === 'beinsports' ||
         ch.category === 'espn' ||
         ch.category === 'dsports' ||
@@ -3772,6 +3777,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       onClick: enterDaznLiveHub,
                     },
                     {
+                      id: 'uk_sports',
+                      label: 'UK Sports (EN)',
+                      mark: 'SKY UK',
+                      markClass: 'text-sky-300 tracking-tight text-sm sm:text-base font-black',
+                      onClick: () => enterLiveSportsBrandHub('uk_sports'),
+                    },
+                    {
                       id: 'beinsports',
                       label: 'beIN SPORTS',
                       mark: 'beIN',
@@ -4227,6 +4239,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </span>
                 )}
 
+                {activeSection === 'tdt' && tdtCategory === 'uk_sports' && (
+                  <span className="h-7 px-2 rounded-lg bg-sky-500 text-white text-xs font-black flex items-center justify-center shrink-0">
+                    UK EN
+                  </span>
+                )}
+
                 {activeSection === 'tdt' && tdtCategory === 'beinsports' && (
                   <span className="h-7 px-2 rounded-lg bg-violet-600 text-white text-xs font-black flex items-center justify-center shrink-0">
                     beIN
@@ -4308,6 +4326,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       ? 'Movistar+'
                       : tdtCategory === 'dazn'
                       ? 'DAZN en Vivo'
+                      : tdtCategory === 'uk_sports'
+                      ? 'UK Sports en Inglés (Sky · Eurosport · DAZN UK)'
                       : tdtCategory === 'beinsports'
                       ? 'beIN SPORTS en Vivo'
                       : tdtCategory === 'espn'
@@ -6214,6 +6234,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   placeholder={
                     tdtCategory === 'dazn'
                       ? 'Buscar canal o emisión en DAZN (F1, LaLiga, MotoGP...)'
+                      : tdtCategory === 'uk_sports'
+                      ? 'Buscar canal UK en inglés (Sky Sports, Eurosport, MUTV, F1...)'
                       : tdtCategory === 'movistar'
                       ? 'Buscar canal o programa en Movistar+ (LaLiga, Cine...)'
                       : 'Buscar canal o qué emiten ahora en la Guía EPG...'
@@ -6856,6 +6878,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     {(
                       [
                         { id: 'all', label: lang === 'es' ? 'Todos' : 'All' },
+                        { id: 'uk_sports', label: 'UK Sports (EN)' },
                         { id: 'beinsports', label: 'beIN SPORTS' },
                         { id: 'espn', label: 'ESPN (1–7)' },
                         { id: 'dsports', label: 'DSports' },

@@ -25,6 +25,7 @@ import {
   db,
   googleProvider,
   handleFirestoreError,
+  isTransientFirestoreError,
   OperationType,
 } from '../firebase';
 import {
@@ -224,6 +225,21 @@ export async function ensureCloudUserProfile(
   try {
     snap = await getDoc(profileRef);
   } catch (error) {
+    if (isTransientFirestoreError(error)) {
+      return {
+        id: user.uid,
+        name: clampString(
+          localProfile.isCustomized
+            ? localProfile.name
+            : user.displayName || localProfile.name,
+          24,
+          'Cineasta'
+        ),
+        avatar: clampString(localProfile.avatar || '🍿', 16, '🍿'),
+        color: sanitizeHexColor(localProfile.color),
+        isCustomized: true,
+      };
+    }
     handleFirestoreError(error, OperationType.GET, path);
   }
 
@@ -267,7 +283,9 @@ export async function ensureCloudUserProfile(
   try {
     await setDoc(profileRef, createPayload);
   } catch (error) {
-    handleFirestoreError(error, OperationType.CREATE, path);
+    if (!isTransientFirestoreError(error)) {
+      handleFirestoreError(error, OperationType.CREATE, path);
+    }
   }
 
   return {
@@ -399,6 +417,7 @@ export async function upsertCloudWatchHistory(
       const existingSnap = await getDoc(docRef);
       existsOnServer = existingSnap.exists();
     } catch (error) {
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.GET, path);
     }
 
@@ -488,6 +507,7 @@ export async function updateCloudWatchProgressOnly(
         knownHistoryDocIds.delete(docId);
         return;
       }
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
   });
@@ -621,6 +641,7 @@ export async function upsertCloudCatalogFavorite(
       const existingSnap = await getDoc(docRef);
       existsOnServer = existingSnap.exists();
     } catch (error) {
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.GET, path);
     }
 
@@ -720,6 +741,7 @@ export async function upsertCloudChannelFavorite(
       const existingSnap = await getDoc(docRef);
       existsOnServer = existingSnap.exists();
     } catch (error) {
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.GET, path);
     }
 
@@ -919,6 +941,7 @@ export async function upsertCloudSavedRoom(params: {
       const existingSnap = await getDoc(docRef);
       existsOnServer = existingSnap.exists();
     } catch (error) {
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.GET, path);
     }
 
@@ -1048,6 +1071,7 @@ export async function upsertCloudFriend(friend: SavedFriend): Promise<void> {
       const existingSnap = await getDoc(docRef);
       existsOnServer = existingSnap.exists();
     } catch (error) {
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.GET, path);
     }
 
@@ -1235,6 +1259,7 @@ export function subscribeUserCloudCollections(
       callbacks.onWatchHistory(dedupedHistory);
     },
     (error) => {
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.LIST, 'watchHistory');
     }
   );
@@ -1378,6 +1403,7 @@ export function subscribeUserCloudCollections(
       callbacks.onFavorites(dedupedWatchlist, dedupedChannels);
     },
     (error) => {
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.LIST, 'favorites');
     }
   );
@@ -1431,6 +1457,7 @@ export function subscribeUserCloudCollections(
       callbacks.onSavedRooms?.(roomsList);
     },
     (error) => {
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.LIST, 'savedRooms');
     }
   );
@@ -1459,6 +1486,7 @@ export function subscribeUserCloudCollections(
       callbacks.onFriends?.(friendsList);
     },
     (error) => {
+      if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.LIST, 'friends');
     }
   );

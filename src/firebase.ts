@@ -14,6 +14,7 @@ const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(
   app,
   {
+    experimentalAutoDetectLongPolling: true,
     localCache: persistentLocalCache({
       tabManager: persistentMultipleTabManager(),
     }),
@@ -51,6 +52,24 @@ export interface FirestoreErrorInfo {
   };
 }
 
+export function isTransientFirestoreError(error: unknown): boolean {
+  if (!error) return false;
+  const code =
+    typeof error === 'object' && 'code' in error
+      ? String((error as { code?: unknown }).code || '')
+      : '';
+  const msg = error instanceof Error ? error.message : String(error);
+  return (
+    code === 'unavailable' ||
+    code === 'aborted' ||
+    code === 'deadline-exceeded' ||
+    code === 'cancelled' ||
+    msg.includes('the client is offline') ||
+    msg.includes('Could not reach Cloud Firestore backend') ||
+    msg.includes('Failed to get document because the client is offline')
+  );
+}
+
 export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
@@ -73,14 +92,17 @@ export function handleFirestoreError(
     operationType,
     path,
   };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
 async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch {
-    // Offline fallback handled transparently by persistentLocalCache
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
+    }
   }
 }
 

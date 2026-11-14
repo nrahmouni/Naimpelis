@@ -356,6 +356,7 @@ export function App() {
     null
   );
   const catalogScrollRef = useRef<HTMLDivElement | null>(null);
+  const lastScrollCompressToggleRef = useRef<number>(0);
   const miniDragStartRef = useRef<{
     pointerId: number;
     startX: number;
@@ -4102,8 +4103,13 @@ export function App() {
   const isDockedMini =
     isPlayerActive &&
     (isPlayerMinimized ||
-      (isPlayingMediaReady && isAutoMiniByScroll) ||
       (isPlayingMediaReady && isOnMobileSocialTab && !pinFullPlayerOnChat));
+  const isScrollCompressed =
+    isPlayerActive &&
+    isPlayingMediaReady &&
+    isAutoMiniByScroll &&
+    !isPlayerMinimized &&
+    !isOnMobileSocialTab;
   const showCinemaOverlay = isCinemaMode && isPlayerActive && !isDockedMini;
   const hasConnectedSmartTv = participants.some(
     (p) => p.name.includes('(TV)') || p.avatar === '📺'
@@ -4117,10 +4123,16 @@ export function App() {
     ) {
       return;
     }
+    const now = Date.now();
+    if (now - lastScrollCompressToggleRef.current < 220) {
+      return;
+    }
     const st = e.currentTarget.scrollTop;
-    if (st > 140 && !isAutoMiniByScroll) {
+    if (st > 105 && !isAutoMiniByScroll) {
+      lastScrollCompressToggleRef.current = now;
       setIsAutoMiniByScroll(true);
-    } else if (st < 25 && isAutoMiniByScroll) {
+    } else if (st < 20 && isAutoMiniByScroll) {
+      lastScrollCompressToggleRef.current = now;
       setIsAutoMiniByScroll(false);
     }
   };
@@ -4719,18 +4731,7 @@ export function App() {
               isDesktopLayout ? 'overflow-y-auto' : 'overflow-hidden'
             }`}
           >
-            {/* Preserve top layout space ONLY on Desktop where player and catalog share the same scroll container */}
-            {isDesktopLayout &&
-              isDockedMini &&
-              isAutoMiniByScroll &&
-              !isPlayerMinimized && (
-                <div
-                  aria-hidden="true"
-                  className="shrink-0 w-full pointer-events-none max-w-7xl mx-auto px-6 pt-5 aspect-video"
-                />
-              )}
-
-            {/* SINGLE NATIVE CINEMA PLAYER INSTANCE (Supports Full Stage & Draggable 4-Corner 16:9 PiP) */}
+            {/* SINGLE NATIVE CINEMA PLAYER INSTANCE (Stays Docked Inline at Top & Compresses on Scroll) */}
             <div
               onPointerDown={isDockedMini ? handleMiniPointerDown : undefined}
               onPointerMove={isDockedMini ? handleMiniPointerMove : undefined}
@@ -4752,17 +4753,21 @@ export function App() {
                   : `shrink-0 w-full min-w-0 ${
                       isPlayerActive
                         ? isDesktopLayout
-                          ? 'block w-full max-w-none px-2 pt-2 sm:px-4 sm:pt-2'
+                          ? isScrollCompressed
+                            ? 'sticky top-0 z-30 block w-full max-w-none px-3 pt-1.5 pb-1.5 bg-[#0B0B0E]/95 backdrop-blur-md border-b border-white/[0.08] transition-all duration-200'
+                            : 'sticky top-0 z-30 block w-full max-w-none px-2 pt-2 sm:px-4 sm:pt-2 bg-[#0B0B0E] transition-all duration-200'
                           : isAutoImmersiveLandscape
                           ? 'block h-full flex-1 bg-black'
-                          : 'block border-b border-white/[0.08]'
+                          : isScrollCompressed
+                          ? 'block bg-[#0B0B0E]/95 border-b border-white/[0.08] transition-all duration-200'
+                          : 'block border-b border-white/[0.08] transition-all duration-200'
                         : 'hidden'
                     }`
               }
             >
               <div
                 className={
-                  isDockedMini || showCinemaOverlay
+                  isDockedMini || showCinemaOverlay || isScrollCompressed
                     ? 'relative'
                     : isDesktopLayout
                     ? 'relative rounded-3xl shadow-[0_32px_90px_rgba(0,0,0,0.9)]'
@@ -4772,6 +4777,7 @@ export function App() {
                 {/* Dynamic Ambilight Cinema Glow from Active Poster / Backdrop */}
                 {isPlayerActive &&
                   !isDockedMini &&
+                  !isScrollCompressed &&
                   (effectiveVideoState.backdrop || effectiveVideoState.poster) && (
                     <img
                       src={effectiveVideoState.backdrop || effectiveVideoState.poster}
@@ -4806,6 +4812,12 @@ export function App() {
                   onCloseSecondaryStream={handleCloseSecondaryStream}
                   canControlRoom={canControlRoom}
                   isMinimized={isDockedMini}
+                  isCompressed={isScrollCompressed}
+                  onExpandCompressed={() => {
+                    setIsAutoMiniByScroll(false);
+                    mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                    catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                  }}
                   onToggleMinimize={() => {
                     if (isDockedMini) {
                       setIsPlayerMinimized(false);

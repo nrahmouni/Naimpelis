@@ -121,8 +121,8 @@ interface ChromeCastNamespace {
     media?: {
       DEFAULT_MEDIA_RECEIVER_APP_ID: string;
       StreamType: { LIVE: string; BUFFERED: string };
-      HlsSegmentFormat?: { FMP4: string };
-      HlsVideoSegmentFormat?: { FMP4: string };
+      HlsSegmentFormat?: { TS?: string; MPEG2_TS?: string; FMP4: string };
+      HlsVideoSegmentFormat?: { MPEG2_TS?: string; FMP4: string };
       MetadataType?: { GENERIC: number };
       GenericMediaMetadata?: new () => { title?: string; subtitle?: string; images?: unknown[] };
       LoadRequest?: new (mediaInfo: unknown) => { autoplay?: boolean; currentTime?: number };
@@ -134,6 +134,14 @@ interface ChromeCastNamespace {
       };
     };
   };
+}
+
+interface PresentationConnectionLike {
+  state?: string;
+  close?: () => void;
+  terminate?: () => void;
+  send?: (data: string) => void;
+  addEventListener?: (ev: string, cb: () => void) => void;
 }
 
 interface WebKitVideoElement extends HTMLVideoElement {
@@ -164,6 +172,9 @@ declare global {
     cast?: CastNamespace;
     chrome?: ChromeCastNamespace;
     webkitAudioContext?: typeof AudioContext;
+    PresentationRequest?: new (urls: string[]) => {
+      start: () => Promise<PresentationConnectionLike>;
+    };
   }
 }
 
@@ -215,6 +226,8 @@ interface NativeCinemaPlayerProps {
   onCloseSecondaryStream?: () => void;
   canControlRoom?: boolean;
   isMinimized?: boolean;
+  isCompressed?: boolean;
+  onExpandCompressed?: () => void;
   onToggleMinimize?: () => void;
   onClosePlayer?: () => void;
   isTvMode?: boolean;
@@ -261,6 +274,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onCloseSecondaryStream,
   canControlRoom = true,
   isMinimized = false,
+  isCompressed = false,
+  onExpandCompressed,
   onToggleMinimize,
   onClosePlayer,
   isTvMode = false,
@@ -1273,28 +1288,53 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   // ============================================================================
   // DIRECT GOOGLE CHROMECAST + REMOTE PLAYBACK + AIRPLAY ENGINE (VIDEO + AUDIO)
   // ============================================================================
+  const getCastPublicOrigin = useCallback(() => {
+    if (typeof window === 'undefined') return '';
+    if (
+      /^ais-dev-/i.test(window.location.hostname || '') &&
+      import.meta.env?.VITE_PUBLIC_APP_HOST
+    ) {
+      return `https://${String(import.meta.env.VITE_PUBLIC_APP_HOST)}`;
+    }
+    return window.location.origin;
+  }, []);
+
   const buildCastCompatibleStreamUrl = useCallback(
     (rawUrl: string, mode: string) => {
-      const absUrl = new URL(rawUrl, window.location.origin).href;
+      const publicOrigin = getCastPublicOrigin() || window.location.origin;
+      const absUrl = new URL(rawUrl, publicOrigin).href;
       if (mode !== 'hls') {
+        try {
+          const p = new URL(absUrl);
+          if (p.pathname.startsWith('/api/ts-proxy/')) {
+            return `${publicOrigin}${p.pathname}${p.search}`;
+          }
+        } catch {
+          // ignore
+        }
         return absUrl;
       }
-      // Ensure external CDN HLS manifests (RTVE, 3Cat, Akamai, etc.) always pass through
-      // same-origin CORS-enabled /api/hls-proxy so Chromecast CAF (Origin: gstatic.com)
-      // and Android RemotePlayback never reject live channels due to missing CORS headers!
+      // Ensure ALL HLS manifests (including same-origin /api/hls-proxy and external CDNs)
+      // resolve through a CORS-open public origin URL with &abs=1 so Chromecast CAF
+      // (Origin: gstatic.com) and Smart TV decoders receive absolute segment URLs!
       try {
         const parsed = new URL(absUrl);
-        if (parsed.origin !== window.location.origin) {
-          return `${window.location.origin}/api/hls-proxy/stream.m3u8?url=${encodeURIComponent(
+        if (parsed.pathname.startsWith('/api/hls-proxy')) {
+          const sp = new URLSearchParams(parsed.search);
+          sp.set('abs', '1');
+          return `${publicOrigin}${parsed.pathname}?${sp.toString()}`;
+        }
+        if (parsed.origin !== publicOrigin) {
+          return `${publicOrigin}/api/hls-proxy/stream.m3u8?url=${encodeURIComponent(
             absUrl
-          )}&referer=${encodeURIComponent(parsed.origin + '/')}`;
+          )}&referer=${encodeURIComponent(parsed.origin + '/')}&abs=1`;
         }
       } catch {
         // ignore
       }
       return absUrl;
     },
-    []
+    [getCastPublicOrigin]
   );
 
   const syncBridgeVideoSource = useCallback(() => {
@@ -1371,80 +1411,75 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   ]);
 
   const loadStreamIntoCastSession = useCallback(
-    async (session: CastSessionLike | null) => {
+    async (session: CastSessionLike | null): Promise<boolean> => {
       if (
         !session ||
         !window.chrome?.cast?.media ||
         (videoState.mode !== 'hls' && videoState.mode !== 'direct') ||
         !videoState.url
       ) {
-        return;
+        return false;
       }
 
-      try {
-        const absoluteStreamUrl = buildCastCompatibleStreamUrl(videoState.url, videoState.mode);
-        const contentType =
-          videoState.mode === 'direct' ? 'video/mp4' : 'application/x-mpegurl';
-        const mediaInfo = new window.chrome.cast.media.MediaInfo(
-          absoluteStreamUrl,
-          contentType
-        );
+      const absoluteStreamUrl = buildCastCompatibleStreamUrl(videoState.url, videoState.mode);
+      const contentType =
+        videoState.mode === 'direct' ? 'video/mp4' : 'application/x-mpegurl';
+      const mediaInfo = new window.chrome.cast.media.MediaInfo(
+        absoluteStreamUrl,
+        contentType
+      );
 
-        mediaInfo.streamType = videoState.isLive
-          ? window.chrome.cast.media.StreamType.LIVE
-          : window.chrome.cast.media.StreamType.BUFFERED;
+      mediaInfo.streamType = videoState.isLive
+        ? window.chrome.cast.media.StreamType.LIVE
+        : window.chrome.cast.media.StreamType.BUFFERED;
 
-        // Only force FMP4 hint when explicitly fMP4; for live HLS let CAF Shaka Player
-        // auto-probe master & variant playlists so live channels never fail codec init!
-        if (videoState.mode === 'hls' && /\.m4s|\.cmfv/i.test(videoState.rawSourceUrl || videoState.url)) {
-          if (window.chrome.cast.media.HlsSegmentFormat) {
-            mediaInfo.hlsSegmentFormat = window.chrome.cast.media.HlsSegmentFormat.FMP4;
-          }
-          if (window.chrome.cast.media.HlsVideoSegmentFormat) {
-            mediaInfo.hlsVideoSegmentFormat = window.chrome.cast.media.HlsVideoSegmentFormat.FMP4;
-          }
+      if (videoState.mode === 'hls') {
+        const isFmp4 = /\.m4s|\.cmfv/i.test(videoState.rawSourceUrl || videoState.url);
+        const hlsSegFmt = window.chrome.cast.media.HlsSegmentFormat;
+        const hlsVidFmt = window.chrome.cast.media.HlsVideoSegmentFormat;
+        if (isFmp4) {
+          if (hlsSegFmt?.FMP4) mediaInfo.hlsSegmentFormat = hlsSegFmt.FMP4;
+          if (hlsVidFmt?.FMP4) mediaInfo.hlsVideoSegmentFormat = hlsVidFmt.FMP4;
+        } else {
+          const tsFmt = hlsSegFmt?.TS || hlsSegFmt?.MPEG2_TS;
+          if (tsFmt) mediaInfo.hlsSegmentFormat = tsFmt;
+          if (hlsVidFmt?.MPEG2_TS) mediaInfo.hlsVideoSegmentFormat = hlsVidFmt.MPEG2_TS;
         }
+      }
 
-        if (window.chrome.cast.media.GenericMediaMetadata) {
-          const metadata = new window.chrome.cast.media.GenericMediaMetadata();
-          metadata.title = videoState.title || 'NAIM CINE';
-          metadata.subtitle =
-            videoState.subtitle || (videoState.isLive ? 'TV en Directo HD' : 'Proyección Directa 1080p');
-          if (videoState.poster && /^https?:\/\//i.test(videoState.poster) && window.chrome.cast.Image) {
-            metadata.images = [new window.chrome.cast.Image(videoState.poster)];
-          }
-          mediaInfo.metadata = metadata;
+      if (window.chrome.cast.media.GenericMediaMetadata) {
+        const metadata = new window.chrome.cast.media.GenericMediaMetadata();
+        metadata.title = videoState.title || 'NAIM CINE';
+        metadata.subtitle =
+          videoState.subtitle || (videoState.isLive ? 'TV en Directo HD' : 'Proyección Directa 1080p');
+        if (videoState.poster && /^https?:\/\//i.test(videoState.poster) && window.chrome.cast.Image) {
+          metadata.images = [new window.chrome.cast.Image(videoState.poster)];
         }
+        mediaInfo.metadata = metadata;
+      }
 
-        if (!window.chrome.cast.media.LoadRequest || !session.loadMedia) return;
-        const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
-        request.autoplay = true;
-        // CRITICAL: Never set currentTime = 0 on LIVE HLS streams (causes CAF Shaka to seek
-        // outside the live sliding window and abort live channel playback!)
-        if (!videoState.isLive) {
-          request.currentTime = Math.floor(
-            videoRef.current?.currentTime || videoState.currentTime || 0
-          );
-        }
-
-        await session.loadMedia(request);
-
-        if (videoRef.current) {
-          videoRef.current.muted = true;
-          videoRef.current.pause();
-          setIsMuted(true);
-        }
-        const friendlyName = session.getCastDevice?.()?.friendlyName || 'Chromecast TV';
-        setCastDeviceName(friendlyName);
-        setIsCastingToTv(true);
-        showTransientToast(`✓ Transmitiendo Vídeo + Audio en ${friendlyName}`);
-      } catch {
-        showTransientToast(
-          lang === 'es'
-            ? '✓ Conectado al televisor, sincronizando vídeo y audio...'
-            : '✓ Connected to TV, syncing video and audio...'
+      if (!window.chrome.cast.media.LoadRequest || !session.loadMedia) return false;
+      const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
+      request.autoplay = true;
+      // Never set currentTime = 0 on LIVE HLS streams (avoids seeking outside live sliding window)
+      if (!videoState.isLive) {
+        request.currentTime = Math.floor(
+          videoRef.current?.currentTime || videoState.currentTime || 0
         );
       }
+
+      await session.loadMedia(request);
+
+      if (videoRef.current) {
+        videoRef.current.muted = true;
+        videoRef.current.pause();
+        setIsMuted(true);
+      }
+      const friendlyName = session.getCastDevice?.()?.friendlyName || 'Chromecast TV';
+      setCastDeviceName(friendlyName);
+      setIsCastingToTv(true);
+      showTransientToast(`✓ Transmitiendo Vídeo + Audio en ${friendlyName}`);
+      return true;
     },
     [
       videoState.mode,
@@ -1455,7 +1490,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       videoState.subtitle,
       videoState.poster,
       videoState.currentTime,
-      lang,
       showTransientToast,
       buildCastCompatibleStreamUrl,
     ]
@@ -1627,7 +1661,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     if (castSdkReady && window.cast?.framework) {
       const session = window.cast.framework.CastContext.getInstance().getCurrentSession();
       if (session && (videoState.mode === 'hls' || videoState.mode === 'direct') && videoState.url) {
-        loadStreamIntoCastSession(session);
+        loadStreamIntoCastSession(session).catch(() => {});
       }
     }
   }, [
@@ -1654,13 +1688,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         syncBridgeVideoSource();
       }
 
-      // Path 1: Native Apple AirPlay 2 Picker (iOS / iPadOS / macOS Safari -> Samsung Smart TV / Apple TV / LG!)
-      // Use mainVideo first (which on Apple devices uses native HLS so both Video + Audio transmit in 1080p!)
+      // Path 1: Native Apple AirPlay 2 Picker (iOS / iPadOS / macOS Safari -> Samsung / LG / Apple TV)
       if (hasNativeStream) {
         if (mainVideo?.webkitShowPlaybackTargetPicker) {
           try {
             if (hlsRef.current) {
-              // Convert from Hls.js blob: to direct HTTP URL before AirPlay so video frames are transmitted!
               switchMainVideoToDirectCastUrl();
             }
             mainVideo.webkitShowPlaybackTargetPicker();
@@ -1676,12 +1708,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             showTransientToast('Selecciona tu televisor en el menú AirPlay');
             return;
           } catch {
-            // continue to Cast / RemotePlayback
+            // continue to Cast SDK
           }
         }
       }
 
-      // Path 2: Official Google Chromecast SDK (Always request session on demand so Chrome scans for TVs!)
+      // Path 2: Official Google Chromecast CAF SDK (with &abs=1 public HTTPS stream URL)
       if (window.cast?.framework && window.chrome?.cast) {
         try {
           const context = window.cast.framework.CastContext.getInstance();
@@ -1700,24 +1732,59 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           const session = context.getCurrentSession();
           if (session) {
             if (hasNativeStream) {
-              await loadStreamIntoCastSession(session);
+              try {
+                await loadStreamIntoCastSession(session);
+                return;
+              } catch {
+                // If Default Media Receiver rejected the manifest (e.g. local dev host unreachable from LAN TV),
+                // close the failed session and fall through to Presentation / RemotePlayback / Smart TV!
+                session.endSession?.(true);
+              }
             } else {
               const friendlyName =
                 session.getCastDevice?.()?.friendlyName || 'Chromecast TV';
               setCastDeviceName(friendlyName);
               setIsCastingToTv(true);
               showTransientToast(`✓ Conectado a ${friendlyName}`);
+              return;
             }
-            return;
           }
         } catch (err: unknown) {
           const errObj = err as { code?: string };
           if (err === 'cancel' || errObj?.code === 'cancel') return;
-          // If inside mobile browser where CastContext delegates to W3C RemotePlayback, continue to Path 3
         }
       }
 
-      // Path 3: W3C HTML5 RemotePlayback API using Direct HTTP URL (Bypasses Hls.js blob: audio-only bug!)
+      // Path 3: W3C PresentationRequest -> Direct Chrome/Android TV device picker opening the Room TV URL
+      if (typeof window !== 'undefined' && window.PresentationRequest) {
+        try {
+          const castOrigin = getCastPublicOrigin() || window.location.origin;
+          const targetTvUrl = roomCode
+            ? `${castOrigin}/${encodeURIComponent(roomCode)}?tv=1`
+            : `${castOrigin}/tv`;
+          const presentationReq = new window.PresentationRequest([targetTvUrl]);
+          const conn = await presentationReq.start();
+          setIsCastingToTv(true);
+          setCastDeviceName('Smart TV (Cast)');
+          conn.addEventListener?.('terminate', () => {
+            setIsCastingToTv(false);
+            setCastDeviceName('');
+          });
+          conn.addEventListener?.('close', () => {
+            setIsCastingToTv(false);
+            setCastDeviceName('');
+          });
+          showTransientToast('✓ Pantalla enviada directamente a tu Smart TV');
+          return;
+        } catch (err: unknown) {
+          const errObj = err as { name?: string };
+          if (errObj?.name === 'AbortError' || errObj?.name === 'NotAllowedError') {
+            return;
+          }
+        }
+      }
+
+      // Path 4: W3C HTML5 RemotePlayback API using Direct HTTP URL
       if (hasNativeStream) {
         if (bridgeVideo?.remote?.prompt) {
           try {
@@ -1766,11 +1833,19 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         }
       }
 
-      // Path 4: Universal Smart TV Hub (4-Digit Code / AirPlay / Smart View instructions)
+      // Path 5: Already-Paired Smart TV in Room -> Instant sync + Battery-saver Remote toggle
+      if (hasConnectedSmartTv) {
+        onSendTvRemoteCommand?.('reload_tv');
+        setBatterySaverTvMode((v) => !v);
+        showTransientToast('✓ Sincronizado directamente en tu Smart TV vinculada');
+        return;
+      }
+
+      // Path 6: Universal Smart TV Hub (4-Digit Code / QR / Smart View)
       if (onOpenSmartTvModal) {
         showTransientToast(
           hasNativeStream
-            ? 'Abriendo centro de envío directo y Smart TV...'
+            ? 'Conecta tu Smart TV en 1 toque o con código de 4 dígitos'
             : 'Elige una película o conecta tu TV con 4 dígitos'
         );
         onOpenSmartTvModal();
@@ -1788,9 +1863,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       videoState.url,
       videoState.isLive,
       isCastingToTv,
+      hasConnectedSmartTv,
+      roomCode,
       lang,
+      getCastPublicOrigin,
       loadStreamIntoCastSession,
       onOpenSmartTvModal,
+      onSendTvRemoteCommand,
       showTransientToast,
       syncBridgeVideoSource,
       switchMainVideoToDirectCastUrl,
@@ -2752,9 +2831,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             ? 'h-full'
             : compactVideoForMobileKeyboard
             ? 'h-[122px] sm:aspect-video'
+            : isCompressed && !isMinimized
+            ? 'h-[136px] sm:h-[210px] lg:h-[238px]'
             : 'aspect-video'
         } ${
-          isCinemaMode && !isMinimized && !isTvMode && !isStageFullscreen
+          isCinemaMode && !isMinimized && !isCompressed && !isTvMode && !isStageFullscreen
             ? 'z-50 lg:rounded-2xl ring-1 ring-white/15 shadow-[0_24px_90px_rgba(0,0,0,0.96)]'
             : ''
         }`}
@@ -2778,8 +2859,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           }
           className="relative w-full h-full overflow-hidden select-none"
         >
-        {/* Floating Reactions Layer (Hidden when docked in tiny miniplayer) */}
-        {!isMinimized && (
+        {/* Floating Reactions Layer (Hidden when docked in mini or scroll-compressed bar) */}
+        {!isMinimized && !isCompressed && (
           <div className="pointer-events-none absolute inset-0 z-40 overflow-hidden">
             {floatingReactions.map((r) => (
               <div
@@ -2869,7 +2950,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         )}
 
         {/* Incoming Live Chat Message Pill (Bottom-Left over Video when Floating Chat is closed) */}
-        {recentIncomingChatBubble && !floatingChatOpen && !isMinimized && !isTvMode && (
+        {recentIncomingChatBubble && !floatingChatOpen && !isMinimized && !isCompressed && !isTvMode && (
           <button
             type="button"
             onClick={(e) => {
@@ -3032,8 +3113,30 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           </div>
         )}
 
+        {/* Compact Expand Pill when Inline Scroll-Compressed (No Corner PiP) */}
+        {isCompressed && !isMinimized && !isTvMode && !isStageFullscreen && (
+          <div className="pointer-events-none absolute top-2 right-2 z-35 flex items-center gap-1.5">
+            {onExpandCompressed && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerHaptic('light');
+                  onExpandCompressed();
+                }}
+                aria-label={lang === 'es' ? 'Ampliar reproductor' : 'Expand player'}
+                className="pointer-events-auto min-h-[34px] px-3 rounded-full bg-black/75 hover:bg-[#9146FF] backdrop-blur-md border border-white/20 text-[11px] font-bold text-white flex items-center gap-1.5 shadow-lg cursor-pointer active:scale-95 transition-all"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+                <span>{lang === 'es' ? 'Ampliar' : 'Expand'}</span>
+              </button>
+            )}
+          </div>
+        )}
+
         {/* Top Bar Inside Player: Title + Finish Time on Pause + Cast + Chat + Ajustes + Close (Native HLS/Direct) */}
         {!isMinimized &&
+          (!isCompressed || isStageFullscreen) &&
           (videoState.mode === 'hls' || videoState.mode === 'direct') && (
           <div
             className={`pointer-events-none absolute top-0 inset-x-0 z-30 px-3 sm:px-5 pt-3 pb-10 bg-gradient-to-b from-black/90 via-black/45 to-transparent flex items-start justify-between gap-3 transition-opacity duration-300 ${
@@ -4227,6 +4330,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       {/* ==================================================================== */}
       {!isTvMode &&
         !isMinimized &&
+        !isCompressed &&
         !compactVideoForMobileKeyboard &&
         videoState.mode !== 'idle' &&
         videoState.mode !== 'cloud' && (
