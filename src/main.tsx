@@ -11,11 +11,18 @@ try {
   localStorage.removeItem('naim_arcade_save_v1');
   useThemeStore.getState().syncDomAttributes();
 
-  // Remove ONLY deprecated v1/v2 caches, preserving active OLED v4 service worker caches
+  // Remove deprecated v1-v5 caches on boot, preserving active v6 service worker caches
   if ('caches' in window) {
     caches.keys().then((keys) => {
       for (const key of keys) {
-        if (key.includes('arcade') || key.includes('naim-cine-v1') || key.includes('naim-cine-v2')) {
+        if (
+          key.includes('arcade') ||
+          key.includes('naim-cine-v1') ||
+          key.includes('naim-cine-v2') ||
+          key.includes('naim-cine-twitch-v3') ||
+          key.includes('naim-cine-twitch-v4') ||
+          key.includes('naim-cine-twitch-v5')
+        ) {
           caches.delete(key).catch(() => {});
         }
       }

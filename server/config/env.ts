@@ -32,7 +32,7 @@ export const ENV: AppEnvironmentConfig = {
   isProd: process.env.NODE_ENV === 'production',
   tmdbApiKey: process.env.TMDB_API_KEY || '90b2cae8d7161e8ba0f3836240d7d352',
   publicDomain: process.env.PUBLIC_APP_DOMAIN || '',
-  appVersionName: process.env.NAIM_APP_VERSION || '3.0.0',
+  appVersionName: process.env.NAIM_APP_VERSION || '3.1.0',
   appVersionCodeMobile: Number(process.env.NAIM_MOBILE_VERSION_CODE) || 300,
   appVersionCodeTv: Number(process.env.NAIM_TV_VERSION_CODE) || 300,
   androidMobilePkg: process.env.ANDROID_MOBILE_PKG || 'com.naimcine.mobile',

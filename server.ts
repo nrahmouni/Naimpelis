@@ -251,6 +251,163 @@ function unpackDeanEdwards(html: string): string | null {
   return payload;
 }
 
+async function fetchTextWithCurlFallback(
+  url: string,
+  headers: Record<string, string>,
+  timeoutMs = 3500
+): Promise<string> {
+  if (!shouldBypassNodeFetch(url)) {
+    try {
+      const res = await fetch(url, {
+        headers,
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (res.ok) {
+        const txt = await res.text();
+        if (txt) return txt;
+      }
+    } catch {
+      markHostNeedsCurlFallback(url);
+    }
+  }
+  const fb = await curlGetText(url, headers, Math.max(3, Math.ceil(timeoutMs / 1000)), true).catch(
+    () => ({ text: '' })
+  );
+  return fb.text || '';
+}
+
+async function curlPostJsonText(
+  url: string,
+  payload: unknown,
+  headers: Record<string, string>,
+  maxTimeSec = 5
+): Promise<string> {
+  return new Promise((resolve) => {
+    const args = [
+      '-sS',
+      '-L',
+      '-k',
+      '--compressed',
+      '--max-time',
+      String(maxTimeSec),
+      '-X',
+      'POST',
+      '-H',
+      'Content-Type: application/json',
+    ];
+    for (const [k, v] of Object.entries(headers)) {
+      if (v && k.toLowerCase() !== 'content-type') args.push('-H', `${k}: ${v}`);
+    }
+    args.push('-d', JSON.stringify(payload), url);
+    execFile('curl', args, { maxBuffer: 4 * 1024 * 1024 }, (err, stdout) => {
+      if (err && !stdout) return resolve('');
+      resolve(String(stdout || ''));
+    });
+  });
+}
+
+async function probeHlsSegmentHealth(rawM3u8Url: string, origin: string): Promise<boolean> {
+  const reqHeaders: Record<string, string> = {
+    'User-Agent': CHROME_UA,
+    Referer: `${origin}/`,
+    Origin: origin,
+    Accept: '*/*',
+  };
+
+  try {
+    const masterText = await fetchTextWithCurlFallback(rawM3u8Url, reqHeaders, 3000);
+    if (!masterText.includes('#EXTM3U')) return false;
+
+    let mediaPlaylistUrl = rawM3u8Url;
+    let mediaText = masterText;
+
+    if (masterText.includes('#EXT-X-STREAM-INF')) {
+      const lines = masterText.split(/\r?\n/);
+      let bestVariant = '';
+      let bestBw = -1;
+      let pendingBw = 0;
+      let expectingUrl = false;
+      for (const raw of lines) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (line.startsWith('#EXT-X-STREAM-INF')) {
+          const bwM = line.match(/BANDWIDTH=(\d+)/i);
+          pendingBw = bwM ? parseInt(bwM[1], 10) || 0 : 0;
+          expectingUrl = true;
+          continue;
+        }
+        if (line.startsWith('#')) continue;
+        if (expectingUrl) {
+          expectingUrl = false;
+          try {
+            const absVar = new URL(line, rawM3u8Url).href;
+            if (!bestVariant || pendingBw >= bestBw) {
+              bestBw = pendingBw;
+              bestVariant = absVar;
+            }
+          } catch {
+            // ignore invalid variant URL
+          }
+        }
+      }
+      if (!bestVariant) return false;
+      mediaPlaylistUrl = bestVariant;
+      mediaText = await fetchTextWithCurlFallback(mediaPlaylistUrl, reqHeaders, 3000);
+      if (!mediaText.includes('#EXTM3U')) return false;
+    }
+
+    const firstSegRel = mediaText
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .find((l) => l && !l.startsWith('#'));
+    if (!firstSegRel) return true;
+
+    const firstSegUrl = new URL(firstSegRel, mediaPlaylistUrl).href;
+    const segHeaders: Record<string, string> = {
+      'User-Agent': CHROME_UA,
+      Referer: `${origin}/`,
+      Range: 'bytes=0-65535',
+    };
+
+    const isLikelyHtml = (buf: Buffer): boolean => {
+      const head = buf.subarray(0, 64).toString('utf8').trimStart().toLowerCase();
+      return head.startsWith('<!doctype') || head.startsWith('<html');
+    };
+
+    if (!shouldBypassNodeFetch(firstSegUrl)) {
+      try {
+        const segResp = await fetch(firstSegUrl, {
+          headers: segHeaders,
+          signal: AbortSignal.timeout(2800),
+        });
+        if (segResp.ok) {
+          const ab = await segResp.arrayBuffer();
+          const buf = Buffer.from(ab);
+          if (buf.length >= 512 && !isLikelyHtml(buf)) {
+            return true;
+          }
+          if (buf.length === 0 || isLikelyHtml(buf)) return false;
+        }
+      } catch {
+        markHostNeedsCurlFallback(firstSegUrl);
+      }
+    }
+
+    const curlSeg = await curlGetBufferWithStatus(firstSegUrl, segHeaders, 3).catch(() => ({
+      buf: Buffer.alloc(0),
+      status: 0,
+    }));
+    return (
+      curlSeg.status >= 200 &&
+      curlSeg.status < 400 &&
+      curlSeg.buf.length >= 512 &&
+      !isLikelyHtml(curlSeg.buf)
+    );
+  } catch {
+    return false;
+  }
+}
+
 async function unpackVidhideToHls(embedUrl: string): Promise<{ rawM3u8: string; proxyUrl: string } | null> {
   try {
     // 1. Fast Vidaraa / Vidara JSON Stream Unpacker (`vidaraa.cc`, `vidara.to`, `vidara.so` -> 1080p HLS in ~200ms)
@@ -259,22 +416,46 @@ async function unpackVidhideToHls(embedUrl: string): Promise<{ rawM3u8: string; 
       const segments = u.pathname.split('/').filter(Boolean);
       const filecode = segments[segments.length - 1] || '';
       if (filecode) {
-        const apiRes = await fetch(`${u.origin}/api/stream`, {
-          method: 'POST',
-          headers: {
-            'User-Agent': CHROME_UA,
-            'Content-Type': 'application/json',
-            Accept: 'application/json, text/plain, */*',
-            Origin: u.origin,
-            Referer: embedUrl,
-          },
-          body: JSON.stringify({ filecode, device: 'web', codecs: [] }),
-          signal: AbortSignal.timeout(4800),
-        });
-        if (apiRes.ok) {
-          const apiJson: any = await apiRes.json();
-          const rawM3u8 = String(apiJson?.streaming_url || apiJson?.file || '').trim();
-          if (rawM3u8 && /^https?:\/\//i.test(rawM3u8)) {
+        const apiHeaders: Record<string, string> = {
+          'User-Agent': CHROME_UA,
+          'Content-Type': 'application/json',
+          Accept: 'application/json, text/plain, */*',
+          Origin: u.origin,
+          Referer: embedUrl,
+        };
+        let apiJson: any = null;
+        try {
+          const apiRes = await fetch(`${u.origin}/api/stream`, {
+            method: 'POST',
+            headers: apiHeaders,
+            body: JSON.stringify({ filecode, device: 'web', codecs: [] }),
+            signal: AbortSignal.timeout(4800),
+          });
+          if (apiRes.ok) {
+            apiJson = await apiRes.json();
+          }
+        } catch {
+          // fallback to curl POST in containerized Cloud Run environments
+        }
+        if (!apiJson) {
+          const rawPost = await curlPostJsonText(
+            `${u.origin}/api/stream`,
+            { filecode, device: 'web', codecs: [] },
+            apiHeaders,
+            5
+          );
+          if (rawPost) {
+            try {
+              apiJson = JSON.parse(rawPost);
+            } catch {
+              apiJson = null;
+            }
+          }
+        }
+        const rawM3u8 = String(apiJson?.streaming_url || apiJson?.file || '').trim();
+        if (rawM3u8 && /^https?:\/\//i.test(rawM3u8)) {
+          const healthy = await probeHlsSegmentHealth(rawM3u8, u.origin);
+          if (healthy) {
             return {
               rawM3u8,
               proxyUrl: buildHlsProxyUrl(rawM3u8, `${u.origin}/`),
@@ -300,24 +481,14 @@ async function unpackVidhideToHls(embedUrl: string): Promise<{ rawM3u8: string; 
       ).catch(() => ({ text: '' }));
       html = curlRes.text || '';
     } else {
-      try {
-        const res = await fetch(embedUrl, {
-          headers: {
-            'User-Agent': CHROME_UA,
-            Referer: refererOrigin,
-          },
-          signal: AbortSignal.timeout(4500),
-        });
-        if (res.ok) html = await res.text();
-      } catch {
-        const curlRes = await curlGetText(
-          embedUrl,
-          { 'User-Agent': CHROME_UA, Referer: refererOrigin },
-          4,
-          true
-        ).catch(() => ({ text: '' }));
-        html = curlRes.text || '';
-      }
+      html = await fetchTextWithCurlFallback(
+        embedUrl,
+        {
+          'User-Agent': CHROME_UA,
+          Referer: refererOrigin,
+        },
+        4500
+      );
     }
     if (!html) return null;
 
@@ -329,40 +500,23 @@ async function unpackVidhideToHls(embedUrl: string): Promise<{ rawM3u8: string; 
 
     const links = JSON.parse(linksMatch[1]);
     const origin = new URL(embedUrl).origin;
-    const rawCandidates = (
-      origin.includes('2vcdn')
-        ? [links.hls4, links.hls2]
-        : [links.hls2, links.hls4, links.hls3]
-    )
+    // Prefer `hls4` (`/stream/...`) FIRST because third-party `hls2` mirrors (`acek-cdn`, `dramiyos-cdn`)
+    // frequently stall on `.ts` segments even while returning 200 OK on `master.m3u8`
+    const rawCandidates = [links.hls4, links.hls2, links.hls3]
       .map((c) => String(c || '').trim())
       .filter(Boolean);
 
     if (rawCandidates.length === 0) return null;
 
-    // Verify which candidate HLS manifest actually returns HTTP 200 `#EXTM3U`
-    // (critical because mirrors like premilkyway/hls2 can 403 due to ASN lock while hls4 returns 200 OK)
+    // Verify BOTH `#EXTM3U` manifest AND actual media segment download (skipping stalled/broken CDNs)
     for (const rawCandidate of rawCandidates) {
       const rawM3u8 = rawCandidate.startsWith('/') ? `${origin}${rawCandidate}` : rawCandidate;
-      try {
-        const probe = await fetch(rawM3u8, {
-          headers: {
-            'User-Agent': CHROME_UA,
-            Referer: `${origin}/`,
-            Origin: origin,
-          },
-          signal: AbortSignal.timeout(2500),
-        });
-        if (probe.ok) {
-          const body = await probe.text();
-          if (body.includes('#EXTM3U')) {
-            return {
-              rawM3u8,
-              proxyUrl: buildHlsProxyUrl(rawM3u8, `${origin}/`),
-            };
-          }
-        }
-      } catch {
-        // try next candidate
+      const healthy = await probeHlsSegmentHealth(rawM3u8, origin);
+      if (healthy) {
+        return {
+          rawM3u8,
+          proxyUrl: buildHlsProxyUrl(rawM3u8, `${origin}/`),
+        };
       }
     }
 
@@ -394,37 +548,17 @@ let cachedEmbed69AnubisCookie: { cookie: string; expiresAt: number } | null = nu
 
 async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix: string): Promise<string> {
   // 1. Primary ultra-fast mirror (`serieskao.top/vidurl/...`) serves identical Embed69/Moe player HTML without Anubis PoW
-  try {
-    const mirrorUrl = `https://serieskao.top/vidurl/${imdbSuffix}/`;
-    const mRes = await fetch(mirrorUrl, {
-      headers: {
-        'User-Agent': CHROME_UA,
-        Referer: 'https://serieskao.top/',
-      },
-      signal: AbortSignal.timeout(3800),
-    });
-    if (mRes.ok) {
-      const mHtml = await mRes.text();
-      if (mHtml.includes('dataLink') || mHtml.includes('OptionsLangDisp')) {
-        return mHtml;
-      }
-    }
-  } catch (err: any) {
-    if (err?.name !== 'TimeoutError') {
-      try {
-        const curlMirror = await curlGetText(
-          `https://serieskao.top/vidurl/${imdbSuffix}/`,
-          { 'User-Agent': CHROME_UA, Referer: 'https://serieskao.top/' },
-          3,
-          true
-        );
-        if (curlMirror.text && (curlMirror.text.includes('dataLink') || curlMirror.text.includes('OptionsLangDisp'))) {
-          return curlMirror.text;
-        }
-      } catch {
-        // fallback to embed69.org direct
-      }
-    }
+  const mirrorUrl = `https://serieskao.top/vidurl/${imdbSuffix}/`;
+  const mHtml = await fetchTextWithCurlFallback(
+    mirrorUrl,
+    {
+      'User-Agent': CHROME_UA,
+      Referer: 'https://serieskao.top/',
+    },
+    4000
+  );
+  if (mHtml && (mHtml.includes('dataLink') || mHtml.includes('OptionsLangDisp'))) {
+    return mHtml;
   }
 
   // 2. Direct `embed69.org/f/...` with automatic Anubis v1.28.2 PoW challenge solver & 6h cookie cache
@@ -438,11 +572,7 @@ async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix: string): Promise<
     reqHeaders.Cookie = cachedEmbed69AnubisCookie.cookie;
   }
 
-  const res = await fetch(embed69Url, {
-    headers: reqHeaders,
-    signal: AbortSignal.timeout(5500),
-  });
-  const html = await res.text();
+  const html = await fetchTextWithCurlFallback(embed69Url, reqHeaders, 5000);
   if (html.includes('dataLink') || html.includes('OptionsLangDisp')) {
     return html;
   }
@@ -774,18 +904,15 @@ async function resolveSeriesKaoVidurlTracks(opts: {
 
       for (const hint of uniqueHints.slice(0, 2)) {
         try {
-          const sRes = await fetch(
+          const sHtml = await fetchTextWithCurlFallback(
             `https://serieskao.top/search?s=${encodeURIComponent(hint)}`,
             {
-              headers: {
-                'User-Agent': CHROME_UA,
-                Referer: 'https://serieskao.top/',
-              },
-              signal: AbortSignal.timeout(4000),
-            }
+              'User-Agent': CHROME_UA,
+              Referer: 'https://serieskao.top/',
+            },
+            4000
           );
-          if (!sRes.ok) continue;
-          const sHtml = await sRes.text();
+          if (!sHtml) continue;
 
           const cardRe =
             /<a[^>]+href="((?:https?:\/\/serieskao\.top)?\/(?:serie|pelicula)\/[^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
@@ -850,15 +977,15 @@ async function resolveSeriesKaoVidurlTracks(opts: {
         ? `${matchedShowUrl}/temporada/${opts.season || 1}/capitulo/${opts.episode || 1}`
         : matchedShowUrl;
 
-    const pRes = await fetch(pageUrl, {
-      headers: {
+    const pHtml = await fetchTextWithCurlFallback(
+      pageUrl,
+      {
         'User-Agent': CHROME_UA,
         Referer: 'https://serieskao.top/',
       },
-      signal: AbortSignal.timeout(4200),
-    });
-    if (!pRes.ok) return [];
-    const pHtml = await pRes.text();
+      4200
+    );
+    if (!pHtml) return [];
 
     if (opts.imdbId) {
       const pageImdbMatch = pHtml.match(/\b(tt\d{6,10})\b/i);
@@ -877,15 +1004,15 @@ async function resolveSeriesKaoVidurlTracks(opts: {
       ? rawVidurl
       : `https://serieskao.top${rawVidurl}`;
 
-    const vRes = await fetch(fullVidurl, {
-      headers: {
+    const vHtml = await fetchTextWithCurlFallback(
+      fullVidurl,
+      {
         'User-Agent': CHROME_UA,
         Referer: pageUrl,
       },
-      signal: AbortSignal.timeout(4500),
-    });
-    if (!vRes.ok) return [];
-    const vHtml = await vRes.text();
+      4500
+    );
+    if (!vHtml) return [];
     const slugTag =
       fullVidurl
         .split('/vidurl/')[1]
@@ -1270,7 +1397,7 @@ async function resolveGnulaSlug(opts: {
         .map((h) => String(h || '').replace(/\s*\([^)]*\)/g, '').trim())
         .filter((h) => normalizeTitleForMatch(h).length >= 2)
     )
-  ).slice(0, 3);
+  ).slice(0, 5);
   if (uniqueHints.length === 0) return null;
 
   const cacheKey = `${opts.mediaType}|${opts.yearHint || ''}|${uniqueHints
@@ -1288,16 +1415,22 @@ async function resolveGnulaSlug(opts: {
   for (const hint of uniqueHints) {
     try {
       const searchUrl = `${GNULA_ORIGIN}/wp-json/gnrd/v1/search?q=${encodeURIComponent(hint)}`;
-      const res = await fetch(searchUrl, {
-        headers: {
+      const rawJsonText = await fetchTextWithCurlFallback(
+        searchUrl,
+        {
           'User-Agent': CHROME_UA,
           Accept: 'application/json',
           Referer: `${GNULA_ORIGIN}/`,
         },
-        signal: AbortSignal.timeout(3600),
-      });
-      if (!res.ok) continue;
-      const json: any = await res.json();
+        4000
+      );
+      if (!rawJsonText) continue;
+      let json: any = null;
+      try {
+        json = JSON.parse(rawJsonText);
+      } catch {
+        continue;
+      }
       const results: any[] = Array.isArray(json?.results) ? json.results : [];
       if (results.length === 0) continue;
 
@@ -1329,13 +1462,32 @@ async function resolveGnulaSlug(opts: {
         );
       };
 
+      const isStrongTokenYearMatch = (rawTitle: any, rawYear: any): boolean => {
+        if (!expectedYearNum || Number(String(rawYear || '').trim()) !== expectedYearNum) {
+          return false;
+        }
+        const rNorm = normalizeTitleForMatch(String(rawTitle || '').replace(/\s*\([^)]*\)/g, ''));
+        if (!rNorm || rNorm.length < 4) return false;
+        return normTargets.some((nt) => {
+          if (nt.length < 4) return false;
+          if (rNorm.includes(nt) || nt.includes(rNorm)) return true;
+          const ntTokens = nt.split(/\s+/).filter((t) => t.length >= 3);
+          const rTokens = rNorm.split(/\s+/).filter((t) => t.length >= 3);
+          if (ntTokens.length >= 2 && ntTokens.every((tok) => rTokens.includes(tok))) return true;
+          if (rTokens.length >= 2 && rTokens.every((tok) => ntTokens.includes(tok))) return true;
+          return false;
+        });
+      };
+
       const chosen =
         pool.find(
           (r) =>
             isExactTitle(r?.title) &&
             expectedYearNum > 0 &&
             Number(String(r?.year || '').trim()) === expectedYearNum
-        ) || pool.find((r) => isExactTitle(r?.title) && isYearCompatible(r?.year));
+        ) ||
+        pool.find((r) => isExactTitle(r?.title) && isYearCompatible(r?.year)) ||
+        pool.find((r) => isStrongTokenYearMatch(r?.title, r?.year));
 
       if (chosen?.url) {
         const m = String(chosen.url).match(/\/ver\/([^/?#]+)\/?/i);
@@ -1376,15 +1528,15 @@ async function extractGnulaCastellanoTracks(opts: {
           )}/`
         : `${GNULA_ORIGIN}/ver/${slug}/`;
 
-    const pageRes = await fetch(pageUrl, {
-      headers: {
+    const html = await fetchTextWithCurlFallback(
+      pageUrl,
+      {
         'User-Agent': CHROME_UA,
         Referer: `${GNULA_ORIGIN}/`,
       },
-      signal: AbortSignal.timeout(4000),
-    });
-    if (!pageRes.ok) return [];
-    const html = await pageRes.text();
+      4200
+    );
+    if (!html) return [];
 
     const pidMatch = html.match(/_gnrdPid\s*=\s*(\d+)/);
     const tokMatch = html.match(/_gnrdTok\s*=\s*["']([^"']+)["']/);
@@ -1393,16 +1545,17 @@ async function extractGnulaCastellanoTracks(opts: {
     const playerApiUrl = `${GNULA_ORIGIN}/wp-json/gnrd/v1/player?id=${
       pidMatch[1]
     }&t=${encodeURIComponent(tokMatch[1])}`;
-    const pRes = await fetch(playerApiUrl, {
-      headers: {
+    const pText = await fetchTextWithCurlFallback(
+      playerApiUrl,
+      {
         'User-Agent': CHROME_UA,
         Accept: 'application/json',
         Referer: pageUrl,
       },
-      signal: AbortSignal.timeout(3800),
-    });
-    if (!pRes.ok) return [];
-    const pJson: any = await pRes.json();
+      4000
+    );
+    if (!pText) return [];
+    const pJson: any = JSON.parse(pText);
     if (!pJson?.p) return [];
 
     const decoded = gnrdXorUnpack(String(pJson.p));
@@ -1471,7 +1624,7 @@ async function extractGnulaCastellanoTracks(opts: {
       });
     });
 
-    return [...nativeTracks, ...embedBackupTracks];
+    return nativeTracks.length > 0 ? nativeTracks : embedBackupTracks;
   } catch {
     return [];
   }
@@ -1486,14 +1639,7 @@ async function extractEmbed69SpanishTracks(opts: {
   titleHints?: string[];
 }): Promise<TrackRecord[]> {
   try {
-    const imdbId =
-      opts.imdbId || (opts.tmdbId ? await resolveImdbId(opts.tmdbId, opts.mediaType) : null);
-
-    const epSuffix =
-      opts.mediaType === 'tv' && opts.season && opts.episode
-        ? `-${opts.season}x${String(opts.episode).padStart(2, '0')}`
-        : '';
-
+    let imdbId = opts.imdbId || null;
     const hints = [...(opts.titleHints || [])].filter(Boolean);
     let isLikelyAnime = false;
     let yearHint = '';
@@ -1503,11 +1649,14 @@ async function extractEmbed69SpanishTracks(opts: {
         const cleanId = String(opts.tmdbId).replace(/\D/g, '');
         const tmUrl =
           opts.mediaType === 'tv'
-            ? `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=es-ES`
-            : `https://api.themoviedb.org/3/movie/${cleanId}?api_key=${TMDB_API_KEY}&language=es-ES`;
-        const tmRes = await fetch(tmUrl, { signal: AbortSignal.timeout(2800) });
+            ? `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=es-ES&append_to_response=translations,external_ids`
+            : `https://api.themoviedb.org/3/movie/${cleanId}?api_key=${TMDB_API_KEY}&language=es-ES&append_to_response=translations,external_ids`;
+        const tmRes = await fetch(tmUrl, { signal: AbortSignal.timeout(3000) });
         if (tmRes.ok) {
           const tmJson: any = await tmRes.json();
+          if (!imdbId) {
+            imdbId = tmJson?.imdb_id || tmJson?.external_ids?.imdb_id || null;
+          }
           const esName = String(tmJson?.name || tmJson?.title || '').trim();
           const origName = String(
             tmJson?.original_name || tmJson?.original_title || ''
@@ -1515,7 +1664,23 @@ async function extractEmbed69SpanishTracks(opts: {
           const rawDate = String(tmJson?.first_air_date || tmJson?.release_date || '');
           if (rawDate) yearHint = rawDate.split('-')[0] || '';
           if (esName) hints.push(esName);
-          if (origName) hints.push(origName);
+
+          const translations: any[] = Array.isArray(tmJson?.translations?.translations)
+            ? tmJson.translations.translations
+            : [];
+          const mxEntry = translations.find(
+            (tr) => tr?.iso_3166_1 === 'MX' || (tr?.iso_639_1 === 'es' && tr?.iso_3166_1 !== 'ES')
+          );
+          const mxName = String(mxEntry?.data?.title || mxEntry?.data?.name || '').trim();
+          if (mxName && !hints.includes(mxName)) hints.push(mxName);
+
+          if (origName && !hints.includes(origName)) hints.push(origName);
+
+          const enEntry = translations.find(
+            (tr) => tr?.iso_3166_1 === 'US' || tr?.iso_639_1 === 'en'
+          );
+          const enTrName = String(enEntry?.data?.title || enEntry?.data?.name || '').trim();
+          if (enTrName && !hints.includes(enTrName)) hints.push(enTrName);
 
           const genres: any[] = Array.isArray(tmJson?.genres) ? tmJson.genres : [];
           const hasAnimGenre = genres.some((g) => Number(g?.id) === 16);
@@ -1526,26 +1691,20 @@ async function extractEmbed69SpanishTracks(opts: {
             String(tmJson?.original_language || '').toLowerCase() === 'ja' ||
             origCountries.includes('JP');
           isLikelyAnime = hasAnimGenre && isJp;
-
-          if (isLikelyAnime) {
-            const enUrl =
-              opts.mediaType === 'tv'
-                ? `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=en-US`
-                : `https://api.themoviedb.org/3/movie/${cleanId}?api_key=${TMDB_API_KEY}&language=en-US`;
-            const enRes = await fetch(enUrl, { signal: AbortSignal.timeout(2400) }).catch(
-              () => null
-            );
-            if (enRes?.ok) {
-              const enJson: any = await enRes.json();
-              const enName = String(enJson?.name || enJson?.title || '').trim();
-              if (enName) hints.push(enName);
-            }
-          }
         }
       } catch {
         // ignore
       }
     }
+
+    if (!imdbId && opts.tmdbId) {
+      imdbId = await resolveImdbId(opts.tmdbId, opts.mediaType);
+    }
+
+    const epSuffix =
+      opts.mediaType === 'tv' && opts.season && opts.episode
+        ? `-${opts.season}x${String(opts.episode).padStart(2, '0')}`
+        : '';
 
     const [gnulaTracks, directTracks, skTracks, animeTracks] = await Promise.all([
       hints.length > 0
@@ -1586,14 +1745,19 @@ async function extractEmbed69SpanishTracks(opts: {
     const countPerLang: Record<string, number> = {};
     const merged: TrackRecord[] = [];
 
-    // Prioritize exact IMDb-matched `directTracks` FIRST, followed by year-verified native HLS extractors
-    const orderedCandidates = [
+    // Prioritize high-res native HLS extractors (`gnula/vidara` 1080p + verified `directTracks`) FIRST;
+    // avoid polluting native HLS lists with ad-filled `web_embed` tracks when native HLS exists.
+    const nativeCandidates = [
+      ...gnulaTracks.filter((t) => t.resolverType === 'vidhide_hls'),
       ...directTracks,
-      ...gnulaTracks.filter((t) => t.resolverType !== 'web_embed'),
       ...skTracks,
       ...animeTracks,
-      ...gnulaTracks.filter((t) => t.resolverType === 'web_embed'),
+      ...gnulaTracks.filter((t) => t.resolverType !== 'vidhide_hls' && t.resolverType !== 'web_embed'),
     ];
+    const orderedCandidates =
+      nativeCandidates.length > 0
+        ? nativeCandidates
+        : gnulaTracks.filter((t) => t.resolverType === 'web_embed');
 
     for (const tr of orderedCandidates) {
       const code = String(tr.lang || '').toUpperCase();
@@ -2049,6 +2213,9 @@ async function extractBingetrixEnglishTracks(opts: {
               ? rawStreamUrl.split('__TOKEN__').join(token)
               : `${rawStreamUrl}${rawStreamUrl.includes('?') ? '&' : '?'}token=${token}`
             : rawStreamUrl;
+
+          const healthy = await probeHlsSegmentHealth(finalMasterUrl, playerOrigin);
+          if (!healthy) return null;
 
           const proxyUrl = buildHlsProxyUrl(finalMasterUrl, `${playerOrigin}/`);
           const sourceRef =
@@ -5390,7 +5557,7 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
   if (!targetUrl) return res.status(400).send('Missing url');
 
   const cachedVod = !forceAac ? vodHlsManifestCache.get(vodCacheKey) : undefined;
-  if (cachedVod && Date.now() - cachedVod.ts < 2 * 60 * 60 * 1000) {
+  if (cachedVod && Date.now() - cachedVod.ts < 10 * 60 * 1000) {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', '*');
@@ -5626,6 +5793,25 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
   }
 });
 
+function findDisguisedTsOffset(buf: Buffer): number {
+  if (!buf || buf.length < 380) return 0;
+  // Already starts with MPEG-TS sync byte pattern
+  if (buf[0] === 0x47 && buf[188] === 0x47) return 0;
+  const isPng = buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47;
+  const isGif = buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x38;
+  const isJpg = buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff;
+  const isBmp = buf[0] === 0x42 && buf[1] === 0x4d;
+  if (!isPng && !isGif && !isJpg && !isBmp) return 0;
+
+  const limit = Math.min(buf.length - 376, 4096);
+  for (let i = 4; i < limit; i++) {
+    if (buf[i] === 0x47 && buf[i + 188] === 0x47 && buf[i + 376] === 0x47) {
+      return i;
+    }
+  }
+  return 0;
+}
+
 app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
   const targetUrl = String(req.query.url || '');
   const referer = resolveKnownUpstreamReferer(targetUrl, String(req.query.referer || ''));
@@ -5720,12 +5906,6 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
       throw new Error(`TS upstream ${upstream.status}`);
     }
 
-    res.status(upstream.status);
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', '*');
-    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
-
     const rawCt = (upstream.headers.get('content-type') || '').toLowerCase();
     const isDisguisedSegment =
       !rawCt ||
@@ -5737,19 +5917,32 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
       rawCt.includes('woff') ||
       rawCt.includes('javascript') ||
       rawCt.startsWith('application/octet-stream');
-    res.setHeader(
-      'Content-Type',
-      isDisguisedSegment ? (isUrlMp4 ? 'video/mp4' : 'video/mp2t') : rawCt
-    );
+
+    const shouldSniffImageHeader = !isUrlMp4 && !req.headers.range && isDisguisedSegment;
 
     const cl = upstream.headers.get('content-length');
-    if (cl) res.setHeader('Content-Length', cl);
-
     const cr = upstream.headers.get('content-range');
-    if (cr) res.setHeader('Content-Range', cr);
-
     const ar = upstream.headers.get('accept-ranges');
-    if (ar) res.setHeader('Accept-Ranges', ar);
+
+    const writeCommonHeaders = (clAdjust = 0) => {
+      res.status(upstream.status);
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Content-Type');
+      res.setHeader(
+        'Content-Type',
+        isDisguisedSegment ? (isUrlMp4 ? 'video/mp4' : 'video/mp2t') : rawCt
+      );
+      if (cl) {
+        const numCl = Number(cl);
+        if (Number.isFinite(numCl) && numCl > clAdjust) {
+          res.setHeader('Content-Length', String(numCl - clAdjust));
+        }
+      }
+      if (cr) res.setHeader('Content-Range', cr);
+      if (ar) res.setHeader('Accept-Ranges', ar);
+    };
 
     const nodeStream = Readable.fromWeb(upstream.body as any);
     let streamIdleTimer: ReturnType<typeof setTimeout> | null = null;
@@ -5769,13 +5962,64 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
     });
     nodeStream.on('error', () => {
       if (streamIdleTimer) clearTimeout(streamIdleTimer);
+      if (!res.headersSent) res.status(502);
       res.end();
     });
     req.on('close', () => {
       if (streamIdleTimer) clearTimeout(streamIdleTimer);
       nodeStream.destroy();
     });
-    nodeStream.pipe(res);
+
+    if (!shouldSniffImageHeader) {
+      writeCommonHeaders(0);
+      nodeStream.pipe(res);
+      return;
+    }
+
+    // Strip disguised 1x1 PNG/GIF/JPEG header bytes before MPEG-TS sync byte (0x47)
+    let headerChecked = false;
+    const probeChunks: Buffer[] = [];
+    let probeLen = 0;
+
+    const flushInitial = (ended: boolean) => {
+      if (headerChecked) return;
+      headerChecked = true;
+      const headBuf = Buffer.concat(probeChunks);
+      const offset = findDisguisedTsOffset(headBuf);
+      writeCommonHeaders(offset);
+      if (offset > 0) {
+        res.write(headBuf.subarray(offset));
+      } else if (headBuf.length > 0) {
+        res.write(headBuf);
+      }
+      probeChunks.length = 0;
+      if (ended) {
+        res.end();
+      }
+    };
+
+    nodeStream.on('data', (chunk: Buffer) => {
+      if (!headerChecked) {
+        const b = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        probeChunks.push(b);
+        probeLen += b.length;
+        if (probeLen >= 512) {
+          flushInitial(false);
+        }
+      } else if (!res.writableEnded) {
+        if (!res.write(chunk)) {
+          nodeStream.pause();
+          res.once('drain', () => nodeStream.resume());
+        }
+      }
+    });
+    nodeStream.once('end', () => {
+      if (!headerChecked) {
+        flushInitial(true);
+      } else if (!res.writableEnded) {
+        res.end();
+      }
+    });
   } catch (err) {
     clearTimeout(hdrTimer);
     if (req.destroyed || res.writableEnded) return;
@@ -5816,6 +6060,9 @@ app.get(['/api/ts-proxy', '/api/ts-proxy/:filename'], async (req, res) => {
           res.setHeader('Content-Range', `bytes ${start}-${end}/${buf.length}`);
           res.setHeader('Accept-Ranges', 'bytes');
         }
+      } else if (!isFmp4Buffer) {
+        const tsOff = findDisguisedTsOffset(buf);
+        if (tsOff > 0) outBuf = buf.subarray(tsOff);
       }
 
       res.status(statusCode);
@@ -11707,7 +11954,11 @@ app.get('/api/extract/stream', async (req, res) => {
       }
 
       if (primaryStreamUrl) {
-        const validTracks = orderedTracks.filter((_, idx) => !deadTrackIndices.has(idx));
+        const validTracks = orderedTracks.filter(
+          (tr, idx) =>
+            !deadTrackIndices.has(idx) &&
+            (primaryMode === 'embed' || tr.resolverType !== 'web_embed')
+        );
         const resolvedLang = String(resolvedTrack?.lang || preferLang).toUpperCase();
         const resolvedLabel = resolvedTrack?.label || preferLang;
         const availableLanguages = Array.from(
@@ -11998,13 +12249,14 @@ app.get('/api/extract/stream', async (req, res) => {
                 },
               ];
 
-        // Put sandbox-friendly embeds first inside sandboxed iframes, while still keeping vidfast.vc accessible
-        const orderedEntries = isSandboxedFrame
+        // Put sandbox-friendly embeds first inside sandboxed iframes, limited to 2 cleanest backups
+        const orderedEntries = (isSandboxedFrame
           ? [
               ...baseEntries.filter((entry) => entry.sandboxSafe),
               ...baseEntries.filter((entry) => !entry.sandboxSafe),
             ]
-          : baseEntries;
+          : baseEntries
+        ).slice(0, 2);
 
         return orderedEntries.map((entry) => ({
           id: entry.id,
@@ -12022,17 +12274,9 @@ app.get('/api/extract/stream', async (req, res) => {
         Promise.resolve(buildWebEmbedTracks()),
       ]);
 
-      const prioritizeYoutube =
-        Boolean(ytFallback) &&
-        (embedFallbackTracks.length === 0 ||
-          ((preferLang === 'ES' || preferLang === 'LAT') && ytFallback!.exactEpisodeMatch));
-
-      const combinedFallbackTracks: TrackRecord[] = prioritizeYoutube
-        ? [ytFallback!.track, ...embedFallbackTracks]
-        : ytFallback
-        ? [embedFallbackTracks[0], ytFallback.track, ...embedFallbackTracks.slice(1)].filter(
-            Boolean
-          )
+      // When a full clean YouTube stream is found, avoid flooding the bar with ad-heavy web embeds
+      const combinedFallbackTracks: TrackRecord[] = ytFallback
+        ? [ytFallback.track]
         : embedFallbackTracks;
 
       if (combinedFallbackTracks.length > 0) {

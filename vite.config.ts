@@ -47,7 +47,7 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          cacheId: 'naim-cine-twitch-v5',
+          cacheId: 'naim-cine-twitch-v6',
           skipWaiting: true,
           clientsClaim: true,
           cleanupOutdatedCaches: true,

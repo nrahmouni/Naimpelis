@@ -31,14 +31,14 @@ class ServiceMeshRegistry {
 
   constructor() {
     const initialDefs: Array<{ id: MicroserviceId; name: string; version: string }> = [
-      { id: 'api-gateway', name: 'API Gateway & Edge Router', version: '3.0.0' },
-      { id: 'catalog-discovery', name: 'Catalog & Genre Discovery Service', version: '3.0.0' },
-      { id: 'stream-extractor', name: 'Stream Extraction & HLS/TS Proxy Service', version: '3.0.0' },
-      { id: 'live-media-epg', name: 'Live TDT, FAST & XMLTV EPG Service', version: '3.0.0' },
-      { id: 'football-matchboard', name: 'Football Live Matchboard & Scores Service', version: '3.0.0' },
-      { id: 'watch-party-ws', name: 'Real-Time Watch Party WebSocket Hub', version: '3.0.0' },
-      { id: 'smart-tv-pairing', name: 'Smart TV / Google TV 10-Foot Pairing Service', version: '3.0.0' },
-      { id: 'qoe-telemetry', name: 'Playback QoE & Analytics Service', version: '3.0.0' },
+      { id: 'api-gateway', name: 'API Gateway & Edge Router', version: '3.1.0' },
+      { id: 'catalog-discovery', name: 'Catalog & Genre Discovery Service', version: '3.1.0' },
+      { id: 'stream-extractor', name: 'Stream Extraction & HLS/TS Proxy Service', version: '3.1.0' },
+      { id: 'live-media-epg', name: 'Live TDT, FAST & XMLTV EPG Service', version: '3.1.0' },
+      { id: 'football-matchboard', name: 'Football Live Matchboard & Scores Service', version: '3.1.0' },
+      { id: 'watch-party-ws', name: 'Real-Time Watch Party WebSocket Hub', version: '3.1.0' },
+      { id: 'smart-tv-pairing', name: 'Smart TV / Google TV 10-Foot Pairing Service', version: '3.1.0' },
+      { id: 'qoe-telemetry', name: 'Playback QoE & Analytics Service', version: '3.1.0' },
     ];
     for (const def of initialDefs) {
       this.services.set(def.id, {
