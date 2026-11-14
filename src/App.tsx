@@ -3189,7 +3189,10 @@ export function App() {
     setExtractionLabel('Analizando enlace y extrayendo flujo limpio...');
 
     try {
-      const params = new URLSearchParams({ url: rawUrl });
+      const params = new URLSearchParams({
+        url: rawUrl,
+        ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
+      });
       const res = await fetch(`/api/extract/stream?${params.toString()}`);
       const data = await res.json();
 
@@ -5171,6 +5174,8 @@ export function App() {
                   hideInternalTabs={mobileTab === 'room'}
                   openQueueTrigger={openQueueTrigger}
                   isKeyboardOpen={isMobileKeyboardOpen}
+                  showMenusButton={isChromeHidden && isOnMobileSocialTab}
+                  onShowMenus={() => setIsChromeHidden(false)}
                   onOpenFloatingChatOnVideo={
                     isPlayerActive
                       ? () => {
@@ -5710,8 +5715,8 @@ export function App() {
           </div>
         )}
 
-        {/* Click-to-Reveal Floating Pill when Top/Bottom Chrome is Hidden */}
-        {isChromeHidden && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
+        {/* Click-to-Reveal Floating Pill when Top/Bottom Chrome is Hidden (moved to PartySidebar corner when in mobile Sala) */}
+        {isChromeHidden && !isOnMobileSocialTab && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
           <div className="fixed bottom-[max(0.65rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 animate-fade-in">
             <button
               type="button"

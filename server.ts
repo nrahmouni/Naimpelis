@@ -228,11 +228,11 @@ function buildTsProxyUrl(
 // ============================================================================
 function unpackDeanEdwards(html: string): string | null {
   const m = html.match(
-    /eval\(function\(p,a,c,k,e,d\)\{[\s\S]+?\}\(\s*'([\s\S]*?)'\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*'([^']*)'\.split\('\|'\)/
+    /eval\(function\(p,a,c,k,e,d\)\{[\s\S]+?\}\(\s*(['"])([\s\S]*?)\1\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(['"])([^'"]*)\5\.split\(['"]\|['"]\)/
   );
   if (!m) return null;
 
-  let [, payload, radixStr, countStr, dictStr] = m;
+  let [, , payload, radixStr, countStr, , dictStr] = m;
   const radix = parseInt(radixStr, 10);
   let count = parseInt(countStr, 10);
   const dict = dictStr.split('|');
@@ -284,19 +284,43 @@ async function unpackVidhideToHls(embedUrl: string): Promise<{ rawM3u8: string; 
       }
     }
 
-    // 2. Standard Vidhide / Smoothpre / Earnvids / Streamwish Dean Edwards Unpacker
+    // 2. Standard Vidhide / Smoothpre / Earnvids / Streamwish / 2vcdn Dean Edwards Unpacker
     const refererOrigin = embedUrl.includes('gnulahd')
       ? 'https://ww3.gnulahd.nu/'
+      : embedUrl.includes('2vcdn')
+      ? 'https://streamsrcs.2embed.cc/'
       : 'https://embed69.org/';
-    const res = await fetch(embedUrl, {
-      headers: {
-        'User-Agent': CHROME_UA,
-        Referer: refererOrigin,
-      },
-      signal: AbortSignal.timeout(5500),
-    });
-    if (!res.ok) return null;
-    const html = await res.text();
+    let html = '';
+    if (embedUrl.includes('2vcdn')) {
+      const curlRes = await curlGetText(
+        embedUrl,
+        { 'User-Agent': CHROME_UA, Referer: refererOrigin },
+        4,
+        true
+      ).catch(() => ({ text: '' }));
+      html = curlRes.text || '';
+    } else {
+      try {
+        const res = await fetch(embedUrl, {
+          headers: {
+            'User-Agent': CHROME_UA,
+            Referer: refererOrigin,
+          },
+          signal: AbortSignal.timeout(4500),
+        });
+        if (res.ok) html = await res.text();
+      } catch {
+        const curlRes = await curlGetText(
+          embedUrl,
+          { 'User-Agent': CHROME_UA, Referer: refererOrigin },
+          4,
+          true
+        ).catch(() => ({ text: '' }));
+        html = curlRes.text || '';
+      }
+    }
+    if (!html) return null;
+
     const unpacked = unpackDeanEdwards(html);
     if (!unpacked) return null;
 
@@ -305,14 +329,44 @@ async function unpackVidhideToHls(embedUrl: string): Promise<{ rawM3u8: string; 
 
     const links = JSON.parse(linksMatch[1]);
     const origin = new URL(embedUrl).origin;
-    const rawCandidate = links.hls2 || links.hls4 || links.hls3 || '';
-    if (!rawCandidate) return null;
+    const rawCandidates = (
+      origin.includes('2vcdn')
+        ? [links.hls4, links.hls2]
+        : [links.hls2, links.hls4, links.hls3]
+    )
+      .map((c) => String(c || '').trim())
+      .filter(Boolean);
 
-    const rawM3u8 = rawCandidate.startsWith('/') ? `${origin}${rawCandidate}` : rawCandidate;
-    return {
-      rawM3u8,
-      proxyUrl: buildHlsProxyUrl(rawM3u8, `${origin}/`),
-    };
+    if (rawCandidates.length === 0) return null;
+
+    // Verify which candidate HLS manifest actually returns HTTP 200 `#EXTM3U`
+    // (critical because mirrors like premilkyway/hls2 can 403 due to ASN lock while hls4 returns 200 OK)
+    for (const rawCandidate of rawCandidates) {
+      const rawM3u8 = rawCandidate.startsWith('/') ? `${origin}${rawCandidate}` : rawCandidate;
+      try {
+        const probe = await fetch(rawM3u8, {
+          headers: {
+            'User-Agent': CHROME_UA,
+            Referer: `${origin}/`,
+            Origin: origin,
+          },
+          signal: AbortSignal.timeout(2500),
+        });
+        if (probe.ok) {
+          const body = await probe.text();
+          if (body.includes('#EXTM3U')) {
+            return {
+              rawM3u8,
+              proxyUrl: buildHlsProxyUrl(rawM3u8, `${origin}/`),
+            };
+          }
+        }
+      } catch {
+        // try next candidate
+      }
+    }
+
+    return null;
   } catch (err) {
     console.warn('unpackVidhideToHls error:', err);
     return null;
@@ -347,7 +401,7 @@ async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix: string): Promise<
         'User-Agent': CHROME_UA,
         Referer: 'https://serieskao.top/',
       },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(3800),
     });
     if (mRes.ok) {
       const mHtml = await mRes.text();
@@ -355,8 +409,22 @@ async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix: string): Promise<
         return mHtml;
       }
     }
-  } catch {
-    // fallback to embed69.org direct
+  } catch (err: any) {
+    if (err?.name !== 'TimeoutError') {
+      try {
+        const curlMirror = await curlGetText(
+          `https://serieskao.top/vidurl/${imdbSuffix}/`,
+          { 'User-Agent': CHROME_UA, Referer: 'https://serieskao.top/' },
+          3,
+          true
+        );
+        if (curlMirror.text && (curlMirror.text.includes('dataLink') || curlMirror.text.includes('OptionsLangDisp'))) {
+          return curlMirror.text;
+        }
+      } catch {
+        // fallback to embed69.org direct
+      }
+    }
   }
 
   // 2. Direct `embed69.org/f/...` with automatic Anubis v1.28.2 PoW challenge solver & 6h cookie cache
@@ -1674,15 +1742,18 @@ function h2GetRaw(
 async function curlGetText(
   targetUrl: string,
   headers: Record<string, string> = {},
-  maxTimeSec = 6
+  maxTimeSec = 6,
+  preferCurlCli = false
 ): Promise<{ text: string; effectiveUrl: string }> {
-  try {
-    const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
-    if (h2.buf.length > 0 && h2.status < 400) {
-      return { text: h2.buf.toString('utf8'), effectiveUrl: h2.effectiveUrl };
+  if (!preferCurlCli) {
+    try {
+      const h2 = await h2GetRaw(targetUrl, headers, maxTimeSec);
+      if (h2.buf.length > 0 && h2.status < 400) {
+        return { text: h2.buf.toString('utf8'), effectiveUrl: h2.effectiveUrl };
+      }
+    } catch {
+      // fallback to curl if available
     }
-  } catch {
-    // fallback to curl if available
   }
 
   return new Promise((resolve, reject) => {
@@ -2003,6 +2074,82 @@ async function extractBingetrixEnglishTracks(opts: {
     return stampedTracks.filter((t): t is NonNullable<typeof t> => Boolean(t));
   } catch (err) {
     console.warn('extractBingetrixEnglishTracks error:', err);
+    return [];
+  }
+}
+
+async function extract2EmbedEnglishTracks(opts: {
+  tmdbId: string | number;
+  mediaType?: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+}): Promise<TrackRecord[]> {
+  try {
+    const cleanId = String(opts.tmdbId).replace(/\D/g, '');
+    if (!cleanId) return [];
+
+    const mType = opts.mediaType === 'tv' ? 'tv' : 'movie';
+    const embedUrl =
+      mType === 'tv' && opts.season && opts.episode
+        ? `https://www.2embed.cc/embedtv/${cleanId}&s=${opts.season}&e=${opts.episode}`
+        : `https://www.2embed.cc/embed/${cleanId}`;
+
+    const pageRes = await curlGetText(
+      embedUrl,
+      { Referer: 'https://www.2embed.cc/', 'User-Agent': CHROME_UA },
+      5,
+      true
+    ).catch(() => ({ text: '', effectiveUrl: embedUrl }));
+    let html = pageRes.text || '';
+    if (!html) return [];
+
+    let swishMatch = html.match(/https:\/\/streamsrcs\.2embed\.cc\/swish\?id=([a-zA-Z0-9_-]+)/i);
+    if (!swishMatch && mType === 'movie') {
+      const imdbEmbedMatch = html.match(/https:\/\/www\.2embed\.cc\/embed\/(tt\d+)/i);
+      if (imdbEmbedMatch) {
+        const innerRes = await curlGetText(
+          imdbEmbedMatch[0],
+          { Referer: embedUrl, 'User-Agent': CHROME_UA },
+          5,
+          true
+        ).catch(() => ({ text: '' }));
+        html = innerRes.text || '';
+        swishMatch = html.match(/https:\/\/streamsrcs\.2embed\.cc\/swish\?id=([a-zA-Z0-9_-]+)/i);
+      }
+    }
+    if (!swishMatch) return [];
+
+    const swishUrl = swishMatch[0];
+    const swishHtml = (
+      await curlGetText(swishUrl, { Referer: embedUrl, 'User-Agent': CHROME_UA }, 5, true).catch(() => ({
+        text: '',
+      }))
+    ).text;
+    if (!swishHtml) return [];
+
+    const frameMatch = swishHtml.match(
+      /id=["']framesrc["'][^>]*src=["']([^"']+)["']|src=["']([^"']+)["'][^>]*id=["']framesrc["']/i
+    );
+    const frameRaw = String(frameMatch?.[1] || frameMatch?.[2] || swishMatch[1] || '').trim();
+    if (!frameRaw) return [];
+
+    const vcdnUrl = /^https?:\/\//i.test(frameRaw) ? frameRaw : `https://2vcdn.skin/e/${frameRaw}`;
+    const unpacked = await unpackVidhideToHls(vcdnUrl);
+    if (!unpacked) return [];
+
+    return [
+      {
+        id: `2embed-en-${mType}-${cleanId}-${opts.season || 0}-${opts.episode || 0}`,
+        label: 'English 1080p · Direct',
+        lang: 'EN',
+        quality: '1080p HLS',
+        sourceUrl: vcdnUrl,
+        resolverType: 'vidhide_hls',
+        resolvedStreamUrl: unpacked.proxyUrl,
+      },
+    ];
+  } catch (err) {
+    console.warn('extract2EmbedEnglishTracks error:', err);
     return [];
   }
 }
@@ -6098,6 +6245,84 @@ async function fetchTmdbItemsByIds(
   return results.filter((x) => x && x.id && (x.poster_path || x.backdrop_path));
 }
 
+function normalizeNoSpaceForSearch(input: string): string {
+  return String(input || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '');
+}
+
+function buildSmartConcatQueryVariants(rawQuery: string): string[] {
+  const q = String(rawQuery || '').trim();
+  if (!q || /\s/.test(q) || q.length < 5 || q.length > 18) return [];
+  if (!/^[a-zA-Z0-9\u00C0-\u017F]+$/.test(q)) return [];
+
+  const candidates: string[] = [];
+  const camelSplit = q.replace(/([a-z\u00E0-\u00FF])([A-Z\u00C0-\u00DF])/g, '$1 $2').trim();
+  if (camelSplit !== q && camelSplit.includes(' ')) {
+    candidates.push(camelSplit);
+  }
+
+  const splitIndices = Array.from(
+    new Set([2, 3, 4, Math.floor(q.length / 2)].filter((i) => i >= 2 && i <= q.length - 2))
+  );
+  for (const idx of splitIndices) {
+    const splitStr = `${q.slice(0, idx)} ${q.slice(idx)}`;
+    if (!candidates.includes(splitStr)) {
+      candidates.push(splitStr);
+    }
+  }
+  return candidates.slice(0, 3);
+}
+
+function rankTmdbSearchResultsForQuery(items: any[], rawQuery: string, isTv = false): any[] {
+  const normQSpace = normalizeTitleForMatch(rawQuery);
+  const normQCompact = normalizeNoSpaceForSearch(rawQuery);
+  if (!normQCompact) return items;
+
+  const scoreItem = (item: any): number => {
+    const t1 = String((isTv ? item?.name : item?.title) || item?.title || item?.name || '');
+    const t2 = String(
+      (isTv ? item?.original_name : item?.original_title) ||
+        item?.originalTitle ||
+        item?.original_name ||
+        item?.original_title ||
+        ''
+    );
+    const n1Space = normalizeTitleForMatch(t1);
+    const n2Space = normalizeTitleForMatch(t2);
+    const n1Compact = normalizeNoSpaceForSearch(t1);
+    const n2Compact = normalizeNoSpaceForSearch(t2);
+
+    let tier = 0;
+    if (n1Space === normQSpace || n2Space === normQSpace) tier = 500;
+    else if (n1Compact === normQCompact || n2Compact === normQCompact) tier = 420;
+    else if (
+      n1Space.startsWith(normQSpace) ||
+      n2Space.startsWith(normQSpace) ||
+      n1Compact.startsWith(normQCompact) ||
+      n2Compact.startsWith(normQCompact)
+    ) {
+      tier = 260;
+    } else if (
+      n1Space.includes(normQSpace) ||
+      n2Space.includes(normQSpace) ||
+      n1Compact.includes(normQCompact) ||
+      n2Compact.includes(normQCompact)
+    ) {
+      tier = 140;
+    }
+
+    const votes = Number(item?.vote_count || 0);
+    const pop = Number(item?.popularity || 0);
+    const popBoost = Math.min(95, Math.log10(Math.max(1, votes + pop + 1)) * 22);
+    return tier + popBoost;
+  };
+
+  return [...items].sort((a, b) => scoreItem(b) - scoreItem(a));
+}
+
 async function fetchTmdbMovieCatalog(opts: {
   lang: 'es-ES' | 'en-US';
   category: string;
@@ -6110,7 +6335,7 @@ async function fetchTmdbMovieCatalog(opts: {
   const provCfg = STREAMING_PROVIDER_MAP[provider];
   const isAnime = ANIME_PROVIDER_IDS.has(provider);
 
-  const cacheKey = `v5|${lang}|${provider}|${category}|${page}|${query}`;
+  const cacheKey = `v6|${lang}|${provider}|${category}|${page}|${query}`;
   const cached = movieCatalogCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
     return cached;
@@ -6185,6 +6410,40 @@ async function fetchTmdbMovieCatalog(opts: {
   let json: any = res.ok ? await res.json() : { results: [], total_pages: 1 };
   let results: any[] = Array.isArray(json?.results) ? json.results : [];
   let totalPages = Number(json?.total_pages || 1);
+
+  if (query && page === 1) {
+    const compactQ = normalizeNoSpaceForSearch(query);
+    const hasStrongExactMatch = results.some(
+      (r) =>
+        (normalizeNoSpaceForSearch(r?.title || '') === compactQ ||
+          normalizeNoSpaceForSearch(r?.original_title || '') === compactQ) &&
+        Number(r?.vote_count || 0) >= 80
+    );
+    if (!hasStrongExactMatch) {
+      const variants = buildSmartConcatQueryVariants(query);
+      if (variants.length > 0) {
+        const extraLists = await Promise.all(
+          variants.map(async (vq) => {
+            try {
+              const er = await fetch(
+                `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=${lang}&query=${encodeURIComponent(vq)}&page=1&include_adult=false`,
+                { signal: AbortSignal.timeout(3000) }
+              );
+              if (!er.ok) return [];
+              const ej: any = await er.json().catch(() => null);
+              return Array.isArray(ej?.results) ? ej.results : [];
+            } catch {
+              return [];
+            }
+          })
+        );
+        const flatExtra = extraLists.flat();
+        if (flatExtra.length > 0) {
+          results = rankTmdbSearchResultsForQuery([...results, ...flatExtra], query, false);
+        }
+      }
+    }
+  }
 
   // Fallback for Crunchyroll movie sub-genres if US watch_provider filter is sparse
   if (isAnime && provider === 'crunchyroll' && !query && results.length < 4) {
@@ -6274,7 +6533,7 @@ app.get('/api/catalog/movies', async (req, res) => {
     const category = String(req.query.category || 'trending').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const mergedCacheKey = `merged-es-v4|${provider}|${category}|${page}|${query}`;
+    const mergedCacheKey = `merged-es-v6|${provider}|${category}|${page}|${query}`;
     const cachedMerged = movieCatalogCache.get(mergedCacheKey);
     if (cachedMerged && Date.now() - cachedMerged.ts < 5 * 60 * 1000) {
       return res.json({
@@ -6611,8 +6870,9 @@ async function scrapeMovidySeriesCatalog(opts: {
       verifyShowOnMovidy: boolean;
     }[] = [];
 
+    const maxItems = query ? 6 : 18;
     let m: RegExpExecArray | null;
-    while ((m = itemRe.exec(html)) !== null && rawItems.length < 18) {
+    while ((m = itemRe.exec(html)) !== null && rawItems.length < maxItems) {
       const rawHref = String(m[1] || '').trim();
       const rawTitle = String(m[2] || '').trim();
       const rawPoster = String(m[3] || '').trim();
@@ -6660,7 +6920,7 @@ app.get('/api/catalog/series', async (req, res) => {
     const isSpanishCatalog = langParam === 'es-ES';
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const cacheKey = `v5|${langParam}|${provider}|${category}|${page}|${query}`;
+    const cacheKey = `v6|${langParam}|${provider}|${category}|${page}|${query}`;
     const cached = seriesCatalogCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
       return res.json({ success: true, series: cached.series, hasMore: cached.hasMore, page });
@@ -6811,10 +7071,22 @@ app.get('/api/catalog/series', async (req, res) => {
       providerId: provCfg ? provider : undefined,
     });
 
+    const scrapeMovidySeriesFast = () => {
+      if (!isSpanishCatalog || provCfg || isAnime) {
+        return Promise.resolve({ series: [], hasMore: false });
+      }
+      const p = scrapeMovidySeriesCatalog({ category, page, query });
+      if (!query) return p;
+      return Promise.race([
+        p,
+        new Promise<{ series: any[]; hasMore: boolean }>((resolve) =>
+          setTimeout(() => resolve({ series: [], hasMore: false }), 1600)
+        ),
+      ]);
+    };
+
     const [movidySeriesData, curatedAnimeRaw, originalsRes, tRes] = await Promise.all([
-      isSpanishCatalog && !provCfg && !isAnime
-        ? scrapeMovidySeriesCatalog({ category, page, query })
-        : Promise.resolve({ series: [], hasMore: false }),
+      scrapeMovidySeriesFast(),
       curatedAnimeSeedPromise,
       originalsBoostEndpoint
         ? fetch(originalsBoostEndpoint, { signal: AbortSignal.timeout(4500) }).catch(() => null)
@@ -6839,8 +7111,52 @@ app.get('/api/catalog/series', async (req, res) => {
 
     if (tRes.ok) {
       const json: any = await tRes.json();
-      const results: any[] = Array.isArray(json?.results) ? json.results : [];
+      let results: any[] = Array.isArray(json?.results) ? json.results : [];
       totalPages = Number(json?.total_pages || 1);
+
+      if (query && page === 1) {
+        const compactQ = normalizeNoSpaceForSearch(query);
+        const hasStrongExactMatch = results.some(
+          (s) =>
+            (normalizeNoSpaceForSearch(s?.name || '') === compactQ ||
+              normalizeNoSpaceForSearch(s?.original_name || '') === compactQ) &&
+            Number(s?.vote_count || 0) >= 60
+        );
+        if (!hasStrongExactMatch) {
+          const variants = buildSmartConcatQueryVariants(query);
+          if (variants.length > 0) {
+            const extraLists = await Promise.all(
+              variants.map(async (vq) => {
+                try {
+                  const er = await fetch(
+                    `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=${langParam}&query=${encodeURIComponent(
+                      vq
+                    )}&page=1&include_adult=false`,
+                    { signal: AbortSignal.timeout(2800) }
+                  );
+                  if (!er.ok) return [];
+                  const ej: any = await er.json().catch(() => null);
+                  return Array.isArray(ej?.results) ? ej.results : [];
+                } catch {
+                  return [];
+                }
+              })
+            );
+            const flatExtra = extraLists.flat();
+            if (flatExtra.length > 0) {
+              const seenExtra = new Set<number>();
+              const deduped: any[] = [];
+              for (const item of [...results, ...flatExtra]) {
+                if (item?.id && !seenExtra.has(item.id)) {
+                  seenExtra.add(item.id);
+                  deduped.push(item);
+                }
+              }
+              results = rankTmdbSearchResultsForQuery(deduped, query, true);
+            }
+          }
+        }
+      }
 
       tmdbSeries = results
         .filter((s) => {
@@ -10979,9 +11295,16 @@ app.get('/api/extract/stream', async (req, res) => {
       return res.json(formatExtractResponseForClient(req, result));
     }
 
-    // CASE 4: UNIFIED MOVIE & TV SERIES MULTI-ENGINE (MOVIDY ES/LAT/VOSE + EMBED69/SERIESKAO ES/LAT/VOSE + BINGETRIX EN 1080P)
+    // CASE 4: UNIFIED MOVIE & TV SERIES MULTI-ENGINE (MOVIDY ES/LAT/VOSE + EMBED69/SERIESKAO ES/LAT/VOSE + BINGETRIX/2EMBED EN 1080P)
     const bingetrixTvMatch = rawInput.match(/bingetrix\.[a-z]+\/watch\/tv\/(\d+)\/(\d+)\/(\d+)/i);
     const bingetrixMovieMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch|movie)\/(\d+)/i);
+    const externalEmbedTvMatch =
+      rawInput.match(/(?:vidfast|vidlink|vidsrc)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)\/(\d+)/i) ||
+      rawInput.match(/2embed\.[a-z]+\/(?:embedtv|tv)\/(tt\d+|\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i);
+    const externalEmbedMovieMatch =
+      !externalEmbedTvMatch
+        ? rawInput.match(/(?:vidfast|vidlink|vidsrc|2embed)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:movie\/)?(tt\d+|\d+)/i)
+        : null;
     const isMovidyLink =
       rawInput.includes('movidy.pw/ver/') || movidyUrlParam.includes('movidy.pw/ver/');
     const isVestLink = isVestMirrorUrl(rawInput) || isVestMirrorUrl(vestUrlParam);
@@ -10992,6 +11315,8 @@ app.get('/api/extract/stream', async (req, res) => {
       Boolean(tmdbIdParam) ||
       Boolean(bingetrixTvMatch) ||
       Boolean(bingetrixMovieMatch) ||
+      Boolean(externalEmbedTvMatch) ||
+      Boolean(externalEmbedMovieMatch) ||
       isMovidyLink ||
       isVestLink ||
       resolverType === 'bingetrix_en' ||
@@ -10999,19 +11324,50 @@ app.get('/api/extract/stream', async (req, res) => {
 
     if (isCatalogMediaRequest && resolverType !== 'sports_channel') {
       let effectiveMediaType: 'movie' | 'tv' =
-        mediaTypeParam === 'tv' || Boolean(bingetrixTvMatch) ? 'tv' : 'movie';
+        mediaTypeParam === 'tv' || Boolean(bingetrixTvMatch) || Boolean(externalEmbedTvMatch)
+          ? 'tv'
+          : 'movie';
 
       let effectiveSeason = bingetrixTvMatch
         ? parseInt(bingetrixTvMatch[2], 10)
+        : externalEmbedTvMatch
+        ? parseInt(externalEmbedTvMatch[2], 10)
         : seasonParam || 1;
       let effectiveEpisode = bingetrixTvMatch
         ? parseInt(bingetrixTvMatch[3], 10)
+        : externalEmbedTvMatch
+        ? parseInt(externalEmbedTvMatch[3], 10)
         : episodeParam || 1;
 
       let resolvedTmdbId: string | number | null =
         tmdbIdParam ||
         (bingetrixTvMatch ? bingetrixTvMatch[1] : null) ||
-        (bingetrixMovieMatch ? bingetrixMovieMatch[1] : null);
+        (bingetrixMovieMatch ? bingetrixMovieMatch[1] : null) ||
+        (externalEmbedTvMatch ? externalEmbedTvMatch[1] : null) ||
+        (externalEmbedMovieMatch ? externalEmbedMovieMatch[1] : null);
+
+      if (resolvedTmdbId && /^tt\d+$/i.test(String(resolvedTmdbId))) {
+        try {
+          const findRes = await fetch(
+            `https://api.themoviedb.org/3/find/${encodeURIComponent(
+              String(resolvedTmdbId)
+            )}?api_key=${TMDB_API_KEY}&external_source=imdb_id`,
+            { signal: AbortSignal.timeout(3500) }
+          );
+          if (findRes.ok) {
+            const findJson: any = await findRes.json();
+            const hit =
+              effectiveMediaType === 'tv'
+                ? findJson?.tv_results?.[0] || findJson?.movie_results?.[0]
+                : findJson?.movie_results?.[0] || findJson?.tv_results?.[0];
+            if (hit?.id) {
+              resolvedTmdbId = hit.id;
+            }
+          }
+        } catch {
+          // keep original id fallback
+        }
+      }
 
       const hasExplicitMovidyUrl =
         movidyUrlParam.includes('movidy.pw/ver/') || rawInput.includes('movidy.pw/ver/');
@@ -11101,37 +11457,42 @@ app.get('/api/extract/stream', async (req, res) => {
         }
       }
 
-      if (effectiveMediaType === 'movie' && resolvedTmdbId && !hasExplicitMovidyUrl) {
+      let tmdbResolvedTitle = '';
+      if (resolvedTmdbId && (!hasExplicitMovidyUrl || !titleHint)) {
         try {
-          const tmRes = await fetch(
-            `https://api.themoviedb.org/3/movie/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`,
-            { signal: AbortSignal.timeout(3000) }
-          );
+          const tmEndpoint =
+            effectiveMediaType === 'tv'
+              ? `https://api.themoviedb.org/3/tv/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`
+              : `https://api.themoviedb.org/3/movie/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
+          const tmRes = await fetch(tmEndpoint, { signal: AbortSignal.timeout(3000) });
           if (tmRes.ok) {
             const tmJson: any = await tmRes.json();
-            const esTitle = String(tmJson?.title || '').trim();
-            const origTitle = String(tmJson?.original_title || '').trim();
-            tmdbVerifiedYear = String(tmJson?.release_date || '').split('-')[0] || '';
+            const esTitle = String(tmJson?.title || tmJson?.name || '').trim();
+            const origTitle = String(tmJson?.original_title || tmJson?.original_name || '').trim();
+            tmdbResolvedTitle = esTitle || origTitle;
+            tmdbVerifiedYear = String(tmJson?.release_date || tmJson?.first_air_date || '').split('-')[0] || '';
 
-            if (!effectiveMovidyUrl && titleHint) {
-              effectiveMovidyUrl =
-                (await findMovidyUrlByTitle(titleHint, tmdbVerifiedYear)) || '';
-            }
-            if (
-              !effectiveMovidyUrl &&
-              esTitle &&
-              esTitle.toLowerCase() !== titleHint.toLowerCase()
-            ) {
-              effectiveMovidyUrl =
-                (await findMovidyUrlByTitle(esTitle, tmdbVerifiedYear)) || '';
-            }
-            if (
-              !effectiveMovidyUrl &&
-              origTitle &&
-              origTitle.toLowerCase() !== esTitle.toLowerCase()
-            ) {
-              effectiveMovidyUrl =
-                (await findMovidyUrlByTitle(origTitle, tmdbVerifiedYear)) || '';
+            if (effectiveMediaType === 'movie' && !hasExplicitMovidyUrl) {
+              if (!effectiveMovidyUrl && titleHint) {
+                effectiveMovidyUrl =
+                  (await findMovidyUrlByTitle(titleHint, tmdbVerifiedYear)) || '';
+              }
+              if (
+                !effectiveMovidyUrl &&
+                esTitle &&
+                esTitle.toLowerCase() !== titleHint.toLowerCase()
+              ) {
+                effectiveMovidyUrl =
+                  (await findMovidyUrlByTitle(esTitle, tmdbVerifiedYear)) || '';
+              }
+              if (
+                !effectiveMovidyUrl &&
+                origTitle &&
+                origTitle.toLowerCase() !== esTitle.toLowerCase()
+              ) {
+                effectiveMovidyUrl =
+                  (await findMovidyUrlByTitle(origTitle, tmdbVerifiedYear)) || '';
+              }
             }
           }
         } catch {
@@ -11141,7 +11502,7 @@ app.get('/api/extract/stream', async (req, res) => {
         effectiveMovidyUrl = (await findMovidyUrlByTitle(titleHint)) || '';
       }
 
-      const combinedTitleHints = [titleHint, extractedMovidyCleanTitle].filter(Boolean);
+      const combinedTitleHints = [titleHint, extractedMovidyCleanTitle, tmdbResolvedTitle].filter(Boolean);
 
       const shouldQueryVest =
         Boolean(effectiveVestUrl) ||
@@ -11155,7 +11516,7 @@ app.get('/api/extract/stream', async (req, res) => {
           })
         );
 
-      const [movidyTracks, esTracks, enTracks, vestExtracted] = await Promise.all([
+      const [movidyTracks, esTracks, bingetrixEnTracks, twoEmbedEnTracks, vestExtracted] = await Promise.all([
         effectiveMediaType === 'movie' && effectiveMovidyUrl
           ? extractMovidyPageTracks(
               effectiveMovidyUrl,
@@ -11181,6 +11542,14 @@ app.get('/api/extract/stream', async (req, res) => {
               episode: effectiveEpisode,
             })
           : Promise.resolve([]),
+        resolvedTmdbId
+          ? extract2EmbedEnglishTracks({
+              tmdbId: resolvedTmdbId,
+              mediaType: effectiveMediaType,
+              season: effectiveSeason,
+              episode: effectiveEpisode,
+            })
+          : Promise.resolve([]),
         shouldQueryVest
           ? extractVestStreamsAndSubtitles({
               vestUrl: effectiveVestUrl || undefined,
@@ -11196,6 +11565,7 @@ app.get('/api/extract/stream', async (req, res) => {
           : Promise.resolve(null),
       ]);
 
+      const enTracks: TrackRecord[] = [...twoEmbedEnTracks, ...bingetrixEnTracks];
       const vestTracks: TrackRecord[] = vestExtracted?.tracks || [];
       const vestSubtitles = vestExtracted?.subtitles || [];
       const vestDetailMeta = vestExtracted?.detail || extractedVestDetail;
@@ -11309,21 +11679,30 @@ app.get('/api/extract/stream', async (req, res) => {
         }
       }
 
-      // Pass 2: If user explicitly requested Castellano ('ES') and no native ES HLS was available (or no native stream at all),
-      // check if a verified Castellano `web_embed` server (e.g. GnulaHD OK.ru / Byse Castellano) is available before falling back to LAT/EN!
-      if (!primaryStreamUrl || (preferLang === 'ES' && String(resolvedTrack?.lang || '').toUpperCase() !== 'ES')) {
-        const esWebIdx = orderedTracks.findIndex(
-          (t, idx) =>
-            !deadTrackIndices.has(idx) &&
-            t.resolverType === 'web_embed' &&
-            (preferLang === 'ES' ? String(t.lang || '').toUpperCase() === 'ES' : !primaryStreamUrl)
-        );
-        if (esWebIdx !== -1 && !primaryStreamUrl) {
-          const webCand = orderedTracks[esWebIdx];
-          orderedTracks[esWebIdx] = { ...webCand, resolvedStreamUrl: webCand.sourceUrl };
+      // Pass 2: If no native stream resolved yet, check any verified web_embed track (preferring requested language)
+      if (!primaryStreamUrl) {
+        const webIdx =
+          orderedTracks.findIndex(
+            (t, idx) =>
+              !deadTrackIndices.has(idx) &&
+              t.resolverType === 'web_embed' &&
+              String(t.lang || '').toUpperCase() === preferLang
+          ) !== -1
+            ? orderedTracks.findIndex(
+                (t, idx) =>
+                  !deadTrackIndices.has(idx) &&
+                  t.resolverType === 'web_embed' &&
+                  String(t.lang || '').toUpperCase() === preferLang
+              )
+            : orderedTracks.findIndex(
+                (t, idx) => !deadTrackIndices.has(idx) && t.resolverType === 'web_embed'
+              );
+        if (webIdx !== -1) {
+          const webCand = orderedTracks[webIdx];
+          orderedTracks[webIdx] = { ...webCand, resolvedStreamUrl: webCand.sourceUrl };
           primaryStreamUrl = webCand.sourceUrl;
           primaryMode = 'embed';
-          resolvedTrack = orderedTracks[esWebIdx];
+          resolvedTrack = orderedTracks[webIdx];
         }
       }
 
@@ -11340,16 +11719,17 @@ app.get('/api/extract/stream', async (req, res) => {
           (preferLang === 'VOSE' && resolvedLang !== 'VOSE') ||
           (preferLang === 'EN' && resolvedLang !== 'EN');
 
+        const baseCleanTitle = extractedMovidyCleanTitle || tmdbResolvedTitle;
         const displayTitle =
           titleHint ||
-          (extractedMovidyCleanTitle
+          (baseCleanTitle
             ? effectiveMediaType === 'tv'
-              ? `${extractedMovidyCleanTitle} · ${
+              ? `${baseCleanTitle} · ${
                   vestDetailMeta && vestDetailMeta.currentEpisodeNumber > 1 && effectiveSeason === 1
                     ? `Ep. ${vestDetailMeta.currentEpisodeNumber}`
                     : `${effectiveSeason}x${String(effectiveEpisode).padStart(2, '0')}`
                 }`
-              : extractedMovidyCleanTitle
+              : baseCleanTitle
             : 'NAIMCINE HD');
 
         const result: ExtractedStreamResult = {
@@ -11382,15 +11762,15 @@ app.get('/api/extract/stream', async (req, res) => {
       // players so every episode/movie plays immediately without 404 dead ends.
       // ======================================================================
       const fallbackBaseTitle =
-        titleHint || extractedMovidyCleanTitle || '';
+        titleHint || extractedMovidyCleanTitle || tmdbResolvedTitle || '';
       const displayFallbackTitle =
         titleHint ||
-        (extractedMovidyCleanTitle
+        (fallbackBaseTitle
           ? effectiveMediaType === 'tv'
-            ? `${extractedMovidyCleanTitle} · ${effectiveSeason}x${String(
+            ? `${fallbackBaseTitle} · ${effectiveSeason}x${String(
                 effectiveEpisode
               ).padStart(2, '0')}`
-            : extractedMovidyCleanTitle
+            : fallbackBaseTitle
           : 'NAIMCINE HD');
 
       const parseYtSec = (durText: string): number => {
@@ -11555,62 +11935,76 @@ app.get('/api/extract/stream', async (req, res) => {
           effectiveMediaType === 'tv'
             ? [
                 {
-                  id: `embed-vidfast-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 1 · VidFast HD',
-                  url: `https://vidfast.pro/tv/${idStr}/${s}/${e}?autoPlay=true&theme=9146FF`,
+                  id: `embed-vidsrcsh-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 1 · VidSrc HD',
+                  url: `https://vidsrc.sh/embed/tv/${idStr}/${s}/${e}`,
+                  sandboxSafe: true,
                 },
                 {
-                  id: `embed-vidsrccc-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 2 · VidSrc HD',
-                  url: `https://vidsrc.cc/v2/embed/tv/${idStr}/${s}/${e}`,
+                  id: `embed-vidlink-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 2 · Multi-Audio',
+                  url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=9146FF`,
+                  sandboxSafe: true,
                 },
                 {
-                  id: `embed-111movies-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 3 · 111Movies HD',
-                  url: `https://111movies.com/tv/${idStr}/${s}/${e}`,
+                  id: `embed-autoembed-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 3 · AutoEmbed HD',
+                  url: `https://autoembed.me/tv/tmdb/${idStr}-${s}-${e}`,
+                  sandboxSafe: true,
                 },
                 {
                   id: `embed-2embed-${idStr}-${s}-${e}`,
                   label: 'Servidor Web 4 · 2Embed',
                   url: `https://www.2embed.cc/embedtv/${idStr}&s=${s}&e=${e}`,
+                  sandboxSafe: true,
                 },
                 {
-                  id: `embed-vidlink-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 5 · Multi-Audio',
-                  url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=9146FF`,
+                  id: `embed-vidfast-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 5 · VidFast HD',
+                  url: `https://vidfast.vc/tv/${idStr}/${s}/${e}?autoPlay=true&theme=9146FF`,
+                  sandboxSafe: false,
                 },
               ]
             : [
                 {
-                  id: `embed-vidfast-${idStr}`,
-                  label: 'Servidor Web 1 · VidFast HD',
-                  url: `https://vidfast.pro/movie/${idStr}?autoPlay=true&theme=9146FF`,
+                  id: `embed-vidsrcsh-${idStr}`,
+                  label: 'Servidor Web 1 · VidSrc HD',
+                  url: `https://vidsrc.sh/embed/movie/${idStr}`,
+                  sandboxSafe: true,
                 },
                 {
-                  id: `embed-vidsrccc-${idStr}`,
-                  label: 'Servidor Web 2 · VidSrc HD',
-                  url: `https://vidsrc.cc/v2/embed/movie/${idStr}`,
+                  id: `embed-vidlink-${idStr}`,
+                  label: 'Servidor Web 2 · Multi-Audio',
+                  url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=9146FF`,
+                  sandboxSafe: true,
                 },
                 {
-                  id: `embed-111movies-${idStr}`,
-                  label: 'Servidor Web 3 · 111Movies HD',
-                  url: `https://111movies.com/movie/${idStr}`,
+                  id: `embed-autoembed-${idStr}`,
+                  label: 'Servidor Web 3 · AutoEmbed HD',
+                  url: `https://autoembed.me/movie/tmdb/${idStr}`,
+                  sandboxSafe: true,
                 },
                 {
                   id: `embed-2embed-${idStr}`,
                   label: 'Servidor Web 4 · 2Embed',
                   url: `https://www.2embed.cc/embed/${idStr}`,
+                  sandboxSafe: true,
                 },
                 {
-                  id: `embed-vidlink-${idStr}`,
-                  label: 'Servidor Web 5 · Multi-Audio',
-                  url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=9146FF`,
+                  id: `embed-vidfast-${idStr}`,
+                  label: 'Servidor Web 5 · VidFast HD',
+                  url: `https://vidfast.vc/movie/${idStr}?autoPlay=true&theme=9146FF`,
+                  sandboxSafe: false,
                 },
               ];
 
+        // Put sandbox-friendly embeds first inside sandboxed iframes, while still keeping vidfast.vc accessible
         const orderedEntries = isSandboxedFrame
-          ? baseEntries
-          : [baseEntries[0], baseEntries[1], baseEntries[4], baseEntries[2], baseEntries[3]];
+          ? [
+              ...baseEntries.filter((entry) => entry.sandboxSafe),
+              ...baseEntries.filter((entry) => !entry.sandboxSafe),
+            ]
+          : baseEntries;
 
         return orderedEntries.map((entry) => ({
           id: entry.id,
@@ -11731,25 +12125,34 @@ app.get('/api/extract/stream', async (req, res) => {
       // If no raw HLS/MP4 stream was sniffed, check if the external source allows clean iframe embedding;
       // otherwise automatically launch it in the ad-free Cloud Browser so playback never hits a 404 wall!
       let canFrame = false;
-      try {
-        const probeController = new AbortController();
-        const probeTimer = setTimeout(() => probeController.abort(), 3000);
-        const probeRes = await fetch(fullTargetUrl, {
-          headers: { 'User-Agent': CHROME_UA },
-          signal: probeController.signal,
-        });
-        clearTimeout(probeTimer);
-        const xfo = String(probeRes.headers.get('x-frame-options') || '').toLowerCase();
-        const csp = String(probeRes.headers.get('content-security-policy') || '').toLowerCase();
-        probeController.abort();
-        const blockedByXfo = xfo.includes('deny') || xfo.includes('sameorigin');
-        const blockedByCsp =
-          csp.includes('frame-ancestors') &&
-          !csp.includes('frame-ancestors *') &&
-          !csp.includes('frame-ancestors https:');
-        canFrame = probeRes.ok && !blockedByXfo && !blockedByCsp;
-      } catch {
-        canFrame = false;
+      const isSandboxHostileHost = (() => {
+        try {
+          return /(^|\.)vidfast\./i.test(new URL(fullTargetUrl).hostname);
+        } catch {
+          return false;
+        }
+      })();
+      if (!(isSandboxedFrame && isSandboxHostileHost)) {
+        try {
+          const probeController = new AbortController();
+          const probeTimer = setTimeout(() => probeController.abort(), 3000);
+          const probeRes = await fetch(fullTargetUrl, {
+            headers: { 'User-Agent': CHROME_UA },
+            signal: probeController.signal,
+          });
+          clearTimeout(probeTimer);
+          const xfo = String(probeRes.headers.get('x-frame-options') || '').toLowerCase();
+          const csp = String(probeRes.headers.get('content-security-policy') || '').toLowerCase();
+          probeController.abort();
+          const blockedByXfo = xfo.includes('deny') || xfo.includes('sameorigin');
+          const blockedByCsp =
+            csp.includes('frame-ancestors') &&
+            !csp.includes('frame-ancestors *') &&
+            !csp.includes('frame-ancestors https:');
+          canFrame = probeRes.ok && !blockedByXfo && !blockedByCsp;
+        } catch {
+          canFrame = false;
+        }
       }
 
       const extFallbackResult: ExtractedStreamResult = {

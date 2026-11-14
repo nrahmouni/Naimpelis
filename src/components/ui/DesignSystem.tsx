@@ -263,6 +263,7 @@ export interface SegmentedControlProps<T extends string> {
   onChange: (value: T) => void;
   className?: string;
   layoutId?: string;
+  compact?: boolean;
 }
 
 export function SegmentedControl<T extends string>({
@@ -271,13 +272,18 @@ export function SegmentedControl<T extends string>({
   onChange,
   className = '',
   layoutId,
+  compact = false,
 }: SegmentedControlProps<T>) {
   const autoId = useId();
   const pillId = layoutId || `seg-pill-${autoId}`;
 
   return (
     <div
-      className={`w-full min-w-0 p-1 rounded-2xl bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] flex items-center gap-1 overflow-hidden ${className}`}
+      className={`${
+        compact
+          ? 'w-auto inline-flex p-0.5 rounded-xl gap-0.5'
+          : 'w-full min-w-0 p-1 rounded-2xl flex items-center gap-1'
+      } bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] items-center overflow-hidden ${className}`}
     >
       {options.map((option) => {
         const isActive = option.id === value;
@@ -286,24 +292,30 @@ export function SegmentedControl<T extends string>({
             key={option.id}
             type="button"
             onClick={() => onChange(option.id)}
-            className={`relative flex-1 min-w-0 min-h-11 px-1.5 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-colors duration-150 flex items-center justify-center gap-1 sm:gap-1.5 select-none cursor-pointer active:scale-[0.98] ${
-              isActive ? 'text-white' : 'text-zinc-400 hover:text-zinc-100'
-            }`}
+            className={`relative flex items-center justify-center select-none cursor-pointer active:scale-[0.98] transition-colors duration-150 ${
+              compact
+                ? 'flex-none h-7 min-h-7 px-2 py-0.5 rounded-lg text-[11px] font-semibold gap-1'
+                : 'flex-1 min-w-0 min-h-11 px-1.5 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold gap-1 sm:gap-1.5'
+            } ${isActive ? 'text-white' : 'text-zinc-400 hover:text-zinc-100'}`}
           >
             {isActive && (
               <motion.span
                 layoutId={pillId}
                 transition={{ type: 'spring', stiffness: 480, damping: 36 }}
-                className="absolute inset-0 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] shadow-[0_4px_16px_rgba(145,70,255,0.42),inset_0_1px_0_rgba(255,255,255,0.26)]"
+                className={`absolute inset-0 ${
+                  compact ? 'rounded-lg' : 'rounded-xl'
+                } bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] shadow-[0_4px_16px_rgba(145,70,255,0.42),inset_0_1px_0_rgba(255,255,255,0.26)]`}
                 aria-hidden="true"
               />
             )}
-            <span className="relative z-10 flex items-center justify-center gap-1 sm:gap-1.5 min-w-0 max-w-full">
+            <span className="relative z-10 flex items-center justify-center gap-1 min-w-0 max-w-full">
               {option.icon && <span className="shrink-0">{option.icon}</span>}
               <span className="truncate">{option.label}</span>
               {option.badge !== undefined && option.badge !== 0 && option.badge !== '0' && (
                 <span
-                  className={`px-1.5 py-0.5 rounded-full text-[0.65rem] font-mono font-bold leading-none tabular-nums shrink-0 ${
+                  className={`${
+                    compact ? 'px-1 py-0.5 text-[9px]' : 'px-1.5 py-0.5 text-[0.65rem]'
+                  } rounded-full font-mono font-bold leading-none tabular-nums shrink-0 ${
                     isActive ? 'bg-black/30 text-white' : 'bg-white/10 text-zinc-200'
                   }`}
                 >

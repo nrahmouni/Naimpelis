@@ -1187,7 +1187,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     return picked;
   }, [tdtChannels]);
 
-  // Execute Universal Search on Home when user types
+  // Execute Universal Search on Home when user types (non-blocking independent requests + AbortController)
   useEffect(() => {
     if (activeSection !== 'home' || debouncedHomeQuery.length < 2) {
       setHomeMovieResults([]);
@@ -1195,36 +1195,54 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       setLoadingHomeSearch(false);
       return;
     }
-    let cancelled = false;
+
+    const controller = new AbortController();
+    let active = true;
+    let pending = 2;
     setLoadingHomeSearch(true);
 
-    Promise.all([
-      fetch(
-        `/api/catalog/movies?provider=all&category=trending&page=1&query=${encodeURIComponent(
-          debouncedHomeQuery
-        )}`
-      )
-        .then((r) => r.json())
-        .catch(() => ({ movies: [] })),
-      fetch(
-        `/api/catalog/series?provider=all&category=trending&page=1&lang=es&query=${encodeURIComponent(
-          debouncedHomeQuery
-        )}`
-      )
-        .then((r) => r.json())
-        .catch(() => ({ series: [] })),
-    ])
-      .then(([mData, sData]) => {
-        if (cancelled) return;
-        setHomeMovieResults(Array.isArray(mData?.movies) ? mData.movies.slice(0, 10) : []);
-        setHomeSeriesResults(Array.isArray(sData?.series) ? sData.series.slice(0, 10) : []);
+    const markDone = () => {
+      pending -= 1;
+      if (active && pending <= 0) {
+        setLoadingHomeSearch(false);
+      }
+    };
+
+    fetch(
+      `/api/catalog/movies?provider=all&category=trending&page=1&query=${encodeURIComponent(
+        debouncedHomeQuery
+      )}`,
+      { signal: controller.signal }
+    )
+      .then((r) => (r.ok ? r.json() : { movies: [] }))
+      .then((mData) => {
+        if (!active) return;
+        setHomeMovieResults(Array.isArray(mData?.movies) ? mData.movies.slice(0, 12) : []);
       })
-      .finally(() => {
-        if (!cancelled) setLoadingHomeSearch(false);
-      });
+      .catch(() => {
+        if (active && !controller.signal.aborted) setHomeMovieResults([]);
+      })
+      .finally(markDone);
+
+    fetch(
+      `/api/catalog/series?provider=all&category=trending&page=1&lang=es&query=${encodeURIComponent(
+        debouncedHomeQuery
+      )}`,
+      { signal: controller.signal }
+    )
+      .then((r) => (r.ok ? r.json() : { series: [] }))
+      .then((sData) => {
+        if (!active) return;
+        setHomeSeriesResults(Array.isArray(sData?.series) ? sData.series.slice(0, 12) : []);
+      })
+      .catch(() => {
+        if (active && !controller.signal.aborted) setHomeSeriesResults([]);
+      })
+      .finally(markDone);
 
     return () => {
-      cancelled = true;
+      active = false;
+      controller.abort();
     };
   }, [activeSection, debouncedHomeQuery]);
 
@@ -1985,16 +2003,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     if (!debouncedHomeQuery || debouncedHomeQuery.length < 2) return [];
     const norm = (s: string) =>
       s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+    const normCompact = (s: string) => norm(s).replace(/[^a-z0-9]+/g, '');
     const q = norm(debouncedHomeQuery);
+    const qCompact = normCompact(debouncedHomeQuery);
     return tdtChannels
       .filter((ch) => {
         const chEpg = getChannelLiveEpg(ch.id);
+        const hay = `${ch.name} ${ch.shortMark} ${ch.network} ${chEpg?.now?.title || ''} ${chEpg?.next?.title || ''}`;
         return (
-          norm(ch.name).includes(q) ||
-          norm(ch.shortMark).includes(q) ||
-          norm(ch.network).includes(q) ||
-          norm(chEpg?.now?.title || '').includes(q) ||
-          norm(chEpg?.next?.title || '').includes(q)
+          norm(hay).includes(q) ||
+          (qCompact.length >= 2 && normCompact(hay).includes(qCompact))
         );
       })
       .slice(0, 6);
@@ -3495,8 +3513,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           {debouncedHomeQuery.length >= 2 ? (
             <div className="space-y-6">
               {loadingHomeSearch && (
-                <div className="py-8 flex items-center justify-center gap-2 text-sm text-zinc-400">
-                  <Loader2 className="w-5 h-5 animate-spin text-white" />
+                <div
+                  className={`${
+                    homeMovieResults.length > 0 ||
+                    homeSeriesResults.length > 0 ||
+                    homeMatchingChannels.length > 0
+                      ? 'py-2.5 px-3.5 rounded-xl bg-white/[0.03] border border-white/[0.06] inline-flex'
+                      : 'py-8 flex justify-center'
+                  } items-center gap-2 text-xs sm:text-sm text-zinc-400`}
+                >
+                  <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF] shrink-0" />
                   <span>{pickLang(lang, { es: 'Buscando en todo el catálogo...', ca: 'Cercant a tot el catàleg...', en: 'Searching across catalog...' })}</span>
                 </div>
               )}

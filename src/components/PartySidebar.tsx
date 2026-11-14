@@ -32,6 +32,7 @@ import {
   Clock,
   ThumbsUp,
   Plus,
+  ChevronUp,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -116,6 +117,8 @@ interface PartySidebarProps {
   hideInternalTabs?: boolean;
   isKeyboardOpen?: boolean;
   onOpenFloatingChatOnVideo?: () => void;
+  showMenusButton?: boolean;
+  onShowMenus?: () => void;
   savedFriends?: SavedFriend[];
   onlineUsers?: OnlineAppUser[];
   onOpenFriendsModal?: () => void;
@@ -204,6 +207,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   openQueueTrigger,
   hideInternalTabs = false,
   onOpenFloatingChatOnVideo,
+  showMenusButton = false,
+  onShowMenus,
   savedFriends = [],
   onlineUsers = [],
   onOpenFriendsModal,
@@ -228,7 +233,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const [tvCodeInput, setTvCodeInput] = useState('');
   const [customUrlInput, setCustomUrlInput] = useState('');
   const [profileNameDraft, setProfileNameDraft] = useState(currentUser.name);
-  const [showFloatingReactions, setShowFloatingReactions] = useState(true);
+  const [showFloatingReactions, setShowFloatingReactions] = useState(false);
   const [pairedCodeLabel, setPairedCodeLabel] = useState<string | null>(null);
   const [forceShowRemote, setForceShowRemote] = useState(false);
   const [confirmLeave, setConfirmLeave] = useState(false);
@@ -372,75 +377,114 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   return (
     <aside className="w-full h-full flex flex-col bg-[#18181B] border-l border-white/[0.08] select-none overflow-hidden relative">
       {/* ==================================================================== */}
-      {/* FLOATING MINIMALIST SEGMENTED CONTROL HEADER                         */}
+      {/* ULTRA-COMPACT CORNER TABS BAR (LEAVES CHAT OPEN & UNOBSTRUCTED)      */}
       {/* ==================================================================== */}
-      {!hideInternalTabs && (
-        <div className="px-3 pt-2.5 pb-2 border-b border-white/[0.08] flex items-center gap-2 shrink-0 bg-[#18181B]/95 backdrop-blur-xl z-20">
-          <SegmentedControl
-            className="flex-1"
-            value={activeTab}
-            onChange={setActiveTab}
-            options={[
-              {
-                id: 'chat',
-                label: t.tabChat,
-                icon: <MessageSquare className="w-4 h-4 shrink-0" />,
-              },
-              {
-                id: 'queue',
-                label: pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' }),
-                icon: <ListVideo className="w-4 h-4 shrink-0" />,
-                badge: roomQueue.length,
-              },
-              {
-                id: 'room',
-                label: t.tabRoom,
-                icon: <Users className="w-4 h-4 shrink-0" />,
-                badge: participants.length,
-              },
-            ]}
-          />
+      {(!hideInternalTabs || showMenusButton) && (
+        <div className="px-2.5 py-1.5 border-b border-white/[0.06] flex items-center justify-between gap-2 shrink-0 bg-[#18181B]/95 backdrop-blur-xl z-20">
+          <div className="flex items-center gap-1.5 min-w-0">
+            {showMenusButton && onShowMenus ? (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onShowMenus();
+                }}
+                aria-label={pickLang(lang, {
+                  es: 'Mostrar menús',
+                  ca: 'Mostrar menús',
+                  en: 'Show menus',
+                })}
+                className="h-7 px-2 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-semibold text-zinc-100 flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
+              >
+                <ChevronUp className="w-3 h-3 text-[#BF94FF]" />
+                <span>{pickLang(lang, { es: 'Menús', ca: 'Menús', en: 'Menus' })}</span>
+              </button>
+            ) : (
+              <span className="text-[11px] font-semibold text-zinc-400 truncate pl-0.5">
+                {activeTab === 'chat'
+                  ? t.tabChat
+                  : activeTab === 'queue'
+                  ? pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' })
+                  : t.tabRoom}
+              </span>
+            )}
+          </div>
 
-          {onOpenFloatingChatOnVideo && (
-            <IconButton
-              onClick={onOpenFloatingChatOnVideo}
-              variant="glass"
-              title={pickLang(lang, {
-                es: 'Superponer chat flotante sobre el vídeo',
-                ca: 'Superposar xat flotant sobre el vídeo',
-                en: 'Overlay floating chat on video',
-              })}
-              aria-label={pickLang(lang, {
-                es: 'Chat flotante sobre el vídeo',
-                ca: 'Xat flotant sobre el vídeo',
-                en: 'Floating chat over video',
-              })}
-            >
-              <Maximize2 className="w-4 h-4 text-[#BF94FF]" />
-            </IconButton>
-          )}
+          {!hideInternalTabs && (
+          <div className="flex items-center gap-1 shrink-0 ml-auto">
+            <SegmentedControl
+              compact
+              value={activeTab}
+              onChange={setActiveTab}
+              options={[
+                {
+                  id: 'chat',
+                  label: t.tabChat,
+                  icon: <MessageSquare className="w-3 h-3 shrink-0" />,
+                },
+                {
+                  id: 'queue',
+                  label: pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' }),
+                  icon: <ListVideo className="w-3 h-3 shrink-0" />,
+                  badge: roomQueue.length,
+                },
+                {
+                  id: 'room',
+                  label: t.tabRoom,
+                  icon: <Users className="w-3 h-3 shrink-0" />,
+                  badge: participants.length,
+                },
+              ]}
+            />
 
-          {effectiveView === 'desktop' && (
-            <IconButton
-              onClick={onOpenFriendsModal || handleShareInvite}
-              variant={copiedLink ? 'crimson' : 'glass'}
-              title={
-                onOpenFriendsModal
-                  ? pickLang(lang, {
-                      es: 'Amigos e Invitación Directa',
-                      ca: 'Amics i Invitació Directa',
-                      en: 'Friends & Direct Invite',
-                    })
-                  : t.invite
-              }
-              aria-label={t.invite}
-            >
-              {copiedLink ? (
-                <Check className="w-4 h-4 text-white" />
-              ) : (
-                <UserPlus className="w-4 h-4 text-[#BF94FF]" />
-              )}
-            </IconButton>
+            {onOpenFloatingChatOnVideo && (
+              <button
+                type="button"
+                onClick={onOpenFloatingChatOnVideo}
+                title={pickLang(lang, {
+                  es: 'Superponer chat flotante sobre el vídeo',
+                  ca: 'Superposar xat flotant sobre el vídeo',
+                  en: 'Overlay floating chat on video',
+                })}
+                aria-label={pickLang(lang, {
+                  es: 'Chat flotante sobre el vídeo',
+                  ca: 'Xat flotant sobre el vídeo',
+                  en: 'Floating chat over video',
+                })}
+                className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-[#BF94FF] cursor-pointer shrink-0 transition-colors"
+              >
+                <Maximize2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+
+            {effectiveView === 'desktop' && (
+              <button
+                type="button"
+                onClick={onOpenFriendsModal || handleShareInvite}
+                title={
+                  onOpenFriendsModal
+                    ? pickLang(lang, {
+                        es: 'Amigos e Invitación Directa',
+                        ca: 'Amics i Invitació Directa',
+                        en: 'Friends & Direct Invite',
+                      })
+                    : t.invite
+                }
+                aria-label={t.invite}
+                className={`w-7 h-7 rounded-lg border flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
+                  copiedLink
+                    ? 'bg-emerald-500/20 border-emerald-500/40 text-white'
+                    : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-[#BF94FF]'
+                }`}
+              >
+                {copiedLink ? (
+                  <Check className="w-3.5 h-3.5 text-white" />
+                ) : (
+                  <UserPlus className="w-3.5 h-3.5" />
+                )}
+              </button>
+            )}
+          </div>
           )}
         </div>
       )}
@@ -517,7 +561,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           )}
 
           {/* Borderless Chat Stream */}
-          <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-3 custom-scrollbar pb-20">
+          <div
+            className={`flex-1 overflow-y-auto px-3.5 py-2.5 space-y-2.5 custom-scrollbar ${
+              showFloatingReactions ? 'pb-16' : 'pb-3'
+            }`}
+          >
             {messages.length === 0 ? (
               <div className="space-y-3">
                 <EmptyStateCard

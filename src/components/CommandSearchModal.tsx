@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { CornerDownLeft, Film, Search, Sparkles, Trophy, Tv, X } from 'lucide-react';
+import { CornerDownLeft, Film, Loader2, Search, Sparkles, Trophy, Tv, X } from 'lucide-react';
 import type { AppLanguage, CatalogMovie, SpanishTdtChannel } from '../types';
 import { pickLang } from '../utils/i18n';
 import { BottomSheet, StandardInput } from './ui/DesignSystem';
@@ -64,50 +64,137 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
     }
   };
 
-  const normQuery = query
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
+  const [remoteMovies, setRemoteMovies] = useState<CatalogMovie[]>([]);
+  const [remoteSeries, setRemoteSeries] = useState<CatalogMovie[]>([]);
+  const [loadingRemote, setLoadingRemote] = useState(false);
+
+  useEffect(() => {
+    const clean = query.trim();
+    if (!isOpen || clean.length < 2 || /^https?:\/\//i.test(clean)) {
+      setRemoteMovies([]);
+      setRemoteSeries([]);
+      setLoadingRemote(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    setLoadingRemote(true);
+
+    const timer = window.setTimeout(() => {
+      let pending = 2;
+      const doneOne = () => {
+        pending -= 1;
+        if (active && pending <= 0) {
+          setLoadingRemote(false);
+        }
+      };
+
+      fetch(
+        `/api/catalog/movies?provider=all&category=trending&page=1&query=${encodeURIComponent(clean)}`,
+        { signal: controller.signal }
+      )
+        .then((r) => (r.ok ? r.json() : { movies: [] }))
+        .then((data) => {
+          if (!active) return;
+          setRemoteMovies(Array.isArray(data?.movies) ? data.movies.slice(0, 8) : []);
+        })
+        .catch(() => {
+          if (active && !controller.signal.aborted) setRemoteMovies([]);
+        })
+        .finally(doneOne);
+
+      fetch(
+        `/api/catalog/series?provider=all&category=trending&page=1&lang=${lang === 'en' ? 'en' : 'es'}&query=${encodeURIComponent(clean)}`,
+        { signal: controller.signal }
+      )
+        .then((r) => (r.ok ? r.json() : { series: [] }))
+        .then((data) => {
+          if (!active) return;
+          setRemoteSeries(Array.isArray(data?.series) ? data.series.slice(0, 8) : []);
+        })
+        .catch(() => {
+          if (active && !controller.signal.aborted) setRemoteSeries([]);
+        })
+        .finally(doneOne);
+    }, 180);
+
+    return () => {
+      active = false;
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [isOpen, query, lang]);
+
+  const normText = (s: string) =>
+    s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  const normCompact = (s: string) => normText(s).replace(/[^a-z0-9]+/g, '');
+
+  const normQuery = normText(query).trim();
+  const compactQuery = normCompact(query);
 
   const matchedMovies = useMemo(() => {
     if (!normQuery) return movies.slice(0, 6);
-    return movies
-      .filter((m) =>
-        m.title
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .includes(normQuery)
-      )
-      .slice(0, 8);
-  }, [movies, normQuery]);
+    const localHits = movies.filter((m) => {
+      const t = normText(m.title);
+      const orig = normText(m.originalTitle || '');
+      return (
+        t.includes(normQuery) ||
+        orig.includes(normQuery) ||
+        (compactQuery.length >= 2 &&
+          (normCompact(m.title).includes(compactQuery) ||
+            normCompact(m.originalTitle || '').includes(compactQuery)))
+      );
+    });
+    const merged: CatalogMovie[] = [];
+    const seen = new Set<string>();
+    for (const item of [...remoteMovies, ...localHits]) {
+      const key = item.tmdbId ? `tmdb-${item.tmdbId}` : `id-${item.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+      if (merged.length >= 8) break;
+    }
+    return merged;
+  }, [movies, remoteMovies, normQuery, compactQuery]);
 
   const matchedSeries = useMemo(() => {
     if (!normQuery) return series.slice(0, 6);
-    return series
-      .filter((s) =>
-        s.title
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .includes(normQuery)
-      )
-      .slice(0, 8);
-  }, [series, normQuery]);
+    const localHits = series.filter((s) => {
+      const t = normText(s.title);
+      const orig = normText(s.originalTitle || '');
+      return (
+        t.includes(normQuery) ||
+        orig.includes(normQuery) ||
+        (compactQuery.length >= 2 &&
+          (normCompact(s.title).includes(compactQuery) ||
+            normCompact(s.originalTitle || '').includes(compactQuery)))
+      );
+    });
+    const merged: CatalogMovie[] = [];
+    const seen = new Set<string>();
+    for (const item of [...remoteSeries, ...localHits]) {
+      const key = item.tmdbId ? `tmdb-${item.tmdbId}` : `id-${item.id}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(item);
+      if (merged.length >= 8) break;
+    }
+    return merged;
+  }, [series, remoteSeries, normQuery, compactQuery]);
 
   const matchedChannels = useMemo(() => {
     if (!normQuery) return tdtChannels.slice(0, 4);
     return tdtChannels
-      .filter((c) =>
-        `${c.name} ${c.network}`
-          .toLowerCase()
-          .normalize('NFD')
-          .replace(/[\u0300-\u036f]/g, '')
-          .includes(normQuery)
-      )
+      .filter((c) => {
+        const hay = `${c.name} ${c.network} ${c.shortMark}`;
+        return (
+          normText(hay).includes(normQuery) ||
+          (compactQuery.length >= 2 && normCompact(hay).includes(compactQuery))
+        );
+      })
       .slice(0, 6);
-  }, [tdtChannels, normQuery]);
+  }, [tdtChannels, normQuery, compactQuery]);
 
   const flatActions = useMemo<FlatSearchAction[]>(() => {
     const list: FlatSearchAction[] = [];
@@ -227,7 +314,20 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
           </div>
         )}
 
-        {flatActions.length === 0 ? (
+        {loadingRemote && (
+          <div className="px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center gap-2 text-xs text-zinc-300">
+            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#BF94FF] shrink-0" />
+            <span>
+              {pickLang(lang, {
+                es: 'Buscando en todo el catálogo...',
+                ca: 'Cercant a tot el catàleg...',
+                en: 'Searching full catalog...',
+              })}
+            </span>
+          </div>
+        )}
+
+        {!loadingRemote && flatActions.length === 0 ? (
           <div className="py-10 text-center space-y-2 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
             <Sparkles className="w-6 h-6 text-[#BF94FF] mx-auto" />
             <p className="text-sm font-semibold text-white">
@@ -245,7 +345,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
               })}
             </p>
           </div>
-        ) : (
+        ) : flatActions.length > 0 ? (
           <div className="space-y-4">
             {matchedMovies.length > 0 && (
               <section className="space-y-2">
@@ -417,7 +517,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
               </section>
             )}
           </div>
-        )}
+        ) : null}
       </div>
     </BottomSheet>
   );

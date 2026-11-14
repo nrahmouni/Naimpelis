@@ -4143,97 +4143,133 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* ================================================================== */}
         {/* UNIVERSAL WEB EMBED STAGE (MULTI-SERVER FALLBACK PLAYER)           */}
         {/* ================================================================== */}
-        {videoState.mode === 'embed' && videoState.url && (
-          <div className="relative w-full h-full bg-black">
-            <iframe
-              key={videoState.url}
-              src={videoState.url}
-              title={videoState.title || 'Reproductor Web HD'}
-              allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write; web-share"
-              allowFullScreen
-              referrerPolicy="no-referrer-when-downgrade"
-              className="w-full h-full border-0 bg-black"
-            />
+        {videoState.mode === 'embed' && videoState.url && (() => {
+          const activeTrackUrl =
+            videoState.tracks[videoState.activeTrackIndex]?.sourceUrl || videoState.url;
+          const externalVidfastHref = (() => {
+            const candidates = [
+              activeTrackUrl,
+              videoState.rawSourceUrl,
+              videoState.url,
+              ...videoState.tracks.map((tr) => tr.sourceUrl),
+            ].filter(Boolean);
 
-            {!isMinimized && embedRescueDismissedUrl !== videoState.url && (
-              <div className="absolute bottom-2.5 right-2.5 left-2.5 sm:left-auto z-20 flex flex-wrap items-center justify-end gap-1.5 pointer-events-none">
-                <div className="pointer-events-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#111116]/90 backdrop-blur-md border border-white/15 shadow-xl text-[11px] text-zinc-200 max-w-full overflow-x-auto no-scrollbar">
-                  <span className="text-zinc-400 whitespace-nowrap hidden sm:inline">
-                    {pickLang(lang, {
-                      es: '¿Sandbox o pantalla negra?',
-                      ca: 'Sandbox o pantalla negra?',
-                      en: 'Sandbox or black screen?',
-                    })}
-                  </span>
+            for (const c of candidates) {
+              if (/vidfast\.[a-z.]+/i.test(c)) {
+                return c.replace(/vidfast\.[a-z.]+/i, 'vidfast.vc');
+              }
+            }
+            if (videoState.seriesMeta?.tmdbId) {
+              return `https://vidfast.vc/tv/${videoState.seriesMeta.tmdbId}/${
+                videoState.seriesMeta.season || 1
+              }/${videoState.seriesMeta.episode || 1}?autoPlay=true&theme=9146FF`;
+            }
+            for (const c of candidates) {
+              const tvM =
+                c.match(/(?:bingetrix|vidsrc|vidlink|autoembed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?tv\/(?:tmdb\/)?(\d+)[/-](\d+)[/-](\d+)/i) ||
+                c.match(/2embed\.[a-z.]+\/(?:embedtv|tv)\/(\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i);
+              if (tvM) {
+                return `https://vidfast.vc/tv/${tvM[1]}/${tvM[2]}/${tvM[3]}?autoPlay=true&theme=9146FF`;
+              }
+              const movM = c.match(
+                /(?:bingetrix|vidsrc|vidlink|autoembed|2embed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?(?:movie\/)?(?:tmdb\/)?(\d+)/i
+              );
+              if (movM) {
+                return `https://vidfast.vc/movie/${movM[1]}?autoPlay=true&theme=9146FF`;
+              }
+            }
+            return activeTrackUrl;
+          })();
 
-                  {videoState.tracks.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        const nextIdx =
-                          (videoState.activeTrackIndex + 1) % videoState.tracks.length;
-                        onSelectTrack(nextIdx, currentTime);
-                      }}
-                      className="min-h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
-                    >
+          return (
+            <div className="relative w-full h-full bg-black">
+              <iframe
+                key={videoState.url}
+                src={videoState.url}
+                title={videoState.title || 'Reproductor Web HD'}
+                allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write; web-share"
+                allowFullScreen
+                referrerPolicy="no-referrer-when-downgrade"
+                className="w-full h-full border-0 bg-black"
+              />
+
+              {!isMinimized && embedRescueDismissedUrl !== videoState.url && (
+                <div className="absolute bottom-2.5 right-2.5 left-2.5 sm:left-auto z-20 flex flex-wrap items-center justify-end gap-1.5 pointer-events-none">
+                  <div className="pointer-events-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#111116]/90 backdrop-blur-md border border-white/15 shadow-xl text-[11px] text-zinc-200 max-w-full overflow-x-auto no-scrollbar">
+                    <span className="text-zinc-400 whitespace-nowrap hidden sm:inline">
                       {pickLang(lang, {
-                        es: 'Otro servidor',
-                        ca: 'Un altre servidor',
-                        en: 'Next server',
-                      })}
-                    </button>
-                  )}
-
-                  <a
-                    href={videoState.url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="min-h-7 px-2.5 rounded-lg bg-white/[0.1] hover:bg-white/[0.18] text-white font-semibold flex items-center gap-1 whitespace-nowrap shrink-0 transition-colors"
-                  >
-                    <ExternalLink className="w-3 h-3 shrink-0" />
-                    <span>
-                      {pickLang(lang, {
-                        es: 'Sin sandbox',
-                        ca: 'Sense sandbox',
-                        en: 'Open clean',
+                        es: '¿Pantalla negra o lento?',
+                        ca: 'Pantalla negra o lent?',
+                        en: 'Black screen or slow?',
                       })}
                     </span>
-                  </a>
 
-                  {onOpenInCloudBrowser && (
+                    {videoState.tracks.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          const nextIdx =
+                            (videoState.activeTrackIndex + 1) % videoState.tracks.length;
+                          onSelectTrack(nextIdx, currentTime);
+                        }}
+                        className="min-h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
+                      >
+                        {pickLang(lang, {
+                          es: 'Otro servidor',
+                          ca: 'Un altre servidor',
+                          en: 'Next server',
+                        })}
+                      </button>
+                    )}
+
+                    {onOpenInCloudBrowser && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('medium');
+                          onOpenInCloudBrowser(activeTrackUrl);
+                        }}
+                        className="min-h-7 px-2.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
+                      >
+                        Cloud HD
+                      </button>
+                    )}
+
+                    <a
+                      href={externalVidfastHref}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-7 px-2.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-100 font-semibold whitespace-nowrap inline-flex items-center gap-1 shrink-0 transition-colors"
+                    >
+                      <ExternalLink className="w-3 h-3" />
+                      <span>
+                        {pickLang(lang, {
+                          es: 'Sin sandbox',
+                          ca: 'Sense sandbox',
+                          en: 'Open vidfast',
+                        })}
+                      </span>
+                    </a>
+
                     <button
                       type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        onOpenInCloudBrowser(
-                          videoState.tracks[videoState.activeTrackIndex]?.sourceUrl ||
-                            videoState.url
-                        );
-                      }}
-                      className="min-h-7 px-2.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
+                      onClick={() => setEmbedRescueDismissedUrl(videoState.url)}
+                      aria-label={pickLang(lang, {
+                        es: 'Ocultar aviso',
+                        ca: 'Amagar avís',
+                        en: 'Dismiss notice',
+                      })}
+                      className="w-7 h-7 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
                     >
-                      Cloud HD
+                      <X className="w-3.5 h-3.5" />
                     </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setEmbedRescueDismissedUrl(videoState.url)}
-                    aria-label={pickLang(lang, {
-                      es: 'Ocultar aviso',
-                      ca: 'Amagar avís',
-                      en: 'Dismiss notice',
-                    })}
-                    className="w-7 h-7 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
+                  </div>
                 </div>
-              </div>
-            )}
-          </div>
-        )}
+              )}
+            </div>
+          );
+        })()}
 
         {/* ================================================================== */}
         {/* ISOLATED SERVER-SIDE CLOUD BROWSER                                 */}
@@ -4330,6 +4366,45 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   onClick={handleCloudCanvasClick}
                   className="w-full h-full object-contain cursor-pointer"
                 />
+              ) : cloudState && !cloudState.isLoading ? (
+                <div className="relative w-full h-full bg-black">
+                  <iframe
+                    key={cloudState.url || videoState.url}
+                    src={cloudState.url || videoState.url}
+                    title={cloudState.title || 'Reproductor Web HD'}
+                    allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write; web-share"
+                    allowFullScreen
+                    referrerPolicy="no-referrer-when-downgrade"
+                    className="w-full h-full border-0 bg-black"
+                  />
+                  <div className="absolute bottom-2.5 right-2.5 z-20 flex items-center gap-1.5">
+                    {cloudState.detectedStreamUrl && (
+                      <button
+                        type="button"
+                        onClick={() => onPromoteCloudStreamToNative(cloudState.detectedStreamUrl!)}
+                        className="min-h-8 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white inline-flex items-center gap-1.5 shadow-xl cursor-pointer"
+                      >
+                        <Sparkles className="w-3.5 h-3.5" />
+                        <span>{t.switchNativeHd}</span>
+                      </button>
+                    )}
+                    <a
+                      href={cloudState.url || videoState.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="min-h-8 px-3 rounded-xl bg-[#111116]/90 hover:bg-white/20 border border-white/15 text-xs font-semibold text-white inline-flex items-center gap-1.5 shadow-xl"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>
+                        {pickLang(lang, {
+                          es: 'Sin sandbox',
+                          ca: 'Sense sandbox',
+                          en: 'Open directly',
+                        })}
+                      </span>
+                    </a>
+                  </div>
+                </div>
               ) : (
                 <div className="flex flex-col items-center gap-2 text-zinc-400 p-4 text-center">
                   <Loader2 className="w-7 h-7 animate-spin text-[#9146FF]" />
