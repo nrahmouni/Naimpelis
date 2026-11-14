@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import type { User } from 'firebase/auth';
 import {
   Send,
   Users,
@@ -28,6 +29,8 @@ import {
   UserCheck,
   UserPlus,
   Clock,
+  ThumbsUp,
+  Plus,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -38,7 +41,9 @@ import {
   TvRemoteCommandType,
   SavedFriend,
   OnlineAppUser,
+  RoomRole,
 } from '../types';
+import type { TypingUserPayload } from '../shared/protocol';
 import { UI_COPY } from '../utils/i18n';
 import { buildShortInviteUrl } from '../utils/shortLink';
 import { deriveFriendCode } from '../utils/storage';
@@ -67,7 +72,7 @@ interface PartySidebarProps {
   lang: AppLanguage;
   effectiveView: EffectiveViewMode;
   onToggleViewMode: () => void;
-  authUser?: any;
+  authUser?: User | null;
   authLoading?: boolean;
   onSignIn?: () => void;
   onSignOut?: () => void;
@@ -92,6 +97,10 @@ interface PartySidebarProps {
   onPlayQueueItem: (item: RoomQueueItem) => void;
   onRemoveFromQueue: (id: string) => void;
   onPromoteQueueItem?: (id: string) => void;
+  onVoteQueueItem?: (id: string) => void;
+  onSetParticipantRole?: (userId: string, role: RoomRole) => void;
+  typingUsers?: TypingUserPayload[];
+  onTypingChange?: (isTyping: boolean) => void;
   activeMediaTitle?: string;
   currentVideoTimeSec?: number;
   onSeekToTimestamp?: (seconds: number) => void;
@@ -125,6 +134,7 @@ interface PartySidebarProps {
   onSendReaction: (emoji: string) => void;
   onTransferHost: (newHostId: string) => void;
   onUpdateProfile: (nextName: string, nextAvatar: string, nextColor: string) => void;
+  onCreateNewRoom?: (customRoomName?: string) => void;
   onLeaveRoom: () => void;
 }
 
@@ -176,6 +186,10 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   onPlayQueueItem,
   onRemoveFromQueue,
   onPromoteQueueItem,
+  onVoteQueueItem,
+  onSetParticipantRole,
+  typingUsers = [],
+  onTypingChange,
   activeMediaTitle = '',
   currentVideoTimeSec = 0,
   onSeekToTimestamp,
@@ -198,6 +212,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   onSendReaction,
   onTransferHost,
   onUpdateProfile,
+  onCreateNewRoom,
   onLeaveRoom,
 }) => {
   const t = UI_COPY[lang];
@@ -206,6 +221,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const [inputText, setInputText] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [roomNameDraft, setRoomNameDraft] = useState(roomName);
+  const [newRoomNameDraft, setNewRoomNameDraft] = useState('');
   const [pinDraft, setPinDraft] = useState(currentHostPin || '');
   const [tvCodeInput, setTvCodeInput] = useState('');
   const [customUrlInput, setCustomUrlInput] = useState('');
@@ -250,6 +266,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
     if (!inputText.trim()) return;
     onSendMessage(inputText.trim());
     setInputText('');
+    onTypingChange?.(false);
   };
 
   const inviteUrl = buildShortInviteUrl(roomId, false);
@@ -465,13 +482,41 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           )}
 
           {/* Borderless Chat Stream */}
-          <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-3 custom-scrollbar pb-16">
+          <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-3 custom-scrollbar pb-20">
             {messages.length === 0 ? (
-              <EmptyStateCard
-                icon={<MessageSquare className="w-6 h-6" />}
-                title={lang === 'es' ? 'El chat está tranquilo' : 'Chat is quiet'}
-                description="Saluda al grupo o lanza una reacción en vivo mientras veis la sala."
-              />
+              <div className="space-y-3">
+                <EmptyStateCard
+                  icon={<MessageSquare className="w-6 h-6" />}
+                  title={lang === 'ca' ? 'El xat està tranquil' : lang === 'es' ? 'El chat está tranquilo' : 'Chat is quiet'}
+                  description={
+                    lang === 'ca'
+                      ? 'Saluda el grup o envia una reacció en directe.'
+                      : lang === 'es'
+                        ? 'Saluda al grupo o lanza una reacción en vivo mientras veis la sala.'
+                        : 'Say hi to your room or send a live reaction.'
+                  }
+                />
+                <div className="flex flex-wrap items-center justify-center gap-1.5 px-2">
+                  {[
+                    '👋 ¡Hola a todos!',
+                    '🍿 ¡Empezamos!',
+                    '🔥 ¡Qué pasada!',
+                    '⏸️ Un segundo porfa',
+                  ].map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        onSendMessage(chip);
+                      }}
+                      className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-[#E11D48]/25 border border-white/10 text-xs font-medium text-zinc-200 cursor-pointer transition-colors"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
+              </div>
             ) : (
               messages.map((msg) => {
                 if (msg.isSystem) {
@@ -553,14 +598,14 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
           {/* FLOATING REACTION PILL (Hovering above the chat input) */}
           {showFloatingReactions && (
-            <div className="absolute left-3 right-3 bottom-17 z-20 flex justify-center pointer-events-none animate-fade-in">
-              <div className="pointer-events-auto inline-flex items-center gap-1 px-2.5 py-1.5 rounded-full bg-[#0E0F16]/90 backdrop-blur-2xl border border-white/[0.12] shadow-[0_12px_32px_rgba(0,0,0,0.75)] max-w-full overflow-x-auto no-scrollbar">
+            <div className="absolute inset-x-2 bottom-17 z-20 flex justify-center pointer-events-none animate-fade-in">
+              <div className="pointer-events-auto inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-[#0E0F16]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_12px_32px_rgba(0,0,0,0.75)] max-w-full overflow-x-auto no-scrollbar">
                 {QUICK_REACTIONS.map((emoji) => (
                   <button
                     key={emoji}
                     type="button"
                     onClick={() => onSendReaction(emoji)}
-                    className="w-9 h-9 rounded-full hover:bg-white/[0.12] active:scale-125 transition-all flex items-center justify-center text-base shrink-0 cursor-pointer"
+                    className="w-8 h-8 rounded-full hover:bg-white/[0.12] active:scale-125 transition-all flex items-center justify-center text-base shrink-0 cursor-pointer"
                     title={`Enviar ${emoji}`}
                   >
                     {emoji}
@@ -569,13 +614,24 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowFloatingReactions(false)}
-                  className="w-7 h-7 rounded-full hover:bg-white/10 text-zinc-500 hover:text-zinc-300 flex items-center justify-center shrink-0 cursor-pointer ml-0.5"
+                  className="w-7 h-7 rounded-full hover:bg-white/15 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer ml-0.5 sticky right-0 bg-[#0E0F16]/90"
                   title="Ocultar barra de emojis"
                   aria-label="Ocultar emojis"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Typing indicator above input */}
+          {typingUsers.filter((u) => u.userId !== currentUser.id).length > 0 && (
+            <div className="px-3.5 py-1 text-[11px] text-zinc-400 bg-[#0B0B10]/85 border-t border-white/[0.04] truncate">
+              {typingUsers
+                .filter((u) => u.userId !== currentUser.id)
+                .map((u) => u.userName)
+                .join(', ')}{' '}
+              {lang === 'en' ? 'is typing...' : lang === 'ca' ? 'està escrivint...' : 'está escribiendo...'}
             </div>
           )}
 
@@ -620,7 +676,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             <StandardInput
               type="text"
               value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setInputText(val);
+                onTypingChange?.(val.trim().length > 0);
+              }}
               placeholder={t.chatPlaceholder}
               rightElement={
                 <button
@@ -670,9 +730,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {roomQueue.length === 0 ? (
             <EmptyStateCard
               icon={<ListVideo className="w-6 h-6" />}
-              title={lang === 'es' ? 'La cola está vacía' : 'Queue is empty'}
+              title={lang === 'ca' ? 'La cua és buida' : lang === 'es' ? 'La cola está vacía' : 'Queue is empty'}
               description="Añade películas, episodios o vídeos desde el catálogo con el botón + Cola, o abre un enlace directo."
-              actionLabel="Pegar Enlace / Cloud Browser"
+              actionLabel="Pegar enlace o abrir web"
               onAction={() => setShowUrlLoaderSheet(true)}
             />
           ) : (
@@ -713,6 +773,24 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
                   {(!hostOnlyControl || isHost) && (
                     <div className="flex items-center gap-1.5 shrink-0">
+                      {onVoteQueueItem && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            onVoteQueueItem(item.id);
+                          }}
+                          title="Votar este título en la cola"
+                          className={`min-h-9 px-2.5 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
+                            item.voterIds?.includes(currentUser.id)
+                              ? 'bg-[#E11D48]/25 border border-[#E11D48]/50 text-[#FB7185]'
+                              : 'bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300'
+                          }`}
+                        >
+                          <ThumbsUp className="w-3 h-3" />
+                          <span>{item.voterIds?.length || 0}</span>
+                        </button>
+                      )}
                       {idx > 0 && onPromoteQueueItem && (
                         <button
                           type="button"
@@ -786,7 +864,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             </div>
 
             <div className="grid grid-cols-2 gap-2.5">
-              <SecondaryButton onClick={handleShareInvite} fullWidth>
+              <SecondaryButton onClick={handleShareInvite} fullWidth className="whitespace-nowrap">
                 {copiedLink ? (
                   <>
                     <Check className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -795,7 +873,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 ) : (
                   <>
                     <Share2 className="w-4 h-4 text-[#FB7185] shrink-0" />
-                    <span>Compartir enlace</span>
+                    <span>Compartir</span>
                   </>
                 )}
               </SecondaryButton>
@@ -804,9 +882,10 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 onClick={() => setShowTvRemoteSheet(true)}
                 active={hasConnectedSmartTv}
                 fullWidth
+                className="whitespace-nowrap"
               >
                 <Tv className="w-4 h-4 text-[#E11D48] shrink-0" />
-                <span>{hasConnectedSmartTv ? 'Mando TV Activo' : 'Mando TV'}</span>
+                <span>{hasConnectedSmartTv ? 'TV Activa' : 'Mando TV'}</span>
               </SecondaryButton>
             </div>
           </div>
@@ -926,14 +1005,33 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                           <span>{t.hostLabel}</span>
                         </span>
                       ) : isHost ? (
-                        <button
-                          type="button"
-                          onClick={() => onTransferHost(p.id)}
-                          className="min-h-9 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-semibold text-zinc-300 cursor-pointer"
-                          title={t.makeHost}
-                        >
-                          {t.makeHost}
-                        </button>
+                        <div className="flex items-center gap-1">
+                          {onSetParticipantRole && !isTvDevice && (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                onSetParticipantRole(p.id, p.role === 'mod' ? 'viewer' : 'mod')
+                              }
+                              className={`min-h-9 px-2.5 rounded-xl border text-[11px] font-semibold cursor-pointer ${
+                                p.role === 'mod'
+                                  ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
+                                  : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.08] text-zinc-300'
+                              }`}
+                              title="Alternar rol de Moderador"
+                            >
+                              <Shield className="w-3 h-3 inline mr-1" />
+                              {p.role === 'mod' ? 'Mod' : 'Viewer'}
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => onTransferHost(p.id)}
+                            className="min-h-9 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-semibold text-zinc-300 cursor-pointer"
+                            title={t.makeHost}
+                          >
+                            {t.makeHost}
+                          </button>
+                        </div>
                       ) : null}
                     </div>
                   </div>
@@ -1053,7 +1151,26 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             )}
           </div>
 
-          <div className="pt-2">
+          <div className="pt-2 space-y-2.5">
+            {onCreateNewRoom && (
+              <SecondaryButton
+                onClick={() => {
+                  triggerHaptic('medium');
+                  onCreateNewRoom();
+                }}
+                fullWidth
+              >
+                <Plus className="w-4 h-4 text-[#FB7185] shrink-0" />
+                <span>
+                  {lang === 'es'
+                    ? 'Crear nueva sala'
+                    : lang === 'ca'
+                    ? 'Crear nova sala'
+                    : 'Create new room'}
+                </span>
+              </SecondaryButton>
+            )}
+
             <SecondaryButton
               onClick={() => {
                 triggerHaptic('medium');
@@ -1087,8 +1204,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       <BottomSheet
         isOpen={showUrlLoaderSheet}
         onClose={() => setShowUrlLoaderSheet(false)}
-        title="Enlace Directo o Cloud Browser"
-        subtitle="Reproduce archivos .m3u8 / .mp4 o navega sin anuncios"
+        title="Enlace directo o navegador web"
+        subtitle="Reproduce archivos de vídeo directos o abre cualquier web de forma segura"
         icon={<Link2 className="w-5 h-5" />}
       >
         <div className="space-y-3">
@@ -1395,7 +1512,53 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           </div>
         )}
 
-        {/* 4. View Mode Switcher */}
+        {/* 4. Create New Room */}
+        {onCreateNewRoom && (
+          <div className="space-y-2 pt-2 border-t border-white/[0.07]">
+            <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
+              <Plus className="w-3.5 h-3.5 text-[#E11D48]" />
+              <span>
+                {lang === 'es'
+                  ? 'Crear nueva sala'
+                  : lang === 'ca'
+                  ? 'Crear nova sala'
+                  : 'Create new room'}
+              </span>
+            </label>
+            <div className="flex items-center gap-2">
+              <StandardInput
+                type="text"
+                value={newRoomNameDraft}
+                onChange={(e) => setNewRoomNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onCreateNewRoom(newRoomNameDraft.trim() || undefined);
+                    setNewRoomNameDraft('');
+                    setShowRoomSettingsSheet(false);
+                  }
+                }}
+                placeholder={
+                  lang === 'es'
+                    ? 'Nombre opcional (ej. Noche de Cine)'
+                    : 'Optional name (e.g. Movie Night)'
+                }
+              />
+              <PrimaryButton
+                onClick={() => {
+                  onCreateNewRoom(newRoomNameDraft.trim() || undefined);
+                  setNewRoomNameDraft('');
+                  setShowRoomSettingsSheet(false);
+                }}
+              >
+                <Plus className="w-4 h-4" />
+                <span>{lang === 'es' ? 'Crear' : 'Create'}</span>
+              </PrimaryButton>
+            </div>
+          </div>
+        )}
+
+        {/* 5. View Mode Switcher */}
         <div className="pt-2 border-t border-white/[0.07] flex items-center justify-between">
           <span className="text-xs text-zinc-400">Formato de pantalla</span>
           <ViewModeSwitchButton

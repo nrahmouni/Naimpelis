@@ -5,6 +5,7 @@ import http2 from 'http2';
 import zlib from 'zlib';
 import { execFile, spawn } from 'child_process';
 import express from 'express';
+import compression from 'compression';
 import { createServer } from 'http';
 import { Readable } from 'stream';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -12,6 +13,32 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import puppeteer, { type Browser, type Page } from 'puppeteer';
 import ffmpegStatic from 'ffmpeg-static';
+import { ENV } from './server/config/env.ts';
+import { logger } from './server/utils/logger.ts';
+import {
+  applyPublicCacheHeaders,
+  expressErrorHandler,
+  securityHeadersMiddleware,
+} from './server/middleware/errorHandler.ts';
+import { registerOperationalRoutes } from './server/routes/health.ts';
+import {
+  assignParticipantRole,
+  canUserControlRoom,
+  pruneJoinCooldownCache,
+  selectNextHostOnLeave,
+  shouldEmitJoinSystemMessage,
+  toggleQueueItemVote,
+} from './server/services/roomSync.ts';
+import {
+  fetchTmdbTitleLogo,
+  resolveLocalizedTmdbTitle,
+} from './server/services/tmdbService.ts';
+import {
+  doFootballTeamNamesMatch,
+  fetchFotmobDayIndex,
+  fetchRealFootballMatchDetails,
+  getRegionLabelFromCcode,
+} from './server/services/footballLiveService.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -29,7 +56,7 @@ const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg')
 
 const CHROME_UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
-const TMDB_API_KEY = '90b2cae8d7161e8ba0f3836240d7d352';
+const TMDB_API_KEY = ENV.tmdbApiKey;
 
 const AD_DOMAIN_PATTERNS = [
   'doubleclick',
@@ -161,8 +188,8 @@ function getPublicOrigin(req: express.Request): string {
   const rawHost = String(req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000')
     .split(',')[0]
     .trim();
-  if (/^ais-dev-/i.test(rawHost)) {
-    return 'https://naimcine.ai.studio';
+  if (ENV.publicDomain && /^ais-dev-/i.test(rawHost)) {
+    return `https://${ENV.publicDomain}`;
   }
   const proto =
     rawHost.endsWith('.run.app') || rawHost.endsWith('.ai.studio') ? 'https' : rawProto;
@@ -809,6 +836,31 @@ async function extractAnimeAv1Tracks(opts: {
   episode?: number;
 }): Promise<TrackRecord[]> {
   try {
+    const CANONICAL_ANIME_SLUG_MAP: Record<string, string> = {
+      'attack on titan': 'shingeki-no-kyojin',
+      'ataque a los titanes': 'shingeki-no-kyojin',
+      'shingeki no kyojin': 'shingeki-no-kyojin',
+      'fullmetal alchemist brotherhood': 'fullmetal-alchemist-brotherhood',
+      'fullmetal alchemist': 'fullmetal-alchemist-brotherhood',
+      'hunter x hunter': 'hunter-x-hunter-2011',
+      'hunter × hunter': 'hunter-x-hunter-2011',
+      'death note': 'death-note',
+      'one piece': 'one-piece',
+      'jujutsu kaisen': 'jujutsu-kaisen',
+      'demon slayer': 'kimetsu-no-yaiba',
+      'kimetsu no yaiba': 'kimetsu-no-yaiba',
+      'guardianes de la noche': 'kimetsu-no-yaiba',
+      'steins gate': 'steinsgate',
+      'steinsgate': 'steinsgate',
+      'vinland saga': 'vinland-saga',
+      'berserk': 'berserk',
+      'los siete pecados capitales': 'nanatsu-no-taizai',
+      'los 7 pecados capitales': 'nanatsu-no-taizai',
+      'nanatsu no taizai': 'nanatsu-no-taizai',
+      'the seven deadly sins': 'nanatsu-no-taizai',
+      'solo leveling': 'solo-leveling',
+    };
+
     const rawHints = Array.from(
       new Set(
         opts.titleHints
@@ -816,7 +868,10 @@ async function extractAnimeAv1Tracks(opts: {
             const clean = String(raw || '').replace(/\s*\([^)]*\)/g, '').trim();
             const beforeColon = clean.includes(':') ? clean.split(':')[0].trim() : '';
             const afterColon = clean.includes(':') ? clean.split(':').slice(1).join(' ').trim() : '';
-            return [clean, beforeColon, afterColon];
+            const beforeSemi = clean.includes(';') ? clean.split(';')[0].trim() : '';
+            const afterSemi = clean.includes(';') ? clean.split(';').slice(1).join(' ').trim() : '';
+            const noSemi = clean.replace(/;/g, ' ').trim();
+            return [clean, noSemi, beforeColon, afterColon, beforeSemi, afterSemi];
           })
           .filter((s) => s.length >= 2 && !/[\u3040-\u30ff\u4e00-\u9faf]/.test(s))
       )
@@ -836,6 +891,13 @@ async function extractAnimeAv1Tracks(opts: {
         .map((h) => normalizeTitleForMatch(h))
         .filter((nh) => nh.length >= 2);
       if (normHints.length === 0) return [];
+
+      for (const nh of normHints) {
+        if (CANONICAL_ANIME_SLUG_MAP[nh]) {
+          matchedSlug = CANONICAL_ANIME_SLUG_MAP[nh];
+          break;
+        }
+      }
 
       for (const q of rawHints.slice(0, 3)) {
         try {
@@ -871,15 +933,22 @@ async function extractAnimeAv1Tracks(opts: {
             if (!normCand || normCand.length < 2) continue;
 
             let baseScore = 0;
+            const slugNoHyphen = slugLower.replace(/-/g, '');
             for (const nh of normHints) {
-              if (normCand === nh || slugLower === nh.replace(/\s+/g, '-')) {
+              const nhNoSpace = nh.replace(/\s+/g, '');
+              if (
+                normCand === nh ||
+                slugLower === nh.replace(/\s+/g, '-') ||
+                (nhNoSpace.length >= 4 && slugNoHyphen === nhNoSpace)
+              ) {
                 baseScore = Math.max(baseScore, 100);
               } else if (
-                nh.length >= 5 &&
+                nh.length >= 4 &&
                 (normCand.startsWith(`${nh} `) ||
-                  slugLower.startsWith(`${nh.replace(/\s+/g, '-')}-`))
+                  slugLower.startsWith(`${nh.replace(/\s+/g, '-')}-`) ||
+                  slugNoHyphen.startsWith(nhNoSpace))
               ) {
-                baseScore = Math.max(baseScore, 84);
+                baseScore = Math.max(baseScore, 86);
               }
             }
             if (baseScore < 80) continue;
@@ -987,6 +1056,20 @@ async function extractAnimeAv1Tracks(opts: {
           }
         } catch {
           // fallback below
+        }
+      }
+
+      if (found.length === 0) {
+        const vidhideMatch = blockStr.match(/https?:\/\/(?:ryderjet\.com|vidhide[a-z0-9.-]*)\/(?:embed\/|v\/|d\/)([a-zA-Z0-9_-]+)/i);
+        if (vidhideMatch?.[0]) {
+          found.push({
+            id: `anime-vidhide-${matchedSlug}-${epNum}-${langCode.toLowerCase()}`,
+            label: `${langLabel} · VidHide 1080p`,
+            lang: langCode,
+            quality: '1080p HLS',
+            sourceUrl: vidhideMatch[0],
+            resolverType: 'vidhide_hls',
+          });
         }
       }
 
@@ -2841,8 +2924,15 @@ async function sniffStreamWithHeadless(
 // EXPRESS + WEBSOCKET SERVER INITIALIZATION
 // ============================================================================
 const app = express();
+app.disable('x-powered-by');
 const httpServer = createServer(app);
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: {
+    zlibDeflateOptions: { level: 6 },
+    threshold: 1024,
+  },
+});
 
 httpServer.on('upgrade', (req, socket, head) => {
   const pathname = (req.url || '').split('?')[0];
@@ -2853,24 +2943,25 @@ httpServer.on('upgrade', (req, socket, head) => {
   }
 });
 
-app.use(express.json());
+app.use(compression());
+app.use(securityHeadersMiddleware);
+app.use(express.json({ limit: '1mb' }));
 
 // Serve ES5 UMD Hls.js locally for Samsung Tizen / LG webOS Smart TVs (zero external CDN dependency)
 app.get('/vendor/hls.min.js', (_req, res) => {
   const hlsPath = path.resolve(__dirname, 'node_modules', 'hls.js', 'dist', 'hls.min.js');
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=86400');
+  applyPublicCacheHeaders(res, 86400, 86400);
   res.sendFile(hlsPath);
 });
 
-// Digital Asset Links for Android Trusted Web Activity (100% fullscreen native APK without URL bar)
-app.get('/.well-known/assetlinks.json', (_req, res) => {
-  const pubPath = path.resolve(__dirname, 'public', '.well-known', 'assetlinks.json');
-  const distPath = path.resolve(__dirname, 'dist', '.well-known', 'assetlinks.json');
-  const target = fs.existsSync(pubPath) ? pubPath : distPath;
-  res.setHeader('Content-Type', 'application/json; charset=utf-8');
-  res.setHeader('Cache-Control', 'public, max-age=3600');
-  res.sendFile(target);
+registerOperationalRoutes(app, {
+  getStats: () => ({
+    roomsCount: rooms.size,
+    connectedClientsCount: clients.size,
+    uptimeSec: Math.round(process.uptime()),
+  }),
+  getPublicOrigin,
 });
 
 // Direct Ready-to-Install Signed Android APK Download (Mobile & Google TV / Chromecast)
@@ -2959,11 +3050,11 @@ interface RoomRecord {
     currentTime: number;
     isPlaying: boolean;
     isLive: boolean;
-    tracks: any[];
+    tracks: TrackRecord[];
     activeTrackIndex: number;
-    seriesMeta?: any;
+    seriesMeta?: Record<string, unknown>;
     lastUpdated: number;
-  updatedBy?: string;
+    updatedBy?: string;
   };
   pinCode?: string;
   hostOnlyControl: boolean;
@@ -2977,20 +3068,37 @@ interface RoomRecord {
     winnerOptionId?: string;
     options: {
       id: string;
-      item: any;
+      item: Record<string, unknown>;
       voterIds: string[];
     }[];
   } | null;
-  queue: any[];
+  queue: Array<{
+    id: string;
+    title: string;
+    voterIds?: string[];
+    voteCount?: number;
+    [key: string]: unknown;
+  }>;
   participants: {
     id: string;
     name: string;
     avatar: string;
     color: string;
     isHost: boolean;
+    role?: 'host' | 'mod' | 'viewer';
     joinedAt: number;
   }[];
-  messages: any[];
+  messages: Array<{
+    id: string;
+    senderId: string;
+    senderName: string;
+    senderAvatar: string;
+    senderColor: string;
+    text: string;
+    timestamp: number;
+    isSystem?: boolean;
+    systemType?: 'join' | 'leave' | 'video_change' | 'host_transfer' | 'host_change' | 'poll' | 'lock';
+  }>;
   lastTvRemoteCommand?: {
     seq: number;
     command: string;
@@ -3099,6 +3207,18 @@ function schedulePersistRoomsToDisk() {
 }
 
 loadPersistedRoomsFromDisk();
+
+function cleanupInactiveRooms() {
+  const now = Date.now();
+  const maxInactiveMs = 24 * 60 * 60 * 1000;
+  for (const [id, r] of rooms.entries()) {
+    if ((!r.participants || r.participants.length === 0) && (now - (r.createdAt || 0) > maxInactiveMs)) {
+      rooms.delete(id);
+    }
+  }
+  pruneJoinCooldownCache(now);
+}
+setInterval(cleanupInactiveRooms, 15 * 60 * 1000).unref();
 
 function generateTvPairingCode(): string {
   const now = Date.now();
@@ -3350,7 +3470,7 @@ function finalizeRoomPoll(roomId: string, expectedPollId: string) {
       : 'Votación finalizada',
     timestamp: Date.now(),
     isSystem: true,
-    systemType: 'poll',
+    systemType: 'poll' as const,
   };
   room.messages.push(sysMsg);
   if (room.messages.length > 150) room.messages.shift();
@@ -3381,8 +3501,8 @@ function getOrCreateRoom(roomId: string, roomName?: string): { room: RoomRecord;
       mode: 'idle',
       url: '',
       rawSourceUrl: '',
-      title: 'NAIMCINE · Elige película, serie, partido o YouTube',
-      subtitle: 'Reproducción nativa HLS sincronizada sin anuncios',
+      title: 'NAIM CINE · Elige película, serie, partido o YouTube',
+      subtitle: 'Reproducción HD sincronizada sin anuncios',
       currentTime: 0,
       isPlaying: false,
       isLive: false,
@@ -3396,10 +3516,10 @@ function getOrCreateRoom(roomId: string, roomName?: string): { room: RoomRecord;
       {
         id: `sys-welcome-${Date.now()}`,
         senderId: 'system',
-        senderName: 'NAIMCINE',
+        senderName: 'NAIM CINE',
         senderAvatar: '🎬',
         senderColor: '#e11d48',
-        text: 'Bienvenido a NAIMCINE. Elige cualquier película (Español o Bingetrix EN), serie, fútbol en vivo o YouTube para ver juntos sin anuncios.',
+        text: 'Bienvenido a NAIM CINE. Elige cualquier película en Español o VO, serie, fútbol en vivo o vídeo para ver juntos sin anuncios.',
         timestamp: Date.now(),
         isSystem: true,
       },
@@ -3555,10 +3675,16 @@ wss.on('connection', (ws) => {
 
       if (type === 'PING') {
         const currentMeta = clients.get(ws);
+        const now = Date.now();
         if (currentMeta) {
-          currentMeta.lastSeen = Date.now();
+          currentMeta.lastSeen = now;
         }
-        ws.send(JSON.stringify({ type: 'PONG', payload: { clientTs: payload?.clientTs || Date.now() } }));
+        ws.send(
+          JSON.stringify({
+            type: 'PONG',
+            payload: { clientTs: payload?.clientTs || now, serverTs: now },
+          })
+        );
         return;
       }
 
@@ -3699,6 +3825,7 @@ wss.on('connection', (ws) => {
 
         const isHost = room.hostId === userId;
         const alreadyInRoom = room.participants.some((p) => p.id === userId);
+        const existingMember = room.participants.find((p) => p.id === userId);
         room.participants = room.participants.filter((p) => p.id !== userId);
 
         room.participants.push({
@@ -3707,7 +3834,8 @@ wss.on('connection', (ws) => {
           avatar: userAvatar,
           color: userColor,
           isHost,
-          joinedAt: Date.now(),
+          role: isHost ? 'host' : existingMember?.role || 'viewer',
+          joinedAt: existingMember?.joinedAt || Date.now(),
         });
 
         const friendCode = deriveServerFriendCode(userId);
@@ -3726,17 +3854,25 @@ wss.on('connection', (ws) => {
         scheduleBroadcastOnlineUsers();
 
         let joinMsg = null;
-        if (!alreadyInRoom) {
+        if (
+          shouldEmitJoinSystemMessage({
+            roomId,
+            userId,
+            userName,
+            alreadyInRoom,
+            existingMessages: room.messages,
+          })
+        ) {
           joinMsg = {
             id: `join-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             senderId: 'system',
-            senderName: 'NAIMCINE',
+            senderName: 'NAIM CINE',
             senderAvatar: userAvatar,
             senderColor: '#10b981',
             text: `${userName} se ha unido a la sala`,
             timestamp: Date.now(),
             isSystem: true,
-            systemType: 'join',
+            systemType: 'join' as const,
           };
           room.messages.push(joinMsg);
           if (room.messages.length > 150) room.messages.shift();
@@ -3747,7 +3883,7 @@ wss.on('connection', (ws) => {
         ws.send(
           JSON.stringify({
             type: 'ROOM_STATE',
-            payload: serializeRoomForClient(room),
+            payload: { ...serializeRoomForClient(room), serverTime: Date.now() },
           })
         );
 
@@ -3770,10 +3906,12 @@ wss.on('connection', (ws) => {
 
         const senderMeta = clients.get(ws);
         if (
-          room.hostOnlyControl &&
-          room.hostId &&
-          senderMeta?.userId &&
-          senderMeta.userId !== room.hostId
+          !canUserControlRoom({
+            hostOnlyControl: room.hostOnlyControl,
+            hostId: room.hostId,
+            userId: senderMeta?.userId,
+            participants: room.participants,
+          })
         ) {
           const hostMember = room.participants.find((p) => p.id === room.hostId);
           ws.send(
@@ -3810,7 +3948,7 @@ wss.on('connection', (ws) => {
             text: `${updatedBy || 'Un amigo'} puso "${room.videoState.title}"`,
             timestamp: Date.now(),
             isSystem: true,
-            systemType: 'video_change',
+            systemType: 'video_change' as const,
           };
           room.messages.push(sysMsg);
           if (room.messages.length > 150) room.messages.shift();
@@ -3876,6 +4014,41 @@ wss.on('connection', (ws) => {
           type: 'QUEUE_UPDATED',
           payload: { queue: room.queue },
         });
+      } else if (type === 'QUEUE_VOTE') {
+        const { roomId, itemId, userId } = payload || {};
+        const room = rooms.get(roomId);
+        const senderMeta = clients.get(ws);
+        const voterId = senderMeta?.userId || userId;
+        if (!room || !itemId || !voterId) return;
+        room.queue = toggleQueueItemVote(room.queue, itemId, String(voterId));
+        schedulePersistRoomsToDisk();
+        broadcastToRoom(roomId, {
+          type: 'QUEUE_UPDATED',
+          payload: { queue: room.queue },
+        });
+      } else if (type === 'SET_PARTICIPANT_ROLE') {
+        const { roomId, targetUserId, role } = payload || {};
+        const room = rooms.get(roomId);
+        const senderMeta = clients.get(ws);
+        if (!room || !senderMeta?.userId || senderMeta.userId !== room.hostId) return;
+        if (!targetUserId || (role !== 'mod' && role !== 'viewer' && role !== 'host')) return;
+        room.participants = assignParticipantRole(room.participants as never, targetUserId, role);
+        broadcastToRoom(roomId, {
+          type: 'PARTICIPANTS_UPDATED',
+          payload: { participants: room.participants, hostId: room.hostId },
+        });
+      } else if (type === 'TYPING_STATE') {
+        const { roomId, userId, userName, isTyping } = payload || {};
+        const room = rooms.get(roomId);
+        if (!room || !userId) return;
+        broadcastToRoom(
+          roomId,
+          {
+            type: 'TYPING_UPDATED',
+            payload: { userId, userName, isTyping: Boolean(isTyping) },
+          },
+          ws
+        );
       } else if (type === 'SEND_CHAT') {
         const { roomId, text, user } = payload || {};
         const room = rooms.get(roomId);
@@ -3931,7 +4104,7 @@ wss.on('connection', (ws) => {
           text: `${target?.name || 'Un participante'} es ahora el anfitrión`,
           timestamp: Date.now(),
           isSystem: true,
-          systemType: 'host_change',
+          systemType: 'host_change' as const,
         };
         room.messages.push(sysMsg);
 
@@ -3997,8 +4170,8 @@ wss.on('connection', (ws) => {
           mode: 'cloud',
           url,
           rawSourceUrl: url,
-          title: `Cloud Browser · ${url}`,
-          subtitle: 'Navegador aislado en servidor sin ventanas emergentes',
+          title: `Navegador remoto · ${url}`,
+          subtitle: 'Sesión web aislada sin ventanas emergentes',
           currentTime: 0,
           isPlaying: true,
           isLive: true,
@@ -4059,7 +4232,7 @@ wss.on('connection', (ws) => {
             : `${senderMeta.userName || 'El anfitrión'} permitió control compartido en la sala`,
           timestamp: Date.now(),
           isSystem: true,
-          systemType: 'lock',
+          systemType: 'lock' as const,
         };
         room.messages.push(sysMsg);
         if (room.messages.length > 150) room.messages.shift();
@@ -4110,7 +4283,7 @@ wss.on('connection', (ws) => {
           text: `${room.activePoll.createdBy} inició una votación en vivo (${clampedSec}s)`,
           timestamp: now,
           isSystem: true,
-          systemType: 'poll',
+          systemType: 'poll' as const,
         };
         room.messages.push(sysMsg);
         if (room.messages.length > 150) room.messages.shift();
@@ -4187,7 +4360,7 @@ wss.on('connection', (ws) => {
             : `${senderMeta.userName || 'El anfitrión'} quitó el PIN de la sala (acceso libre con enlace)`,
           timestamp: Date.now(),
           isSystem: true,
-          systemType: 'lock',
+          systemType: 'lock' as const,
         };
         room.messages.push(sysMsg);
         if (room.messages.length > 150) room.messages.shift();
@@ -4465,20 +4638,25 @@ wss.on('connection', (ws) => {
     }
 
     if (room.hostId === meta.userId) {
-      room.hostId = room.participants[0].id;
-      room.participants[0].isHost = true;
+      const nextHost = selectNextHostOnLeave(room.participants as never, meta.userId);
+      if (nextHost) {
+        room.hostId = nextHost.id;
+        room.participants.forEach((p) => {
+          p.isHost = p.id === nextHost.id;
+        });
+      }
     }
 
     const leaveMsg = {
       id: `leave-${Date.now()}`,
       senderId: 'system',
-      senderName: 'NAIMCINE',
+      senderName: 'NAIM CINE',
       senderAvatar: '👋',
       senderColor: '#71717a',
       text: `${meta.userName || 'Un participante'} salió de la sala`,
       timestamp: Date.now(),
       isSystem: true,
-      systemType: 'leave',
+      systemType: 'leave' as const,
     };
     room.messages.push(leaveMsg);
     schedulePersistRoomsToDisk();
@@ -4495,8 +4673,9 @@ wss.on('connection', (ws) => {
 });
 
 // ============================================================================
-// REST API: IMAGE, HLS MANIFEST & MPEG-TS SEGMENT STREAMING PROXIES
+// REST API: IMAGE, STREAMING MANIFEST & MPEG-TS SEGMENT STREAMING PROXIES
 // ============================================================================
+
 app.get('/api/img-proxy', async (req, res) => {
   const rawUrl = String(req.query.url || '');
   if (!rawUrl) return res.status(400).end();
@@ -5502,14 +5681,94 @@ const ANIME_PROVIDER_IDS = new Set([
   'animeflv',
 ]);
 
+// Top Legendary Masterpiece Anime Requested by User (always authentic & rich in Castellano / Latino / VOSE 1080p)
+const USER_MASTERPIECE_ANIME_TV_IDS = [
+  1429,   // Attack on Titan (Ataque a los Titanes / Shingeki no Kyojin)
+  127532, // Solo Leveling
+  95479,  // Jujutsu Kaisen
+  85937,  // Demon Slayer (Kimetsu no Yaiba: Guardianes de la Noche)
+  31911,  // Fullmetal Alchemist: Brotherhood
+  46298,  // Hunter × Hunter (2011)
+  13916,  // Death Note
+  37854,  // One Piece
+  42509,  // Steins;Gate
+  88803,  // Vinland Saga
+  35935,  // Berserk: La Historia de la Espada Feroz (1997)
+  66053,  // Berserk (2016)
+  62104,  // Los siete pecados capitales (The Seven Deadly Sins / Nanatsu no Taizai)
+];
+
+function matchMasterpieceAnimeIds(rawQuery: string): number[] {
+  const norm = String(rawQuery || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  if (!norm) return [];
+
+  if (
+    /^(attack on titan|ataque a los titanes|shingeki|shingeki no kyojin|aot|titanes?)$/i.test(norm) ||
+    /\b(attack on titan|ataque a los titanes|shingeki no kyojin)\b/i.test(norm)
+  ) {
+    return [1429];
+  }
+  if (
+    /^(fullmetal|fullmetal alchemist|brotherhood|fma|alchemist|full metal)$/i.test(norm) ||
+    /\b(fullmetal|full metal alchemist)\b/i.test(norm)
+  ) {
+    return [31911];
+  }
+  if (
+    /^(hunter x hunter|hunter|hunterxhunter|hxh|cazador x)$/i.test(norm) ||
+    /\b(hunter x hunter|hunterxhunter)\b/i.test(norm)
+  ) {
+    return [46298, 45952];
+  }
+  if (/^(death note|deathnote|shinigami|light yagami)$/i.test(norm) || /\b(death note)\b/i.test(norm)) {
+    return [13916];
+  }
+  if (/^(one piece|onepiece|luffy|straw hat)$/i.test(norm) || /\b(one piece)\b/i.test(norm)) {
+    return [37854];
+  }
+  if (/^(jujutsu|jujutsu kaisen|jjk|sukuna|gojo)$/i.test(norm) || /\b(jujutsu kaisen)\b/i.test(norm)) {
+    return [95479];
+  }
+  if (
+    /^(demon slayer|kimetsu|kimetsu no yaiba|guardianes de la noche|tanjiro)$/i.test(norm) ||
+    /\b(demon slayer|kimetsu no yaiba|guardianes de la noche)\b/i.test(norm)
+  ) {
+    return [85937];
+  }
+  if (/^(steins gate|steinsgate|steins|okabe)$/i.test(norm) || /\b(steins gate|steinsgate)\b/i.test(norm)) {
+    return [42509];
+  }
+  if (/^(vinland|vinland saga|thorfinn)$/i.test(norm) || /\b(vinland saga)\b/i.test(norm)) {
+    return [88803];
+  }
+  if (/^(berserk|berserk 1997|berserk 2016|guts)$/i.test(norm) || /\b(berserk)\b/i.test(norm)) {
+    return [35935, 66053];
+  }
+  if (
+    /^(los 7 pecados capitales|7 pecados capitales|los 7 pecados|7 pecados|los siete pecados capitales|siete pecados capitales|los siete pecados|nanatsu no taizai|nanatsu|seven deadly sins|meliodas)$/i.test(norm) ||
+    /\b(7 pecados|siete pecados|nanatsu no taizai|seven deadly sins)\b/i.test(norm)
+  ) {
+    return [62104];
+  }
+  if (/^(solo leveling|sololeveling|sung jinwoo|jinwoo)$/i.test(norm) || /\b(solo leveling)\b/i.test(norm)) {
+    return [127532];
+  }
+  return [];
+}
+
 // Selecta Visión / AnimeBox Spain flagship TV & Movie TMDB IDs (always authentic & rich in Castellano/VOSE)
 const ANIMEBOX_CURATED_TV_IDS = [
+  ...USER_MASTERPIECE_ANIME_TV_IDS,
   12971, // Dragon Ball Z
   12609, // Dragon Ball
   62715, // Dragon Ball Super
   46260, // Naruto
   31910, // Naruto Shippuden
-  1429, // Attack on Titan (Shingeki no Kyojin)
   203737, // Oshi no Ko
   46261, // Fairy Tail
   60863, // Haikyu!!
@@ -5855,8 +6114,8 @@ async function fetchTmdbMovieCatalog(opts: {
         (isAnime
           ? 'Película de anime disponible en Español, Latino y VOSE (Japonés Sub Español) en 1080p.'
           : isEn
-          ? 'Available in 1080p Original English ad-free HLS streaming.'
-          : 'Disponible en reproducción directa HLS sin anuncios (Castellano, Latino y VO Inglés 1080p).'),
+          ? 'Available in 1080p Original English ad-free streaming.'
+          : 'Disponible en reproducción directa HD sin anuncios (Castellano, Latino y VO Inglés 1080p).'),
       poster: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : '',
       backdrop: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : '',
       bingetrixUrl: `https://bingetrix.sc/watch/${m.id}`,
@@ -6250,8 +6509,21 @@ app.get('/api/catalog/series', async (req, res) => {
     };
 
     if (query) {
+      const matchedMasterpieceIds = matchMasterpieceAnimeIds(query);
+      if (matchedMasterpieceIds.length > 0) {
+        curatedAnimeSeedPromise = fetchTmdbItemsByIds(matchedMasterpieceIds, 'tv', langParam);
+      }
       endpoint = `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=${langParam}&query=${encodeURIComponent(query)}&page=${page}&include_adult=false`;
     } else if (isAnime) {
+      if (page === 1 && (category === 'trending' || category === 'popular' || category === 'shonen')) {
+        curatedAnimeSeedPromise = fetchTmdbItemsByIds(
+          provider === 'animebox'
+            ? [...USER_MASTERPIECE_ANIME_TV_IDS, ...ANIMEBOX_CURATED_TV_IDS]
+            : USER_MASTERPIECE_ANIME_TV_IDS,
+          'tv',
+          langParam
+        );
+      }
       const animeGenreStr = ANIME_SERIES_GENRES[category] || '16';
       const isSimulcastMode =
         category === 'simulcast' || (provider === 'jkanime' && category === 'trending');
@@ -6281,13 +6553,6 @@ app.get('/api/catalog/series', async (req, res) => {
           )}&with_genres=16&with_origin_country=JP&sort_by=popularity.desc&vote_count.gte=25&page=1&include_adult=false`;
         }
       } else if (provider === 'animebox') {
-        if (page === 1 && (category === 'trending' || category === 'popular')) {
-          curatedAnimeSeedPromise = fetchTmdbItemsByIds(
-            ANIMEBOX_CURATED_TV_IDS,
-            'tv',
-            langParam
-          );
-        }
         // Check Spain AnimeBox provider 2735 on page 1 boost + Japanese Anime in Spain
         if (page === 1) {
           originalsBoostEndpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&watch_region=ES&with_watch_providers=2735&with_watch_monetization_types=${encodeURIComponent(
@@ -7061,9 +7326,9 @@ async function fetchLiveSportsAgendaFeeds(): Promise<{
                 const timeMatch = rawTime.match(/(\d{1,2}:\d{2})/);
                 const timeStr = timeMatch ? timeMatch[1] : 'EN VIVO';
 
-                const key = `sxhd-${matchTitle}`;
+                const key = `sxhd-${leagueName}-${timeStr}-${matchTitle}`;
                 liveGrouped.set(key, {
-                  id: `live-${Buffer.from(key).toString('base64url').slice(0, 14)}`,
+                  id: `live-${crypto.createHash('sha1').update(key).digest('base64url').slice(0, 16)}`,
                   title: matchTitle,
                   homeTeam,
                   awayTeam,
@@ -7129,7 +7394,7 @@ async function fetchLiveSportsAgendaFeeds(): Promise<{
 
           if (!liveGrouped.has(key)) {
             liveGrouped.set(key, {
-              id: `live-${Buffer.from(key).toString('base64url').slice(0, 14)}`,
+              id: `live-${crypto.createHash('sha1').update(key).digest('base64url').slice(0, 16)}`,
               title: matchTitle,
               competition: compPrefix || 'Agenda en Directo',
               sport: detectSportKind(`${compPrefix} ${matchTitle}`),
@@ -10945,12 +11210,18 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
       )
     );
 
-    const primaryTitle =
-      data.title || data.name || data.original_title || data.original_name || 'Título';
+    const localizedTitleData = await resolveLocalizedTmdbTitle({
+      tmdbId: Number(cleanId),
+      mediaType,
+      currentTitle: data.title || data.name || '',
+      originalTitle: data.original_title || data.original_name || '',
+      lang: langParam,
+    });
+    const primaryTitle = localizedTitleData.title || titleHint || 'Título';
     const originalTitle = data.original_title || data.original_name || '';
     const tmdbYear = String(data.release_date || data.first_air_date || '').split('-')[0] || '';
 
-    const [allVideosResolved, availableLanguages] = await Promise.all([
+    const [allVideosResolved, availableLanguages, titleLogoUrl] = await Promise.all([
       (async () => {
         let vids: any[] = Array.isArray(data?.videos?.results) ? data.videos.results : [];
         if (vids.length === 0 && langParam !== 'en-US') {
@@ -10974,6 +11245,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         movidyUrl: movidyUrlHint || undefined,
         yearHint: tmdbYear || undefined,
       }),
+      fetchTmdbTitleLogo(Number(cleanId), mediaType, req.query.lang === 'en' ? 'en' : 'es'),
     ]);
 
     const ytVideos = allVideosResolved.filter((v) => v && v.site === 'YouTube' && v.key);
@@ -11020,9 +11292,10 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         .map((g: any) => g?.name)
         .filter(Boolean)
         .slice(0, 4),
-      overview: data.overview || '',
+      overview: localizedTitleData.overview || data.overview || '',
       poster: data.poster_path ? `https://image.tmdb.org/t/p/w500${data.poster_path}` : '',
       backdrop: data.backdrop_path ? `https://image.tmdb.org/t/p/w1280${data.backdrop_path}` : '',
+      logoUrl: titleLogoUrl || undefined,
       trailerKey: officialTrailer?.key || undefined,
       directorOrCreator: director,
       cast: rawCast.slice(0, 10).map((c) => ({
@@ -11748,17 +12021,18 @@ app.get('/api/sports/football-board', async (req, res) => {
     .format(new Date())
     .replace(/-/g, '');
   const dateKey = requestedDate.length === 8 ? requestedDate : madridToday;
+  const isToday = dateKey === madridToday;
+  const cacheTtlMs = isToday ? 18 * 1000 : 2 * 60 * 1000;
 
   if (
     cachedFootballBoard &&
     cachedFootballBoard.dateKey === dateKey &&
-    Date.now() - cachedFootballBoard.ts < 35 * 1000
+    Date.now() - cachedFootballBoard.ts < cacheTtlMs
   ) {
     return res.json({ success: true, dateKey, matches: cachedFootballBoard.matches });
   }
 
   try {
-    const isToday = dateKey === madridToday;
     const madridTimeFmt = new Intl.DateTimeFormat('es-ES', {
       timeZone: 'Europe/Madrid',
       hour: '2-digit',
@@ -11766,10 +12040,11 @@ app.get('/api/sports/football-board', async (req, res) => {
       hour12: false,
     });
 
-    const [liveFeeds, ...responses] = await Promise.all([
+    const [liveFeeds, fotmobMatches, ...responses] = await Promise.all([
       isToday
         ? fetchLiveSportsAgendaFeeds()
         : Promise.resolve({ rojaMatches: [], streamXhdFootball: [] }),
+      fetchFotmobDayIndex(dateKey).catch(() => []),
       ...SOCCER_BOARD_LEAGUES.map((league) =>
         fetch(
           `https://site.api.espn.com/apis/site/v2/sports/soccer/${league.slug}/scoreboard?dates=${dateKey}&lang=es&region=es`,
@@ -11784,6 +12059,16 @@ app.get('/api/sports/football-board', async (req, res) => {
     const scrapedMatches = liveFeeds.rojaMatches;
     const items: any[] = [];
     const seenEventIds = new Set<string>();
+    const matchedFotmobIds = new Set<string>();
+
+    const findFotmobMatch = (homeName: string, awayName: string) =>
+      fotmobMatches.find(
+        (fm) =>
+          (doFootballTeamNamesMatch(homeName, fm.homeName) &&
+            doFootballTeamNamesMatch(awayName, fm.awayName)) ||
+          (doFootballTeamNamesMatch(homeName, fm.awayName) &&
+            doFootballTeamNamesMatch(awayName, fm.homeName))
+      );
 
     for (const { league, json } of responses) {
       const events: any[] = Array.isArray(json?.events) ? json.events : [];
@@ -11809,7 +12094,7 @@ app.get('/api/sports/football-board', async (req, res) => {
 
         const rawState = String(ev?.status?.type?.state || '').toLowerCase();
         const statusName = String(ev?.status?.type?.name || '');
-        const statusState: 'live' | 'upcoming' | 'finished' =
+        let statusState: 'live' | 'upcoming' | 'finished' =
           rawState === 'in' ? 'live' : rawState === 'post' ? 'finished' : 'upcoming';
 
         let statusLabel = '';
@@ -11833,6 +12118,32 @@ app.get('/api/sports/football-board', async (req, res) => {
           away.team?.shortDisplayName || away.team?.displayName || 'Visitante'
         ).trim();
 
+        const fm = findFotmobMatch(homeTeam, awayTeam);
+        if (fm) {
+          matchedFotmobIds.add(fm.fotmobId);
+          // Use freshest live status/minute/score if FotMob reports in-progress/finished ahead of ESPN
+          if (fm.statusState === 'live') {
+            statusState = 'live';
+            if (fm.statusLabel) statusLabel = fm.statusLabel;
+          } else if (fm.statusState === 'finished' && statusState !== 'finished') {
+            statusState = 'finished';
+            statusLabel = fm.statusLabel || 'FT';
+          }
+        }
+
+        const resolvedHomeScore =
+          fm && fm.statusState !== 'upcoming'
+            ? fm.homeScore
+            : statusState === 'upcoming'
+            ? '-'
+            : String(home.score ?? '0');
+        const resolvedAwayScore =
+          fm && fm.statusState !== 'upcoming'
+            ? fm.awayScore
+            : statusState === 'upcoming'
+            ? '-'
+            : String(away.score ?? '0');
+
         const channels = buildFootballMatchChannels({
           matchId: `fb-${eventId}`,
           homeTeam,
@@ -11845,6 +12156,7 @@ app.get('/api/sports/football-board', async (req, res) => {
         items.push({
           id: `fb-${eventId}`,
           eventId,
+          fotmobMatchId: fm?.fotmobId,
           leagueSlug: league.slug,
           regionName: league.regionName,
           leagueName: league.leagueName,
@@ -11853,24 +12165,26 @@ app.get('/api/sports/football-board', async (req, res) => {
           leagueLogoUrl: espnLeagueLogo,
           priority: league.priority,
           kickoffIso: kickoffDate.toISOString(),
-          kickoffTime,
-          kickoffMs: kickoffDate.getTime() || 0,
+          kickoffTime: fm?.kickoffTime || kickoffTime,
+          kickoffMs: fm?.kickoffMs || kickoffDate.getTime() || 0,
           statusState,
           statusLabel,
           homeTeam,
           awayTeam,
           homeShort: String(home.team?.abbreviation || homeTeam.slice(0, 3)).toUpperCase(),
           awayShort: String(away.team?.abbreviation || awayTeam.slice(0, 3)).toUpperCase(),
-          homeLogo: resolveTeamBadgeUrl(home.team, isInternational),
-          awayLogo: resolveTeamBadgeUrl(away.team, isInternational),
-          homeScore: statusState === 'upcoming' ? '-' : String(home.score ?? '0'),
-          awayScore: statusState === 'upcoming' ? '-' : String(away.score ?? '0'),
+          homeLogo: resolveTeamBadgeUrl(home.team, isInternational) || fm?.homeLogo,
+          awayLogo: resolveTeamBadgeUrl(away.team, isInternational) || fm?.awayLogo,
+          homeScore: resolvedHomeScore,
+          awayScore: resolvedAwayScore,
+          homeRedCards: fm?.homeRedCards || 0,
+          awayRedCards: fm?.awayRedCards || 0,
           channels,
         });
       }
     }
 
-    // Also include any live/today football matches from StreamXHD (`eventos.json`) not already in ESPN's feed
+    // Include live/today football matches from StreamXHD (`eventos.json`) not already in ESPN's feed, enriched with real FotMob live scores/IDs
     if (isToday && liveFeeds.streamXhdFootball.length > 0) {
       for (let idx = 0; idx < liveFeeds.streamXhdFootball.length; idx++) {
         const sx = liveFeeds.streamXhdFootball[idx];
@@ -11878,6 +12192,9 @@ app.get('/api/sports/football-board', async (req, res) => {
           doesScrapedEventMatchFixture(it.homeTeam, it.awayTeam, sx)
         );
         if (alreadyInBoard) continue;
+
+        const fm = findFotmobMatch(sx.homeTeam, sx.awayTeam);
+        if (fm) matchedFotmobIds.add(fm.fotmobId);
 
         const sxId = `sxhd-${idx + 1}-${normalizeTeamToken(sx.homeTeam).slice(0, 8)}`;
         const codeUpper = String(sx.code || '').toUpperCase();
@@ -11902,37 +12219,93 @@ app.get('/api/sports/football-board', async (req, res) => {
 
         items.push({
           id: `fb-${sxId}`,
-          eventId: sxId,
-          leagueSlug: `live.${normalizeTeamToken(sx.leagueName || 'directo')}`,
-          regionName: codeUpper || 'Internacional',
-          leagueName: sx.leagueName || 'Fútbol en Vivo',
-          groupTitle: `${codeUpper || 'En Vivo'}: ${sx.leagueName || 'Fútbol en Directo'}`,
-          regionFlagUrl: `https://flagcdn.com/w40/${flagIso}.png`,
+          eventId: fm?.fotmobId || sxId,
+          fotmobMatchId: fm?.fotmobId,
+          leagueSlug: fm ? `fotmob.${fm.leagueId}` : `live.${normalizeTeamToken(sx.leagueName || 'directo')}`,
+          regionName: fm ? getRegionLabelFromCcode(fm.ccode) : codeUpper || 'Internacional',
+          leagueName: fm?.leagueName || sx.leagueName || 'Fútbol en Vivo',
+          groupTitle: `${codeUpper || 'En Vivo'}: ${fm?.leagueName || sx.leagueName || 'Fútbol en Directo'}`,
+          regionFlagUrl: fm?.regionFlagUrl || `https://flagcdn.com/w40/${flagIso}.png`,
           priority: 12,
-          kickoffIso: new Date().toISOString(),
-          kickoffTime: sx.timeStr || 'EN VIVO',
-          kickoffMs: Date.now(),
-          statusState: 'live',
-          statusLabel: 'EN VIVO',
-          homeTeam: sx.homeTeam,
-          awayTeam: sx.awayTeam,
-          homeShort: sx.homeTeam.slice(0, 3).toUpperCase(),
-          awayShort: sx.awayTeam.slice(0, 3).toUpperCase(),
-          homeLogo: sx.homeLogo,
-          awayLogo: sx.awayLogo,
-          homeScore: '•',
-          awayScore: '•',
+          kickoffIso: fm?.utcTime || new Date().toISOString(),
+          kickoffTime: fm?.kickoffTime || sx.timeStr || 'EN VIVO',
+          kickoffMs: fm?.kickoffMs || Date.now(),
+          statusState: fm?.statusState || 'live',
+          statusLabel: fm?.statusLabel || 'EN VIVO',
+          homeTeam: fm?.homeName || sx.homeTeam,
+          awayTeam: fm?.awayName || sx.awayTeam,
+          homeShort: (fm?.homeName || sx.homeTeam).slice(0, 3).toUpperCase(),
+          awayShort: (fm?.awayName || sx.awayTeam).slice(0, 3).toUpperCase(),
+          homeLogo: fm?.homeLogo || sx.homeLogo,
+          awayLogo: fm?.awayLogo || sx.awayLogo,
+          homeScore: fm ? fm.homeScore : '•',
+          awayScore: fm ? fm.awayScore : '•',
+          homeRedCards: fm?.homeRedCards || 0,
+          awayRedCards: fm?.awayRedCards || 0,
           channels: sx.channels,
         });
       }
     }
 
+    // Also include top FotMob live or notable international/club fixtures not covered by ESPN
+    for (const fm of fotmobMatches) {
+      if (matchedFotmobIds.has(fm.fotmobId)) continue;
+      if (fm.statusState !== 'live' && fm.ccode !== 'INT' && fm.ccode !== 'ESP' && fm.ccode !== 'EUR') {
+        continue;
+      }
+      // Also check if RojaDirecta / StreamXHD has any stream for this FotMob fixture
+      const pseudoLeague: SoccerLeagueFeedDef = {
+        slug: `fotmob.${fm.leagueId}`,
+        regionName: getRegionLabelFromCcode(fm.ccode),
+        leagueName: fm.leagueName,
+        regionFlagUrl: fm.regionFlagUrl,
+        priority: fm.statusState === 'live' ? 11 : 28,
+        broadcasterProfile: fm.ccode === 'ESP' ? 'laliga' : fm.ccode === 'INT' ? 'spain_nt' : 'europe',
+      };
+      const channels = buildFootballMatchChannels({
+        matchId: `fb-fm-${fm.fotmobId}`,
+        homeTeam: fm.homeName,
+        awayTeam: fm.awayName,
+        statusState: fm.statusState,
+        league: pseudoLeague,
+        scrapedMatches,
+      });
+
+      items.push({
+        id: `fb-fm-${fm.fotmobId}`,
+        eventId: fm.fotmobId,
+        fotmobMatchId: fm.fotmobId,
+        leagueSlug: pseudoLeague.slug,
+        regionName: pseudoLeague.regionName,
+        leagueName: fm.leagueName,
+        groupTitle: `${pseudoLeague.regionName}: ${fm.leagueName}`,
+        regionFlagUrl: fm.regionFlagUrl,
+        priority: pseudoLeague.priority,
+        kickoffIso: fm.utcTime || new Date().toISOString(),
+        kickoffTime: fm.kickoffTime,
+        kickoffMs: fm.kickoffMs,
+        statusState: fm.statusState,
+        statusLabel: fm.statusLabel,
+        homeTeam: fm.homeName,
+        awayTeam: fm.awayName,
+        homeShort: fm.homeName.slice(0, 3).toUpperCase(),
+        awayShort: fm.awayName.slice(0, 3).toUpperCase(),
+        homeLogo: fm.homeLogo,
+        awayLogo: fm.awayLogo,
+        homeScore: fm.homeScore,
+        awayScore: fm.awayScore,
+        homeRedCards: fm.homeRedCards,
+        awayRedCards: fm.awayRedCards,
+        channels,
+      });
+    }
+
     items.sort((a, b) => {
-      if (a.priority !== b.priority) return a.priority - b.priority;
       const rank = (s: string) => (s === 'live' ? 0 : s === 'upcoming' ? 1 : 2);
       if (rank(a.statusState) !== rank(b.statusState)) {
         return rank(a.statusState) - rank(b.statusState);
       }
+      if (a.priority !== b.priority) return a.priority - b.priority;
       return a.kickoffMs - b.kickoffMs;
     });
 
@@ -11944,193 +12317,34 @@ app.get('/api/sports/football-board', async (req, res) => {
   }
 });
 
-const cachedMatchDetailsMap = new Map<string, { data: any; ts: number }>();
-
 app.get('/api/sports/match-details', async (req, res) => {
-  const eventId = String(req.query.eventId || '').replace(/\D/g, '');
+  const eventId = String(req.query.eventId || '').trim();
+  const fotmobMatchId = String(req.query.fotmobMatchId || '').trim();
   const leagueSlug = String(req.query.leagueSlug || 'all').replace(/[^a-z0-9._-]/gi, '') || 'all';
-  if (!eventId) {
-    return res.status(400).json({ success: false, error: 'Missing eventId' });
-  }
+  const homeTeam = String(req.query.homeTeam || '').trim();
+  const awayTeam = String(req.query.awayTeam || '').trim();
+  const dateKey = String(req.query.date || '').replace(/\D/g, '').slice(0, 8);
 
-  const cacheKey = `${leagueSlug}:${eventId}`;
-  const cached = cachedMatchDetailsMap.get(cacheKey);
-  if (cached && Date.now() - cached.ts < 30 * 1000) {
-    return res.json({ success: true, details: cached.data });
+  if (!eventId && !fotmobMatchId && !(homeTeam && awayTeam)) {
+    return res.status(400).json({ success: false, error: 'Missing eventId or team info' });
   }
 
   try {
-    const summaryUrl = `https://site.api.espn.com/apis/site/v2/sports/soccer/${leagueSlug}/summary?event=${eventId}&lang=es&region=es`;
-    const r = await fetch(summaryUrl, { signal: AbortSignal.timeout(4500) });
-    if (!r.ok) {
-      return res.json({
-        success: true,
-        details: { eventId, stats: [], events: [] },
-      });
-    }
-    const sj: any = await r.json();
-
-    const comp = sj?.header?.competitions?.[0];
-    const competitors: any[] = Array.isArray(comp?.competitors) ? comp.competitors : [];
-    const homeComp = competitors.find((c) => c.homeAway === 'home') || competitors[0];
-    const awayComp = competitors.find((c) => c.homeAway === 'away') || competitors[1];
-    const homeTeamId = String(homeComp?.team?.id || homeComp?.id || '');
-    const awayTeamId = String(awayComp?.team?.id || awayComp?.id || '');
-
-    // 1. Comparative Team Statistics
-    const boxTeams: any[] = Array.isArray(sj?.boxscore?.teams) ? sj.boxscore.teams : [];
-    const homeStatsArr: any[] =
-      boxTeams.find((t) => String(t?.team?.id || '') === homeTeamId)?.statistics ||
-      boxTeams[0]?.statistics ||
-      [];
-    const awayStatsArr: any[] =
-      boxTeams.find((t) => String(t?.team?.id || '') === awayTeamId)?.statistics ||
-      boxTeams[1]?.statistics ||
-      [];
-
-    const statKeysOrder: { key: string; esLabel: string }[] = [
-      { key: 'possessionPct', esLabel: 'Posesión (%)' },
-      { key: 'shotsSummary', esLabel: 'Remates Totales' },
-      { key: 'totalShots', esLabel: 'Remates Totales' },
-      { key: 'shotsOnTarget', esLabel: 'Remates a Puerta' },
-      { key: 'wonCorners', esLabel: 'Saques de Esquina' },
-      { key: 'foulsCommitted', esLabel: 'Faltas Cometidas' },
-      { key: 'offsides', esLabel: 'Fueras de Juego' },
-      { key: 'yellowCards', esLabel: 'Tarjetas Amarillas' },
-      { key: 'redCards', esLabel: 'Tarjetas Rojas' },
-      { key: 'saves', esLabel: 'Paradas del Portero' },
-    ];
-
-    const stats: any[] = [];
-    const seenLabels = new Set<string>();
-    for (const def of statKeysOrder) {
-      const hs = homeStatsArr.find((s) => s?.name === def.key);
-      const as = awayStatsArr.find((s) => s?.name === def.key);
-      if (!hs && !as) continue;
-      const label = def.esLabel || hs?.label || as?.label || def.key;
-      if (seenLabels.has(label)) continue;
-      seenLabels.add(label);
-
-      const hStr = String(hs?.displayValue ?? '0');
-      const aStr = String(as?.displayValue ?? '0');
-      const hNum = parseFloat(hStr.replace(/[^0-9.]/g, '')) || 0;
-      const aNum = parseFloat(aStr.replace(/[^0-9.]/g, '')) || 0;
-      const sum = hNum + aNum;
-      const homePct = sum > 0 ? Math.round((hNum / sum) * 100) : 50;
-      const awayPct = sum > 0 ? 100 - homePct : 50;
-
-      stats.push({
-        key: def.key,
-        label,
-        homeValue: def.key === 'possessionPct' && !hStr.includes('%') ? `${hStr}%` : hStr,
-        awayValue: def.key === 'possessionPct' && !aStr.includes('%') ? `${aStr}%` : aStr,
-        homePct,
-        awayPct,
-      });
-    }
-
-    // 2. Match Key Events (Goals, Cards, Substitutions)
-    const rawKeyEvents: any[] = Array.isArray(sj?.keyEvents)
-      ? sj.keyEvents
-      : Array.isArray(comp?.details)
-      ? comp.details
-      : [];
-
-    const events: any[] = rawKeyEvents
-      .map((ke, idx) => {
-        const rawType = String(ke?.type?.type || ke?.type?.text || '').toLowerCase();
-        const isGoal = Boolean(ke?.scoringPlay) || rawType.includes('goal') || rawType.includes('gol');
-        const isRed = rawType.includes('red') || rawType.includes('roja');
-        const isYellow = !isRed && (rawType.includes('yellow') || rawType.includes('amarilla'));
-        const isSub = rawType.includes('sub') || rawType.includes('cambio');
-        if (!isGoal && !isRed && !isYellow && !isSub) return null;
-
-        const evTeamId = String(ke?.team?.id || '');
-        const side: 'home' | 'away' | 'neutral' =
-          evTeamId && evTeamId === homeTeamId
-            ? 'home'
-            : evTeamId && evTeamId === awayTeamId
-            ? 'away'
-            : 'neutral';
-
-        const participants: any[] = Array.isArray(ke?.participants) ? ke.participants : [];
-        const playerName =
-          String(
-            participants[0]?.athlete?.displayName ||
-              ke?.athletesInvolved?.[0]?.displayName ||
-              ke?.shortText ||
-              ''
-          ).trim() || 'Jugador';
-        const assistOrSubName =
-          String(participants[1]?.athlete?.displayName || '').trim() || undefined;
-
-        return {
-          id: String(ke?.id || `ev-${idx}`),
-          clock: String(ke?.clock?.displayValue || '').trim() || "•",
-          type: isGoal
-            ? 'goal'
-            : isRed
-            ? 'red-card'
-            : isYellow
-            ? 'yellow-card'
-            : isSub
-            ? 'substitution'
-            : 'other',
-          typeLabel: isGoal
-            ? 'Gol'
-            : isRed
-            ? 'Tarjeta Roja'
-            : isYellow
-            ? 'Amarilla'
-            : 'Cambio',
-          playerName,
-          assistOrSubName,
-          side,
-          detailText: String(ke?.shortText || ke?.text || '').trim() || undefined,
-        };
-      })
-      .filter(Boolean);
-
-    // 3. Starting XI & Substitutes Lineups
-    const rosters: any[] = Array.isArray(sj?.rosters) ? sj.rosters : [];
-    const parseLineup = (rObj: any) => {
-      if (!rObj) return undefined;
-      const list: any[] = Array.isArray(rObj?.roster) ? rObj.roster : [];
-      if (list.length === 0) return undefined;
-      const mapped = list.map((p, idx) => ({
-        id: String(p?.athlete?.id || `p-${idx}`),
-        jersey: String(p?.jersey || '-'),
-        name: String(p?.athlete?.displayName || p?.athlete?.shortName || 'Jugador'),
-        position: String(p?.position?.abbreviation || ''),
-        starter: Boolean(p?.starter),
-      }));
-      return {
-        teamName: String(rObj?.team?.displayName || ''),
-        formation: rObj?.formation ? String(rObj.formation) : undefined,
-        starters: mapped.filter((x) => x.starter),
-        substitutes: mapped.filter((x) => !x.starter),
-      };
-    };
-
-    const homeRoster = rosters.find((rItem) => rItem?.homeAway === 'home') || rosters[0];
-    const awayRoster = rosters.find((rItem) => rItem?.homeAway === 'away') || rosters[1];
-
-    const details = {
+    const details = await fetchRealFootballMatchDetails({
       eventId,
-      venue: sj?.gameInfo?.venue?.fullName
-        ? String(sj.gameInfo.venue.fullName)
-        : undefined,
-      stats,
-      events,
-      homeLineup: parseLineup(homeRoster),
-      awayLineup: parseLineup(awayRoster),
-    };
-
-    cachedMatchDetailsMap.set(cacheKey, { data: details, ts: Date.now() });
+      fotmobMatchId,
+      leagueSlug,
+      homeTeam,
+      awayTeam,
+      dateKey: dateKey || undefined,
+    });
     res.json({ success: true, details });
   } catch (err) {
     console.warn('Match details error:', err);
-    res.json({ success: true, details: { eventId, stats: [], events: [] } });
+    res.json({
+      success: true,
+      details: { eventId: eventId || fotmobMatchId, stats: [], events: [], commentary: [], shotsMap: [] },
+    });
   }
 });
 
@@ -14901,53 +15115,29 @@ app.get(['/epg.xml', '/api/iptv/epg.xml'], async (req, res) => {
 });
 
 // ============================================================================
-// SELF-DESTROYING SERVICE WORKER & CACHE PURGE ENDPOINT
-// Ensures any browser that previously cached a Workbox bundle immediately
-// purges its cache and reloads fresh from the live server.
+// PWA SERVICE WORKER: SERVE PRODUCTION DIST SW.JS OR CLEAN NOOP IN DEV
 // ============================================================================
 app.get(['/sw.js', '/service-worker.js'], (_req, res) => {
+  const distSw = path.resolve(__dirname, 'dist', 'sw.js');
+  if (ENV.isProd && fs.existsSync(distSw)) {
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+    return res.sendFile(distSw);
+  }
   res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.send(`// NAIMCINE Cache-Purging Service Worker v4
-self.addEventListener('install', function () {
-  self.skipWaiting();
-});
-self.addEventListener('activate', function (event) {
-  event.waitUntil(
-    (async function () {
-      try {
-        var keys = await caches.keys();
-        await Promise.all(keys.map(function (k) { return caches.delete(k); }));
-      } catch (e) {}
-      try {
-        await self.registration.unregister();
-      } catch (e) {}
-    })()
-  );
-});
-`);
-});
-
-app.get('/registerSW.js', (_req, res) => {
-  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.send(`if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then(function (regs) {
-    regs.forEach(function (r) { r.unregister(); });
-  });
-}
-`);
+  res.send(`self.addEventListener('message', (e) => { if (e.data?.type === 'SKIP_WAITING') self.skipWaiting(); });`);
 });
 
 // ============================================================================
 // VITE + PRODUCTION STATIC MOUNTING (INSTANT PORT 3000 BINDING)
 // ============================================================================
 async function startServer() {
-  const PORT = Number(process.env.PORT) || 3000;
-  const isProd = process.env.NODE_ENV === 'production';
+  const PORT = ENV.port;
+  const isProd = ENV.isProd;
 
   if (!isProd) {
-    let viteMiddleware: any = null;
+    let viteMiddleware: express.RequestHandler | null = null;
     const viteReady = (async () => {
       const { createServer: createViteServer } = await import('vite');
       const hmrEnabled = process.env.DISABLE_HMR !== 'true';
@@ -14966,15 +15156,16 @@ async function startServer() {
       if (!viteMiddleware) {
         await viteReady;
       }
-      return viteMiddleware(req, res, next);
+      return viteMiddleware!(req, res, next);
     });
 
     httpServer.listen(PORT, '0.0.0.0', () => {
-      console.log(`NAIMCINE Media Engine running on http://0.0.0.0:${PORT}`);
+      logger.info({ port: PORT, env: ENV.nodeEnv }, 'naim_cine_engine_started');
     });
   } else {
     app.use(
       express.static(path.resolve(__dirname, 'dist'), {
+        maxAge: '7d',
         setHeaders: (res, filePath) => {
           if (filePath.endsWith('.html') || filePath.endsWith('sw.js')) {
             res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
@@ -14991,9 +15182,26 @@ async function startServer() {
     });
 
     httpServer.listen(PORT, '0.0.0.0', () => {
-      console.log(`NAIMCINE Media Engine running on http://0.0.0.0:${PORT}`);
+      logger.info({ port: PORT, env: ENV.nodeEnv }, 'naim_cine_engine_started');
     });
   }
 }
 
 startServer();
+
+app.use(expressErrorHandler);
+
+process.on('uncaughtException', (err) => {
+  logger.error({ err }, 'uncaught_exception');
+});
+process.on('unhandledRejection', (reason) => {
+  logger.error({ reason }, 'unhandled_rejection');
+});
+process.on('SIGTERM', () => {
+  logger.info('sigterm_graceful_shutdown');
+  httpServer.close(() => process.exit(0));
+});
+process.on('SIGINT', () => {
+  logger.info('sigint_graceful_shutdown');
+  httpServer.close(() => process.exit(0));
+});

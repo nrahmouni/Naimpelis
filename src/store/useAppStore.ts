@@ -1,0 +1,175 @@
+import { create } from 'zustand';
+import type { TypingUserPayload } from '../shared/protocol';
+import type { ScheduledRoomItem, SubtitleStyleSettings } from '../types';
+
+const SUBTITLE_STYLE_KEY = 'naimcine_subtitle_style_v1';
+const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
+
+export type ShellNavSection = 'home' | 'search' | 'rooms' | 'my_list' | 'profile';
+
+interface SwUpdateRegistration {
+  waitingWorker: ServiceWorker | null;
+}
+
+interface AppShellState {
+  activeNavSection: ShellNavSection;
+  showDesignSystem: boolean;
+  showLegalModal: boolean;
+  showNotificationCenter: boolean;
+  showCommandSearch: boolean;
+  showSurpriseModal: boolean;
+  typingUsers: TypingUserPayload[];
+  subtitleStyle: SubtitleStyleSettings;
+  syncOffsetMs: number;
+  miniPlayerDismissed: boolean;
+  scheduledRooms: ScheduledRoomItem[];
+  swUpdate: SwUpdateRegistration | null;
+  setActiveNavSection: (section: ShellNavSection) => void;
+  setShowDesignSystem: (open: boolean) => void;
+  setShowLegalModal: (open: boolean) => void;
+  setShowNotificationCenter: (open: boolean) => void;
+  setShowCommandSearch: (open: boolean) => void;
+  setShowSurpriseModal: (open: boolean) => void;
+  setTypingUser: (userId: string, userName: string, isTyping: boolean, roomId?: string) => void;
+  updateSubtitleStyle: (patch: Partial<SubtitleStyleSettings>) => void;
+  setSubtitleStyle: (patch: Partial<SubtitleStyleSettings>) => void;
+  setSyncOffsetMs: (offsetMs: number) => void;
+  setMiniPlayerDismissed: (dismissed: boolean) => void;
+  addScheduledRoom: (item: Omit<ScheduledRoomItem, 'id'>) => void;
+  removeScheduledRoom: (id: string) => void;
+  setSwUpdate: (reg: SwUpdateRegistration | null) => void;
+  applySwUpdateNow: () => void;
+}
+
+const DEFAULT_SUBTITLE_STYLE: SubtitleStyleSettings = {
+  fontScale: 1,
+  fontColor: '#FFFFFF',
+  bgOpacity: 0.72,
+  edgeShadow: 'shadow',
+  fontFamily: 'sans',
+};
+
+function loadSubtitleStyle(): SubtitleStyleSettings {
+  if (typeof localStorage === 'undefined') return DEFAULT_SUBTITLE_STYLE;
+  try {
+    const raw = localStorage.getItem(SUBTITLE_STYLE_KEY);
+    if (!raw) return DEFAULT_SUBTITLE_STYLE;
+    return { ...DEFAULT_SUBTITLE_STYLE, ...(JSON.parse(raw) as Partial<SubtitleStyleSettings>) };
+  } catch {
+    return DEFAULT_SUBTITLE_STYLE;
+  }
+}
+
+function loadScheduledRooms(): ScheduledRoomItem[] {
+  if (typeof localStorage === 'undefined') return [];
+  try {
+    const raw = localStorage.getItem(SCHEDULED_ROOMS_KEY);
+    if (!raw) return [];
+    const list = JSON.parse(raw) as ScheduledRoomItem[];
+    return Array.isArray(list)
+      ? list.filter((s) => {
+          const ts = Date.parse(s.scheduledForIso);
+          return !Number.isFinite(ts) || ts > Date.now() - 3600_000;
+        })
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+export const useAppStore = create<AppShellState>((set, get) => ({
+  activeNavSection: 'home',
+  showDesignSystem:
+    typeof window !== 'undefined' &&
+    window.location.pathname.toLowerCase().includes('/design-system'),
+  showLegalModal: false,
+  showNotificationCenter: false,
+  showCommandSearch: false,
+  showSurpriseModal: false,
+  typingUsers: [],
+  subtitleStyle: loadSubtitleStyle(),
+  syncOffsetMs: 0,
+  miniPlayerDismissed: false,
+  scheduledRooms: loadScheduledRooms(),
+  swUpdate: null,
+
+  setActiveNavSection: (activeNavSection) => set({ activeNavSection }),
+  setShowDesignSystem: (showDesignSystem) => set({ showDesignSystem }),
+  setShowLegalModal: (showLegalModal) => set({ showLegalModal }),
+  setShowNotificationCenter: (showNotificationCenter) => set({ showNotificationCenter }),
+  setShowCommandSearch: (showCommandSearch) => set({ showCommandSearch }),
+  setShowSurpriseModal: (showSurpriseModal) => set({ showSurpriseModal }),
+
+  setTypingUser: (userId, userName, isTyping, roomId = '') => {
+    set((state) => {
+      const filtered = state.typingUsers.filter((u) => u.userId !== userId);
+      return {
+        typingUsers: isTyping
+          ? [...filtered, { roomId, userId, userName, isTyping: true }].slice(-4)
+          : filtered,
+      };
+    });
+  },
+
+  updateSubtitleStyle: (patch) => {
+    const next = { ...get().subtitleStyle, ...patch };
+    set({ subtitleStyle: next });
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(SUBTITLE_STYLE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+    }
+  },
+  setSubtitleStyle: (patch) => {
+    get().updateSubtitleStyle(patch);
+  },
+
+  setSyncOffsetMs: (offsetMs) => {
+    set({ syncOffsetMs: Math.max(-1000, Math.min(1000, offsetMs)) });
+  },
+
+  setMiniPlayerDismissed: (miniPlayerDismissed) => set({ miniPlayerDismissed }),
+
+  addScheduledRoom: (item) => {
+    const entry: ScheduledRoomItem = {
+      ...item,
+      id: `sched-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+    };
+    const next = [entry, ...get().scheduledRooms].slice(0, 12);
+    set({ scheduledRooms: next });
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(SCHEDULED_ROOMS_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+    }
+  },
+
+  removeScheduledRoom: (id) => {
+    const next = get().scheduledRooms.filter((s) => s.id !== id);
+    set({ scheduledRooms: next });
+    if (typeof localStorage !== 'undefined') {
+      try {
+        localStorage.setItem(SCHEDULED_ROOMS_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+    }
+  },
+
+  setSwUpdate: (swUpdate) => set({ swUpdate }),
+
+  applySwUpdateNow: () => {
+    const worker = get().swUpdate?.waitingWorker;
+    if (worker) {
+      worker.postMessage({ type: 'SKIP_WAITING' });
+    }
+    set({ swUpdate: null });
+    if (typeof window !== 'undefined') {
+      window.setTimeout(() => window.location.reload(), 250);
+    }
+  },
+}));

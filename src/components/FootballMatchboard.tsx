@@ -14,7 +14,7 @@ import {
   Tv,
   X,
 } from 'lucide-react';
-import {
+import type {
   AppLanguage,
   FavoriteChannelItem,
   FootballMatchDetails,
@@ -23,6 +23,7 @@ import {
 } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 import { buildChannelFavId } from '../utils/storage';
+import { LiveMatchCenter } from './LiveMatchCenter';
 
 interface FootballMatchboardProps {
   lang: AppLanguage;
@@ -38,7 +39,11 @@ interface FootballMatchboardProps {
 
 type StatusTab = 'all' | 'live' | 'upcoming' | 'finished';
 
-function formatOffsetDateKey(dayOffset: number): { dateKey: string; labelEs: string; labelEn: string } {
+function formatOffsetDateKey(dayOffset: number): {
+  dateKey: string;
+  labelEs: string;
+  labelEn: string;
+} {
   const d = new Date();
   d.setDate(d.getDate() + dayOffset);
   const dateKey = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' })
@@ -76,6 +81,21 @@ function toSportsMatch(item: FootballMatchboardItem): SportsMatch {
     isLive: item.statusState === 'live',
     is247Channel: false,
     channels: item.channels,
+    matchMeta: {
+      eventId: item.eventId,
+      fotmobMatchId: item.fotmobMatchId,
+      leagueSlug: item.leagueSlug,
+      homeTeam: item.homeTeam,
+      awayTeam: item.awayTeam,
+      homeShort: item.homeShort,
+      awayShort: item.awayShort,
+      homeLogo: item.homeLogo,
+      awayLogo: item.awayLogo,
+      homeScore: item.homeScore,
+      awayScore: item.awayScore,
+      statusState: item.statusState,
+      statusLabel: item.statusLabel,
+    },
   };
 }
 
@@ -149,7 +169,6 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   const [hasAutoSelectedTab, setHasAutoSelectedTab] = useState<boolean>(false);
 
   const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
-  const [detailTab, setDetailTab] = useState<'overview' | 'lineups'>('overview');
   const [detailsMap, setDetailsMap] = useState<Record<string, FootballMatchDetails>>({});
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
 
@@ -162,7 +181,14 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         const res = await fetch(`/api/sports/football-board?date=${activeDateInfo.dateKey}`);
         const data = await res.json();
         if (Array.isArray(data?.matches)) {
-          const incoming: FootballMatchboardItem[] = data.matches;
+          const rawIncoming: FootballMatchboardItem[] = data.matches;
+          const dedupMap = new Map<string, FootballMatchboardItem>();
+          for (const item of rawIncoming) {
+            const baseKey = String(item.id || `${item.eventId}-${item.kickoffTime}`);
+            const uniqueKey = dedupMap.has(baseKey) ? `${baseKey}-${dedupMap.size}` : baseKey;
+            dedupMap.set(uniqueKey, { ...item, id: uniqueKey });
+          }
+          const incoming = Array.from(dedupMap.values());
           setMatches(incoming);
           if (!hasAutoSelectedTab && dayOffset === 0) {
             const liveTotal = incoming.filter((m) => m.statusState === 'live').length;
@@ -185,34 +211,54 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     fetchBoard(false);
     const interval = setInterval(() => {
       fetchBoard(true);
-    }, 35000);
+    }, 20000);
     return () => clearInterval(interval);
   }, [fetchBoard]);
 
   const loadMatchDetails = useCallback(
-    async (item: FootballMatchboardItem) => {
-      if (detailsMap[item.eventId] && item.statusState === 'finished') {
+    async (item: FootballMatchboardItem, force = false) => {
+      if (!force && detailsMap[item.id] && item.statusState === 'finished') {
         return;
       }
       setLoadingDetailId(item.id);
       try {
-        const res = await fetch(
-          `/api/sports/match-details?eventId=${encodeURIComponent(
-            item.eventId
-          )}&leagueSlug=${encodeURIComponent(item.leagueSlug)}`
-        );
+        const params = new URLSearchParams({
+          eventId: item.eventId,
+          leagueSlug: item.leagueSlug,
+          homeTeam: item.homeTeam,
+          awayTeam: item.awayTeam,
+          date: activeDateInfo.dateKey,
+        });
+        if (item.fotmobMatchId) {
+          params.set('fotmobMatchId', item.fotmobMatchId);
+        }
+        const res = await fetch(`/api/sports/match-details?${params.toString()}`);
         const data = await res.json();
         if (data?.details) {
-          setDetailsMap((prev) => ({ ...prev, [item.eventId]: data.details }));
+          setDetailsMap((prev) => ({ ...prev, [item.id]: data.details }));
         }
       } catch {
-        // ignore
+        // ignore transient network errors
       } finally {
         setLoadingDetailId((curr) => (curr === item.id ? null : curr));
       }
     },
-    [detailsMap]
+    [activeDateInfo.dateKey, detailsMap]
   );
+
+  // Auto-poll live match details every 15s while user has a live match expanded
+  const expandedMatchObj = useMemo(
+    () => matches.find((m) => m.id === expandedMatchId) || null,
+    [matches, expandedMatchId]
+  );
+
+  useEffect(() => {
+    if (!expandedMatchObj || expandedMatchObj.statusState !== 'live') return;
+    const timer = setInterval(() => {
+      loadMatchDetails(expandedMatchObj, true);
+    }, 15000);
+    return () => clearInterval(timer);
+  }, [expandedMatchObj, loadMatchDetails]);
 
   const liveCount = useMemo(
     () => matches.filter((m) => m.statusState === 'live').length,
@@ -270,6 +316,15 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     return groups;
   }, [filteredMatches]);
 
+  const featuredLiveMatch = useMemo(() => {
+    return (
+      matches.find((m) => m.statusState === 'live' && m.channels.length > 0) ||
+      matches.find((m) => m.statusState === 'live') ||
+      matches.find((m) => m.channels.length > 0) ||
+      null
+    );
+  }, [matches]);
+
   const handleToggleExpand = (item: FootballMatchboardItem) => {
     triggerHaptic('light');
     if (expandedMatchId === item.id) {
@@ -277,15 +332,14 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
       return;
     }
     setExpandedMatchId(item.id);
-    setDetailTab('overview');
-    loadMatchDetails(item);
+    loadMatchDetails(item, true);
   };
 
   const handleQuickPlayTv = (e: React.MouseEvent, item: FootballMatchboardItem) => {
     e.stopPropagation();
     triggerHaptic('medium');
     setExpandedMatchId(item.id);
-    loadMatchDetails(item);
+    loadMatchDetails(item, true);
     if (item.channels.length > 0) {
       onPlaySportsMatch(toSportsMatch(item), 0);
     }
@@ -293,10 +347,57 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
 
   return (
     <section className="rounded-2xl overflow-hidden border border-white/[0.08] bg-[#1B1E28] shadow-xl">
+      {/* Featured Live Match Spotlight Banner */}
+      {featuredLiveMatch && !searchQuery.trim() && (
+        <div className="p-3.5 sm:p-4 bg-gradient-to-r from-[#121622] via-[#1B2233] to-[#121622] border-b border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shrink-0">
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+              <span>{featuredLiveMatch.statusState === 'live' ? featuredLiveMatch.statusLabel || 'EN VIVO' : featuredLiveMatch.kickoffTime}</span>
+            </div>
+            <div className="min-w-0">
+              <div className="text-[11px] text-zinc-400 truncate">
+                {featuredLiveMatch.groupTitle}
+              </div>
+              <div className="font-display font-bold text-sm sm:text-base text-white truncate flex items-center gap-2">
+                <TeamCrestImg src={featuredLiveMatch.homeLogo} shortCode={featuredLiveMatch.homeShort} alt={featuredLiveMatch.homeTeam} />
+                <span className="truncate">{featuredLiveMatch.homeTeam}</span>
+                <span className="font-mono text-[#FFBD0F] tabular-nums shrink-0">
+                  {featuredLiveMatch.homeScore} - {featuredLiveMatch.awayScore}
+                </span>
+                <span className="truncate">{featuredLiveMatch.awayTeam}</span>
+                <TeamCrestImg src={featuredLiveMatch.awayLogo} shortCode={featuredLiveMatch.awayShort} alt={featuredLiveMatch.awayTeam} />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => handleToggleExpand(featuredLiveMatch)}
+              className="min-h-[38px] px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-semibold text-white cursor-pointer transition-colors"
+            >
+              {lang === 'es' ? 'Ver Estadísticas y XI' : 'Stats & Lineups'}
+            </button>
+            {featuredLiveMatch.channels.length > 0 && (
+              <button
+                type="button"
+                disabled={Boolean(loadingItemId)}
+                onClick={(e) => handleQuickPlayTv(e, featuredLiveMatch)}
+                className="min-h-[38px] px-3.5 rounded-xl bg-[#FFBD0F] hover:bg-amber-300 text-[#11131A] text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>{lang === 'es' ? 'Ver Partido' : 'Watch Live'}</span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* Top Toolbar: Status Filter Buttons + Day Switcher + Search */}
       <div className="p-3 sm:p-4 bg-[#171A23] border-b border-white/[0.07] space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* Status Filter Buttons: Todas | En vivo(N) | Próximos | Terminados */}
+          {/* Status Filter Buttons: Todas | En vivo (N) | Próximos | Terminados */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
             <button
               type="button"
@@ -327,7 +428,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             >
               <Radio className="w-3.5 h-3.5 shrink-0" />
               <span>
-                {lang === 'es' ? `En vivo(${liveCount})` : `Live(${liveCount})`}
+                {lang === 'ca'
+                  ? `En directe (${liveCount})`
+                  : lang === 'es'
+                  ? `En vivo (${liveCount})`
+                  : `Live (${liveCount})`}
               </span>
             </button>
 
@@ -446,7 +551,10 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
       {loading && matches.length === 0 ? (
         <div className="divide-y divide-white/[0.05]">
           {Array.from({ length: 6 }).map((_, idx) => (
-            <div key={idx} className="h-16 bg-[#242833] px-4 flex items-center justify-between animate-pulse">
+            <div
+              key={idx}
+              className="h-16 bg-[#242833] px-4 flex items-center justify-between animate-pulse"
+            >
               <div className="w-12 h-7 rounded bg-white/[0.06]" />
               <div className="flex-1 mx-4 space-y-2">
                 <div className="w-40 h-3.5 rounded bg-white/[0.07]" />
@@ -505,7 +613,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                     (c) => activeVideoRawUrl && c.sourceUrl === activeVideoRawUrl
                   );
                   const isExtracting = Boolean(loadingItemId?.startsWith(item.id));
-                  const details = detailsMap[item.eventId];
+                  const details = detailsMap[item.id] || null;
 
                   return (
                     <div key={item.id} className="bg-[#242833]">
@@ -535,9 +643,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                           {item.statusLabel ? (
                             <span
                               className={`text-[11px] font-mono font-bold tabular-nums mt-1 ${
-                                item.statusState === 'live'
-                                  ? 'text-[#22C55E]'
-                                  : 'text-zinc-400'
+                                item.statusState === 'live' ? 'text-[#22C55E]' : 'text-zinc-400'
                               }`}
                             >
                               {item.statusLabel}
@@ -547,7 +653,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
 
                         {/* Middle Column: Flags / Club Crests + Home & Away Team Names */}
                         <div className="flex-1 min-w-0 space-y-2">
-                          <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
                             <TeamCrestImg
                               src={item.homeLogo}
                               shortCode={item.homeShort}
@@ -556,8 +662,14 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                             <span className="text-sm font-medium text-white truncate">
                               {item.homeTeam}
                             </span>
+                            {(item.homeRedCards || 0) > 0 && (
+                              <span
+                                className="w-2 h-3 rounded-[2px] bg-rose-500 shrink-0"
+                                title="Tarjeta roja"
+                              />
+                            )}
                           </div>
-                          <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="flex items-center gap-2 min-w-0">
                             <TeamCrestImg
                               src={item.awayLogo}
                               shortCode={item.awayShort}
@@ -566,6 +678,12 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                             <span className="text-sm font-medium text-zinc-100 truncate">
                               {item.awayTeam}
                             </span>
+                            {(item.awayRedCards || 0) > 0 && (
+                              <span
+                                className="w-2 h-3 rounded-[2px] bg-rose-500 shrink-0"
+                                title="Tarjeta roja"
+                              />
+                            )}
                           </div>
                         </div>
 
@@ -641,7 +759,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                         </div>
                       </div>
 
-                      {/* Expanded Panel: Direct Broadcast Servers + Live Stats & Lineups */}
+                      {/* Expanded Panel: Direct Broadcast Servers + Full Sofascore-Grade LiveMatchCenter */}
                       {isExpanded && (
                         <div className="px-3.5 sm:px-5 py-4 bg-[#151821] border-t border-white/[0.07] space-y-4">
                           {/* Server / Signal Selector Strip */}
@@ -668,7 +786,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                   const isActiveServer = activeVideoRawUrl === ch.sourceUrl;
                                   return (
                                     <div
-                                      key={ch.id}
+                                      key={`${item.id}-${ch.id}-${idx}`}
                                       className="inline-flex items-center rounded-lg overflow-hidden shrink-0 border border-white/[0.1]"
                                     >
                                       <button
@@ -725,182 +843,26 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                             )}
                           </div>
 
-                          {/* Match Center Sub-Tabs: General (Stats & Events) | Alineaciones */}
-                          <div className="space-y-3 pt-1 border-t border-white/[0.06]">
-                            <div className="flex items-center gap-4 border-b border-white/[0.06]">
-                              <button
-                                type="button"
-                                onClick={() => setDetailTab('overview')}
-                                className={`pb-2 text-xs font-bold whitespace-nowrap cursor-pointer border-b-2 transition-colors ${
-                                  detailTab === 'overview'
-                                    ? 'border-[#FFBD0F] text-[#FFBD0F]'
-                                    : 'border-transparent text-zinc-400 hover:text-zinc-200'
-                                }`}
-                              >
-                                {lang === 'es' ? 'General y Estadísticas' : 'Overview & Stats'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setDetailTab('lineups')}
-                                className={`pb-2 text-xs font-bold whitespace-nowrap cursor-pointer border-b-2 transition-colors ${
-                                  detailTab === 'lineups'
-                                    ? 'border-[#FFBD0F] text-[#FFBD0F]'
-                                    : 'border-transparent text-zinc-400 hover:text-zinc-200'
-                                }`}
-                              >
-                                {lang === 'es' ? 'Alineaciones' : 'Lineups'}
-                              </button>
-                              {details?.venue && (
-                                <span className="ml-auto pb-2 text-[11px] text-zinc-400 truncate max-w-[180px] sm:max-w-xs">
-                                  {details.venue}
-                                </span>
-                              )}
-                            </div>
-
-                            {loadingDetailId === item.id && !details ? (
-                              <div className="py-6 flex items-center justify-center gap-2 text-xs text-zinc-400">
-                                <Loader2 className="w-4 h-4 animate-spin text-[#FFBD0F]" />
-                                <span>
-                                  {lang === 'es'
-                                    ? 'Cargando datos en tiempo real del partido...'
-                                    : 'Loading live match data...'}
-                                </span>
-                              </div>
-                            ) : detailTab === 'overview' ? (
-                              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                {/* Comparative Stats Bars */}
-                                <div className="space-y-2.5">
-                                  <h4 className="text-xs font-semibold text-zinc-300">
-                                    {lang === 'es' ? 'Estadísticas del Partido' : 'Match Statistics'}
-                                  </h4>
-                                  {details && details.stats.length > 0 ? (
-                                    <div className="space-y-2.5">
-                                      {details.stats.map((st) => (
-                                        <div key={st.key} className="space-y-1">
-                                          <div className="flex items-center justify-between text-xs">
-                                            <span className="font-mono font-bold tabular-nums text-white">
-                                              {st.homeValue}
-                                            </span>
-                                            <span className="text-zinc-400">{st.label}</span>
-                                            <span className="font-mono font-bold tabular-nums text-white">
-                                              {st.awayValue}
-                                            </span>
-                                          </div>
-                                          <div className="h-1.5 rounded-full bg-white/[0.07] overflow-hidden flex">
-                                            <div
-                                              style={{ width: `${st.homePct}%` }}
-                                              className="bg-[#FFBD0F] h-full transition-opacity"
-                                            />
-                                            <div
-                                              style={{ width: `${st.awayPct}%` }}
-                                              className="bg-sky-500 h-full transition-opacity"
-                                            />
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <p className="text-xs text-zinc-400 py-2">
-                                      {item.statusState === 'upcoming'
-                                        ? 'Las estadísticas en vivo se activarán al comenzar el encuentro.'
-                                        : 'Estadísticas detalladas no disponibles para este encuentro.'}
-                                    </p>
-                                  )}
-                                </div>
-
-                                {/* Key Match Timeline Events */}
-                                <div className="space-y-2">
-                                  <h4 className="text-xs font-semibold text-zinc-300">
-                                    {lang === 'es' ? 'Eventos Clave' : 'Key Events'}
-                                  </h4>
-                                  {details && details.events.length > 0 ? (
-                                    <div className="divide-y divide-white/[0.05] max-h-56 overflow-y-auto pr-1">
-                                      {details.events.map((ev) => (
-                                        <div
-                                          key={ev.id}
-                                          className="py-2 flex items-center justify-between gap-2 text-xs"
-                                        >
-                                          <div className="flex items-center gap-2 min-w-0">
-                                            <span className="w-9 font-mono font-bold tabular-nums text-[#22C55E] shrink-0">
-                                              {ev.clock}
-                                            </span>
-                                            <span className="text-zinc-400 shrink-0">
-                                              {ev.typeLabel} ·
-                                            </span>
-                                            <span className="font-medium text-white truncate">
-                                              {ev.playerName}
-                                            </span>
-                                          </div>
-                                          <span className="text-[11px] text-zinc-400 shrink-0">
-                                            {ev.side === 'home'
-                                              ? item.homeShort
-                                              : ev.side === 'away'
-                                              ? item.awayShort
-                                              : ''}
-                                          </span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
-                                    <p className="text-xs text-zinc-400 py-2">
-                                      {item.statusState === 'upcoming'
-                                        ? `Inicio programado a las ${item.kickoffTime}.`
-                                        : 'Sin goles ni tarjetas registradas.'}
-                                    </p>
-                                  )}
-                                </div>
-                              </div>
-                            ) : (
-                              /* Lineups View */
-                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                {[
-                                  { team: item.homeTeam, lineup: details?.homeLineup },
-                                  { team: item.awayTeam, lineup: details?.awayLineup },
-                                ].map(({ team, lineup }, idx) => (
-                                  <div key={idx} className="space-y-2">
-                                    <div className="flex items-center justify-between text-xs">
-                                      <span className="font-bold text-white truncate">{team}</span>
-                                      {lineup?.formation && (
-                                        <span className="font-mono tabular-nums text-zinc-400">
-                                          {lineup.formation}
-                                        </span>
-                                      )}
-                                    </div>
-                                    {lineup && lineup.starters.length > 0 ? (
-                                      <div className="divide-y divide-white/[0.05] text-xs">
-                                        {lineup.starters.map((p) => (
-                                          <div
-                                            key={p.id}
-                                            className="py-1.5 flex items-center justify-between gap-2"
-                                          >
-                                            <div className="flex items-center gap-2 min-w-0">
-                                              <span className="w-6 font-mono tabular-nums text-zinc-400 shrink-0">
-                                                {p.jersey}
-                                              </span>
-                                              <span className="text-zinc-100 truncate">
-                                                {p.name}
-                                              </span>
-                                            </div>
-                                            {p.position && (
-                                              <span className="text-[11px] text-zinc-500 shrink-0">
-                                                {p.position}
-                                              </span>
-                                            )}
-                                          </div>
-                                        ))}
-                                      </div>
-                                    ) : (
-                                      <p className="text-xs text-zinc-400 py-2">
-                                        {lang === 'es'
-                                          ? 'Once titular aún no confirmado.'
-                                          : 'Starting lineup not confirmed yet.'}
-                                      </p>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </div>
+                          {/* Real-Time Match Center (Commentary, Pitch Lineups, Period Stats + Shot Map, Events) */}
+                          <LiveMatchCenter
+                            lang={lang}
+                            details={details}
+                            loading={loadingDetailId === item.id}
+                            homeTeam={item.homeTeam}
+                            awayTeam={item.awayTeam}
+                            homeShort={item.homeShort}
+                            awayShort={item.awayShort}
+                            homeLogo={item.homeLogo}
+                            awayLogo={item.awayLogo}
+                            homeScore={item.homeScore}
+                            awayScore={item.awayScore}
+                            statusState={item.statusState}
+                            statusLabel={item.statusLabel}
+                            competition={item.groupTitle}
+                            variant="expanded"
+                            defaultTab="lineups"
+                            onRefresh={() => loadMatchDetails(item, true)}
+                          />
                         </div>
                       )}
                     </div>

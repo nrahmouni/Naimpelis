@@ -22,9 +22,14 @@ import {
   Trophy,
   Lock,
   Bookmark,
+  Palette,
+  Sparkles,
+  Scale,
+  CalendarPlus,
 } from 'lucide-react';
 import {
   AppLanguage,
+  AppTheme,
   CatalogMovie,
   CloudSavedRoom,
   FavoriteChannelItem,
@@ -35,6 +40,8 @@ import { triggerHaptic } from '../utils/haptics';
 import { buildShortInviteUrl, extractRoomCodeFromInput } from '../utils/shortLink';
 import { EffectiveViewMode, getMonogramInitials } from './MobileViewportGuard';
 import { PWAInstallButton } from './PWAInstallPrompt';
+import { useThemeStore } from '../store/useThemeStore';
+import { useAppStore } from '../store/useAppStore';
 
 function formatResumeClock(sec?: number): string {
   if (!sec || !Number.isFinite(sec) || sec <= 0) return '00:00';
@@ -53,6 +60,9 @@ interface UserProfileHubModalProps {
   initialTab?: ProfileHubTab;
   onClose: () => void;
   lang: AppLanguage;
+  onChangeLang?: (lang: AppLanguage) => void;
+  onOpenLegalModal?: () => void;
+  onOpenDesignSystem?: () => void;
   authUser: User | null;
   authLoading: boolean;
   displayName: string;
@@ -88,6 +98,9 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
   initialTab = 'history',
   onClose,
   lang,
+  onChangeLang,
+  onOpenLegalModal,
+  onOpenDesignSystem,
   authUser,
   authLoading,
   displayName,
@@ -117,6 +130,10 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
   onDeleteSavedRoom,
   onLeaveRoom,
 }) => {
+  const { theme, setTheme, density, setDensity, liteMode, setLiteMode } = useThemeStore();
+  const { scheduledRooms, addScheduledRoom, removeScheduledRoom } = useAppStore();
+  const [scheduleTitle, setScheduleTitle] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('22:00');
   const [activeTab, setActiveTab] = useState<ProfileHubTab>(
     initialTab === 'channels' ? 'favorites' : initialTab
   );
@@ -980,41 +997,116 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   </div>
                 )}
 
-                {recentRooms.length > 0 && (
+                {recentRooms.filter((r) => r.id.toLowerCase() !== roomId.toLowerCase()).length > 0 && (
                   <div className="pt-2 border-t border-white/[0.06] space-y-2">
                     <div className="text-[11px] font-medium text-zinc-400">
-                      {lang === 'es' ? 'Tus salas recientes' : 'Recent rooms'}
+                      {lang === 'es' ? 'Otras salas recientes' : 'Other recent rooms'}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
-                      {recentRooms.slice(0, 5).map((r) => {
-                        const isCurrent = r.id.toLowerCase() === roomId.toLowerCase();
-                        return (
+                      {recentRooms
+                        .filter((r) => r.id.toLowerCase() !== roomId.toLowerCase())
+                        .slice(0, 5)
+                        .map((r) => (
                           <button
                             key={r.id}
                             type="button"
                             onClick={() => {
-                              if (!isCurrent) {
-                                triggerHaptic('light');
-                                onSwitchRoom(r.id, r.name);
-                                onClose();
-                              }
+                              triggerHaptic('light');
+                              onSwitchRoom(r.id, r.name);
+                              onClose();
                             }}
-                            className={`h-9 px-3 rounded-xl text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
-                              isCurrent
-                                ? 'bg-[#E11D48]/20 border border-[#E11D48]/50 text-white'
-                                : 'bg-[#0E0F16] hover:bg-white/[0.08] border border-white/[0.08] text-zinc-300'
-                            }`}
+                            className="h-9 px-3 rounded-xl text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors bg-[#0E0F16] hover:bg-white/[0.08] border border-white/[0.08] text-zinc-300"
                           >
                             <span className="truncate max-w-[130px]">{r.name}</span>
                             <span className="font-mono text-[10px] text-zinc-500">
                               #{r.id}
                             </span>
                           </button>
-                        );
-                      })}
+                        ))}
                     </div>
                   </div>
                 )}
+
+                {/* Scheduled Room Reminder Builder */}
+                <div className="pt-2.5 border-t border-white/[0.06] space-y-2">
+                  <div className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5">
+                    <CalendarPlus className="w-3.5 h-3.5 text-[#FB7185]" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Programar sesión en sala'
+                        : lang === 'ca'
+                        ? 'Programar sessió a la sala'
+                        : 'Schedule watch session'}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      value={scheduleTitle}
+                      onChange={(e) => setScheduleTitle(e.target.value)}
+                      placeholder={
+                        lang === 'es' ? 'Película o partido hoy...' : 'Movie or match tonight...'
+                      }
+                      className="flex-1 min-w-0 h-9 px-3 rounded-xl bg-[#0E0F16] border border-white/10 text-xs text-white placeholder:text-zinc-500 outline-none"
+                    />
+                    <input
+                      type="time"
+                      value={scheduleTime}
+                      onChange={(e) => setScheduleTime(e.target.value)}
+                      className="h-9 px-2 rounded-xl bg-[#0E0F16] border border-white/10 text-xs text-white outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!scheduleTitle.trim()) return;
+                        triggerHaptic('success');
+                        const [hh, mm] = scheduleTime.split(':').map(Number);
+                        const dt = new Date();
+                        dt.setHours(Number.isFinite(hh) ? hh : 22, Number.isFinite(mm) ? mm : 0, 0, 0);
+                        addScheduledRoom({
+                          roomId,
+                          roomName: roomName || `Sala ${roomId.toUpperCase()}`,
+                          title: scheduleTitle.trim(),
+                          scheduledForIso: dt.toISOString(),
+                          createdAt: Date.now(),
+                        });
+                        setScheduleTitle('');
+                      }}
+                      className="h-9 px-3 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white cursor-pointer shrink-0"
+                    >
+                      +
+                    </button>
+                  </div>
+                  {scheduledRooms.length > 0 && (
+                    <div className="space-y-1.5">
+                      {scheduledRooms.slice(0, 3).map((sr) => (
+                        <div
+                          key={sr.id}
+                          className="px-2.5 py-2 rounded-xl bg-[#0E0F16] border border-white/[0.08] flex items-center justify-between gap-2 text-xs"
+                        >
+                          <div className="min-w-0">
+                            <span className="font-semibold text-white truncate block">{sr.title}</span>
+                            <span className="text-[11px] text-zinc-400">
+                              {new Date(sr.scheduledForIso).toLocaleTimeString([], {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                              })}{' '}
+                              · #{sr.roomId}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => removeScheduledRoom(sr.id)}
+                            className="p-1 text-zinc-400 hover:text-rose-400 cursor-pointer"
+                            aria-label="Eliminar recordatorio"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {/* Profile Name, View Mode & Cloud Auth Card */}
@@ -1087,6 +1179,132 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
 
                   <div className="flex items-center justify-end">
                     <PWAInstallButton lang={lang} />
+                  </div>
+                </div>
+
+                {/* Theme, Density, Lite Mode & Language Preferences */}
+                <div className="pt-3 border-t border-white/[0.06] space-y-3">
+                  <div className="flex items-center gap-1.5 text-xs font-medium text-white">
+                    <Palette className="w-4 h-4 text-[#FB7185]" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Apariencia, Rendimiento e Idioma'
+                        : lang === 'ca'
+                        ? 'Aparença, Rendiment i Idioma'
+                        : 'Appearance, Performance & Language'}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
+                    {(
+                      [
+                        { id: 'light', label: 'Tema Claro' },
+                        { id: 'dark', label: 'Tema Oscuro' },
+                        { id: 'oled', label: 'OLED Negro' },
+                        { id: 'soft-dark', label: 'Noche Suave' },
+                        { id: 'high-contrast', label: 'Alto Contraste' },
+                      ] as { id: AppTheme; label: string }[]
+                    ).map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setTheme(opt.id);
+                        }}
+                        className={`min-h-9 px-2.5 rounded-xl text-[11px] font-semibold border cursor-pointer transition-colors ${
+                          theme === opt.id
+                            ? 'bg-[#E11D48] text-white border-[#E11D48]'
+                            : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-1.5">
+                      {(['comfortable', 'compact'] as const).map((d) => (
+                        <button
+                          key={d}
+                          type="button"
+                          onClick={() => setDensity(d)}
+                          className={`min-h-8 px-2.5 rounded-lg text-[11px] font-semibold border cursor-pointer ${
+                            density === d
+                              ? 'bg-[#E11D48] text-white border-[#E11D48]'
+                              : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+                          }`}
+                        >
+                          {d === 'comfortable' ? 'Cómoda' : 'Compacta'}
+                        </button>
+                      ))}
+                      <button
+                        type="button"
+                        onClick={() => setLiteMode(!liteMode)}
+                        className={`min-h-8 px-2.5 rounded-lg text-[11px] font-semibold border cursor-pointer ${
+                          liteMode
+                            ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
+                            : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+                        }`}
+                      >
+                        Lite: {liteMode ? 'ON' : 'OFF'}
+                      </button>
+                    </div>
+
+                    {onChangeLang && (
+                      <div className="flex items-center gap-1">
+                        {(['es', 'ca', 'en'] as AppLanguage[]).map((code) => (
+                          <button
+                            key={code}
+                            type="button"
+                            onClick={() => onChangeLang(code)}
+                            className={`min-h-8 px-2.5 rounded-lg text-[11px] font-bold uppercase border cursor-pointer ${
+                              lang === code
+                                ? 'bg-white text-[#050508] border-white'
+                                : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+                            }`}
+                          >
+                            {code}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Annual Stats Snapshot + Design System / GDPR links */}
+                  <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.07] flex items-center justify-between gap-2 text-[11px] text-zinc-300">
+                    <span>
+                      🎬 {watchHistory.length} vistos · ♥ {watchlist.length} guardados · ⭐ {favoriteChannels.length} canales
+                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {onOpenDesignSystem && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenDesignSystem();
+                          }}
+                          className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 cursor-pointer"
+                          title="Design System & Tokens"
+                        >
+                          <Sparkles className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {onOpenLegalModal && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            onClose();
+                            onOpenLegalModal();
+                          }}
+                          className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 cursor-pointer"
+                          title="Privacidad y RGPD"
+                        >
+                          <Scale className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
 

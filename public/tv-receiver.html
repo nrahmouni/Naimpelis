@@ -673,9 +673,6 @@
 
         <div class="status-row">
           <div id="conn-badge" class="status-badge connecting">Conectando con servidor...</div>
-          <button type="button" id="btn-header-fs" class="tv-btn-fullscreen" tabindex="0">
-            ⛶ Pantalla Completa
-          </button>
           <button type="button" id="btn-web-mode" class="tv-btn" tabindex="0">
             Ir a Portada Web
           </button>
@@ -738,7 +735,7 @@
           <div class="step-num">1</div>
           <div class="step-text">
             <strong>Abre tu sala en el móvil</strong>
-            Entra en <span id="step-domain-label">naimcine.ai.studio</span> desde tu smartphone.
+            Entra en <span id="step-domain-label">la app web</span> desde tu smartphone.
           </div>
         </div>
         <div class="step-card">
@@ -843,11 +840,6 @@
       <div id="reactions-layer"></div>
     </div>
 
-    <!-- Always-Accessible Corner Fullscreen Button (auto-hides once in Fullscreen) -->
-    <button type="button" id="tv-corner-fs-btn" tabindex="0">
-      ⛶ Pantalla Completa
-    </button>
-
     <!-- 1-Key OK Fullscreen Prompt when triggered remotely from Mobile Phone -->
     <div id="fs-prompt-banner">
       <button type="button" id="btn-confirm-remote-fs" class="tv-btn-primary" tabindex="0">
@@ -868,7 +860,7 @@
           }
         } catch (e) {}
 
-        var hostLabel = window.location.host || 'naimcine.ai.studio';
+        var hostLabel = window.location.host || 'localhost';
         var hostEl = document.getElementById('host-url-label');
         var stepDomainEl = document.getElementById('step-domain-label');
         if (hostEl) {
@@ -938,8 +930,8 @@
 
         function syncFullscreenButtons() {
           var active = isBrowserInFullscreen();
-          var label = active ? '✓ Salir Pantalla Completa' : '⛶ Pantalla Completa';
-          var ids = ['btn-header-fs', 'btn-pairing-fs', 'btn-hud-fs', 'btn-dock-fs', 'btn-standby-fs'];
+          var label = active ? '✓ Salir Pantalla Completa' : '⛶ Pantalla Completa TV';
+          var ids = ['btn-pairing-fs', 'btn-hud-fs', 'btn-dock-fs', 'btn-standby-fs'];
           for (var i = 0; i < ids.length; i++) {
             var b = document.getElementById(ids[i]);
             if (b) {
@@ -1825,10 +1817,13 @@
 
         document.getElementById('btn-unlock-audio').onclick = unlockAudioAndFullscreen;
         document.getElementById('btn-unmute-now').onclick = unlockAudioAndFullscreen;
-        document.getElementById('btn-header-fs').onclick = function () {
-          unlockAudio();
-          requestTvFullscreen(false);
-        };
+        const btnHeaderFs = document.getElementById('btn-header-fs');
+        if (btnHeaderFs) {
+          btnHeaderFs.onclick = function () {
+            unlockAudio();
+            requestTvFullscreen(false);
+          };
+        }
         document.getElementById('btn-pairing-fs').onclick = function () {
           unlockAudio();
           requestTvFullscreen(false);

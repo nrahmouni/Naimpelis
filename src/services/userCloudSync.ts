@@ -440,10 +440,15 @@ export async function upsertCloudWatchHistory(
   });
 }
 
+const PROGRESS_THROTTLE_MS = 15_000;
+const lastProgressWriteAt = new Map<string, number>();
+const pendingProgressWrites = new Map<string, { resume: number; duration: number }>();
+
 export async function updateCloudWatchProgressOnly(
   rawItemId: string,
   resumeTimeSec: number,
-  durationSec: number
+  durationSec: number,
+  forceFlush = false
 ): Promise<void> {
   const user = auth.currentUser;
   if (!user || !user.emailVerified) return;
@@ -456,6 +461,16 @@ export async function updateCloudWatchProgressOnly(
   const safeDuration = Math.floor(clampNumber(durationSec, 0, 86400, 0));
   const finalResume =
     safeDuration > 120 && safeResume / safeDuration >= 0.96 ? 0 : safeResume;
+
+  const now = Date.now();
+  const lastWrite = lastProgressWriteAt.get(docId) ?? 0;
+  if (!forceFlush && now - lastWrite < PROGRESS_THROTTLE_MS) {
+    pendingProgressWrites.set(docId, { resume: finalResume, duration: safeDuration });
+    return;
+  }
+
+  pendingProgressWrites.delete(docId);
+  lastProgressWriteAt.set(docId, now);
 
   const path = `watchHistory/${docId}`;
   const docRef = doc(db, 'watchHistory', docId);
@@ -476,6 +491,32 @@ export async function updateCloudWatchProgressOnly(
       handleFirestoreError(error, OperationType.UPDATE, path);
     }
   });
+}
+
+export async function flushPendingCloudWatchProgress(): Promise<void> {
+  const user = auth.currentUser;
+  if (!user || !user.emailVerified || pendingProgressWrites.size === 0) return;
+  const entries = Array.from(pendingProgressWrites.entries());
+  pendingProgressWrites.clear();
+  await Promise.all(
+    entries.map(([docId, data]) => {
+      const path = `watchHistory/${docId}`;
+      const docRef = doc(db, 'watchHistory', docId);
+      lastProgressWriteAt.set(docId, Date.now());
+      return enqueueDocWrite(path, async () => {
+        if (!knownHistoryDocIds.has(docId)) return;
+        try {
+          await updateDoc(docRef, {
+            resumeTimeSec: data.resume,
+            durationSec: data.duration,
+            updatedAt: serverTimestamp(),
+          });
+        } catch {
+          // Non-blocking flush on unload/pause
+        }
+      });
+    })
+  );
 }
 
 export async function deleteCloudWatchHistoryItem(rawItemId: string): Promise<void> {
@@ -1351,8 +1392,11 @@ export function subscribeUserCloudCollections(
         const d = docSnap.data();
         const rawQueue = Array.isArray(d.queueItems) ? d.queueItems : [];
         const parsedQueue: RoomQueueItem[] = rawQueue
-          .filter((q: any) => q && typeof q === 'object' && q.title)
-          .map((q: any, idx: number) => ({
+          .filter(
+            (q): q is Record<string, unknown> =>
+              Boolean(q) && typeof q === 'object' && typeof (q as { title?: unknown }).title === 'string'
+          )
+          .map((q, idx: number) => ({
             id: String(q.id || `q-${idx}`),
             kind:
               q.kind === 'tv' || q.kind === 'youtube' || q.kind === 'direct'

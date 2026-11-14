@@ -144,11 +144,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   };
 
   return (
-    <div className="min-h-full w-full bg-[#050507] text-[#F5F5F7] overflow-x-clip">
+    <div className="min-h-dvh w-full bg-[var(--nc-bg-canvas)] text-[var(--nc-text-primary)] overflow-x-clip">
       <div
-        className={`@container min-h-full w-full flex flex-col pt-safe pb-safe relative ${
+        className={`@container min-h-dvh w-full flex flex-col pt-safe pb-safe relative ${
           isFramedMobileOnPc
-            ? 'max-w-[27rem] mx-auto border-x border-white/[0.08] bg-[#050507] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
+            ? 'max-w-[27rem] mx-auto border-x border-white/[0.08] bg-[var(--nc-bg-canvas)] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
             : ''
         }`}
       >
@@ -567,20 +567,21 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           </div>
         </section>
 
-        {onOpenAdsPage && (
-          <div className="pt-4 pb-1 flex justify-center">
+        <footer className="pt-4 pb-2 flex flex-wrap items-center justify-center gap-3 text-[11px] text-zinc-500">
+          <span>NAIM CINE · Streaming sincronizado</span>
+          {onOpenAdsPage && (
             <button
               type="button"
               onClick={() => {
                 triggerHaptic('light');
                 onOpenAdsPage();
               }}
-              className="text-[11px] font-mono tracking-wider text-zinc-600 hover:text-zinc-300 opacity-50 hover:opacity-100 transition-all cursor-pointer py-1 px-3"
+              className="hover:text-zinc-300 transition-colors cursor-pointer py-1 px-2"
             >
-              naimcine ads
+              {lang === 'ca' ? 'Sobre la plataforma' : lang === 'en' ? 'About' : 'Sobre la app'}
             </button>
-          </div>
-        )}
+          )}
+        </footer>
 
         {/* ==================================================================== */}
         {/* PROGRESSIVE DISCLOSURE: LOBBY SETTINGS & APK BOTTOM SHEET            */}

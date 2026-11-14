@@ -219,118 +219,15 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             </PrimaryButton>
           </div>
 
-          {/* Direct Native APK for Google TV / Chromecast (Physical Remote) */}
-          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-[#E11D48]/30 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <Tv className="w-3.5 h-3.5 text-[#E11D48]" />
-                <span>App Nativa Google TV &amp; Chromecast (.APK)</span>
-              </div>
-              <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
-                Funciona 100% con el mando físico de tu tele sin usar el móvil.
-              </p>
-            </div>
-            <a
-              href="/NAIM-CINE-TV.apk?v=14"
-              download="NAIM-CINE-TV.apk"
-              className="min-h-[42px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
-            >
-              <Download className="w-4 h-4 shrink-0" />
-              <span>APK TV</span>
-            </a>
-          </div>
-
-          {/* Direct Native APK for Android Mobile */}
-          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-white/12 flex items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
-                <Download className="w-3.5 h-3.5 text-[#FB7185]" />
-                <span>App Nativa Móvil Android (.APK)</span>
-              </div>
-              <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
-                Buscador de Cine y Series, motor ExoPlayer HD, Fútbol RBTV+, beIN ES/Árabe, ESPN 1-7, DSports y TDT.
-              </p>
-            </div>
-            <a
-              href="/NAIM-CINE.apk?v=14"
-              download="NAIM-CINE.apk"
-              className="min-h-[42px] px-3.5 rounded-xl bg-white/[0.1] hover:bg-white/[0.16] border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
-            >
-              <Download className="w-4 h-4 text-[#FB7185] shrink-0" />
-              <span>APK Móvil</span>
-            </a>
-          </div>
-
-          {/* Samsung Smart TV IPTV (.M3U Playlist + XMLTV EPG) */}
-          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-sky-500/25 space-y-2.5">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0">
-                <div className="text-[11px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
-                  <Tv className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Samsung Smart TV · Lista IPTV (.M3U + EPG)</span>
-                </div>
-                <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
-                  Los 86 canales en directo (TDT, Movistar+, DAZN, beIN Español y Árabe 1-9, ESPN 1-7, DSports) listos para OTTplayer, IPTV Smarters, Smart IPTV o SS IPTV.
-                </p>
-              </div>
-              <a
-                href="/naim-cine.m3u?download=1"
-                download="NAIM-CINE-Samsung-TV.m3u"
-                className="min-h-[40px] px-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-zinc-950 text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
-              >
-                <Download className="w-3.5 h-3.5 shrink-0" />
-                <span>.M3U</span>
-              </a>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => handleCopyIptvLink('m3u')}
-                className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-semibold text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-              >
-                {copiedIptv === 'm3u' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>URL IPTV Copiada</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Copiar URL .M3U</span>
-                  </>
-                )}
-              </button>
-
-              <button
-                type="button"
-                onClick={() => handleCopyIptvLink('epg')}
-                className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-semibold text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
-              >
-                {copiedIptv === 'epg' ? (
-                  <>
-                    <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>URL EPG Copiada</span>
-                  </>
-                ) : (
-                  <>
-                    <Copy className="w-3.5 h-3.5 text-zinc-300" />
-                    <span>Copiar Guía EPG</span>
-                  </>
-                )}
-              </button>
-            </div>
-          </div>
-
-          {/* 2. 1-Step 4-Digit Smart TV Code Pairing */}
+          {/* 1. Primary Option A: 1-Step 4-Digit Smart TV Code Pairing */}
           <form
             onSubmit={handleSubmit}
-            className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3"
+            className="p-4 rounded-2xl bg-white/[0.04] border border-[#E11D48]/30 space-y-3"
           >
             <div className="flex items-center justify-between gap-2">
               <div>
-                <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                  Opción B · Código Smart TV (4 dígitos)
+                <div className="text-[11px] font-bold uppercase tracking-wider text-[#FB7185]">
+                  Opción A · Código Smart TV (4 dígitos)
                 </div>
                 <p className="text-xs text-zinc-300 mt-0.5">
                   Abre <span className="font-mono font-bold text-white">{tvUrl.replace(/^https?:\/\//, '')}</span> en tu TV e introduce el código:
@@ -363,7 +260,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               </PrimaryButton>
             </div>
 
-            {/* Expandable helper for TV URL & QR without forcing a 2-step wizard */}
+            {/* Expandable helper for TV URL & QR */}
             <div className="pt-1 border-t border-white/[0.06]">
               <button
                 type="button"
@@ -421,6 +318,108 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               )}
             </div>
           </form>
+
+          {/* 2. Option B: Direct Native Google TV & Android Mobile APKs + IPTV */}
+          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-white/12 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-1.5">
+                <Download className="w-3.5 h-3.5 text-[#FB7185]" />
+                <span>Opción B · App Nativa Google TV (.APK)</span>
+              </div>
+              <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
+                Funciona 100% con el mando físico de tu tele sin usar el móvil.
+              </p>
+            </div>
+            <a
+              href="/NAIM-CINE-TV.apk?v=240"
+              download="NAIM-CINE-TV.apk"
+              className="min-h-[42px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
+            >
+              <Download className="w-4 h-4 shrink-0" />
+              <span>APK TV</span>
+            </a>
+          </div>
+
+          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-white/12 flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-white flex items-center gap-1.5">
+                <Download className="w-3.5 h-3.5 text-[#FB7185]" />
+                <span>App Nativa Móvil Android (.APK)</span>
+              </div>
+              <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
+                Buscador de Cine y Series, motor Media3 HD, Fútbol en directo, Deportes y TDT España.
+              </p>
+            </div>
+            <a
+              href="/NAIM-CINE.apk?v=240"
+              download="NAIM-CINE.apk"
+              className="min-h-[42px] px-3.5 rounded-xl bg-white/[0.1] hover:bg-white/[0.16] border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
+            >
+              <Download className="w-4 h-4 text-[#FB7185] shrink-0" />
+              <span>APK Móvil</span>
+            </a>
+          </div>
+
+          {/* Samsung Smart TV IPTV (.M3U Playlist + XMLTV EPG) */}
+          <div className="p-3.5 rounded-2xl bg-[#11131C] border border-sky-500/25 space-y-2.5">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
+                  <Tv className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Samsung Smart TV · Lista IPTV (.M3U + EPG)</span>
+                </div>
+                <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
+                  Canales en directo (TDT, Movistar+, DAZN, Deportes) listos para OTTplayer, IPTV Smarters, Smart IPTV o SS IPTV.
+                </p>
+              </div>
+              <a
+                href="/naim-cine.m3u?download=1"
+                download="NAIM-CINE-Samsung-TV.m3u"
+                className="min-h-[40px] px-3 rounded-xl bg-sky-500 hover:bg-sky-400 text-zinc-950 text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
+              >
+                <Download className="w-3.5 h-3.5 shrink-0" />
+                <span>.M3U</span>
+              </a>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => handleCopyIptvLink('m3u')}
+                className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-semibold text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              >
+                {copiedIptv === 'm3u' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>URL IPTV Copiada</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-sky-400" />
+                    <span>Copiar URL .M3U</span>
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => handleCopyIptvLink('epg')}
+                className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-semibold text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+              >
+                {copiedIptv === 'epg' ? (
+                  <>
+                    <Check className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>URL EPG Copiada</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3.5 h-3.5 text-zinc-300" />
+                    <span>Copiar Guía EPG</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
 
           {/* 3. Quick Actions: Open Touch Remote or Switch Device to TV Receiver */}
           <div className="grid grid-cols-2 gap-2">

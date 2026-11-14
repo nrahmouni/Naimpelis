@@ -1,4 +1,7 @@
-export type AppLanguage = 'es' | 'en';
+export type AppLanguage = 'es' | 'ca' | 'en';
+export type AppTheme = 'oled' | 'soft-dark' | 'high-contrast' | 'light' | 'dark';
+export type TextDensity = 'comfortable' | 'compact';
+export type RoomRole = 'host' | 'mod' | 'viewer';
 
 export interface Participant {
   id: string;
@@ -6,7 +9,9 @@ export interface Participant {
   avatar: string;
   color: string;
   isHost: boolean;
+  role?: RoomRole;
   joinedAt: number;
+  isOnline?: boolean;
 }
 
 export type PlaybackEngineMode =
@@ -55,7 +60,7 @@ export interface ActiveSeriesContext {
 
 export interface VideoState {
   mode: PlaybackEngineMode;
-  /** Currently playing proxied HLS URL, direct MP4 URL, YouTube video ID, or Cloud Browser URL */
+  /** Currently playing proxied HLS URL, direct MP4 URL, YouTube video ID, or remote URL */
   url: string;
   rawSourceUrl: string;
   title: string;
@@ -142,6 +147,8 @@ export interface MediaRichDetails {
   overview: string;
   poster: string;
   backdrop: string;
+  logoUrl?: string;
+  dominantColor?: string;
   trailerKey?: string;
   directorOrCreator?: string;
   cast: CastMemberItem[];
@@ -264,6 +271,7 @@ export interface RoomQueueItem {
   url?: string;
   preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN';
   addedBy: string;
+  voterIds?: string[];
 }
 
 export type PollProposalItem = Omit<RoomQueueItem, 'id' | 'addedBy'>;
@@ -308,11 +316,27 @@ export interface SportsMatch {
   isLive: boolean;
   is247Channel?: boolean;
   channels: StreamTrack[];
+  matchMeta?: {
+    eventId?: string;
+    fotmobMatchId?: string;
+    leagueSlug?: string;
+    homeTeam: string;
+    awayTeam: string;
+    homeShort?: string;
+    awayShort?: string;
+    homeLogo?: string;
+    awayLogo?: string;
+    homeScore?: string;
+    awayScore?: string;
+    statusState?: 'live' | 'upcoming' | 'finished';
+    statusLabel?: string;
+  };
 }
 
 export interface FootballMatchboardItem {
   id: string;
   eventId: string;
+  fotmobMatchId?: string;
   leagueSlug: string;
   regionName: string;
   leagueName: string;
@@ -331,6 +355,8 @@ export interface FootballMatchboardItem {
   awayLogo?: string;
   homeScore: string;
   awayScore: string;
+  homeRedCards?: number;
+  awayRedCards?: number;
   channels: StreamTrack[];
 }
 
@@ -346,7 +372,7 @@ export interface FootballMatchStatItem {
 export interface FootballMatchTimelineEvent {
   id: string;
   clock: string;
-  type: 'goal' | 'yellow-card' | 'red-card' | 'substitution' | 'other';
+  type: 'goal' | 'yellow-card' | 'red-card' | 'substitution' | 'var' | 'other';
   typeLabel: string;
   playerName: string;
   assistOrSubName?: string;
@@ -358,24 +384,110 @@ export interface FootballMatchLineupPlayer {
   id: string;
   jersey: string;
   name: string;
+  shortName?: string;
   position: string;
   starter: boolean;
+  age?: number;
+  club?: string;
+  country?: string;
+  height?: string;
+  marketValue?: string;
+  marketValueNum?: number;
+  rating?: string;
+  photoUrl?: string;
+  isCaptain?: boolean;
+  goals?: number;
+  assists?: number;
+  yellowCard?: boolean;
+  redCard?: boolean;
+  subInMinute?: string;
+  subOutMinute?: string;
+  layout?: {
+    x: number;
+    y: number;
+  };
 }
 
 export interface FootballMatchLineupTeam {
   teamName: string;
   formation?: string;
+  coach?: string;
   starters: FootballMatchLineupPlayer[];
   substitutes: FootballMatchLineupPlayer[];
+  unavailable?: { id: string; name: string; reason?: string; photoUrl?: string }[];
+  avgRating?: string;
+  totalMarketValue?: string;
+  averageAge?: number;
+}
+
+export interface FootballMatchCommentaryItem {
+  id: string;
+  minute: string;
+  text: string;
+  type?: string;
+  isImportant?: boolean;
+}
+
+export interface FootballMatchShotItem {
+  id?: string;
+  x: number;
+  y: number;
+  onTarget: boolean;
+  isGoal?: boolean;
+  isBlocked?: boolean;
+  home: boolean;
+  minute: string;
+  player: string;
+  xG?: number;
+  shotType?: string;
+  situation?: string;
+  period?: string;
+  onGoalShot?: {
+    x: number;
+    y: number;
+  } | null;
+}
+
+export interface FootballMomentumPoint {
+  minute: number;
+  value: number;
 }
 
 export interface FootballMatchDetails {
   eventId: string;
+  fotmobMatchId?: string;
+  source?: string;
   venue?: string;
+  referee?: string;
+  attendance?: string;
+  tournamentName?: string;
+  roundName?: string;
+  statusState?: 'live' | 'upcoming' | 'finished';
+  statusLabel?: string;
+  homeTeam?: string;
+  awayTeam?: string;
+  homeShort?: string;
+  awayShort?: string;
+  homeLogo?: string;
+  awayLogo?: string;
+  homeScore?: string;
+  awayScore?: string;
+  homeColor?: string;
+  awayColor?: string;
+  lineupsConfirmed?: boolean;
   stats: FootballMatchStatItem[];
+  statsByPeriod?: {
+    all: FootballMatchStatItem[];
+    firstHalf: FootballMatchStatItem[];
+    secondHalf: FootballMatchStatItem[];
+  };
   events: FootballMatchTimelineEvent[];
   homeLineup?: FootballMatchLineupTeam;
   awayLineup?: FootballMatchLineupTeam;
+  commentary?: FootballMatchCommentaryItem[];
+  shotsMap?: FootballMatchShotItem[];
+  momentum?: FootballMomentumPoint[];
+  updatedAt?: number;
 }
 
 export type TdtCategory =
@@ -591,6 +703,49 @@ export interface RoomData {
   cloudState?: CloudBrowserState;
   participants: Participant[];
   messages: ChatMessage[];
+  createdAt: number;
+}
+
+export type NotificationCategory = 'all' | 'invite' | 'football' | 'series' | 'update' | 'system';
+
+export interface AppNotificationItem {
+  id: string;
+  category: Exclude<NotificationCategory, 'all'>;
+  title: string;
+  body: string;
+  createdAt: number;
+  read: boolean;
+  actionLabel?: string;
+  roomId?: string;
+  eventId?: string;
+  tmdbId?: number;
+}
+
+export interface NotificationPreferences {
+  invites: boolean;
+  football: boolean;
+  series: boolean;
+  updates: boolean;
+  soundEnabled: boolean;
+  quietHoursEnabled: boolean;
+  quietStart: string;
+  quietEnd: string;
+}
+
+export interface SubtitleStyleSettings {
+  fontScale: number;
+  fontColor: string;
+  bgOpacity: number;
+  edgeShadow: 'shadow' | 'outline' | 'none';
+  fontFamily?: 'sans' | 'serif' | 'mono';
+}
+
+export interface ScheduledRoomItem {
+  id: string;
+  roomId: string;
+  roomName: string;
+  title: string;
+  scheduledForIso: string;
   createdAt: number;
 }
 

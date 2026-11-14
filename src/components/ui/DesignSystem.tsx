@@ -121,33 +121,32 @@ export interface StandardInputProps extends React.InputHTMLAttributes<HTMLInputE
   rightElement?: React.ReactNode;
 }
 
-export const StandardInput: React.FC<StandardInputProps> = ({
-  icon,
-  rightElement,
-  className = '',
-  ...props
-}) => {
-  return (
-    <div className="relative flex items-center w-full">
-      {icon && (
-        <div className="absolute left-3.5 text-zinc-400 pointer-events-none flex items-center justify-center">
-          {icon}
-        </div>
-      )}
-      <input
-        {...props}
-        className={`w-full min-h-11 ${icon ? 'pl-10' : 'pl-4'} ${
-          rightElement ? 'pr-12' : 'pr-4'
-        } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.08] border border-white/[0.09] focus:border-[#E11D48] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all ${className}`}
-      />
-      {rightElement && (
-        <div className="absolute right-1.5 flex items-center justify-center">
-          {rightElement}
-        </div>
-      )}
-    </div>
-  );
-};
+export const StandardInput = React.forwardRef<HTMLInputElement, StandardInputProps>(
+  ({ icon, rightElement, className = '', ...props }, ref) => {
+    return (
+      <div className="relative flex items-center w-full">
+        {icon && (
+          <div className="absolute left-3.5 text-zinc-400 pointer-events-none flex items-center justify-center">
+            {icon}
+          </div>
+        )}
+        <input
+          ref={ref}
+          {...props}
+          className={`w-full min-h-11 ${icon ? 'pl-10' : 'pl-4'} ${
+            rightElement ? 'pr-12' : 'pr-4'
+          } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.08] border border-white/[0.09] focus:border-[#E11D48] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all ${className}`}
+        />
+        {rightElement && (
+          <div className="absolute right-1.5 flex items-center justify-center">
+            {rightElement}
+          </div>
+        )}
+      </div>
+    );
+  }
+);
+StandardInput.displayName = 'StandardInput';
 
 // ============================================================================
 // 2. PROGRESSIVE DISCLOSURE: UNIVERSAL BOTTOM SHEET

@@ -1,13 +1,73 @@
 import {
+  CatalogMovie,
+  ChatMessage,
+  OnlineAppUser,
   Participant,
+  PollProposalItem,
   RestoredRoomBlueprint,
+  RoomPollState,
+  RoomQueueItem,
+  RoomRole,
   TvRemoteCommandType,
   VideoState,
 } from '../types';
 
+export interface SocketPayload {
+  id?: string;
+  senderId?: string;
+  senderName?: string;
+  senderAvatar?: string;
+  senderColor?: string;
+  text?: string;
+  timestamp?: number;
+  emoji?: string;
+  isSystem?: boolean;
+  name?: string;
+  hostId?: string;
+  hostName?: string;
+  hostOnlyControl?: boolean;
+  hasPin?: boolean;
+  activePoll?: RoomPollState | null;
+  poll?: RoomPollState | null;
+  participants?: Participant[];
+  messages?: ChatMessage[];
+  message?: ChatMessage;
+  queue?: RoomQueueItem[];
+  videoState?: VideoState;
+  roomId?: string;
+  roomName?: string;
+  invalidAttempt?: boolean;
+  success?: boolean;
+  error?: string;
+  users?: OnlineAppUser[];
+  fromUserId?: string;
+  fromUserName?: string;
+  fromUserAvatar?: string;
+  fromUserColor?: string;
+  fromFriendCode?: string;
+  inviteAuthToken?: string;
+  activeMediaTitle?: string;
+  targetName?: string;
+  deliveredLive?: boolean;
+  justFinished?: boolean;
+  winnerItem?: PollProposalItem;
+  image?: string;
+  url?: string;
+  title?: string;
+  isLoading?: boolean;
+  detectedStreamUrl?: string | null;
+  userId?: string;
+  userName?: string;
+  isTyping?: boolean;
+  command?: TvRemoteCommandType;
+  commandId?: string;
+  movie?: CatalogMovie;
+  [key: string]: unknown;
+}
+
 export interface SocketEvent {
   type: string;
-  payload: any;
+  payload: SocketPayload;
 }
 
 export interface ConnectRoomOptions {
@@ -30,6 +90,7 @@ class SocketService {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private intentionalClose = false;
   public latencyMs = 24;
+  public serverClockOffsetMs = 0;
 
   connect(
     roomId: string,
@@ -85,15 +146,23 @@ class SocketService {
 
       socket.onmessage = (event) => {
         try {
-          const message = JSON.parse(event.data) as SocketEvent;
+          const message = JSON.parse(String(event.data)) as SocketEvent;
           if (message.type === 'PONG' && message.payload?.clientTs) {
-            this.latencyMs = Math.max(4, Date.now() - Number(message.payload.clientTs));
-            this.notifyListeners({ type: 'LATENCY_UPDATED', payload: { latencyMs: this.latencyMs } });
+            const now = Date.now();
+            const rtt = Math.max(4, now - Number(message.payload.clientTs));
+            this.latencyMs = rtt;
+            if (typeof message.payload.serverTs === 'number') {
+              this.serverClockOffsetMs = message.payload.serverTs + Math.round(rtt / 2) - now;
+            }
+            this.notifyListeners({
+              type: 'LATENCY_UPDATED',
+              payload: { latencyMs: this.latencyMs, serverClockOffsetMs: this.serverClockOffsetMs },
+            });
             return;
           }
           this.notifyListeners(message);
-        } catch (err) {
-          console.error('Error parsing WS message:', err);
+        } catch {
+          // Ignore malformed non-JSON frame safely
         }
       };
 
@@ -102,7 +171,8 @@ class SocketService {
         this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: false } });
         if (!this.intentionalClose) {
           this.reconnectAttempts += 1;
-          const delay = Math.min(7000, 1000 * Math.min(this.reconnectAttempts, 7));
+          const jitter = Math.floor(Math.random() * 400);
+          const delay = Math.min(7000, 1000 * Math.min(this.reconnectAttempts, 7)) + jitter;
           this.reconnectTimer = setTimeout(() => {
             if (this.roomId && this.user) {
               this.connect(this.roomId, this.user, this.roomName, this.connectOptions);
@@ -114,10 +184,10 @@ class SocketService {
       };
 
       socket.onerror = () => {
-        // Handled by onclose reconnection
+        // Reconnection triggered by onclose
       };
-    } catch (err) {
-      console.error('Failed to open WebSocket:', err);
+    } catch {
+      this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: false } });
     }
   }
 
@@ -211,6 +281,16 @@ class SocketService {
     });
   }
 
+  sendTypingState(user: Participant, isTyping: boolean) {
+    if (!this.roomId) return;
+    this.send('TYPING_STATE', {
+      roomId: this.roomId,
+      userId: user.id,
+      userName: user.name,
+      isTyping,
+    });
+  }
+
   sendReaction(user: Participant, emoji: string) {
     this.send('SEND_REACTION', {
       roomId: this.roomId,
@@ -223,6 +303,14 @@ class SocketService {
     this.send('TRANSFER_HOST', {
       roomId: this.roomId,
       newHostId,
+    });
+  }
+
+  setParticipantRole(targetUserId: string, role: RoomRole) {
+    this.send('SET_PARTICIPANT_ROLE', {
+      roomId: this.roomId,
+      targetUserId,
+      role,
     });
   }
 
@@ -292,6 +380,14 @@ class SocketService {
     this.send('QUEUE_PROMOTE', {
       roomId: this.roomId,
       itemId,
+    });
+  }
+
+  voteQueueItem(itemId: string, userId: string) {
+    this.send('QUEUE_VOTE', {
+      roomId: this.roomId,
+      itemId,
+      userId,
     });
   }
 
@@ -399,4 +495,3 @@ class SocketService {
 }
 
 export const socketService = new SocketService();
-

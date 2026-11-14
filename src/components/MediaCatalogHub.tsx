@@ -61,6 +61,7 @@ import {
 } from '../utils/storage';
 import { MediaDetailsModal } from './MediaDetailsModal';
 import { FootballMatchboard } from './FootballMatchboard';
+import { BottomSheet, PrimaryButton, StandardInput } from './ui/DesignSystem';
 import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.jpg';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
 
@@ -364,6 +365,127 @@ const ANIME_CATEGORIES = [
   { id: 'drama', es: 'Drama y Seinen', en: 'Drama & Seinen' },
 ] as const;
 
+interface MasterpieceAnimePreset {
+  tmdbId: number;
+  title: string;
+  subtitle: string;
+  tag: string;
+  rating: string;
+  poster: string;
+  backdrop: string;
+}
+
+const MASTERPIECE_ANIME_PRESETS: MasterpieceAnimePreset[] = [
+  {
+    tmdbId: 1429,
+    title: 'Attack on Titan',
+    subtitle: 'Ataque a los Titanes · 4 Temp.',
+    tag: 'Shonen',
+    rating: '9.0',
+    poster: 'https://image.tmdb.org/t/p/w500/yFPQ4JhhirnCVe2UIKGMYX7TOGZ.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/rqbCbjB19amtOtFQbb3K2lgm2zv.jpg',
+  },
+  {
+    tmdbId: 127532,
+    title: 'Solo Leveling',
+    subtitle: 'Ore dake Level Up · 25 Caps.',
+    tag: 'Acción',
+    rating: '8.6',
+    poster: 'https://image.tmdb.org/t/p/w500/eCD7WS9h4lCT8N4Xavc9u8R1IGk.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/xMNH87maNLt9n2bMDYeI6db5VFm.jpg',
+  },
+  {
+    tmdbId: 95479,
+    title: 'Jujutsu Kaisen',
+    subtitle: 'Gojo & Sukuna · 47 Caps.',
+    tag: 'Shonen',
+    rating: '8.6',
+    poster: 'https://image.tmdb.org/t/p/w500/zKFkzRn1UyE11Jv9CJjVmvmQFvR.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/flgn0jXbg8GIe2qaWfd70A0uzfp.jpg',
+  },
+  {
+    tmdbId: 85937,
+    title: 'Demon Slayer',
+    subtitle: 'Kimetsu no Yaiba · 4 Temp.',
+    tag: 'Fantasía',
+    rating: '8.7',
+    poster: 'https://image.tmdb.org/t/p/w500/inXU5hvbDbitrYOgLrq2QjYqiJD.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/nTvM4mhqNlHIvUkI1gVnW6XP7GG.jpg',
+  },
+  {
+    tmdbId: 31911,
+    title: 'Fullmetal Alchemist: Brotherhood',
+    subtitle: 'Hagane no Renkinjutsushi · 64 Caps.',
+    tag: 'Clásico',
+    rating: '9.0',
+    poster: 'https://image.tmdb.org/t/p/w500/vIkH7fUQf8Olo8Apq56FQLGDXOo.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/2UG177tWHy7xRmMKWJHB7nAUmKd.jpg',
+  },
+  {
+    tmdbId: 46298,
+    title: 'Hunter × Hunter',
+    subtitle: 'Chimera Ant & Yorkshin · 148 Caps.',
+    tag: 'Aventura',
+    rating: '8.9',
+    poster: 'https://image.tmdb.org/t/p/w500/43wEsSJxuV8SZuipKpolOsuGVRZ.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/bFKKyCI89Xq98Gul8cGox8K3sZa.jpg',
+  },
+  {
+    tmdbId: 13916,
+    title: 'Death Note',
+    subtitle: 'Light & L · 37 Caps.',
+    tag: 'Misterio',
+    rating: '8.6',
+    poster: 'https://image.tmdb.org/t/p/w500/cFirFPdzle2QYyjFlLVwWUP5YAo.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/z8IPicmEKXUO4I2UDdMEqw7RqOE.jpg',
+  },
+  {
+    tmdbId: 37854,
+    title: 'One Piece',
+    subtitle: 'Egghead & Wano · 1100+ Caps.',
+    tag: 'Aventura',
+    rating: '8.9',
+    poster: 'https://image.tmdb.org/t/p/w500/8f33Q5AuM2G5ZqFeusbIqDjr3cI.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/2rmK7mnchw9Xr3XdiTFSxTTLXqv.jpg',
+  },
+  {
+    tmdbId: 42509,
+    title: 'Steins;Gate',
+    subtitle: 'Viajes en el tiempo · 24 Caps.',
+    tag: 'Sci-Fi',
+    rating: '9.0',
+    poster: 'https://image.tmdb.org/t/p/w500/6iysgZr6Upm5RlAlVFo5f4D9euu.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/gDvxT2z6TNxervG97WfpePRZ3aR.jpg',
+  },
+  {
+    tmdbId: 88803,
+    title: 'Vinland Saga',
+    subtitle: 'Thorfinn & Askeladd · 2 Temp.',
+    tag: 'Seinen',
+    rating: '8.7',
+    poster: 'https://image.tmdb.org/t/p/w500/ySPYLN1sHmgRdqdfLOE092JlNT.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/sPN7Ylc7swmyukJeQBNcRAl9usS.jpg',
+  },
+  {
+    tmdbId: 35935,
+    title: 'Berserk (1997)',
+    subtitle: 'La Edad de Oro · 25 Caps.',
+    tag: 'Seinen',
+    rating: '8.7',
+    poster: 'https://image.tmdb.org/t/p/w500/qsxalXLXwGqjlxG6PXfVeXYIMeu.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/99Y64VK0KwyRWfaW6VdpDfPKNMo.jpg',
+  },
+  {
+    tmdbId: 62104,
+    title: 'Los siete pecados capitales',
+    subtitle: 'Nanatsu no Taizai · 5 Temp.',
+    tag: 'Shonen',
+    rating: '8.4',
+    poster: 'https://image.tmdb.org/t/p/w500/yhmHgYvxj1Xez3q6pJKxQVFiP4S.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/cmziOVMQrqvVfrjjQdadMdi2bGL.jpg',
+  },
+];
+
 const YOUTUBE_QUICK_TOPICS = [
   {
     labelEs: 'Resúmenes LaLiga y Champions',
@@ -441,6 +563,9 @@ interface MediaCatalogHubProps {
   }) => void;
   hasConnectedSmartTv?: boolean;
   activeMediaTitle?: string;
+  onCreateNewRoom?: (customRoomName?: string) => void;
+  showWatchlistOnly?: boolean;
+  onWatchlistOnlyChange?: (val: boolean) => void;
 }
 
 export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
@@ -473,13 +598,28 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onPlayQueueItem,
   onStartPollFromQueue,
   onPlaySecondaryChannel,
+  onCreateNewRoom,
+  showWatchlistOnly: controlledWatchlistOnly,
+  onWatchlistOnlyChange,
 }) => {
   const t = UI_COPY[lang];
 
   const [focusedHub, setFocusedHub] = useState<FocusedHubMode>('all');
-  const [showWatchlistOnly, setShowWatchlistOnly] = useState(false);
+  const [internalWatchlistOnly, setInternalWatchlistOnly] = useState(false);
+  const showWatchlistOnly =
+    controlledWatchlistOnly !== undefined ? controlledWatchlistOnly : internalWatchlistOnly;
+  const setShowWatchlistOnly = (valOrUpdater: boolean | ((prev: boolean) => boolean)) => {
+    const nextVal =
+      typeof valOrUpdater === 'function' ? valOrUpdater(showWatchlistOnly) : valOrUpdater;
+    if (controlledWatchlistOnly === undefined) {
+      setInternalWatchlistOnly(nextVal);
+    }
+    onWatchlistOnlyChange?.(nextVal);
+  };
   const [previewItem, setPreviewItem] = useState<CatalogMovie | null>(null);
   const [liveScores, setLiveScores] = useState<LiveScoreMatch[]>([]);
+  const [showNewRoomSheet, setShowNewRoomSheet] = useState(false);
+  const [newRoomNameDraft, setNewRoomNameDraft] = useState('');
 
   // Universal Search & Apple TV+ Showcase on Home
   const [homeQuery, setHomeQuery] = useState('');
@@ -566,6 +706,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [footballLiveBrand, setFootballLiveBrand] = useState<
     'all' | 'beinsports' | 'espn' | 'dsports' | 'tnt_space' | 'movistar' | 'dazn'
   >('all');
+  const [show247Strip, setShow247Strip] = useState(true);
   const [sportsSearch, setSportsSearch] = useState('');
   const [brokenHeroImgs, setBrokenHeroImgs] = useState<Record<string, boolean>>({});
 
@@ -1730,8 +1871,18 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     return true;
   });
 
-  const multiplexChannels = filteredSports.filter((e) => e.is247Channel);
-  const scheduledMatches = filteredSports.filter((e) => !e.is247Channel);
+  const multiplexChannels = filteredSports.filter(
+    (e) =>
+      e.is247Channel &&
+      sportFilter !== 'soccer' &&
+      !(sportFilter === 'all' && e.sport === 'soccer')
+  );
+  const scheduledMatches = filteredSports.filter(
+    (e) =>
+      !e.is247Channel &&
+      sportFilter !== 'soccer' &&
+      !(sportFilter === 'all' && e.sport === 'soccer')
+  );
 
   const handleDirectSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -2020,7 +2171,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   };
 
   return (
-    <div className="@container w-full min-w-0 max-w-full space-y-5">
+    <div className="@container w-full min-w-0 max-w-full space-y-5 pb-24 sm:pb-6">
       {/* Movie / Series Rich Details & Language Selector Modal */}
       <MediaDetailsModal
         item={previewItem}
@@ -2768,7 +2919,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 {/* Scrollable Episode List (Full-Width Cards on Mobile, 2 Spacious Columns on Desktop lg:) */}
                 <div
                   ref={episodeListScrollRef}
-                  className="flex-1 overflow-y-auto px-3.5 py-3 sm:px-6 sm:py-4 space-y-3 pb-[max(1.25rem,env(safe-area-inset-bottom))]"
+                  className="flex-1 overflow-y-auto px-3.5 py-3 sm:px-6 sm:py-4 space-y-3 pb-[max(2rem,env(safe-area-inset-bottom))]"
                 >
                   {loadingSeriesDetails ? (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-2.5">
@@ -2857,9 +3008,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             >
                               {/* 16:9 Episode Still with Crisp Number Overlay */}
                               <div className="relative w-28 sm:w-36 aspect-video rounded-xl overflow-hidden bg-[#090A10] shrink-0">
-                                {!stillBroken && (ep.still || selectedSeries.backdrop) ? (
+                                {!stillBroken && (ep.still || selectedSeries.backdrop || selectedSeries.poster) ? (
                                   <img
-                                    src={ep.still || selectedSeries.backdrop}
+                                    src={ep.still || selectedSeries.backdrop || selectedSeries.poster}
                                     alt={displayEpHeading}
                                     loading="lazy"
                                     referrerPolicy="no-referrer"
@@ -2872,8 +3023,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200"
                                   />
                                 ) : (
-                                  <div className="w-full h-full flex items-center justify-center bg-[#0E0F16]">
-                                    <Tv className="w-5 h-5 text-zinc-500" />
+                                  <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-[#e11d48]/20 to-[#0E0F16]">
+                                    <Tv className="w-5 h-5 text-zinc-400" />
                                   </div>
                                 )}
 
@@ -2941,9 +3092,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
                                 <p className="text-xs text-zinc-400/90 line-clamp-2 leading-snug">
                                   {ep.overview ||
-                                    (lang === 'es'
-                                      ? `Temporada ${ep.seasonNumber} · Capítulo ${ep.episodeNumber}`
-                                      : `Season ${ep.seasonNumber} · Episode ${ep.episodeNumber}`)}
+                                    (ep.airDate
+                                      ? lang === 'es'
+                                        ? `Estreno ${ep.airDate} · Pulsa para reproducir`
+                                        : `Aired ${ep.airDate} · Tap to play`
+                                      : lang === 'es'
+                                        ? 'Pulsa para reproducir en tu sala'
+                                        : 'Tap to play in room')}
                                 </p>
                               </div>
 
@@ -3120,6 +3275,27 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       : 'Direct URL'}
                   </span>
                 </button>
+
+                {onCreateNewRoom && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setNewRoomNameDraft('');
+                      setShowNewRoomSheet(true);
+                    }}
+                    className="min-h-[44px] px-4 rounded-full bg-[#E11D48]/18 hover:bg-[#E11D48]/28 border border-[#E11D48]/40 text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5 text-[#FB7185]" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Nueva Sala'
+                        : lang === 'ca'
+                        ? 'Nova Sala'
+                        : 'New Room'}
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
 
@@ -3154,7 +3330,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     className="min-h-[42px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.14] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                   >
                     <Tv className="w-3.5 h-3.5" />
-                    <span>Cloud Browser</span>
+                    <span>{t.openWebBtn}</span>
                   </button>
                 </div>
               </div>
@@ -4471,7 +4647,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           ? `Buscar película en ${activePlatformMeta.es}...`
                           : `Search ${activePlatformMeta.en} movies...`
                         : activeSection === 'vose'
-                        ? t.searchBingetrixPlaceholder
+                        ? t.searchVoPlaceholder
                         : t.searchMoviesPlaceholder
                     }
                     className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
@@ -4678,12 +4854,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               <Film className="w-8 h-8 text-[#E11D48] mx-auto mb-1" />
               <p className="text-sm font-bold text-white">
                 {showWatchlistOnly
-                  ? lang === 'es'
-                    ? 'Tu lista está vacía'
-                    : 'Your Watchlist is empty'
-                  : lang === 'es'
-                  ? 'No encontramos películas con ese título'
-                  : 'No movies found matching your search'}
+                  ? lang === 'ca'
+                    ? 'La teva llista (pel·lícules, sèries, canals i partits) és buida'
+                    : lang === 'en'
+                    ? 'Your saved list (movies, series, live channels & matches) is empty'
+                    : 'Tu lista de guardados (películas, series, canales y partidos) está vacía'
+                  : lang === 'ca'
+                  ? 'No hem trobat pel·lícules amb aquest títol'
+                  : lang === 'en'
+                  ? 'No movies found matching your search'
+                  : 'No encontramos películas con ese título'}
               </p>
               {!showWatchlistOnly && movieQuery.trim().length > 1 && (
                 <button
@@ -5507,6 +5687,68 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               ))}
             </div>
           </div>
+
+          {/* Top Masterpiece Anime Requested Collection */}
+          <section className="rounded-3xl bg-[#14161F] border border-white/[0.08] p-3.5 sm:p-4 space-y-3 shadow-lg">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="w-2 h-2 rounded-full bg-[#F47521] shrink-0" />
+                <h3 className="font-display font-bold text-xs sm:text-sm text-white truncate">
+                  {lang === 'es' ? 'Obras Maestras del Anime · Temporadas Completas' : 'Masterpiece Anime Collection · Full Seasons'}
+                </h3>
+              </div>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/[0.06] text-zinc-300 shrink-0">
+                100% HD
+              </span>
+            </div>
+
+            <div className="flex items-stretch gap-2.5 overflow-x-auto no-scrollbar pb-1">
+              {MASTERPIECE_ANIME_PRESETS.map((item) => (
+                <div
+                  key={`preset-${item.tmdbId}`}
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    openSeriesDetails(item.tmdbId, 1, {
+                      id: `tv-es-${item.tmdbId}`,
+                      tmdbId: item.tmdbId,
+                      title: item.title,
+                      mediaType: 'tv',
+                      poster: item.poster,
+                      backdrop: item.backdrop,
+                      rating: item.rating,
+                    });
+                  }}
+                  className="w-[125px] sm:w-[145px] shrink-0 rounded-2xl p-2 bg-[#1C1F2B] hover:bg-[#252A3A] border border-white/[0.07] hover:border-[#F47521]/60 transition-all flex flex-col justify-between gap-2 cursor-pointer group"
+                >
+                  <div className="relative aspect-[2/3] w-full rounded-xl overflow-hidden bg-[#0A0B10]">
+                    <img
+                      src={item.poster}
+                      alt={item.title}
+                      loading="lazy"
+                      referrerPolicy="no-referrer"
+                      className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-300"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-black/20" />
+                    <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/70 backdrop-blur-md text-[9px] font-mono font-bold text-[#FFBD0F] flex items-center gap-0.5">
+                      ★ {item.rating}
+                    </span>
+                    <span className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-[#F47521]/90 text-[9px] font-black uppercase text-white tracking-wider">
+                      {item.tag}
+                    </span>
+                  </div>
+
+                  <div className="min-w-0">
+                    <h4 className="font-display font-bold text-xs text-white truncate group-hover:text-[#F47521] transition-colors">
+                      {item.title}
+                    </h4>
+                    <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                      {item.subtitle}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </section>
 
           {/* Anime Genre & Simulcast Filter Bar */}
           {!debouncedAnimeQuery && (
@@ -6630,49 +6872,61 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
           {/* DIRECT LIVE SPORTS CHANNELS IN FÚTBOL SECTION: beIN SPORTS · ESPN 1-7 · DSports · TNT & Space · Movistar+ · DAZN */}
           {(sportFilter === 'soccer' || sportFilter === 'all') && (
-            <section className="rounded-2xl bg-[#171A23] border border-white/[0.08] p-3 sm:p-4 space-y-3 shadow-lg">
+            <section className="rounded-2xl bg-[#161922] border border-white/[0.08] p-3 sm:p-4 space-y-3 shadow-lg">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShow247Strip((v) => !v);
+                  }}
+                  className="flex items-center gap-2 min-w-0 cursor-pointer text-left group"
+                >
                   <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
-                  <h3 className="font-display font-bold text-xs sm:text-sm text-white truncate">
+                  <h3 className="font-display font-bold text-xs sm:text-sm text-white truncate group-hover:text-[#FFBD0F] transition-colors">
                     {lang === 'es'
-                      ? 'Canales de Fútbol y Deportes en Vivo (24/7)'
-                      : '24/7 Live Football & Sports Channels'}
+                      ? `Canales de Fútbol en Vivo 24/7 (${footballSectionLiveChannels.length})`
+                      : `24/7 Live Football Channels (${footballSectionLiveChannels.length})`}
                   </h3>
-                </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-white/[0.06] text-zinc-300 shrink-0">
+                    {show247Strip ? 'Ocultar' : 'Mostrar'}
+                  </span>
+                </button>
 
-                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
-                  {(
-                    [
-                      { id: 'all', label: lang === 'es' ? 'Todos' : 'All' },
-                      { id: 'beinsports', label: 'beIN SPORTS' },
-                      { id: 'espn', label: 'ESPN (1–7)' },
-                      { id: 'dsports', label: 'DSports' },
-                      { id: 'tnt_space', label: 'TNT y Space' },
-                      { id: 'movistar', label: 'Movistar+' },
-                      { id: 'dazn', label: 'DAZN' },
-                    ] as const
-                  ).map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setFootballLiveBrand(tab.id);
-                      }}
-                      className={`min-h-[34px] px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                        footballLiveBrand === tab.id
-                          ? 'bg-[#FFBD0F] text-[#141720]'
-                          : 'bg-[#242833] hover:bg-[#2E3442] text-zinc-200 border border-white/[0.06]'
-                      }`}
-                    >
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
+                {show247Strip && (
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 max-w-full">
+                    {(
+                      [
+                        { id: 'all', label: lang === 'es' ? 'Todos' : 'All' },
+                        { id: 'beinsports', label: 'beIN SPORTS' },
+                        { id: 'espn', label: 'ESPN (1–7)' },
+                        { id: 'dsports', label: 'DSports' },
+                        { id: 'tnt_space', label: 'TNT y Space' },
+                        { id: 'movistar', label: 'Movistar+' },
+                        { id: 'dazn', label: 'DAZN' },
+                      ] as const
+                    ).map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setFootballLiveBrand(tab.id);
+                        }}
+                        className={`min-h-[32px] px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                          footballLiveBrand === tab.id
+                            ? 'bg-[#FFBD0F] text-[#141720]'
+                            : 'bg-[#242833] hover:bg-[#2E3442] text-zinc-200 border border-white/[0.06]'
+                        }`}
+                      >
+                        {tab.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
 
-              {footballSectionLiveChannels.length > 0 ? (
+              {show247Strip && footballSectionLiveChannels.length > 0 ? (
                 <div
                   className={
                     footballLiveBrand === 'all'
@@ -6791,7 +7045,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     );
                   })}
                 </div>
-              ) : loadingTdt ? (
+              ) : show247Strip && loadingTdt ? (
                 <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar">
                   {Array.from({ length: 5 }).map((_, idx) => (
                     <div
@@ -6804,7 +7058,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </section>
           )}
 
-          {/* RBTV+ Dark Football Matchboard with Official Country Flags, Club Crests, Direct Signals & Live Stats */}
+          {/* Live Football Matchboard with Country Flags, Club Crests, Direct Signals & Live Stats */}
           {(sportFilter === 'soccer' || sportFilter === 'all') && (
             <FootballMatchboard
               lang={lang}
@@ -6920,7 +7174,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </section>
           )}
 
-          {loadingSports && sportsEvents.length === 0 ? (
+          {sportFilter !== 'soccer' && loadingSports && sportsEvents.length === 0 ? (
             <div className="grid grid-cols-1 @md:grid-cols-2 gap-4">
               {Array.from({ length: 4 }).map((_, i) => (
                 <div
@@ -7046,7 +7300,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       : "Today's Live Match Schedule"}
                   </h3>
                   <div className="grid grid-cols-1 @lg:grid-cols-2 gap-3.5">
-                    {scheduledMatches.map((match) => {
+                    {scheduledMatches.map((match, mIdx) => {
                       const isExtractingMatch = loadingItemId?.startsWith(match.id);
                       const matchBackdrop =
                         match.sport === 'motor' ? f1Backdrop : stadiumBackdrop;
@@ -7058,7 +7312,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
                       return (
                         <div
-                          key={match.id}
+                          key={`${match.id}-${mIdx}`}
                           className="relative rounded-3xl overflow-hidden border border-white/[0.09] hover:border-white/25 bg-[#0D0F18] min-h-[160px] p-4 sm:p-5 flex flex-col justify-end gap-3 transition-colors min-w-0"
                         >
                           <img
@@ -7199,7 +7453,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               >
                 <Link2 className="w-4 h-4 text-[#E11D48]" />
                 <span>
-                  {lang === 'es' ? 'Cola y Cloud Browser' : 'Queue & Cloud'} ({roomQueue.length})
+                  {lang === 'ca' ? 'Cua i enllaç web' : lang === 'es' ? 'Cola y enlace web' : 'Queue & Link'} ({roomQueue.length})
                 </span>
               </button>
             </div>
@@ -7918,7 +8172,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           {catalaCommunityLinks.length > 0 && (
             <section className="pt-2 border-t border-white/[0.07] space-y-3">
               <h3 className="font-display font-semibold text-xs sm:text-sm text-zinc-300">
-                Fonts i Comunitat d&apos;Anime en Català (Obrir al Cloud Browser de la sala)
+                Fonts i Comunitat d&apos;Anime en Català (Obrir al navegador web)
               </h3>
               <div className="grid grid-cols-1 @sm:grid-cols-3 gap-3">
                 {catalaCommunityLinks.map((lnk) => (
@@ -8136,6 +8390,58 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </div>
           );
         })()}
+
+      {onCreateNewRoom && (
+        <BottomSheet
+          isOpen={showNewRoomSheet}
+          onClose={() => setShowNewRoomSheet(false)}
+          title={
+            lang === 'es'
+              ? 'Crear nueva sala'
+              : lang === 'ca'
+              ? 'Crear nova sala'
+              : 'Create new room'
+          }
+          subtitle={
+            lang === 'es'
+              ? 'Se generará un enlace único para invitar a tus amigos o vincular tu TV'
+              : 'A fresh invite link will be generated to invite friends or pair your TV'
+          }
+          icon={<Plus className="w-5 h-5" />}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              onCreateNewRoom(newRoomNameDraft.trim() || undefined);
+              setNewRoomNameDraft('');
+              setShowNewRoomSheet(false);
+            }}
+            className="space-y-3"
+          >
+            <StandardInput
+              type="text"
+              value={newRoomNameDraft}
+              onChange={(e) => setNewRoomNameDraft(e.target.value)}
+              placeholder={
+                lang === 'es'
+                  ? 'Nombre opcional (ej. Noche de Cine)'
+                  : 'Optional room name (e.g. Movie Night)'
+              }
+              autoFocus
+            />
+            <PrimaryButton type="submit" fullWidth size="lg">
+              <Plus className="w-4 h-4" />
+              <span>
+                {lang === 'es'
+                  ? 'Crear e ir a la nueva sala'
+                  : lang === 'ca'
+                  ? 'Crear i anar a la nova sala'
+                  : 'Create & enter new room'}
+              </span>
+            </PrimaryButton>
+          </form>
+        </BottomSheet>
+      )}
     </div>
   );
 };

@@ -1,10 +1,113 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   NAIM CINE — DESIGN SYSTEM TOKENS (@theme + Semantic Variables)
+   Apple TV+ / Infuse Obsidian & Crimson Palette · AA WCAG Audited
+   ========================================================================== */
+@theme {
+  --color-bg-canvas: #08090d;
+  --color-bg-elevated: #0f1118;
+  --color-bg-surface: #161923;
+  --color-bg-subtle: #1e2230;
+  --color-text-primary: #f4f5f8;
+  --color-text-secondary: #9499a8;
+  --color-text-muted: #707687;
+  --color-accent: #e11d48;
+  --color-accent-hover: #be123c;
+  --color-border-subtle: rgba(255, 255, 255, 0.08);
+  --color-border-strong: rgba(255, 255, 255, 0.16);
+
+  --radius-card: 16px;
+  --radius-sheet: 24px;
+  --radius-pill: 9999px;
+
+  --shadow-elevation-1: 0 4px 14px rgba(0, 0, 0, 0.45);
+  --shadow-elevation-2: 0 14px 36px rgba(0, 0, 0, 0.65);
+  --shadow-elevation-3: 0 24px 64px rgba(0, 0, 0, 0.85);
+}
+
 @layer base {
   :root {
     --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
     --font-display: 'Outfit', 'Plus Jakarta Sans', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
+
+    --nc-bg-canvas: #08090d;
+    --nc-bg-elevated: #0f1118;
+    --nc-bg-surface: #161923;
+    --nc-bg-subtle: #1e2230;
+    --nc-text-primary: #f4f5f8;
+    --nc-text-secondary: #9499a8;
+    --nc-accent: #e11d48;
+    --nc-border: rgba(255, 255, 255, 0.085);
+    --ambient-poster-glow: rgba(225, 29, 72, 0.28);
+    --nc-blur: 32px;
+    --nc-density-pad: 1rem;
+  }
+
+  /* OLED Pure Black Theme */
+  :root[data-theme="oled"] {
+    --nc-bg-canvas: #000000;
+    --nc-bg-elevated: #060709;
+    --nc-bg-surface: #0e1117;
+    --nc-bg-subtle: #151922;
+    --nc-text-primary: #f8f9fc;
+    --nc-text-secondary: #8c93a4;
+    --nc-border: rgba(255, 255, 255, 0.08);
+  }
+
+  /* Soft Dark Theme */
+  :root[data-theme="soft-dark"] {
+    --nc-bg-canvas: #10131c;
+    --nc-bg-elevated: #171b28;
+    --nc-bg-surface: #1f2536;
+    --nc-bg-subtle: #283045;
+    --nc-text-primary: #f6f7fb;
+    --nc-text-secondary: #a5acc0;
+    --nc-border: rgba(255, 255, 255, 0.11);
+  }
+
+  /* Dark Theme (Standard) */
+  :root[data-theme="dark"] {
+    --nc-bg-canvas: #0b0d13;
+    --nc-bg-elevated: #121620;
+    --nc-bg-surface: #1a202c;
+    --nc-bg-subtle: #242c3d;
+    --nc-text-primary: #f1f3f9;
+    --nc-text-secondary: #9aa1b4;
+    --nc-border: rgba(255, 255, 255, 0.09);
+  }
+
+  /* Light Theme */
+  :root[data-theme="light"] {
+    --nc-bg-canvas: #f4f6fa;
+    --nc-bg-elevated: #ffffff;
+    --nc-bg-surface: #e8ecf4;
+    --nc-bg-subtle: #d9dfec;
+    --nc-text-primary: #111318;
+    --nc-text-secondary: #565e70;
+    --nc-border: rgba(0, 0, 0, 0.12);
+  }
+
+  /* High Contrast Accessibility Theme (AA/AAA >= 7:1 text contrast) */
+  :root[data-theme="high-contrast"] {
+    --nc-bg-canvas: #000000;
+    --nc-bg-elevated: #09090b;
+    --nc-bg-surface: #121216;
+    --nc-bg-subtle: #1c1c24;
+    --nc-text-primary: #ffffff;
+    --nc-text-secondary: #d4d8e4;
+    --nc-border: rgba(255, 255, 255, 0.28);
+  }
+
+  /* Compact Density Mode */
+  :root[data-density="compact"] {
+    --nc-density-pad: 0.68rem;
+  }
+
+  /* Auto / Manual Lite Mode (low-RAM devices & Android TV budget boxes) */
+  :root[data-lite="true"] {
+    --nc-blur: 0px;
   }
 
   *, *::before, *::after {
@@ -15,8 +118,8 @@
     width: 100%;
     max-width: 100vw;
     min-height: 100dvh;
-    background-color: #050508;
-    color: #F5F5F7;
+    background-color: var(--nc-bg-canvas);
+    color: var(--nc-text-primary);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
@@ -28,6 +131,11 @@
 
   button, a, input, select, textarea, [role="button"] {
     touch-action: manipulation;
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--nc-accent);
+    outline-offset: 2px;
   }
 }
 
@@ -77,57 +185,67 @@
   }
 
   .glass-bar {
-    background: rgba(6, 6, 9, 0.72);
-    backdrop-filter: blur(32px) saturate(180%);
-    -webkit-backdrop-filter: blur(32px) saturate(180%);
+    background: color-mix(in srgb, var(--nc-bg-canvas) 84%, transparent);
+    backdrop-filter: blur(var(--nc-blur)) saturate(175%);
+    -webkit-backdrop-filter: blur(var(--nc-blur)) saturate(175%);
   }
 
   .liquid-glass {
-    background: rgba(18, 19, 26, 0.64);
-    backdrop-filter: blur(36px) saturate(185%);
-    -webkit-backdrop-filter: blur(36px) saturate(185%);
-    border: 1px solid rgba(255, 255, 255, 0.11);
+    background: color-mix(in srgb, var(--nc-bg-elevated) 82%, transparent);
+    backdrop-filter: blur(var(--nc-blur)) saturate(180%);
+    -webkit-backdrop-filter: blur(var(--nc-blur)) saturate(180%);
+    border: 1px solid var(--nc-border);
     box-shadow:
-      0 20px 55px rgba(0, 0, 0, 0.72),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+      var(--shadow-elevation-2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   .liquid-glass-pill {
     background: rgba(255, 255, 255, 0.075);
-    backdrop-filter: blur(28px) saturate(175%);
-    -webkit-backdrop-filter: blur(28px) saturate(175%);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+    backdrop-filter: blur(calc(var(--nc-blur) * 0.85)) saturate(170%);
+    -webkit-backdrop-filter: blur(calc(var(--nc-blur) * 0.85)) saturate(170%);
+    border: 1px solid var(--nc-border);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
 
   .apple-card {
-    background: #0B0C11;
-    border: 1px solid rgba(255, 255, 255, 0.07);
-    box-shadow: 0 16px 38px rgba(0, 0, 0, 0.62);
+    background: var(--nc-bg-elevated);
+    border: 1px solid var(--nc-border);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-elevation-1);
     transition:
       transform 0.2s cubic-bezier(0.16, 1, 0.3, 1),
-      border-color 0.2s ease;
+      border-color 0.2s ease,
+      box-shadow 0.2s ease;
+  }
+
+  .ambient-poster-aura {
+    background: radial-gradient(
+      ellipse 85% 65% at 50% 0%,
+      var(--ambient-poster-glow),
+      transparent 72%
+    );
   }
 
   .glass-panel {
-    background: rgba(14, 14, 18, 0.82);
-    backdrop-filter: blur(24px);
-    -webkit-backdrop-filter: blur(24px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: color-mix(in srgb, var(--nc-bg-surface) 88%, transparent);
+    backdrop-filter: blur(calc(var(--nc-blur) * 0.75));
+    -webkit-backdrop-filter: blur(calc(var(--nc-blur) * 0.75));
+    border: 1px solid var(--nc-border);
   }
 
   .glass-pill {
-    background: rgba(20, 20, 26, 0.78);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: color-mix(in srgb, var(--nc-bg-subtle) 85%, transparent);
+    backdrop-filter: blur(calc(var(--nc-blur) * 0.5));
+    -webkit-backdrop-filter: blur(calc(var(--nc-blur) * 0.5));
+    border: 1px solid var(--nc-border);
   }
 
   .sheet-handle {
     width: 36px;
     height: 4px;
     border-radius: 9999px;
-    background: rgba(255, 255, 255, 0.22);
+    background: rgba(255, 255, 255, 0.24);
     margin: 8px auto 4px;
   }
 
@@ -143,7 +261,7 @@
   @keyframes sheetUp {
     from {
       opacity: 0;
-      transform: translateY(24px) scale(0.98);
+      transform: translateY(20px) scale(0.985);
     }
     to {
       opacity: 1;
@@ -165,7 +283,7 @@
   }
 
   .animate-sheet-up {
-    animation: sheetUp 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    animation: sheetUp 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards;
   }
 
   .skeleton-shimmer {
@@ -180,10 +298,33 @@
   }
 }
 
+/* Lite & Reduced-Motion Performance Overrides */
+:root[data-lite="true"] .liquid-glass,
+:root[data-lite="true"] .liquid-glass-pill,
+:root[data-lite="true"] .glass-bar,
+:root[data-lite="true"] .glass-panel {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
+
+:root[data-reduced-motion="true"] *,
+:root[data-reduced-motion="true"] *::before,
+:root[data-reduced-motion="true"] *::after {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
 /* ==========================================================================
    APK / STANDALONE WEBVIEW PROPORTIONAL REM NORMALIZATION
-   Guarantees arbitrary [..px] Tailwind classes scale in lockstep with root
-   font-size when Android APK WebView or Desktop-Site viewport scaling is active.
    ========================================================================== */
 .text-\[8px\] { font-size: 0.55rem !important; line-height: 1.25 !important; }
 .text-\[9px\] { font-size: 0.6rem !important; line-height: 1.25 !important; }
@@ -227,7 +368,6 @@
 
 /* ==========================================================================
    GOOGLE TV / CHROMECAST PHYSICAL REMOTE 10-FOOT FOCUS RING
-   High-contrast crisp white + crimson halo visible from across the living room.
    ========================================================================== */
 html.is-google-tv,
 html.is-google-tv body {
@@ -236,7 +376,7 @@ html.is-google-tv body {
 }
 
 html.tv-dpad-active *:focus {
-  outline: 3px solid #FFFFFF !important;
+  outline: 3px solid #ffffff !important;
   outline-offset: 3px !important;
   box-shadow:
     0 0 0 6px rgba(225, 29, 72, 0.78),
@@ -252,5 +392,3 @@ html.tv-dpad-active a:focus,
 html.tv-dpad-active [role="button"]:focus {
   transform: scale(1.025);
 }
-
-

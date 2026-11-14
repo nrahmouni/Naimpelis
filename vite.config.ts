@@ -9,8 +9,8 @@ export default defineConfig(() => {
       react(),
       tailwindcss(),
       VitePWA({
-        selfDestroying: true,
-        registerType: 'autoUpdate',
+        selfDestroying: false,
+        registerType: 'prompt',
         includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
           id: '/',
@@ -48,12 +48,12 @@ export default defineConfig(() => {
         },
         workbox: {
           cacheId: 'naim-cine-oled-v4',
-          skipWaiting: true,
+          skipWaiting: false,
           clientsClaim: true,
           cleanupOutdatedCaches: true,
           maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,
           globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
-          globIgnores: ['**/tv-receiver.html', '**/*.apk'],
+          globIgnores: ['**/tv-receiver.html', '**/*.apk', '**/assets/aistudio/**'],
           navigateFallback: '/index.html',
           navigateFallbackDenylist: [
             /^\/api\//,
@@ -100,7 +100,29 @@ export default defineConfig(() => {
       }),
     ],
     build: {
-      target: 'es2019',
+      target: 'es2020',
+      chunkSizeWarningLimit: 900,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (id.includes('node_modules/react/') || id.includes('node_modules/react-dom/')) {
+              return 'vendor-react';
+            }
+            if (id.includes('node_modules/firebase/') || id.includes('node_modules/@firebase/')) {
+              return 'vendor-firebase';
+            }
+            if (id.includes('node_modules/hls.js/')) {
+              return 'vendor-media';
+            }
+            if (id.includes('node_modules/lucide-react/')) {
+              return 'vendor-icons';
+            }
+            if (id.includes('node_modules/motion/')) {
+              return 'vendor-motion';
+            }
+          },
+        },
+      },
     },
     resolve: {
       alias: {

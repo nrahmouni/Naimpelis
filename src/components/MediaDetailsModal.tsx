@@ -20,6 +20,7 @@ import {
   RoomQueueItem,
 } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { extractSafeAmbientColor } from '../utils/imageUrl';
 
 export type MovieAudioLangPreference = 'ES' | 'LAT' | 'VOSE' | 'EN';
 
@@ -99,7 +100,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     useState<MovieAudioLangPreference>(defaultAudioLang);
   const trailerIframeRef = useRef<HTMLIFrameElement | null>(null);
 
-  const sendTrailerCommand = useCallback((func: string, args: any[] = []) => {
+  const sendTrailerCommand = useCallback((func: string, args: unknown[] = []) => {
     const win = trailerIframeRef.current?.contentWindow;
     if (!win) return;
     try {
@@ -192,6 +193,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     ? AUDIO_LANGUAGE_OPTIONS.filter((opt) => details!.availableLanguages!.includes(opt.code))
     : [];
 
+  const ambientGlow = details?.dominantColor || extractSafeAmbientColor(title);
+
   return (
     <div
       role="dialog"
@@ -202,7 +205,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[860px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#0D0D12]/95 backdrop-blur-2xl border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden"
+        style={{ ['--ambient-poster-glow' as string]: ambientGlow }}
+        className="w-full sm:max-w-[860px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#0D0D12]/95 backdrop-blur-2xl border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden ambient-poster-aura"
       >
         {/* Top Hero: Inline 4K Official Trailer or High-Res Backdrop */}
         <div className="relative w-full aspect-video max-h-[36dvh] sm:max-h-[380px] bg-black shrink-0 overflow-hidden">
@@ -373,9 +377,21 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               ) : null}
             </div>
 
-            <h2 className="font-display font-bold text-xl sm:text-3xl text-white leading-tight">
-              {title}
-            </h2>
+            {details?.logoUrl ? (
+              <div className="pt-1">
+                <img
+                  src={details.logoUrl}
+                  alt={title}
+                  className="max-h-14 sm:max-h-20 w-auto object-contain drop-shadow-[0_6px_18px_rgba(0,0,0,0.85)]"
+                  referrerPolicy="no-referrer"
+                />
+                <h2 className="sr-only">{title}</h2>
+              </div>
+            ) : (
+              <h2 className="font-display font-bold text-xl sm:text-3xl text-white leading-tight">
+                {title}
+              </h2>
+            )}
 
             {details?.tagline && (
               <p className="text-xs sm:text-sm italic text-zinc-400">

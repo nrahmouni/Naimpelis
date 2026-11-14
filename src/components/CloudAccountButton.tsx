@@ -68,9 +68,9 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
           triggerHaptic('light');
           onOpenProfileHub();
         }}
-        className={`min-h-10 ${
-          compact && !isDesktop ? 'px-2.5' : 'px-3'
-        } rounded-xl bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/[0.09] text-xs font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
+        className={`min-h-[32px] ${
+          compact && !isDesktop ? 'px-2' : 'px-2.5'
+        } rounded-lg bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/[0.09] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
         title={
           lang === 'es'
             ? 'Abrir Mi Perfil (Historial, Favoritos, Salas y Vista)'
@@ -111,9 +111,9 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
         type="button"
         disabled={busy}
         onClick={handleLoginClick}
-        className={`min-h-10 ${
-          compact && !isDesktop ? 'px-2.5' : 'px-3.5'
-        } rounded-xl bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/[0.09] text-xs font-semibold text-zinc-100 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
+        className={`min-h-[32px] ${
+          compact && !isDesktop ? 'px-2' : 'px-3'
+        } rounded-lg bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/[0.09] text-xs font-semibold text-zinc-100 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
         title={
           lang === 'es'
             ? 'Iniciar sesión con Google y sincronizar en la nube'
@@ -141,7 +141,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
     <button
       type="button"
       onClick={handleLoginClick}
-      className="min-h-10 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
+      className="min-h-[32px] px-2 rounded-lg bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors shrink-0"
     >
       <span className="w-6 h-6 rounded-full bg-[#E11D48]/20 border border-[#E11D48]/40 text-white flex items-center justify-center text-xs font-bold shrink-0">
         {shortName.slice(0, 1).toUpperCase()}

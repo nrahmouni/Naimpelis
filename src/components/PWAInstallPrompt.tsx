@@ -129,8 +129,8 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
 
             <p className="text-xs text-zinc-400 leading-relaxed">
               {lang === 'es'
-                ? 'Descarga el nuevo APK nativo para Móvil Android (con buscador de Cine y Series, motor ExoPlayer HD, Fútbol RBTV+, beIN ES/Árabe, ESPN 1-7, DSports y TDT) o la versión para Google TV / Chromecast.'
-                : 'Download the native Android Mobile APK (Movie & Series search, ExoPlayer HD engine, Live Football, Sports, Live TV, Movies & Series) or the Google TV / Chromecast APK.'}
+                ? 'Descarga el APK nativo para Móvil Android (Cine y Series HD, motor Media3/ExoPlayer, Fútbol en directo, Deportes y TDT) o la versión para Google TV / Chromecast.'
+                : 'Download the native Android Mobile APK (Movie & Series HD, Media3/ExoPlayer engine, Live Football, Sports, Live TV) or the Google TV / Chromecast APK.'}
             </p>
           </div>
         </div>

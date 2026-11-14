@@ -131,11 +131,13 @@ export function buildShortInviteUrl(roomId: string, tvMode = false): string {
   return tvMode ? `${base}?tv=1` : base;
 }
 
-const PUBLIC_PRODUCTION_DOMAIN = 'naimcine.ai.studio';
+const PUBLIC_PRODUCTION_DOMAIN =
+  (typeof import.meta !== 'undefined' &&
+    (import.meta.env?.VITE_PUBLIC_APP_HOST as string | undefined)) ||
+  (typeof window !== 'undefined' ? window.location.host : 'localhost:3000');
 
 /**
- * Returns true when running inside the private AI Studio editor container (ais-dev-*),
- * which requires Google Sign-In and cannot be opened on external Smart TVs.
+ * Returns true when running inside a private preview hostname that requires auth cookies.
  */
 export function isPrivateDevPreviewHost(): boolean {
   if (typeof window === 'undefined') return false;
@@ -143,29 +145,29 @@ export function isPrivateDevPreviewHost(): boolean {
 }
 
 /**
- * Builds the clean Smart TV 4-digit quick pairing URL (never returning a private ais-dev login URL)
+ * Builds the clean Smart TV 4-digit quick pairing URL using the active host or configured public host.
  */
 export function buildTvPairingUrl(): string {
   if (typeof window === 'undefined') return `https://${PUBLIC_PRODUCTION_DOMAIN}/tv`;
-  if (isPrivateDevPreviewHost()) {
-    return `https://${PUBLIC_PRODUCTION_DOMAIN}/tv`;
+  if (isPrivateDevPreviewHost() && import.meta.env?.VITE_PUBLIC_APP_HOST) {
+    return `https://${import.meta.env.VITE_PUBLIC_APP_HOST}/tv`;
   }
   return `${window.location.origin}/tv`;
 }
 
 /**
- * Returns the public host (without protocol) for UI display on phones & TVs
+ * Returns the public host (without protocol) for UI display on phones & TVs.
  */
 export function getDisplayAppHost(): string {
   if (typeof window === 'undefined') return PUBLIC_PRODUCTION_DOMAIN;
-  if (isPrivateDevPreviewHost()) {
-    return PUBLIC_PRODUCTION_DOMAIN;
+  if (isPrivateDevPreviewHost() && import.meta.env?.VITE_PUBLIC_APP_HOST) {
+    return String(import.meta.env.VITE_PUBLIC_APP_HOST);
   }
   return window.location.host || PUBLIC_PRODUCTION_DOMAIN;
 }
 
 /**
- * Returns the clean public /tv URL without protocol (e.g. naimcine.ai.studio/tv)
+ * Returns the clean public /tv path label without protocol.
  */
 export function getDisplayTvPairingLabel(): string {
   return `${getDisplayAppHost()}/tv`;

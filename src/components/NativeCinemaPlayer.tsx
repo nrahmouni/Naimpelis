@@ -55,15 +55,115 @@ import {
   parseSubtitleText,
 } from '../utils/subtitles';
 import { SecondaryHlsStage } from './SecondaryHlsStage';
+import { useAppStore } from '../store/useAppStore';
+
+interface YouTubePlayerInstance {
+  unMute?: () => void;
+  mute?: () => void;
+  isMuted?: () => boolean;
+  setVolume?: (volume: number) => void;
+  getVolume?: () => number;
+  playVideo: () => void;
+  pauseVideo: () => void;
+  seekTo?: (seconds: number, allowSeekAhead?: boolean) => void;
+  setPlaybackRate?: (rate: number) => void;
+  getCurrentTime?: () => number;
+  getDuration?: () => number;
+  getPlayerState?: () => number;
+  loadVideoById?: (videoId: string, startSeconds?: number) => void;
+  destroy?: () => void;
+}
+
+interface YouTubePlayerEvent {
+  target: YouTubePlayerInstance;
+  data: number;
+}
+
+interface YouTubeNamespace {
+  Player: new (
+    elementId: string,
+    config: {
+      videoId: string;
+      playerVars?: Record<string, string | number>;
+      events?: {
+        onReady?: (e: YouTubePlayerEvent) => void;
+        onStateChange?: (e: YouTubePlayerEvent) => void;
+      };
+    }
+  ) => YouTubePlayerInstance;
+}
+
+interface CastSessionLike {
+  getCastDevice?: () => { friendlyName?: string };
+  endSession?: (stopCasting: boolean) => void;
+  loadMedia?: (req: unknown) => Promise<unknown>;
+}
+
+interface CastContextLike {
+  setOptions: (opts: Record<string, unknown>) => void;
+  addEventListener: (eventType: string, listener: (ev: { sessionState: string }) => void) => void;
+  getCurrentSession: () => CastSessionLike | null;
+  requestSession: () => Promise<void>;
+}
+
+interface CastNamespace {
+  framework?: {
+    CastContext: { getInstance: () => CastContextLike };
+    CastContextEventType: { SESSION_STATE_CHANGED: string };
+    SessionState: { SESSION_STARTED: string; SESSION_RESUMED: string; SESSION_ENDED: string };
+  };
+}
+
+interface ChromeCastNamespace {
+  cast?: {
+    AutoJoinPolicy: { ORIGIN_SCOPED: string };
+    Image?: new (url: string) => unknown;
+    media?: {
+      DEFAULT_MEDIA_RECEIVER_APP_ID: string;
+      StreamType: { LIVE: string; BUFFERED: string };
+      HlsSegmentFormat?: { FMP4: string };
+      HlsVideoSegmentFormat?: { FMP4: string };
+      MetadataType?: { GENERIC: number };
+      GenericMediaMetadata?: new () => { title?: string; subtitle?: string; images?: unknown[] };
+      LoadRequest?: new (mediaInfo: unknown) => { autoplay?: boolean; currentTime?: number };
+      MediaInfo: new (url: string, contentType: string) => {
+        streamType: string;
+        hlsSegmentFormat?: string;
+        hlsVideoSegmentFormat?: string;
+        metadata?: unknown;
+      };
+    };
+  };
+}
+
+interface WebKitVideoElement extends HTMLVideoElement {
+  autoPictureInPicture?: boolean;
+  webkitPresentationMode?: 'inline' | 'picture-in-picture' | 'fullscreen';
+  webkitSupportsPresentationMode?: (mode: string) => boolean;
+  webkitSetPresentationMode?: (mode: string) => void;
+  webkitEnterFullscreen?: () => void;
+  webkitShowPlaybackTargetPicker?: () => void;
+  webkitCurrentPlaybackTargetIsWireless?: boolean;
+}
+
+interface WakeLockSentinelLike {
+  release?: () => Promise<void>;
+}
+
+interface ScreenOrientationWithLock {
+  lock?: (orientation: string) => Promise<void>;
+  unlock?: () => void;
+}
 
 declare global {
   interface Window {
-    YT?: any;
+    YT?: YouTubeNamespace;
     onYouTubeIframeAPIReady?: () => void;
     __onGCastApiAvailable?: (isAvailable: boolean) => void;
     __naimCastApiReady?: boolean;
-    cast?: any;
-    chrome?: any;
+    cast?: CastNamespace;
+    chrome?: ChromeCastNamespace;
+    webkitAudioContext?: typeof AudioContext;
   }
 }
 
@@ -182,12 +282,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   compactVideoForMobileKeyboard = false,
   onOpenInCloudBrowser,
 }) => {
+  const { subtitleStyle, setSubtitleStyle, syncOffsetMs, setSyncOffsetMs } = useAppStore();
   const t = UI_COPY[lang];
   const stageWrapperRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const castBridgeVideoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
-  const ytPlayerRef = useRef<any>(null);
+  const ytPlayerRef = useRef<YouTubePlayerInstance | null>(null);
   const ytContainerId = useRef(`yt-stage-${Math.random().toString(36).slice(2, 8)}`);
   const isApplyingRemoteRef = useRef(false);
   const controlsTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -387,7 +488,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       if (!activeFs) {
         setIsHorizontalFullscreen(false);
         try {
-          (window.screen?.orientation as any)?.unlock?.();
+          (window.screen?.orientation as (ScreenOrientation & { unlock?: () => void }) | undefined)?.unlock?.();
         } catch {
           // ignore
         }
@@ -457,7 +558,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         });
       } else if (cmd === 'toggle_fullscreen') {
         const container = stageWrapperRef.current || document.documentElement;
-        const video = videoRef.current as any;
+        const video = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
         if (document.fullscreenElement) {
           document.exitFullscreen().catch(() => {});
           showTransientToast('Saliendo de pantalla completa');
@@ -645,7 +746,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     if (!video) return;
     const next = !vocalBoostEnabled;
     try {
-      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
       if (!AudioCtx) return;
 
       if (!audioGraphRef.current) {
@@ -868,11 +969,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   // SCREEN WAKE LOCK (Prevents phone/tablet screen from sleeping mid-movie/match)
   // ============================================================================
   useEffect(() => {
-    let wakeLock: any = null;
+    let wakeLock: WakeLockSentinelLike | null = null;
     const requestLock = async () => {
       try {
-        if (localPlaying && 'wakeLock' in navigator) {
-          wakeLock = await (navigator as any).wakeLock.request('screen');
+        const nav = navigator as Navigator & {
+          wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> };
+        };
+        if (localPlaying && nav.wakeLock?.request) {
+          wakeLock = await nav.wakeLock.request('screen');
         }
       } catch {
         // ignore unsupported or battery-saver restrictions
@@ -893,11 +997,54 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     };
   }, [localPlaying]);
 
+  // Stall 8s Auto-Failover & QoE Metrics Reporter
+  useEffect(() => {
+    if (!isBuffering || !localPlaying || videoState.mode === 'idle') return;
+    const stallTimer = setTimeout(() => {
+      fetch('/api/metrics/qoe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event: 'rebuffer_8s_failover',
+          title: videoState.title,
+          mode: videoState.mode,
+          isLive: videoState.isLive,
+          activeTrackIndex: videoState.activeTrackIndex,
+        }),
+      }).catch(() => {});
+      if (
+        canControlRoom &&
+        videoState.tracks.length > 1 &&
+        videoState.activeTrackIndex + 1 < videoState.tracks.length
+      ) {
+        showTransientToast(
+          lang === 'es'
+            ? 'Cambio automático de servidor por buffering...'
+            : 'Auto-switching backup server after buffering...'
+        );
+        onSelectTrack(videoState.activeTrackIndex + 1, currentTime);
+      }
+    }, 8000);
+    return () => clearTimeout(stallTimer);
+  }, [
+    isBuffering,
+    localPlaying,
+    videoState.mode,
+    videoState.title,
+    videoState.isLive,
+    videoState.tracks.length,
+    videoState.activeTrackIndex,
+    canControlRoom,
+    onSelectTrack,
+    currentTime,
+    lang,
+  ]);
+
   // ============================================================================
   // PICTURE-IN-PICTURE (SUPERPONER VÍDEO ENCIMA DEL TELÉFONO) + MEDIA SESSION
   // ============================================================================
   useEffect(() => {
-    const video = videoRef.current as any;
+    const video = videoRef.current as WebKitVideoElement | null;
     if (!video) return;
 
     // Enable Android Chrome / PWA automatic PiP when swiping to phone home screen
@@ -978,10 +1125,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       }
       // Chrome Android Auto-PiP handler
       try {
-        (navigator.mediaSession as any).setActionHandler(
+        const ms = navigator.mediaSession as MediaSession & {
+          setActionHandler: (action: string, handler: (() => void) | null) => void;
+        };
+        ms.setActionHandler(
           'enterpictureinpicture',
           async () => {
-            const v = videoRef.current as any;
+            const v = videoRef.current as WebKitVideoElement | null;
             if (v?.requestPictureInPicture && !document.pictureInPictureElement) {
               await v.requestPictureInPicture();
             }
@@ -1200,7 +1350,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   ]);
 
   const loadStreamIntoCastSession = useCallback(
-    async (session: any) => {
+    async (session: CastSessionLike | null) => {
       if (
         !session ||
         !window.chrome?.cast?.media ||
@@ -1234,14 +1384,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           }
         }
 
-        const metadata = new window.chrome.cast.media.GenericMediaMetadata();
-        metadata.title = videoState.title || 'NAIM CINE';
-        metadata.subtitle = videoState.subtitle || (videoState.isLive ? 'TV en Directo HD' : 'Proyección Directa 1080p');
-        if (videoState.poster && /^https?:\/\//i.test(videoState.poster)) {
-          metadata.images = [new window.chrome.cast.Image(videoState.poster)];
+        if (window.chrome.cast.media.GenericMediaMetadata) {
+          const metadata = new window.chrome.cast.media.GenericMediaMetadata();
+          metadata.title = videoState.title || 'NAIM CINE';
+          metadata.subtitle =
+            videoState.subtitle || (videoState.isLive ? 'TV en Directo HD' : 'Proyección Directa 1080p');
+          if (videoState.poster && /^https?:\/\//i.test(videoState.poster) && window.chrome.cast.Image) {
+            metadata.images = [new window.chrome.cast.Image(videoState.poster)];
+          }
+          mediaInfo.metadata = metadata;
         }
-        mediaInfo.metadata = metadata;
 
+        if (!window.chrome.cast.media.LoadRequest || !session.loadMedia) return;
         const request = new window.chrome.cast.media.LoadRequest(mediaInfo);
         request.autoplay = true;
         // CRITICAL: Never set currentTime = 0 on LIVE HLS streams (causes CAF Shaka to seek
@@ -1292,18 +1446,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       try {
         const context = window.cast.framework.CastContext.getInstance();
         context.setOptions({
-          receiverApplicationId: window.chrome.cast.media.DEFAULT_MEDIA_RECEIVER_APP_ID,
+          receiverApplicationId: window.chrome.cast.media?.DEFAULT_MEDIA_RECEIVER_APP_ID || 'CC1AD845',
           autoJoinPolicy: window.chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
         });
         setCastSdkReady(true);
 
         context.addEventListener(
           window.cast.framework.CastContextEventType.SESSION_STATE_CHANGED,
-          (event: any) => {
+          (event: { sessionState: string }) => {
             const state = event.sessionState;
-            const SESSION_STARTED = window.cast.framework.SessionState.SESSION_STARTED;
-            const SESSION_RESUMED = window.cast.framework.SessionState.SESSION_RESUMED;
-            const SESSION_ENDED = window.cast.framework.SessionState.SESSION_ENDED;
+            const SESSION_STARTED = window.cast?.framework?.SessionState.SESSION_STARTED;
+            const SESSION_RESUMED = window.cast?.framework?.SessionState.SESSION_RESUMED;
+            const SESSION_ENDED = window.cast?.framework?.SessionState.SESSION_ENDED;
 
             if (state === SESSION_STARTED || state === SESSION_RESUMED) {
               const session = context.getCurrentSession();
@@ -1346,14 +1500,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
   // Listen to native W3C RemotePlayback & Apple AirPlay 2 state on both video elements
   useEffect(() => {
-    const bridgeVid = castBridgeVideoRef.current as any;
-    const mainVid = videoRef.current as any;
+    const bridgeVid = castBridgeVideoRef.current as WebKitVideoElement | null;
+    const mainVid = videoRef.current as WebKitVideoElement | null;
 
     const onRemoteConnect = (ev?: Event) => {
       setIsCastingToTv(true);
       setCastDeviceName('Smart TV (Cast Directo)');
       // If mainVid was connected while using Hls.js blob:, switch it to direct HTTP URL so TV gets video + audio!
-      if (ev?.currentTarget === mainVid && hlsRef.current) {
+      if (ev?.currentTarget === mainVid && hlsRef.current && mainVid) {
         switchMainVideoToDirectCastUrl();
         mainVid.muted = false;
         mainVid.play?.().catch(() => {});
@@ -1363,7 +1517,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           setIsMuted(true);
         }
         try {
-          if (!videoState.isLive && mainVid?.currentTime > 1) {
+          if (!videoState.isLive && (mainVid?.currentTime ?? 0) > 1 && mainVid) {
             bridgeVid.currentTime = mainVid.currentTime;
           }
           bridgeVid.muted = false;
@@ -1392,7 +1546,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     };
 
     const onWebkitWirelessChange = (e: Event) => {
-      const target = e.currentTarget as any;
+      const target = e.currentTarget as WebKitVideoElement | null;
       if (target?.webkitCurrentPlaybackTargetIsWireless) {
         if (target === mainVid && hlsRef.current) {
           switchMainVideoToDirectCastUrl();
@@ -1470,8 +1624,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         e.stopPropagation();
       }
       triggerHaptic('medium');
-      const mainVideo = videoRef.current as any;
-      const bridgeVideo = castBridgeVideoRef.current as any;
+      const mainVideo = videoRef.current as WebKitVideoElement | null;
+      const bridgeVideo = castBridgeVideoRef.current as WebKitVideoElement | null;
       const hasNativeStream =
         (videoState.mode === 'hls' || videoState.mode === 'direct') && Boolean(videoState.url);
 
@@ -1512,7 +1666,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           const context = window.cast.framework.CastContext.getInstance();
           const existingSession = context.getCurrentSession();
           if (existingSession && isCastingToTv) {
-            existingSession.endSession(true);
+            existingSession.endSession?.(true);
             setIsCastingToTv(false);
             setCastDeviceName('');
             showTransientToast(
@@ -1535,8 +1689,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             }
             return;
           }
-        } catch (err: any) {
-          if (err === 'cancel' || err?.code === 'cancel') return;
+        } catch (err: unknown) {
+          const errObj = err as { code?: string };
+          if (err === 'cancel' || errObj?.code === 'cancel') return;
           // If inside mobile browser where CastContext delegates to W3C RemotePlayback, continue to Path 3
         }
       }
@@ -1547,7 +1702,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           try {
             syncBridgeVideoSource();
             await bridgeVideo.remote.prompt();
-            if (!videoState.isLive && mainVideo?.currentTime > 1) {
+            if (!videoState.isLive && mainVideo && mainVideo.currentTime > 1) {
               bridgeVideo.currentTime = mainVideo.currentTime;
             }
             bridgeVideo.muted = false;
@@ -1561,8 +1716,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             setCastDeviceName('Smart TV (Cast Directo)');
             showTransientToast('✓ Transmitiendo Vídeo + Audio directamente en tu TV');
             return;
-          } catch (err: any) {
-            if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
+          } catch (err: unknown) {
+            const errObj = err as { name?: string };
+            if (errObj?.name === 'AbortError' || errObj?.name === 'NotAllowedError') {
               return;
             }
           }
@@ -1580,8 +1736,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             setCastDeviceName('Smart TV (Cast Directo)');
             showTransientToast('✓ Transmitiendo Vídeo + Audio directamente en tu TV');
             return;
-          } catch (err: any) {
-            if (err?.name === 'AbortError' || err?.name === 'NotAllowedError') {
+          } catch (err: unknown) {
+            const errObj = err as { name?: string };
+            if (errObj?.name === 'AbortError' || errObj?.name === 'NotAllowedError') {
               return;
             }
           }
@@ -2002,7 +2159,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           start: Math.floor(videoState.currentTime || 0),
         },
         events: {
-          onReady: (e: any) => {
+          onReady: (e: YouTubePlayerEvent) => {
             try {
               e.target.unMute?.();
               e.target.setVolume?.(100);
@@ -2017,7 +2174,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               e.target.pauseVideo();
             }
           },
-          onStateChange: (e: any) => {
+          onStateChange: (e: YouTubePlayerEvent) => {
             if (e.data === 1) {
               try {
                 if (e.target.isMuted?.()) {
@@ -2272,14 +2429,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     triggerHaptic('light');
     revealControls();
     const container = stageWrapperRef.current;
-    const video = videoRef.current as any;
+    const video = videoRef.current as WebKitVideoElement | null;
 
     const currentlyFull = Boolean(document.fullscreenElement) || isHorizontalFullscreen;
     if (currentlyFull) {
       setIsHorizontalFullscreen(false);
       setIsFullscreen(false);
       try {
-        (window.screen?.orientation as any)?.unlock?.();
+        (window.screen?.orientation as unknown as ScreenOrientationWithLock)?.unlock?.();
       } catch {
         // ignore
       }
@@ -2313,8 +2470,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     }
 
     try {
-      if ((window.screen?.orientation as any)?.lock) {
-        await (window.screen.orientation as any).lock('landscape');
+      const ori = window.screen?.orientation as unknown as ScreenOrientationWithLock | undefined;
+      if (ori?.lock) {
+        await ori.lock('landscape');
       }
     } catch {
       // When OS portrait lock or browser blocks native lock, our inner 90deg landscape stage handles it automatically
@@ -2347,10 +2505,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     const nextForce = !forceLandscapeRotation;
     setForceLandscapeRotation(nextForce);
     try {
-      if (nextForce && (window.screen?.orientation as any)?.lock) {
-        await (window.screen.orientation as any).lock('landscape');
-      } else if (!nextForce && (window.screen?.orientation as any)?.unlock) {
-        (window.screen.orientation as any).unlock();
+      const ori = window.screen?.orientation as unknown as ScreenOrientationWithLock | undefined;
+      if (nextForce && ori?.lock) {
+        await ori.lock('landscape');
+      } else if (!nextForce && ori?.unlock) {
+        ori.unlock();
       }
     } catch {
       // ignore
@@ -2372,7 +2531,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const handleTogglePiP = async (e: React.MouseEvent) => {
     e.stopPropagation();
     triggerHaptic('medium');
-    const video = videoRef.current as any;
+    const video = videoRef.current as WebKitVideoElement | null;
     if (!video) return;
 
     try {
@@ -2388,7 +2547,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         return;
       }
       // iOS Safari WebKit Presentation Mode PiP
-      if (video.webkitSupportsPresentationMode?.('picture-in-picture')) {
+      if (video.webkitSupportsPresentationMode?.('picture-in-picture') && video.webkitSetPresentationMode) {
         const nextMode =
           video.webkitPresentationMode === 'picture-in-picture'
             ? 'inline'
@@ -3445,7 +3604,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 }`}
               >
                 <div
-                  className={`max-w-[88%] px-3 py-1 rounded-lg bg-black/75 text-white font-medium text-center whitespace-pre-line leading-snug shadow-lg ${sizeClass}`}
+                  className={`max-w-[88%] px-3 py-1.5 rounded-lg font-medium text-center whitespace-pre-line leading-snug ${sizeClass}`}
+                  style={{
+                    color: subtitleStyle.fontColor,
+                    fontSize: `${subtitleStyle.fontScale * 100}%`,
+                    backgroundColor: `rgba(0, 0, 0, ${subtitleStyle.bgOpacity})`,
+                    textShadow:
+                      subtitleStyle.edgeShadow === 'none'
+                        ? 'none'
+                        : subtitleStyle.edgeShadow === 'outline'
+                        ? '0 0 4px #000, 0 0 2px #000'
+                        : '0 2px 6px rgba(0,0,0,0.9)',
+                  }}
                 >
                   {cueText}
                 </div>
@@ -4453,48 +4623,106 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </select>
 
                 {activeSubId !== 'off' && (
-                  <div className="flex items-center justify-between gap-2 pt-1">
+                  <div className="space-y-2.5 pt-1">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSubtitleOffsetSec((s) => Number((s - 0.5).toFixed(1)))
+                          }
+                          className="min-h-[38px] px-3 rounded-xl bg-white/10 hover:bg-white/20 font-mono text-xs text-white cursor-pointer"
+                        >
+                          -0.5s
+                        </button>
+                        <span className="font-mono text-xs text-sky-300 min-w-[48px] text-center">
+                          {subtitleOffsetSec >= 0
+                            ? `+${subtitleOffsetSec}s`
+                            : `${subtitleOffsetSec}s`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSubtitleOffsetSec((s) => Number((s + 0.5).toFixed(1)))
+                          }
+                          className="min-h-[38px] px-3 rounded-xl bg-white/10 hover:bg-white/20 font-mono text-xs text-white cursor-pointer"
+                        >
+                          +0.5s
+                        </button>
+                      </div>
+
+                      <div className="flex items-center gap-1">
+                        {(['sm', 'md', 'lg'] as const).map((sz) => (
+                          <button
+                            key={sz}
+                            type="button"
+                            onClick={() => setSubtitleSize(sz)}
+                            className={`min-h-[38px] min-w-[38px] rounded-xl text-xs font-bold uppercase cursor-pointer ${
+                              subtitleSize === sz
+                                ? 'bg-[#E11D48] text-white'
+                                : 'bg-white/10 text-zinc-300'
+                            }`}
+                          >
+                            {sz === 'sm' ? 'S' : sz === 'md' ? 'M' : 'L'}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Subtitle Studio Style + Font Color */}
+                    <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-300">
+                      <span>Color / Fondo</span>
+                      <div className="flex items-center gap-1.5">
+                        {(['#FFFFFF', '#FDE047', '#38BDF8'] as const).map((clr) => (
+                          <button
+                            key={clr}
+                            type="button"
+                            onClick={() => setSubtitleStyle({ fontColor: clr })}
+                            className={`w-6 h-6 rounded-full border-2 cursor-pointer ${
+                              subtitleStyle.fontColor === clr ? 'border-white scale-110' : 'border-white/30'
+                            }`}
+                            style={{ backgroundColor: clr }}
+                            aria-label={`Color subtítulos ${clr}`}
+                          />
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setSubtitleStyle({
+                              bgOpacity: subtitleStyle.bgOpacity > 0.4 ? 0 : 0.72,
+                            })
+                          }
+                          className="px-2 py-1 rounded-lg bg-white/10 text-[10px] font-semibold text-white cursor-pointer"
+                        >
+                          Caja: {subtitleStyle.bgOpacity > 0.4 ? 'ON' : 'OFF'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Fine Audio/Sync Offset (±50ms) */}
+                {!videoState.isLive && (
+                  <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.06] text-xs">
+                    <span className="text-zinc-300 font-medium">Ajuste fino de sala</span>
                     <div className="flex items-center gap-1.5">
                       <button
                         type="button"
-                        onClick={() =>
-                          setSubtitleOffsetSec((s) => Number((s - 0.5).toFixed(1)))
-                        }
-                        className="min-h-[38px] px-3 rounded-xl bg-white/10 hover:bg-white/20 font-mono text-xs text-white cursor-pointer"
+                        onClick={() => setSyncOffsetMs(syncOffsetMs - 50)}
+                        className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 font-mono text-white cursor-pointer"
                       >
-                        -0.5s
+                        -50ms
                       </button>
-                      <span className="font-mono text-xs text-sky-300 min-w-[48px] text-center">
-                        {subtitleOffsetSec >= 0
-                          ? `+${subtitleOffsetSec}s`
-                          : `${subtitleOffsetSec}s`}
+                      <span className="font-mono text-zinc-200 min-w-[54px] text-center">
+                        {syncOffsetMs >= 0 ? `+${syncOffsetMs}ms` : `${syncOffsetMs}ms`}
                       </span>
                       <button
                         type="button"
-                        onClick={() =>
-                          setSubtitleOffsetSec((s) => Number((s + 0.5).toFixed(1)))
-                        }
-                        className="min-h-[38px] px-3 rounded-xl bg-white/10 hover:bg-white/20 font-mono text-xs text-white cursor-pointer"
+                        onClick={() => setSyncOffsetMs(syncOffsetMs + 50)}
+                        className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 font-mono text-white cursor-pointer"
                       >
-                        +0.5s
+                        +50ms
                       </button>
-                    </div>
-
-                    <div className="flex items-center gap-1">
-                      {(['sm', 'md', 'lg'] as const).map((sz) => (
-                        <button
-                          key={sz}
-                          type="button"
-                          onClick={() => setSubtitleSize(sz)}
-                          className={`min-h-[38px] min-w-[38px] rounded-xl text-xs font-bold uppercase cursor-pointer ${
-                            subtitleSize === sz
-                              ? 'bg-[#E11D48] text-white'
-                              : 'bg-white/10 text-zinc-300'
-                          }`}
-                        >
-                          {sz === 'sm' ? 'S' : sz === 'md' ? 'M' : 'L'}
-                        </button>
-                      ))}
                     </div>
                   </div>
                 )}

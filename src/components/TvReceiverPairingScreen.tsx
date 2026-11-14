@@ -380,24 +380,6 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
 
           <button
             type="button"
-            onClick={toggleTvBrowserFullscreen}
-            className="min-h-[44px] px-4 rounded-2xl bg-[#E11D48]/20 hover:bg-[#E11D48] border border-[#E11D48] text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-colors"
-          >
-            {isFullscreen ? (
-              <>
-                <Minimize className="w-4 h-4" />
-                <span>{lang === 'es' ? 'Salir Pantalla Completa' : 'Exit Fullscreen'}</span>
-              </>
-            ) : (
-              <>
-                <Maximize className="w-4 h-4" />
-                <span>{lang === 'es' ? 'Pantalla Completa' : 'Fullscreen'}</span>
-              </>
-            )}
-          </button>
-
-          <button
-            type="button"
             onClick={onExitTvLobby}
             className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs sm:text-sm font-semibold text-zinc-200 flex items-center gap-2 cursor-pointer transition-colors"
           >
