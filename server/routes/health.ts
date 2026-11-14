@@ -5,6 +5,7 @@ import { ENV, ROOT_DIR } from '../config/env.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { logger } from '../utils/logger.ts';
 import { serviceMesh } from '../gateway/serviceMesh.ts';
+import { buildSignedApkBuffer } from '../services/apkBuilderService.ts';
 
 export interface QoeSample {
   id: string;
@@ -100,8 +101,22 @@ export function registerOperationalRoutes(
 
     const mobileApkPath = path.join(ROOT_DIR, 'public', 'NAIM-CINE.apk');
     const tvApkPath = path.join(ROOT_DIR, 'public', 'NAIM-CINE-TV.apk');
-    const mobileBytes = fs.existsSync(mobileApkPath) ? fs.statSync(mobileApkPath).size : 0;
-    const tvBytes = fs.existsSync(tvApkPath) ? fs.statSync(tvApkPath).size : 0;
+    let mobileBytes = fs.existsSync(mobileApkPath) ? fs.statSync(mobileApkPath).size : 0;
+    let tvBytes = fs.existsSync(tvApkPath) ? fs.statSync(tvApkPath).size : 0;
+    if (!mobileBytes) {
+      try {
+        mobileBytes = buildSignedApkBuffer('mobile', origin).length;
+      } catch {
+        mobileBytes = 0;
+      }
+    }
+    if (!tvBytes) {
+      try {
+        tvBytes = buildSignedApkBuffer('tv', origin).length;
+      } catch {
+        tvBytes = 0;
+      }
+    }
 
     const payload = {
       success: true,

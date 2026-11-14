@@ -12,6 +12,7 @@ import {
   ChevronUp,
   Download,
   MonitorPlay,
+  Loader2,
 } from 'lucide-react';
 import { AppLanguage, TvRemoteCommandType } from '../types';
 import {
@@ -22,6 +23,7 @@ import {
   HapticTvRemote,
 } from './ui/DesignSystem';
 import { buildTvPairingUrl, getDisplayAppHost } from '../utils/shortLink';
+import { triggerApkDownload } from '../utils/apkDownload';
 
 interface SmartTvQuickModalProps {
   isOpen: boolean;
@@ -58,9 +60,32 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
   const [copiedUrl, setCopiedUrl] = useState(false);
   const [copiedIptv, setCopiedIptv] = useState<'m3u' | 'epg' | null>(null);
   const [pairedCodeLabel, setPairedCodeLabel] = useState<string | null>(null);
+  const [apkStatus, setApkStatus] = useState<{
+    flavor: 'mobile' | 'tv' | null;
+    state: 'idle' | 'downloading' | 'done' | 'error';
+    message?: string;
+  }>({ flavor: null, state: 'idle' });
   const [activeTab, setActiveTab] = useState<SmartTvTab>(
     hasConnectedSmartTv ? 'remote' : 'pair'
   );
+
+  const handleApkDownload = async (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    flavor: 'mobile' | 'tv',
+    url: string,
+    filename: string
+  ) => {
+    e.preventDefault();
+    if (apkStatus.state === 'downloading') return;
+    setApkStatus({ flavor, state: 'downloading' });
+    const result = await triggerApkDownload(url, filename);
+    if (result.ok) {
+      setApkStatus({ flavor, state: 'done' });
+      setTimeout(() => setApkStatus({ flavor: null, state: 'idle' }), 3000);
+    } else {
+      setApkStatus({ flavor, state: 'error', message: result.error });
+    }
+  };
 
   useEffect(() => {
     if (hasConnectedSmartTv) {
@@ -411,10 +436,23 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             <a
               href="/NAIM-CINE.apk?v=240"
               download="NAIM-CINE.apk"
+              onClick={(e) => handleApkDownload(e, 'mobile', '/NAIM-CINE.apk?v=240', 'NAIM-CINE.apk')}
               className="min-h-11 px-4 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-all shadow-[0_8px_22px_rgba(145,70,255,0.35)]"
             >
-              <Download className="w-4 h-4 shrink-0" />
-              <span>APK Móvil</span>
+              {apkStatus.flavor === 'mobile' && apkStatus.state === 'downloading' ? (
+                <Loader2 className="w-4 h-4 shrink-0 animate-spin" />
+              ) : apkStatus.flavor === 'mobile' && apkStatus.state === 'done' ? (
+                <Check className="w-4 h-4 shrink-0 text-emerald-300" />
+              ) : (
+                <Download className="w-4 h-4 shrink-0" />
+              )}
+              <span>
+                {apkStatus.flavor === 'mobile' && apkStatus.state === 'downloading'
+                  ? 'Preparando...'
+                  : apkStatus.flavor === 'mobile' && apkStatus.state === 'done'
+                  ? 'Descargada'
+                  : 'APK Móvil'}
+              </span>
             </a>
           </div>
 
@@ -432,12 +470,30 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             <a
               href="/NAIM-CINE-TV.apk?v=240"
               download="NAIM-CINE-TV.apk"
+              onClick={(e) => handleApkDownload(e, 'tv', '/NAIM-CINE-TV.apk?v=240', 'NAIM-CINE-TV.apk')}
               className="min-h-11 px-4 rounded-xl bg-white/[0.1] hover:bg-white/[0.16] border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 shrink-0 whitespace-nowrap transition-colors"
             >
-              <Download className="w-4 h-4 text-[#BF94FF] shrink-0" />
-              <span>APK TV</span>
+              {apkStatus.flavor === 'tv' && apkStatus.state === 'downloading' ? (
+                <Loader2 className="w-4 h-4 text-[#BF94FF] shrink-0 animate-spin" />
+              ) : apkStatus.flavor === 'tv' && apkStatus.state === 'done' ? (
+                <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+              ) : (
+                <Download className="w-4 h-4 text-[#BF94FF] shrink-0" />
+              )}
+              <span>
+                {apkStatus.flavor === 'tv' && apkStatus.state === 'downloading'
+                  ? 'Preparando...'
+                  : apkStatus.flavor === 'tv' && apkStatus.state === 'done'
+                  ? 'Descargada'
+                  : 'APK TV'}
+              </span>
             </a>
           </div>
+          {apkStatus.state === 'error' && apkStatus.message && (
+            <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/35 text-xs text-rose-200">
+              Error al descargar APK: {apkStatus.message}
+            </div>
+          )}
 
           {/* Samsung Smart TV IPTV (.M3U Playlist + XMLTV EPG) */}
           <div className="p-3.5 rounded-2xl nc-specular-surface border border-sky-500/25 space-y-2.5">

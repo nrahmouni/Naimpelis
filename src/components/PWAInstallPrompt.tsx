@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { Download, Smartphone, X, Share, MoreVertical, Monitor, Tv } from 'lucide-react';
+import { Download, Smartphone, X, Share, MoreVertical, Monitor, Tv, Loader2, Check } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { useOnlineStatus, usePWAInstall } from '../utils/usePWAInstall';
 import { NaimBrandLogo } from './NaimBrandLogo';
 import { triggerHaptic } from '../utils/haptics';
+import { triggerApkDownload } from '../utils/apkDownload';
 
 interface PWAInstallButtonProps {
   lang: AppLanguage;
@@ -71,8 +72,31 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
 }) => {
   const { isInstallable, isInstalled, isIOS, isAndroid, install } = usePWAInstall();
   const [showManualGuide, setShowManualGuide] = useState(false);
+  const [apkDownloading, setApkDownloading] = useState<'mobile' | 'tv' | null>(null);
+  const [apkDone, setApkDone] = useState<'mobile' | 'tv' | null>(null);
+  const [apkError, setApkError] = useState<string | null>(null);
 
   if (isInstalled) return null;
+
+  const handleDownloadApk = async (
+    e: React.MouseEvent<HTMLAnchorElement>,
+    flavor: 'mobile' | 'tv',
+    url: string,
+    filename: string
+  ) => {
+    e.preventDefault();
+    if (apkDownloading) return;
+    setApkDownloading(flavor);
+    setApkError(null);
+    const res = await triggerApkDownload(url, filename);
+    setApkDownloading(null);
+    if (res.ok) {
+      setApkDone(flavor);
+      setTimeout(() => setApkDone(null), 3200);
+    } else {
+      setApkError(res.error || 'Error al descargar');
+    }
+  };
 
   const handleInstallNow = async () => {
     triggerHaptic('success');
@@ -141,26 +165,48 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
           } gap-2.5`}
         >
           <a
-            href="/NAIM-CINE.apk?v=14"
+            href="/NAIM-CINE.apk?v=240"
             download="NAIM-CINE.apk"
-            onClick={() => triggerHaptic('success')}
+            onClick={(e) => handleDownloadApk(e, 'mobile', '/NAIM-CINE.apk?v=240', 'NAIM-CINE.apk')}
             className="min-h-11 px-5 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all shadow-[0_12px_32px_rgba(145,70,255,0.34),inset_0_1px_0_rgba(255,255,255,0.22)]"
           >
-            <Download className="w-4 h-4 text-white shrink-0" />
+            {apkDownloading === 'mobile' ? (
+              <Loader2 className="w-4 h-4 text-white shrink-0 animate-spin" />
+            ) : apkDone === 'mobile' ? (
+              <Check className="w-4 h-4 text-emerald-300 shrink-0" />
+            ) : (
+              <Download className="w-4 h-4 text-white shrink-0" />
+            )}
             <span>
-              {lang === 'es' ? 'APK Móvil Android (Nativo HD)' : 'Android Mobile APK (Native HD)'}
+              {apkDownloading === 'mobile'
+                ? lang === 'es' ? 'Descargando APK...' : 'Downloading APK...'
+                : apkDone === 'mobile'
+                ? lang === 'es' ? 'APK Móvil Descargada' : 'Mobile APK Downloaded'
+                : lang === 'es'
+                ? 'APK Móvil Android (Nativo HD)'
+                : 'Android Mobile APK (Native HD)'}
             </span>
           </a>
 
           <a
-            href="/NAIM-CINE-TV.apk?v=14"
+            href="/NAIM-CINE-TV.apk?v=240"
             download="NAIM-CINE-TV.apk"
-            onClick={() => triggerHaptic('success')}
+            onClick={(e) => handleDownloadApk(e, 'tv', '/NAIM-CINE-TV.apk?v=240', 'NAIM-CINE-TV.apk')}
             className="min-h-11 px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all"
           >
-            <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
+            {apkDownloading === 'tv' ? (
+              <Loader2 className="w-4 h-4 text-[#BF94FF] shrink-0 animate-spin" />
+            ) : apkDone === 'tv' ? (
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
+            )}
             <span>
-              {lang === 'es'
+              {apkDownloading === 'tv'
+                ? lang === 'es' ? 'Descargando TV...' : 'Downloading TV...'
+                : apkDone === 'tv'
+                ? lang === 'es' ? 'APK TV Descargada' : 'TV APK Downloaded'
+                : lang === 'es'
                 ? 'APK Google TV / Chromecast'
                 : 'Google TV / Chromecast APK'}
             </span>
@@ -178,6 +224,12 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
           </button>
         </div>
       </div>
+
+      {apkError && (
+        <div className="px-3.5 py-2 rounded-xl bg-rose-500/15 border border-rose-500/35 text-xs text-rose-200">
+          {apkError}
+        </div>
+      )}
 
       {showManualGuide && (
         <PWAInstallGuideModal
@@ -265,9 +317,12 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
               )}
             </p>
             <a
-              href="/NAIM-CINE.apk?v=14"
+              href="/NAIM-CINE.apk?v=240"
               download="NAIM-CINE.apk"
-              onClick={() => triggerHaptic('success')}
+              onClick={(e) => {
+                e.preventDefault();
+                void triggerApkDownload('/NAIM-CINE.apk?v=240', 'NAIM-CINE.apk');
+              }}
               className="w-full min-h-[44px] px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs sm:text-sm font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
             >
               <Download className="w-4 h-4 shrink-0" />
@@ -279,9 +334,12 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
             </a>
 
             <a
-              href="/NAIM-CINE-TV.apk?v=14"
+              href="/NAIM-CINE-TV.apk?v=240"
               download="NAIM-CINE-TV.apk"
-              onClick={() => triggerHaptic('success')}
+              onClick={(e) => {
+                e.preventDefault();
+                void triggerApkDownload('/NAIM-CINE-TV.apk?v=240', 'NAIM-CINE-TV.apk');
+              }}
               className="w-full min-h-[42px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/12 text-white text-xs font-semibold flex items-center justify-center gap-2 cursor-pointer transition-colors"
             >
               <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />

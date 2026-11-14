@@ -115,6 +115,7 @@ export interface CatalogMovie {
   id: string;
   tmdbId?: number;
   mediaType?: 'movie' | 'tv';
+  seasonNumber?: number;
   title: string;
   originalTitle?: string;
   year: string;

@@ -61,6 +61,7 @@ import {
 import { MediaDetailsModal } from './MediaDetailsModal';
 import { FootballMatchboard } from './FootballMatchboard';
 import { ExpandedDiscoverySection } from './ExpandedDiscoverySection';
+import { LatestReleasesSection } from './LatestReleasesSection';
 import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.jpg';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
 
@@ -396,9 +397,9 @@ const MASTERPIECE_ANIME_PRESETS: MasterpieceAnimePreset[] = [
   {
     tmdbId: 95479,
     title: 'Jujutsu Kaisen',
-    subtitle: 'Gojo & Sukuna · 47 Caps.',
-    tag: 'Shonen',
-    rating: '8.6',
+    subtitle: '3 Temp. · Culling Game · 59 Caps.',
+    tag: 'Estreno T3',
+    rating: '8.8',
     poster: 'https://image.tmdb.org/t/p/w500/zKFkzRn1UyE11Jv9CJjVmvmQFvR.jpg',
     backdrop: 'https://image.tmdb.org/t/p/w1280/flgn0jXbg8GIe2qaWfd70A0uzfp.jpg',
   },
@@ -482,6 +483,15 @@ const MASTERPIECE_ANIME_PRESETS: MasterpieceAnimePreset[] = [
     rating: '8.4',
     poster: 'https://image.tmdb.org/t/p/w500/yhmHgYvxj1Xez3q6pJKxQVFiP4S.jpg',
     backdrop: 'https://image.tmdb.org/t/p/w1280/cmziOVMQrqvVfrjjQdadMdi2bGL.jpg',
+  },
+  {
+    tmdbId: 12971,
+    title: 'Dragon Ball Z',
+    subtitle: 'Sagas Z Completas · 291 Caps.',
+    tag: 'Clásico',
+    rating: '8.8',
+    poster: 'https://image.tmdb.org/t/p/w500/ogH4r9HsimigseBNLzHn4uVNOxh.jpg',
+    backdrop: 'https://image.tmdb.org/t/p/w1280/ydf1CeiBLfdxiyNTpskM0802TKl.jpg',
   },
 ];
 
@@ -2189,7 +2199,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         onOpenSeriesEpisodes={(tmdbId) => {
           const seed = previewItem || undefined;
           setPreviewItem(null);
-          openSeriesDetails(tmdbId, 1, seed);
+          openSeriesDetails(tmdbId, seed?.seasonNumber || 1, seed);
         }}
         onToggleBookmark={(m) => onToggleCatalogFavorite(m)}
         onAddToQueue={onAddToQueue}
@@ -4154,6 +4164,19 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 onAddToQueue={onAddToQueue}
                 isBookmarked={isBookmarked}
                 onToggleBookmark={(item) => onToggleCatalogFavorite(item)}
+              />
+
+              {/* Últimos Estrenos en Cine y Nuevas Temporadas */}
+              <LatestReleasesSection
+                lang={lang}
+                onSelectMovie={(movie) => setPreviewItem(movie)}
+                onSelectSeries={(series, seasonNum) => {
+                  if (series.tmdbId) {
+                    openSeriesDetails(series.tmdbId, seasonNum, { ...series, mediaType: 'tv' });
+                  } else {
+                    setPreviewItem({ ...series, mediaType: 'tv', seasonNumber: seasonNum });
+                  }
+                }}
               />
             </>
           )}

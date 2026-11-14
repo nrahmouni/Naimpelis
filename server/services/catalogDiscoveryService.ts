@@ -180,6 +180,10 @@ const PROVIDER_TMDB_IDS: Record<string, string> = {
 
 const collectionsCache = new LruTtlCache<string, EditorialCollection[]>(20, 10 * 60 * 1000);
 const discoverCache = new LruTtlCache<string, { items: CatalogMovie[]; hasMore: boolean }>(120, 5 * 60 * 1000);
+const latestReleasesCache = new LruTtlCache<
+  string,
+  { cinemaReleases: CatalogMovie[]; newSeasons: CatalogMovie[]; updatedAt: number }
+>(10, 10 * 60 * 1000);
 
 interface TmdbDiscoverResult {
   page?: number;
@@ -414,4 +418,120 @@ export async function getEditorialCollections(lang = 'es'): Promise<EditorialCol
 
   collectionsCache.set(tmdbLang, collections);
   return collections;
+}
+
+export async function getLatestCinemaAndSeasons(lang = 'es'): Promise<{
+  cinemaReleases: CatalogMovie[];
+  newSeasons: CatalogMovie[];
+  updatedAt: number;
+}> {
+  const tmdbLang = resolveTmdbLanguageTag(lang);
+  const cached = latestReleasesCache.get(tmdbLang);
+  if (cached) return cached;
+
+  const isEn = tmdbLang.startsWith('en');
+
+  const [nowPlayingRes, upcomingMoviesRes, onTheAirRes, airingTodayRes] = await Promise.all([
+    fetchTmdbJson<TmdbDiscoverResult>('/movie/now_playing', {
+      language: tmdbLang,
+      region: 'ES',
+      page: 1,
+    }),
+    fetchTmdbJson<TmdbDiscoverResult>('/movie/now_playing', {
+      language: tmdbLang,
+      region: 'US',
+      page: 1,
+    }),
+    fetchTmdbJson<TmdbDiscoverResult>('/tv/on_the_air', {
+      language: tmdbLang,
+      page: 1,
+    }),
+    fetchTmdbJson<TmdbDiscoverResult>('/tv/airing_today', {
+      language: tmdbLang,
+      page: 1,
+    }),
+  ]);
+
+  const seenMovies = new Set<number>();
+  const cinemaReleases: CatalogMovie[] = [];
+  for (const row of [
+    ...(nowPlayingRes?.results || []),
+    ...(upcomingMoviesRes?.results || []),
+  ]) {
+    if (!row?.id || !row.poster_path || seenMovies.has(row.id)) continue;
+    seenMovies.add(row.id);
+    cinemaReleases.push(mapTmdbRowToCatalogItem(row, 'movie'));
+    if (cinemaReleases.length >= 16) break;
+  }
+
+  // Highlighted verified new seasons from DramasFree & 321MoviesFree first, then live TMDB on_the_air / airing_today
+  const featuredNewSeasons: CatalogMovie[] = [
+    {
+      id: 'latest-from-s4',
+      tmdbId: 124364,
+      mediaType: 'tv',
+      seasonNumber: 4,
+      title: isEn ? 'From · Season 4' : 'From · Temporada 4',
+      originalTitle: 'From',
+      year: '2026',
+      rating: '8.4',
+      overview: isEn
+        ? 'New Season 4 (10 episodes) available in Español Dubbed & VOSE with synced subtitles.'
+        : 'Nueva Temporada 4 completa (10 capítulos) en Doblaje Español y VOSE con subtítulos.',
+      poster:
+        'https://img.321moviesfree.com/cover/20260518/1779099655641_9b678d1469ec7cc0b2e3a72dff432890From%20Season%204.webp',
+      backdrop: 'https://image.tmdb.org/t/p/w1280/m7eiSGHFzr584zFmetGqkqaU6BN.jpg',
+      vestUrl:
+        'https://ww20.321moviesfree.com/es/detail/drama/8JsoLCi6DNWXexKol4WnR-From-Season-4/1/',
+      languages: ['Castellano', 'VOSE'],
+      platform: isEn ? 'New Season 4' : 'Estreno T4',
+    },
+    {
+      id: 'latest-jjk-s3',
+      tmdbId: 95479,
+      mediaType: 'tv',
+      seasonNumber: 3,
+      title: isEn ? 'Jujutsu Kaisen · Season 3' : 'Jujutsu Kaisen · Temporada 3',
+      originalTitle: 'Jujutsu Kaisen',
+      year: '2026',
+      rating: '9.0',
+      overview: isEn
+        ? 'The Culling Game arc (Season 3 · 12 episodes) now streaming in Español Dubbed & VOSE.'
+        : 'Arco del Juego del Sacrificio (Temporada 3 · 12 capítulos) en Doblaje Español y VOSE.',
+      poster:
+        'https://img.dramasfree.com/cover/20251230/1767080544319_4eb5f2c10b0df3bd35bca2f45b23390c5TmWcu2Gs0uhyCQXle3cCvgrbIA.webp',
+      backdrop: 'https://image.tmdb.org/t/p/w1280/flgn0jXbg8GIe2qaWfd70A0uzfp.jpg',
+      vestUrl:
+        'https://www3.dramasfree.com/es/detail/drama/48BzZjCCHYX5ZQvFviD9V-Jujutsu-Kaisen-Season-3/1/',
+      languages: ['Castellano', 'VOSE'],
+      platform: isEn ? 'New Season 3' : 'Estreno T3',
+    },
+  ];
+
+  const seenTv = new Set<number>(
+    featuredNewSeasons.map((s) => s.tmdbId).filter((id): id is number => Boolean(id))
+  );
+  const newSeasons: CatalogMovie[] = [...featuredNewSeasons];
+
+  for (const row of [
+    ...(onTheAirRes?.results || []),
+    ...(airingTodayRes?.results || []),
+  ]) {
+    if (!row?.id || !row.poster_path || seenTv.has(row.id)) continue;
+    seenTv.add(row.id);
+    const mapped = mapTmdbRowToCatalogItem(row, 'tv');
+    newSeasons.push({
+      ...mapped,
+      platform: isEn ? 'New Episodes' : 'En Emisión',
+    });
+    if (newSeasons.length >= 16) break;
+  }
+
+  const payload = {
+    cinemaReleases,
+    newSeasons,
+    updatedAt: Date.now(),
+  };
+  latestReleasesCache.set(tmdbLang, payload);
+  return payload;
 }

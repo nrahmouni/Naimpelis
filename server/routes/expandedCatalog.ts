@@ -4,6 +4,7 @@ import {
   EXPANDED_GENRES,
   FAST_THEMATIC_CHANNELS,
   getEditorialCollections,
+  getLatestCinemaAndSeasons,
 } from '../services/catalogDiscoveryService.ts';
 import { logger } from '../utils/logger.ts';
 
@@ -77,5 +78,26 @@ export function registerExpandedCatalogRoutes(app: express.Express): void {
       success: true,
       channels,
     });
+  });
+
+  // Latest Cinema Releases (Cartelera) & Newly Released TV Seasons
+  app.get('/api/catalog/latest-releases', async (req, res) => {
+    try {
+      const lang = String(req.query.lang || 'es').toLowerCase();
+      const data = await getLatestCinemaAndSeasons(lang);
+      res.setHeader('Cache-Control', 'public, max-age=180');
+      res.json({
+        success: true,
+        ...data,
+      });
+    } catch (err) {
+      logger.warn({ err }, 'latest_releases_error');
+      res.status(500).json({
+        success: false,
+        cinemaReleases: [],
+        newSeasons: [],
+        updatedAt: Date.now(),
+      });
+    }
   });
 }

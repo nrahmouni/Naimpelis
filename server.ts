@@ -55,6 +55,7 @@ import {
   type VestParsedDetail,
   type VestSubtitleItem,
 } from './server/services/vestMirrorService.ts';
+import { buildSignedApkBuffer } from './server/services/apkBuilderService.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -823,31 +824,6 @@ async function extractAnimeAv1Tracks(opts: {
   episode?: number;
 }): Promise<TrackRecord[]> {
   try {
-    const CANONICAL_ANIME_SLUG_MAP: Record<string, string> = {
-      'attack on titan': 'shingeki-no-kyojin',
-      'ataque a los titanes': 'shingeki-no-kyojin',
-      'shingeki no kyojin': 'shingeki-no-kyojin',
-      'fullmetal alchemist brotherhood': 'fullmetal-alchemist-brotherhood',
-      'fullmetal alchemist': 'fullmetal-alchemist-brotherhood',
-      'hunter x hunter': 'hunter-x-hunter-2011',
-      'hunter × hunter': 'hunter-x-hunter-2011',
-      'death note': 'death-note',
-      'one piece': 'one-piece',
-      'jujutsu kaisen': 'jujutsu-kaisen',
-      'demon slayer': 'kimetsu-no-yaiba',
-      'kimetsu no yaiba': 'kimetsu-no-yaiba',
-      'guardianes de la noche': 'kimetsu-no-yaiba',
-      'steins gate': 'steinsgate',
-      'steinsgate': 'steinsgate',
-      'vinland saga': 'vinland-saga',
-      'berserk': 'berserk',
-      'los siete pecados capitales': 'nanatsu-no-taizai',
-      'los 7 pecados capitales': 'nanatsu-no-taizai',
-      'nanatsu no taizai': 'nanatsu-no-taizai',
-      'the seven deadly sins': 'nanatsu-no-taizai',
-      'solo leveling': 'solo-leveling',
-    };
-
     const rawHints = Array.from(
       new Set(
         opts.titleHints
@@ -867,127 +843,223 @@ async function extractAnimeAv1Tracks(opts: {
 
     const seasonNum = opts.mediaType === 'tv' ? Math.max(1, opts.season || 1) : 1;
     const epNum = opts.mediaType === 'tv' ? Math.max(1, opts.episode || 1) : 1;
-    const slugCacheKey = `${opts.mediaType}|s${seasonNum}|${normalizeTitleForMatch(rawHints[0])}`;
+
+    const resolveCanonicalAnimeAv1Target = (
+      normList: string[],
+      sNum: number,
+      eNum: number
+    ): { slug: string; ep: number } | null => {
+      for (const nh of normList) {
+        if (
+          nh === 'attack on titan' ||
+          nh === 'ataque a los titanes' ||
+          nh === 'shingeki no kyojin'
+        ) {
+          if (sNum === 1) return { slug: 'shingeki-no-kyojin', ep: eNum };
+          if (sNum === 2) return { slug: 'shingeki-no-kyojin-season-2', ep: eNum };
+          if (sNum === 3) {
+            return eNum <= 12
+              ? { slug: 'shingeki-no-kyojin-season-3', ep: eNum }
+              : { slug: 'shingeki-no-kyojin-season-3-part-2', ep: eNum - 12 };
+          }
+          return { slug: 'shingeki-no-kyojin-the-final-season', ep: eNum };
+        }
+        if (nh === 'solo leveling' || nh === 'ore dake level up na ken') {
+          if (sNum === 1 && eNum <= 12) {
+            return { slug: 'ore-dake-level-up-na-ken', ep: eNum };
+          }
+          if (sNum === 1 && eNum > 12) {
+            return { slug: 'ore-dake-level-up-na-ken-season-2', ep: eNum - 12 };
+          }
+          return { slug: 'ore-dake-level-up-na-ken-season-2', ep: eNum };
+        }
+        if (nh === 'jujutsu kaisen') {
+          if (sNum === 1) {
+            if (eNum >= 48) {
+              return { slug: 'jujutsu-kaisen-shimetsu-kaiyuu-zenpen', ep: eNum - 47 };
+            }
+            if (eNum >= 25) {
+              return { slug: 'jujutsu-kaisen-2nd-season', ep: eNum - 24 };
+            }
+            return { slug: 'jujutsu-kaisen', ep: eNum };
+          }
+          if (sNum === 2) return { slug: 'jujutsu-kaisen-2nd-season', ep: eNum };
+          return { slug: 'jujutsu-kaisen-shimetsu-kaiyuu-zenpen', ep: eNum };
+        }
+        if (
+          nh === 'demon slayer' ||
+          nh === 'kimetsu no yaiba' ||
+          nh === 'guardianes de la noche'
+        ) {
+          if (sNum === 1) return { slug: 'kimetsu-no-yaiba', ep: eNum };
+          if (sNum === 2) return { slug: 'kimetsu-no-yaiba-yuukaku-hen', ep: eNum };
+          if (sNum === 3) return { slug: 'kimetsu-no-yaiba-katanakaji-no-sato-hen', ep: eNum };
+          return { slug: 'kimetsu-no-yaiba-hashira-geiko-hen', ep: eNum };
+        }
+        if (nh === 'vinland saga') {
+          return sNum >= 2
+            ? { slug: 'vinland-saga-season-2', ep: eNum }
+            : { slug: 'vinland-saga', ep: eNum };
+        }
+        if (nh === 'berserk') {
+          return sNum >= 2
+            ? { slug: 'berserk-2nd-season', ep: eNum }
+            : { slug: 'berserk', ep: eNum };
+        }
+        if (
+          nh === 'los siete pecados capitales' ||
+          nh === 'los 7 pecados capitales' ||
+          nh === 'nanatsu no taizai' ||
+          nh === 'the seven deadly sins'
+        ) {
+          if (sNum === 1) return { slug: 'nanatsu-no-taizai', ep: eNum };
+          if (sNum === 2) return { slug: 'nanatsu-no-taizai-imashime-no-fukkatsu', ep: eNum };
+          if (sNum === 3) return { slug: 'nanatsu-no-taizai-kamigami-no-gekirin', ep: eNum };
+          return { slug: 'nanatsu-no-taizai-mokushiroku-no-yonkishi', ep: eNum };
+        }
+        if (nh === 'fullmetal alchemist brotherhood' || nh === 'fullmetal alchemist') {
+          return { slug: 'fullmetal-alchemist-brotherhood', ep: eNum };
+        }
+        if (nh === 'hunter x hunter' || nh === 'hunter hunter') {
+          return { slug: 'hunter-x-hunter-2011', ep: eNum };
+        }
+        if (nh === 'death note') {
+          return { slug: 'death-note', ep: eNum };
+        }
+        if (nh === 'one piece') {
+          return { slug: 'one-piece', ep: eNum };
+        }
+        if (nh === 'steins gate' || nh === 'steinsgate') {
+          return { slug: 'steinsgate', ep: eNum };
+        }
+        if (nh === 'dragon ball z') {
+          return { slug: 'dragon-ball-z', ep: eNum };
+        }
+      }
+      return null;
+    };
+
+    const normHints = rawHints
+      .map((h) => normalizeTitleForMatch(h))
+      .filter((nh) => nh.length >= 2);
+    if (normHints.length === 0) return [];
 
     let matchedSlug: string | null = null;
-    const cachedSlug = animeAv1SlugCache.get(slugCacheKey);
-    if (cachedSlug && Date.now() - cachedSlug.ts < 30 * 60 * 1000) {
-      matchedSlug = cachedSlug.slug;
+    let resolvedEpNum = epNum;
+
+    const canonicalTarget = resolveCanonicalAnimeAv1Target(normHints, seasonNum, epNum);
+    if (canonicalTarget) {
+      matchedSlug = canonicalTarget.slug;
+      resolvedEpNum = Math.max(1, canonicalTarget.ep);
     } else {
-      const normHints = rawHints
-        .map((h) => normalizeTitleForMatch(h))
-        .filter((nh) => nh.length >= 2);
-      if (normHints.length === 0) return [];
-
-      for (const nh of normHints) {
-        if (CANONICAL_ANIME_SLUG_MAP[nh]) {
-          matchedSlug = CANONICAL_ANIME_SLUG_MAP[nh];
-          break;
-        }
-      }
-
-      for (const q of rawHints.slice(0, 3)) {
-        try {
-          const sRes = await fetch(
-            `https://animeav1.com/catalogo?search=${encodeURIComponent(q)}`,
-            {
-              headers: {
-                'User-Agent': CHROME_UA,
-                Referer: 'https://animeav1.com/',
-              },
-              signal: AbortSignal.timeout(3800),
-            }
-          );
-          if (!sRes.ok) continue;
-          const sHtml = await sRes.text();
-          const rIdx = sHtml.indexOf('results:[');
-          if (rIdx === -1) continue;
-          const block = sHtml.slice(rIdx, rIdx + 28000);
-
-          const candidates = [
-            ...block.matchAll(/\{id:"?\d+"?,title:"([^"]+)"[^{}]*?slug:"([^"]+)"/g),
-          ].map((m) => ({
-            title: m[1],
-            slug: m[2],
-          }));
-
-          let bestSlug: string | null = null;
-          let bestScore = -999;
-
-          for (const cand of candidates) {
-            const normCand = normalizeTitleForMatch(cand.title);
-            const slugLower = cand.slug.toLowerCase();
-            if (!normCand || normCand.length < 2) continue;
-
-            let baseScore = 0;
-            const slugNoHyphen = slugLower.replace(/-/g, '');
-            for (const nh of normHints) {
-              const nhNoSpace = nh.replace(/\s+/g, '');
-              if (
-                normCand === nh ||
-                slugLower === nh.replace(/\s+/g, '-') ||
-                (nhNoSpace.length >= 4 && slugNoHyphen === nhNoSpace)
-              ) {
-                baseScore = Math.max(baseScore, 100);
-              } else if (
-                nh.length >= 4 &&
-                (normCand.startsWith(`${nh} `) ||
-                  slugLower.startsWith(`${nh.replace(/\s+/g, '-')}-`) ||
-                  slugNoHyphen.startsWith(nhNoSpace))
-              ) {
-                baseScore = Math.max(baseScore, 86);
+      const slugCacheKey = `${opts.mediaType}|s${seasonNum}|${normHints[0]}`;
+      const cachedSlug = animeAv1SlugCache.get(slugCacheKey);
+      if (cachedSlug && Date.now() - cachedSlug.ts < 30 * 60 * 1000) {
+        matchedSlug = cachedSlug.slug;
+      } else {
+        for (const q of rawHints.slice(0, 3)) {
+          try {
+            const sRes = await fetch(
+              `https://animeav1.com/catalogo?search=${encodeURIComponent(q)}`,
+              {
+                headers: {
+                  'User-Agent': CHROME_UA,
+                  Referer: 'https://animeav1.com/',
+                },
+                signal: AbortSignal.timeout(3800),
               }
-            }
-            if (baseScore < 80) continue;
-
-            const isMovieEntry = /\b(movie|pelicula|film)\b/i.test(`${cand.title} ${cand.slug}`);
-            const isSpecialOrOva = /\b(ova|special|sunny-side|recap|summary)\b/i.test(
-              `${cand.title} ${cand.slug}`
             );
-            const hasSeasonN = new RegExp(
-              `(?:season[-\\s]*${seasonNum}|${seasonNum}(?:nd|rd|th)[-\\s]*season|\\bpart[-\\s]*${seasonNum}\\b)`,
-              'i'
-            ).test(`${cand.title} ${cand.slug}`);
-            const hasAnyHigherSeason =
-              /(?:season[-\s]*[2-9]|[2-9](?:nd|rd|th)[-\s]*season)/i.test(
+            if (!sRes.ok) continue;
+            const sHtml = await sRes.text();
+            const rIdx = sHtml.indexOf('results:[');
+            if (rIdx === -1) continue;
+            const block = sHtml.slice(rIdx, rIdx + 28000);
+
+            const candidates = [
+              ...block.matchAll(/\{id:"?\d+"?,title:"([^"]+)"[^{}]*?slug:"([^"]+)"/g),
+            ].map((m) => ({
+              title: m[1],
+              slug: m[2],
+            }));
+
+            let bestSlug: string | null = null;
+            let bestScore = -999;
+
+            for (const cand of candidates) {
+              const normCand = normalizeTitleForMatch(cand.title);
+              const slugLower = cand.slug.toLowerCase();
+              if (!normCand || normCand.length < 2) continue;
+
+              let baseScore = 0;
+              const slugNoHyphen = slugLower.replace(/-/g, '');
+              for (const nh of normHints) {
+                const nhNoSpace = nh.replace(/\s+/g, '');
+                if (
+                  normCand === nh ||
+                  slugLower === nh.replace(/\s+/g, '-') ||
+                  (nhNoSpace.length >= 4 && slugNoHyphen === nhNoSpace)
+                ) {
+                  baseScore = Math.max(baseScore, 100);
+                } else if (
+                  nh.length >= 4 &&
+                  (normCand.startsWith(`${nh} `) ||
+                    slugLower.startsWith(`${nh.replace(/\s+/g, '-')}-`) ||
+                    slugNoHyphen.startsWith(nhNoSpace))
+                ) {
+                  baseScore = Math.max(baseScore, 86);
+                }
+              }
+              if (baseScore < 80) continue;
+
+              const isMovieEntry = /\b(movie|pelicula|film)\b/i.test(`${cand.title} ${cand.slug}`);
+              const isSpecialOrOva = /\b(ova|special|sunny-side|recap|summary)\b/i.test(
                 `${cand.title} ${cand.slug}`
               );
+              const hasSeasonN = new RegExp(
+                `(?:season[-\\s]*${seasonNum}|${seasonNum}(?:nd|rd|th)[-\\s]*season|\\bpart[-\\s]*${seasonNum}\\b)`,
+                'i'
+              ).test(`${cand.title} ${cand.slug}`);
+              const hasAnyHigherSeason =
+                /(?:season[-\s]*[2-9]|[2-9](?:nd|rd|th)[-\s]*season)/i.test(
+                  `${cand.title} ${cand.slug}`
+                );
 
-            if (opts.mediaType === 'movie') {
-              if (isMovieEntry) baseScore += 22;
-              if (hasAnyHigherSeason) baseScore -= 30;
-            } else {
-              if (isMovieEntry) baseScore -= 45;
-              if (isSpecialOrOva) baseScore -= 35;
-              if (seasonNum >= 2) {
-                if (hasSeasonN) baseScore += 35;
-                else baseScore -= 25;
-              } else if (hasAnyHigherSeason) {
-                baseScore -= 28;
+              if (opts.mediaType === 'movie') {
+                if (isMovieEntry) baseScore += 22;
+                if (hasAnyHigherSeason) baseScore -= 30;
+              } else {
+                if (isMovieEntry) baseScore -= 45;
+                if (isSpecialOrOva) baseScore -= 35;
+                if (seasonNum >= 2) {
+                  if (hasSeasonN) baseScore += 35;
+                  else baseScore -= 25;
+                } else if (hasAnyHigherSeason) {
+                  baseScore -= 28;
+                }
+              }
+
+              if (baseScore > bestScore) {
+                bestScore = baseScore;
+                bestSlug = cand.slug;
               }
             }
 
-            if (baseScore > bestScore) {
-              bestScore = baseScore;
-              bestSlug = cand.slug;
+            if (bestSlug && bestScore >= 55) {
+              matchedSlug = bestSlug;
+              break;
             }
+          } catch {
+            // try next hint
           }
-
-          if (bestSlug && bestScore >= 55) {
-            matchedSlug = bestSlug;
-            break;
-          }
-        } catch {
-          // try next hint
         }
-      }
 
-      animeAv1SlugCache.set(slugCacheKey, { slug: matchedSlug, ts: Date.now() });
+        animeAv1SlugCache.set(slugCacheKey, { slug: matchedSlug, ts: Date.now() });
+      }
     }
 
     if (!matchedSlug) return [];
 
-    const epUrl = `https://animeav1.com/media/${matchedSlug}/${epNum}`;
+    const epUrl = `https://animeav1.com/media/${matchedSlug}/${resolvedEpNum}`;
     const epRes = await fetch(epUrl, {
       headers: {
         'User-Agent': CHROME_UA,
@@ -1031,7 +1103,7 @@ async function extractAnimeAv1Tracks(opts: {
             const m3uTxt = await chk.text();
             if (m3uTxt.includes('#EXTM3U')) {
               found.push({
-                id: `anime-zilla-${matchedSlug}-${epNum}-${langCode.toLowerCase()}`,
+                id: `anime-zilla-${matchedSlug}-${resolvedEpNum}-${langCode.toLowerCase()}`,
                 label: `${langLabel} · Anime HD`,
                 lang: langCode,
                 quality: '1080p HLS',
@@ -2375,6 +2447,8 @@ async function probeAvailableLanguages(opts: {
       findVestSeedForMedia({
         tmdbId: cleanId || undefined,
         titleHints: hints,
+        season: season || undefined,
+        episode: episode || undefined,
       })
     );
   if (vestMatch) {
@@ -2901,30 +2975,44 @@ registerOperationalRoutes(app, {
 registerExpandedCatalogRoutes(app);
 
 // Direct Ready-to-Install Signed Android APK Download (Mobile & Google TV / Chromecast)
-app.get(['/NAIM-CINE-TV.apk', '/tv.apk', '/googletv.apk', '/api/download/apk-tv'], (_req, res) => {
+app.get(['/NAIM-CINE-TV.apk', '/tv.apk', '/googletv.apk', '/api/download/apk-tv'], (req, res) => {
   const pubTvApk = path.resolve(__dirname, 'public', 'NAIM-CINE-TV.apk');
   const distTvApk = path.resolve(__dirname, 'dist', 'NAIM-CINE-TV.apk');
   const target = fs.existsSync(pubTvApk) ? pubTvApk : distTvApk;
-  if (!fs.existsSync(target)) {
-    return res.status(404).json({ error: 'Google TV APK file not found' });
-  }
   res.setHeader('Content-Type', 'application/vnd.android.package-archive');
   res.setHeader('Content-Disposition', 'attachment; filename="NAIM-CINE-TV.apk"');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.sendFile(target);
+  if (fs.existsSync(target)) {
+    return res.sendFile(target);
+  }
+  try {
+    const apkBuf = buildSignedApkBuffer('tv', getPublicOrigin(req));
+    res.setHeader('Content-Length', String(apkBuf.length));
+    return res.send(apkBuf);
+  } catch (err) {
+    logger.error({ err }, 'tv_apk_build_failed');
+    return res.status(500).json({ error: 'Unable to build Google TV APK package' });
+  }
 });
 
-app.get(['/NAIM-CINE.apk', '/naimcine.apk', '/movil.apk', '/api/download/apk'], (_req, res) => {
+app.get(['/NAIM-CINE.apk', '/naimcine.apk', '/movil.apk', '/api/download/apk'], (req, res) => {
   const pubApk = path.resolve(__dirname, 'public', 'NAIM-CINE.apk');
   const distApk = path.resolve(__dirname, 'dist', 'NAIM-CINE.apk');
   const target = fs.existsSync(pubApk) ? pubApk : distApk;
-  if (!fs.existsSync(target)) {
-    return res.status(404).json({ error: 'APK file not found' });
-  }
   res.setHeader('Content-Type', 'application/vnd.android.package-archive');
   res.setHeader('Content-Disposition', 'attachment; filename="NAIM-CINE.apk"');
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.sendFile(target);
+  if (fs.existsSync(target)) {
+    return res.sendFile(target);
+  }
+  try {
+    const apkBuf = buildSignedApkBuffer('mobile', getPublicOrigin(req));
+    res.setHeader('Content-Length', String(apkBuf.length));
+    return res.send(apkBuf);
+  } catch (err) {
+    logger.error({ err }, 'mobile_apk_build_failed');
+    return res.status(500).json({ error: 'Unable to build Mobile APK package' });
+  }
 });
 
 // Serve Zero-Dependency Pure ES5 + Classic CSS Smart TV Receiver (/tv) directly
@@ -6696,7 +6784,7 @@ app.get('/api/catalog/tv/:tmdbId', async (req, res) => {
     if (!showRes.ok) return res.status(404).json({ success: false });
     const showJson: any = await showRes.json();
 
-    const seasons = (Array.isArray(showJson?.seasons) ? showJson.seasons : [])
+    const baseSeasons = (Array.isArray(showJson?.seasons) ? showJson.seasons : [])
       .filter(
         (s: any) =>
           s &&
@@ -6717,21 +6805,67 @@ app.get('/api/catalog/tv/:tmdbId', async (req, res) => {
         poster: s.poster_path ? `https://image.tmdb.org/t/p/w342${s.poster_path}` : '',
       }));
 
+    // Special virtual season splitting for Jujutsu Kaisen (95479) where TMDB groups T1 + T2 + T3 into Season 1
+    const isJjkSplit =
+      cleanId === '95479' &&
+      baseSeasons.length === 1 &&
+      (baseSeasons[0]?.episodeCount || 0) >= 48;
+
+    // Special Season 4 guarantee for From (124364) available on 321MoviesFree / DramasFree
+    const hasFromS4Already = baseSeasons.some((s: any) => s.seasonNumber === 4);
+
+    let seasons = baseSeasons;
+    if (isJjkSplit) {
+      const basePoster = baseSeasons[0]?.poster || '';
+      seasons = [
+        {
+          seasonNumber: 1,
+          name: isEn ? 'Season 1' : 'Temporada 1',
+          episodeCount: 24,
+          poster: basePoster,
+        },
+        {
+          seasonNumber: 2,
+          name: isEn ? 'Season 2 · Shibuya Incident' : 'Temporada 2 · Shibuya',
+          episodeCount: 23,
+          poster: basePoster,
+        },
+        {
+          seasonNumber: 3,
+          name: isEn ? 'Season 3 · The Culling Game' : 'Temporada 3 · Culling Game',
+          episodeCount: Math.max(12, (baseSeasons[0]?.episodeCount || 59) - 47),
+          poster: basePoster,
+        },
+      ];
+    } else if (cleanId === '124364' && !hasFromS4Already) {
+      seasons = [
+        ...baseSeasons,
+        {
+          seasonNumber: 4,
+          name: isEn ? 'Season 4 (New)' : 'Temporada 4 (Nueva)',
+          episodeCount: 10,
+          poster: baseSeasons[baseSeasons.length - 1]?.poster || '',
+        },
+      ];
+    }
+
     const effectiveSeason =
       seasons.length > 0 && !seasons.some((s: any) => s.seasonNumber === requestedSeason)
         ? seasons[0].seasonNumber
         : requestedSeason;
 
+    const tmdbSeasonToFetch = isJjkSplit ? 1 : effectiveSeason;
+
     const seasonRequests: Promise<Response>[] = [
       fetch(
-        `https://api.themoviedb.org/3/tv/${cleanId}/season/${effectiveSeason}?api_key=${TMDB_API_KEY}&language=${langParam}`,
+        `https://api.themoviedb.org/3/tv/${cleanId}/season/${tmdbSeasonToFetch}?api_key=${TMDB_API_KEY}&language=${langParam}`,
         { signal: AbortSignal.timeout(4500) }
       ),
     ];
     if (!isEn) {
       seasonRequests.push(
         fetch(
-          `https://api.themoviedb.org/3/tv/${cleanId}/season/${effectiveSeason}?api_key=${TMDB_API_KEY}&language=en-US`,
+          `https://api.themoviedb.org/3/tv/${cleanId}/season/${tmdbSeasonToFetch}?api_key=${TMDB_API_KEY}&language=en-US`,
           { signal: AbortSignal.timeout(4500) }
         )
       );
@@ -6760,9 +6894,22 @@ app.get('/api/catalog/tv/:tmdbId', async (req, res) => {
     let episodes = rawEpisodes
       .filter((ep: any) => ep && typeof ep.episode_number === 'number' && ep.episode_number >= 1)
       .sort((a: any, b: any) => a.episode_number - b.episode_number)
+      .filter((ep: any) => {
+        if (!isJjkSplit) return true;
+        if (effectiveSeason === 1) return ep.episode_number >= 1 && ep.episode_number <= 24;
+        if (effectiveSeason === 2) return ep.episode_number >= 25 && ep.episode_number <= 47;
+        return ep.episode_number >= 48;
+      })
       .map((ep: any) => {
-        const epNum = ep.episode_number;
-        const enFallback = enEpisodesByNum.get(epNum);
+        const origEpNum = ep.episode_number;
+        const epNum = isJjkSplit
+          ? effectiveSeason === 2
+            ? origEpNum - 24
+            : effectiveSeason === 3
+            ? origEpNum - 47
+            : origEpNum
+          : origEpNum;
+        const enFallback = enEpisodesByNum.get(origEpNum);
         const rawName = String(ep.name || '').trim();
         const isGenericEsName =
           !rawName || /^(episodio|episode|cap[ií]tulo)\s*\d+$/i.test(rawName);
@@ -6789,6 +6936,26 @@ app.get('/api/catalog/tv/:tmdbId', async (req, res) => {
           rating: ep.vote_average ? Number(ep.vote_average).toFixed(1) : undefined,
         };
       });
+
+    if (isJjkSplit && effectiveSeason === 3 && episodes.length < 12) {
+      const existingNums = new Set(episodes.map((e: any) => e.episodeNumber));
+      for (let idx = 1; idx <= 12; idx++) {
+        if (!existingNums.has(idx)) {
+          episodes.push({
+            id: `ep-${cleanId}-3-${idx}`,
+            episodeNumber: idx,
+            seasonNumber: 3,
+            title: isEn ? `Episode ${idx}` : `Capítulo ${idx}`,
+            overview: '',
+            still: '',
+            runtime: 24,
+            airDate: '2026',
+            rating: undefined,
+          });
+        }
+      }
+      episodes.sort((a: any, b: any) => a.episodeNumber - b.episodeNumber);
+    }
 
     const activeSeasonSummary = seasons.find((s: any) => s.seasonNumber === effectiveSeason);
     if (episodes.length === 0 && activeSeasonSummary && activeSeasonSummary.episodeCount > 0) {
@@ -10515,6 +10682,8 @@ app.get('/api/extract/stream', async (req, res) => {
             tmdbId: resolvedTmdbId,
             titleHints: combinedTitleHints,
             preferLang,
+            season: effectiveSeason,
+            episode: effectiveEpisode,
           })
         );
 
