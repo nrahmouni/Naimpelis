@@ -10746,12 +10746,13 @@ app.get('/api/extract/stream', async (req, res) => {
   const seasonParam = parseInt(String(req.query.season || '0'), 10) || undefined;
   const episodeParam = parseInt(String(req.query.episode || '0'), 10) || undefined;
   const episodeTitleHint = String(req.query.episodeTitle || '').trim();
+  const isSandboxedFrame = String(req.query.sandboxed || '').trim() === '1';
 
   if (!rawInput && !movidyUrlParam && !vestUrlParam && !titleHint && !tmdbIdParam) {
     return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
   }
 
-  const cacheKey = `${mediaTypeParam}|${tmdbIdParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${rawInput}|${movidyUrlParam}|${vestUrlParam}|${titleHint}`;
+  const cacheKey = `${mediaTypeParam}|${tmdbIdParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${rawInput}|${movidyUrlParam}|${vestUrlParam}|${titleHint}`;
   const cached = extractionCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return res.json(formatExtractResponseForClient(req, cached));
@@ -11550,18 +11551,18 @@ app.get('/api/extract/stream', async (req, res) => {
         const idStr = String(resolvedTmdbId);
         const s = Math.max(1, effectiveSeason || 1);
         const e = Math.max(1, effectiveEpisode || 1);
-        const rawEntries =
+        const baseEntries =
           effectiveMediaType === 'tv'
             ? [
                 {
-                  id: `embed-vidlink-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 1 · Multi-Audio HD',
-                  url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=e11d48`,
+                  id: `embed-vidfast-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 1 · VidFast HD',
+                  url: `https://vidfast.pro/tv/${idStr}/${s}/${e}?autoPlay=true&theme=9146FF`,
                 },
                 {
-                  id: `embed-vidfast-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 2 · VidFast HD',
-                  url: `https://vidfast.pro/tv/${idStr}/${s}/${e}?autoPlay=true&theme=E11D48`,
+                  id: `embed-vidsrccc-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 2 · VidSrc HD',
+                  url: `https://vidsrc.cc/v2/embed/tv/${idStr}/${s}/${e}`,
                 },
                 {
                   id: `embed-111movies-${idStr}-${s}-${e}`,
@@ -11573,17 +11574,22 @@ app.get('/api/extract/stream', async (req, res) => {
                   label: 'Servidor Web 4 · 2Embed',
                   url: `https://www.2embed.cc/embedtv/${idStr}&s=${s}&e=${e}`,
                 },
+                {
+                  id: `embed-vidlink-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 5 · Multi-Audio',
+                  url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=9146FF`,
+                },
               ]
             : [
                 {
-                  id: `embed-vidlink-${idStr}`,
-                  label: 'Servidor Web 1 · Multi-Audio HD',
-                  url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=e11d48`,
+                  id: `embed-vidfast-${idStr}`,
+                  label: 'Servidor Web 1 · VidFast HD',
+                  url: `https://vidfast.pro/movie/${idStr}?autoPlay=true&theme=9146FF`,
                 },
                 {
-                  id: `embed-vidfast-${idStr}`,
-                  label: 'Servidor Web 2 · VidFast HD',
-                  url: `https://vidfast.pro/movie/${idStr}?autoPlay=true&theme=E11D48`,
+                  id: `embed-vidsrccc-${idStr}`,
+                  label: 'Servidor Web 2 · VidSrc HD',
+                  url: `https://vidsrc.cc/v2/embed/movie/${idStr}`,
                 },
                 {
                   id: `embed-111movies-${idStr}`,
@@ -11595,9 +11601,18 @@ app.get('/api/extract/stream', async (req, res) => {
                   label: 'Servidor Web 4 · 2Embed',
                   url: `https://www.2embed.cc/embed/${idStr}`,
                 },
+                {
+                  id: `embed-vidlink-${idStr}`,
+                  label: 'Servidor Web 5 · Multi-Audio',
+                  url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=9146FF`,
+                },
               ];
 
-        return rawEntries.map((entry) => ({
+        const orderedEntries = isSandboxedFrame
+          ? baseEntries
+          : [baseEntries[0], baseEntries[1], baseEntries[4], baseEntries[2], baseEntries[3]];
+
+        return orderedEntries.map((entry) => ({
           id: entry.id,
           label: entry.label,
           lang: preferLang || 'EN',

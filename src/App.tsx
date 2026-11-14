@@ -21,6 +21,7 @@ import {
   RefreshCw,
   Download,
   Bookmark,
+  ChevronUp,
 } from 'lucide-react';
 import {
   checkRemoteAppVersion,
@@ -140,6 +141,9 @@ const GuestWelcomePopup = React.lazy(() =>
 );
 const LiveMatchCenter = React.lazy(() =>
   import('./components/LiveMatchCenter').then((m) => ({ default: m.LiveMatchCenter }))
+);
+const SeriesEpisodesDock = React.lazy(() =>
+  import('./components/SeriesEpisodesDock').then((m) => ({ default: m.SeriesEpisodesDock }))
 );
 const TvReceiverPairingScreen = React.lazy(() =>
   import('./components/TvReceiverPairingScreen').then((m) => ({ default: m.TvReceiverPairingScreen }))
@@ -358,6 +362,17 @@ export function App() {
   );
   const catalogScrollRef = useRef<HTMLDivElement | null>(null);
   const lastScrollCompressToggleRef = useRef<number>(0);
+  const [isChromeHidden, setIsChromeHidden] = useState<boolean>(false);
+  const lastChromeScrollYRef = useRef<number>(0);
+  const isNestedSandboxFrame =
+    typeof window !== 'undefined' &&
+    (() => {
+      try {
+        return window.self !== window.top;
+      } catch {
+        return true;
+      }
+    })();
   const miniDragStartRef = useRef<{
     pointerId: number;
     startX: number;
@@ -1824,6 +1839,7 @@ export function App() {
         vestUrl: movie.vestUrl || '',
         preferLang,
         title: movie.title,
+        ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
       const data = await res.json();
@@ -1970,6 +1986,7 @@ export function App() {
         preferLang,
         title: series.title,
         episodeTitle: episode.title || '',
+        ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
       const data = await res.json();
@@ -2129,6 +2146,7 @@ export function App() {
           preferLang: item.preferLang || 'ES',
           title: item.title,
           episodeTitle: item.episodeTitle || '',
+          ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
         });
         const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
         const data = await res.json();
@@ -2300,6 +2318,7 @@ export function App() {
         episode: String(nextEp),
         preferLang,
         title: meta.seriesTitle,
+        ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`);
       const data = await res.json();
@@ -4130,6 +4149,19 @@ export function App() {
   );
 
   const handleCatalogOrWorkspaceScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const st = e.currentTarget.scrollTop;
+    const prevY = lastChromeScrollYRef.current;
+    const delta = st - prevY;
+    lastChromeScrollYRef.current = st;
+
+    if (!isOnMobileSocialTab && !isAutoImmersiveLandscape) {
+      if (st > 52 && delta > 10 && !isChromeHidden) {
+        setIsChromeHidden(true);
+      } else if ((delta < -16 || st <= 16) && isChromeHidden) {
+        setIsChromeHidden(false);
+      }
+    }
+
     if (
       effectiveVideoState.mode === 'idle' ||
       isExtracting ||
@@ -4141,7 +4173,6 @@ export function App() {
     if (now - lastScrollCompressToggleRef.current < 220) {
       return;
     }
-    const st = e.currentTarget.scrollTop;
     if (st > 105 && !isAutoMiniByScroll) {
       lastScrollCompressToggleRef.current = now;
       setIsAutoMiniByScroll(true);
@@ -4149,6 +4180,15 @@ export function App() {
       lastScrollCompressToggleRef.current = now;
       setIsAutoMiniByScroll(false);
     }
+  };
+
+  const handleWorkspaceBackgroundClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isChromeHidden) return;
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('button, a, input, select, textarea, video, iframe, [role="button"]')) {
+      return;
+    }
+    setIsChromeHidden(false);
   };
 
   const handleMiniPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -4452,16 +4492,24 @@ export function App() {
           />
         )}
 
-        {/* Top Workspace Bar (Deduplicated 3-Zone Header: Room Status · Unified Search · Quick Actions) */}
-        <header
-          className={`${
+        {/* Top Workspace Bar (Animated Collapsible 3-Zone Header) */}
+        <div
+          className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 z-30 ${
             isMobileChatWithKeyboard || isAutoImmersiveLandscape
               ? 'hidden'
-              : isDesktopLayout
-              ? 'h-[58px] px-4 flex'
-              : 'h-13 px-3 flex'
-          } bg-[#111115]/90 backdrop-blur-2xl border-b border-white/[0.07] items-center justify-between gap-2.5 shrink-0 z-30 shadow-[0_6px_28px_rgba(0,0,0,0.4)]`}
+              : isChromeHidden
+              ? 'grid-rows-[0fr] opacity-0 pointer-events-none'
+              : 'grid-rows-[1fr] opacity-100'
+          }`}
         >
+          <div className="overflow-hidden">
+            <header
+              className={`${
+                isDesktopLayout ? 'h-[58px] px-4 flex' : 'h-13 px-3 flex'
+              } bg-[#111115]/90 backdrop-blur-2xl border-b border-white/[0.07] items-center justify-between gap-2.5 shadow-[0_6px_28px_rgba(0,0,0,0.4)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                isChromeHidden ? '-translate-y-full' : 'translate-y-0'
+              }`}
+            >
           {/* Zone 1: Brand + Active Room Switcher Pill */}
           <div className="flex items-center gap-2.5 min-w-0">
             <button
@@ -4764,6 +4812,27 @@ export function App() {
               compact
             />
 
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setIsChromeHidden(true);
+              }}
+              className="w-8 h-9 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.07] text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+              title={pickLang(lang, {
+                es: 'Ocultar menús superior e inferior',
+                ca: 'Amagar menús superior i inferior',
+                en: 'Hide top & bottom bars',
+              })}
+              aria-label={pickLang(lang, {
+                es: 'Ocultar menús superior e inferior',
+                ca: 'Amagar menús superior i inferior',
+                en: 'Hide top & bottom bars',
+              })}
+            >
+              <ChevronUp className="w-4 h-4" />
+            </button>
+
             {isDesktopLayout && (
               <button
                 type="button"
@@ -4777,6 +4846,8 @@ export function App() {
             )}
           </div>
         </header>
+          </div>
+        </div>
 
         {/* Main 3-Pane Twitch Broadcast Workspace */}
         <div
@@ -4829,6 +4900,7 @@ export function App() {
           <div
             ref={mainScrollRef}
             onScroll={isDesktopLayout ? handleCatalogOrWorkspaceScroll : undefined}
+            onClick={isDesktopLayout ? handleWorkspaceBackgroundClick : undefined}
             className={`flex-1 min-h-0 min-w-0 flex flex-col ${
               isDesktopLayout ? 'overflow-y-auto' : 'overflow-hidden'
             }`}
@@ -5128,10 +5200,11 @@ export function App() {
             <div
               ref={catalogScrollRef}
               onScroll={!isDesktopLayout ? handleCatalogOrWorkspaceScroll : undefined}
+              onClick={!isDesktopLayout ? handleWorkspaceBackgroundClick : undefined}
               className={`flex-1 min-h-0 min-w-0 ${
                 isDesktopLayout
-                  ? 'overflow-visible px-6 py-6'
-                  : 'overflow-y-auto overflow-x-clip overscroll-contain px-3.5 py-4'
+                  ? 'overflow-visible px-6 py-5'
+                  : 'overflow-y-auto overflow-x-clip overscroll-contain px-3.5 py-3'
               } ${
                 !isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room')
                   ? 'hidden'
@@ -5189,6 +5262,32 @@ export function App() {
                         </button>
                       </div>
                     )
+                  )}
+
+                {/* NEXT EPISODES DOCK DIRECTLY BELOW PLAYER WHEN WATCHING A SERIES */}
+                {videoState.mode !== 'idle' &&
+                  !isPlayerClosedLocally &&
+                  !isPlayerMinimized &&
+                  !isAutoImmersiveLandscape &&
+                  videoState.seriesMeta && (
+                    <React.Suspense fallback={null}>
+                      <SeriesEpisodesDock
+                        seriesMeta={videoState.seriesMeta}
+                        lang={lang}
+                        preferLang={(() => {
+                          const rawLang = String(
+                            videoState.tracks[videoState.activeTrackIndex]?.lang || 'ES'
+                          ).toUpperCase();
+                          return rawLang === 'LAT' || rawLang === 'VOSE' || rawLang === 'EN'
+                            ? rawLang
+                            : 'ES';
+                        })()}
+                        loadingItemId={loadingItemId}
+                        onSelectEpisode={(series, episode, pLang) => {
+                          void handlePlaySeriesEpisode(series, episode, pLang);
+                        }}
+                      />
+                    </React.Suspense>
                   )}
 
                 {/* If user closed their local player while friends are still watching in room */}
@@ -5413,10 +5512,22 @@ export function App() {
           )}
         </div>
 
-        {/* Floating Glass Bottom Navigation Bar (Android Mobile APK & Mobile Web) */}
+        {/* Floating Glass Bottom Navigation Bar (Animated Auto-Hide on Scroll + Click to Reveal) */}
         {!isDesktopLayout && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-          <div className="shrink-0 px-2.5 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#0B0B0E] via-[#0B0B0E]/92 to-transparent z-30">
-            <nav
+          <div
+            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 z-30 ${
+              isChromeHidden
+                ? 'grid-rows-[0fr] opacity-0 pointer-events-none'
+                : 'grid-rows-[1fr] opacity-100'
+            }`}
+          >
+            <div className="overflow-hidden">
+              <div
+                className={`px-2.5 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#0B0B0E] via-[#0B0B0E]/92 to-transparent transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
+                  isChromeHidden ? 'translate-y-full' : 'translate-y-0'
+                }`}
+              >
+                <nav
               className="bg-[#141418]/92 backdrop-blur-2xl border border-white/[0.11] rounded-2xl p-1 grid grid-cols-5 gap-1 shadow-[0_14px_38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.1)]"
               aria-label={pickLang(lang, {
                 es: 'Navegación móvil NAIM CINE',
@@ -5594,6 +5705,52 @@ export function App() {
                 );
               })}
             </nav>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Click-to-Reveal Floating Pill when Top/Bottom Chrome is Hidden */}
+        {isChromeHidden && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
+          <div className="fixed bottom-[max(0.65rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 animate-fade-in">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setIsChromeHidden(false);
+              }}
+              aria-label={pickLang(lang, {
+                es: 'Mostrar menús',
+                ca: 'Mostrar menús',
+                en: 'Show menus',
+              })}
+              className="min-h-9 px-3.5 rounded-full bg-[#141418]/90 hover:bg-[#1E1E26] backdrop-blur-xl border border-white/15 text-xs font-semibold text-zinc-100 shadow-[0_10px_28px_rgba(0,0,0,0.75)] flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
+            >
+              <ChevronUp className="w-3.5 h-3.5 text-[#BF94FF]" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Menús',
+                  ca: 'Menús',
+                  en: 'Menus',
+                })}
+              </span>
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setIsChromeHidden(false);
+                setShowCommandSearch(true);
+              }}
+              aria-label={pickLang(lang, {
+                es: 'Búsqueda rápida',
+                ca: 'Cerca ràpida',
+                en: 'Quick search',
+              })}
+              className="w-9 h-9 rounded-full bg-[#141418]/90 hover:bg-[#1E1E26] backdrop-blur-xl border border-white/15 text-zinc-200 shadow-[0_10px_28px_rgba(0,0,0,0.75)] flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+            >
+              <Search className="w-3.5 h-3.5 text-[#BF94FF]" />
+            </button>
           </div>
         )}
         {/* Service Worker / Cross-Platform Version Update Toast */}

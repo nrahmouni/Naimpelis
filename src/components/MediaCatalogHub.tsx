@@ -30,6 +30,7 @@ import {
   Volume2,
   VolumeX,
   Bookmark,
+  SlidersHorizontal,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -684,6 +685,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   };
   const [previewItem, setPreviewItem] = useState<CatalogMovie | null>(null);
   const [liveScores, setLiveScores] = useState<LiveScoreMatch[]>([]);
+  const [showSectionFilters, setShowSectionFilters] = useState(false);
+  const [showSectionSearch, setShowSectionSearch] = useState(false);
+  const sectionSearchInputRef = useRef<HTMLInputElement | null>(null);
 
   // Universal Search & Apple TV+ Showcase on Home
   const [homeQuery, setHomeQuery] = useState('');
@@ -792,8 +796,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [customUrl, setCustomUrl] = useState('');
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
 
-  // Reset platform/category focus cleanly whenever returning to Home
+  // Reset platform/category focus cleanly whenever returning to Home or switching sections
   useEffect(() => {
+    setShowSectionFilters(false);
+    setShowSectionSearch(false);
     if (activeSection === 'home') {
       setFocusedHub('all');
       setStreamingProvider('all');
@@ -2295,92 +2301,79 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   const activePillar = normalizeCatalogPillar(activeSection, showWatchlistOnly);
 
+  const activeSectionQuery =
+    activeSection === 'movies' || activeSection === 'vose'
+      ? movieQuery
+      : activeSection === 'series'
+      ? seriesQuery
+      : activeSection === 'anime'
+      ? animeQuery
+      : activeSection === 'tdt'
+      ? tdtSearch
+      : activeSection === 'sports'
+      ? sportsSearch
+      : activeSection === 'youtube'
+      ? ytQuery
+      : activeSection === 'castellano'
+      ? castellanoQuery
+      : activeSection === 'catala'
+      ? catalaQuery
+      : '';
+
+  const setActiveSectionQuery = (val: string) => {
+    if (activeSection === 'movies' || activeSection === 'vose') setMovieQuery(val);
+    else if (activeSection === 'series') setSeriesQuery(val);
+    else if (activeSection === 'anime') setAnimeQuery(val);
+    else if (activeSection === 'tdt') setTdtSearch(val);
+    else if (activeSection === 'sports') setSportsSearch(val);
+    else if (activeSection === 'youtube') setYtQuery(val);
+    else if (activeSection === 'castellano') setCastellanoQuery(val);
+    else if (activeSection === 'catala') setCatalaQuery(val);
+  };
+
+  const activeSectionFilterCount = (() => {
+    if (showWatchlistOnly || activeSection === 'direct') return 0;
+    if (activeSection === 'movies' || activeSection === 'vose') {
+      return (
+        (activeSection === 'vose' ? 1 : 0) +
+        (streamingProvider !== 'all' ? 1 : 0) +
+        (movieCategory !== 'trending' ? 1 : 0)
+      );
+    }
+    if (activeSection === 'series') {
+      return (
+        (seriesLangMode === 'EN' || seriesLangMode === 'VOSE' ? 1 : 0) +
+        (streamingProvider !== 'all' ? 1 : 0) +
+        (seriesCategory !== 'trending' ? 1 : 0)
+      );
+    }
+    if (activeSection === 'castellano') {
+      return (
+        (castellanoKind !== 'all' ? 1 : 0) +
+        (castellanoProvider !== 'all' ? 1 : 0) +
+        (castellanoCategory !== 'trending' ? 1 : 0)
+      );
+    }
+    if (activeSection === 'anime') {
+      return (
+        (animeMediaKind !== 'series' ? 1 : 0) +
+        (animeLangPref !== 'ES' ? 1 : 0) +
+        (animePortal !== 'anime_all' ? 1 : 0) +
+        (animeCategory !== 'trending' ? 1 : 0)
+      );
+    }
+    if (activeSection === 'catala') return catalaCategory !== 'all' ? 1 : 0;
+    if (activeSection === 'tdt') {
+      return (tdtCategory !== 'all' ? 1 : 0) + (epgFilter !== 'all' ? 1 : 0);
+    }
+    if (activeSection === 'sports') return sportFilter !== 'soccer' ? 1 : 0;
+    return 0;
+  })();
+
+  const isSectionSearchVisible = showSectionSearch || activeSectionQuery.trim().length > 0;
+
   return (
-    <div className="@container w-full min-w-0 max-w-full space-y-5 pb-24 sm:pb-6">
-      {/* 5-Pillar Consolidated Navigation Bar */}
-      <nav
-        aria-label={pickLang(lang, { es: 'Navegación principal del catálogo', ca: 'Navegació principal del catàleg', en: 'Catalog main navigation' })}
-        className="flex items-center gap-1.5 p-1.5 rounded-2xl bg-[#0D0E15]/95 border border-white/[0.08] overflow-x-auto no-scrollbar"
-      >
-        {(
-          [
-            {
-              id: 'explore' as const,
-              label: t.pillarExplore,
-              onSelect: () => {
-                goToHomeGrid();
-              },
-            },
-            {
-              id: 'catalog' as const,
-              label: t.pillarCatalog,
-              onSelect: () => {
-                triggerHaptic('light');
-                setFocusedHub('all');
-                setShowWatchlistOnly(false);
-                if (activePillar !== 'catalog') {
-                  onChangeSection('movies');
-                }
-              },
-            },
-            {
-              id: 'anime' as const,
-              label: t.pillarAnime,
-              onSelect: () => {
-                triggerHaptic('light');
-                setFocusedHub('all');
-                setShowWatchlistOnly(false);
-                if (activeSection !== 'anime' && activeSection !== 'catala') {
-                  enterAnimeHub('anime_all', 'series');
-                }
-              },
-            },
-            {
-              id: 'live' as const,
-              label: t.pillarLive,
-              onSelect: () => {
-                triggerHaptic('light');
-                setFocusedHub('all');
-                setShowWatchlistOnly(false);
-                if (activeSection !== 'tdt' && activeSection !== 'sports' && activeSection !== 'youtube') {
-                  onChangeSection('tdt');
-                }
-              },
-            },
-            {
-              id: 'mylist' as const,
-              label:
-                cleanWatchlist.length > 0
-                  ? `${t.pillarMyList} (${cleanWatchlist.length})`
-                  : t.pillarMyList,
-              onSelect: () => {
-                triggerHaptic('light');
-                setFocusedHub('all');
-                setStreamingProvider('all');
-                setShowWatchlistOnly(true);
-                onChangeSection('movies');
-              },
-            },
-          ] as const
-        ).map((pillar) => {
-          const isCurrent = activePillar === pillar.id;
-          return (
-            <button
-              key={pillar.id}
-              type="button"
-              onClick={pillar.onSelect}
-              aria-current={isCurrent ? 'page' : undefined}
-              className={`min-h-[40px] px-4 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
-                isCurrent
-                  ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white shadow-[0_6px_18px_rgba(145,70,255,0.34)]'
-                  : 'text-zinc-300 hover:text-white hover:bg-white/[0.06]'
-              }`}
-            >
-              {pillar.label}
-            </button>
-          );
-        })}
-      </nav>
+    <div className="@container w-full min-w-0 max-w-full space-y-4 pb-24 sm:pb-6" data-pillar={activePillar}>
       {/* Movie / Series Rich Details & Language Selector Modal */}
       <MediaDetailsModal
         item={previewItem}
@@ -3414,70 +3407,50 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* ================================================================== */}
       {activeSection === 'home' && (
         <div className="space-y-8">
-          {/* Sleek Liquid Glass Universal Search Pill + Direct URL Paste Action */}
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
+          {/* Compact Single-Line Universal Search + Direct URL Action */}
+          <div className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={homeQuery}
                   onChange={(e) => setHomeQuery(e.target.value)}
                   placeholder={pickLang(lang, {
-                    es: 'Buscar películas, series, anime, canales en vivo o pegar enlace...',
-                    ca: 'Cerca pel·lícules, sèries, anime, canals en directe o enganxa un enllaç...',
-                    en: 'Search movies, series, anime, live channels, or paste a URL...',
+                    es: 'Buscar pelis, series, anime, TV o URL...',
+                    ca: 'Cerca pel·lis, sèries, anime, TV o URL...',
+                    en: 'Search movies, series, anime, TV or URL...',
                   })}
-                  className="w-full h-12 pl-11 pr-11 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border border-white/[0.1] focus:border-[#9146FF]/70 text-base sm:text-sm text-white placeholder:text-zinc-400 outline-none transition-all"
+                  className="w-full h-9 pl-9 pr-8 rounded-full bg-white/[0.05] focus:bg-white/[0.08] border border-white/[0.09] focus:border-[#9146FF]/70 text-sm text-white placeholder:text-zinc-400 outline-none transition-all"
                 />
                 {homeQuery && (
                   <button
                     type="button"
                     onClick={() => setHomeQuery('')}
                     aria-label={pickLang(lang, { es: 'Limpiar búsqueda', ca: 'Netejar cerca', en: 'Clear search' })}
-                    className="w-9 h-9 rounded-xl absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                    className="w-7 h-7 rounded-full absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
                   >
-                    <X className="w-4 h-4" />
+                    <X className="w-3.5 h-3.5" />
                   </button>
                 )}
               </div>
 
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFocusedHub('all');
-                    setStreamingProvider('all');
-                    setShowWatchlistOnly(true);
-                    onChangeSection('movies');
-                  }}
-                  className="min-h-[44px] px-4 rounded-2xl bg-white/[0.045] hover:bg-white/[0.1] border border-white/[0.09] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                >
-                  <Bookmark className="w-3.5 h-3.5 text-[#E11D48]" />
-                  <span>
-                    {t.pillarMyList}
-                    {cleanWatchlist.length > 0 ? ` · ${cleanWatchlist.length}` : ''}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFocusedHub('all');
-                    onChangeSection('direct');
-                  }}
-                  className="min-h-[44px] px-4 rounded-2xl bg-white/[0.045] hover:bg-white/[0.1] border border-white/[0.09] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                >
-                  <Link2 className="w-3.5 h-3.5 text-[#BF94FF]" />
-                  <span>
-                    {roomQueue.length > 0
-                      ? `${pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' })} · ${roomQueue.length}`
-                      : pickLang(lang, { es: 'Pegar URL', ca: 'Enganxar URL', en: 'Direct URL' })}
-                  </span>
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setFocusedHub('all');
+                  onChangeSection('direct');
+                }}
+                className="h-9 px-3 rounded-full bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.09] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+              >
+                <Link2 className="w-3.5 h-3.5 text-[#BF94FF]" />
+                <span>
+                  {roomQueue.length > 0
+                    ? `${pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' })} · ${roomQueue.length}`
+                    : pickLang(lang, { es: 'URL', ca: 'URL', en: 'URL' })}
+                </span>
+              </button>
             </div>
 
             {/^https?:\/\//i.test(homeQuery.trim()) && (
@@ -4401,170 +4374,33 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       )}
 
       {/* ================================================================== */}
-      {/* FOCUSED SUB-VIEW HEADER BAR (ALWAYS 1 TAP BACK TO "← INICIO")      */}
-      {/* Eliminates multi-row navigation clutter across all sub-views       */}
+      {/* UNIFIED COMPACT SUB-VIEW BAR + ON-DEMAND SEARCH & FILTER DRAWER    */}
+      {/* Replaces stacked navigation, language, platform & category rows    */}
       {/* ================================================================== */}
       {activeSection !== 'home' && (
-        <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2.5 pb-1 border-b border-white/[0.07]">
-            {/* Left: Back to Home Grid + Clear Context Title */}
-            <div className="flex items-center gap-2.5 min-w-0">
-              <button
-                type="button"
-                onClick={goToHomeGrid}
-                className="min-h-[44px] px-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>{pickLang(lang, { es: 'Inicio', ca: 'Inici', en: 'Home' })}</span>
-              </button>
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-white/[0.07]">
+            {/* Left: Compact back button (when deep in a hub) + single concise mode switch */}
+            <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
+              {(focusedHub !== 'all' || streamingProvider !== 'all' || activeSection === 'direct') && (
+                <button
+                  type="button"
+                  onClick={goToHomeGrid}
+                  aria-label={pickLang(lang, { es: 'Volver al inicio', ca: 'Tornar a l’inici', en: 'Back to home' })}
+                  className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+              )}
 
-              <div className="flex items-center gap-2 min-w-0">
-                {/* Brand Mark when inside a specific streaming hub */}
-                {(activeSection === 'movies' ||
-                  activeSection === 'vose' ||
-                  activeSection === 'series') &&
-                  streamingProvider !== 'all' &&
-                  !showWatchlistOnly && (
-                    <span
-                      className={`h-7 px-2 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${activePlatformMeta.accentBg} ${activePlatformMeta.accentText}`}
-                    >
-                      {activePlatformMeta.mark}
-                    </span>
-                  )}
-
-                {activeSection === 'tdt' && tdtCategory === 'movistar' && (
-                  <span className="h-7 px-2 rounded-lg bg-[#019DF4] text-white text-xs font-black flex items-center justify-center shrink-0">
-                    M+
-                  </span>
-                )}
-
-                {activeSection === 'tdt' && tdtCategory === 'dazn' && (
-                  <span className="h-7 px-2 rounded-lg bg-white text-[#050508] text-xs font-black flex items-center justify-center shrink-0">
-                    DAZN
-                  </span>
-                )}
-
-                {activeSection === 'tdt' && tdtCategory === 'uk_sports' && (
-                  <span className="h-7 px-2 rounded-lg bg-sky-500 text-white text-xs font-black flex items-center justify-center shrink-0">
-                    UK EN
-                  </span>
-                )}
-
-                {activeSection === 'tdt' && tdtCategory === 'beinsports' && (
-                  <span className="h-7 px-2 rounded-lg bg-violet-600 text-white text-xs font-black flex items-center justify-center shrink-0">
-                    beIN
-                  </span>
-                )}
-
-                {activeSection === 'tdt' && tdtCategory === 'espn' && (
-                  <span className="h-7 px-2 rounded-lg bg-red-600 text-white text-xs font-black flex items-center justify-center shrink-0">
-                    ESPN
-                  </span>
-                )}
-
-                {activeSection === 'tdt' && tdtCategory === 'dsports' && (
-                  <span className="h-7 px-2 rounded-lg bg-sky-600 text-white text-xs font-black flex items-center justify-center shrink-0">
-                    DSP
-                  </span>
-                )}
-
-                {activeSection === 'tdt' && tdtCategory === 'tnt_space' && (
-                  <span className="h-7 px-2 rounded-lg bg-pink-600 text-white text-xs font-black flex items-center justify-center shrink-0">
-                    TNT
-                  </span>
-                )}
-
-                {activeSection === 'anime' && (
-                  <span
-                    className={`h-7 px-2 rounded-lg text-xs font-black flex items-center justify-center shrink-0 ${
-                      animePortal === 'anime_all'
-                        ? 'bg-[#F47521] text-[#120902]'
-                        : `${activeAnimePortalMeta.accentBg} ${activeAnimePortalMeta.accentText}`
-                    }`}
-                  >
-                    {activeAnimePortalMeta.mark}
-                  </span>
-                )}
-
-                {activeSection === 'castellano' && (
-                  <span className="h-7 px-2 rounded-lg bg-amber-400 text-[#140E02] text-xs font-black flex items-center justify-center shrink-0">
-                    ES
-                  </span>
-                )}
-
-                {activeSection === 'catala' && (
-                  <span className="h-7 px-2 rounded-lg bg-[#E11D48] text-white text-xs font-black flex items-center justify-center shrink-0">
-                    CAT
-                  </span>
-                )}
-
-                <h2 className="font-display font-bold text-base sm:text-xl text-white truncate">
-                  {showWatchlistOnly
-                    ? `${t.pillarMyList} (${cleanWatchlist.length})`
-                    : activeSection === 'castellano'
-                    ? pickLang(lang, {
-                        es: 'Todo Disponible en Castellano',
-                        ca: 'Tot Disponible en Castellà',
-                        en: 'Available in Spanish Dub',
-                      })
-                    : activeSection === 'catala'
-                    ? pickLang(lang, {
-                        es: 'Anime y Cine en Català',
-                        ca: "Tot l'Anime en Català · En un sol lloc",
-                        en: 'Anime & Cinema in Catalan',
-                      })
-                    : activeSection === 'anime'
-                    ? animePortal === 'anime_all'
-                      ? pickLang(lang, { es: 'Sección de Anime', ca: "Secció d'Anime", en: 'Anime Hub' })
-                      : pickLang(lang, activeAnimePortalMeta)
-                    : (activeSection === 'movies' ||
-                        activeSection === 'vose' ||
-                        activeSection === 'series') &&
-                      streamingProvider !== 'all'
-                    ? pickLang(lang, activePlatformMeta)
-                    : activeSection === 'movies' || activeSection === 'vose'
-                    ? pickLang(lang, { es: 'Todas las Películas', ca: 'Totes les Pel·lícules', en: 'All Movies' })
-                    : activeSection === 'series'
-                    ? pickLang(lang, { es: 'Todas las Series', ca: 'Totes les Sèries', en: 'All TV Series' })
-                    : activeSection === 'tdt'
-                    ? tdtCategory === 'movistar'
-                      ? 'Movistar+'
-                      : tdtCategory === 'dazn'
-                      ? pickLang(lang, { es: 'DAZN en Vivo', ca: 'DAZN en Directe', en: 'DAZN Live' })
-                      : tdtCategory === 'uk_sports'
-                      ? 'UK Sports (Sky · Eurosport · DAZN UK)'
-                      : tdtCategory === 'beinsports'
-                      ? pickLang(lang, { es: 'beIN SPORTS en Vivo', ca: 'beIN SPORTS en Directe', en: 'beIN SPORTS Live' })
-                      : tdtCategory === 'espn'
-                      ? pickLang(lang, { es: 'ESPN en Vivo (1–7 + Premium)', ca: 'ESPN en Directe (1–7 + Premium)', en: 'ESPN Live (1–7 + Premium)' })
-                      : tdtCategory === 'dsports'
-                      ? pickLang(lang, { es: 'DSports en Vivo', ca: 'DSports en Directe', en: 'DSports Live' })
-                      : tdtCategory === 'tnt_space'
-                      ? pickLang(lang, { es: 'TNT, TNT Sports y Space en Vivo', ca: 'TNT, TNT Sports i Space en Directe', en: 'TNT, TNT Sports & Space Live' })
-                      : tdtCategory === 'tdt_all' || focusedHub === 'tdt_es'
-                      ? pickLang(lang, { es: 'TDT España en Vivo', ca: 'TDT Espanya en Directe', en: 'Spain TDT Live' })
-                      : pickLang(lang, { es: 'Televisión en Directo', ca: 'Televisió en Directe', en: 'Live TV' })
-                    : activeSection === 'sports'
-                    ? sportFilter === 'soccer'
-                      ? pickLang(lang, { es: 'Fútbol en Vivo', ca: 'Futbol en Directe', en: 'Live Football' })
-                      : pickLang(lang, { es: 'Partidos en Directo', ca: 'Partits en Directe', en: 'Live Sports' })
-                    : activeSection === 'youtube'
-                    ? 'YouTube'
-                    : pickLang(lang, { es: 'Enlace y Cola', ca: 'Enllaç i Cua', en: 'Link & Queue' })}
-                </h2>
-              </div>
-            </div>
-
-            {/* Right: Contextual Clean Mode Switcher */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
-              {/* CATALOG PILLAR SWITCH: Películas | VO · Inglés | Series TV | Castellano */}
+              {/* CATALOG MODE SWITCH: Películas | Series | Castellano */}
               {(activeSection === 'movies' ||
                 activeSection === 'vose' ||
                 activeSection === 'series' ||
                 activeSection === 'castellano') &&
                 !isMovistarContext &&
                 !showWatchlistOnly && (
-                  <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                  <div className="flex items-center p-0.5 rounded-xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
                     <button
                       type="button"
                       onClick={() => {
@@ -4573,32 +4409,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         setMoviePage(1);
                         onChangeSection('movies');
                       }}
-                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                        activeSection === 'movies'
+                      className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        activeSection === 'movies' || activeSection === 'vose'
                           ? 'bg-white text-[#050508]'
                           : 'text-zinc-400 hover:text-white'
                       }`}
                     >
                       {pickLang(lang, { es: 'Películas', ca: 'Pel·lícules', en: 'Movies' })}
                     </button>
-                    {focusedHub === 'all' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setShowWatchlistOnly(false);
-                          setMoviePage(1);
-                          onChangeSection('vose');
-                        }}
-                        className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                          activeSection === 'vose'
-                            ? 'bg-white text-[#050508]'
-                            : 'text-zinc-400 hover:text-white'
-                        }`}
-                      >
-                        {pickLang(lang, { es: 'VO · Inglés', ca: 'VO · Anglès', en: 'VO · English' })}
-                      </button>
-                    )}
                     <button
                       type="button"
                       onClick={() => {
@@ -4607,7 +4425,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         setSeriesPage(1);
                         onChangeSection('series');
                       }}
-                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                         activeSection === 'series'
                           ? 'bg-white text-[#050508]'
                           : 'text-zinc-400 hover:text-white'
@@ -4624,162 +4442,70 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           setCastellanoPage(1);
                           onChangeSection('castellano');
                         }}
-                        className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                        className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                           activeSection === 'castellano'
                             ? 'bg-amber-400 text-[#140E02]'
                             : 'text-zinc-400 hover:text-white'
                         }`}
                       >
-                        {pickLang(lang, { es: 'Castellano', ca: 'Castellà', en: 'Spanish Dub' })}
+                        {pickLang(lang, { es: 'Castellano', ca: 'Castellà', en: 'ES Dub' })}
                       </button>
                     )}
                   </div>
                 )}
 
-              {/* CASTELLANO KIND SWITCH: Todo | Series | Películas */}
-              {activeSection === 'castellano' && (
-                <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
-                  {(
-                    [
-                      { id: 'all', es: 'Todo', ca: 'Tot', en: 'All' },
-                      { id: 'series', es: 'Series', ca: 'Sèries', en: 'Series' },
-                      { id: 'movies', es: 'Películas', ca: 'Pel·lícules', en: 'Movies' },
-                    ] as const
-                  ).map((tab) => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setCastellanoKind(tab.id);
-                        setCastellanoPage(1);
-                      }}
-                      className={`min-h-[36px] px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                        castellanoKind === tab.id
-                          ? 'bg-white text-[#050508]'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      {pickLang(lang, tab)}
-                    </button>
-                  ))}
+              {/* ANIME PILLAR SWITCH: Anime | Català */}
+              {(activeSection === 'anime' || activeSection === 'catala') && (
+                <div className="flex items-center p-0.5 rounded-xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onChangeSection('anime');
+                    }}
+                    className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      activeSection === 'anime'
+                        ? 'bg-[#F47521] text-white'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Anime
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onChangeSection('catala');
+                    }}
+                    className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      activeSection === 'catala'
+                        ? 'bg-[#E11D48] text-white'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Català · SX3
+                  </button>
                 </div>
               )}
 
-              {/* ANIME PILLAR SWITCH: Anime Hub | Català (+ Series/Pelis when in Anime) */}
-              {(activeSection === 'anime' || activeSection === 'catala') && (
-                <>
-                  <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        onChangeSection('anime');
-                      }}
-                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                        activeSection === 'anime'
-                          ? 'bg-[#F47521] text-white'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      Anime Hub
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        onChangeSection('catala');
-                      }}
-                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                        activeSection === 'catala'
-                          ? 'bg-[#E11D48] text-white'
-                          : 'text-zinc-400 hover:text-white'
-                      }`}
-                    >
-                      Català · SX3
-                    </button>
-                  </div>
-
-                  {activeSection === 'anime' && (
-                    <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setAnimeMediaKind('series');
-                          setAnimePage(1);
-                        }}
-                        className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                          animeMediaKind === 'series'
-                            ? 'bg-white text-[#050508]'
-                            : 'text-zinc-400 hover:text-white'
-                        }`}
-                      >
-                        {pickLang(lang, { es: 'Series Anime', ca: 'Sèries Anime', en: 'Anime Series' })}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setAnimeMediaKind('movies');
-                          setAnimePage(1);
-                        }}
-                        className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                          animeMediaKind === 'movies'
-                            ? 'bg-white text-[#050508]'
-                            : 'text-zinc-400 hover:text-white'
-                        }`}
-                      >
-                        {pickLang(lang, { es: 'Películas Anime', ca: 'Pel·lícules Anime', en: 'Anime Movies' })}
-                      </button>
-                    </div>
-                  )}
-
-                  {activeSection === 'anime' && activeAnimePortalMeta.externalUrl && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        onOpenCloudBrowser(activeAnimePortalMeta.externalUrl!);
-                      }}
-                      title={pickLang(lang, {
-                        es: `Abrir ${activeAnimePortalMeta.es} en el navegador compartido de la sala`,
-                        ca: `Obrir ${activeAnimePortalMeta.ca} al navegador compartit de la sala`,
-                        en: `Open ${activeAnimePortalMeta.en} in shared room browser`,
-                      })}
-                      className="min-h-[38px] px-3.5 rounded-2xl bg-[#0D0E15] hover:bg-white/[0.08] border border-white/[0.1] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                    >
-                      <Tv className="w-3.5 h-3.5 text-[#38BDF8] shrink-0" />
-                      <span>
-                        {pickLang(lang, {
-                          es: `Web ${activeAnimePortalMeta.es}`,
-                          ca: `Web ${activeAnimePortalMeta.ca}`,
-                          en: `Open ${activeAnimePortalMeta.en}`,
-                        })}
-                      </span>
-                    </button>
-                  )}
-                </>
-              )}
-
-              {/* MOVISTAR+ UNIFIED 3-WAY SWITCH: Canales en Vivo | Películas | Series */}
+              {/* MOVISTAR+ UNIFIED 3-WAY SWITCH: Vivo | Películas | Series */}
               {isMovistarContext && !showWatchlistOnly && activeSection !== 'anime' && (
-                <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                <div className="flex items-center p-0.5 rounded-xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
                   <button
                     type="button"
                     onClick={() => enterMovistarHub('live')}
-                    className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                       activeSection === 'tdt' && tdtCategory === 'movistar'
                         ? 'bg-[#019DF4] text-white'
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    {pickLang(lang, { es: 'Canales en Vivo', ca: 'Canals en Directe', en: 'Live Channels' })}
+                    {pickLang(lang, { es: 'Vivo', ca: 'Directe', en: 'Live' })}
                   </button>
                   <button
                     type="button"
                     onClick={() => enterMovistarHub('movies')}
-                    className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                       activeSection === 'movies' || activeSection === 'vose'
                         ? 'bg-white text-[#050508]'
                         : 'text-zinc-400 hover:text-white'
@@ -4790,7 +4516,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   <button
                     type="button"
                     onClick={() => enterMovistarHub('series')}
-                    className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                       activeSection === 'series'
                         ? 'bg-white text-[#050508]'
                         : 'text-zinc-400 hover:text-white'
@@ -4801,23 +4527,23 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 </div>
               )}
 
-              {/* LIVE PILLAR SWITCH: Canales TV | Fútbol | YouTube */}
+              {/* LIVE PILLAR SWITCH: TV | Fútbol | YouTube */}
               {(activeSection === 'tdt' || activeSection === 'sports' || activeSection === 'youtube') &&
                 focusedHub === 'all' && (
-                  <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                  <div className="flex items-center p-0.5 rounded-xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
                     <button
                       type="button"
                       onClick={() => {
                         triggerHaptic('light');
                         onChangeSection('tdt');
                       }}
-                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                         activeSection === 'tdt'
                           ? 'bg-white text-[#050508]'
                           : 'text-zinc-400 hover:text-white'
                       }`}
                     >
-                      {pickLang(lang, { es: 'Canales TV', ca: 'Canals TV', en: 'TV Channels' })}
+                      TV
                     </button>
                     <button
                       type="button"
@@ -4826,7 +4552,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         setSportFilter('soccer');
                         onChangeSection('sports');
                       }}
-                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                         activeSection === 'sports'
                           ? 'bg-[#FFBD0F] text-[#11131A]'
                           : 'text-zinc-400 hover:text-white'
@@ -4840,7 +4566,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         triggerHaptic('light');
                         onChangeSection('youtube');
                       }}
-                      className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                      className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                         activeSection === 'youtube'
                           ? 'bg-[#E11D48] text-white'
                           : 'text-zinc-400 hover:text-white'
@@ -4851,9 +4577,24 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </div>
                 )}
 
-              {/* MY LIST PILLAR SWITCH: Guardados | Cola y Enlace */}
+              {/* Focused Hub Brand Title when inside TDT España / DAZN / Sports sub-hub */}
+              {(activeSection === 'tdt' || activeSection === 'sports') &&
+                focusedHub !== 'all' &&
+                !isMovistarContext && (
+                  <span className="font-display font-bold text-sm text-white truncate px-1">
+                    {activeSection === 'tdt' && tdtCategory === 'dazn'
+                      ? 'DAZN Live'
+                      : activeSection === 'tdt' && tdtCategory === 'uk_sports'
+                      ? 'UK Sports'
+                      : activeSection === 'tdt'
+                      ? pickLang(lang, { es: 'TDT España', ca: 'TDT Espanya', en: 'Spain TDT' })
+                      : pickLang(lang, { es: 'Deportes en Vivo', ca: 'Esports en Directe', en: 'Live Sports' })}
+                  </span>
+                )}
+
+              {/* MY LIST PILLAR SWITCH: Mi Lista | Cola */}
               {(showWatchlistOnly || activeSection === 'direct') && (
-                <div className="flex items-center p-1 rounded-2xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
+                <div className="flex items-center p-0.5 rounded-xl bg-[#0D0E15] border border-white/[0.08] shrink-0">
                   <button
                     type="button"
                     onClick={() => {
@@ -4861,7 +4602,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       setShowWatchlistOnly(true);
                       onChangeSection('movies');
                     }}
-                    className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                       showWatchlistOnly && activeSection !== 'direct'
                         ? 'bg-white text-[#050508]'
                         : 'text-zinc-400 hover:text-white'
@@ -4876,7 +4617,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       setShowWatchlistOnly(false);
                       onChangeSection('direct');
                     }}
-                    className={`min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                       activeSection === 'direct'
                         ? 'bg-[#9146FF] text-white'
                         : 'text-zinc-400 hover:text-white'
@@ -4887,50 +4628,753 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 </div>
               )}
             </div>
+
+            {/* Right: Compact Search Toggle + Collapsible Filters Drawer Toggle */}
+            {activeSection !== 'direct' && !showWatchlistOnly && (
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShowSectionSearch((prev) => {
+                      const next = !prev;
+                      if (next) {
+                        setTimeout(() => sectionSearchInputRef.current?.focus(), 40);
+                      }
+                      return next;
+                    });
+                  }}
+                  aria-expanded={isSectionSearchVisible}
+                  aria-label={pickLang(lang, { es: 'Buscar en esta sección', ca: 'Cercar en aquesta secció', en: 'Search this section' })}
+                  className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 cursor-pointer transition-colors ${
+                    isSectionSearchVisible
+                      ? 'bg-[#9146FF]/20 border-[#9146FF]/60 text-white'
+                      : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.08] text-zinc-300'
+                  }`}
+                >
+                  <Search className="w-4 h-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShowSectionFilters((v) => !v);
+                  }}
+                  aria-expanded={showSectionFilters}
+                  className={`h-9 px-2.5 rounded-xl border text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    showSectionFilters || activeSectionFilterCount > 0
+                      ? 'bg-white text-[#050508] border-white'
+                      : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.08] text-zinc-200'
+                  }`}
+                >
+                  <SlidersHorizontal className="w-3.5 h-3.5 shrink-0" />
+                  <span>{pickLang(lang, { es: 'Filtros', ca: 'Filtres', en: 'Filters' })}</span>
+                  {activeSectionFilterCount > 0 && (
+                    <span
+                      className={`h-4 min-w-[16px] px-1 rounded-full text-[10px] font-black flex items-center justify-center tabular-nums ${
+                        showSectionFilters || activeSectionFilterCount > 0
+                          ? 'bg-[#772CE8] text-white'
+                          : 'bg-white/15 text-white'
+                      }`}
+                    >
+                      {activeSectionFilterCount}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )}
           </div>
 
-          {/* Optional Platform Filter Pills ONLY when viewing "Todas las Películas" or "Todas las Series" */}
-          {(activeSection === 'movies' ||
-            activeSection === 'vose' ||
-            activeSection === 'series') &&
-            focusedHub === 'all' &&
-            !showWatchlistOnly && (
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-                {STREAMING_PLATFORMS.map((plat) => {
-                  const isSelected = streamingProvider === plat.id;
-                  return (
+          {/* Expandable Slim Search Input (only shown when toggled or query non-empty) */}
+          {activeSection !== 'direct' && !showWatchlistOnly && isSectionSearchVisible && (
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+              <input
+                ref={sectionSearchInputRef}
+                type="text"
+                value={activeSectionQuery}
+                onChange={(e) => setActiveSectionQuery(e.target.value)}
+                placeholder={
+                  activeSection === 'movies' || activeSection === 'vose'
+                    ? streamingProvider !== 'all'
+                      ? pickLang(lang, {
+                          es: `Buscar película en ${activePlatformMeta.es}...`,
+                          ca: `Cerca pel·lícula a ${activePlatformMeta.ca}...`,
+                          en: `Search ${activePlatformMeta.en} movies...`,
+                        })
+                      : activeSection === 'vose'
+                      ? t.searchVoPlaceholder
+                      : t.searchMoviesPlaceholder
+                    : activeSection === 'series'
+                    ? streamingProvider !== 'all'
+                      ? pickLang(lang, {
+                          es: `Buscar serie en ${activePlatformMeta.es}...`,
+                          ca: `Cerca sèrie a ${activePlatformMeta.ca}...`,
+                          en: `Search ${activePlatformMeta.en} series...`,
+                        })
+                      : t.searchSeriesPlaceholder
+                    : activeSection === 'anime'
+                    ? pickLang(lang, { es: 'Buscar anime...', ca: 'Cercar anime...', en: 'Search anime...' })
+                    : activeSection === 'catala'
+                    ? pickLang(lang, { es: 'Buscar anime en catalán...', ca: 'Cercar anime en català...', en: 'Search Catalan anime...' })
+                    : activeSection === 'castellano'
+                    ? pickLang(lang, { es: 'Buscar en Castellano...', ca: 'Cercar en Castellà...', en: 'Search in Spanish...' })
+                    : activeSection === 'tdt'
+                    ? pickLang(lang, { es: 'Buscar canal o programa EPG...', ca: 'Cercar canal o programa EPG...', en: 'Search TV channel or EPG...' })
+                    : activeSection === 'sports'
+                    ? t.searchSportsPlaceholder
+                    : pickLang(lang, { es: 'Buscar en YouTube o pegar enlace...', ca: 'Cercar a YouTube o enganxar enllaç...', en: 'Search YouTube or paste link...' })
+                }
+                className="w-full h-9 pl-9 pr-9 rounded-full bg-white/[0.06] focus:bg-white/[0.09] border border-white/[0.12] focus:border-[#9146FF]/70 text-sm text-white placeholder:text-zinc-400 outline-none transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  if (activeSectionQuery) {
+                    setActiveSectionQuery('');
+                  } else {
+                    setShowSectionSearch(false);
+                  }
+                }}
+                aria-label={pickLang(lang, { es: 'Cerrar o limpiar búsqueda', ca: 'Tancar o netejar cerca', en: 'Close or clear search' })}
+                className="w-7 h-7 rounded-full absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+
+          {/* Collapsible Section Filters Drawer (Keeps Screen Spacious Until Needed) */}
+          {showSectionFilters && activeSection !== 'direct' && !showWatchlistOnly && (
+            <div className="rounded-2xl bg-[#0D0E15]/95 border border-white/[0.1] p-3 space-y-3 shadow-2xl">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                  {pickLang(lang, { es: 'Filtros rápidos', ca: 'Filtres ràpids', en: 'Quick Filters' })}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowSectionFilters(false)}
+                  className="h-7 px-2.5 rounded-lg bg-white/[0.08] hover:bg-white/[0.14] text-[11px] font-bold text-white cursor-pointer transition-colors"
+                >
+                  {pickLang(lang, { es: 'Listo', ca: 'Fet', en: 'Done' })}
+                </button>
+              </div>
+
+              {/* MOVIES / VOSE FILTERS */}
+              {(activeSection === 'movies' || activeSection === 'vose') && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] text-zinc-400 mr-1">
+                      {pickLang(lang, { es: 'Idioma:', ca: 'Idioma:', en: 'Audio:' })}
+                    </span>
                     <button
-                      key={plat.id}
                       type="button"
                       onClick={() => {
                         triggerHaptic('light');
-                        setStreamingProvider(plat.id);
                         setMoviePage(1);
-                        setSeriesPage(1);
-                        if (plat.id === 'all') {
-                          if (movieCategory === 'originals') setMovieCategory('trending');
-                          if (seriesCategory === 'originals') setSeriesCategory('trending');
-                        }
+                        onChangeSection('movies');
                       }}
-                      className={`min-h-[40px] px-3.5 rounded-2xl border text-xs font-bold flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                        isSelected
-                          ? plat.activeBorder
-                          : 'bg-[#0D0E15] hover:bg-white/[0.07] border-white/[0.08] text-zinc-300 hover:text-white'
+                      className={`h-8 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                        activeSection === 'movies'
+                          ? 'bg-[#9146FF] text-white'
+                          : 'bg-white/[0.05] text-zinc-300 hover:text-white'
                       }`}
                     >
-                      {plat.id !== 'all' && (
-                        <span
-                          className={`h-5 px-1.5 rounded-md text-[10px] font-black tracking-tight flex items-center justify-center shrink-0 ${plat.accentBg} ${plat.accentText}`}
-                        >
-                          {plat.mark}
-                        </span>
-                      )}
-                      <span>{pickLang(lang, plat)}</span>
+                      {pickLang(lang, { es: 'Español', ca: 'Castellà', en: 'Spanish' })}
                     </button>
-                  );
-                })}
-              </div>
-            )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setMoviePage(1);
+                        onChangeSection('vose');
+                      }}
+                      className={`h-8 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                        activeSection === 'vose'
+                          ? 'bg-[#9146FF] text-white'
+                          : 'bg-white/[0.05] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {pickLang(lang, { es: 'VO · Inglés', ca: 'VO · Anglès', en: 'VO · English' })}
+                    </button>
+                  </div>
+
+                  {focusedHub === 'all' && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {STREAMING_PLATFORMS.map((plat) => {
+                        const isSelected = streamingProvider === plat.id;
+                        return (
+                          <button
+                            key={plat.id}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setStreamingProvider(plat.id);
+                              setMoviePage(1);
+                              if (plat.id === 'all' && movieCategory === 'originals') {
+                                setMovieCategory('trending');
+                              }
+                            }}
+                            className={`h-8 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                              isSelected
+                                ? plat.activeBorder
+                                : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
+                            }`}
+                          >
+                            {plat.id !== 'all' && (
+                              <span
+                                className={`h-4 px-1 rounded text-[9px] font-black flex items-center justify-center shrink-0 ${plat.accentBg} ${plat.accentText}`}
+                              >
+                                {plat.mark}
+                              </span>
+                            )}
+                            <span>{pickLang(lang, plat)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!debouncedMovieQuery && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {MOVIE_CATEGORIES.map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setMovieCategory(cat.id);
+                            setMoviePage(1);
+                          }}
+                          className={`h-8 px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                            movieCategory === cat.id
+                              ? 'bg-white text-[#050508] font-bold'
+                              : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                          }`}
+                        >
+                          {pickLang(lang, cat)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* SERIES FILTERS */}
+              {activeSection === 'series' && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[11px] text-zinc-400 mr-1">
+                      {pickLang(lang, { es: 'Idioma:', ca: 'Idioma:', en: 'Audio:' })}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setSeriesLangMode('ES');
+                        setSeriesPage(1);
+                      }}
+                      className={`h-8 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                        seriesLangMode !== 'EN' && seriesLangMode !== 'VOSE'
+                          ? 'bg-[#9146FF] text-white'
+                          : 'bg-white/[0.05] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {pickLang(lang, { es: 'Español', ca: 'Castellà', en: 'Spanish' })}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setSeriesLangMode('EN');
+                        setSeriesPage(1);
+                      }}
+                      className={`h-8 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                        seriesLangMode === 'EN' || seriesLangMode === 'VOSE'
+                          ? 'bg-[#9146FF] text-white'
+                          : 'bg-white/[0.05] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {pickLang(lang, { es: 'VO · Inglés', ca: 'VO · Anglès', en: 'VO · English' })}
+                    </button>
+                  </div>
+
+                  {focusedHub === 'all' && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {STREAMING_PLATFORMS.map((plat) => {
+                        const isSelected = streamingProvider === plat.id;
+                        return (
+                          <button
+                            key={plat.id}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setStreamingProvider(plat.id);
+                              setSeriesPage(1);
+                              if (plat.id === 'all' && seriesCategory === 'originals') {
+                                setSeriesCategory('trending');
+                              }
+                            }}
+                            className={`h-8 px-2.5 rounded-lg border text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                              isSelected
+                                ? plat.activeBorder
+                                : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
+                            }`}
+                          >
+                            {plat.id !== 'all' && (
+                              <span
+                                className={`h-4 px-1 rounded text-[9px] font-black flex items-center justify-center shrink-0 ${plat.accentBg} ${plat.accentText}`}
+                              >
+                                {plat.mark}
+                              </span>
+                            )}
+                            <span>{pickLang(lang, plat)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {!debouncedSeriesQuery && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {streamingProvider !== 'all' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setSeriesCategory('originals');
+                            setSeriesPage(1);
+                          }}
+                          className={`h-8 px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                            seriesCategory === 'originals'
+                              ? 'bg-white text-[#050508] font-bold'
+                              : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-200 border border-white/[0.1]'
+                          }`}
+                        >
+                          {pickLang(lang, {
+                            es: `Originales ${activePlatformMeta.es}`,
+                            ca: `Originals ${activePlatformMeta.ca}`,
+                            en: `${activePlatformMeta.en} Originals`,
+                          })}
+                        </button>
+                      )}
+                      {SERIES_CATEGORIES.map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setSeriesCategory(cat.id);
+                            setSeriesPage(1);
+                          }}
+                          className={`h-8 px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                            seriesCategory === cat.id
+                              ? 'bg-white text-[#050508] font-bold'
+                              : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                          }`}
+                        >
+                          {pickLang(lang, cat)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* CASTELLANO FILTERS */}
+              {activeSection === 'castellano' && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {(
+                      [
+                        { id: 'all', es: 'Todo', ca: 'Tot', en: 'All' },
+                        { id: 'series', es: 'Series', ca: 'Sèries', en: 'Series' },
+                        { id: 'movies', es: 'Películas', ca: 'Pel·lícules', en: 'Movies' },
+                      ] as const
+                    ).map((tab) => (
+                      <button
+                        key={tab.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setCastellanoKind(tab.id);
+                          setCastellanoPage(1);
+                        }}
+                        className={`h-8 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                          castellanoKind === tab.id
+                            ? 'bg-amber-400 text-[#140E02]'
+                            : 'bg-white/[0.05] text-zinc-300 hover:text-white'
+                        }`}
+                      >
+                        {pickLang(lang, tab)}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                    {STREAMING_PLATFORMS.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setCastellanoProvider(p.id);
+                          setCastellanoPage(1);
+                        }}
+                        className={`h-8 px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                          castellanoProvider === p.id
+                            ? 'bg-white text-[#050508] border-white'
+                            : 'bg-white/[0.04] text-zinc-300 border-white/[0.08] hover:text-white'
+                        }`}
+                      >
+                        {pickLang(lang, p)}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                    {(
+                      [
+                        { id: 'trending', es: 'Destacados', ca: 'Destacats', en: 'Featured' },
+                        { id: 'spanish_originals', es: 'Producción Española', ca: 'Producció Espanyola', en: 'Spanish Originals' },
+                        { id: 'top_rated', es: 'Mejor Valorados', ca: 'Més Ben Valorats', en: 'Top Rated' },
+                        { id: 'thriller', es: 'Suspense', ca: 'Suspens', en: 'Thriller' },
+                        { id: 'action', es: 'Acción', ca: 'Acció', en: 'Action' },
+                        { id: 'scifi', es: 'Ciencia Ficción', ca: 'Ciència-ficció', en: 'Sci-Fi' },
+                        { id: 'drama', es: 'Drama', ca: 'Drama', en: 'Drama' },
+                        { id: 'comedy', es: 'Comedia', ca: 'Comèdia', en: 'Comedy' },
+                      ] as const
+                    ).map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setCastellanoCategory(cat.id);
+                          setCastellanoPage(1);
+                        }}
+                        className={`h-8 px-3 rounded-lg text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                          castellanoCategory === cat.id
+                            ? 'bg-amber-400 text-[#140E02] border-amber-400 font-bold'
+                            : 'bg-white/[0.04] text-zinc-300 border-white/[0.08]'
+                        }`}
+                      >
+                        {pickLang(lang, cat)}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ANIME FILTERS */}
+              {activeSection === 'anime' && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setAnimeMediaKind('series');
+                        setAnimePage(1);
+                      }}
+                      className={`h-8 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                        animeMediaKind === 'series'
+                          ? 'bg-white text-[#050508]'
+                          : 'bg-white/[0.05] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {pickLang(lang, { es: 'Series Anime', ca: 'Sèries Anime', en: 'Anime Series' })}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setAnimeMediaKind('movies');
+                        setAnimePage(1);
+                      }}
+                      className={`h-8 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                        animeMediaKind === 'movies'
+                          ? 'bg-white text-[#050508]'
+                          : 'bg-white/[0.05] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      {pickLang(lang, { es: 'Películas Anime', ca: 'Pel·lícules Anime', en: 'Anime Movies' })}
+                    </button>
+
+                    {activeAnimePortalMeta.externalUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('medium');
+                          onOpenCloudBrowser(activeAnimePortalMeta.externalUrl!);
+                        }}
+                        className="h-8 px-3 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Tv className="w-3.5 h-3.5 text-[#38BDF8]" />
+                        <span>{`Web ${activeAnimePortalMeta.es}`}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {(
+                      [
+                        { code: 'ES', es: 'Español · Lat', ca: 'Espanyol · Lat', en: 'Spanish Dub' },
+                        { code: 'VOSE', es: 'VOSE · Sub', ca: 'VOSE · Sub', en: 'Sub ES (VOSE)' },
+                        { code: 'EN', es: 'Inglés', ca: 'Anglès', en: 'English' },
+                      ] as const
+                    ).map((opt) => (
+                      <button
+                        key={opt.code}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setAnimeLangPref(opt.code);
+                          setSeriesLangMode(opt.code);
+                          setAnimePage(1);
+                        }}
+                        className={`h-8 px-3 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
+                          animeLangPref === opt.code
+                            ? 'bg-[#F47521] text-white'
+                            : 'bg-white/[0.05] text-zinc-300 hover:text-white'
+                        }`}
+                      >
+                        {pickLang(lang, opt)}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                    {ANIME_PLATFORMS.map((portal) => (
+                      <button
+                        key={portal.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setAnimePortal(portal.id);
+                          setAnimePage(1);
+                          if (portal.id === 'jkanime' && animeCategory === 'trending') {
+                            setAnimeCategory('simulcast');
+                          }
+                        }}
+                        className={`h-8 px-3 rounded-lg border text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                          animePortal === portal.id
+                            ? portal.activeBorder
+                            : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+                        }`}
+                      >
+                        <span className={`h-4 px-1 rounded text-[9px] font-black flex items-center justify-center ${portal.accentBg} ${portal.accentText}`}>
+                          {portal.mark}
+                        </span>
+                        <span>{pickLang(lang, portal)}</span>
+                      </button>
+                    ))}
+                  </div>
+
+                  {!debouncedAnimeQuery && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {ANIME_CATEGORIES.map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setAnimeCategory(cat.id);
+                            setAnimePage(1);
+                          }}
+                          className={`h-8 px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                            animeCategory === cat.id
+                              ? 'bg-[#F47521] text-white font-bold'
+                              : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                          }`}
+                        >
+                          {pickLang(lang, cat)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* CATALÀ FILTERS */}
+              {activeSection === 'catala' && (
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                  {(
+                    [
+                      { id: 'all', es: 'Todo', ca: 'Tot', en: 'All' },
+                      { id: 'classics', es: 'Clásicos TV3 · K3', ca: 'Clàssics TV3 · K3', en: 'TV3 · K3 Classics' },
+                      { id: 'shonen', es: 'Shonen y Acción', ca: 'Shonen i Acció', en: 'Shonen & Action' },
+                      { id: 'movies', es: 'Películas', ca: 'Pel·lícules', en: 'Movies' },
+                      { id: 'live_tv', es: 'TV Directo · SX3', ca: 'TV Directe · SX3', en: 'Live TV · SX3' },
+                    ] as const
+                  ).map((tab) => (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setCatalaCategory(tab.id);
+                      }}
+                      className={`h-8 px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                        catalaCategory === tab.id
+                          ? 'bg-[#E11D48] text-white border-[#E11D48]'
+                          : 'bg-white/[0.04] text-zinc-300 border-white/[0.08]'
+                      }`}
+                    >
+                      {pickLang(lang, tab)}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* TDT / LIVE TV FILTERS */}
+              {activeSection === 'tdt' && (
+                <div className="space-y-2.5">
+                  {(focusedHub === 'tdt_es' || focusedHub === 'all') && (
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {(focusedHub === 'tdt_es' ? TDT_NATIONAL_CATEGORIES : ALL_LIVE_CATEGORIES).map((cat) => (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setTdtCategory(cat.id);
+                          }}
+                          className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                            tdtCategory === cat.id
+                              ? 'bg-white text-[#050508]'
+                              : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                          }`}
+                        >
+                          {pickLang(lang, cat)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {(
+                        [
+                          { id: 'all', es: 'Toda la emisión', ca: 'Tota l’emissió', en: 'All Airing' },
+                          { id: 'sports_now', es: 'Deporte ahora', ca: 'Esport ara', en: 'Sports Now' },
+                          { id: 'cinema_now', es: 'Cine y Series', ca: 'Cinema i Sèries', en: 'Cinema Now' },
+                        ] as const
+                      ).map((flt) => (
+                        <button
+                          key={flt.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setEpgFilter(flt.id);
+                          }}
+                          className={`h-8 px-3 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                            epgFilter === flt.id
+                              ? 'bg-white text-[#050507]'
+                              : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
+                          }`}
+                        >
+                          {pickLang(lang, flt)}
+                        </button>
+                      ))}
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        fetchTdtCatalog();
+                        fetchLiveEpg(true);
+                      }}
+                      className="h-8 px-3 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${loadingTdt || loadingEpg ? 'animate-spin' : ''}`} />
+                      <span>{pickLang(lang, { es: 'Actualizar EPG', ca: 'Actualitzar EPG', en: 'Refresh EPG' })}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* SPORTS FILTERS */}
+              {activeSection === 'sports' && (
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                    {(
+                      [
+                        { id: 'soccer', label: pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' }) },
+                        { id: 'basketball', label: t.basketball },
+                        { id: 'tennis', label: t.tennis },
+                        { id: 'motor', label: t.motor },
+                        { id: 'all', label: t.allSports },
+                      ] as const
+                    ).map((cat) => (
+                      <button
+                        key={cat.id}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setSportFilter(cat.id);
+                        }}
+                        className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                          sportFilter === cat.id
+                            ? cat.id === 'soccer'
+                              ? 'bg-[#FFBD0F] text-[#11131A]'
+                              : 'bg-white text-[#050508]'
+                            : 'bg-white/[0.05] text-zinc-200 border border-white/[0.08]'
+                        }`}
+                      >
+                        {cat.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      fetchSportsAgenda();
+                    }}
+                    className="h-8 px-3 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${loadingSports ? 'animate-spin' : ''}`} />
+                    <span>{pickLang(lang, { es: 'Actualizar', ca: 'Actualitzar', en: 'Refresh' })}</span>
+                  </button>
+                </div>
+              )}
+
+              {/* YOUTUBE QUICK TOPICS */}
+              {activeSection === 'youtube' && (
+                <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                  {YOUTUBE_QUICK_TOPICS.map((topic) => {
+                    const topicLabel = pickLang(lang, {
+                      es: topic.labelEs,
+                      ca: topic.labelCa,
+                      en: topic.labelEn,
+                    });
+                    return (
+                      <button
+                        key={topic.q}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setYtQuery(topicLabel);
+                          setDebouncedYtQuery(topic.q);
+                        }}
+                        className={`h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                          debouncedYtQuery === topic.q
+                            ? 'bg-white text-[#050508]'
+                            : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.08]'
+                        }`}
+                      >
+                        {topicLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -5001,100 +5445,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               )}
 
               {renderContinueWatchingStrip()}
-            </div>
-          )}
-
-          {!showWatchlistOnly && (
-            <div className="space-y-3">
-              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={movieQuery}
-                    onChange={(e) => setMovieQuery(e.target.value)}
-                    placeholder={
-                      streamingProvider !== 'all'
-                        ? pickLang(lang, {
-                            es: `Buscar película en ${activePlatformMeta.es}...`,
-                            ca: `Cerca pel·lícula a ${activePlatformMeta.ca}...`,
-                            en: `Search ${activePlatformMeta.en} movies...`,
-                          })
-                        : activeSection === 'vose'
-                        ? t.searchVoPlaceholder
-                        : t.searchMoviesPlaceholder
-                    }
-                    className="w-full h-11 pl-10 pr-10 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border border-white/[0.09] focus:border-[#9146FF]/70 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-all"
-                  />
-                  {movieQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setMovieQuery('')}
-                      aria-label={pickLang(lang, { es: 'Limpiar búsqueda', ca: 'Netejar cerca', en: 'Clear search' })}
-                      className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Audio Language Switcher (Español | VO · Inglés) */}
-                <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/[0.08] shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setMoviePage(1);
-                      onChangeSection('movies');
-                    }}
-                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
-                      activeSection === 'movies'
-                        ? 'bg-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    {pickLang(lang, { es: 'Español', ca: 'Castellà', en: 'Spanish' })}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setMoviePage(1);
-                      onChangeSection('vose');
-                    }}
-                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
-                      activeSection === 'vose'
-                        ? 'bg-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
-                        : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    {pickLang(lang, { es: 'VO · Inglés', ca: 'VO · Anglès', en: 'VO · English' })}
-                  </button>
-                </div>
-              </div>
-
-              {!debouncedMovieQuery && (
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                  {MOVIE_CATEGORIES.map((cat) => (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setMovieCategory(cat.id);
-                        setMoviePage(1);
-                      }}
-                      className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                        movieCategory === cat.id
-                          ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white shadow-[0_6px_18px_rgba(145,70,255,0.32)]'
-                          : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
-                      }`}
-                    >
-                      {pickLang(lang, cat)}
-                    </button>
-                  ))}
-                </div>
-              )}
             </div>
           )}
 
@@ -5445,114 +5795,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* ================================================================== */}
       {activeSection === 'series' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={seriesQuery}
-                onChange={(e) => setSeriesQuery(e.target.value)}
-                placeholder={
-                  streamingProvider !== 'all'
-                    ? pickLang(lang, {
-                        es: `Buscar serie en ${activePlatformMeta.es}...`,
-                        ca: `Cerca sèrie a ${activePlatformMeta.ca}...`,
-                        en: `Search ${activePlatformMeta.en} series...`,
-                      })
-                    : t.searchSeriesPlaceholder
-                }
-                className="w-full h-11 pl-10 pr-10 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border border-white/[0.09] focus:border-[#9146FF]/70 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-all"
-              />
-              {seriesQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSeriesQuery('')}
-                  aria-label={pickLang(lang, { es: 'Limpiar búsqueda', ca: 'Netejar cerca', en: 'Clear search' })}
-                  className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/[0.08] shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setSeriesLangMode('ES');
-                  setSeriesPage(1);
-                }}
-                className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
-                  seriesLangMode !== 'EN' && seriesLangMode !== 'VOSE'
-                    ? 'bg-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {pickLang(lang, { es: 'Español', ca: 'Castellà', en: 'Spanish' })}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setSeriesLangMode('EN');
-                  setSeriesPage(1);
-                }}
-                className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
-                  seriesLangMode === 'EN' || seriesLangMode === 'VOSE'
-                    ? 'bg-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
-                    : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                {pickLang(lang, { es: 'VO · Inglés', ca: 'VO · Anglès', en: 'VO · English' })}
-              </button>
-            </div>
-          </div>
-
-          {!debouncedSeriesQuery && (
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-              {streamingProvider !== 'all' && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setSeriesCategory('originals');
-                    setSeriesPage(1);
-                  }}
-                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                    seriesCategory === 'originals'
-                      ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white shadow-[0_6px_18px_rgba(145,70,255,0.32)]'
-                      : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-200 border border-white/[0.12]'
-                  }`}
-                >
-                  {pickLang(lang, {
-                    es: `Originales ${activePlatformMeta.es}`,
-                    ca: `Originals ${activePlatformMeta.ca}`,
-                    en: `${activePlatformMeta.en} Originals`,
-                  })}
-                </button>
-              )}
-              {SERIES_CATEGORIES.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setSeriesCategory(cat.id);
-                    setSeriesPage(1);
-                  }}
-                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                    seriesCategory === cat.id
-                      ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white shadow-[0_6px_18px_rgba(145,70,255,0.32)]'
-                      : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
-                  }`}
-                >
-                  {pickLang(lang, cat)}
-                </button>
-              ))}
-            </div>
-          )}
-
           {/* Favorite Series Quick Rail (only when browsing All Series) */}
           {!debouncedSeriesQuery && streamingProvider === 'all' && favoriteSeriesList.length > 0 && (
             <section className="rounded-3xl bg-white/[0.02] border border-white/[0.07] p-4 space-y-3">
@@ -5938,121 +6180,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* ================================================================== */}
       {activeSection === 'anime' && (
         <div className="space-y-4">
-          {/* 4-Platform + All Anime Big Visual Selector Grid */}
-          <div className="grid grid-cols-2 @sm:grid-cols-3 @lg:grid-cols-5 gap-3">
-            {ANIME_PLATFORMS.map((portal) => {
-              const isSelected = animePortal === portal.id;
-              return (
-                <button
-                  key={portal.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setAnimePortal(portal.id);
-                    setAnimePage(1);
-                    if (portal.id === 'jkanime' && animeCategory === 'trending') {
-                      setAnimeCategory('simulcast');
-                    }
-                  }}
-                  className={`group min-h-[104px] p-4 rounded-3xl bg-gradient-to-br ${
-                    portal.cardGlow
-                  } border text-left flex flex-col justify-between gap-2.5 cursor-pointer active:scale-[0.98] transition-all ${
-                    isSelected
-                      ? portal.activeBorder
-                      : 'border-white/[0.08] hover:border-white/25 text-zinc-200'
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span
-                      className={`h-8 px-2.5 rounded-xl text-xs font-display font-black tracking-tight flex items-center justify-center shrink-0 shadow-sm ${portal.accentBg} ${portal.accentText}`}
-                    >
-                      {portal.mark}
-                    </span>
-                    <ChevronRight
-                      className={`w-4 h-4 transition-colors ${
-                        isSelected
-                          ? 'text-white'
-                          : 'text-zinc-500 group-hover:text-white'
-                      }`}
-                    />
-                  </div>
-                  <div>
-                    <div className="font-display font-bold text-sm sm:text-base text-white truncate">
-                      {pickLang(lang, portal)}
-                    </div>
-                    <div className="text-[11px] text-zinc-400 mt-0.5 line-clamp-1">
-                      {pickLang(lang, { es: portal.descEs, ca: portal.descCa, en: portal.descEn })}
-                    </div>
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Search Input + Audio Selector (Español · Lat | VOSE · Sub | Inglés) */}
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={animeQuery}
-                onChange={(e) => setAnimeQuery(e.target.value)}
-                placeholder={
-                  animePortal === 'anime_all'
-                    ? pickLang(lang, {
-                        es: 'Buscar anime (One Piece, Naruto, Solo Leveling, Dragon Ball, Jujutsu Kaisen...)',
-                        ca: 'Cerca anime (One Piece, Naruto, Solo Leveling, Bola de Drac, Jujutsu Kaisen...)',
-                        en: 'Search anime series or movies...',
-                      })
-                    : pickLang(lang, {
-                        es: `Buscar en ${activeAnimePortalMeta.es} (Naruto, Kimetsu no Yaiba, Frieren...)`,
-                        ca: `Cerca a ${activeAnimePortalMeta.ca} (Naruto, Kimetsu no Yaiba, Frieren...)`,
-                        en: `Search ${activeAnimePortalMeta.en} anime...`,
-                      })
-                }
-                className="w-full h-11 pl-10 pr-10 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border border-white/[0.09] focus:border-[#F47521]/70 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-all"
-              />
-              {animeQuery && (
-                <button
-                  type="button"
-                  onClick={() => setAnimeQuery('')}
-                  aria-label={pickLang(lang, { es: 'Limpiar búsqueda de anime', ca: "Netejar cerca d'anime", en: 'Clear anime search' })}
-                  className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/[0.08] shrink-0">
-              {(
-                [
-                  { code: 'ES', es: 'Español · Lat', ca: 'Espanyol · Lat', en: 'Spanish Dub' },
-                  { code: 'VOSE', es: 'VOSE · Sub', ca: 'VOSE · Sub', en: 'Sub ES (VOSE)' },
-                  { code: 'EN', es: 'Inglés', ca: 'Anglès', en: 'English' },
-                ] as const
-              ).map((opt) => (
-                <button
-                  key={opt.code}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setAnimeLangPref(opt.code);
-                    setSeriesLangMode(opt.code);
-                    setAnimePage(1);
-                  }}
-                  className={`flex-1 sm:flex-initial min-h-[36px] px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
-                    animeLangPref === opt.code
-                      ? 'bg-[#F47521] text-white shadow-[0_6px_16px_rgba(244,117,33,0.32)]'
-                      : 'text-zinc-400 hover:text-white'
-                  }`}
-                >
-                  {pickLang(lang, opt)}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* Top Masterpiece Anime Requested Collection */}
           <section className="rounded-3xl bg-[#14161F] border border-white/[0.08] p-3.5 sm:p-4 space-y-3 shadow-lg">
             <div className="flex items-center justify-between gap-2">
@@ -6120,30 +6247,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               ))}
             </div>
           </section>
-
-          {/* Anime Genre & Simulcast Filter Bar */}
-          {!debouncedAnimeQuery && (
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-              {ANIME_CATEGORIES.map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setAnimeCategory(cat.id);
-                    setAnimePage(1);
-                  }}
-                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
-                    animeCategory === cat.id
-                      ? 'bg-[#F47521] text-white shadow-[0_6px_16px_rgba(244,117,33,0.3)]'
-                      : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
-                  }`}
-                >
-                  {pickLang(lang, cat)}
-                </button>
-              ))}
-            </div>
-          )}
 
           {/* Editorial Anime Spotlight Hero Card */}
           {spotlightAnime && (
@@ -6607,208 +6710,19 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* Adapts cleanly whether viewing DAZN only, Movistar+ only, or TDT   */}
       {/* ================================================================== */}
       {activeSection === 'tdt' && (
-        <div className="space-y-5">
-          {/* Search + Clean Sub-Category Filter */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div className="flex items-center gap-2 w-full sm:max-w-md">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={tdtSearch}
-                  onChange={(e) => setTdtSearch(e.target.value)}
-                  placeholder={
-                    tdtCategory === 'dazn'
-                      ? pickLang(lang, {
-                          es: 'Buscar canal o emisión en DAZN (F1, LaLiga, MotoGP...)',
-                          ca: 'Cercar canal o emissió a DAZN (F1, LaLiga, MotoGP...)',
-                          en: 'Search DAZN channel or broadcast (F1, LaLiga, MotoGP...)',
-                        })
-                      : tdtCategory === 'uk_sports'
-                      ? pickLang(lang, {
-                          es: 'Buscar canal UK en inglés (Sky Sports, Eurosport, MUTV, F1...)',
-                          ca: 'Cercar canal UK en anglès (Sky Sports, Eurosport, MUTV, F1...)',
-                          en: 'Search UK Sports channel (Sky Sports, Eurosport, MUTV, F1...)',
-                        })
-                      : tdtCategory === 'movistar'
-                      ? pickLang(lang, {
-                          es: 'Buscar canal o programa en Movistar+ (LaLiga, Cine...)',
-                          ca: 'Cercar canal o programa a Movistar+ (LaLiga, Cinema...)',
-                          en: 'Search Movistar+ channel or program (LaLiga, Cinema...)',
-                        })
-                      : pickLang(lang, {
-                          es: 'Buscar canal o qué emiten ahora en la Guía EPG...',
-                          ca: 'Cercar canal o què emeten ara a la Guia EPG...',
-                          en: 'Search live TV channel or current EPG program...',
-                        })
-                  }
-                  className="w-full h-11 pl-10 pr-9 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
-                />
-                {tdtSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setTdtSearch('')}
-                    aria-label={pickLang(lang, {
-                      es: 'Limpiar búsqueda',
-                      ca: 'Netejar cerca',
-                      en: 'Clear search',
-                    })}
-                    className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  fetchTdtCatalog();
-                  fetchLiveEpg(true);
-                }}
-                aria-label={pickLang(lang, {
-                  es: 'Actualizar canales y Guía EPG',
-                  ca: 'Actualitzar canals i Guia EPG',
-                  en: 'Refresh channels and EPG Guide',
-                })}
-                title={pickLang(lang, {
-                  es: 'Actualizar canales y Guía EPG en tiempo real',
-                  ca: 'Actualitzar canals i Guia EPG en temps real',
-                  en: 'Refresh live channels and EPG Guide',
-                })}
-                className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#16161E] border border-white/[0.08] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer transition-colors"
-              >
-                <RefreshCw
-                  className={`w-4 h-4 ${loadingTdt || loadingEpg ? 'animate-spin' : ''}`}
-                />
-              </button>
-            </div>
-
-            {/* Category Tabs */}
-            {focusedHub === 'tdt_es' ? (
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
-                {TDT_NATIONAL_CATEGORIES.map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setTdtCategory(cat.id);
-                    }}
-                    className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                      tdtCategory === cat.id
-                        ? 'bg-white text-[#050508]'
-                        : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
-                    }`}
-                  >
-                    {pickLang(lang, cat)}
-                  </button>
-                ))}
-              </div>
-            ) : focusedHub === 'all' ? (
-              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-1">
-                {ALL_LIVE_CATEGORIES.map((cat) => (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setTdtCategory(cat.id);
-                    }}
-                    className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                      tdtCategory === cat.id
-                        ? 'bg-white text-[#050508]'
-                        : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
-                    }`}
-                  >
-                    {pickLang(lang, cat)}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-
-          {/* Real-Time EPG Control Bar */}
-          <div className="flex flex-col @md:flex-row @md:items-center justify-between gap-2.5 pb-3 border-b border-white/[0.07]">
-            <div className="flex items-center gap-2 text-xs text-zinc-300 min-w-0 flex-wrap">
-              <Calendar className="w-4 h-4 text-rose-400 shrink-0" />
-              <span className="font-display font-bold text-white">
-                {pickLang(lang, {
-                  es: 'Guía EPG en Tiempo Real',
-                  ca: 'Guia EPG en Temps Real',
-                  en: 'Real-Time EPG Guide',
-                })}
+        <div className="space-y-4">
+          {epgMadridClock && (
+            <div className="flex items-center gap-2 text-xs text-zinc-400">
+              <Calendar className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+              <span className="font-semibold text-zinc-200">
+                {pickLang(lang, { es: 'Guía EPG en directo', ca: 'Guia EPG en directe', en: 'Live EPG Guide' })}
               </span>
-              {epgMadridClock && (
-                <>
-                  <span className="text-zinc-600" aria-hidden="true">
-                    ·
-                  </span>
-                  <span className="font-mono tabular-nums text-zinc-400">
-                    {lang === 'es'
-                      ? `${epgMadridClock} h (España)`
-                      : lang === 'ca'
-                      ? `${epgMadridClock} h (CET)`
-                      : `${epgMadridClock} CET`}
-                  </span>
-                </>
-              )}
-              <span className="text-zinc-600 hidden sm:inline" aria-hidden="true">
-                ·
-              </span>
-              <span className="text-zinc-400 hidden sm:inline">
-                {pickLang(lang, {
-                  es: 'Pulsa Guía en cualquier canal para ver toda su programación de hoy',
-                  ca: 'Prem Guia en qualsevol canal per veure tota la programació d’avui',
-                  en: 'Tap EPG on any channel for full schedule',
-                })}
+              <span aria-hidden="true">·</span>
+              <span className="font-mono tabular-nums">
+                {lang === 'es' ? `${epgMadridClock} h` : `${epgMadridClock} CET`}
               </span>
             </div>
-
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-              {(
-                [
-                  {
-                    id: 'all',
-                    es: 'Toda la emisión',
-                    ca: 'Tota l’emissió',
-                    en: 'All Airing',
-                  },
-                  {
-                    id: 'sports_now',
-                    es: 'Deporte ahora',
-                    ca: 'Esport ara',
-                    en: 'Live Sports Now',
-                  },
-                  {
-                    id: 'cinema_now',
-                    es: 'Cine y Series ahora',
-                    ca: 'Cinema i Sèries ara',
-                    en: 'Movies & Series Now',
-                  },
-                ] as const
-              ).map((flt) => {
-                const active = epgFilter === flt.id;
-                return (
-                  <button
-                    key={flt.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setEpgFilter(flt.id);
-                    }}
-                    className={`min-h-[40px] px-3.5 rounded-full text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                      active
-                        ? 'bg-white text-[#050507]'
-                        : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
-                    }`}
-                  >
-                    {pickLang(lang, flt)}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
+          )}
 
           {/* Saved Favorite Channels Quick Bar */}
           {favoriteChannels.length > 0 && focusedHub === 'all' && (
@@ -7294,85 +7208,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* ================================================================== */}
       {activeSection === 'sports' && (
         <div className="space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            {sportFilter !== 'soccer' && sportFilter !== 'all' && (
-              <div className="flex items-center gap-2 w-full sm:max-w-md">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="text"
-                    value={sportsSearch}
-                    onChange={(e) => setSportsSearch(e.target.value)}
-                    placeholder={t.searchSportsPlaceholder}
-                    className="w-full h-11 pl-10 pr-9 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
-                  />
-                  {sportsSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setSportsSearch('')}
-                      aria-label={pickLang(lang, {
-                        es: 'Limpiar búsqueda',
-                        ca: 'Netejar cerca',
-                        en: 'Clear search',
-                      })}
-                      className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                    >
-                      <X className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    fetchSportsAgenda();
-                  }}
-                  aria-label={pickLang(lang, {
-                    es: 'Actualizar agenda deportiva',
-                    ca: 'Actualitzar agenda esportiva',
-                    en: 'Refresh sports schedule',
-                  })}
-                  className="w-11 h-11 rounded-2xl bg-[#0D0D12] hover:bg-[#16161E] border border-white/[0.08] flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer transition-colors"
-                >
-                  <RefreshCw className={`w-4 h-4 ${loadingSports ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            )}
-
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-              {(
-                [
-                  {
-                    id: 'soccer',
-                    label: pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' }),
-                  },
-                  { id: 'basketball', label: t.basketball },
-                  { id: 'tennis', label: t.tennis },
-                  { id: 'motor', label: t.motor },
-                  { id: 'all', label: t.allSports },
-                ] as const
-              ).map((cat) => (
-                <button
-                  key={cat.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setSportFilter(cat.id);
-                  }}
-                  className={`min-h-[42px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
-                    sportFilter === cat.id
-                      ? cat.id === 'soccer'
-                        ? 'bg-[#FFBD0F] text-[#11131A] shadow-sm'
-                        : 'bg-white text-[#050508]'
-                      : 'bg-[#242833] hover:bg-[#2E3442] text-zinc-200 border border-white/[0.08]'
-                  }`}
-                >
-                  {cat.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
           {/* DIRECT LIVE SPORTS CHANNELS IN FÚTBOL SECTION */}
           {(sportFilter === 'soccer' || sportFilter === 'all') && (
             <section className="rounded-2xl bg-[#161922] border border-white/[0.08] p-3 sm:p-4 space-y-3 shadow-lg">
@@ -7997,83 +7832,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* ================================================================== */}
       {activeSection === 'youtube' && (
         <div className="space-y-4">
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row gap-2">
-              <div className="relative flex-1">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-                <input
-                  type="text"
-                  value={ytQuery}
-                  onChange={(e) => setYtQuery(e.target.value)}
-                  placeholder={pickLang(lang, {
-                    es: 'Buscar en YouTube o pegar enlace directo...',
-                    ca: 'Cercar a YouTube o enganxar enllaç directe...',
-                    en: 'Search YouTube or paste direct link...',
-                  })}
-                  className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-[#E11D48] text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
-                />
-                {ytQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setYtQuery('')}
-                    aria-label={pickLang(lang, {
-                      es: 'Limpiar búsqueda',
-                      ca: 'Netejar cerca',
-                      en: 'Clear search',
-                    })}
-                    className="w-9 h-9 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-
-              <button
-                type="button"
-                onClick={() => onChangeSection('direct')}
-                className="min-h-[44px] px-4 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.09] text-xs font-bold text-zinc-100 flex items-center justify-center gap-2 whitespace-nowrap shrink-0 cursor-pointer"
-              >
-                <Link2 className="w-4 h-4 text-[#E11D48]" />
-                <span>
-                  {pickLang(lang, {
-                    es: 'Cola y enlace web',
-                    ca: 'Cua i enllaç web',
-                    en: 'Queue & Link',
-                  })}{' '}
-                  ({roomQueue.length})
-                </span>
-              </button>
-            </div>
-
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-              {YOUTUBE_QUICK_TOPICS.map((topic) => {
-                const topicLabel = pickLang(lang, {
-                  es: topic.labelEs,
-                  ca: topic.labelCa,
-                  en: topic.labelEn,
-                });
-                return (
-                  <button
-                    key={topic.q}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setYtQuery(topicLabel);
-                      setDebouncedYtQuery(topic.q);
-                    }}
-                    className={`min-h-[40px] px-4 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                      debouncedYtQuery === topic.q
-                        ? 'bg-white text-[#050508]'
-                        : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300 border border-white/[0.08]'
-                    }`}
-                  >
-                    {topicLabel}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {loadingYt ? (
             <div className="grid grid-cols-1 @sm:grid-cols-2 @lg:grid-cols-3 gap-4">
               {Array.from({ length: 6 }).map((_, i) => (
@@ -8332,130 +8090,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* SECTION 7: TODO LO DISPONIBLE EN CASTELLANO (ESPAÑOL DE ESPAÑA)    */}
       {/* ================================================================== */}
       {activeSection === 'castellano' && (
-        <div className="space-y-5">
-          {/* Search + Platform Filter + Genre Filter */}
-          <div className="space-y-3">
-            <div className="relative">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={castellanoQuery}
-                onChange={(e) => setCastellanoQuery(e.target.value)}
-                placeholder={pickLang(lang, {
-                  es: 'Buscar serie o película en Castellano (From, Reina Roja, Fallout, La que se avecina, Dune...)',
-                  ca: 'Cercar sèrie o pel·lícula en Castellà (From, Reina Roja, Fallout, Dune...)',
-                  en: 'Search Spanish-dubbed series or movie (From, Reina Roja, Fallout, Dune...)',
-                })}
-                className="w-full h-12 pl-11 pr-11 rounded-2xl bg-[#0D0E15] border border-white/[0.1] focus:border-amber-400/50 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
-              />
-              {castellanoQuery && (
-                <button
-                  type="button"
-                  onClick={() => setCastellanoQuery('')}
-                  aria-label={pickLang(lang, {
-                    es: 'Limpiar búsqueda',
-                    ca: 'Netejar cerca',
-                    en: 'Clear search',
-                  })}
-                  className="w-10 h-10 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {/* Platform Filter Row */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-              {STREAMING_PLATFORMS.map((p) => {
-                const active = castellanoProvider === p.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setCastellanoProvider(p.id);
-                      setCastellanoPage(1);
-                    }}
-                    className={`min-h-[40px] px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
-                      active
-                        ? 'bg-white text-[#050508] border-white'
-                        : 'bg-[#0D0E15] text-zinc-300 border-white/[0.08] hover:border-white/25 hover:text-white'
-                    }`}
-                  >
-                    {pickLang(lang, p)}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Category / Origin Filter Row */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-              {(
-                [
-                  {
-                    id: 'trending',
-                    es: 'Destacados en Castellano',
-                    ca: 'Destacats en Castellà',
-                    en: 'Featured in Spanish',
-                  },
-                  {
-                    id: 'spanish_originals',
-                    es: 'Producción Española',
-                    ca: 'Producció Espanyola',
-                    en: 'Spanish Originals',
-                  },
-                  {
-                    id: 'top_rated',
-                    es: 'Mejor Valorados',
-                    ca: 'Més Ben Valorats',
-                    en: 'Top Rated',
-                  },
-                  {
-                    id: 'thriller',
-                    es: 'Suspense y Misterio',
-                    ca: 'Suspens i Misteri',
-                    en: 'Thriller & Mystery',
-                  },
-                  {
-                    id: 'action',
-                    es: 'Acción y Aventura',
-                    ca: 'Acció i Aventura',
-                    en: 'Action & Adventure',
-                  },
-                  {
-                    id: 'scifi',
-                    es: 'Ciencia Ficción',
-                    ca: 'Ciència-ficció',
-                    en: 'Sci-Fi',
-                  },
-                  { id: 'drama', es: 'Drama', ca: 'Drama', en: 'Drama' },
-                  { id: 'comedy', es: 'Comedia', ca: 'Comèdia', en: 'Comedy' },
-                ] as const
-              ).map((cat) => {
-                const active = castellanoCategory === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setCastellanoCategory(cat.id);
-                      setCastellanoPage(1);
-                    }}
-                    className={`min-h-[38px] px-3.5 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
-                      active
-                        ? 'bg-amber-400 text-[#140E02] border-amber-400 font-bold'
-                        : 'bg-white/[0.04] text-zinc-300 border-white/[0.08] hover:bg-white/[0.1]'
-                    }`}
-                  >
-                    {pickLang(lang, cat)}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
+        <div className="space-y-4">
           {loadingCastellano ? (
             <div className="grid grid-cols-2 @sm:grid-cols-3 @md:grid-cols-4 @xl:grid-cols-5 gap-3.5 sm:gap-4">
               {Array.from({ length: 10 }).map((_, idx) => (
@@ -8620,105 +8255,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* SECTION 8: TOT L'ANIME EN CATALÀ EN UN SOL LLOC (`catala`)         */}
       {/* ================================================================== */}
       {activeSection === 'catala' && (
-        <div className="space-y-6">
-          {/* Intro + Search + Category Tabs */}
-          <div className="space-y-3.5">
-            <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed max-w-3xl">
-              {pickLang(lang, {
-                es: 'Todo el anime en catalán reunido en un solo lugar: series clásicas de TV3, K3 y Canal 3XL, estrenos del SX3, películas de anime y canales en directo sin anuncios.',
-                ca: "Tot l'anime en català que estava escampat per internet reunit en un sol lloc: sèries clàssiques de TV3, K3 i Canal 3XL, estrenes del SX3, pel·lícules d'anime i canals en directe sense anuncis.",
-                en: 'All Catalan-dubbed anime in one place: classic TV3, K3 and 3XL series, SX3 premieres, anime films, and ad-free live TV channels.',
-              })}
-            </p>
-
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="w-4 h-4 text-zinc-400 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                type="text"
-                value={catalaQuery}
-                onChange={(e) => setCatalaQuery(e.target.value)}
-                placeholder={pickLang(lang, {
-                  es: 'Buscar anime en catalán (Bola de Drac, Sakura, Conan, Dr. Slump, Evangelion...)',
-                  ca: 'Cerca qualsevol anime en català (Bola de Drac, Sakura, Conan, Dr. Slump, Evangelion, Death Note...)',
-                  en: 'Search anime in Catalan (Dragon Ball, Sakura, Conan, Dr. Slump, Evangelion...)',
-                })}
-                className="w-full h-12 pl-11 pr-11 rounded-2xl bg-[#0D0E15] border border-white/[0.1] focus:border-rose-400/55 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
-              />
-              {catalaQuery && (
-                <button
-                  type="button"
-                  onClick={() => setCatalaQuery('')}
-                  aria-label={pickLang(lang, {
-                    es: 'Limpiar búsqueda',
-                    ca: 'Netejar cerca',
-                    en: 'Clear search',
-                  })}
-                  className="w-10 h-10 rounded-xl absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              )}
-            </div>
-
-            {/* Category Filter Tabs */}
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
-              {(
-                [
-                  {
-                    id: 'all',
-                    es: 'Todo el Anime en Catalán',
-                    ca: "Tot l'Anime en Català",
-                    en: 'All Catalan Anime',
-                  },
-                  {
-                    id: 'classics',
-                    es: 'Clásicos TV3 · K3 · 3XL',
-                    ca: 'Clàssics TV3 · K3 · 3XL',
-                    en: 'TV3 · K3 · 3XL Classics',
-                  },
-                  {
-                    id: 'shonen',
-                    es: 'Shonen y Acción',
-                    ca: 'Shonen i Acció',
-                    en: 'Shonen & Action',
-                  },
-                  {
-                    id: 'movies',
-                    es: 'Películas y OVAs',
-                    ca: 'Pel·lícules i OVAs',
-                    en: 'Movies & OVAs',
-                  },
-                  {
-                    id: 'live_tv',
-                    es: 'TV en Directo · SX3 y TV3',
-                    ca: 'TV en Directe · SX3 i TV3',
-                    en: 'Live TV · SX3 & TV3',
-                  },
-                ] as const
-              ).map((tab) => {
-                const active = catalaCategory === tab.id;
-                return (
-                  <button
-                    key={tab.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setCatalaCategory(tab.id);
-                    }}
-                    className={`min-h-[40px] px-4 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
-                      active
-                        ? 'bg-[#E11D48] text-white border-[#E11D48]'
-                        : 'bg-[#0D0E15] text-zinc-300 border-white/[0.08] hover:border-white/25 hover:text-white'
-                    }`}
-                  >
-                    {pickLang(lang, tab)}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
+        <div className="space-y-5">
           {/* Live Catalan Channels Strip (SX3 Anime 24h, TV3, Esport3, 324) */}
           {(catalaCategory === 'all' || catalaCategory === 'live_tv') &&
             !debouncedCatalaQuery &&
