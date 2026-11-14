@@ -221,17 +221,17 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[880px] max-h-[92dvh] sm:max-h-[86dvh] rounded-t-3xl sm:rounded-3xl bg-[#0E0E13]/95 backdrop-blur-2xl border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
+        className="w-full sm:max-w-[880px] max-h-[92dvh] sm:max-h-[86dvh] rounded-t-3xl sm:rounded-3xl bg-[#18181B]/95 backdrop-blur-2xl border-t sm:border border-white/[0.08] shadow-[0_32px_110px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
       >
         {/* Mobile iOS Sheet Grab Handle */}
-        <div className="sm:hidden pt-2.5 flex justify-center bg-[#09090D]">
+        <div className="sm:hidden pt-2.5 flex justify-center bg-[#0E0E10]">
           <div className="sheet-handle" />
         </div>
 
         {/* ================================================================ */}
         {/* HEADER: USER IDENTITY + QUICK ROOM SWITCHER + CLOSE              */}
         {/* ================================================================ */}
-        <div className="px-4 sm:px-6 pt-3.5 sm:pt-5 pb-3.5 border-b border-white/[0.07] flex items-center justify-between gap-3 shrink-0 bg-[#09090D]">
+        <div className="px-4 sm:px-6 pt-3.5 sm:pt-5 pb-3.5 border-b border-white/[0.08] flex items-center justify-between gap-3 shrink-0 bg-[#0E0E10]">
           <div className="flex items-center gap-3 min-w-0">
             {authUser?.photoURL && !photoBroken ? (
               <img
@@ -242,7 +242,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 className="w-11 h-11 rounded-2xl object-cover border border-white/15 shrink-0"
               />
             ) : (
-              <div className="w-11 h-11 rounded-2xl bg-[#E11D48]/18 border border-[#E11D48]/40 flex items-center justify-center font-display font-bold text-sm text-white shrink-0">
+              <div className="w-11 h-11 rounded-2xl bg-[#9146FF]/20 border border-[#9146FF]/45 flex items-center justify-center font-display font-bold text-sm text-white shrink-0">
                 {getMonogramInitials(displayName)}
               </div>
             )}
@@ -277,7 +277,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
               }}
               className="hidden sm:flex min-h-[38px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-white items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
             >
-              <Plus className="w-3.5 h-3.5 text-[#E11D48]" />
+              <Plus className="w-3.5 h-3.5 text-[#BF94FF]" />
               <span>{lang === 'es' ? 'Nueva sala' : 'New room'}</span>
             </button>
 
@@ -295,7 +295,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
         {/* ================================================================ */}
         {/* NAVIGATION TABS (3 CLEAN TABS: CONTINUAR VIENDO · GUARDADOS · CUENTA) */}
         {/* ================================================================ */}
-        <div className="px-4 sm:px-6 bg-[#09090D] border-b border-white/[0.07] flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar shrink-0">
+        <div className="px-4 sm:px-6 bg-[#0E0E10] border-b border-white/[0.08] flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar shrink-0">
           {(
             [
               {
@@ -329,7 +329,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 }}
                 className={`min-h-[44px] px-3 sm:px-4 border-b-2 text-xs sm:text-sm font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                   active
-                    ? 'border-[#E11D48] text-white'
+                    ? 'border-[#9146FF] text-[#BF94FF]'
                     : 'border-transparent text-zinc-400 hover:text-white'
                 }`}
               >
@@ -351,7 +351,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
               {latestWatched ? (
                 <>
                   {/* Spotlight Resume Card */}
-                  <div className="relative rounded-2xl overflow-hidden border border-white/12 bg-[#090A0F] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="relative rounded-2xl overflow-hidden border border-white/[0.08] bg-[#1F1F23] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-3.5 min-w-0">
                       {latestWatched.poster ? (
                         <img
@@ -361,12 +361,12 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                           className="w-16 h-24 rounded-xl object-cover border border-white/10 shrink-0"
                         />
                       ) : (
-                        <div className="w-16 h-24 rounded-xl bg-[#0E0F16] flex items-center justify-center shrink-0">
+                        <div className="w-16 h-24 rounded-xl bg-[#26262C] flex items-center justify-center shrink-0">
                           <Film className="w-6 h-6 text-zinc-500" />
                         </div>
                       )}
                       <div className="min-w-0 space-y-1">
-                        <div className="text-[11px] font-medium text-[#FB7185]">
+                        <div className="text-[11px] font-medium text-[#BF94FF]">
                           {lang === 'es' ? 'Última reproducción' : 'Last watched'}
                         </div>
                         <h3 className="font-display font-bold text-base sm:text-lg text-white truncate">
@@ -386,7 +386,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             </div>
                             <div className="h-1.5 w-full rounded-full bg-white/15 overflow-hidden">
                               <div
-                                className="h-full bg-[#E11D48] rounded-full"
+                                className="h-full bg-[#9146FF] rounded-full"
                                 style={{
                                   width: `${
                                     latestWatched.durationSec && latestWatched.durationSec > 0
@@ -419,7 +419,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                           onReplayHistoryItem(latestWatched, false);
                           onClose();
                         }}
-                        className="flex-1 sm:flex-initial min-h-[44px] px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs sm:text-sm font-semibold text-white flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
+                        className="flex-1 sm:flex-initial min-h-[44px] px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs sm:text-sm font-semibold text-white flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
                       >
                         <Play className="w-4 h-4 fill-current" />
                         <span>
@@ -500,7 +500,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       return (
                         <div
                           key={item.id}
-                          className="rounded-2xl bg-[#090A0F] border border-white/[0.08] hover:border-white/20 p-3 flex items-center gap-3 transition-colors"
+                          className="rounded-2xl bg-[#1F1F23] border border-white/[0.08] hover:border-[#9146FF]/40 p-3 flex items-center gap-3 transition-colors"
                         >
                           <button
                             type="button"
@@ -511,7 +511,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             }}
                             className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
                           >
-                            <div className="relative w-12 h-16 rounded-lg overflow-hidden bg-[#0E0F16] shrink-0">
+                            <div className="relative w-12 h-16 rounded-lg overflow-hidden bg-[#26262C] shrink-0">
                               {item.poster ? (
                                 <img
                                   src={item.poster}
@@ -527,7 +527,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               {pct > 0 && (
                                 <div className="absolute bottom-0 inset-x-0 h-1 bg-black/70">
                                   <div
-                                    className="h-full bg-[#E11D48]"
+                                    className="h-full bg-[#9146FF]"
                                     style={{ width: `${pct}%` }}
                                   />
                                 </div>
@@ -541,7 +541,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               <div className="text-[11px] text-zinc-400 truncate mt-0.5">
                                 {item.subtitle}
                               </div>
-                              <div className="text-[11px] font-mono tabular-nums text-[#FB7185] mt-1">
+                              <div className="text-[11px] font-mono tabular-nums text-[#BF94FF] mt-1">
                                 {item.resumeTimeSec && item.resumeTimeSec > 5
                                   ? `${
                                       lang === 'es' ? 'Seguir en' : 'Resume'
@@ -628,8 +628,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     onClick={() => setFavFilter(f.id)}
                     className={`min-h-9 px-3.5 rounded-full text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
                       favFilter === f.id
-                        ? 'bg-white text-[#050508] shadow-sm'
-                        : 'bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-zinc-300'
+                        ? 'bg-[#9146FF] text-white shadow-sm'
+                        : 'bg-[#1F1F23] hover:bg-[#26262C] border border-white/[0.08] text-zinc-300'
                     }`}
                   >
                     {f.label}
@@ -651,7 +651,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       {favoriteChannels.map((ch) => (
                         <div
                           key={ch.favId}
-                          className="rounded-2xl bg-[#090A0F] border border-white/[0.08] hover:border-white/20 p-3.5 flex items-center justify-between gap-3 transition-colors"
+                          className="rounded-2xl bg-[#1F1F23] border border-white/[0.08] hover:border-[#9146FF]/40 p-3.5 flex items-center justify-between gap-3 transition-colors"
                         >
                           <button
                             type="button"
@@ -683,7 +683,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                                 onPlayFavoriteChannel(ch);
                                 onClose();
                               }}
-                              className="min-h-9 px-3 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
+                              className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
                             >
                               <Play className="w-3 h-3 fill-current" />
                               <span>{lang === 'es' ? 'Ver' : 'Watch'}</span>
@@ -712,7 +712,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 <div className="space-y-2.5">
                   {favFilter === 'all' && favoriteChannels.length > 0 && (
                     <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-                      <Film className="w-3.5 h-3.5 text-[#E11D48]" />
+                      <Film className="w-3.5 h-3.5 text-[#9146FF]" />
                       <span>Películas y Series en Mi Lista ({filteredWatchlist.length})</span>
                     </h4>
                   )}
@@ -722,7 +722,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       return (
                         <div
                           key={`${item.mediaType || 'movie'}-${item.tmdbId || item.id}`}
-                          className="group relative rounded-2xl overflow-hidden bg-[#090A0F] border border-white/[0.08] hover:border-white/25 flex flex-col transition-all"
+                          className="group relative rounded-2xl overflow-hidden bg-[#1F1F23] border border-white/[0.08] hover:border-[#9146FF]/50 flex flex-col transition-all"
                         >
                           <button
                             type="button"
@@ -731,7 +731,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               onPlayCatalogItem(item);
                               onClose();
                             }}
-                            className="relative aspect-[2/3] w-full overflow-hidden bg-[#0E0F16] text-left cursor-pointer"
+                            className="relative aspect-[2/3] w-full overflow-hidden bg-[#26262C] text-left cursor-pointer"
                           >
                             {item.poster ? (
                               <img
@@ -774,7 +774,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             }}
                             title={lang === 'es' ? 'Quitar de favoritos' : 'Remove favorite'}
                             aria-label="Quitar de favoritos"
-                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-rose-600 flex items-center justify-center text-[#E11D48] hover:text-white cursor-pointer transition-colors"
+                            className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-[#9146FF] flex items-center justify-center text-[#BF94FF] hover:text-white cursor-pointer transition-colors"
                           >
                             <Heart className="w-3.5 h-3.5 fill-current" />
                           </button>
@@ -813,7 +813,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
           {activeTab === 'account' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Room Control Card */}
-              <div className="rounded-2xl bg-[#090A0F] border border-white/[0.08] p-4 space-y-4">
+              <div className="rounded-2xl bg-[#1F1F23] border border-white/[0.08] p-4 space-y-4">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <div className="text-xs font-medium text-zinc-400">
@@ -831,12 +831,12 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   >
                     {copiedInvite ? (
                       <>
-                        <Check className="w-3.5 h-3.5 text-emerald-400" />
+                        <Check className="w-3.5 h-3.5 text-[#00F593]" />
                         <span>{lang === 'es' ? 'Copiado' : 'Copied'}</span>
                       </>
                     ) : (
                       <>
-                        <Share2 className="w-3.5 h-3.5 text-[#FB7185]" />
+                        <Share2 className="w-3.5 h-3.5 text-[#BF94FF]" />
                         <span>{lang === 'es' ? 'Copiar link' : 'Copy link'}</span>
                       </>
                     )}
@@ -851,7 +851,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       onCreateNewRoom();
                       onClose();
                     }}
-                    className="flex-1 min-h-[44px] px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                    className="flex-1 min-h-[44px] px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-semibold text-white flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
                   >
                     <Plus className="w-4 h-4" />
                     <span>
@@ -893,9 +893,9 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         onClose();
                         onLeaveRoom();
                       }}
-                      className="flex-1 min-h-[44px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-rose-500/15 border border-white/12 hover:border-rose-500/35 text-xs font-semibold text-zinc-200 hover:text-rose-200 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
+                      className="flex-1 min-h-[44px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-[#9146FF]/15 border border-white/12 hover:border-[#9146FF]/35 text-xs font-semibold text-zinc-200 hover:text-white flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
                     >
-                      <LogOut className="w-4 h-4 text-[#E11D48]" />
+                      <LogOut className="w-4 h-4 text-[#BF94FF]" />
                       <span>
                         {lang === 'es' ? 'Salir al Inicio' : 'Exit to Home'}
                       </span>
@@ -913,7 +913,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         ? 'Unirse a código o link de amigo...'
                         : 'Join friend code or link...'
                     }
-                    className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#11131B] border border-white/10 focus:border-white/35 text-base sm:text-xs font-mono text-white placeholder:text-zinc-500 outline-none"
+                    className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#26262C] border border-white/10 focus:border-[#9146FF] text-base sm:text-xs font-mono text-white placeholder:text-zinc-500 outline-none"
                   />
                   <button
                     type="submit"
@@ -944,8 +944,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             key={sr.roomCode}
                             className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 ${
                               isCurrent
-                                ? 'bg-[#E11D48]/14 border-[#E11D48]/45'
-                                : 'bg-[#11131B] border-white/[0.08]'
+                                ? 'bg-[#9146FF]/15 border-[#9146FF]/45'
+                                : 'bg-[#26262C] border-white/[0.08]'
                             }`}
                           >
                             <button
@@ -1015,7 +1015,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               onSwitchRoom(r.id, r.name);
                               onClose();
                             }}
-                            className="h-9 px-3 rounded-xl text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors bg-[#0E0F16] hover:bg-white/[0.08] border border-white/[0.08] text-zinc-300"
+                            className="h-9 px-3 rounded-xl text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors bg-[#26262C] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300"
                           >
                             <span className="truncate max-w-[130px]">{r.name}</span>
                             <span className="font-mono text-[10px] text-zinc-500">
@@ -1030,7 +1030,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 {/* Scheduled Room Reminder Builder */}
                 <div className="pt-2.5 border-t border-white/[0.06] space-y-2">
                   <div className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5">
-                    <CalendarPlus className="w-3.5 h-3.5 text-[#FB7185]" />
+                    <CalendarPlus className="w-3.5 h-3.5 text-[#BF94FF]" />
                     <span>
                       {lang === 'es'
                         ? 'Programar sesión en sala'
@@ -1047,13 +1047,13 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       placeholder={
                         lang === 'es' ? 'Película o partido hoy...' : 'Movie or match tonight...'
                       }
-                      className="flex-1 min-w-0 h-9 px-3 rounded-xl bg-[#0E0F16] border border-white/10 text-xs text-white placeholder:text-zinc-500 outline-none"
+                      className="flex-1 min-w-0 h-9 px-3 rounded-xl bg-[#26262C] border border-white/10 focus:border-[#9146FF] text-xs text-white placeholder:text-zinc-500 outline-none"
                     />
                     <input
                       type="time"
                       value={scheduleTime}
                       onChange={(e) => setScheduleTime(e.target.value)}
-                      className="h-9 px-2 rounded-xl bg-[#0E0F16] border border-white/10 text-xs text-white outline-none"
+                      className="h-9 px-2 rounded-xl bg-[#26262C] border border-white/10 text-xs text-white outline-none"
                     />
                     <button
                       type="button"
@@ -1072,7 +1072,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         });
                         setScheduleTitle('');
                       }}
-                      className="h-9 px-3 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white cursor-pointer shrink-0"
+                      className="h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-semibold text-white cursor-pointer shrink-0"
                     >
                       +
                     </button>
@@ -1082,7 +1082,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       {scheduledRooms.slice(0, 3).map((sr) => (
                         <div
                           key={sr.id}
-                          className="px-2.5 py-2 rounded-xl bg-[#0E0F16] border border-white/[0.08] flex items-center justify-between gap-2 text-xs"
+                          className="px-2.5 py-2 rounded-xl bg-[#26262C] border border-white/[0.08] flex items-center justify-between gap-2 text-xs"
                         >
                           <div className="min-w-0">
                             <span className="font-semibold text-white truncate block">{sr.title}</span>
@@ -1110,7 +1110,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
               </div>
 
               {/* Profile Name, View Mode & Cloud Auth Card */}
-              <div className="rounded-2xl bg-[#090A0F] border border-white/[0.08] p-4 space-y-4">
+              <div className="rounded-2xl bg-[#1F1F23] border border-white/[0.08] p-4 space-y-4">
                 <form onSubmit={handleSaveName} className="space-y-2">
                   <label className="block text-xs font-medium text-zinc-400">
                     {lang === 'es' ? 'Tu nombre visible en sala' : 'Display name'}
@@ -1121,7 +1121,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       value={draftName}
                       onChange={(e) => setDraftName(e.target.value)}
                       maxLength={24}
-                      className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#0E0F16] border border-white/12 focus:border-[#E11D48] text-base sm:text-xs text-white outline-none"
+                      className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#26262C] border border-white/12 focus:border-[#9146FF] text-base sm:text-xs text-white outline-none"
                     />
                     <button
                       type="submit"
@@ -1185,7 +1185,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 {/* Theme, Density, Lite Mode & Language Preferences */}
                 <div className="pt-3 border-t border-white/[0.06] space-y-3">
                   <div className="flex items-center gap-1.5 text-xs font-medium text-white">
-                    <Palette className="w-4 h-4 text-[#FB7185]" />
+                    <Palette className="w-4 h-4 text-[#BF94FF]" />
                     <span>
                       {lang === 'es'
                         ? 'Apariencia, Rendimiento e Idioma'
@@ -1214,8 +1214,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         }}
                         className={`min-h-9 px-2.5 rounded-xl text-[11px] font-semibold border cursor-pointer transition-colors ${
                           theme === opt.id
-                            ? 'bg-[#E11D48] text-white border-[#E11D48]'
-                            : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
+                            ? 'bg-[#9146FF] text-white border-[#9146FF]'
+                            : 'bg-[#26262C] hover:bg-white/[0.1] border-white/[0.08] text-zinc-300'
                         }`}
                       >
                         {opt.label}
@@ -1232,8 +1232,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                           onClick={() => setDensity(d)}
                           className={`min-h-8 px-2.5 rounded-lg text-[11px] font-semibold border cursor-pointer ${
                             density === d
-                              ? 'bg-[#E11D48] text-white border-[#E11D48]'
-                              : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+                              ? 'bg-[#9146FF] text-white border-[#9146FF]'
+                              : 'bg-[#26262C] border-white/[0.08] text-zinc-300'
                           }`}
                         >
                           {d === 'comfortable' ? 'Cómoda' : 'Compacta'}
@@ -1245,7 +1245,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         className={`min-h-8 px-2.5 rounded-lg text-[11px] font-semibold border cursor-pointer ${
                           liteMode
                             ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
-                            : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+                            : 'bg-[#26262C] border-white/[0.08] text-zinc-300'
                         }`}
                       >
                         Lite: {liteMode ? 'ON' : 'OFF'}
@@ -1261,8 +1261,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             onClick={() => onChangeLang(code)}
                             className={`min-h-8 px-2.5 rounded-lg text-[11px] font-bold uppercase border cursor-pointer ${
                               lang === code
-                                ? 'bg-white text-[#050508] border-white'
-                                : 'bg-white/[0.04] border-white/[0.08] text-zinc-300'
+                                ? 'bg-[#9146FF] text-white border-[#9146FF]'
+                                : 'bg-[#26262C] border-white/[0.08] text-zinc-300'
                             }`}
                           >
                             {code}
@@ -1313,7 +1313,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   <div className="flex items-center gap-2 text-xs font-medium text-white">
                     <Cloud
                       className={`w-4 h-4 ${
-                        authUser ? 'text-emerald-400' : 'text-zinc-400'
+                        authUser ? 'text-[#00F593]' : 'text-zinc-400'
                       }`}
                     />
                     <span>
@@ -1347,7 +1347,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                           triggerHaptic('medium');
                           await onSignIn();
                         }}
-                        className="w-full min-h-[42px] px-4 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                        className="w-full min-h-[42px] px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-semibold text-white flex items-center justify-center gap-2 cursor-pointer transition-colors"
                       >
                         <LogIn className="w-3.5 h-3.5" />
                         <span>

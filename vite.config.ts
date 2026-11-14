@@ -10,16 +10,16 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         selfDestroying: false,
-        registerType: 'prompt',
-        includeAssets: ['icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
+        registerType: 'autoUpdate',
+        includeAssets: ['favicon.ico', 'icon.svg', 'apple-touch-icon.png', 'pwa-192x192.png', 'pwa-512x512.png', 'pwa-maskable-512x512.png'],
         manifest: {
           id: '/',
-          name: 'NAIM CINE — Cine, Series y Fútbol en Sala',
+          name: 'NAIM CINE — Salas en Vivo, Cine y Deportes',
           short_name: 'NAIM CINE',
           description:
-            'Tu sala privada para ver películas, series, fútbol en directo y YouTube sincronizado con tus amigos sin anuncios.',
-          theme_color: '#050508',
-          background_color: '#050508',
+            'Tu plataforma multiplataforma en directo para ver películas, series, anime, fútbol y TV con amigos en tiempo real.',
+          theme_color: '#0E0E10',
+          background_color: '#0E0E10',
           display: 'standalone',
           orientation: 'any',
           start_url: '/',
@@ -47,8 +47,8 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          cacheId: 'naim-cine-oled-v4',
-          skipWaiting: false,
+          cacheId: 'naim-cine-twitch-v5',
+          skipWaiting: true,
           clientsClaim: true,
           cleanupOutdatedCaches: true,
           maximumFileSizeToCacheInBytes: 8 * 1024 * 1024,

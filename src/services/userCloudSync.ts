@@ -86,7 +86,7 @@ function sanitizeHexColor(raw: unknown): string {
   if (typeof raw === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(raw.trim())) {
     return raw.trim();
   }
-  return '#E11D48';
+  return '#9146FF';
 }
 
 function toMillis(ts: unknown, fallback = Date.now()): number {

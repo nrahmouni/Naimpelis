@@ -147,7 +147,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
         {matchedMovies.length > 0 && (
           <section className="space-y-2">
             <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
-              <Film className="w-3.5 h-3.5 text-[#e11d48]" />
+              <Film className="w-3.5 h-3.5 text-[#BF94FF]" />
               <span>Películas ({matchedMovies.length})</span>
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">

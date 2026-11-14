@@ -553,7 +553,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           {Array.from({ length: 6 }).map((_, idx) => (
             <div
               key={idx}
-              className="h-16 bg-[#242833] px-4 flex items-center justify-between animate-pulse"
+              className="h-16 bg-[#18181B] px-4 flex items-center justify-between skeleton-shimmer"
             >
               <div className="w-12 h-7 rounded bg-white/[0.06]" />
               <div className="flex-1 mx-4 space-y-2">
@@ -565,7 +565,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           ))}
         </div>
       ) : groupedCompetitions.length === 0 ? (
-        <div className="p-8 text-center bg-[#242833] space-y-3">
+        <div className="p-8 text-center bg-[#18181B] space-y-3">
           <p className="text-sm text-zinc-300 font-medium">
             {statusTab === 'live'
               ? lang === 'es'

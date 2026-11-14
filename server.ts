@@ -11,7 +11,6 @@ import { Readable } from 'stream';
 import { WebSocketServer, WebSocket } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import puppeteer, { type Browser, type Page } from 'puppeteer';
 import ffmpegStatic from 'ffmpeg-static';
 import { ENV } from './server/config/env.ts';
 import { logger } from './server/utils/logger.ts';
@@ -20,7 +19,14 @@ import {
   expressErrorHandler,
   securityHeadersMiddleware,
 } from './server/middleware/errorHandler.ts';
+import { serviceMeshGatewayMiddleware } from './server/gateway/serviceMesh.ts';
 import { registerOperationalRoutes } from './server/routes/health.ts';
+import { registerExpandedCatalogRoutes } from './server/routes/expandedCatalog.ts';
+import {
+  resolveCloudSessionLite,
+  sniffStreamViaHttp,
+  type CloudSessionLite,
+} from './server/services/streamSnifferService.ts';
 import {
   assignParticipantRole,
   canUserControlRoom,
@@ -39,6 +45,16 @@ import {
   fetchRealFootballMatchDetails,
   getRegionLabelFromCcode,
 } from './server/services/footballLiveService.ts';
+import {
+  curlPlainGetText,
+  extractVestStreamsAndSubtitles,
+  fetchVestDetailPage,
+  findVestSeedForMedia,
+  isVestMirrorUrl,
+  listVestCatalogEntries,
+  type VestParsedDetail,
+  type VestSubtitleItem,
+} from './server/services/vestMirrorService.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -92,40 +108,7 @@ function isBlockedAdUrl(url: string): boolean {
   return AD_DOMAIN_PATTERNS.some((domain) => lower.includes(domain));
 }
 
-// ============================================================================
-// WARM SINGLETON HEADLESS CHROMIUM ENGINE (FOR SPORTS SNIFFING & CLOUD BROWSER)
-// ============================================================================
-let sharedBrowserPromise: Promise<Browser> | null = null;
-
-async function getSharedBrowser(): Promise<Browser> {
-  if (sharedBrowserPromise) {
-    try {
-      const browser = await sharedBrowserPromise;
-      if (browser.connected) return browser;
-    } catch {
-      sharedBrowserPromise = null;
-    }
-  }
-
-  sharedBrowserPromise = puppeteer.launch({
-    headless: true,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--ignore-certificate-errors',
-      '--autoplay-policy=no-user-gesture-required',
-      '--disable-popup-blocking=false',
-      '--mute-audio',
-    ],
-  });
-
-  const browser = await sharedBrowserPromise;
-  browser.on('disconnected', () => {
-    sharedBrowserPromise = null;
-  });
-  return browser;
-}
+// Stream sniffing & virtual browser resolution run in-process via HTTP/TLS (no Chromium binary required)
 
 // ============================================================================
 // STREAM EXTRACTION TYPES & CACHE
@@ -146,6 +129,7 @@ interface TrackRecord {
   resolverType:
     | 'movidy_embed'
     | 'vidhide_hls'
+    | 'vest_hls'
     | 'embed_sniff'
     | 'bingetrix_en'
     | 'sports_channel'
@@ -166,7 +150,10 @@ interface ExtractedStreamResult {
   referer?: string;
   youtubeId?: string;
   title?: string;
+  poster?: string;
+  backdrop?: string;
   tracks?: TrackRecord[];
+  subtitles?: VestSubtitleItem[];
   requestedLang?: string;
   resolvedLang?: string;
   resolvedLabel?: string;
@@ -2297,12 +2284,13 @@ async function probeAvailableLanguages(opts: {
   episode?: number;
   titleHints?: string[];
   movidyUrl?: string;
+  vestUrl?: string;
   yearHint?: string;
 }): Promise<('ES' | 'LAT' | 'VOSE' | 'EN')[]> {
   const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
   const season = opts.mediaType === 'tv' ? opts.season || 1 : 0;
   const episode = opts.mediaType === 'tv' ? opts.episode || 1 : 0;
-  const cacheKey = `${opts.mediaType}|${cleanId || opts.movidyUrl || ''}|${season}|${episode}`;
+  const cacheKey = `${opts.mediaType}|${cleanId || opts.movidyUrl || opts.vestUrl || ''}|${season}|${episode}`;
 
   const cached = availableLangsCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
@@ -2379,6 +2367,19 @@ async function probeAvailableLanguages(opts: {
   }
   if (hasEn) {
     foundSet.add('EN');
+  }
+
+  const vestMatch =
+    (opts.vestUrl && isVestMirrorUrl(opts.vestUrl)) ||
+    Boolean(
+      findVestSeedForMedia({
+        tmdbId: cleanId || undefined,
+        titleHints: hints,
+      })
+    );
+  if (vestMatch) {
+    foundSet.add('ES');
+    foundSet.add('VOSE');
   }
 
   const ordered = (['ES', 'LAT', 'VOSE', 'EN'] as const).filter((code) =>
@@ -2843,80 +2844,12 @@ async function unwrapNestedEmbedChain(initialUrl: string): Promise<{ targetUrl: 
 async function sniffStreamWithHeadless(
   rawUrl: string
 ): Promise<{ streamUrl: string; referer: string; isDirectMp4: boolean } | null> {
-  let page: Page | null = null;
   try {
     const { targetUrl, referer } = await unwrapNestedEmbedChain(rawUrl);
-    const browser = await getSharedBrowser();
-    page = await browser.newPage();
-
-    await page.setUserAgent(CHROME_UA);
-    await page.setExtraHTTPHeaders({ Referer: referer });
-    await page.setRequestInterception(true);
-
-    let resolvedMedia: { streamUrl: string; referer: string; isDirectMp4: boolean } | null = null;
-    let resolvePromise!: (val: { streamUrl: string; referer: string; isDirectMp4: boolean } | null) => void;
-    const mediaFoundPromise = new Promise<{
-      streamUrl: string;
-      referer: string;
-      isDirectMp4: boolean;
-    } | null>((res) => {
-      resolvePromise = res;
-    });
-
-    page.on('request', (req) => {
-      const reqUrl = req.url();
-      const resType = req.resourceType();
-
-      if (isBlockedAdUrl(reqUrl) || resType === 'image' || resType === 'font') {
-        req.abort().catch(() => {});
-        return;
-      }
-
-      const isSwOnlyVirtualPlaystream =
-        reqUrl.includes('tilinhd.') && reqUrl.includes('stream_tv=');
-
-      if (
-        !resolvedMedia &&
-        !isSwOnlyVirtualPlaystream &&
-        (reqUrl.includes('.m3u8') || reqUrl.includes('stream_tv=') || /\.mp4(\?|$)/i.test(reqUrl))
-      ) {
-        const reqReferer = req.headers()['referer'] || targetUrl;
-        const isDirectMp4 = /\.mp4(\?|$)/i.test(reqUrl) && !reqUrl.includes('.m3u8');
-        resolvedMedia = {
-          streamUrl: reqUrl,
-          referer: reqReferer,
-          isDirectMp4,
-        };
-        resolvePromise(resolvedMedia);
-      }
-
-      req.continue().catch(() => {});
-    });
-
-    await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 10000 }).catch(() => {});
-
-    setTimeout(async () => {
-      if (!resolvedMedia && page && !page.isClosed()) {
-        await page
-          .evaluate(() => {
-            const btn = document.querySelector<HTMLElement>(
-              '.play-wrapper, .vjs-big-play-button, .jw-icon-display, [data-play], button, video'
-            );
-            btn?.click();
-          })
-          .catch(() => {});
-      }
-    }, 900);
-
-    const timeoutPromise = new Promise<null>((res) => setTimeout(() => res(null), 6000));
-    return await Promise.race([mediaFoundPromise, timeoutPromise]);
+    return await sniffStreamViaHttp(targetUrl, referer);
   } catch (err) {
-    console.warn('Headless stream sniff unavailable (safe fallback):', (err as Error)?.message);
+    logger.warn({ err }, 'http_stream_sniff_fallback_failed');
     return null;
-  } finally {
-    if (page) {
-      await page.close().catch(() => {});
-    }
   }
 }
 
@@ -2946,6 +2879,7 @@ httpServer.on('upgrade', (req, socket, head) => {
 app.use(compression());
 app.use(securityHeadersMiddleware);
 app.use(express.json({ limit: '1mb' }));
+app.use('/api', serviceMeshGatewayMiddleware);
 
 // Serve ES5 UMD Hls.js locally for Samsung Tizen / LG webOS Smart TVs (zero external CDN dependency)
 app.get('/vendor/hls.min.js', (_req, res) => {
@@ -2963,6 +2897,8 @@ registerOperationalRoutes(app, {
   }),
   getPublicOrigin,
 });
+
+registerExpandedCatalogRoutes(app);
 
 // Direct Ready-to-Install Signed Android APK Download (Mobile & Google TV / Chromecast)
 app.get(['/NAIM-CINE-TV.apk', '/tv.apk', '/googletv.apk', '/api/download/apk-tv'], (_req, res) => {
@@ -3026,13 +2962,8 @@ app.get('/', (req, res, next) => {
 // ============================================================================
 // SUBSYSTEM 3: AUTHORITATIVE REAL-TIME ROOM, QUEUE & CLOUD BROWSER ENGINE
 // ============================================================================
-interface CloudRoomSession {
-  page: Page;
-  timer: ReturnType<typeof setInterval>;
-  url: string;
-  title: string;
-  isLoading: boolean;
-  detectedStreamUrl?: string;
+interface CloudRoomSession extends CloudSessionLite {
+  closed: boolean;
 }
 
 interface RoomRecord {
@@ -3553,116 +3484,48 @@ function broadcastToRoom(roomId: string, message: unknown, excludeWs?: WebSocket
 async function stopCloudSession(roomId: string) {
   const existing = cloudSessions.get(roomId);
   if (!existing) return;
-  clearInterval(existing.timer);
+  existing.closed = true;
   cloudSessions.delete(roomId);
-  await existing.page.close().catch(() => {});
 }
 
 async function startCloudSession(roomId: string, targetUrl: string) {
   await stopCloudSession(roomId);
 
-  let normalizedUrl = targetUrl.trim();
-  if (!/^https?:\/\//i.test(normalizedUrl)) {
-    normalizedUrl = 'https://' + normalizedUrl;
-  }
+  const lite = await resolveCloudSessionLite(targetUrl);
+  let proxiedDetectedStream: string | undefined;
 
-  let browser: Browser;
-  try {
-    browser = await getSharedBrowser();
-  } catch {
-    return;
+  if (lite.detectedStreamUrl) {
+    if (/\.mp4(\?|$)/i.test(lite.detectedStreamUrl)) {
+      proxiedDetectedStream = buildTsProxyUrl(lite.detectedStreamUrl, lite.url);
+    } else {
+      try {
+        const m3uText = await fetchSportsHtmlHop(lite.detectedStreamUrl, lite.url);
+        if (!m3uText.includes('#EXTM3U') || (await verifyM3u8HasCleanVideoFrame(m3uText, lite.detectedStreamUrl, lite.url))) {
+          proxiedDetectedStream = buildHlsProxyUrl(lite.detectedStreamUrl, lite.url);
+        }
+      } catch {
+        proxiedDetectedStream = buildHlsProxyUrl(lite.detectedStreamUrl, lite.url);
+      }
+    }
   }
-  const page = await browser.newPage();
-  await page.setViewport({ width: 1280, height: 720 });
-  await page.setUserAgent(CHROME_UA);
-  await page.setRequestInterception(true);
 
   const session: CloudRoomSession = {
-    page,
-    url: normalizedUrl,
-    title: normalizedUrl,
-    isLoading: true,
-    timer: setInterval(async () => {
-      if (page.isClosed()) return;
-      try {
-        const base64Jpeg = await page.screenshot({ type: 'jpeg', quality: 65, encoding: 'base64' });
-        broadcastToRoom(roomId, {
-          type: 'CLOUD_BROWSER_FRAME',
-          payload: {
-            image: `data:image/jpeg;base64,${base64Jpeg}`,
-            url: session.url,
-            title: session.title,
-            isLoading: session.isLoading,
-            detectedStreamUrl: session.detectedStreamUrl,
-          },
-        });
-      } catch {
-        // ignore transient navigation screenshot errors
-      }
-    }, 320),
+    ...lite,
+    detectedStreamUrl: proxiedDetectedStream || undefined,
+    closed: false,
   };
-
   cloudSessions.set(roomId, session);
 
-  page.on('popup', async (popupPage) => {
-    if (popupPage) await popupPage.close().catch(() => {});
+  broadcastToRoom(roomId, {
+    type: 'CLOUD_BROWSER_FRAME',
+    payload: {
+      image: '',
+      url: session.url,
+      title: session.title,
+      isLoading: false,
+      detectedStreamUrl: session.detectedStreamUrl,
+    },
   });
-
-  page.on('request', (req) => {
-    const reqUrl = req.url();
-    if (isBlockedAdUrl(reqUrl)) {
-      req.abort().catch(() => {});
-      return;
-    }
-    if (/\.mp4(\?|$)/i.test(reqUrl)) {
-      const ref = req.headers()['referer'] || session.url;
-      session.detectedStreamUrl = buildTsProxyUrl(reqUrl, ref);
-    } else if (reqUrl.includes('.m3u8') || reqUrl.includes('stream_tv=')) {
-      const ref = req.headers()['referer'] || session.url;
-      // Verify live frame health asynchronously before exposing `detectedStreamUrl` so scrambled green satellite streams are never promoted!
-      void (async () => {
-        try {
-          const m3uText = await fetchSportsHtmlHop(reqUrl, ref);
-          if (m3uText.includes('#EXTM3U')) {
-            const clean = await verifyM3u8HasCleanVideoFrame(m3uText, reqUrl, ref);
-            if (!clean) return;
-          }
-          session.detectedStreamUrl = buildHlsProxyUrl(reqUrl, ref);
-        } catch {
-          // ignore
-        }
-      })();
-    }
-    req.continue().catch(() => {});
-  });
-
-  page.on('framenavigated', (frame) => {
-    if (frame === page.mainFrame()) {
-      session.url = frame.url();
-      page
-        .title()
-        .then((t) => {
-          session.title = t || session.url;
-        })
-        .catch(() => {});
-    }
-  });
-
-  await page.evaluateOnNewDocument(() => {
-    window.open = () => null;
-    window.alert = () => {};
-    window.confirm = () => true;
-  });
-
-  page
-    .goto(normalizedUrl, { waitUntil: 'domcontentloaded', timeout: 15000 })
-    .then(async () => {
-      session.isLoading = false;
-      session.title = (await page.title().catch(() => '')) || session.url;
-    })
-    .catch(() => {
-      session.isLoading = false;
-    });
 }
 
 wss.on('connection', (ws) => {
@@ -4190,26 +4053,16 @@ wss.on('connection', (ws) => {
       } else if (type === 'CLOUD_BROWSER_INPUT') {
         const { roomId, input } = payload || {};
         const session = cloudSessions.get(roomId);
-        if (!session || session.page.isClosed() || !input) return;
+        if (!session || session.closed || !input) return;
 
         try {
-          if (input.type === 'click' && typeof input.x === 'number' && typeof input.y === 'number') {
-            await session.page.mouse.click(input.x, input.y);
-          } else if (input.type === 'scroll' && typeof input.deltaY === 'number') {
-            await session.page.mouse.wheel({ deltaY: input.deltaY });
-          } else if (input.type === 'type' && typeof input.text === 'string') {
-            await session.page.keyboard.type(input.text);
-          } else if (input.type === 'key' && typeof input.key === 'string') {
-            await session.page.keyboard.press(input.key as any);
-          } else if (input.type === 'navigate' && typeof input.url === 'string') {
+          if (input.type === 'navigate' && typeof input.url === 'string') {
             await startCloudSession(roomId, input.url);
-          } else if (input.type === 'back') {
-            await session.page.goBack({ waitUntil: 'domcontentloaded' }).catch(() => {});
           } else if (input.type === 'reload') {
-            await session.page.reload({ waitUntil: 'domcontentloaded' }).catch(() => {});
+            await startCloudSession(roomId, session.url);
           }
         } catch {
-          // ignore input error during page navigation
+          // ignore transient navigation error
         }
       } else if (type === 'CLOUD_BROWSER_STOP') {
         const { roomId } = payload || {};
@@ -5243,9 +5096,14 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
     let manifestText = '';
 
     if (shouldBypassNodeFetch(targetUrl)) {
-      const fallback = await curlGetText(targetUrl, headers, 7);
+      let fallback = await curlGetText(targetUrl, headers, 7);
       if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
-        return res.status(502).send('Upstream HLS error');
+        const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => '');
+        if (plainTxt && plainTxt.includes('#EXTM3U')) {
+          fallback = { text: plainTxt, effectiveUrl: targetUrl };
+        } else {
+          return res.status(502).send('Upstream HLS error');
+        }
       }
       baseUrl = fallback.effectiveUrl || targetUrl;
       manifestText = fallback.text;
@@ -5265,9 +5123,15 @@ app.get(['/api/hls-proxy', '/api/hls-proxy/:filename'], async (req, res) => {
         }
       } catch {
         markHostNeedsCurlFallback(targetUrl);
-        const fallback = await curlGetText(targetUrl, headers, 7);
+        let fallback = await curlGetText(targetUrl, headers, 7);
         if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
-          return res.status(502).send('Upstream HLS error');
+          // Some Cloudflare CDNs (e.g. 321moviesfree/cuevana4br/flixlat/123pelicula) reject Chrome UA -> retry plain curl
+          const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => '');
+          if (plainTxt && plainTxt.includes('#EXTM3U')) {
+            fallback = { text: plainTxt, effectiveUrl: targetUrl };
+          } else {
+            return res.status(502).send('Upstream HLS error');
+          }
         }
         baseUrl = fallback.effectiveUrl || targetUrl;
         manifestText = fallback.text;
@@ -6247,6 +6111,24 @@ app.get('/api/catalog/movies', async (req, res) => {
       combinedMovies.push(tm);
     }
 
+    // 3. Attach or append crawled mirror entries (321moviesfree, cuevana4br, flixlat, 123pelicula)
+    if (page === 1 || query) {
+      const vestEntries = listVestCatalogEntries({ mediaType: 'movie', query });
+      for (const ve of vestEntries) {
+        const kVe = normalizeTitleForMatch(ve.title);
+        if (ve.tmdbId) {
+          const existing = combinedMovies.find((m) => Number(m.tmdbId) === Number(ve.tmdbId));
+          if (existing) {
+            if (!existing.vestUrl) existing.vestUrl = ve.vestUrl;
+            continue;
+          }
+        }
+        if (kVe && seenNormTitles.has(kVe)) continue;
+        if (kVe) seenNormTitles.add(kVe);
+        combinedMovies.push(ve);
+      }
+    }
+
     const hasMore = Boolean(movidyData.hasMore || tmdbData.hasMore);
     movieCatalogCache.set(mergedCacheKey, {
       movies: combinedMovies,
@@ -6258,6 +6140,35 @@ app.get('/api/catalog/movies', async (req, res) => {
   } catch (err) {
     console.error('Spanish movies catalog error:', err);
     res.status(500).json({ success: false, movies: [], hasMore: false });
+  }
+});
+
+app.get('/api/catalog/vest', async (req, res) => {
+  try {
+    const rawUrl = String(req.query.url || '').trim();
+    const query = String(req.query.query || '').trim();
+    const mediaType =
+      req.query.mediaType === 'movie'
+        ? 'movie'
+        : req.query.mediaType === 'tv'
+        ? 'tv'
+        : 'all';
+
+    if (rawUrl && isVestMirrorUrl(rawUrl)) {
+      const detail = await fetchVestDetailPage(rawUrl);
+      return res.json({
+        success: Boolean(detail),
+        detail,
+        items: listVestCatalogEntries({ mediaType, query }),
+      });
+    }
+
+    return res.json({
+      success: true,
+      items: listVestCatalogEntries({ mediaType, query }),
+    });
+  } catch {
+    return res.status(500).json({ success: false, items: [] });
   }
 });
 
@@ -6717,6 +6628,25 @@ app.get('/api/catalog/series', async (req, res) => {
       if (ts?.tmdbId && !seenTmdbIds.has(ts.tmdbId)) {
         seenTmdbIds.add(ts.tmdbId);
         combinedSeries.push(ts);
+      }
+    }
+
+    // Attach or append Vest mirror TV entries (321moviesfree, cuevana4br, flixlat, 123pelicula)
+    if (page === 1 || query) {
+      const vestSeries = listVestCatalogEntries({ mediaType: 'tv', query });
+      for (const vs of vestSeries) {
+        if (vs.tmdbId) {
+          const existing = combinedSeries.find((s) => Number(s.tmdbId) === Number(vs.tmdbId));
+          if (existing) {
+            if (!existing.vestUrl) existing.vestUrl = vs.vestUrl;
+            continue;
+          }
+          seenTmdbIds.add(vs.tmdbId);
+        } else {
+          const kVs = normalizeTitleForMatch(vs.title);
+          if (combinedSeries.some((s) => normalizeTitleForMatch(s.title) === kVs)) continue;
+        }
+        combinedSeries.push(vs);
       }
     }
 
@@ -10182,6 +10112,7 @@ function formatExtractResponseForClient(
 app.get('/api/extract/stream', async (req, res) => {
   const rawInput = String(req.query.url || '').trim();
   const movidyUrlParam = String(req.query.movidyUrl || '').trim();
+  const vestUrlParam = String(req.query.vestUrl || '').trim();
   const resolverType = String(req.query.resolverType || '').trim();
   const preferLang = String(req.query.preferLang || req.query.lang || 'ES').toUpperCase();
   const titleHint = String(req.query.title || '').trim();
@@ -10191,11 +10122,11 @@ app.get('/api/extract/stream', async (req, res) => {
   const episodeParam = parseInt(String(req.query.episode || '0'), 10) || undefined;
   const episodeTitleHint = String(req.query.episodeTitle || '').trim();
 
-  if (!rawInput && !movidyUrlParam && !titleHint && !tmdbIdParam) {
+  if (!rawInput && !movidyUrlParam && !vestUrlParam && !titleHint && !tmdbIdParam) {
     return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
   }
 
-  const cacheKey = `${mediaTypeParam}|${tmdbIdParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${rawInput}|${movidyUrlParam}|${titleHint}`;
+  const cacheKey = `${mediaTypeParam}|${tmdbIdParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${rawInput}|${movidyUrlParam}|${vestUrlParam}|${titleHint}`;
   const cached = extractionCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return res.json(formatExtractResponseForClient(req, cached));
@@ -10326,6 +10257,30 @@ app.get('/api/extract/stream', async (req, res) => {
       });
     }
 
+    // CASE 1B-VEST: Direct Vest/Groot track switch (`vest_hls` from 321moviesfree/cuevana4br/flixlat/123pelicula)
+    if (resolverType === 'vest_hls' && rawInput) {
+      try {
+        const originRef = new URL(rawInput).origin + '/';
+        const result: ExtractedStreamResult = {
+          success: true,
+          mode: 'hls',
+          streamUrl: buildHlsProxyUrl(rawInput, originRef),
+          rawStreamUrl: rawInput,
+          referer: originRef,
+          requestedLang: preferLang,
+          resolvedLang: preferLang,
+          expiresAt: Date.now() + 15 * 60 * 1000,
+        };
+        extractionCache.set(cacheKey, result);
+        return res.json(formatExtractResponseForClient(req, result));
+      } catch {
+        return res.status(404).json({
+          success: false,
+          error: 'La pista seleccionada no está activa.',
+        });
+      }
+    }
+
     // CASE 1C: Verified Web Embed Player track switch (`web_embed`)
     if (resolverType === 'web_embed' && rawInput) {
       const fullEmbedUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
@@ -10394,6 +10349,7 @@ app.get('/api/extract/stream', async (req, res) => {
     const bingetrixMovieMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch|movie)\/(\d+)/i);
     const isMovidyLink =
       rawInput.includes('movidy.pw/ver/') || movidyUrlParam.includes('movidy.pw/ver/');
+    const isVestLink = isVestMirrorUrl(rawInput) || isVestMirrorUrl(vestUrlParam);
 
     const isCatalogMediaRequest =
       mediaTypeParam === 'movie' ||
@@ -10402,6 +10358,7 @@ app.get('/api/extract/stream', async (req, res) => {
       Boolean(bingetrixTvMatch) ||
       Boolean(bingetrixMovieMatch) ||
       isMovidyLink ||
+      isVestLink ||
       resolverType === 'bingetrix_en' ||
       (!rawInput && Boolean(titleHint));
 
@@ -10409,10 +10366,10 @@ app.get('/api/extract/stream', async (req, res) => {
       let effectiveMediaType: 'movie' | 'tv' =
         mediaTypeParam === 'tv' || Boolean(bingetrixTvMatch) ? 'tv' : 'movie';
 
-      const effectiveSeason = bingetrixTvMatch
+      let effectiveSeason = bingetrixTvMatch
         ? parseInt(bingetrixTvMatch[2], 10)
         : seasonParam || 1;
-      const effectiveEpisode = bingetrixTvMatch
+      let effectiveEpisode = bingetrixTvMatch
         ? parseInt(bingetrixTvMatch[3], 10)
         : episodeParam || 1;
 
@@ -10429,8 +10386,15 @@ app.get('/api/extract/stream', async (req, res) => {
         ? rawInput
         : '';
 
+      const effectiveVestUrl = isVestMirrorUrl(vestUrlParam)
+        ? vestUrlParam
+        : isVestMirrorUrl(rawInput)
+        ? rawInput
+        : '';
+
       let extractedMovidyCleanTitle = '';
       let extractedMovidyYear = '';
+      let extractedVestDetail: VestParsedDetail | null = null;
       let tmdbVerifiedYear = '';
 
       // Inspect direct Movidy `/ver/...` link to detect TV Series (`id="eps"`), exact title, and exact release year
@@ -10442,6 +10406,31 @@ app.get('/api/extract/stream', async (req, res) => {
           }
           extractedMovidyCleanTitle = mvMeta.cleanTitle;
           extractedMovidyYear = mvMeta.year;
+        }
+      }
+
+      // Inspect direct 321moviesfree / cuevana4br / flixlat / 123pelicula `/detail/...` link
+      if (effectiveVestUrl) {
+        extractedVestDetail = await fetchVestDetailPage(
+          effectiveVestUrl,
+          episodeParam && episodeParam > 0 ? episodeParam : undefined
+        );
+        if (extractedVestDetail) {
+          if (!mediaTypeParam) {
+            effectiveMediaType = extractedVestDetail.mediaType;
+          }
+          if (!episodeParam && extractedVestDetail.currentEpisodeNumber > 0) {
+            effectiveEpisode = extractedVestDetail.currentEpisodeNumber;
+          }
+          if (!extractedMovidyCleanTitle) {
+            extractedMovidyCleanTitle = extractedVestDetail.cleanTitle;
+          }
+          const vestSeed = findVestSeedForMedia({
+            titleHints: [extractedVestDetail.cleanTitle],
+          });
+          if (!resolvedTmdbId && vestSeed?.tmdbId) {
+            resolvedTmdbId = vestSeed.tmdbId;
+          }
         }
       }
 
@@ -10519,7 +10508,17 @@ app.get('/api/extract/stream', async (req, res) => {
 
       const combinedTitleHints = [titleHint, extractedMovidyCleanTitle].filter(Boolean);
 
-      const [movidyTracks, esTracks, enTracks] = await Promise.all([
+      const shouldQueryVest =
+        Boolean(effectiveVestUrl) ||
+        Boolean(
+          findVestSeedForMedia({
+            tmdbId: resolvedTmdbId,
+            titleHints: combinedTitleHints,
+            preferLang,
+          })
+        );
+
+      const [movidyTracks, esTracks, enTracks, vestExtracted] = await Promise.all([
         effectiveMediaType === 'movie' && effectiveMovidyUrl
           ? extractMovidyPageTracks(
               effectiveMovidyUrl,
@@ -10545,12 +10544,31 @@ app.get('/api/extract/stream', async (req, res) => {
               episode: effectiveEpisode,
             })
           : Promise.resolve([]),
+        shouldQueryVest
+          ? extractVestStreamsAndSubtitles({
+              vestUrl: effectiveVestUrl || undefined,
+              tmdbId: resolvedTmdbId,
+              mediaType: effectiveMediaType,
+              season: effectiveSeason,
+              episode: effectiveEpisode,
+              preferLang,
+              titleHints: combinedTitleHints,
+              tmdbApiKey: TMDB_API_KEY,
+              buildHlsProxyUrl: (m3u8Url, referer) => buildHlsProxyUrl(m3u8Url, referer),
+            }).catch(() => null)
+          : Promise.resolve(null),
       ]);
 
+      const vestTracks: TrackRecord[] = vestExtracted?.tracks || [];
+      const vestSubtitles = vestExtracted?.subtitles || [];
+      const vestDetailMeta = vestExtracted?.detail || extractedVestDetail;
+
       // Combine all discovered tracks and sort by requested language priority
-      const allDiscovered: TrackRecord[] = hasExplicitMovidyUrl
-        ? [...movidyTracks, ...esTracks, ...enTracks]
-        : [...esTracks, ...movidyTracks, ...enTracks];
+      const allDiscovered: TrackRecord[] = isVestLink
+        ? [...vestTracks, ...movidyTracks, ...esTracks, ...enTracks]
+        : hasExplicitMovidyUrl
+        ? [...movidyTracks, ...vestTracks, ...esTracks, ...enTracks]
+        : [...esTracks, ...vestTracks, ...movidyTracks, ...enTracks];
 
       const getLangScore = (trackLang: string): number => {
         const tl = String(trackLang || '').toUpperCase();
@@ -10584,7 +10602,10 @@ app.get('/api/extract/stream', async (req, res) => {
       };
 
       const resolverPriority = (rt: string): number => {
-        if (rt === 'vidhide_hls' || rt === 'movidy_embed' || rt === 'bingetrix_en') return 1;
+        if (isVestLink && rt === 'vest_hls') return 0;
+        if (rt === 'vest_hls' || rt === 'vidhide_hls' || rt === 'movidy_embed' || rt === 'bingetrix_en') {
+          return 1;
+        }
         if (rt === 'embed_sniff') return 2;
         if (rt === 'web_embed') return 3;
         return 4;
@@ -10686,9 +10707,11 @@ app.get('/api/extract/stream', async (req, res) => {
           titleHint ||
           (extractedMovidyCleanTitle
             ? effectiveMediaType === 'tv'
-              ? `${extractedMovidyCleanTitle} · ${effectiveSeason}x${String(
-                  effectiveEpisode
-                ).padStart(2, '0')}`
+              ? `${extractedMovidyCleanTitle} · ${
+                  vestDetailMeta && vestDetailMeta.currentEpisodeNumber > 1 && effectiveSeason === 1
+                    ? `Ep. ${vestDetailMeta.currentEpisodeNumber}`
+                    : `${effectiveSeason}x${String(effectiveEpisode).padStart(2, '0')}`
+                }`
               : extractedMovidyCleanTitle
             : 'NAIMCINE HD');
 
@@ -10697,7 +10720,14 @@ app.get('/api/extract/stream', async (req, res) => {
           mode: primaryMode,
           streamUrl: primaryStreamUrl,
           title: displayTitle,
+          poster: vestDetailMeta?.coverVerticalUrl
+            ? `/api/img-proxy?url=${encodeURIComponent(vestDetailMeta.coverVerticalUrl)}`
+            : undefined,
+          backdrop: vestDetailMeta?.coverHorizontalUrl
+            ? `/api/img-proxy?url=${encodeURIComponent(vestDetailMeta.coverHorizontalUrl)}`
+            : undefined,
           tracks: validTracks,
+          subtitles: vestSubtitles.length > 0 ? vestSubtitles : undefined,
           requestedLang: preferLang,
           resolvedLang,
           resolvedLabel,
@@ -11243,6 +11273,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         episode: mediaType === 'tv' ? 1 : undefined,
         titleHints: [primaryTitle, originalTitle, titleHint],
         movidyUrl: movidyUrlHint || undefined,
+        vestUrl: String(req.query.vestUrl || '').trim() || undefined,
         yearHint: tmdbYear || undefined,
       }),
       fetchTmdbTitleLogo(Number(cleanId), mediaType, req.query.lang === 'en' ? 'en' : 'es'),
@@ -11391,12 +11422,22 @@ app.get('/api/subtitles/proxy', async (req, res) => {
   const rawUrl = String(req.query.url || '');
   if (!rawUrl || !/^https?:\/\//i.test(rawUrl)) return res.status(400).send('');
   try {
-    const r = await fetch(rawUrl, {
-      headers: { 'User-Agent': CHROME_UA },
-      signal: AbortSignal.timeout(5500),
-    });
-    if (!r.ok) return res.status(404).send('');
-    const txt = await r.text();
+    let txt = '';
+    try {
+      const r = await fetch(rawUrl, {
+        headers: { 'User-Agent': CHROME_UA },
+        signal: AbortSignal.timeout(5500),
+      });
+      if (r.ok) {
+        txt = await r.text();
+      }
+    } catch {
+      // fallback to plain curl below
+    }
+    if (!txt) {
+      txt = await curlPlainGetText(rawUrl, 7).catch(() => '');
+    }
+    if (!txt) return res.status(404).send('');
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.send(txt);
@@ -12814,6 +12855,16 @@ app.get('/api/catalog/castellano', async (req, res) => {
         mediaType: 'movie',
         languages: ['Castellano', 'Latino', 'VOSE'],
       });
+    }
+
+    if (page === 1 || query) {
+      const vestEntries = listVestCatalogEntries({
+        mediaType: kind === 'series' ? 'tv' : kind === 'movies' ? 'movie' : 'all',
+        query,
+      });
+      for (const ve of vestEntries) {
+        pushUnique(ve);
+      }
     }
 
     const mapTmdbEntry = (raw: any, mType: 'tv' | 'movie') => {
@@ -15136,6 +15187,9 @@ async function startServer() {
   const PORT = ENV.port;
   const isProd = ENV.isProd;
 
+  // Mount global API error handler prior to Vite / SPA fallback
+  app.use(expressErrorHandler);
+
   if (!isProd) {
     let viteMiddleware: express.RequestHandler | null = null;
     const viteReady = (async () => {
@@ -15188,8 +15242,6 @@ async function startServer() {
 }
 
 startServer();
-
-app.use(expressErrorHandler);
 
 process.on('uncaughtException', (err) => {
   logger.error({ err }, 'uncaught_exception');

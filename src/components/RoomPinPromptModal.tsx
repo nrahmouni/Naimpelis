@@ -51,10 +51,10 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-[90] bg-[#050507]/92 backdrop-blur-2xl flex items-center justify-center p-4">
-      <div className="w-full max-w-[390px] rounded-3xl bg-[#101015] border border-white/12 shadow-[0_30px_100px_rgba(0,0,0,0.92)] p-6 space-y-5">
+    <div className="fixed inset-0 z-[90] bg-[#0E0E10]/92 backdrop-blur-2xl flex items-center justify-center p-4">
+      <div className="w-full max-w-[390px] rounded-3xl bg-[#18181B] border border-white/12 shadow-[0_30px_100px_rgba(0,0,0,0.92)] p-6 space-y-5">
         <div className="flex flex-col items-center text-center space-y-2">
-          <div className="w-14 h-14 rounded-2xl bg-white/[0.06] border border-white/12 flex items-center justify-center text-[#E11D48]">
+          <div className="w-14 h-14 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF]">
             <Lock className="w-6 h-6" />
           </div>
           <div className="text-[11px] font-mono uppercase tracking-widest text-zinc-400">
@@ -82,10 +82,10 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
               onChange={(e) => handlePinChange(e.target.value)}
               placeholder="• • • •"
               aria-label={lang === 'es' ? 'PIN de 4 dígitos' : '4-digit PIN'}
-              className={`w-full h-14 px-4 rounded-2xl bg-[#07070A] border ${
+              className={`w-full h-14 px-4 rounded-2xl bg-[#0E0E10] border ${
                 invalidAttempt
-                  ? 'border-rose-500 focus:border-rose-400'
-                  : 'border-white/15 focus:border-white/35'
+                  ? 'border-[#EB0400] focus:border-[#EB0400]'
+                  : 'border-white/15 focus:border-[#9146FF]'
               } text-center font-mono font-bold text-2xl tracking-[0.55em] text-white placeholder:text-zinc-600 outline-none transition-colors`}
             />
           </div>
@@ -114,7 +114,7 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
             <button
               type="submit"
               disabled={pin.length !== 4}
-              className="h-12 px-4 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-40 text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed transition-colors shadow-lg shadow-[#E11D48]/25"
+              className="h-12 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] disabled:opacity-40 text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed transition-colors shadow-lg shadow-[#9146FF]/25"
             >
               <span>{lang === 'es' ? 'Desbloquear' : 'Unlock'}</span>
               <ArrowRight className="w-4 h-4" />

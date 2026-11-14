@@ -5,17 +5,17 @@ interface NaimBrandLogoProps {
   className?: string;
   /** Dramatic theatrical timing used inside the full-screen NaimcineIntro */
   animated?: boolean;
-  /** Render the dark Obsidian Cinema squircle stage behind the N emblem */
+  /** Render the dark Broadcast Obsidian frame behind the emblem */
   withFrame?: boolean;
   /** Enable subtle sheen in headers/cards */
   live?: boolean;
 }
 
 /**
- * Official NAIM CINE Brand Logo:
- * - Dark Obsidian squircle with subtle slate rim
- * - Left & Right crisp white geometric pillars with diagonal cuts
- * - Center Crimson (#E11D48) diagonal ribbon with a white Play triangle (▶) at its heart
+ * Official NAIM CINE Brand Logo — Twitch-Style Broadcast Edition:
+ * - Deep Broadcast Obsidian squircle (#0E0E10)
+ * - Electric Violet (#9146FF) beveled broadcast chassis frame
+ * - Crisp white play-monolith & signal pillars for instant legibility across Web, Android APK & Google TV
  */
 export const NaimBrandLogo: React.FC<NaimBrandLogoProps> = ({
   size = 40,
@@ -41,19 +41,25 @@ export const NaimBrandLogo: React.FC<NaimBrandLogoProps> = ({
           width="96"
           height="96"
           rx="22"
-          fill="#0B0C10"
-          stroke="#1E2028"
+          fill="#0E0E10"
+          stroke="#27272F"
           strokeWidth="2.5"
         />
       )}
-      {/* Left White Pillar with Diagonal Cut */}
-      <path d="M 21 43.5 L 34.5 63.5 L 34.5 80 L 21 80 Z" fill="#F8FAFC" />
-      {/* Right White Pillar with Diagonal Cut */}
-      <path d="M 65.5 20 L 79 20 L 79 56.5 L 65.5 36.5 Z" fill="#F8FAFC" />
-      {/* Center Crimson Diagonal Ribbon */}
-      <path d="M 21 20 L 38.5 20 L 79 80 L 61.5 80 Z" fill="#E11D48" />
-      {/* Center White Play Triangle */}
-      <path d="M 46.8 44.2 L 56.2 50.0 L 46.8 55.8 Z" fill="#FFFFFF" />
+      {/* Electric Violet Broadcast Bubble / Screen Silhouette */}
+      <path
+        d="M 22 18 H 82 V 63 L 68 77 H 52 L 40 87 V 77 H 22 V 32 L 22 18 Z"
+        fill="#9146FF"
+      />
+      {/* Crisp Dark Inner Monitor Window */}
+      <path
+        d="M 31 27 H 73 V 58 L 63 68 H 47 L 39 75 V 68 H 31 V 27 Z"
+        fill="#0E0E10"
+      />
+      {/* Twin Broadcast Bars + Play Arrow */}
+      <rect x="41" y="37" width="5.5" height="17" rx="2.75" fill="#FFFFFF" />
+      <rect x="52" y="37" width="5.5" height="17" rx="2.75" fill="#FFFFFF" />
+      <path d="M 62.5 38.5 L 70 45.5 L 62.5 52.5 Z" fill="#FFFFFF" />
     </svg>
   );
 };

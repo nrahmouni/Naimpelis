@@ -35,7 +35,7 @@ export const LegalPrivacyModal: React.FC<LegalPrivacyModalProps> = ({ isOpen, on
       <div className="space-y-4 text-xs text-zinc-300 leading-relaxed">
         <section className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2">
           <h4 className="font-bold text-white flex items-center gap-2">
-            <FileText className="w-4 h-4 text-[#e11d48]" />
+            <FileText className="w-4 h-4 text-[#BF94FF]" />
             <span>1. Datos almacenados y sincronización en la nube</span>
           </h4>
           <p>

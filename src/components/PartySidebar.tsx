@@ -359,12 +359,12 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
     activePoll?.options.reduce((acc, o) => acc + o.voterIds.length, 0) || 0;
 
   return (
-    <aside className="w-full h-full flex flex-col bg-[#08080C] border-l border-white/[0.06] select-none overflow-hidden relative">
+    <aside className="w-full h-full flex flex-col bg-[#18181B] border-l border-white/[0.08] select-none overflow-hidden relative">
       {/* ==================================================================== */}
       {/* FLOATING MINIMALIST SEGMENTED CONTROL HEADER                         */}
       {/* ==================================================================== */}
       {!hideInternalTabs && (
-        <div className="px-3 pt-2.5 pb-2 border-b border-white/[0.06] flex items-center gap-2 shrink-0 bg-[#08080C]/90 backdrop-blur-xl z-20">
+        <div className="px-3 pt-2.5 pb-2 border-b border-white/[0.08] flex items-center gap-2 shrink-0 bg-[#18181B]/95 backdrop-blur-xl z-20">
           <SegmentedControl
             className="flex-1"
             value={activeTab}
@@ -397,7 +397,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               title="Superponer chat flotante sobre el vídeo"
               aria-label="Chat flotante sobre el vídeo"
             >
-              <Maximize2 className="w-4 h-4 text-[#FB7185]" />
+              <Maximize2 className="w-4 h-4 text-[#BF94FF]" />
             </IconButton>
           )}
 
@@ -415,7 +415,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               {copiedLink ? (
                 <Check className="w-4 h-4 text-white" />
               ) : (
-                <UserPlus className="w-4 h-4 text-[#FB7185]" />
+                <UserPlus className="w-4 h-4 text-[#BF94FF]" />
               )}
             </IconButton>
           )}
@@ -429,9 +429,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         <div className="flex-1 flex flex-col min-h-0 relative">
           {/* Active Poll Banner (if open) */}
           {activePoll && !activePoll.isClosed && (
-            <div className="mx-3 mt-2.5 p-3.5 rounded-2xl bg-[#12121A]/95 border border-[#E11D48]/35 space-y-2.5 shrink-0 shadow-lg">
+            <div className="mx-3 mt-2.5 p-3.5 rounded-2xl bg-[#1F1F23] border border-[#9146FF]/40 space-y-2.5 shrink-0 shadow-lg">
               <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#FB7185]">
+                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#BF94FF]">
                   <BarChart2 className="w-3.5 h-3.5" />
                   <span>Encuesta en Vivo</span>
                 </div>
@@ -439,7 +439,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   <button
                     type="button"
                     onClick={() => onClosePoll(activePoll.id)}
-                    className="text-xs text-zinc-400 hover:text-white cursor-pointer"
+                    className="text-xs text-[#ADADB8] hover:text-white cursor-pointer"
                   >
                     Cerrar
                   </button>
@@ -458,12 +458,12 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                       onClick={() => onVotePoll(activePoll.id, opt.id)}
                       className={`w-full relative overflow-hidden rounded-xl border px-3 py-2 text-left transition-all cursor-pointer ${
                         voted
-                          ? 'border-[#E11D48]/60 bg-[#E11D48]/15'
-                          : 'border-white/[0.08] bg-white/[0.03] hover:bg-white/[0.06]'
+                          ? 'border-[#9146FF]/65 bg-[#9146FF]/20'
+                          : 'border-white/[0.08] bg-[#26262C]/70 hover:bg-[#26262C]'
                       }`}
                     >
                       <div
-                        className="absolute inset-y-0 left-0 bg-[#E11D48]/20 transition-all duration-300"
+                        className="absolute inset-y-0 left-0 bg-[#9146FF]/25 transition-all duration-300"
                         style={{ width: `${pct}%` }}
                       />
                       <div className="relative flex items-center justify-between gap-2 text-xs">
@@ -510,7 +510,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                         triggerHaptic('light');
                         onSendMessage(chip);
                       }}
-                      className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-[#E11D48]/25 border border-white/10 text-xs font-medium text-zinc-200 cursor-pointer transition-colors"
+                      className="min-h-9 px-3 rounded-xl bg-[#26262C] hover:bg-[#9146FF]/25 border border-white/10 text-xs font-medium text-[#EFEFF1] cursor-pointer transition-colors"
                     >
                       {chip}
                     </button>
@@ -538,7 +538,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     <div
                       className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0 mt-0.5 shadow-sm border border-white/15"
                       style={{
-                        backgroundColor: msg.senderColor || '#E11D48',
+                        backgroundColor: msg.senderColor || '#9146FF',
                       }}
                     >
                       {msg.senderAvatar && msg.senderAvatar.length <= 2
@@ -551,15 +551,15 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                       <div className="flex items-baseline gap-2">
                         <span
                           className="text-xs font-bold truncate"
-                          style={{ color: msg.senderColor || '#FB7185' }}
+                          style={{ color: msg.senderColor || '#BF94FF' }}
                         >
                           {msg.senderName}
                         </span>
-                        <span className="text-[0.68rem] font-mono text-zinc-500 shrink-0">
+                        <span className="text-[0.68rem] font-mono text-[#ADADB8] shrink-0">
                           {formatTime(msg.timestamp)}
                         </span>
                       </div>
-                      <p className="text-sm text-zinc-100 leading-relaxed break-words select-text mt-0.5">
+                      <p className="text-sm text-[#EFEFF1] leading-relaxed break-words select-text mt-0.5">
                         {onSeekToTimestamp
                           ? msg.text
                               .split(/(\b(?:\d{1,2}:)?\d{1,2}:\d{2}\b)/g)
@@ -575,7 +575,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                                           triggerHaptic('light');
                                           onSeekToTimestamp(secs);
                                         }}
-                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-[#E11D48]/20 hover:bg-[#E11D48]/35 border border-[#E11D48]/40 font-mono text-xs font-bold text-[#FB7185] cursor-pointer"
+                                        className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-[#9146FF]/20 hover:bg-[#9146FF]/35 border border-[#9146FF]/45 font-mono text-xs font-bold text-[#BF94FF] cursor-pointer"
                                         title={`Saltar a ${part}`}
                                       >
                                         <Clock className="w-2.5 h-2.5" />
@@ -599,7 +599,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {/* FLOATING REACTION PILL (Hovering above the chat input) */}
           {showFloatingReactions && (
             <div className="absolute inset-x-2 bottom-17 z-20 flex justify-center pointer-events-none animate-fade-in">
-              <div className="pointer-events-auto inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-[#0E0F16]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_12px_32px_rgba(0,0,0,0.75)] max-w-full overflow-x-auto no-scrollbar">
+              <div className="pointer-events-auto inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-[#1F1F23]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_12px_32px_rgba(0,0,0,0.75)] max-w-full overflow-x-auto no-scrollbar">
                 {QUICK_REACTIONS.map((emoji) => (
                   <button
                     key={emoji}
@@ -614,7 +614,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowFloatingReactions(false)}
-                  className="w-7 h-7 rounded-full hover:bg-white/15 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer ml-0.5 sticky right-0 bg-[#0E0F16]/90"
+                  className="w-7 h-7 rounded-full hover:bg-white/15 text-[#ADADB8] hover:text-white flex items-center justify-center shrink-0 cursor-pointer ml-0.5 sticky right-0 bg-[#1F1F23]/95"
                   title="Ocultar barra de emojis"
                   aria-label="Ocultar emojis"
                 >
@@ -626,7 +626,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
           {/* Typing indicator above input */}
           {typingUsers.filter((u) => u.userId !== currentUser.id).length > 0 && (
-            <div className="px-3.5 py-1 text-[11px] text-zinc-400 bg-[#0B0B10]/85 border-t border-white/[0.04] truncate">
+            <div className="px-3.5 py-1 text-[11px] text-[#ADADB8] bg-[#18181B] border-t border-white/[0.06] truncate">
               {typingUsers
                 .filter((u) => u.userId !== currentUser.id)
                 .map((u) => u.userName)
@@ -638,7 +638,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {/* Chat Input Bar */}
           <form
             onSubmit={handleSend}
-            className="p-2.5 border-t border-white/[0.07] bg-[#0B0B10]/95 backdrop-blur-xl flex items-center gap-1.5 shrink-0 z-20"
+            className="p-2.5 border-t border-white/[0.08] bg-[#18181B]/95 backdrop-blur-xl flex items-center gap-1.5 shrink-0 z-20"
           >
             {!showFloatingReactions && (
               <IconButton
@@ -648,7 +648,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 title="Mostrar reacciones"
                 aria-label="Mostrar reacciones"
               >
-                <Smile className="w-5 h-5 text-zinc-400" />
+                <Smile className="w-5 h-5 text-[#ADADB8]" />
               </IconButton>
             )}
 
@@ -664,9 +664,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 }}
                 title="Insertar minuto exacto del vídeo"
                 aria-label="Insertar minuto actual"
-                className="min-h-11 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] font-mono text-[11px] font-bold text-zinc-300 hover:text-white flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
+                className="min-h-11 px-2.5 rounded-xl bg-[#26262C] hover:bg-white/[0.12] border border-white/[0.08] font-mono text-[11px] font-bold text-[#EFEFF1] hover:text-white flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
               >
-                <Clock className="w-3.5 h-3.5 text-[#E11D48]" />
+                <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
                 <span className="hidden sm:inline">
                   {formatChatVideoStamp(currentVideoTimeSec)}
                 </span>
@@ -687,7 +687,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   type="submit"
                   disabled={!inputText.trim()}
                   aria-label="Enviar mensaje"
-                  className="w-9 h-9 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-30 text-white flex items-center justify-center transition-all active:scale-90 cursor-pointer"
+                  className="w-9 h-9 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] disabled:opacity-30 text-white flex items-center justify-center transition-all active:scale-90 cursor-pointer"
                 >
                   <Send className="w-4 h-4" />
                 </button>
@@ -715,7 +715,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             <div className="flex items-center gap-2">
               {roomQueue.length >= 2 && (
                 <SecondaryButton onClick={onStartPollFromQueue}>
-                  <BarChart2 className="w-4 h-4 text-[#E11D48]" />
+                  <BarChart2 className="w-4 h-4 text-[#BF94FF]" />
                   <span>Votar Cola</span>
                 </SecondaryButton>
               )}
@@ -783,8 +783,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                           title="Votar este título en la cola"
                           className={`min-h-9 px-2.5 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
                             item.voterIds?.includes(currentUser.id)
-                              ? 'bg-[#E11D48]/25 border border-[#E11D48]/50 text-[#FB7185]'
-                              : 'bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300'
+                              ? 'bg-[#9146FF]/25 border border-[#9146FF]/55 text-[#BF94FF]'
+                              : 'bg-[#26262C] hover:bg-white/[0.12] text-[#EFEFF1]'
                           }`}
                         >
                           <ThumbsUp className="w-3 h-3" />
@@ -851,7 +851,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   title="Ver Código QR de la Sala"
                   aria-label="Código QR"
                 >
-                  <QrCode className="w-4 h-4 text-[#FB7185]" />
+                  <QrCode className="w-4 h-4 text-[#BF94FF]" />
                 </IconButton>
                 <IconButton
                   onClick={() => setShowRoomSettingsSheet(true)}
@@ -867,12 +867,12 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               <SecondaryButton onClick={handleShareInvite} fullWidth className="whitespace-nowrap">
                 {copiedLink ? (
                   <>
-                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <Check className="w-4 h-4 text-[#00F593] shrink-0" />
                     <span>{t.copied}</span>
                   </>
                 ) : (
                   <>
-                    <Share2 className="w-4 h-4 text-[#FB7185] shrink-0" />
+                    <Share2 className="w-4 h-4 text-[#BF94FF] shrink-0" />
                     <span>Compartir</span>
                   </>
                 )}
@@ -884,7 +884,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 fullWidth
                 className="whitespace-nowrap"
               >
-                <Tv className="w-4 h-4 text-[#E11D48] shrink-0" />
+                <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
                 <span>{hasConnectedSmartTv ? 'TV Activa' : 'Mando TV'}</span>
               </SecondaryButton>
             </div>
@@ -903,8 +903,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
                 {t.participants} ({participants.length})
               </span>
-              <span className="text-xs text-emerald-400 font-medium flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="text-xs text-[#00F593] font-medium flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#00F593]" />
                 Sala en vivo
               </span>
             </div>
@@ -926,7 +926,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     <div className="flex items-center gap-3 min-w-0">
                       <div
                         className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold text-white border border-white/15 shrink-0"
-                        style={{ backgroundColor: p.color || '#E11D48' }}
+                        style={{ backgroundColor: p.color || '#9146FF' }}
                       >
                         {p.avatar && p.avatar.length <= 2 ? p.avatar : getInitials(p.name)}
                       </div>
@@ -990,7 +990,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                                 friendCode: pCode,
                               })
                             }
-                            className="min-h-9 px-3 rounded-xl bg-[#E11D48]/15 hover:bg-[#E11D48]/25 border border-[#E11D48]/35 text-xs font-bold text-[#FB7185] flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                            className="min-h-9 px-3 rounded-xl bg-[#9146FF]/15 hover:bg-[#9146FF]/30 border border-[#9146FF]/45 text-xs font-bold text-[#BF94FF] flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                             title="Guardar en tu lista de amigos"
                           >
                             <UserPlus className="w-3.5 h-3.5" />
@@ -1050,7 +1050,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 <button
                   type="button"
                   onClick={onOpenFriendsModal}
-                  className="text-xs font-semibold text-[#FB7185] hover:underline flex items-center gap-1.5 cursor-pointer"
+                  className="text-xs font-semibold text-[#BF94FF] hover:underline flex items-center gap-1.5 cursor-pointer"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
                   <span>Buscar o añadir amigos</span>
@@ -1094,14 +1094,14 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                         <div className="relative shrink-0">
                           <div
                             className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white border border-white/15"
-                            style={{ backgroundColor: friend.color || '#E11D48' }}
+                            style={{ backgroundColor: friend.color || '#9146FF' }}
                           >
                             {friend.avatar && friend.avatar.length <= 2
                               ? friend.avatar
                               : getInitials(friend.name)}
                           </div>
                           <span
-                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#08080C] ${
+                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#18181B] ${
                               isOnline ? 'bg-emerald-400' : 'bg-zinc-600'
                             }`}
                           />
@@ -1138,7 +1138,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                               friendCode: friend.friendCode,
                             })
                           }
-                          className="min-h-9 px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#F43F5E] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shrink-0"
+                          className="min-h-9 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shrink-0"
                         >
                           <Send className="w-3.5 h-3.5" />
                           <span>Invitar</span>
@@ -1160,7 +1160,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 }}
                 fullWidth
               >
-                <Plus className="w-4 h-4 text-[#FB7185] shrink-0" />
+                <Plus className="w-4 h-4 text-[#BF94FF] shrink-0" />
                 <span>
                   {lang === 'es'
                     ? 'Crear nueva sala'
@@ -1183,9 +1183,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 }
               }}
               fullWidth
-              className={confirmLeave ? '!bg-rose-600 !text-white animate-pulse' : ''}
+              className={confirmLeave ? '!bg-[#EB0400] !border-[#EB0400] !text-white' : ''}
             >
-              <LogOut className="w-4 h-4 text-rose-400" />
+              <LogOut className={`w-4 h-4 ${confirmLeave ? 'text-white' : 'text-[#BF94FF]'}`} />
               <span>
                 {confirmLeave
                   ? lang === 'es'
@@ -1319,7 +1319,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 setTvCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))
               }
               placeholder="0000"
-              className="w-full h-16 rounded-2xl bg-black/75 border-2 border-white/15 focus:border-[#E11D48] text-center font-mono text-3xl font-bold tracking-[0.4em] text-white focus:outline-none"
+              className="w-full h-16 rounded-2xl bg-[#0E0E10] border-2 border-white/15 focus:border-[#9146FF] text-center font-mono text-3xl font-bold tracking-[0.4em] text-white focus:outline-none"
             />
             <PrimaryButton
               type="submit"
@@ -1384,7 +1384,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         {/* 0. User Display Name */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-            <UserCheck className="w-3.5 h-3.5 text-[#E11D48]" />
+            <UserCheck className="w-3.5 h-3.5 text-[#BF94FF]" />
             <span>Tu nombre en la sala</span>
           </label>
           <div className="flex items-center gap-2">
@@ -1413,7 +1413,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         {isHost && (
           <div className="space-y-2 pt-2 border-t border-white/[0.07]">
             <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-              <Edit3 className="w-3.5 h-3.5 text-[#E11D48]" />
+              <Edit3 className="w-3.5 h-3.5 text-[#BF94FF]" />
               <span>Nombre de la sala</span>
             </label>
             <div className="flex items-center gap-2">
@@ -1465,7 +1465,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             className="!justify-between"
           >
             <span className="flex items-center gap-2">
-              <Bookmark className="w-4 h-4 text-[#FB7185]" />
+              <Bookmark className="w-4 h-4 text-[#BF94FF]" />
               <span>Sala Permanente 24/7</span>
             </span>
             <span className="text-xs font-mono uppercase">
@@ -1516,7 +1516,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         {onCreateNewRoom && (
           <div className="space-y-2 pt-2 border-t border-white/[0.07]">
             <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5 text-[#E11D48]" />
+              <Plus className="w-3.5 h-3.5 text-[#BF94FF]" />
               <span>
                 {lang === 'es'
                   ? 'Crear nueva sala'
