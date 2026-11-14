@@ -3062,8 +3062,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             </div>
 
             <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {/* 1. 1-TAP DIRECT CAST TO TV BUTTON */}
-              {!isTvMode && (
+              {/* 1. 1-TAP DIRECT CAST TO TV (Fullscreen only — windowed uses below-video strip) */}
+              {!isTvMode && (isFullscreen || isHorizontalFullscreen) && (
                 <button
                   type="button"
                   onClick={handleDirectCastToTv}
@@ -3072,7 +3072,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
                     isCastingToTv || hasConnectedSmartTv
                       ? 'bg-emerald-500/25 border-emerald-400/60 text-emerald-100 shadow-[0_8px_20px_rgba(16,185,129,0.35)]'
-                      : 'bg-[#18181B]/75 hover:bg-[#9146FF] border-white/20 text-white'
+                      : 'bg-[#141418]/80 hover:bg-[#9146FF] border-white/20 text-white'
                   }`}
                 >
                   <Cast className="w-4 h-4 shrink-0" />
@@ -3080,8 +3080,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </button>
               )}
 
-              {/* 2. Floating Chat Toggle */}
-              {!isTvMode && onToggleFloatingChat && (
+              {/* 2. Floating Chat Toggle (Fullscreen only — windowed uses below-video strip) */}
+              {!isTvMode && (isFullscreen || isHorizontalFullscreen) && onToggleFloatingChat && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -3094,7 +3094,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
                     floatingChatOpen
                       ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_8px_20px_rgba(145,70,255,0.35)]'
-                      : 'bg-[#18181B]/70 hover:bg-[#18181B]/90 border-white/15 text-zinc-100'
+                      : 'bg-[#141418]/75 hover:bg-[#141418]/95 border-white/15 text-zinc-100'
                   }`}
                 >
                   <MessageSquare className="w-4 h-4 shrink-0" />
@@ -3102,8 +3102,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </button>
               )}
 
-              {/* 3. Ajustes de Reproducción (Subtítulos, Modo Cine, PiP, Audio y Velocidad) */}
-              {!isTvMode && (
+              {/* 3. Ajustes de Reproducción (Fullscreen only — windowed uses below-video strip) */}
+              {!isTvMode && (isFullscreen || isHorizontalFullscreen) && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -3120,7 +3120,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     vocalBoostEnabled ||
                     activeSubId !== 'off'
                       ? 'bg-[#9146FF]/25 border-[#9146FF]/60 text-white shadow-[0_0_20px_rgba(145,70,255,0.3)]'
-                      : 'bg-[#18181B]/70 hover:bg-[#18181B]/90 border-white/15 text-white'
+                      : 'bg-[#141418]/75 hover:bg-[#141418]/95 border-white/15 text-white'
                   }`}
                 >
                   <SlidersHorizontal className="w-4 h-4 text-zinc-100 shrink-0" />
@@ -3648,7 +3648,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {!isMinimized && autoNextCountdown !== null && onNextEpisode && (
           <div
             onClick={(e) => e.stopPropagation()}
-            className="absolute bottom-16 right-3 sm:bottom-20 sm:right-5 z-35 p-3 rounded-2xl bg-[#18181B]/95 border border-[#9146FF]/35 shadow-2xl flex items-center gap-2.5 backdrop-blur-md"
+            className="absolute bottom-16 right-3 sm:bottom-20 sm:right-5 z-35 p-3 rounded-2xl bg-[#141418]/95 nc-specular-surface border border-[#9146FF]/40 shadow-[0_18px_45px_rgba(0,0,0,0.7)] flex items-center gap-2.5 backdrop-blur-xl animate-sheet-up"
           >
             <div className="min-w-0">
               <div className="text-[10px] font-semibold text-[#BF94FF]">
@@ -3712,12 +3712,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   disabled={!showControls}
                   onClick={(e) => handleSeekRelative(-10, e)}
                   aria-label="Retroceder 10 segundos"
-                  className={`relative z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/25 flex flex-col items-center justify-center text-white shadow-xl active:scale-90 transition-all cursor-pointer ${
+                  className={`relative z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#141418]/75 hover:bg-[#1F1F26]/90 backdrop-blur-xl border border-white/20 hover:border-white/35 flex flex-col items-center justify-center text-white shadow-xl active:scale-90 transition-all cursor-pointer ${
                     showControls ? 'pointer-events-auto' : 'pointer-events-none'
                   }`}
                 >
                   <RotateCcw className="w-5 h-5 sm:w-6 sm:h-6" />
-                  <span className="text-[9px] font-bold tracking-tighter -mt-0.5">-10s</span>
+                  <span className="text-[9px] font-bold tabular-nums tracking-tighter -mt-0.5">-10s</span>
                 </button>
               )}
 
@@ -3726,7 +3726,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 disabled={!showControls}
                 onClick={(e) => handleTogglePlay(e)}
                 aria-label={localPlaying ? 'Pausar' : 'Reproducir'}
-                className={`relative z-40 w-15 h-15 sm:w-18 sm:h-18 rounded-full bg-black/70 hover:bg-[#9146FF] backdrop-blur-md border border-white/25 flex items-center justify-center text-white shadow-2xl active:scale-90 transition-all cursor-pointer ${
+                className={`relative z-40 w-15 h-15 sm:w-18 sm:h-18 rounded-full bg-[#141418]/80 hover:bg-[#9146FF] backdrop-blur-xl border border-white/25 hover:border-[#BF94FF]/70 flex items-center justify-center text-white shadow-[0_14px_40px_rgba(0,0,0,0.65)] hover:shadow-[0_10px_32px_rgba(145,70,255,0.45)] active:scale-90 transition-all cursor-pointer ${
                   showControls ? 'pointer-events-auto' : 'pointer-events-none'
                 }`}
               >
@@ -3743,12 +3743,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   disabled={!showControls}
                   onClick={(e) => handleSeekRelative(10, e)}
                   aria-label="Avanzar 10 segundos"
-                  className={`relative z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-black/65 hover:bg-black/85 backdrop-blur-md border border-white/25 flex flex-col items-center justify-center text-white shadow-xl active:scale-90 transition-all cursor-pointer ${
+                  className={`relative z-40 w-12 h-12 sm:w-14 sm:h-14 rounded-full bg-[#141418]/75 hover:bg-[#1F1F26]/90 backdrop-blur-xl border border-white/20 hover:border-white/35 flex flex-col items-center justify-center text-white shadow-xl active:scale-90 transition-all cursor-pointer ${
                     showControls ? 'pointer-events-auto' : 'pointer-events-none'
                   }`}
                 >
                   <RotateCw className="w-5 h-5 sm:w-6 sm:h-6" />
-                  <span className="text-[9px] font-bold tracking-tighter -mt-0.5">+10s</span>
+                  <span className="text-[9px] font-bold tabular-nums tracking-tighter -mt-0.5">+10s</span>
                 </button>
               )}
             </div>
@@ -4230,7 +4230,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         !compactVideoForMobileKeyboard &&
         videoState.mode !== 'idle' &&
         videoState.mode !== 'cloud' && (
-          <div className="bg-[#18181B] border-t border-white/[0.08] px-3 sm:px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+          <div className="bg-[#111116]/95 backdrop-blur-xl border-t border-white/[0.08] px-3 sm:px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
             {/* Left: Quick Language Pills (VOD), Multi-Server Fallback Switcher, OR Live Signal Pills */}
             <div className="flex items-center gap-1.5 min-w-0 shrink-0">
               {videoState.tracks.length > 1 &&
@@ -4238,7 +4238,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 (videoState.tracks || []).some(
                   (tr) => tr.resolverType === 'web_embed' || tr.resolverType === 'youtube'
                 )) ? (
-                <div className="flex items-center gap-1 bg-[#26262C]/80 p-1 rounded-2xl border border-white/[0.08]">
+                <div className="flex items-center gap-1 bg-white/[0.045] p-1 rounded-2xl border border-white/[0.08]">
                   {videoState.tracks.slice(0, 6).map((tr, idx) => {
                     const active = idx === videoState.activeTrackIndex;
                     const shortLabel =
@@ -4463,7 +4463,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         >
           <div
             onClick={(e) => e.stopPropagation()}
-            className="w-full sm:max-w-lg rounded-t-[28px] sm:rounded-[28px] bg-[#18181B]/95 backdrop-blur-2xl border-t sm:border border-white/[0.12] shadow-[0_-20px_70px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col max-h-[86dvh] animate-sheet-up"
+            className="w-full sm:max-w-lg rounded-t-[28px] sm:rounded-[28px] bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.12] shadow-[0_-20px_70px_rgba(0,0,0,0.95)] overflow-hidden flex flex-col max-h-[86dvh] animate-sheet-up"
           >
             <div className="pt-2.5 pb-1 flex justify-center sm:hidden">
               <div className="w-10 h-1.5 rounded-full bg-white/20" />
@@ -4472,7 +4472,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             {/* Header */}
             <div className="px-5 py-3.5 border-b border-white/[0.08] flex items-center justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#26262C] border border-white/[0.12] flex items-center justify-center text-[#BF94FF]">
+                <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF]">
                   <SlidersHorizontal className="w-5 h-5" />
                 </div>
                 <div>
@@ -4508,7 +4508,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     className={`min-h-[64px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                       isCinemaMode
                         ? 'bg-amber-400/20 border-amber-400/50 text-amber-200'
-                        : 'bg-[#1F1F23] hover:bg-[#26262C] border-white/[0.08] text-zinc-200'
+                        : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
                     }`}
                   >
                     {isCinemaMode ? (
@@ -4530,7 +4530,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     className={`min-h-[64px] p-3 rounded-2xl border flex flex-col items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
                       isInPiP
                         ? 'bg-[#9146FF]/25 border-[#9146FF]/60 text-white'
-                        : 'bg-[#1F1F23] hover:bg-[#26262C] border-white/[0.08] text-zinc-200'
+                        : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
                     }`}
                   >
                     <PictureInPicture2 className="w-5 h-5 text-sky-400" />
@@ -4541,7 +4541,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
               {/* 2. Audio / Language & Server Selector */}
               {(videoState.tracks.length > 0 || !videoState.isLive) && (
-                <div className="p-4 rounded-2xl bg-[#1F1F23] border border-white/[0.08] space-y-3">
+                <div className="p-4 rounded-2xl bg-white/[0.035] border border-white/[0.08] space-y-3">
                   <div className="text-xs font-bold text-white flex items-center gap-2">
                     <Globe className="w-4 h-4 text-[#9146FF]" />
                     <span>Idioma de Audio y Servidor</span>
@@ -4618,7 +4618,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               )}
 
               {/* 3. Subtitles (.SRT / .VTT + Offset + Font Size) */}
-              <div className="p-4 rounded-2xl bg-[#1F1F23] border border-white/[0.08] space-y-3">
+              <div className="p-4 rounded-2xl bg-white/[0.035] border border-white/[0.08] space-y-3">
                 <div className="flex items-center justify-between">
                   <span className="text-xs font-bold text-white flex items-center gap-2">
                     <Subtitles className="w-4 h-4 text-sky-400" />
@@ -4754,7 +4754,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               </div>
 
               {/* 4. Cinema Pro Enhancements (Vocal Boost, Ambilight, Quality & Speed) */}
-              <div className="p-4 rounded-2xl bg-[#1F1F23] border border-white/[0.08] space-y-3">
+              <div className="p-4 rounded-2xl bg-white/[0.035] border border-white/[0.08] space-y-3">
                 <div className="grid grid-cols-2 gap-2.5">
                   <button
                     type="button"

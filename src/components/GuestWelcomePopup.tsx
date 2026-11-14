@@ -53,7 +53,7 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
   return (
     <aside
       aria-label={lang === 'es' ? 'Personalizar tu nombre en la sala' : 'Set your display name'}
-      className="fixed bottom-[68px] inset-x-3 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[360px] z-30 rounded-2xl bg-[#18181B]/95 backdrop-blur-xl border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.9)] p-4 animate-room-warp"
+      className="fixed bottom-[78px] inset-x-3 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[360px] z-30 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.9)] p-4 animate-room-warp"
     >
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-3 min-w-0">
@@ -78,7 +78,7 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
           }}
           title={lang === 'es' ? `Seguir como ${currentName}` : `Keep ${currentName}`}
           aria-label="Cerrar"
-          className="w-8 h-8 rounded-lg bg-white/[0.06] hover:bg-white/12 flex items-center justify-center text-zinc-400 hover:text-white shrink-0 cursor-pointer transition-colors"
+          className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/12 flex items-center justify-center text-zinc-400 hover:text-white shrink-0 cursor-pointer transition-colors"
         >
           <X className="w-4 h-4" />
         </button>
@@ -93,11 +93,11 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
             lang === 'es' ? `Tu nombre (o ${currentName})` : `Your name (or ${currentName})`
           }
           maxLength={24}
-          className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#26262C] border border-white/12 focus:border-[#9146FF] text-base sm:text-xs text-white placeholder:text-[#ADADB8] outline-none transition-colors"
+          className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-white/[0.05] focus:bg-white/[0.08] border border-white/12 focus:border-[#9146FF] text-base sm:text-xs text-white placeholder:text-[#ADADB8] outline-none transition-all"
         />
         <button
           type="submit"
-          className="h-11 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] active:scale-95 text-xs font-semibold text-white flex items-center gap-1.5 shrink-0 cursor-pointer transition-all"
+          className="h-11 px-4 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 active:scale-95 text-xs font-bold text-white flex items-center gap-1.5 shrink-0 cursor-pointer transition-all shadow-[0_6px_18px_rgba(145,70,255,0.35)]"
         >
           <Check className="w-3.5 h-3.5" />
           <span>{lang === 'es' ? 'Guardar' : 'Save'}</span>

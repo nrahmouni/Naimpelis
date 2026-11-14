@@ -244,7 +244,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[540px] max-h-[90dvh] rounded-t-3xl sm:rounded-3xl bg-[#18181B]/98 border-t sm:border border-white/[0.12] shadow-[0_30px_100px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
+        className="w-full sm:max-w-[540px] max-h-[90dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.12] shadow-[0_30px_100px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden animate-sheet-up"
       >
         {/* Mobile grab handle */}
         <div className="sm:hidden pt-2.5 flex justify-center">
@@ -443,11 +443,11 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                           <div className="text-[11px] truncate mt-0.5">
                             {isInSameRoom ? (
                               <span className="text-emerald-400 font-semibold">
-                                ● Ya está contigo en esta sala
+                                Ya está contigo en esta sala
                               </span>
                             ) : onlineInfo ? (
                               <span className="text-emerald-400 font-medium">
-                                ● En línea en la app
+                                En línea en la app
                                 {onlineInfo.mediaTitle
                                   ? ` · Viendo "${onlineInfo.mediaTitle}"`
                                   : onlineInfo.roomName
@@ -701,7 +701,7 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
   return (
     <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[95] w-[calc(100%-20px)] max-w-[440px] space-y-2 pointer-events-none">
       {invite && (
-        <div className="pointer-events-auto p-3.5 rounded-3xl bg-[#18181B]/98 backdrop-blur-2xl border-2 border-[#9146FF]/65 shadow-[0_24px_70px_rgba(145,70,255,0.4)] flex flex-col gap-3 animate-fade-in">
+        <div className="pointer-events-auto p-3.5 rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border border-[#9146FF]/55 shadow-[0_24px_70px_rgba(145,70,255,0.42)] flex flex-col gap-3 animate-fade-in">
           <div className="flex items-start justify-between gap-2.5">
             <div className="flex items-center gap-3 min-w-0">
               <div
@@ -760,7 +760,7 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
       )}
 
       {friendAddedNotice && (
-        <div className="pointer-events-auto p-3 rounded-2xl bg-[#18181B]/95 backdrop-blur-2xl border border-emerald-500/45 shadow-2xl flex items-center justify-between gap-2.5 animate-fade-in">
+        <div className="pointer-events-auto p-3 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border border-emerald-500/45 shadow-2xl flex items-center justify-between gap-2.5 animate-fade-in">
           <div className="flex items-center gap-2.5 min-w-0">
             <div
               className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"

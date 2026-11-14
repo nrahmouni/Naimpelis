@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   ChevronDown,
   ChevronLeft,
@@ -346,13 +347,13 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   };
 
   return (
-    <section className="rounded-2xl overflow-hidden border border-white/[0.08] bg-[#1B1E28] shadow-xl">
+    <section className="rounded-3xl overflow-hidden nc-specular-surface border border-white/[0.1] shadow-2xl">
       {/* Featured Live Match Spotlight Banner */}
       {featuredLiveMatch && !searchQuery.trim() && (
-        <div className="p-3.5 sm:p-4 bg-gradient-to-r from-[#121622] via-[#1B2233] to-[#121622] border-b border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
+        <div className="relative p-4 sm:p-5 bg-gradient-to-r from-[#13141D] via-[#1B1F2E] to-[#13141D] border-b border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-3 overflow-hidden">
+          <div className="flex items-center gap-3 min-w-0 relative z-10">
             <div className="px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
               <span>{featuredLiveMatch.statusState === 'live' ? featuredLiveMatch.statusLabel || 'EN VIVO' : featuredLiveMatch.kickoffTime}</span>
             </div>
             <div className="min-w-0">
@@ -371,11 +372,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-2 shrink-0 relative z-10">
             <button
               type="button"
               onClick={() => handleToggleExpand(featuredLiveMatch)}
-              className="min-h-[38px] px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-semibold text-white cursor-pointer transition-colors"
+              className="min-h-[42px] px-3.5 rounded-2xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-semibold text-white cursor-pointer transition-all active:scale-95"
             >
               {lang === 'es' ? 'Ver Estadísticas y XI' : 'Stats & Lineups'}
             </button>
@@ -384,7 +385,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                 type="button"
                 disabled={Boolean(loadingItemId)}
                 onClick={(e) => handleQuickPlayTv(e, featuredLiveMatch)}
-                className="min-h-[38px] px-3.5 rounded-xl bg-[#FFBD0F] hover:bg-amber-300 text-[#11131A] text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-colors"
+                className="min-h-[42px] px-4 rounded-2xl bg-[#FFBD0F] hover:bg-amber-300 text-[#11131A] text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-[0_6px_18px_rgba(255,189,15,0.28)]"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
                 <span>{lang === 'es' ? 'Ver Partido' : 'Watch Live'}</span>
@@ -760,111 +761,121 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                       </div>
 
                       {/* Expanded Panel: Direct Broadcast Servers + Full Sofascore-Grade LiveMatchCenter */}
-                      {isExpanded && (
-                        <div className="px-3.5 sm:px-5 py-4 bg-[#151821] border-t border-white/[0.07] space-y-4">
-                          {/* Server / Signal Selector Strip */}
-                          <div className="space-y-2">
-                            <div className="flex items-center justify-between gap-2 text-xs text-zinc-400">
-                              <span className="font-semibold text-zinc-200">
-                                {lang === 'es'
-                                  ? 'Señales en Directo Disponibles'
-                                  : 'Available Live Signals'}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setExpandedMatchId(null)}
-                                className="inline-flex items-center gap-1 text-zinc-400 hover:text-white cursor-pointer"
-                              >
-                                <span>{lang === 'es' ? 'Cerrar' : 'Close'}</span>
-                                <ChevronDown className="w-3.5 h-3.5 rotate-180" />
-                              </button>
-                            </div>
+                      <AnimatePresence initial={false}>
+                        {isExpanded && (
+                          <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="px-3.5 sm:px-5 py-4 bg-[#14161F] border-t border-white/[0.07] space-y-4">
+                              {/* Server / Signal Selector Strip */}
+                              <div className="space-y-2">
+                                <div className="flex items-center justify-between gap-2 text-xs text-zinc-400">
+                                  <span className="font-semibold text-zinc-200">
+                                    {lang === 'es'
+                                      ? 'Señales en Directo Disponibles'
+                                      : 'Available Live Signals'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setExpandedMatchId(null)}
+                                    className="inline-flex items-center gap-1 text-zinc-400 hover:text-white cursor-pointer"
+                                  >
+                                    <span>{lang === 'es' ? 'Cerrar' : 'Close'}</span>
+                                    <ChevronDown className="w-3.5 h-3.5 rotate-180" />
+                                  </button>
+                                </div>
 
-                            {item.channels.length > 0 ? (
-                              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-                                {item.channels.map((ch, idx) => {
-                                  const isActiveServer = activeVideoRawUrl === ch.sourceUrl;
-                                  return (
-                                    <div
-                                      key={`${item.id}-${ch.id}-${idx}`}
-                                      className="inline-flex items-center rounded-lg overflow-hidden shrink-0 border border-white/[0.1]"
-                                    >
-                                      <button
-                                        type="button"
-                                        disabled={Boolean(loadingItemId)}
-                                        onClick={() => {
-                                          triggerHaptic('medium');
-                                          onPlaySportsMatch(sportsMatchObj, idx);
-                                        }}
-                                        className={`min-h-[40px] px-3.5 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
-                                          isActiveServer
-                                            ? 'bg-[#FFBD0F] text-[#141720]'
-                                            : 'bg-[#242833] hover:bg-[#2F3545] text-white'
-                                        }`}
-                                      >
-                                        <Play className="w-3 h-3 fill-current" />
-                                        <span>{ch.label}</span>
-                                      </button>
-
-                                      {activeVideoRawUrl &&
-                                        !isActiveServer &&
-                                        onPlaySecondaryChannel && (
+                                {item.channels.length > 0 ? (
+                                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+                                    {item.channels.map((ch, idx) => {
+                                      const isActiveServer = activeVideoRawUrl === ch.sourceUrl;
+                                      return (
+                                        <div
+                                          key={`${item.id}-${ch.id}-${idx}`}
+                                          className="inline-flex items-center rounded-xl overflow-hidden shrink-0 border border-white/[0.1]"
+                                        >
                                           <button
                                             type="button"
+                                            disabled={Boolean(loadingItemId)}
                                             onClick={() => {
-                                              triggerHaptic('light');
-                                              onPlaySecondaryChannel(sportsMatchObj, idx);
+                                              triggerHaptic('medium');
+                                              onPlaySportsMatch(sportsMatchObj, idx);
                                             }}
-                                            title="Abrir en segunda pantalla Multiview"
-                                            aria-label="Abrir en Multiview"
-                                            className="min-h-[40px] px-2.5 bg-[#1D212B] hover:bg-[#2A3040] border-l border-white/[0.08] text-sky-300 flex items-center justify-center cursor-pointer"
+                                            className={`min-h-[42px] px-3.5 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                                              isActiveServer
+                                                ? 'bg-[#FFBD0F] text-[#141720]'
+                                                : 'bg-[#242833] hover:bg-[#2F3545] text-white'
+                                            }`}
                                           >
-                                            <Columns2 className="w-3.5 h-3.5" />
+                                            <Play className="w-3 h-3 fill-current" />
+                                            <span>{ch.label}</span>
                                           </button>
-                                        )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            ) : (
-                              <div className="px-3.5 py-2.5 rounded-xl bg-[#1E222D] border border-white/[0.07] text-xs text-zinc-300">
-                                {item.statusState === 'finished'
-                                  ? lang === 'es'
-                                    ? 'Encuentro finalizado.'
-                                    : 'Match finished.'
-                                  : item.statusState === 'upcoming'
-                                  ? lang === 'es'
-                                    ? `Las señales dedicadas de este partido se activarán minutos antes del inicio (${item.kickoffTime}). También puedes sintonizar beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+ o DAZN arriba.`
-                                    : `Dedicated live streams open shortly before kickoff (${item.kickoffTime}).`
-                                  : lang === 'es'
-                                  ? 'Sin enlace dedicado para este encuentro; sintoniza arriba el canal oficial en vivo (beIN SPORTS, ESPN 1–7, DSports, TNT Sports, Movistar+ o DAZN).'
-                                  : 'Check the live sports channels bar above (beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+, DAZN).'}
-                              </div>
-                            )}
-                          </div>
 
-                          {/* Real-Time Match Center (Commentary, Pitch Lineups, Period Stats + Shot Map, Events) */}
-                          <LiveMatchCenter
-                            lang={lang}
-                            details={details}
-                            loading={loadingDetailId === item.id}
-                            homeTeam={item.homeTeam}
-                            awayTeam={item.awayTeam}
-                            homeShort={item.homeShort}
-                            awayShort={item.awayShort}
-                            homeLogo={item.homeLogo}
-                            awayLogo={item.awayLogo}
-                            homeScore={item.homeScore}
-                            awayScore={item.awayScore}
-                            statusState={item.statusState}
-                            statusLabel={item.statusLabel}
-                            competition={item.groupTitle}
-                            variant="expanded"
-                            defaultTab="lineups"
-                            onRefresh={() => loadMatchDetails(item, true)}
-                          />
-                        </div>
-                      )}
+                                          {activeVideoRawUrl &&
+                                            !isActiveServer &&
+                                            onPlaySecondaryChannel && (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  triggerHaptic('light');
+                                                  onPlaySecondaryChannel(sportsMatchObj, idx);
+                                                }}
+                                                title="Abrir en segunda pantalla Multiview"
+                                                aria-label="Abrir en Multiview"
+                                                className="min-h-[42px] px-2.5 bg-[#1D212B] hover:bg-[#2A3040] border-l border-white/[0.08] text-sky-300 flex items-center justify-center cursor-pointer"
+                                              >
+                                                <Columns2 className="w-3.5 h-3.5" />
+                                              </button>
+                                            )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                ) : (
+                                  <div className="px-3.5 py-2.5 rounded-xl bg-[#1E222D] border border-white/[0.07] text-xs text-zinc-300">
+                                    {item.statusState === 'finished'
+                                      ? lang === 'es'
+                                        ? 'Encuentro finalizado.'
+                                        : 'Match finished.'
+                                      : item.statusState === 'upcoming'
+                                      ? lang === 'es'
+                                        ? `Las señales dedicadas de este partido se activarán minutos antes del inicio (${item.kickoffTime}). También puedes sintonizar beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+ o DAZN arriba.`
+                                        : `Dedicated live streams open shortly before kickoff (${item.kickoffTime}).`
+                                      : lang === 'es'
+                                      ? 'Sin enlace dedicado para este encuentro; sintoniza arriba el canal oficial en vivo (beIN SPORTS, ESPN 1–7, DSports, TNT Sports, Movistar+ o DAZN).'
+                                      : 'Check the live sports channels bar above (beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+, DAZN).'}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Real-Time Match Center */}
+                              <LiveMatchCenter
+                                lang={lang}
+                                details={details}
+                                loading={loadingDetailId === item.id}
+                                homeTeam={item.homeTeam}
+                                awayTeam={item.awayTeam}
+                                homeShort={item.homeShort}
+                                awayShort={item.awayShort}
+                                homeLogo={item.homeLogo}
+                                awayLogo={item.awayLogo}
+                                homeScore={item.homeScore}
+                                awayScore={item.awayScore}
+                                statusState={item.statusState}
+                                statusLabel={item.statusLabel}
+                                competition={item.groupTitle}
+                                variant="expanded"
+                                defaultTab="lineups"
+                                onRefresh={() => loadMatchDetails(item, true)}
+                              />
+                            </div>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   );
                 })}

@@ -33,7 +33,7 @@ export const LegalPrivacyModal: React.FC<LegalPrivacyModalProps> = ({ isOpen, on
       maxWidth="sm:max-w-2xl"
     >
       <div className="space-y-4 text-xs text-zinc-300 leading-relaxed">
-        <section className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2">
+        <section className="p-4 rounded-2xl bg-white/[0.035] nc-specular-surface border border-white/[0.08] space-y-2">
           <h4 className="font-bold text-white flex items-center gap-2">
             <FileText className="w-4 h-4 text-[#BF94FF]" />
             <span>1. Datos almacenados y sincronización en la nube</span>
@@ -45,7 +45,7 @@ export const LegalPrivacyModal: React.FC<LegalPrivacyModalProps> = ({ isOpen, on
           </p>
         </section>
 
-        <section className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2">
+        <section className="p-4 rounded-2xl bg-white/[0.035] nc-specular-surface border border-white/[0.08] space-y-2">
           <h4 className="font-bold text-white">2. Metadatos e imágenes de catálogo (TMDB)</h4>
           <p>
             Los títulos, sinopsis, carátulas, logotipos oficiales y repartos mostrados proceden de la API pública
@@ -54,7 +54,7 @@ export const LegalPrivacyModal: React.FC<LegalPrivacyModalProps> = ({ isOpen, on
           </p>
         </section>
 
-        <section className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2">
+        <section className="p-4 rounded-2xl bg-white/[0.035] nc-specular-surface border border-white/[0.08] space-y-2">
           <h4 className="font-bold text-white">3. Tus derechos (Exportación GDPR y Eliminación)</h4>
           <p>
             Puedes descargar en cualquier momento una copia íntegra de tu perfil, salas recientes, favoritos

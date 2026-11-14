@@ -90,9 +90,9 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
         aria-label={
           lang === 'es' ? 'Descargar aplicación NAIM CINE' : 'Download NAIM CINE App'
         }
-        className={`rounded-3xl bg-[#18181B]/95 backdrop-blur-xl border border-white/[0.09] p-4 ${
+        className={`rounded-3xl nc-specular-surface backdrop-blur-xl border border-white/[0.1] p-4 ${
           isDesktop ? 'lg:p-5 lg:flex-row lg:items-center' : ''
-        } flex flex-col justify-between gap-4 shadow-[0_20px_60px_rgba(0,0,0,0.65)]`}
+        } flex flex-col justify-between gap-4 shadow-[0_24px_64px_rgba(0,0,0,0.68)]`}
       >
         <div className="flex items-start gap-3.5 min-w-0">
           <NaimBrandLogo
@@ -144,7 +144,7 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
             href="/NAIM-CINE.apk?v=14"
             download="NAIM-CINE.apk"
             onClick={() => triggerHaptic('success')}
-            className="min-h-11 px-5 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all shadow-[0_12px_32px_rgba(145,70,255,0.34)]"
+            className="min-h-11 px-5 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 active:scale-[0.98] text-white font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all shadow-[0_12px_32px_rgba(145,70,255,0.34),inset_0_1px_0_rgba(255,255,255,0.22)]"
           >
             <Download className="w-4 h-4 text-white shrink-0" />
             <span>

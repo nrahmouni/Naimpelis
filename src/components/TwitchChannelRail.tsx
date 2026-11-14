@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Compass,
   Film,
@@ -8,7 +9,6 @@ import {
   Play,
   Radio,
   Sparkles,
-  Tv,
   Trophy,
   Users,
 } from 'lucide-react';
@@ -44,7 +44,7 @@ interface TwitchChannelRailProps {
   onSelectFastChannel: (channel: FastChannelItem) => void;
   onSelectFavoriteChannel: (channel: FavoriteChannelItem) => void;
   onChangeCatalogSection: (section: CatalogSection) => void;
-  onOpenTvModal: () => void;
+  onOpenTvModal?: () => void;
 }
 
 const FAST_CATEGORY_LABELS: Record<FastChannelItem['category'], { es: string; ca: string; en: string }> = {
@@ -67,7 +67,6 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
   onSelectFastChannel,
   onSelectFavoriteChannel,
   onChangeCatalogSection,
-  onOpenTvModal,
 }) => {
   const [collapsed, setCollapsed] = useState(false);
   const [fastChannels, setFastChannels] = useState<FastChannelItem[]>([]);
@@ -126,6 +125,13 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
     },
   ];
 
+  const isDirectorySectionActive = (id: CatalogSection) => {
+    if (id === 'movies') return catalogSection === 'movies' || catalogSection === 'vose';
+    if (id === 'series') return catalogSection === 'series' || catalogSection === 'castellano';
+    if (id === 'anime') return catalogSection === 'anime' || catalogSection === 'catala';
+    return catalogSection === id;
+  };
+
   const getCategoryLabel = (cat: FastChannelItem['category']) => {
     const entry = FAST_CATEGORY_LABELS[cat];
     return lang === 'ca' ? entry.ca : lang === 'en' ? entry.en : entry.es;
@@ -133,9 +139,9 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
 
   return (
     <aside
-      aria-label="Navegación de canales en vivo"
-      className={`hidden lg:flex flex-col shrink-0 h-full bg-[#18181B] border-r border-white/[0.08] select-none transition-[width] duration-200 ease-out overflow-hidden ${
-        collapsed ? 'w-14' : 'w-60'
+      aria-label="Directorio principal y canales en vivo"
+      className={`hidden lg:flex flex-col shrink-0 h-full bg-[#111115]/95 backdrop-blur-xl border-r border-white/[0.07] select-none transition-[width] duration-200 ease-out overflow-hidden ${
+        collapsed ? 'w-[4.25rem]' : 'w-60'
       }`}
     >
       {/* Rail Header */}
@@ -145,8 +151,8 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
         }`}
       >
         {!collapsed && (
-          <span className="font-display font-bold text-xs uppercase tracking-[0.12em] text-[#EFEFF1]">
-            {lang === 'ca' ? 'Per a tu' : lang === 'en' ? 'For You' : 'Para ti'}
+          <span className="font-display font-bold text-[11px] uppercase tracking-[0.14em] text-zinc-400">
+            {lang === 'ca' ? 'Navegació' : lang === 'en' ? 'Browse' : 'Directorio'}
           </span>
         )}
         <button
@@ -157,7 +163,7 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
           }}
           title={collapsed ? 'Expandir barra lateral' : 'Colapsar barra lateral'}
           aria-label={collapsed ? 'Expandir barra lateral' : 'Colapsar barra lateral'}
-          className="w-8 h-8 rounded-lg hover:bg-[#26262C] text-[#ADADB8] hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+          className="w-8 h-8 rounded-xl hover:bg-white/[0.08] text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
         >
           {collapsed ? (
             <PanelLeftOpen className="w-4 h-4" />
@@ -168,20 +174,67 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
       </div>
 
       {/* Scrollable Sections */}
-      <div className="flex-1 overflow-y-auto custom-scrollbar py-2.5 space-y-4">
-        {/* 1. Canales en Directo (FAST 24/7) */}
+      <div className="flex-1 overflow-y-auto custom-scrollbar py-2.5 space-y-5">
+        {/* 1. Primary Directory (Single Source of Truth on Desktop) */}
+        <section className="space-y-1 px-2">
+          <div className="space-y-0.5">
+            {directoryItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = isDirectorySectionActive(item.id);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onChangeCatalogSection(item.id);
+                  }}
+                  title={item.label}
+                  className={`relative w-full flex items-center gap-3 min-h-10 rounded-xl text-left cursor-pointer transition-colors ${
+                    collapsed ? 'justify-center px-0' : 'px-3'
+                  } ${
+                    isActive
+                      ? 'text-white'
+                      : 'text-zinc-400 hover:text-white hover:bg-white/[0.05]'
+                  }`}
+                >
+                  {isActive && (
+                    <motion.span
+                      layoutId="desktop-rail-directory-pill"
+                      transition={{ type: 'spring', stiffness: 460, damping: 34 }}
+                      className="absolute inset-0 rounded-xl bg-gradient-to-r from-[#9146FF]/28 via-[#9146FF]/16 to-transparent border border-[#9146FF]/45 shadow-[0_6px_18px_rgba(145,70,255,0.2)]"
+                      aria-hidden="true"
+                    />
+                  )}
+                  <Icon
+                    className={`relative z-10 w-4 h-4 shrink-0 ${
+                      isActive ? 'text-[#C6A2FF]' : ''
+                    }`}
+                  />
+                  {!collapsed && (
+                    <span className="relative z-10 text-xs font-semibold truncate">
+                      {item.label}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+
+        {/* 2. Canales en Directo (FAST 24/7) */}
         {fastChannels.length > 0 && (
-          <section className="space-y-1">
+          <section className="space-y-1.5 pt-3 border-t border-white/[0.06] px-2">
             {!collapsed && (
-              <div className="px-3 pb-1 flex items-center justify-between">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-[#ADADB8]">
+              <div className="px-2 pb-0.5 flex items-center justify-between">
+                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
                   {lang === 'ca'
                     ? 'Canals en Directe'
                     : lang === 'en'
                     ? 'Live Channels'
                     : 'Canales en Directo'}
                 </h2>
-                <span className="text-[10px] font-mono text-[#ADADB8] tabular-nums">
+                <span className="text-[10px] font-mono text-zinc-500 tabular-nums">
                   {fastChannels.length}
                 </span>
               </div>
@@ -201,23 +254,23 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
                       onSelectFastChannel(ch);
                     }}
                     title={`${ch.name} · ${getCategoryLabel(ch.category)} (${ch.quality})`}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 text-left cursor-pointer transition-colors ${
+                    className={`w-full flex items-center gap-2.5 rounded-xl px-2 py-2 text-left cursor-pointer transition-all ${
                       collapsed ? 'justify-center' : ''
                     } ${
                       isChannelActive
-                        ? 'bg-[#1F1F23] border-l-2 border-[#9146FF]'
-                        : 'hover:bg-[#1F1F23] border-l-2 border-transparent'
+                        ? 'bg-[#9146FF]/18 border border-[#9146FF]/45 shadow-[0_6px_16px_rgba(145,70,255,0.18)]'
+                        : 'hover:bg-white/[0.05] border border-transparent'
                     }`}
                   >
                     <div
-                      className="w-8 h-8 rounded-lg flex items-center justify-center font-display font-bold text-[10px] text-white shrink-0 shadow-sm relative"
+                      className="w-8 h-8 rounded-xl flex items-center justify-center font-display font-bold text-[10px] text-white shrink-0 shadow-sm relative ring-1 ring-white/15"
                       style={{ backgroundColor: ch.tone || '#9146FF' }}
                     >
                       <span>{ch.mark}</span>
                       {collapsed && (
                         <span
                           aria-hidden="true"
-                          className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#EB0400] border-2 border-[#18181B]"
+                          className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-[#EB0400] border-2 border-[#111115]"
                         />
                       )}
                     </div>
@@ -225,19 +278,27 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
                     {!collapsed && (
                       <>
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-semibold text-[#EFEFF1] truncate leading-tight">
+                          <div className="text-xs font-semibold text-zinc-100 truncate leading-tight">
                             {ch.name}
                           </div>
-                          <div className="text-[11px] text-[#ADADB8] truncate leading-tight mt-0.5">
+                          <div className="text-[11px] text-zinc-400 truncate leading-tight mt-0.5">
                             {getCategoryLabel(ch.category)}
                           </div>
                         </div>
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="w-2 h-2 rounded-full bg-[#EB0400]" />
-                          <span className="text-[10px] font-mono text-[#ADADB8] tabular-nums">
-                            {ch.quality}
+                        {isChannelActive ? (
+                          <span className="flex items-end gap-0.5 h-3 shrink-0" aria-hidden="true">
+                            <span className="w-0.5 h-full rounded-full bg-[#BF94FF] nc-eq-bar-1" />
+                            <span className="w-0.5 h-full rounded-full bg-[#BF94FF] nc-eq-bar-2" />
+                            <span className="w-0.5 h-full rounded-full bg-[#BF94FF] nc-eq-bar-3" />
                           </span>
-                        </div>
+                        ) : (
+                          <div className="flex items-center gap-1 shrink-0">
+                            <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400]" />
+                            <span className="text-[10px] font-mono text-zinc-400 tabular-nums">
+                              {ch.quality}
+                            </span>
+                          </div>
+                        )}
                       </>
                     )}
                   </button>
@@ -247,19 +308,19 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
           </section>
         )}
 
-        {/* 2. Salas Seguidas / Canales Favoritos */}
+        {/* 3. Salas Recientes y Canales Favoritos */}
         {(recentRooms.length > 0 || favoriteChannels.length > 0) && (
-          <section className="space-y-1 pt-2 border-t border-white/[0.06]">
+          <section className="space-y-1.5 pt-3 border-t border-white/[0.06] px-2">
             {!collapsed && (
-              <div className="px-3 pb-1 flex items-center justify-between">
-                <h2 className="text-[11px] font-bold uppercase tracking-wider text-[#ADADB8]">
+              <div className="px-2 pb-0.5 flex items-center justify-between">
+                <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
                   {lang === 'ca'
-                    ? 'Sales Seguites'
+                    ? 'Sales i Favorits'
                     : lang === 'en'
-                    ? 'Followed Rooms'
-                    : 'Salas Seguidas'}
+                    ? 'Rooms & Favorites'
+                    : 'Salas y Favoritos'}
                 </h2>
-                <Users className="w-3.5 h-3.5 text-[#ADADB8]" />
+                <Users className="w-3.5 h-3.5 text-zinc-500" />
               </div>
             )}
 
@@ -274,20 +335,20 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
                       triggerHaptic('light');
                       if (!isActive) onSelectRoom(room.id, room.name);
                     }}
-                    title={`${room.name} (${room.id.toUpperCase()})`}
-                    className={`w-full flex items-center gap-2.5 px-2.5 py-2 text-left cursor-pointer transition-colors ${
+                    title={`${room.name} (#${room.id.toUpperCase()})`}
+                    className={`w-full flex items-center gap-2.5 rounded-xl px-2 py-2 text-left cursor-pointer transition-colors ${
                       collapsed ? 'justify-center' : ''
                     } ${
                       isActive
-                        ? 'bg-[#1F1F23] border-l-2 border-[#9146FF]'
-                        : 'hover:bg-[#1F1F23] border-l-2 border-transparent'
+                        ? 'bg-white/[0.08] border border-white/[0.12]'
+                        : 'hover:bg-white/[0.05] border border-transparent'
                     }`}
                   >
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center font-display font-bold text-[11px] shrink-0 border ${
                         isActive
-                          ? 'bg-[#9146FF] text-white border-[#BF94FF]/50'
-                          : 'bg-[#26262C] text-[#EFEFF1] border-white/10'
+                          ? 'bg-[#9146FF] text-white border-[#C6A2FF]/60 shadow-[0_0_12px_rgba(145,70,255,0.45)]'
+                          : 'bg-white/[0.06] text-zinc-200 border-white/10'
                       }`}
                     >
                       {getMonogramInitials(room.name || room.id)}
@@ -295,17 +356,15 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
                     {!collapsed && (
                       <>
                         <div className="min-w-0 flex-1">
-                          <div className="text-xs font-semibold text-[#EFEFF1] truncate leading-tight">
+                          <div className="text-xs font-semibold text-zinc-100 truncate leading-tight">
                             {room.name || `Sala ${room.id.toUpperCase()}`}
                           </div>
-                          <div className="text-[11px] font-mono text-[#ADADB8] truncate leading-tight mt-0.5">
+                          <div className="text-[11px] font-mono text-zinc-400 truncate leading-tight mt-0.5">
                             #{room.id.toUpperCase()}
                           </div>
                         </div>
                         {isActive && (
-                          <span className="text-[10px] font-bold uppercase tracking-wider text-[#BF94FF] shrink-0">
-                            Activa
-                          </span>
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_#34d399]" />
                         )}
                       </>
                     )}
@@ -315,27 +374,27 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
 
               {favoriteChannels.slice(0, 4).map((fav) => (
                 <button
-                  key={fav.id}
+                  key={fav.favId}
                   type="button"
                   onClick={() => {
                     triggerHaptic('light');
                     onSelectFavoriteChannel(fav);
                   }}
-                  title={fav.name}
-                  className={`w-full flex items-center gap-2.5 px-2.5 py-2 text-left cursor-pointer hover:bg-[#1F1F23] border-l-2 border-transparent transition-colors ${
+                  title={fav.title}
+                  className={`w-full flex items-center gap-2.5 rounded-xl px-2 py-2 text-left cursor-pointer hover:bg-white/[0.05] border border-transparent transition-colors ${
                     collapsed ? 'justify-center' : ''
                   }`}
                 >
-                  <div className="w-8 h-8 rounded-lg bg-[#26262C] border border-white/10 flex items-center justify-center text-[#BF94FF] shrink-0">
+                  <div className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-[#BF94FF] shrink-0">
                     <Play className="w-3.5 h-3.5 fill-current" />
                   </div>
                   {!collapsed && (
                     <div className="min-w-0 flex-1">
-                      <div className="text-xs font-semibold text-[#EFEFF1] truncate leading-tight">
-                        {fav.name}
+                      <div className="text-xs font-semibold text-zinc-100 truncate leading-tight">
+                        {fav.title}
                       </div>
-                      <div className="text-[11px] text-[#ADADB8] truncate leading-tight mt-0.5">
-                        {fav.category || 'Canal Favorito'}
+                      <div className="text-[11px] text-zinc-400 truncate leading-tight mt-0.5">
+                        {fav.channelLabel || fav.competition || 'Canal Favorito'}
                       </div>
                     </div>
                   )}
@@ -344,64 +403,6 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
             </div>
           </section>
         )}
-
-        {/* 3. Directorio */}
-        <section className="space-y-1 pt-2 border-t border-white/[0.06]">
-          {!collapsed && (
-            <div className="px-3 pb-1">
-              <h2 className="text-[11px] font-bold uppercase tracking-wider text-[#ADADB8]">
-                {lang === 'ca' ? 'Directori' : lang === 'en' ? 'Directory' : 'Directorio'}
-              </h2>
-            </div>
-          )}
-          <div className="space-y-0.5">
-            {directoryItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = catalogSection === item.id;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onChangeCatalogSection(item.id);
-                  }}
-                  title={item.label}
-                  className={`w-full flex items-center gap-2.5 px-3 py-2 text-left cursor-pointer transition-colors ${
-                    collapsed ? 'justify-center px-0' : ''
-                  } ${
-                    isActive
-                      ? 'bg-[#1F1F23] text-[#BF94FF] border-l-2 border-[#9146FF]'
-                      : 'text-[#ADADB8] hover:text-white hover:bg-[#1F1F23] border-l-2 border-transparent'
-                  }`}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  {!collapsed && (
-                    <span className="text-xs font-semibold truncate">{item.label}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-
-      {/* Bottom Smart TV Quick Action */}
-      <div className="p-2 border-t border-white/[0.06] shrink-0">
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic('light');
-            onOpenTvModal();
-          }}
-          title="Google TV & Smart TV (/tv)"
-          className={`w-full min-h-9 px-2.5 rounded-lg bg-[#26262C] hover:bg-[#9146FF]/20 border border-white/[0.08] hover:border-[#9146FF]/50 text-xs font-semibold text-[#EFEFF1] flex items-center gap-2 cursor-pointer transition-colors ${
-            collapsed ? 'justify-center px-0' : ''
-          }`}
-        >
-          <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
-          {!collapsed && <span className="truncate">Google TV · /tv</span>}
-        </button>
       </div>
     </aside>
   );

@@ -1,4 +1,5 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import {
   X,
   Play,
@@ -9,7 +10,6 @@ import {
   VolumeX,
   Maximize2,
   Sparkles,
-  RefreshCw,
   Unlink,
   Tv,
   Hand,
@@ -40,7 +40,7 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-2 font-bold text-white bg-[#9146FF] hover:bg-[#772CE8] active:scale-[0.97] transition-all duration-150 shadow-[0_8px_24px_rgba(145,70,255,0.3)] disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer ${
+      className={`group relative overflow-hidden inline-flex items-center justify-center gap-2 font-bold text-white bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] hover:from-[#A96EFF] hover:to-[#8738F5] active:scale-[0.97] transition-all duration-150 shadow-[0_8px_24px_rgba(145,70,255,0.34),inset_0_1px_0_rgba(255,255,255,0.28)] disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer ${
         fullWidth ? 'w-full' : ''
       } ${sizeClass} ${className}`}
     >
@@ -71,10 +71,10 @@ export const SecondaryButton: React.FC<SecondaryButtonProps> = ({
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-2 font-semibold backdrop-blur-xl active:scale-[0.97] transition-all duration-150 disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer border ${
+      className={`inline-flex items-center justify-center gap-2 font-semibold backdrop-blur-xl active:scale-[0.97] transition-all duration-150 disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer border shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ${
         active
-          ? 'bg-[#9146FF]/18 border-[#9146FF]/55 text-white shadow-[0_0_20px_rgba(145,70,255,0.24)]'
-          : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.09] text-zinc-100 hover:text-white'
+          ? 'bg-[#9146FF]/22 border-[#9146FF]/60 text-white shadow-[0_0_22px_rgba(145,70,255,0.26),inset_0_1px_0_rgba(255,255,255,0.16)]'
+          : 'bg-white/[0.055] hover:bg-white/[0.11] border-white/[0.09] hover:border-white/[0.18] text-zinc-100 hover:text-white'
       } ${fullWidth ? 'w-full' : ''} ${sizeClass} ${className}`}
     >
       {children}
@@ -97,14 +97,14 @@ export const IconButton: React.FC<IconButtonProps> = ({
 }) => {
   const variantClasses =
     variant === 'crimson'
-      ? 'bg-[#9146FF] hover:bg-[#772CE8] text-white border border-[#9146FF]/55 shadow-[0_8px_20px_rgba(145,70,255,0.32)]'
+      ? 'bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] hover:from-[#A96EFF] hover:to-[#8738F5] text-white border border-white/20 shadow-[0_8px_20px_rgba(145,70,255,0.34)]'
       : variant === 'ghost'
       ? active
         ? 'bg-white/15 text-white'
-        : 'bg-transparent hover:bg-white/[0.08] text-zinc-300 hover:text-white'
+        : 'bg-transparent hover:bg-white/[0.09] text-zinc-300 hover:text-white'
       : active
-      ? 'bg-[#9146FF]/22 border border-[#9146FF]/55 text-white shadow-[0_0_16px_rgba(145,70,255,0.28)]'
-      : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-200 hover:text-white backdrop-blur-xl';
+      ? 'bg-[#9146FF]/24 border border-[#9146FF]/60 text-white shadow-[0_0_18px_rgba(145,70,255,0.3)]'
+      : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] hover:border-white/[0.18] text-zinc-200 hover:text-white backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]';
 
   return (
     <button
@@ -124,9 +124,9 @@ export interface StandardInputProps extends React.InputHTMLAttributes<HTMLInputE
 export const StandardInput = React.forwardRef<HTMLInputElement, StandardInputProps>(
   ({ icon, rightElement, className = '', ...props }, ref) => {
     return (
-      <div className="relative flex items-center w-full">
+      <div className="relative flex items-center w-full group">
         {icon && (
-          <div className="absolute left-3.5 text-zinc-400 pointer-events-none flex items-center justify-center">
+          <div className="absolute left-3.5 text-zinc-400 group-focus-within:text-[#BF94FF] transition-colors pointer-events-none flex items-center justify-center">
             {icon}
           </div>
         )}
@@ -135,7 +135,7 @@ export const StandardInput = React.forwardRef<HTMLInputElement, StandardInputPro
           {...props}
           className={`w-full min-h-11 ${icon ? 'pl-10' : 'pl-4'} ${
             rightElement ? 'pr-12' : 'pr-4'
-          } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.08] border border-white/[0.09] focus:border-[#9146FF] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all ${className}`}
+          } py-2.5 rounded-2xl bg-white/[0.045] hover:bg-white/[0.07] focus:bg-white/[0.085] border border-white/[0.09] focus:border-[#9146FF] focus:shadow-[0_0_0_3px_rgba(145,70,255,0.18)] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all ${className}`}
         />
         {rightElement && (
           <div className="absolute right-1.5 flex items-center justify-center">
@@ -149,7 +149,7 @@ export const StandardInput = React.forwardRef<HTMLInputElement, StandardInputPro
 StandardInput.displayName = 'StandardInput';
 
 // ============================================================================
-// 2. PROGRESSIVE DISCLOSURE: UNIVERSAL BOTTOM SHEET
+// 2. PROGRESSIVE DISCLOSURE: SPRING-ANIMATED UNIVERSAL BOTTOM SHEET
 // ============================================================================
 
 export interface BottomSheetProps {
@@ -171,55 +171,74 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   children,
   maxWidth = 'sm:max-w-lg',
 }) => {
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (!isOpen) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-[190] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
-      onClick={onClose}
-    >
-      <div
-        className={`w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#18181B]/96 backdrop-blur-2xl border-t sm:border border-white/[0.11] shadow-[0_-20px_70px_rgba(0,0,0,0.9)] overflow-hidden flex flex-col max-h-[88dvh] animate-sheet-up`}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Drag handle for mobile feel */}
-        <div className="pt-2.5 pb-1 flex justify-center sm:hidden">
-          <div className="w-10 h-1.5 rounded-full bg-white/20" />
-        </div>
-
-        {/* Header */}
-        <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            {icon && (
-              <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0">
-                {icon}
-              </div>
-            )}
-            <div className="min-w-0">
-              <h3 className="text-base font-bold text-white tracking-tight truncate">
-                {title}
-              </h3>
-              {subtitle && (
-                <p className="text-xs text-zinc-400 truncate mt-0.5">{subtitle}</p>
-              )}
+    <AnimatePresence>
+      {isOpen && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
+          className="fixed inset-0 z-[190] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4"
+          onClick={onClose}
+        >
+          <motion.div
+            initial={{ opacity: 0, y: 28, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.97 }}
+            transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.9 }}
+            className={`w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl border-t sm:border border-white/[0.12] shadow-[0_-24px_80px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.12)] overflow-hidden flex flex-col max-h-[88dvh]`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Drag handle for mobile feel */}
+            <div className="pt-2.5 pb-1 flex justify-center sm:hidden">
+              <div className="w-10 h-1.5 rounded-full bg-white/25" />
             </div>
-          </div>
-          <IconButton onClick={onClose} variant="ghost" aria-label="Cerrar menú">
-            <X className="w-5 h-5" />
-          </IconButton>
-        </div>
 
-        {/* Body */}
-        <div className="p-5 overflow-y-auto custom-scrollbar space-y-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
-          {children}
-        </div>
-      </div>
-    </div>
+            {/* Header */}
+            <div className="px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between gap-3 bg-gradient-to-b from-white/[0.03] to-transparent">
+              <div className="flex items-center gap-3 min-w-0">
+                {icon && (
+                  <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
+                    {icon}
+                  </div>
+                )}
+                <div className="min-w-0">
+                  <h3 className="font-display text-base font-bold text-white tracking-tight truncate">
+                    {title}
+                  </h3>
+                  {subtitle && (
+                    <p className="text-xs text-zinc-400 truncate mt-0.5">{subtitle}</p>
+                  )}
+                </div>
+              </div>
+              <IconButton onClick={onClose} variant="ghost" aria-label="Cerrar menú">
+                <X className="w-5 h-5" />
+              </IconButton>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 overflow-y-auto custom-scrollbar space-y-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+              {children}
+            </div>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>
   );
 };
 
 // ============================================================================
-// 3. FLOATING MINIMAL SEGMENTED CONTROL
+// 3. FLOATING SPRING-SLIDING SEGMENTED CONTROL
 // ============================================================================
 
 export interface SegmentedOption<T extends string> {
@@ -234,6 +253,7 @@ export interface SegmentedControlProps<T extends string> {
   value: T;
   onChange: (value: T) => void;
   className?: string;
+  layoutId?: string;
 }
 
 export function SegmentedControl<T extends string>({
@@ -241,10 +261,14 @@ export function SegmentedControl<T extends string>({
   value,
   onChange,
   className = '',
+  layoutId,
 }: SegmentedControlProps<T>) {
+  const autoId = useId();
+  const pillId = layoutId || `seg-pill-${autoId}`;
+
   return (
     <div
-      className={`p-1 rounded-2xl bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] flex items-center gap-1 ${className}`}
+      className={`p-1 rounded-2xl bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] flex items-center gap-1 ${className}`}
     >
       {options.map((option) => {
         const isActive = option.id === value;
@@ -253,23 +277,31 @@ export function SegmentedControl<T extends string>({
             key={option.id}
             type="button"
             onClick={() => onChange(option.id)}
-            className={`flex-1 min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-all duration-150 flex items-center justify-center gap-1.5 select-none cursor-pointer active:scale-[0.98] ${
-              isActive
-                ? 'bg-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.38)]'
-                : 'text-zinc-400 hover:text-zinc-100 hover:bg-white/[0.04]'
+            className={`relative flex-1 min-h-11 px-3 py-2 rounded-xl text-xs font-bold transition-colors duration-150 flex items-center justify-center gap-1.5 select-none cursor-pointer active:scale-[0.98] ${
+              isActive ? 'text-white' : 'text-zinc-400 hover:text-zinc-100'
             }`}
           >
-            {option.icon}
-            <span className="truncate">{option.label}</span>
-            {option.badge !== undefined && option.badge !== 0 && option.badge !== '0' && (
-              <span
-                className={`px-2 py-0.5 rounded-full text-[0.7rem] font-mono font-bold leading-none ${
-                  isActive ? 'bg-black/30 text-white' : 'bg-white/10 text-zinc-200'
-                }`}
-              >
-                {option.badge}
-              </span>
+            {isActive && (
+              <motion.span
+                layoutId={pillId}
+                transition={{ type: 'spring', stiffness: 480, damping: 36 }}
+                className="absolute inset-0 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] shadow-[0_4px_16px_rgba(145,70,255,0.42),inset_0_1px_0_rgba(255,255,255,0.26)]"
+                aria-hidden="true"
+              />
             )}
+            <span className="relative z-10 flex items-center justify-center gap-1.5 min-w-0">
+              {option.icon}
+              <span className="truncate">{option.label}</span>
+              {option.badge !== undefined && option.badge !== 0 && option.badge !== '0' && (
+                <span
+                  className={`px-2 py-0.5 rounded-full text-[0.7rem] font-mono font-bold leading-none tabular-nums ${
+                    isActive ? 'bg-black/30 text-white' : 'bg-white/10 text-zinc-200'
+                  }`}
+                >
+                  {option.badge}
+                </span>
+              )}
+            </span>
           </button>
         );
       })}
@@ -326,18 +358,23 @@ export const EmptyStateCard: React.FC<EmptyStateCardProps> = ({
   onAction,
 }) => {
   return (
-    <div className="py-12 px-6 rounded-3xl bg-white/[0.02] border border-white/[0.06] text-center max-w-md mx-auto my-4 flex flex-col items-center">
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.25 }}
+      className="py-12 px-6 rounded-3xl bg-white/[0.025] border border-white/[0.07] text-center max-w-md mx-auto my-4 flex flex-col items-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+    >
       <div className="w-14 h-14 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/30 flex items-center justify-center text-[#BF94FF] mb-3.5 shadow-inner">
         {icon}
       </div>
-      <h4 className="text-base font-bold text-white tracking-tight">{title}</h4>
+      <h4 className="font-display text-base font-bold text-white tracking-tight">{title}</h4>
       <p className="text-xs text-zinc-400 mt-1.5 leading-relaxed">{description}</p>
       {actionLabel && onAction && (
         <div className="mt-4">
           <SecondaryButton onClick={onAction}>{actionLabel}</SecondaryButton>
         </div>
       )}
-    </div>
+    </motion.div>
   );
 };
 
@@ -412,7 +449,6 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
 
-    // Horizontal swipe -> Seek -15s / +15s
     if (absX > 36 && absX > absY) {
       if (dx < 0) {
         onCommand('seek_delta', -15);
@@ -424,7 +460,6 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
       return;
     }
 
-    // Vertical swipe -> Volume Up / Down
     if (absY > 36 && absY > absX) {
       if (dy < 0) {
         const nextVol = Math.min(100, volume + 10);
@@ -440,7 +475,6 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
       return;
     }
 
-    // Tap / Double tap on Trackpad zones
     const rect = e.currentTarget.getBoundingClientRect();
     const relX = (e.clientX - rect.left) / rect.width;
     const now = Date.now();
@@ -477,10 +511,10 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
 
   return (
     <div className="space-y-4 select-none">
-      {/* Status Pill */}
+      {/* Status Row */}
       <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25">
         <div className="flex items-center gap-2.5">
-          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+          <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_#34d399]" />
           <span className="text-xs font-bold text-emerald-300 tabular-nums">
             TV Conectada · #{pairedTvCode}
           </span>
@@ -495,15 +529,14 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
         </button>
       </div>
 
-      {/* Central Haptic Touchpad (Eyes-Free Surface) */}
+      {/* Central Haptic Touchpad */}
       <div
         onPointerDown={handleTrackpadPointerDown}
         onPointerUp={handleTrackpadPointerUp}
-        className="relative h-44 sm:h-48 rounded-3xl bg-gradient-to-b from-white/[0.07] to-white/[0.02] border border-white/[0.12] shadow-[inset_0_1px_1px_rgba(255,255,255,0.15),0_16px_40px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center overflow-hidden touch-none cursor-pointer active:scale-[0.99] transition-transform"
+        className="relative h-44 sm:h-48 rounded-3xl bg-[radial-gradient(ellipse_at_50%_0%,rgba(145,70,255,0.18),rgba(255,255,255,0.02)_70%)] border border-white/[0.12] shadow-[inset_0_1px_1px_rgba(255,255,255,0.18),0_16px_40px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center overflow-hidden touch-none cursor-pointer active:scale-[0.99] transition-transform"
       >
-        {/* Subtle tactile zone guides */}
-        <div className="absolute inset-y-6 left-1/4 w-px bg-white/[0.05] pointer-events-none" />
-        <div className="absolute inset-y-6 right-1/4 w-px bg-white/[0.05] pointer-events-none" />
+        <div className="absolute inset-y-6 left-1/4 w-px bg-white/[0.06] pointer-events-none" />
+        <div className="absolute inset-y-6 right-1/4 w-px bg-white/[0.06] pointer-events-none" />
 
         <div className="w-full px-6 flex items-center justify-between text-zinc-500 pointer-events-none">
           <div className="flex flex-col items-center gap-1">
@@ -512,13 +545,13 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
           </div>
 
           <div className="flex flex-col items-center gap-1.5">
-            <div className="w-12 h-12 rounded-2xl bg-white/[0.06] border border-white/10 flex items-center justify-center text-zinc-200">
+            <div className="w-12 h-12 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/35 flex items-center justify-center text-zinc-200 shadow-[0_0_24px_rgba(145,70,255,0.2)]">
               <Hand className="w-5 h-5 text-[#BF94FF]" />
             </div>
-            <span className="text-xs font-bold text-zinc-200 tracking-tight">
+            <span className="font-display text-xs font-bold text-zinc-100 tracking-tight">
               Trackpad Táctil
             </span>
-            <span className="text-[10px] text-zinc-500 text-center">
+            <span className="text-[10px] text-zinc-400 text-center max-w-[11rem]">
               Toca para Pausa · Desliza para avanzar o volumen
             </span>
           </div>
@@ -529,15 +562,22 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
           </div>
         </div>
 
-        {/* Live Haptic Feedback Toast inside Trackpad */}
-        {touchFeedback && (
-          <div className="absolute inset-x-8 bottom-3 py-1.5 px-3 rounded-full bg-[#9146FF] text-white text-xs font-bold text-center shadow-lg animate-fade-in">
-            {touchFeedback}
-          </div>
-        )}
+        <AnimatePresence>
+          {touchFeedback && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.94 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 6, scale: 0.95 }}
+              transition={{ duration: 0.16 }}
+              className="absolute inset-x-8 bottom-3 py-1.5 px-3 rounded-full bg-[#9146FF] text-white text-xs font-bold text-center shadow-lg"
+            >
+              {touchFeedback}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
-      {/* Hero Play / Pause + Quick Fullscreen Row */}
+      {/* Hero Play / Pause + Quick Seek Row */}
       <div className="grid grid-cols-3 gap-2.5">
         <SecondaryButton
           onClick={() => {
@@ -594,7 +634,7 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
         <div className="flex-1 flex flex-col gap-1.5">
           <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-300">
             <span>Volumen TV</span>
-            <span className="font-mono text-zinc-400">{isMuted ? 'MUTE' : `${volume}%`}</span>
+            <span className="font-mono text-zinc-400 tabular-nums">{isMuted ? 'MUTE' : `${volume}%`}</span>
           </div>
           <input
             type="range"
@@ -602,7 +642,7 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
             max={100}
             value={isMuted ? 0 : volume}
             onChange={handleVolumeSlider}
-            className="w-full h-2 rounded-full accent-[#9146FF] bg-white/15 cursor-pointer"
+            className="cinema-range w-full h-2 rounded-full accent-[#9146FF] bg-white/15 cursor-pointer"
           />
         </div>
       </div>
@@ -630,49 +670,59 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
         </SecondaryButton>
       </div>
 
-      {showAdvancedTvTools && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 animate-fade-in">
-          <SecondaryButton
-            onClick={() => {
-              onCommand('cycle_subtitles');
-              triggerHaptic('💬 Subtítulos TV');
-            }}
-            className="text-[11px] px-2"
+      <AnimatePresence>
+        {showAdvancedTvTools && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.18 }}
+            className="overflow-hidden"
           >
-            <Subtitles className="w-3.5 h-3.5 text-zinc-300" />
-            <span>Subtítulos</span>
-          </SecondaryButton>
-          <SecondaryButton
-            onClick={() => {
-              onCommand('cycle_audio');
-              triggerHaptic('🔊 Audio TV');
-            }}
-            className="text-[11px] px-2"
-          >
-            <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-            <span>Audio TV</span>
-          </SecondaryButton>
-          <SecondaryButton
-            onClick={() => {
-              onCommand('cycle_aspect');
-              triggerHaptic('📐 Formato');
-            }}
-            className="text-[11px] px-2"
-          >
-            <span>Rellenar</span>
-          </SecondaryButton>
-          <SecondaryButton
-            onClick={() => {
-              onCommand('toggle_ambilight');
-              triggerHaptic('✨ Ambilight TV');
-            }}
-            className="text-[11px] px-2"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-            <span>Ambilight</span>
-          </SecondaryButton>
-        </div>
-      )}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              <SecondaryButton
+                onClick={() => {
+                  onCommand('cycle_subtitles');
+                  triggerHaptic('💬 Subtítulos TV');
+                }}
+                className="text-[11px] px-2"
+              >
+                <Subtitles className="w-3.5 h-3.5 text-zinc-300" />
+                <span>Subtítulos</span>
+              </SecondaryButton>
+              <SecondaryButton
+                onClick={() => {
+                  onCommand('cycle_audio');
+                  triggerHaptic('🔊 Audio TV');
+                }}
+                className="text-[11px] px-2"
+              >
+                <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Audio TV</span>
+              </SecondaryButton>
+              <SecondaryButton
+                onClick={() => {
+                  onCommand('cycle_aspect');
+                  triggerHaptic('📐 Formato');
+                }}
+                className="text-[11px] px-2"
+              >
+                <span>Rellenar</span>
+              </SecondaryButton>
+              <SecondaryButton
+                onClick={() => {
+                  onCommand('toggle_ambilight');
+                  triggerHaptic('✨ Ambilight TV');
+                }}
+                className="text-[11px] px-2"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                <span>Ambilight</span>
+              </SecondaryButton>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

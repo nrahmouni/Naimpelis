@@ -68,9 +68,9 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
           triggerHaptic('light');
           onOpenProfileHub();
         }}
-        className={`min-h-[32px] ${
+        className={`min-h-[36px] ${
           compact && !isDesktop ? 'px-2' : 'px-2.5'
-        } rounded-lg bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/[0.09] text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
+        } rounded-xl bg-white/[0.06] hover:bg-white/[0.12] active:scale-95 border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
         title={
           lang === 'es'
             ? 'Abrir Mi Perfil (Historial, Favoritos, Salas y Vista)'
@@ -83,10 +83,10 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
             alt={shortName}
             referrerPolicy="no-referrer"
             onError={() => setImgBroken(true)}
-            className="w-6 h-6 rounded-full object-cover shrink-0 ring-1 ring-white/20"
+            className="w-6 h-6 rounded-full object-cover shrink-0 ring-2 ring-[#9146FF]/45"
           />
         ) : (
-          <span className="w-6 h-6 rounded-full bg-[#9146FF]/20 border border-[#9146FF]/50 text-white flex items-center justify-center text-[0.65rem] font-display font-bold shrink-0">
+          <span className="w-6 h-6 rounded-full bg-gradient-to-br from-[#9E5CFF] to-[#7C2AE8] text-white flex items-center justify-center text-[0.65rem] font-display font-bold shrink-0 shadow-[0_0_12px_rgba(145,70,255,0.4)]">
             {displayName ? getMonogramInitials(displayName) : <UserIcon className="w-3.5 h-3.5" />}
           </span>
         )}
@@ -95,7 +95,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
         </span>
         {user && (
           <span
-            className={`w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 ${
+            className={`w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_6px_#34d399] ${
               compact && !isDesktop ? 'hidden' : 'block'
             }`}
           />

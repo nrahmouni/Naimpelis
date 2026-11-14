@@ -42,6 +42,7 @@ import { EffectiveViewMode, getMonogramInitials } from './MobileViewportGuard';
 import { PWAInstallButton } from './PWAInstallPrompt';
 import { useThemeStore } from '../store/useThemeStore';
 import { useAppStore } from '../store/useAppStore';
+import { SegmentedControl } from './ui/DesignSystem';
 
 function formatResumeClock(sec?: number): string {
   if (!sec || !Number.isFinite(sec) || sec <= 0) return '00:00';
@@ -221,17 +222,17 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[880px] max-h-[92dvh] sm:max-h-[86dvh] rounded-t-3xl sm:rounded-3xl bg-[#18181B]/95 backdrop-blur-2xl border-t sm:border border-white/[0.08] shadow-[0_32px_110px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
+        className="w-full sm:max-w-[880px] max-h-[92dvh] sm:max-h-[86dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden animate-sheet-up"
       >
         {/* Mobile iOS Sheet Grab Handle */}
-        <div className="sm:hidden pt-2.5 flex justify-center bg-[#0E0E10]">
+        <div className="sm:hidden pt-2.5 flex justify-center">
           <div className="sheet-handle" />
         </div>
 
         {/* ================================================================ */}
-        {/* HEADER: USER IDENTITY + QUICK ROOM SWITCHER + CLOSE              */}
+        {/* HEADER: USER IDENTITY + CLOSE                                    */}
         {/* ================================================================ */}
-        <div className="px-4 sm:px-6 pt-3.5 sm:pt-5 pb-3.5 border-b border-white/[0.08] flex items-center justify-between gap-3 shrink-0 bg-[#0E0E10]">
+        <div className="px-4 sm:px-6 pt-3.5 sm:pt-5 pb-3.5 border-b border-white/[0.08] flex items-center justify-between gap-3 shrink-0">
           <div className="flex items-center gap-3 min-w-0">
             {authUser?.photoURL && !photoBroken ? (
               <img
@@ -267,37 +268,28 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('success');
-                onCreateNewRoom();
-                onClose();
-              }}
-              className="hidden sm:flex min-h-[38px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-white items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5 text-[#BF94FF]" />
-              <span>{lang === 'es' ? 'Nueva sala' : 'New room'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label={lang === 'es' ? 'Cerrar mi perfil' : 'Close profile'}
-              className="w-10 h-10 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer transition-colors"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label={lang === 'es' ? 'Cerrar mi perfil' : 'Close profile'}
+            className="min-h-[44px] min-w-[44px] rounded-2xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer transition-colors shrink-0"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
 
         {/* ================================================================ */}
-        {/* NAVIGATION TABS (3 CLEAN TABS: CONTINUAR VIENDO · GUARDADOS · CUENTA) */}
+        {/* NAVIGATION TABS (SEGMENTED CONTROL: CONTINUAR · GUARDADOS · CUENTA) */}
         {/* ================================================================ */}
-        <div className="px-4 sm:px-6 bg-[#0E0E10] border-b border-white/[0.08] flex items-center gap-1 sm:gap-2 overflow-x-auto no-scrollbar shrink-0">
-          {(
-            [
+        <div className="px-4 sm:px-6 py-2.5 border-b border-white/[0.08] shrink-0">
+          <SegmentedControl
+            value={activeTab}
+            onChange={(nextTab) => {
+              triggerHaptic('light');
+              setActiveTab(nextTab);
+            }}
+            className="w-full"
+            options={[
               {
                 id: 'history',
                 label:
@@ -316,27 +308,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 id: 'account',
                 label: lang === 'es' ? 'Cuenta y Salas' : 'Account & Rooms',
               },
-            ] as const
-          ).map((tab) => {
-            const active = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setActiveTab(tab.id);
-                }}
-                className={`min-h-[44px] px-3 sm:px-4 border-b-2 text-xs sm:text-sm font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                  active
-                    ? 'border-[#9146FF] text-[#BF94FF]'
-                    : 'border-transparent text-zinc-400 hover:text-white'
-                }`}
-              >
-                {tab.label}
-              </button>
-            );
-          })}
+            ]}
+          />
         </div>
 
         {/* ================================================================ */}
@@ -351,7 +324,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
               {latestWatched ? (
                 <>
                   {/* Spotlight Resume Card */}
-                  <div className="relative rounded-2xl overflow-hidden border border-white/[0.08] bg-[#1F1F23] p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="relative rounded-2xl overflow-hidden border border-white/[0.09] bg-white/[0.04] nc-specular-surface p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-3.5 min-w-0">
                       {latestWatched.poster ? (
                         <img
@@ -500,7 +473,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       return (
                         <div
                           key={item.id}
-                          className="rounded-2xl bg-[#1F1F23] border border-white/[0.08] hover:border-[#9146FF]/40 p-3 flex items-center gap-3 transition-colors"
+                          className="rounded-2xl bg-white/[0.04] border border-white/[0.08] hover:border-[#9146FF]/40 p-3 flex items-center gap-3 transition-colors"
                         >
                           <button
                             type="button"
@@ -651,7 +624,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       {favoriteChannels.map((ch) => (
                         <div
                           key={ch.favId}
-                          className="rounded-2xl bg-[#1F1F23] border border-white/[0.08] hover:border-[#9146FF]/40 p-3.5 flex items-center justify-between gap-3 transition-colors"
+                          className="rounded-2xl bg-white/[0.04] border border-white/[0.08] hover:border-[#9146FF]/40 p-3.5 flex items-center justify-between gap-3 transition-colors"
                         >
                           <button
                             type="button"
@@ -722,7 +695,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       return (
                         <div
                           key={`${item.mediaType || 'movie'}-${item.tmdbId || item.id}`}
-                          className="group relative rounded-2xl overflow-hidden bg-[#1F1F23] border border-white/[0.08] hover:border-[#9146FF]/50 flex flex-col transition-all"
+                          className="group relative rounded-2xl overflow-hidden bg-white/[0.04] nc-card-sheen border border-white/[0.08] hover:border-[#9146FF]/50 flex flex-col transition-all"
                         >
                           <button
                             type="button"
@@ -813,7 +786,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
           {activeTab === 'account' && (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {/* Room Control Card */}
-              <div className="rounded-2xl bg-[#1F1F23] border border-white/[0.08] p-4 space-y-4">
+              <div className="rounded-2xl bg-white/[0.04] nc-specular-surface border border-white/[0.08] p-4 space-y-4">
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <div className="text-xs font-medium text-zinc-400">
@@ -1110,7 +1083,7 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
               </div>
 
               {/* Profile Name, View Mode & Cloud Auth Card */}
-              <div className="rounded-2xl bg-[#1F1F23] border border-white/[0.08] p-4 space-y-4">
+              <div className="rounded-2xl bg-white/[0.04] nc-specular-surface border border-white/[0.08] p-4 space-y-4">
                 <form onSubmit={handleSaveName} className="space-y-2">
                   <label className="block text-xs font-medium text-zinc-400">
                     {lang === 'es' ? 'Tu nombre visible en sala' : 'Display name'}

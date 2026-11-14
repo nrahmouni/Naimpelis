@@ -72,7 +72,7 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
         </header>
 
         {/* Live Theme & Mode Switcher */}
-        <section className="p-5 rounded-3xl bg-[var(--nc-bg-elevated)] border border-[var(--nc-border)] space-y-4">
+        <section className="p-5 rounded-3xl bg-[var(--nc-bg-elevated)] nc-specular-surface border border-[var(--nc-border)] space-y-4">
           <div className="flex items-center gap-2 text-sm font-bold">
             <Palette className="w-4 h-4 text-[#BF94FF]" />
             <span>Temas Semánticos & Rendimiento</span>
@@ -163,7 +163,7 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
           />
 
           {sampleTab === 'buttons' && (
-            <div className="p-5 rounded-3xl bg-[var(--nc-bg-elevated)] border border-[var(--nc-border)] space-y-5">
+            <div className="p-5 rounded-3xl bg-[var(--nc-bg-elevated)] nc-specular-surface border border-[var(--nc-border)] space-y-5">
               <div className="flex flex-wrap items-center gap-3">
                 <PrimaryButton size="lg">
                   <Play className="w-4 h-4 fill-current" />

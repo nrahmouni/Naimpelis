@@ -23,7 +23,6 @@ import {
   Check,
   Vote,
   Radio,
-  Trophy,
   Calendar,
   ChevronLeft,
   ChevronRight,
@@ -62,7 +61,6 @@ import {
 import { MediaDetailsModal } from './MediaDetailsModal';
 import { FootballMatchboard } from './FootballMatchboard';
 import { ExpandedDiscoverySection } from './ExpandedDiscoverySection';
-import { BottomSheet, PrimaryButton, StandardInput } from './ui/DesignSystem';
 import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.jpg';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
 
@@ -599,7 +597,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onPlayQueueItem,
   onStartPollFromQueue,
   onPlaySecondaryChannel,
-  onCreateNewRoom,
   showWatchlistOnly: controlledWatchlistOnly,
   onWatchlistOnlyChange,
 }) => {
@@ -619,8 +616,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   };
   const [previewItem, setPreviewItem] = useState<CatalogMovie | null>(null);
   const [liveScores, setLiveScores] = useState<LiveScoreMatch[]>([]);
-  const [showNewRoomSheet, setShowNewRoomSheet] = useState(false);
-  const [newRoomNameDraft, setNewRoomNameDraft] = useState('');
 
   // Universal Search & Apple TV+ Showcase on Home
   const [homeQuery, setHomeQuery] = useState('');
@@ -3211,14 +3206,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       ? 'Buscar películas, series, anime, canales en vivo o pegar enlace...'
                       : 'Search movies, series, anime, live channels, or paste a URL...'
                   }
-                  className="w-full h-12 pl-11 pr-11 rounded-full liquid-glass-pill focus:border-white/35 text-base sm:text-sm text-white placeholder:text-zinc-400 outline-none transition-colors"
+                  className="w-full h-12 pl-11 pr-11 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border border-white/[0.1] focus:border-[#9146FF]/70 text-base sm:text-sm text-white placeholder:text-zinc-400 outline-none transition-all"
                 />
                 {homeQuery && (
                   <button
                     type="button"
                     onClick={() => setHomeQuery('')}
                     aria-label="Limpiar búsqueda"
-                    className="w-9 h-9 rounded-full absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                    className="w-9 h-9 rounded-xl absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
                   >
                     <X className="w-4 h-4" />
                   </button>
@@ -3235,9 +3230,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     setShowWatchlistOnly(true);
                     onChangeSection('movies');
                   }}
-                  className="min-h-[44px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  className="min-h-[44px] px-4 rounded-2xl bg-white/[0.045] hover:bg-white/[0.1] border border-white/[0.09] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                 >
-                  <Heart className="w-3.5 h-3.5 text-zinc-300" />
+                  <Heart className="w-3.5 h-3.5 text-[#E11D48]" />
                   <span>
                     {lang === 'es' ? 'Mi Lista' : 'My List'}
                     {cleanWatchlist.length > 0 ? ` · ${cleanWatchlist.length}` : ''}
@@ -3249,25 +3244,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   onClick={() => {
                     triggerHaptic('light');
                     setFocusedHub('all');
-                    setSportFilter('soccer');
-                    onChangeSection('sports');
-                  }}
-                  className="min-h-[44px] px-4 rounded-full bg-[#FFBD0F]/15 hover:bg-[#FFBD0F]/25 border border-[#FFBD0F]/35 text-xs font-bold text-[#FFBD0F] flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                >
-                  <Trophy className="w-3.5 h-3.5 text-[#FFBD0F]" />
-                  <span>{lang === 'es' ? 'Fútbol en Vivo' : 'Live Football'}</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFocusedHub('all');
                     onChangeSection('direct');
                   }}
-                  className="min-h-[44px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.12] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                  className="min-h-[44px] px-4 rounded-2xl bg-white/[0.045] hover:bg-white/[0.1] border border-white/[0.09] text-xs font-semibold text-zinc-200 hover:text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                 >
-                  <Link2 className="w-3.5 h-3.5 text-zinc-300" />
+                  <Link2 className="w-3.5 h-3.5 text-[#BF94FF]" />
                   <span>
                     {roomQueue.length > 0
                       ? `${lang === 'es' ? 'Cola' : 'Queue'} · ${roomQueue.length}`
@@ -3276,27 +3257,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       : 'Direct URL'}
                   </span>
                 </button>
-
-                {onCreateNewRoom && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setNewRoomNameDraft('');
-                      setShowNewRoomSheet(true);
-                    }}
-                    className="min-h-[44px] px-4 rounded-full bg-[#E11D48]/18 hover:bg-[#E11D48]/28 border border-[#E11D48]/40 text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-[#FB7185]" />
-                    <span>
-                      {lang === 'es'
-                        ? 'Nueva Sala'
-                        : lang === 'ca'
-                        ? 'Nova Sala'
-                        : 'New Room'}
-                    </span>
-                  </button>
-                )}
               </div>
             </div>
 
@@ -3557,7 +3517,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     aria-label={lang === 'es' ? 'Estrenos destacados' : 'Featured spotlight'}
                     onMouseEnter={() => setIsHeroHovered(true)}
                     onMouseLeave={() => setIsHeroHovered(false)}
-                    className="relative w-full min-h-[310px] sm:min-h-[415px] rounded-[28px] overflow-hidden border border-white/[0.1] bg-[#08090E] flex flex-col justify-end p-5 sm:p-9 lg:p-11 shadow-[0_28px_70px_rgba(0,0,0,0.7)]"
+                    className="relative w-full min-h-[310px] sm:min-h-[415px] rounded-[28px] overflow-hidden border border-white/[0.12] bg-[#0B0B10] nc-specular-surface flex flex-col justify-end p-5 sm:p-9 lg:p-11 shadow-[0_28px_70px_rgba(0,0,0,0.75)]"
                   >
                     {!heroBroken && heroImg ? (
                       <img
@@ -3571,12 +3531,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         className="absolute inset-0 w-full h-full object-cover object-center opacity-80 transition-opacity duration-500"
                       />
                     ) : (
-                      <div className="absolute inset-0 bg-gradient-to-br from-zinc-800/40 via-[#0B0C14] to-[#050507]" />
+                      <div className="absolute inset-0 nc-aurora-ambient" />
                     )}
 
                     {/* Cinema Scrims for Crisp Readability Without Boxy Clutter */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-[#050507] via-[#050507]/60 to-transparent" />
-                    <div className="absolute inset-0 bg-gradient-to-r from-[#050507]/95 via-[#050507]/45 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#08080C] via-[#08080C]/55 to-transparent" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-[#08080C]/95 via-[#08080C]/45 to-transparent" />
 
                     <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-5">
                       <div className="max-w-2xl space-y-2.5">
@@ -3631,7 +3591,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                 onPlayMovie(heroItem, 'ES');
                               }
                             }}
-                            className="min-h-[46px] px-6 rounded-full bg-white hover:bg-zinc-200 text-[#050507] text-xs sm:text-sm font-bold flex items-center gap-2 shadow-[0_8px_28px_rgba(255,255,255,0.22)] transition-all active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
+                            className="min-h-[46px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 text-white text-xs sm:text-sm font-bold flex items-center gap-2 shadow-[0_10px_28px_rgba(145,70,255,0.42)] transition-all active:scale-[0.98] whitespace-nowrap shrink-0 cursor-pointer"
                           >
                             {loadingItemId === heroItem.id ? (
                               <Loader2 className="w-4 h-4 animate-spin" />
@@ -3656,7 +3616,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                 triggerHaptic('light');
                                 setPreviewItem(heroItem);
                               }}
-                              className="min-h-[46px] px-5 rounded-full liquid-glass-pill hover:bg-white/[0.14] text-xs sm:text-sm font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                              className="min-h-[46px] px-5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] backdrop-blur-xl border border-white/15 text-xs sm:text-sm font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                             >
                               <Info className="w-4 h-4" />
                               <span>{lang === 'es' ? 'Idioma y Ficha' : 'Audio & Info'}</span>
@@ -3667,10 +3627,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             type="button"
                             onClick={(e) => handleToggleBookmark(heroItem, e)}
                             aria-label="Guardar en Mi Lista"
-                            className="min-h-[46px] px-4 rounded-full liquid-glass-pill hover:bg-white/[0.14] text-xs sm:text-sm font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                            className="min-h-[46px] px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] backdrop-blur-xl border border-white/15 text-xs sm:text-sm font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
                           >
                             {heroSaved ? (
-                              <Check className="w-4 h-4 text-white" />
+                              <Check className="w-4 h-4 text-[#BF94FF]" />
                             ) : (
                               <Plus className="w-4 h-4 text-white" />
                             )}
@@ -3694,7 +3654,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                 aria-label={`Ir a destacado ${idx + 1}`}
                                 className={`h-1.5 rounded-full transition-all cursor-pointer ${
                                   idx === safeIdx
-                                    ? 'w-6 bg-white'
+                                    ? 'w-6 bg-[#9146FF]'
                                     : 'w-1.5 bg-white/30 hover:bg-white/55'
                                 }`}
                               />
@@ -3745,25 +3705,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   <h3 className="font-display font-bold text-base sm:text-lg text-white tracking-tight">
                     {lang === 'es' ? 'Canales y Plataformas' : 'Channels & Apps'}
                   </h3>
-                  <div className="flex items-center gap-3 text-xs font-semibold text-zinc-400">
-                    <button
-                      type="button"
-                      onClick={enterGeneralMovies}
-                      className="hover:text-white transition-colors cursor-pointer"
-                    >
-                      {lang === 'es' ? 'Todo el Cine' : 'All Movies'}
-                    </button>
-                    <span className="text-zinc-700" aria-hidden="true">
-                      ·
-                    </span>
-                    <button
-                      type="button"
-                      onClick={enterGeneralSeries}
-                      className="hover:text-white transition-colors cursor-pointer"
-                    >
-                      {lang === 'es' ? 'Todas las Series' : 'All Series'}
-                    </button>
-                  </div>
+                  <span className="text-xs font-medium text-zinc-500 tabular-nums">
+                    16 {lang === 'es' ? 'plataformas' : 'apps'}
+                  </span>
                 </div>
 
                 <div className="grid grid-cols-3 @sm:grid-cols-4 @md:grid-cols-6 gap-2.5 sm:gap-3">
@@ -3904,7 +3848,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       key={tile.id}
                       type="button"
                       onClick={tile.onClick}
-                      className="group h-[74px] sm:h-[82px] px-3 rounded-2xl bg-[#0B0C12]/90 hover:bg-[#141622] border border-white/[0.08] hover:border-white/25 flex flex-col items-center justify-center gap-1 text-center cursor-pointer transition-all duration-200 hover:-translate-y-0.5 active:scale-[0.98]"
+                      className="group h-[74px] sm:h-[82px] px-3 rounded-2xl bg-[#121218]/95 hover:bg-[#191922] nc-specular-surface nc-card-sheen border border-white/[0.08] hover:border-[#9146FF]/50 flex flex-col items-center justify-center gap-1 text-center cursor-pointer transition-all duration-200 hover:-translate-y-1 active:scale-[0.98]"
                     >
                       <span className={`font-display leading-none ${tile.markClass}`}>
                         {tile.mark}
@@ -4676,7 +4620,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         ? t.searchVoPlaceholder
                         : t.searchMoviesPlaceholder
                     }
-                    className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
+                    className="w-full h-11 pl-10 pr-10 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border border-white/[0.09] focus:border-[#9146FF]/70 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-all"
                   />
                   {movieQuery && (
                     <button
@@ -4691,7 +4635,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 </div>
 
                 {/* Audio Language Switcher (Español | VO · Inglés) */}
-                <div className="flex items-center p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] shrink-0">
+                <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/[0.08] shrink-0">
                   <button
                     type="button"
                     onClick={() => {
@@ -4699,9 +4643,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       setMoviePage(1);
                       onChangeSection('movies');
                     }}
-                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
                       activeSection === 'movies'
-                        ? 'bg-white text-[#050507]'
+                        ? 'bg-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
@@ -4714,9 +4658,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       setMoviePage(1);
                       onChangeSection('vose');
                     }}
-                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
                       activeSection === 'vose'
-                        ? 'bg-white text-[#050507]'
+                        ? 'bg-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
                         : 'text-zinc-400 hover:text-white'
                     }`}
                   >
@@ -4727,20 +4671,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
               {!debouncedMovieQuery && (
                 <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (gridMovies.length === 0) return;
-                      triggerHaptic('success');
-                      const rand = gridMovies[Math.floor(Math.random() * gridMovies.length)];
-                      if (rand) setPreviewItem(rand);
-                    }}
-                    title="Elegir una película al azar"
-                    className="min-h-[38px] px-3.5 rounded-xl text-xs font-bold bg-[#E11D48]/15 hover:bg-[#E11D48]/25 border border-[#E11D48]/35 text-[#FB7185] flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Sorpréndeme</span>
-                  </button>
                   {MOVIE_CATEGORIES.map((cat) => (
                     <button
                       key={cat.id}
@@ -4750,9 +4680,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         setMovieCategory(cat.id);
                         setMoviePage(1);
                       }}
-                      className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                      className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                         movieCategory === cat.id
-                          ? 'bg-white text-[#050508]'
+                          ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white shadow-[0_6px_18px_rgba(145,70,255,0.32)]'
                           : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
                       }`}
                     >
@@ -5131,7 +5061,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       : `Search ${activePlatformMeta.en} series...`
                     : t.searchSeriesPlaceholder
                 }
-                className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none"
+                className="w-full h-11 pl-10 pr-10 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border border-white/[0.09] focus:border-[#9146FF]/70 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-all"
               />
               {seriesQuery && (
                 <button
@@ -5145,7 +5075,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               )}
             </div>
 
-            <div className="flex items-center p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] shrink-0">
+            <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/[0.08] shrink-0">
               <button
                 type="button"
                 onClick={() => {
@@ -5153,9 +5083,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   setSeriesLangMode('ES');
                   setSeriesPage(1);
                 }}
-                className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
                   seriesLangMode !== 'EN' && seriesLangMode !== 'VOSE'
-                    ? 'bg-white text-[#050508]'
+                    ? 'bg-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
@@ -5168,9 +5098,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   setSeriesLangMode('EN');
                   setSeriesPage(1);
                 }}
-                className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                className={`flex-1 sm:flex-initial min-h-[36px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
                   seriesLangMode === 'EN' || seriesLangMode === 'VOSE'
-                    ? 'bg-white text-[#050508]'
+                    ? 'bg-[#9146FF] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
@@ -5189,9 +5119,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     setSeriesCategory('originals');
                     setSeriesPage(1);
                   }}
-                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                     seriesCategory === 'originals'
-                      ? 'bg-white text-[#050508]'
+                      ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white shadow-[0_6px_18px_rgba(145,70,255,0.32)]'
                       : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-200 border border-white/[0.12]'
                   }`}
                 >
@@ -5209,9 +5139,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     setSeriesCategory(cat.id);
                     setSeriesPage(1);
                   }}
-                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                     seriesCategory === cat.id
-                      ? 'bg-white text-[#050508]'
+                      ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white shadow-[0_6px_18px_rgba(145,70,255,0.32)]'
                       : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
                   }`}
                 >
@@ -5671,7 +5601,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     ? `Buscar en ${activeAnimePortalMeta.es} (Naruto, Kimetsu no Yaiba, Frieren...)`
                     : `Search ${activeAnimePortalMeta.en} anime...`
                 }
-                className="w-full h-11 pl-10 pr-10 rounded-2xl bg-[#0D0D12] border border-white/[0.08] focus:border-white/30 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
+                className="w-full h-11 pl-10 pr-10 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border border-white/[0.09] focus:border-[#F47521]/70 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-all"
               />
               {animeQuery && (
                 <button
@@ -5685,7 +5615,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               )}
             </div>
 
-            <div className="flex items-center p-1 rounded-2xl bg-[#0D0D12] border border-white/[0.08] shrink-0">
+            <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/[0.08] shrink-0">
               {(
                 [
                   { code: 'ES', labelEs: 'Español · Lat', labelEn: 'Spanish Dub' },
@@ -5702,9 +5632,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     setSeriesLangMode(opt.code);
                     setAnimePage(1);
                   }}
-                  className={`flex-1 sm:flex-initial min-h-[36px] px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                  className={`flex-1 sm:flex-initial min-h-[36px] px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-all ${
                     animeLangPref === opt.code
-                      ? 'bg-white text-[#050508]'
+                      ? 'bg-[#F47521] text-white shadow-[0_6px_16px_rgba(244,117,33,0.32)]'
                       : 'text-zinc-400 hover:text-white'
                   }`}
                 >
@@ -5779,27 +5709,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           {/* Anime Genre & Simulcast Filter Bar */}
           {!debouncedAnimeQuery && (
             <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-              <button
-                type="button"
-                onClick={() => {
-                  if (animeItems.length === 0) return;
-                  triggerHaptic('success');
-                  const rand = animeItems[Math.floor(Math.random() * animeItems.length)];
-                  if (!rand) return;
-                  if (animeMediaKind === 'series' && rand.tmdbId) {
-                    setSeriesLangMode(animeLangPref);
-                    openSeriesDetails(rand.tmdbId, 1, { ...rand, mediaType: 'tv' });
-                  } else {
-                    setPreviewItem({ ...rand, mediaType: 'movie' });
-                  }
-                }}
-                title="Elegir un anime al azar"
-                className="min-h-[38px] px-3.5 rounded-xl text-xs font-bold bg-[#F47521]/15 hover:bg-[#F47521]/25 border border-[#F47521]/35 text-[#FDBA74] flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>{lang === 'es' ? 'Sorpréndeme' : 'Surprise Me'}</span>
-              </button>
-
               {ANIME_CATEGORIES.map((cat) => (
                 <button
                   key={cat.id}
@@ -5809,9 +5718,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     setAnimeCategory(cat.id);
                     setAnimePage(1);
                   }}
-                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-colors whitespace-nowrap shrink-0 cursor-pointer ${
+                  className={`min-h-[38px] px-4 rounded-xl text-xs font-bold transition-all whitespace-nowrap shrink-0 cursor-pointer ${
                     animeCategory === cat.id
-                      ? 'bg-white text-[#050508]'
+                      ? 'bg-[#F47521] text-white shadow-[0_6px_16px_rgba(244,117,33,0.3)]'
                       : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border border-white/[0.08]'
                   }`}
                 >
@@ -7076,7 +6985,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   {Array.from({ length: 5 }).map((_, idx) => (
                     <div
                       key={idx}
-                      className="w-[188px] h-16 rounded-xl bg-[#242833] animate-pulse shrink-0"
+                      className="w-[188px] h-16 rounded-xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer shrink-0"
                     />
                   ))}
                 </div>
@@ -7617,10 +7526,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* ================================================================== */}
       {activeSection === 'direct' && (
         <div className="space-y-5">
-          <div className="rounded-3xl bg-[#0D0D12] border border-white/[0.08] p-5 sm:p-6 space-y-4">
+          <div className="rounded-3xl bg-[#121218]/95 nc-specular-surface border border-white/[0.09] p-5 sm:p-6 space-y-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <ListVideo className="w-5 h-5 text-[#E11D48]" />
+                <ListVideo className="w-5 h-5 text-[#BF94FF]" />
                 <h3 className="font-display font-semibold text-base sm:text-lg text-white">
                   {lang === 'es' ? 'Cola Compartida de la Sala' : 'Shared Room Queue'} (
                   {roomQueue.length})
@@ -7634,7 +7543,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     triggerHaptic('medium');
                     onStartPollFromQueue();
                   }}
-                  className="min-h-[40px] px-3.5 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer transition-colors"
+                  className="min-h-[40px] px-3.5 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer transition-all shadow-[0_6px_18px_rgba(145,70,255,0.3)]"
                 >
                   <Vote className="w-4 h-4" />
                   <span>
@@ -7657,7 +7566,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 {roomQueue.map((qItem) => (
                   <div
                     key={qItem.id}
-                    className="rounded-2xl bg-[#07070A] border border-white/[0.07] p-3 flex items-center justify-between gap-3"
+                    className="rounded-2xl bg-white/[0.035] border border-white/[0.08] p-3 flex items-center justify-between gap-3"
                   >
                     <div className="min-w-0 flex-1">
                       <div className="text-xs sm:text-sm font-semibold text-white truncate">
@@ -7674,7 +7583,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           triggerHaptic('success');
                           onPlayQueueItem(qItem);
                         }}
-                        className="min-h-10 px-3 rounded-xl bg-[#E11D48] hover:bg-[#BE123C] text-xs font-semibold text-white flex items-center gap-1 cursor-pointer"
+                        className="min-h-10 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1 cursor-pointer transition-colors"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
                         <span>Ver</span>
@@ -7694,7 +7603,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             )}
           </div>
 
-          <div className="rounded-3xl bg-[#0D0D12] border border-white/[0.08] p-5 sm:p-8 space-y-6">
+          <div className="rounded-3xl bg-[#121218]/95 nc-specular-surface border border-white/[0.09] p-5 sm:p-8 space-y-6">
             <div className="max-w-2xl space-y-1.5">
               <h3 className="font-display font-semibold text-lg sm:text-xl text-white">
                 {t.directTitle}
@@ -7708,13 +7617,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 value={customUrl}
                 onChange={(e) => setCustomUrl(e.target.value)}
                 placeholder="https://youtube.com/watch?v=... | .m3u8 | .mp4"
-                className="w-full h-12 px-4 rounded-2xl bg-[#07070A] border border-white/12 focus:border-white/35 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none font-mono"
+                className="w-full h-12 px-4 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border border-white/12 focus:border-[#9146FF]/70 text-base sm:text-sm text-white placeholder:text-zinc-500 outline-none font-mono transition-all"
               />
               <div className="grid grid-cols-1 @sm:grid-cols-2 gap-2.5">
                 <button
                   type="submit"
                   disabled={!customUrl.trim() || Boolean(loadingItemId)}
-                  className="min-h-12 px-5 rounded-2xl bg-[#E11D48] hover:bg-[#BE123C] disabled:opacity-40 text-sm font-semibold text-white flex items-center justify-center gap-2 transition-colors whitespace-nowrap cursor-pointer disabled:cursor-not-allowed"
+                  className="min-h-12 px-5 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 disabled:opacity-40 text-sm font-bold text-white flex items-center justify-center gap-2 transition-all shadow-[0_8px_24px_rgba(145,70,255,0.34)] whitespace-nowrap cursor-pointer disabled:cursor-not-allowed"
                 >
                   <Sparkles className="w-4 h-4" />
                   <span>{t.playNativeBtn}</span>
@@ -8240,7 +8149,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               onClick={() => setSelectedEpgChannel(null)}
             >
               <div
-                className="w-full sm:max-w-xl max-h-[86vh] rounded-t-3xl sm:rounded-3xl bg-[#0B0C12] border-t sm:border border-white/[0.12] flex flex-col overflow-hidden shadow-2xl"
+                className="w-full sm:max-w-xl max-h-[86vh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.12] flex flex-col overflow-hidden shadow-2xl animate-sheet-up"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Mobile Drag Handle */}
@@ -8417,57 +8326,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           );
         })()}
 
-      {onCreateNewRoom && (
-        <BottomSheet
-          isOpen={showNewRoomSheet}
-          onClose={() => setShowNewRoomSheet(false)}
-          title={
-            lang === 'es'
-              ? 'Crear nueva sala'
-              : lang === 'ca'
-              ? 'Crear nova sala'
-              : 'Create new room'
-          }
-          subtitle={
-            lang === 'es'
-              ? 'Se generará un enlace único para invitar a tus amigos o vincular tu TV'
-              : 'A fresh invite link will be generated to invite friends or pair your TV'
-          }
-          icon={<Plus className="w-5 h-5" />}
-        >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              onCreateNewRoom(newRoomNameDraft.trim() || undefined);
-              setNewRoomNameDraft('');
-              setShowNewRoomSheet(false);
-            }}
-            className="space-y-3"
-          >
-            <StandardInput
-              type="text"
-              value={newRoomNameDraft}
-              onChange={(e) => setNewRoomNameDraft(e.target.value)}
-              placeholder={
-                lang === 'es'
-                  ? 'Nombre opcional (ej. Noche de Cine)'
-                  : 'Optional room name (e.g. Movie Night)'
-              }
-              autoFocus
-            />
-            <PrimaryButton type="submit" fullWidth size="lg">
-              <Plus className="w-4 h-4" />
-              <span>
-                {lang === 'es'
-                  ? 'Crear e ir a la nueva sala'
-                  : lang === 'ca'
-                  ? 'Crear i anar a la nova sala'
-                  : 'Create & enter new room'}
-              </span>
-            </PrimaryButton>
-          </form>
-        </BottomSheet>
-      )}
-    </div>
-  );
-};
+      </div>
+    );
+  };

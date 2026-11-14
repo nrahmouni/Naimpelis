@@ -482,7 +482,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
     <div
       className={
         variant === 'docked'
-          ? 'rounded-3xl bg-[#11141D] border border-white/[0.1] shadow-[0_24px_60px_rgba(0,0,0,0.8)] overflow-hidden'
+          ? 'rounded-3xl nc-specular-surface border border-white/[0.11] shadow-[0_24px_60px_rgba(0,0,0,0.84)] overflow-hidden'
           : 'space-y-4'
       }
     >
@@ -492,12 +492,12 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
           <div className="flex items-center justify-between gap-2 text-[11px]">
             <div className="flex items-center gap-2 min-w-0">
               {resolvedState === 'live' ? (
-                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 font-bold uppercase tracking-wider">
-                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400 animate-ping" />
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 font-bold uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
                   EN VIVO
                 </span>
               ) : (
-                <span className="px-2 py-0.5 rounded-full bg-white/[0.08] text-zinc-300 font-semibold">
+                <span className="px-2.5 py-0.5 rounded-full bg-white/[0.08] text-zinc-300 font-semibold">
                   {resolvedState === 'finished' ? 'Finalizado' : 'Previa'}
                 </span>
               )}
@@ -578,8 +578,8 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
 
       {!isCollapsed && (
         <div className={variant === 'docked' ? 'p-3.5 sm:p-4 space-y-4' : 'space-y-4'}>
-          {/* 4 Main Sofascore-Grade Navigation Tabs */}
-          <div className="flex items-center gap-4 overflow-x-auto no-scrollbar border-b border-white/[0.08]">
+          {/* 4 Main Navigation Tabs */}
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-2 border-b border-white/[0.08]">
             {(
               [
                 {
@@ -612,10 +612,10 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                   triggerHaptic('light');
                   setActiveTab(tab.key);
                 }}
-                className={`pb-2.5 text-xs sm:text-sm font-bold whitespace-nowrap cursor-pointer border-b-2 transition-colors flex items-center gap-1.5 ${
+                className={`min-h-[38px] px-3.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap cursor-pointer transition-all flex items-center gap-1.5 ${
                   activeTab === tab.key
-                    ? 'border-[#FFBD0F] text-white'
-                    : 'border-transparent text-zinc-400 hover:text-zinc-200'
+                    ? 'bg-[#FFBD0F] text-[#11131A] shadow-sm'
+                    : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 hover:text-white'
                 }`}
               >
                 {'liveDot' in tab && tab.liveDot && (

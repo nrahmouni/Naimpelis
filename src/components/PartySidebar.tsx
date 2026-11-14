@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { AnimatePresence, motion } from 'motion/react';
 import type { User } from 'firebase/auth';
 import {
   Send,
@@ -429,7 +430,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         <div className="flex-1 flex flex-col min-h-0 relative">
           {/* Active Poll Banner (if open) */}
           {activePoll && !activePoll.isClosed && (
-            <div className="mx-3 mt-2.5 p-3.5 rounded-2xl bg-[#1F1F23] border border-[#9146FF]/40 space-y-2.5 shrink-0 shadow-lg">
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-3 mt-2.5 p-3.5 rounded-2xl nc-specular-surface border border-[#9146FF]/40 space-y-2.5 shrink-0 shadow-lg"
+            >
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#BF94FF]">
                   <BarChart2 className="w-3.5 h-3.5" />
@@ -459,18 +464,20 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                       className={`w-full relative overflow-hidden rounded-xl border px-3 py-2 text-left transition-all cursor-pointer ${
                         voted
                           ? 'border-[#9146FF]/65 bg-[#9146FF]/20'
-                          : 'border-white/[0.08] bg-[#26262C]/70 hover:bg-[#26262C]'
+                          : 'border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08]'
                       }`}
                     >
-                      <div
-                        className="absolute inset-y-0 left-0 bg-[#9146FF]/25 transition-all duration-300"
-                        style={{ width: `${pct}%` }}
+                      <motion.div
+                        initial={{ scaleX: 0 }}
+                        animate={{ scaleX: Math.max(0, pct / 100) }}
+                        transition={{ type: 'spring', stiffness: 260, damping: 28 }}
+                        className="absolute inset-y-0 left-0 w-full origin-left bg-[#9146FF]/30"
                       />
                       <div className="relative flex items-center justify-between gap-2 text-xs">
                         <span className="font-semibold text-white truncate">
                           {opt.item.title}
                         </span>
-                        <span className="text-xs font-mono text-zinc-300 shrink-0">
+                        <span className="text-xs font-mono text-zinc-300 tabular-nums shrink-0">
                           {pct}% ({votes})
                         </span>
                       </div>
@@ -478,7 +485,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   );
                 })}
               </div>
-            </div>
+            </motion.div>
           )}
 
           {/* Borderless Chat Stream */}
@@ -597,32 +604,40 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           </div>
 
           {/* FLOATING REACTION PILL (Hovering above the chat input) */}
-          {showFloatingReactions && (
-            <div className="absolute inset-x-2 bottom-17 z-20 flex justify-center pointer-events-none animate-fade-in">
-              <div className="pointer-events-auto inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-[#1F1F23]/95 backdrop-blur-2xl border border-white/[0.12] shadow-[0_12px_32px_rgba(0,0,0,0.75)] max-w-full overflow-x-auto no-scrollbar">
-                {QUICK_REACTIONS.map((emoji) => (
+          <AnimatePresence>
+            {showFloatingReactions && (
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.94 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 8, scale: 0.94 }}
+                transition={{ duration: 0.16 }}
+                className="absolute inset-x-2 bottom-17 z-20 flex justify-center pointer-events-none"
+              >
+                <div className="pointer-events-auto inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-[#141418]/95 backdrop-blur-2xl border border-white/[0.14] shadow-[0_12px_32px_rgba(0,0,0,0.82)] max-w-full overflow-x-auto no-scrollbar">
+                  {QUICK_REACTIONS.map((emoji) => (
+                    <button
+                      key={emoji}
+                      type="button"
+                      onClick={() => onSendReaction(emoji)}
+                      className="w-8 h-8 rounded-full hover:bg-white/[0.12] active:scale-125 transition-transform flex items-center justify-center text-base shrink-0 cursor-pointer"
+                      title={`Enviar ${emoji}`}
+                    >
+                      {emoji}
+                    </button>
+                  ))}
                   <button
-                    key={emoji}
                     type="button"
-                    onClick={() => onSendReaction(emoji)}
-                    className="w-8 h-8 rounded-full hover:bg-white/[0.12] active:scale-125 transition-all flex items-center justify-center text-base shrink-0 cursor-pointer"
-                    title={`Enviar ${emoji}`}
+                    onClick={() => setShowFloatingReactions(false)}
+                    className="w-7 h-7 rounded-full hover:bg-white/15 text-[#ADADB8] hover:text-white flex items-center justify-center shrink-0 cursor-pointer ml-0.5 sticky right-0 bg-[#141418]/95"
+                    title="Ocultar barra de emojis"
+                    aria-label="Ocultar emojis"
                   >
-                    {emoji}
+                    <X className="w-3.5 h-3.5" />
                   </button>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setShowFloatingReactions(false)}
-                  className="w-7 h-7 rounded-full hover:bg-white/15 text-[#ADADB8] hover:text-white flex items-center justify-center shrink-0 cursor-pointer ml-0.5 sticky right-0 bg-[#1F1F23]/95"
-                  title="Ocultar barra de emojis"
-                  aria-label="Ocultar emojis"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-          )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Typing indicator above input */}
           {typingUsers.filter((u) => u.userId !== currentUser.id).length > 0 && (
@@ -833,7 +848,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       {activeTab === 'room' && (
         <div className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar">
           {/* Primary Action Card: Room Info + Share Link & TV Remote */}
-          <div className="p-4 rounded-3xl bg-white/[0.03] border border-white/[0.08] space-y-3.5">
+          <div className="p-4 rounded-3xl nc-specular-surface border border-white/[0.1] space-y-3.5">
             <div className="flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -1151,26 +1166,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             )}
           </div>
 
-          <div className="pt-2 space-y-2.5">
-            {onCreateNewRoom && (
-              <SecondaryButton
-                onClick={() => {
-                  triggerHaptic('medium');
-                  onCreateNewRoom();
-                }}
-                fullWidth
-              >
-                <Plus className="w-4 h-4 text-[#BF94FF] shrink-0" />
-                <span>
-                  {lang === 'es'
-                    ? 'Crear nueva sala'
-                    : lang === 'ca'
-                    ? 'Crear nova sala'
-                    : 'Create new room'}
-                </span>
-              </SecondaryButton>
-            )}
-
+          <div className="pt-2">
             <SecondaryButton
               onClick={() => {
                 triggerHaptic('medium');

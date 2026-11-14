@@ -207,7 +207,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       <div
         onClick={(e) => e.stopPropagation()}
         style={{ ['--ambient-poster-glow' as string]: ambientGlow }}
-        className="w-full sm:max-w-[860px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#18181B]/95 backdrop-blur-2xl border-t sm:border border-white/[0.08] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden ambient-poster-aura"
+        className="w-full sm:max-w-[860px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden ambient-poster-aura animate-sheet-up"
       >
         {/* Top Hero: Inline 4K Official Trailer or High-Res Backdrop */}
         <div className="relative w-full aspect-video max-h-[36dvh] sm:max-h-[380px] bg-black shrink-0 overflow-hidden">
@@ -235,7 +235,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#18181B] via-[#18181B]/35 to-black/30" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#141418] via-[#141418]/35 to-black/30" />
               {details?.trailerKey && (
                 <button
                   type="button"
@@ -244,7 +244,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     setTrailerMuted(false);
                     setPlayTrailer(true);
                   }}
-                  className="absolute left-4 bottom-4 z-20 min-h-10 px-4 rounded-xl bg-[#18181B]/85 hover:bg-[#18181B] border border-white/15 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 backdrop-blur-xl shadow-xl cursor-pointer transition-all active:scale-95"
+                  className="absolute left-4 bottom-4 z-20 min-h-[42px] px-4 rounded-xl bg-[#141418]/85 hover:bg-[#1C1C22] border border-white/15 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 backdrop-blur-xl shadow-xl cursor-pointer transition-all active:scale-95"
                 >
                   <Youtube className="w-4 h-4 text-[#BF94FF]" />
                   <span>{lang === 'es' ? '▶ Ver Tráiler 4K' : '▶ Watch 4K Trailer'}</span>
@@ -252,7 +252,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               )}
             </>
           ) : (
-            <div className="w-full h-full flex items-center justify-center bg-[#1F1F23]">
+            <div className="w-full h-full flex items-center justify-center bg-white/[0.04]">
               {isSeries ? (
                 <Tv className="w-12 h-12 text-zinc-600" />
               ) : (
@@ -320,7 +320,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               type="button"
               onClick={onClose}
               aria-label="Cerrar ficha"
-              className="w-9 h-9 rounded-xl bg-[#18181B]/80 hover:bg-[#9146FF] border border-white/20 flex items-center justify-center text-white backdrop-blur-md cursor-pointer transition-colors"
+              className="w-10 h-10 rounded-xl bg-[#141418]/80 hover:bg-[#9146FF] border border-white/20 flex items-center justify-center text-white backdrop-blur-md cursor-pointer transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -424,7 +424,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 </div>
 
                 {loading && !hasProbedLanguages ? (
-                  <div className="min-h-[52px] px-4 rounded-2xl bg-[#1F1F23] border border-white/[0.08] flex items-center gap-2.5 text-xs text-zinc-300">
+                  <div className="min-h-[52px] px-4 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center gap-2.5 text-xs text-zinc-300">
                     <Loader2 className="w-4 h-4 animate-spin text-[#9146FF] shrink-0" />
                     <span>
                       {lang === 'es'
@@ -456,8 +456,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                           }}
                           className={`min-h-[52px] px-3 py-2 rounded-2xl border text-left transition-all cursor-pointer active:scale-[0.98] flex items-center gap-2.5 ${
                             active
-                              ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_8px_24px_rgba(145,70,255,0.28)]'
-                              : 'bg-[#1F1F23] hover:bg-[#26262C] border-white/[0.08] text-zinc-300'
+                              ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white border-[#BF94FF]/50 shadow-[0_8px_24px_rgba(145,70,255,0.32)]'
+                              : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
                           }`}
                         >
                           <span className="text-lg shrink-0">{opt.flag}</span>
@@ -502,7 +502,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     onClose();
                     onOpenSeriesEpisodes(id);
                   }}
-                  className="min-h-[48px] px-6 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-lg shadow-[#9146FF]/30"
+                  className="min-h-[48px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-[0_10px_28px_rgba(145,70,255,0.38)]"
                 >
                   <Play className="w-4 h-4 fill-current" />
                   <span>
@@ -522,7 +522,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     onClose();
                     onPlayMovie(enrichedMovie, selectedAudioLang);
                   }}
-                  className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-lg shadow-[#9146FF]/30"
+                  className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-[0_10px_28px_rgba(145,70,255,0.38)]"
                 >
                   {loading && !hasProbedLanguages ? (
                     <Loader2 className="w-4 h-4 animate-spin shrink-0" />
@@ -651,7 +651,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 {details.cast.map((actor) => (
                   <div
                     key={actor.id}
-                    className="w-[104px] sm:w-[116px] shrink-0 rounded-2xl bg-[#1F1F23] border border-white/[0.08] p-2 flex flex-col items-center text-center gap-1.5"
+                    className="w-[104px] sm:w-[116px] shrink-0 rounded-2xl bg-white/[0.04] border border-white/[0.08] p-2 flex flex-col items-center text-center gap-1.5"
                   >
                     {actor.photo ? (
                       <img
@@ -662,7 +662,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                         className="w-14 h-14 rounded-full object-cover border border-white/10"
                       />
                     ) : (
-                      <div className="w-14 h-14 rounded-full bg-[#26262C] flex items-center justify-center text-xs font-bold text-zinc-300">
+                      <div className="w-14 h-14 rounded-full bg-white/[0.07] flex items-center justify-center text-xs font-bold text-zinc-300">
                         {actor.name.slice(0, 2).toUpperCase()}
                       </div>
                     )}
@@ -695,9 +695,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       triggerHaptic('light');
                       onSelectSimilar(sim);
                     }}
-                    className="group text-left rounded-2xl overflow-hidden bg-[#1F1F23] border border-white/[0.08] hover:border-[#9146FF]/50 transition-all cursor-pointer flex flex-col"
+                    className="group text-left rounded-2xl overflow-hidden bg-white/[0.04] nc-card-sheen border border-white/[0.08] hover:border-[#9146FF]/50 transition-all cursor-pointer flex flex-col"
                   >
-                    <div className="aspect-[2/3] w-full bg-[#26262C] overflow-hidden">
+                    <div className="aspect-[2/3] w-full bg-white/[0.05] overflow-hidden">
                       {sim.poster ? (
                         <img
                           src={sim.poster}

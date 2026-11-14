@@ -89,10 +89,10 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveFilter(tab.id)}
-                className={`min-h-9 px-3 rounded-xl text-xs font-semibold whitespace-nowrap transition-colors cursor-pointer ${
+                className={`min-h-9 px-3 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
                   active
-                    ? 'bg-[#9146FF] text-white'
-                    : 'bg-[#26262C] text-[#EFEFF1] hover:bg-white/[0.14]'
+                    ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
+                    : 'bg-white/[0.045] text-[#EFEFF1] hover:bg-white/[0.1] border border-white/[0.08]'
                 }`}
               >
                 {tab.label}
@@ -119,7 +119,7 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
             className={`min-h-9 min-w-9 px-2.5 rounded-xl text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
               showSettings
                 ? 'bg-[#9146FF]/20 text-white border border-[#9146FF]/45'
-                : 'bg-[#26262C] text-[#EFEFF1] hover:bg-white/[0.14]'
+                : 'bg-white/[0.045] border border-white/[0.08] text-[#EFEFF1] hover:bg-white/[0.1]'
             }`}
             aria-label="Preferencias de notificaciones"
           >
@@ -209,12 +209,12 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
               onClick={() => markRead(item.id)}
               className={`p-3.5 rounded-2xl border transition-colors flex items-start justify-between gap-3 ${
                 item.read
-                  ? 'bg-white/[0.02] border-white/[0.06]'
-                  : 'bg-[#9146FF]/[0.12] border-[#9146FF]/35'
+                  ? 'bg-white/[0.03] border-white/[0.07]'
+                  : 'bg-[#9146FF]/[0.12] nc-specular-surface border-[#9146FF]/40'
               }`}
             >
               <div className="flex items-start gap-3 min-w-0">
-                <div className="w-9 h-9 rounded-xl bg-[#26262C] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                <div className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
                   {renderCategoryIcon(item.category)}
                 </div>
                 <div className="min-w-0">

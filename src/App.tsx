@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
+import { motion, MotionConfig } from 'motion/react';
 import {
   LayoutGrid,
   Film,
@@ -7,8 +8,6 @@ import {
   Radio,
   Check,
   LogOut,
-  PanelRightClose,
-  PanelRightOpen,
   Play,
   Square,
   Lock,
@@ -20,7 +19,6 @@ import {
   Search,
   Sparkles,
   RefreshCw,
-  ShieldCheck,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -302,6 +300,7 @@ export function App() {
   }>({ movies: [], series: [], tdt: [] });
 
   const syncDomAttributes = useThemeStore((s) => s.syncDomAttributes);
+  const reducedMotion = useThemeStore((s) => s.reducedMotion);
   const showDesignSystem = useAppStore((s) => s.showDesignSystem);
   const setShowDesignSystem = useAppStore((s) => s.setShowDesignSystem);
   const showLegalModal = useAppStore((s) => s.showLegalModal);
@@ -3880,26 +3879,28 @@ export function App() {
   // ============================================================================
   if (isTvPairLobby) {
     return (
-      <React.Suspense fallback={null}>
-        <TvReceiverPairingScreen
-          lang={lang}
-          onPaired={({ roomId: pairedCode, roomName: pairedTitle, tvAuthToken: token }) => {
-            manualLobbyStayRef.current = false;
-            setTvAuthToken(token);
-            setIsTvPairLobby(false);
-            setIsTvMode(true);
-            setRoomId(pairedCode);
-            setRoomName(pairedTitle || `Sala ${pairedCode.toUpperCase()}`);
-            setInRoom(true);
-          }}
-          onExitTvLobby={() => {
-            setIsTvPairLobby(false);
-            if (typeof window !== 'undefined') {
-              window.history.replaceState({}, '', '/');
-            }
-          }}
-        />
-      </React.Suspense>
+      <MotionConfig reducedMotion={reducedMotion ? 'always' : 'user'}>
+        <React.Suspense fallback={null}>
+          <TvReceiverPairingScreen
+            lang={lang}
+            onPaired={({ roomId: pairedCode, roomName: pairedTitle, tvAuthToken: token }) => {
+              manualLobbyStayRef.current = false;
+              setTvAuthToken(token);
+              setIsTvPairLobby(false);
+              setIsTvMode(true);
+              setRoomId(pairedCode);
+              setRoomName(pairedTitle || `Sala ${pairedCode.toUpperCase()}`);
+              setInRoom(true);
+            }}
+            onExitTvLobby={() => {
+              setIsTvPairLobby(false);
+              if (typeof window !== 'undefined') {
+                window.history.replaceState({}, '', '/');
+              }
+            }}
+          />
+        </React.Suspense>
+      </MotionConfig>
     );
   }
 
@@ -3908,7 +3909,7 @@ export function App() {
   // ============================================================================
   if (!inRoom) {
     return (
-      <>
+      <MotionConfig reducedMotion={reducedMotion ? 'always' : 'user'}>
         {showIntro && (
           <NaimcineIntro
             withSound={introWithSound}
@@ -3971,7 +3972,7 @@ export function App() {
             }
           }}
         />
-      </>
+      </MotionConfig>
     );
   }
 
@@ -4160,22 +4161,23 @@ export function App() {
     !isMobileKeyboardOpen;
 
   // ============================================================================
-  // RENDER 3: UNIFIED WORKSPACE (DESKTOP OR USER-SELECTED MOBILE VIEW)
+  // RENDER 3: UNIFIED WORKSPACE (DESKTOP, ANDROID MOBILE APK & GOOGLE TV APK)
   // ============================================================================
   return (
+    <MotionConfig reducedMotion={reducedMotion ? 'always' : 'user'}>
     <div
       style={
         !isDesktopLayout && visualViewportHeight
           ? { height: `${visualViewportHeight}px` }
           : undefined
       }
-      className="h-full w-full max-w-[100vw] bg-[#0E0E10] text-[#EFEFF1] overflow-hidden"
+      className="h-full w-full max-w-[100vw] bg-[#0B0B0E] text-[#EFEFF1] overflow-hidden"
     >
       <div
         className={`h-full w-full flex flex-col overflow-hidden pt-safe animate-room-warp ${
           isFramedMobileOnPc
-            ? 'max-w-[27rem] mx-auto bg-[#0E0E10] border-x border-white/[0.08] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
-            : 'bg-[#0E0E10]'
+            ? 'max-w-[27rem] mx-auto bg-[#0B0B0E] border-x border-white/[0.08] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
+            : 'bg-[#0B0B0E]'
         }`}
       >
         <OfflineIndicator lang={lang} />
@@ -4350,17 +4352,17 @@ export function App() {
           />
         )}
 
-        {/* Top Bar (Twitch Broadcast 3-Zone Navigation) */}
+        {/* Top Workspace Bar (Deduplicated 3-Zone Header: Room Status · Unified Search · Quick Actions) */}
         <header
           className={`${
             isMobileChatWithKeyboard || isAutoImmersiveLandscape
               ? 'hidden'
               : isDesktopLayout
-              ? 'h-[52px] px-4 flex'
-              : 'h-11 px-2.5 flex'
-          } bg-[#18181B]/95 backdrop-blur-xl border-b border-white/[0.08] items-center justify-between gap-2 shrink-0 z-30`}
+              ? 'h-[58px] px-4 flex'
+              : 'h-13 px-3 flex'
+          } bg-[#111115]/90 backdrop-blur-2xl border-b border-white/[0.07] items-center justify-between gap-2.5 shrink-0 z-30 shadow-[0_6px_28px_rgba(0,0,0,0.4)]`}
         >
-          {/* Zone 1: Clean Brand Lockup */}
+          {/* Zone 1: Brand + Active Room Switcher Pill */}
           <div className="flex items-center gap-2.5 min-w-0">
             <button
               type="button"
@@ -4370,10 +4372,11 @@ export function App() {
                 catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               title="NAIM CINE · Inicio"
-              className="shrink-0 cursor-pointer rounded-xl overflow-hidden hover:scale-105 active:scale-95 transition-transform"
+              className="shrink-0 cursor-pointer rounded-xl overflow-hidden hover:scale-105 active:scale-95 transition-transform shadow-[0_0_18px_rgba(145,70,255,0.28)]"
             >
-              <NaimBrandLogo size={34} />
+              <NaimBrandLogo size={isDesktopLayout ? 36 : 32} />
             </button>
+
             <button
               type="button"
               onClick={() => {
@@ -4385,148 +4388,101 @@ export function App() {
                 setProfileHubTab('account');
                 setProfileHubOpen(true);
               }}
-              className="flex items-center gap-2 min-w-0 text-left cursor-pointer group"
+              className="min-h-9 px-2.5 py-1 rounded-xl bg-white/[0.045] hover:bg-white/[0.09] border border-white/[0.08] flex items-center gap-2 min-w-0 text-left cursor-pointer group transition-all"
               title={
                 lang === 'es'
                   ? 'Gestionar sala activa o cambiar de sala'
                   : 'Manage active room or switch room'
               }
             >
-              <span className="font-display font-bold text-sm tracking-tight text-white whitespace-nowrap shrink-0">
-                NAIM CINE
-              </span>
-              <span className="text-zinc-600 text-xs" aria-hidden="true">
-                ·
-              </span>
-              <span className="text-xs font-medium text-zinc-400 group-hover:text-zinc-200 transition-colors truncate max-w-[7.5rem] sm:max-w-44">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_#34d399]" />
+              <span className="font-display font-bold text-xs sm:text-[13px] text-white truncate max-w-[7rem] sm:max-w-44">
                 {roomName || `Sala ${roomId.toUpperCase()}`}
               </span>
+              {isDesktopLayout && (
+                <span className="text-[11px] font-mono text-zinc-400 tabular-nums shrink-0">
+                  · {participants.length}
+                </span>
+              )}
               {roomHasPin && (
                 <Lock
-                  className="w-3 h-3 text-zinc-400 shrink-0"
+                  className="w-3 h-3 text-amber-400 shrink-0"
                   aria-label="Sala con PIN privado"
                 />
               )}
             </button>
           </div>
 
-          {/* Zone 2: Clean Single-Line Architectural Tabs (Desktop Mode) */}
+          {/* Zone 2 (Desktop): Centered Unified Command Search Spotlight + Sorpréndeme */}
           {isDesktopLayout && (
-            <nav
-              className="flex items-center gap-5 overflow-x-auto no-scrollbar h-full"
-              aria-label="Catálogo NAIM CINE"
-            >
-              {(
-                [
-                  {
-                    id: 'home',
-                    label: lang === 'ca' ? 'Inici' : lang === 'en' ? 'Home' : 'Inicio',
-                    isActive: catalogSection === 'home' && !showWatchlistOnly,
-                    onClick: () => {
-                      setShowWatchlistOnly(false);
-                      setCatalogSection('home');
-                    },
-                  },
-                  {
-                    id: 'movies',
-                    label: lang === 'ca' ? 'Pel·lícules' : lang === 'en' ? 'Movies' : 'Películas',
-                    isActive:
-                      (catalogSection === 'movies' || catalogSection === 'vose') &&
-                      !showWatchlistOnly,
-                    onClick: () => {
-                      setShowWatchlistOnly(false);
-                      setCatalogSection('movies');
-                    },
-                  },
-                  {
-                    id: 'series',
-                    label: lang === 'ca' ? 'Sèries' : 'Series',
-                    isActive:
-                      (catalogSection === 'series' || catalogSection === 'castellano') &&
-                      !showWatchlistOnly,
-                    onClick: () => {
-                      setShowWatchlistOnly(false);
-                      setCatalogSection('series');
-                    },
-                  },
-                  {
-                    id: 'anime',
-                    label: 'Anime',
-                    isActive:
-                      (catalogSection === 'anime' || catalogSection === 'catala') &&
-                      !showWatchlistOnly,
-                    onClick: () => {
-                      setShowWatchlistOnly(false);
-                      setCatalogSection('anime');
-                    },
-                  },
-                  {
-                    id: 'sports',
-                    label: lang === 'ca' ? 'Futbol' : lang === 'en' ? 'Football' : 'Fútbol',
-                    isActive: catalogSection === 'sports' && !showWatchlistOnly,
-                    onClick: () => {
-                      setShowWatchlistOnly(false);
-                      setCatalogSection('sports');
-                    },
-                  },
-                  {
-                    id: 'tdt',
-                    label: lang === 'ca' ? 'TV en Directe' : lang === 'en' ? 'Live TV' : 'TV en Vivo',
-                    isActive: catalogSection === 'tdt' && !showWatchlistOnly,
-                    onClick: () => {
-                      setShowWatchlistOnly(false);
-                      setCatalogSection('tdt');
-                    },
-                  },
-                ] as const
-              ).map((navItem) => (
-                <button
-                  key={navItem.id}
-                  type="button"
-                  onClick={navItem.onClick}
-                  className={`h-full px-1 border-b-2 text-xs font-semibold transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center ${
-                    navItem.isActive
-                      ? 'border-[#9146FF] text-[#BF94FF]'
-                      : 'border-transparent text-[#ADADB8] hover:text-white'
-                  }`}
-                >
-                  <span>{navItem.label}</span>
-                </button>
-              ))}
-            </nav>
-          )}
-
-          {/* Zone 3: Compact Search + Actions */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {isDesktopLayout && (
+            <div className="flex-1 max-w-md mx-2 flex items-center gap-1.5">
               <button
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
                   setShowCommandSearch(true);
                 }}
-                title="Búsqueda rápida (Ctrl/⌘ + K)"
+                title="Búsqueda universal (Ctrl/⌘ + K)"
                 aria-label="Búsqueda rápida"
-                className="h-8 px-2.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-300 hover:text-white text-xs font-medium flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                className="flex-1 h-9 px-3.5 rounded-xl bg-white/[0.045] hover:bg-white/[0.085] border border-white/[0.09] hover:border-[#9146FF]/45 text-zinc-400 hover:text-zinc-100 text-xs flex items-center justify-between gap-2 cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
               >
-                <Search className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden xl:inline text-[11px] font-mono text-zinc-400">⌘K</span>
+                <span className="flex items-center gap-2 truncate">
+                  <Search className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+                  <span className="truncate">
+                    {lang === 'es'
+                      ? 'Buscar películas, series, canales...'
+                      : 'Search movies, series, channels...'}
+                  </span>
+                </span>
+                <kbd className="px-1.5 py-0.5 rounded-md bg-white/[0.07] border border-white/[0.08] text-[10px] font-mono text-zinc-300 shrink-0">
+                  ⌘K
+                </kbd>
               </button>
-            )}
 
-            {isDesktopLayout && (
               <button
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
                   setShowSurpriseModal(true);
                 }}
-                title="Sorpréndeme · Recomendación rápida"
+                title="Sorpréndeme · Recomendación al instante"
                 aria-label="Sorpréndeme"
-                className="w-8 h-8 rounded-lg bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.1] text-amber-300 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
+                className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-[#9146FF]/22 border border-white/[0.09] hover:border-[#9146FF]/45 text-amber-300 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
               >
-                <Sparkles className="w-3.5 h-3.5 shrink-0" />
+                <Sparkles className="w-4 h-4 shrink-0" />
               </button>
+            </div>
+          )}
+
+          {/* Zone 3: Focused Workspace Actions (Available seamlessly on Desktop & Android Mobile APK) */}
+          <div className="flex items-center gap-1.5 shrink-0">
+            {!isDesktopLayout && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShowCommandSearch(true);
+                  }}
+                  title="Buscar catálogo"
+                  aria-label="Buscar catálogo"
+                  className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
+                >
+                  <Search className="w-4 h-4 shrink-0" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShowSurpriseModal(true);
+                  }}
+                  title="Sorpréndeme"
+                  aria-label="Sorpréndeme"
+                  className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.09] text-amber-300 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
+                >
+                  <Sparkles className="w-4 h-4 shrink-0" />
+                </button>
+              </>
             )}
 
             <button
@@ -4537,9 +4493,9 @@ export function App() {
               }}
               title="Centro de notificaciones"
               aria-label="Centro de notificaciones"
-              className="w-8 h-8 rounded-lg bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.1] text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all relative"
+              className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all relative"
             >
-              <Bell className="w-3.5 h-3.5 shrink-0" />
+              <Bell className="w-4 h-4 shrink-0" />
               {unreadNotificationsCount > 0 && (
                 <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-[#9146FF] text-white text-[10px] font-bold flex items-center justify-center tabular-nums shadow-sm">
                   {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
@@ -4558,13 +4514,13 @@ export function App() {
                   ? 'Conectar Smart TV y Mando'
                   : 'Connect Smart TV & Remote'
               }
-              className={`min-h-[32px] px-2.5 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all relative ${
+              className={`min-h-[36px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all relative ${
                 hasConnectedSmartTv
-                  ? 'bg-[#00F593]/15 hover:bg-[#00F593]/25 border-[#00F593]/40 text-[#00F593]'
-                  : 'bg-[#26262C] hover:bg-white/[0.14] border-white/[0.1] text-[#EFEFF1]'
+                  ? 'bg-[#00F593]/15 hover:bg-[#00F593]/25 border-[#00F593]/45 text-[#00F593]'
+                  : 'bg-white/[0.055] hover:bg-white/[0.12] border-white/[0.09] text-[#EFEFF1]'
               }`}
             >
-              <Tv className="w-3.5 h-3.5 text-zinc-100 shrink-0" />
+              <Tv className="w-4 h-4 shrink-0" />
               <span className={isDesktopLayout ? 'inline' : 'hidden'}>TV</span>
             </button>
 
@@ -4572,7 +4528,7 @@ export function App() {
               type="button"
               onClick={handleShareOrCopyHeaderInvite}
               title="Amigos e Invitación Directa a la Sala"
-              className="min-h-[32px] px-3 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-sm relative"
+              className="min-h-[36px] px-3 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] hover:from-[#A96EFF] hover:to-[#8738F5] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_6px_18px_rgba(145,70,255,0.34),inset_0_1px_0_rgba(255,255,255,0.24)] relative"
             >
               {copiedHeaderInvite ? (
                 <>
@@ -4582,9 +4538,11 @@ export function App() {
               ) : (
                 <>
                   <UserPlus className="w-3.5 h-3.5 shrink-0" />
-                  <span>{isDesktopLayout ? 'Invitar' : t.invite}</span>
+                  <span className={isDesktopLayout ? 'inline' : 'hidden sm:inline'}>
+                    {isDesktopLayout ? 'Invitar' : t.invite}
+                  </span>
                   {onlineSavedFriendsCount > 0 && (
-                    <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-[#0E0E10] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
+                    <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-black/40 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                       {onlineSavedFriendsCount}
                     </span>
                   )}
@@ -4599,10 +4557,10 @@ export function App() {
                   setSidebarOpen((v) => !v);
                   setUnreadChatCount(0);
                 }}
-                className={`min-h-[32px] px-3 rounded-lg border text-xs font-semibold flex items-center justify-center gap-1 cursor-pointer active:scale-95 transition-all relative whitespace-nowrap shrink-0 ${
+                className={`min-h-[36px] px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all relative whitespace-nowrap shrink-0 ${
                   sidebarOpen
-                    ? 'bg-[#9146FF]/20 text-[#BF94FF] border-[#9146FF]/50'
-                    : 'bg-[#26262C] hover:bg-white/[0.14] border-white/[0.1] text-[#EFEFF1]'
+                    ? 'bg-[#9146FF]/22 text-[#C6A2FF] border-[#9146FF]/55 shadow-[0_0_18px_rgba(145,70,255,0.22)]'
+                    : 'bg-white/[0.055] hover:bg-white/[0.12] border-white/[0.09] text-[#EFEFF1]'
                 }`}
                 title={sidebarOpen ? 'Ocultar Sala y Chat' : 'Abrir Sala, Cola y Chat'}
                 aria-label="Alternar Sala y Chat"
@@ -4638,11 +4596,11 @@ export function App() {
               <button
                 type="button"
                 onClick={handleLeaveRoom}
-                className="w-8 h-8 ml-0.5 rounded-lg bg-[#26262C] hover:bg-white/[0.14] border border-white/[0.09] text-[#ADADB8] hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+                className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-rose-500/20 border border-white/[0.09] hover:border-rose-500/35 text-zinc-400 hover:text-rose-200 flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
                 title={t.leaveRoom}
                 aria-label={t.leaveRoom}
               >
-                <LogOut className="w-3.5 h-3.5" />
+                <LogOut className="w-4 h-4" />
               </button>
             )}
           </div>
@@ -5155,30 +5113,9 @@ export function App() {
                   onWatchlistOnlyChange={setShowWatchlistOnly}
                 />
 
-                {/* Footer with Legal/GDPR, Design System & naimcine ads */}
-                <footer className="mt-14 pt-6 pb-4 border-t border-white/[0.06] flex flex-wrap items-center justify-center gap-4 text-[11px] text-[#ADADB8]">
-                  <span>NAIM CINE · Web · Android · Google TV</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setShowLegalModal(true);
-                    }}
-                    className="inline-flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer py-1 px-2.5 rounded-full hover:bg-white/[0.05]"
-                  >
-                    <ShieldCheck className="w-3.5 h-3.5" />
-                    <span>Privacidad & GDPR</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setShowDesignSystem(true);
-                    }}
-                    className="text-zinc-400 hover:text-white transition-colors cursor-pointer py-1 px-2.5 rounded-full hover:bg-white/[0.05]"
-                  >
-                    Design System
-                  </button>
+                {/* Minimalist Footer (Legal & Design System live cleanly inside Mi Perfil) */}
+                <footer className="mt-14 pt-5 pb-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-3 text-[11px] text-zinc-500">
+                  <span>NAIM CINE · Web · Android APK · Google TV</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -5188,7 +5125,7 @@ export function App() {
                         window.history.pushState({}, '', '/naimcine-ads');
                       }
                     }}
-                    className="text-[11px] font-mono tracking-wider text-zinc-600 hover:text-zinc-300 opacity-60 hover:opacity-100 transition-all cursor-pointer py-1 px-2.5 rounded-full hover:bg-white/[0.04]"
+                    className="text-[11px] font-mono tracking-wider text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer py-1 px-2.5 rounded-full hover:bg-white/[0.05]"
                   >
                     naimcine ads
                   </button>
@@ -5272,11 +5209,11 @@ export function App() {
           )}
         </div>
 
-        {/* Twitch-Style Bottom Navigation Bar (Mobile / Android) */}
+        {/* Floating Glass Bottom Navigation Bar (Android Mobile APK & Mobile Web) */}
         {!isDesktopLayout && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-          <div className="shrink-0 px-2 pt-1 pb-[max(0.2rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#0E0E10] via-[#0E0E10]/95 to-transparent z-30">
+          <div className="shrink-0 px-2.5 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#0B0B0E] via-[#0B0B0E]/92 to-transparent z-30">
             <nav
-              className="bg-[#18181B]/95 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-1 grid grid-cols-5 gap-0.5 shadow-[0_12px_32px_rgba(0,0,0,0.65)]"
+              className="bg-[#141418]/92 backdrop-blur-2xl border border-white/[0.11] rounded-2xl p-1 grid grid-cols-5 gap-1 shadow-[0_14px_38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.1)]"
               aria-label="Navegación móvil NAIM CINE"
             >
               {(
@@ -5375,24 +5312,30 @@ export function App() {
                       triggerHaptic('light');
                       item.onSelect();
                     }}
-                    className={`min-h-[38px] py-1 rounded-xl flex flex-col items-center justify-center gap-0.5 relative active:scale-95 transition-all cursor-pointer ${
-                      active
-                        ? 'bg-[#9146FF] text-white shadow-sm'
-                        : 'text-[#ADADB8] hover:text-white'
+                    className={`min-h-[44px] py-1.5 rounded-xl flex flex-col items-center justify-center gap-0.5 relative active:scale-95 transition-colors cursor-pointer ${
+                      active ? 'text-white' : 'text-zinc-400 hover:text-white'
                     }`}
                   >
-                    <div className="relative flex items-center justify-center">
+                    {active && (
+                      <motion.span
+                        layoutId="mobile-bottom-nav-pill"
+                        transition={{ type: 'spring', stiffness: 460, damping: 34 }}
+                        className="absolute inset-0 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] shadow-[0_6px_18px_rgba(145,70,255,0.42),inset_0_1px_0_rgba(255,255,255,0.26)]"
+                        aria-hidden="true"
+                      />
+                    )}
+                    <div className="relative z-10 flex items-center justify-center">
                       <Icon
-                        className={`w-3.5 h-3.5 shrink-0 ${
-                          active ? 'text-white' : 'text-[#ADADB8]'
+                        className={`w-4 h-4 shrink-0 ${
+                          active ? 'text-white' : 'text-zinc-400'
                         }`}
                         strokeWidth={2.2}
                       />
                       {'badge' in item && item.badge ? (
                         <span
-                          className={`absolute -top-1 -right-2 min-w-3.5 h-3.5 px-0.5 rounded-full text-[0.55rem] font-bold flex items-center justify-center tabular-nums shadow-sm ${
+                          className={`absolute -top-1.5 -right-2.5 min-w-4 h-4 px-1 rounded-full text-[0.6rem] font-bold flex items-center justify-center tabular-nums shadow-sm ${
                             active
-                              ? 'bg-[#0E0E10] text-white'
+                              ? 'bg-[#0B0B0E] text-white'
                               : 'bg-[#9146FF] text-white'
                           }`}
                         >
@@ -5401,8 +5344,8 @@ export function App() {
                       ) : null}
                     </div>
                     <span
-                      className={`text-[0.6rem] leading-none tracking-tight whitespace-nowrap shrink-0 ${
-                        active ? 'font-bold text-white' : 'font-medium text-[#ADADB8]'
+                      className={`relative z-10 text-[0.65rem] leading-none tracking-tight whitespace-nowrap shrink-0 ${
+                        active ? 'font-bold text-white' : 'font-medium text-zinc-400'
                       }`}
                     >
                       {item.label}
@@ -5480,6 +5423,7 @@ export function App() {
         </React.Suspense>
       </div>
     </div>
+    </MotionConfig>
   );
 }
 

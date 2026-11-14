@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
+import { motion } from 'motion/react';
 import {
   ArrowRight,
   Shuffle,
@@ -19,6 +20,8 @@ import {
   Monitor,
   Smartphone,
   ShieldCheck,
+  Sparkles,
+  KeyRound,
 } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { UI_COPY } from '../utils/i18n';
@@ -37,6 +40,7 @@ import {
   SecondaryButton,
   IconButton,
   BottomSheet,
+  SegmentedControl,
 } from './ui/DesignSystem';
 import twitchBroadcastHeroImg from '../assets/images/twitch_broadcast_hero_1794673805657.jpg';
 
@@ -92,7 +96,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const [heroImgFailed, setHeroImgFailed] = useState(false);
   const [nameError, setNameError] = useState(false);
   const [showLobbyOptionsSheet, setShowLobbyOptionsSheet] = useState(false);
-  const [showJoinDrawer, setShowJoinDrawer] = useState(false);
+  const [entryMode, setEntryMode] = useState<'create' | 'join'>('create');
 
   useEffect(() => {
     setName(initialProfile.name);
@@ -160,8 +164,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           },
           {
             icon: Tv,
-            title: 'Smart TV 10-Foot',
-            desc: 'Emparellament instantani amb codi /tv i trackpad tàctil al mòbil.',
+            title: 'Smart TV & Android',
+            desc: 'Mateix disseny modern a Web, APK Android mòbil i receptor Google TV.',
           },
         ]
       : lang === 'en'
@@ -183,8 +187,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           },
           {
             icon: Tv,
-            title: '10-Foot Smart TV',
-            desc: 'Instant 4-digit TV pairing with haptic mobile trackpad remote.',
+            title: 'Android & Google TV',
+            desc: 'Same ultra-fluid app interface on Web, Android Mobile APK & Google TV.',
           },
         ]
       : [
@@ -205,15 +209,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           },
           {
             icon: Tv,
-            title: 'Receptor Smart TV',
-            desc: 'Empareja cualquier televisor en /tv con mando táctil háptico desde el móvil.',
+            title: 'Android y Google TV',
+            desc: 'Mismo diseño y fluidez en Web, APK Móvil Android y Receptor Google TV.',
           },
         ];
 
   return (
-    <div className="min-h-dvh w-full bg-[#0E0E10] text-[#EFEFF1] overflow-x-clip relative">
-      {/* Subtle Ambient Broadcast Lighting */}
-      <div className="pointer-events-none fixed inset-x-0 top-0 h-[36rem] overflow-hidden">
+    <div className="min-h-dvh w-full bg-[#0B0B0E] text-[#EFEFF1] overflow-x-clip relative">
+      {/* Subtle Ambient Broadcast & Aurora Lighting */}
+      <div className="pointer-events-none fixed inset-x-0 top-0 h-[38rem] overflow-hidden">
         {!heroImgFailed && (
           <img
             src={twitchBroadcastHeroImg}
@@ -221,22 +225,22 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             aria-hidden="true"
             referrerPolicy="no-referrer"
             onError={() => setHeroImgFailed(true)}
-            className="w-full h-full object-cover object-center opacity-[0.18] scale-105"
+            className="w-full h-full object-cover object-center opacity-[0.16] scale-105"
           />
         )}
-        <div className="absolute inset-0 bg-gradient-to-b from-[#0E0E10]/45 via-[#0E0E10]/85 to-[#0E0E10]" />
-        <div className="absolute -top-40 left-1/3 w-[42rem] h-72 rounded-full bg-[#9146FF]/16 blur-[140px]" />
+        <div className="absolute inset-0 bg-gradient-to-b from-[#0B0B0E]/40 via-[#0B0B0E]/85 to-[#0B0B0E]" />
+        <div className="absolute inset-0 nc-aurora-ambient" />
       </div>
 
       <div
         className={`@container min-h-dvh w-full flex flex-col pt-safe pb-safe relative z-10 ${
           isFramedMobileOnPc
-            ? 'max-w-[27rem] mx-auto border-x border-white/[0.08] bg-[#0E0E10] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
+            ? 'max-w-[27rem] mx-auto border-x border-white/[0.08] bg-[#0B0B0E] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
             : ''
         }`}
       >
         {/* ==================================================================== */}
-        {/* 3-ZONE TOP NAVIGATION HEADER                                         */}
+        {/* SINGLE-RESPONSIBILITY HEADER (Zero Duplicate Action Menus)           */}
         {/* ==================================================================== */}
         <header
           className={`w-full max-w-[1440px] mx-auto ${
@@ -253,54 +257,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             title={lang === 'es' ? 'Ver Intro NAIMCINE' : 'Play NAIMCINE Intro'}
           >
             <NaimBrandLogo
-              size={isDesktop ? 40 : 34}
-              className="shrink-0 shadow-[0_0_24px_rgba(145,70,255,0.35)] group-hover:scale-105 transition-transform"
+              size={isDesktop ? 42 : 34}
+              className="shrink-0 shadow-[0_0_26px_rgba(145,70,255,0.4)] group-hover:scale-105 transition-transform"
             />
             <span className="font-display font-bold text-base sm:text-lg tracking-[0.14em] text-white">
-              NAIM <span className="text-[#9146FF]">CINE</span>
+              NAIM <span className="text-[#A970FF]">CINE</span>
             </span>
           </button>
-
-          {isDesktop && (
-            <nav className="hidden lg:flex items-center gap-7 text-sm font-medium text-zinc-400">
-              {onOpenTvPairLobby && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onOpenTvPairLobby();
-                  }}
-                  className="hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
-                >
-                  <Tv className="w-4 h-4 text-[#BF94FF]" />
-                  <span>{lang === 'es' ? 'Receptor Smart TV' : 'Smart TV Receiver'}</span>
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  onChangeLang(lang === 'es' ? 'ca' : lang === 'ca' ? 'en' : 'es');
-                }}
-                className="hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer flex items-center gap-1.5"
-              >
-                <Globe className="w-4 h-4 text-zinc-400" />
-                <span>{lang === 'es' ? 'ES' : lang === 'ca' ? 'CA' : 'EN'}</span>
-              </button>
-              {onOpenAdsPage && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onOpenAdsPage();
-                  }}
-                  className="hover:text-white transition-colors whitespace-nowrap shrink-0 cursor-pointer"
-                >
-                  {lang === 'ca' ? 'Plataforma' : lang === 'en' ? 'Platform' : 'Plataforma'}
-                </button>
-              )}
-            </nav>
-          )}
 
           <div className="flex items-center gap-2 shrink-0">
             {onOpenTvPairLobby && (
@@ -310,11 +273,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   triggerHaptic('medium');
                   onOpenTvPairLobby();
                 }}
-                className="!px-3.5 lg:hidden"
-                title="Modo Smart TV (/tv)"
+                className="!px-3.5"
+                title="Abrir Receptor Smart TV (/tv)"
               >
                 <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
-                <span>Smart TV</span>
+                <span className="hidden sm:inline">
+                  {lang === 'es' ? 'Receptor Smart TV' : 'Smart TV'}
+                </span>
+                <span className="sm:hidden">TV</span>
               </SecondaryButton>
             )}
 
@@ -324,8 +290,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 triggerHaptic('light');
                 setShowLobbyOptionsSheet(true);
               }}
-              aria-label="Ajustes, cuenta y descargas"
-              title="Ajustes, cuenta Google, idioma y APK"
+              aria-label="Ajustes, idioma y descarga APK"
+              title="Ajustes, cuenta Google, idioma y descarga APK"
             >
               <Settings className="w-5 h-5" />
             </IconButton>
@@ -335,10 +301,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         {/* ==================================================================== */}
         {/* MAIN STAGE: 12-COLUMN ASYMMETRIC THEATER SHOWCASE + LAUNCHPAD        */}
         {/* ==================================================================== */}
-        <main className="flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 py-4 lg:py-8 flex flex-col justify-center">
+        <main className="flex-1 w-full max-w-[1440px] mx-auto px-4 sm:px-6 lg:px-10 py-3 lg:py-8 flex flex-col justify-center">
           {/* Smart TV Auto-Detection Banner */}
           {onOpenTvPairLobby && isSmartTvBrowser() && (
-            <div className="mb-6 p-4 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/45 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+            <motion.div
+              initial={{ opacity: 0, y: -8 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mb-6 p-4 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/45 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3"
+            >
               <div className="flex items-center gap-3">
                 <div className="w-11 h-11 rounded-xl bg-[#9146FF] flex items-center justify-center text-white shrink-0">
                   <Tv className="w-5 h-5" />
@@ -358,20 +328,25 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <Tv className="w-4 h-4" />
                 <span>{lang === 'es' ? 'Modo TV' : 'TV Mode'}</span>
               </PrimaryButton>
-            </div>
+            </motion.div>
           )}
 
           <div
             className={
               isDesktop
                 ? 'grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8 items-stretch'
-                : 'max-w-lg mx-auto w-full space-y-5'
+                : 'max-w-lg mx-auto w-full space-y-4'
             }
           >
             {/* LEFT: BROADCAST STUDIO SHOWCASE (Desktop 7 Columns) */}
             {isDesktop && (
-              <section className="hidden lg:flex lg:col-span-7 rounded-3xl overflow-hidden border border-white/[0.08] bg-[#18181B] relative flex-col justify-between shadow-[0_28px_80px_rgba(0,0,0,0.75)] min-h-[32rem]">
-                <div className="relative flex-1 min-h-[19rem] overflow-hidden bg-[#1F1F23]">
+              <motion.section
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
+                className="hidden lg:flex lg:col-span-7 rounded-3xl overflow-hidden nc-specular-surface relative flex-col justify-between min-h-[32rem]"
+              >
+                <div className="relative flex-1 min-h-[19rem] overflow-hidden bg-[#18181D]">
                   {!heroImgFailed && (
                     <img
                       src={twitchBroadcastHeroImg}
@@ -381,12 +356,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       className="w-full h-full object-cover object-center"
                     />
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#18181B] via-[#18181B]/35 to-transparent" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#18181B]/80 via-transparent to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#121217] via-[#121217]/35 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#121217]/85 via-transparent to-transparent" />
                 </div>
 
                 <div className="relative z-10 p-8 -mt-20 space-y-4">
-                  <p className="text-xs font-mono uppercase tracking-[0.18em] text-[#BF94FF]">
+                  <p className="text-xs font-mono uppercase tracking-[0.18em] text-[#C6A2FF]">
                     {lang === 'ca'
                       ? 'EMISSIÓ EN DIRECTE · SINCRONITZACIÓ < 40 MS · MULTIPLATAFORMA'
                       : lang === 'en'
@@ -406,24 +381,29 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       : 'Salas de emisión en vivo con chat en directo, 14 géneros, fútbol, canales TDT/FAST 24/7 y la misma interfaz unificada en Web, Android APK y Google TV.'}
                   </p>
 
-                  <div className="pt-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-[#ADADB8] border-t border-white/[0.07]">
+                  <div className="pt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-[#ADADB8] border-t border-white/[0.08]">
                     <span className="flex items-center gap-1.5 text-[#EFEFF1]">
                       <ShieldCheck className="w-4 h-4 text-[#00F593]" />
                       {lang === 'es' ? 'Salas privadas cifradas' : 'Encrypted private rooms'}
                     </span>
                     <span>·</span>
-                    <span>Web · Android APK · Google TV / Tizen</span>
+                    <span>Web · Android APK · Google TV</span>
                     <span>·</span>
                     <span className="font-mono text-[#EFEFF1] tabular-nums">14 Géneros · +500 Canales</span>
                   </div>
                 </div>
-              </section>
+              </motion.section>
             )}
 
-            {/* MOBILE HERO HEADLINE (Compact Single-Screen Fit) */}
+            {/* MOBILE HERO HEADLINE (Compact Android Mobile Native Feel) */}
             {!isDesktop && (
-              <div className="text-center space-y-1.5 px-1">
-                <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-[#BF94FF]">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.28 }}
+                className="text-center space-y-1.5 px-1"
+              >
+                <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-[#C6A2FF]">
                   {lang === 'es'
                     ? 'Directos · Cine · Fútbol · Google TV'
                     : 'Live · Movies · Football · Google TV'}
@@ -431,19 +411,22 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 <h1 className="font-display font-bold text-2xl sm:text-3xl leading-[1.12] tracking-tight text-white text-balance">
                   {t.heroHeadline}
                 </h1>
-              </div>
+              </motion.div>
             )}
 
             {/* RIGHT: ROOM LAUNCHPAD CARD (Desktop 5 Columns / Mobile Full) */}
-            <section
+            <motion.section
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.35, delay: 0.04, ease: [0.16, 1, 0.3, 1] }}
               className={`${
                 isDesktop ? 'lg:col-span-5' : ''
-              } rounded-3xl bg-[#18181B]/95 backdrop-blur-2xl border border-white/[0.09] shadow-[0_28px_80px_rgba(0,0,0,0.8)] p-5 sm:p-7 flex flex-col justify-between space-y-5`}
+              } rounded-3xl bg-[#141418]/92 backdrop-blur-2xl border border-white/[0.11] shadow-[0_28px_80px_rgba(0,0,0,0.84),inset_0_1px_0_rgba(255,255,255,0.1)] p-5 sm:p-7 flex flex-col justify-between space-y-5`}
             >
               <div className="space-y-4">
                 {/* 1. Recent Rooms Quick Strip */}
                 {recentRooms.length > 0 && (
-                  <div className="space-y-2 pb-3.5 border-b border-white/[0.07]">
+                  <div className="space-y-2 pb-3.5 border-b border-white/[0.08]">
                     <div className="flex items-center justify-between text-xs text-[#ADADB8]">
                       <span className="font-semibold flex items-center gap-1.5 text-[#EFEFF1]">
                         <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
@@ -463,8 +446,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                           }}
                           className={`min-h-10 px-3.5 rounded-xl flex items-center gap-2 text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
                             idx === 0
-                              ? 'bg-[#9146FF] hover:bg-[#772CE8] text-white shadow-md'
-                              : 'bg-[#26262C] hover:bg-white/[0.14] text-[#EFEFF1]'
+                              ? 'bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] text-white shadow-[0_6px_18px_rgba(145,70,255,0.34)]'
+                              : 'bg-white/[0.07] hover:bg-white/[0.13] border border-white/[0.08] text-[#EFEFF1]'
                           }`}
                         >
                           <Play className="w-3 h-3 fill-current shrink-0" />
@@ -485,7 +468,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       triggerHaptic('medium');
                       onSignIn();
                     }}
-                    className="w-full min-h-12 px-5 rounded-2xl bg-white hover:bg-zinc-100 active:scale-[0.98] disabled:opacity-60 text-[#07070b] font-display font-bold text-sm flex items-center justify-center gap-3 shadow-[0_10px_28px_rgba(255,255,255,0.12)] transition-all cursor-pointer"
+                    className="w-full min-h-12 px-5 rounded-2xl bg-white hover:bg-zinc-100 active:scale-[0.98] disabled:opacity-60 text-[#07070b] font-display font-bold text-sm flex items-center justify-center gap-3 shadow-[0_10px_28px_rgba(255,255,255,0.14)] transition-all cursor-pointer"
                   >
                     <svg className="w-5 h-5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
                       <path
@@ -516,10 +499,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     </span>
                   </button>
                 ) : (
-                  <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/[0.07] space-y-3.5">
+                  <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/[0.09] space-y-3.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-10 h-10 rounded-xl bg-white text-[#07070b] flex items-center justify-center font-display font-bold text-sm shrink-0">
+                        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9E5CFF] to-[#7C2AE8] text-white flex items-center justify-center font-display font-bold text-sm shrink-0 shadow-[0_6px_16px_rgba(145,70,255,0.3)]">
                           {getMonogramInitials(authUser.displayName || authUser.email || 'NC')}
                         </div>
                         <div className="min-w-0">
@@ -542,54 +525,69 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       </button>
                     </div>
 
-                    <PrimaryButton
-                      type="button"
-                      onClick={() => {
-                        const googleName =
-                          authUser.displayName?.trim() || name.trim() || 'Cineasta';
-                        const profile: StoredProfile = {
-                          id: initialProfile.id,
-                          name: googleName.slice(0, 24),
-                          avatar: initialProfile.avatar || '🎬',
-                          color: initialProfile.color || '#9146FF',
-                          isCustomized: true,
-                        };
-                        if (recentRooms.length > 0) {
-                          onEnterRoom(recentRooms[0].id, profile, recentRooms[0].name);
-                        } else {
-                          const code = generateShortRoomCode(4);
-                          onEnterRoom(code, profile, `Sala de ${profile.name}`);
-                        }
-                      }}
-                      fullWidth
-                      size="lg"
-                    >
-                      <Play className="w-4 h-4 fill-current shrink-0" />
-                      <span>
-                        {lang === 'es'
-                          ? `Abrir Sala (${authUser.displayName?.split(' ')[0] || 'Directo'})`
-                          : 'Enter My Room'}
-                      </span>
-                      <ArrowRight className="w-4 h-4 shrink-0" />
-                    </PrimaryButton>
+                    {entryMode === 'create' && (
+                      <PrimaryButton
+                        type="button"
+                        onClick={() => {
+                          const googleName =
+                            authUser.displayName?.trim() || name.trim() || 'Cineasta';
+                          const profile: StoredProfile = {
+                            id: initialProfile.id,
+                            name: googleName.slice(0, 24),
+                            avatar: initialProfile.avatar || '🎬',
+                            color: initialProfile.color || '#9146FF',
+                            isCustomized: true,
+                          };
+                          if (recentRooms.length > 0) {
+                            onEnterRoom(recentRooms[0].id, profile, recentRooms[0].name);
+                          } else {
+                            const code = generateShortRoomCode(4);
+                            onEnterRoom(code, profile, `Sala de ${profile.name}`);
+                          }
+                        }}
+                        fullWidth
+                        size="lg"
+                      >
+                        <Play className="w-4 h-4 fill-current shrink-0" />
+                        <span>
+                          {lang === 'es'
+                            ? `Abrir Sala (${authUser.displayName?.split(' ')[0] || 'Directo'})`
+                            : 'Enter My Room'}
+                        </span>
+                        <ArrowRight className="w-4 h-4 shrink-0" />
+                      </PrimaryButton>
+                    )}
                   </div>
                 )}
 
-                {/* 3. Fast Guest Entry */}
-                {!authUser && (
-                  <div className="space-y-3">
-                    <div className="relative flex items-center py-0.5">
-                      <div className="flex-grow border-t border-white/[0.07]" />
-                      <span className="shrink-0 px-3 text-xs font-medium text-zinc-500">
-                        {lang === 'es' ? 'o crea una sala al instante' : 'or launch an instant room'}
-                      </span>
-                      <div className="flex-grow border-t border-white/[0.07]" />
-                    </div>
+                {/* 3. Segmented Mode Switcher: Create Room vs Join with Code */}
+                <SegmentedControl
+                  layoutId="lobby-entry-mode"
+                  value={entryMode}
+                  onChange={(mode) => {
+                    triggerHaptic('light');
+                    setEntryMode(mode);
+                  }}
+                  options={[
+                    {
+                      id: 'create',
+                      label: lang === 'es' ? 'Crear sala nueva' : 'Create room',
+                      icon: <Sparkles className="w-3.5 h-3.5" />,
+                    },
+                    {
+                      id: 'join',
+                      label: lang === 'es' ? 'Unirse con código' : 'Join with code',
+                      icon: <KeyRound className="w-3.5 h-3.5" />,
+                    },
+                  ]}
+                />
 
+                {entryMode === 'create' && !authUser && (
+                  <div className="space-y-3">
                     <div className="flex items-center gap-2">
                       <div
                         aria-hidden="true"
-                        className="w-11 h-11 rounded-2xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center font-display font-bold text-sm text-white shrink-0"
+                        className="w-11 h-11 rounded-2xl bg-white/[0.06] border border-white/[0.09] flex items-center justify-center font-display font-bold text-sm text-white shrink-0"
                       >
                         {getMonogramInitials(name)}
                       </div>
@@ -609,11 +607,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                         }}
                         placeholder={t.nicknamePlaceholder}
                         maxLength={24}
-                        className={`flex-1 min-w-0 min-h-11 px-4 rounded-2xl bg-[#26262C] border ${
+                        className={`flex-1 min-w-0 min-h-11 px-4 rounded-2xl bg-white/[0.05] border ${
                           nameError
                             ? 'border-[#EB0400]'
                             : 'border-white/[0.09] focus:border-[#9146FF]'
-                        } text-sm font-medium text-white placeholder:text-[#ADADB8] outline-none transition-colors`}
+                        } text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition-colors`}
                       />
                       <IconButton
                         type="button"
@@ -632,50 +630,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       size="lg"
                     >
                       <Play className="w-4 h-4 fill-current shrink-0" />
-                      <span>{lang === 'es' ? 'Crear Sala Privada' : t.createRoomBtn}</span>
+                      <span>{lang === 'es' ? 'Entrar y Crear Sala' : t.createRoomBtn}</span>
                       <ArrowRight className="w-4 h-4 shrink-0" />
                     </PrimaryButton>
                   </div>
                 )}
-              </div>
 
-              {/* 4. Secondary Actions: Join by Code & App Downloads */}
-              <div className="pt-3 border-t border-white/[0.07]">
-                {!showJoinDrawer ? (
-                  <div className="grid grid-cols-2 gap-2.5">
-                    <SecondaryButton
-                      type="button"
-                      onClick={() => setShowJoinDrawer(true)}
-                      fullWidth
-                    >
-                      <span>{lang === 'es' ? 'Unirse con código' : 'Join with code'}</span>
-                    </SecondaryButton>
-
-                    <SecondaryButton
-                      type="button"
-                      onClick={() => setShowLobbyOptionsSheet(true)}
-                      fullWidth
-                    >
-                      <Download className="w-4 h-4 text-zinc-300" />
-                      <span className="truncate">
-                        {lang === 'es' ? 'APK y Ajustes' : 'Apps & Settings'}
-                      </span>
-                    </SecondaryButton>
-                  </div>
-                ) : (
-                  <form onSubmit={handleJoinByCode} className="space-y-2 animate-fade-in">
-                    <div className="flex items-center justify-between">
-                      <label htmlFor="lobby-room-code" className="text-xs font-semibold text-zinc-300">
-                        {t.joinRoomLabel}
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setShowJoinDrawer(false)}
-                        className="text-xs text-zinc-400 hover:text-white cursor-pointer"
-                      >
-                        {lang === 'es' ? 'Cerrar' : 'Close'}
-                      </button>
-                    </div>
+                {entryMode === 'join' && (
+                  <form onSubmit={handleJoinByCode} className="space-y-3">
                     <div className="flex items-center gap-2">
                       <input
                         id="lobby-room-code"
@@ -684,9 +646,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                         onChange={(e) => setRoomCode(e.target.value)}
                         placeholder={t.roomCodePlaceholder}
                         autoFocus
-                        className="flex-1 min-w-0 min-h-11 px-4 rounded-2xl bg-white/[0.05] border border-white/[0.1] focus:border-white/30 text-sm text-white placeholder:text-zinc-500 outline-none font-mono"
+                        className="flex-1 min-w-0 min-h-12 px-4 rounded-2xl bg-white/[0.05] border border-white/[0.1] focus:border-[#9146FF] text-sm text-white placeholder:text-zinc-500 outline-none font-mono uppercase tracking-wider"
                       />
-                      <PrimaryButton type="submit" disabled={!roomCode.trim()} className="shrink-0">
+                      <PrimaryButton type="submit" disabled={!roomCode.trim()} size="lg" className="shrink-0">
                         <span>{t.joinBtn}</span>
                         <ArrowRight className="w-4 h-4" />
                       </PrimaryButton>
@@ -694,23 +656,48 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   </form>
                 )}
               </div>
-            </section>
+
+              {/* 4. Single Clean APK / App Settings Trigger */}
+              <div className="pt-3 border-t border-white/[0.07] flex items-center justify-between gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setShowLobbyOptionsSheet(true);
+                  }}
+                  className="w-full min-h-11 px-4 rounded-2xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-between gap-2 cursor-pointer transition-colors"
+                >
+                  <span className="flex items-center gap-2">
+                    <Download className="w-4 h-4 text-[#BF94FF]" />
+                    <span>
+                      {lang === 'es'
+                        ? 'Descargar APK Android / Google TV e Idioma'
+                        : 'Download Android / Google TV APK & Settings'}
+                    </span>
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-zinc-400" />
+                </button>
+              </div>
+            </motion.section>
           </div>
 
           {/* 4-COLUMN DESKTOP CAPABILITY PROOF STRIP */}
           {isDesktop && (
             <section className="hidden lg:grid grid-cols-4 gap-4 mt-8">
-              {featureHighlights.map((item) => {
+              {featureHighlights.map((item, idx) => {
                 const Icon = item.icon;
                 return (
-                  <div
+                  <motion.div
                     key={item.title}
-                    className="p-5 rounded-2xl bg-[#18181B] border border-white/[0.08] hover:border-[#9146FF]/45 transition-colors space-y-2"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: 0.08 + idx * 0.04 }}
+                    className="p-5 rounded-2xl nc-specular-surface hover:border-[#9146FF]/45 hover:-translate-y-0.5 transition-all space-y-2"
                   >
                     <Icon className="w-5 h-5 text-[#BF94FF]" />
                     <h2 className="font-display font-bold text-sm text-white">{item.title}</h2>
                     <p className="text-xs text-[#ADADB8] leading-relaxed">{item.desc}</p>
-                  </div>
+                  </motion.div>
                 );
               })}
             </section>
@@ -737,11 +724,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         <BottomSheet
           isOpen={showLobbyOptionsSheet}
           onClose={() => setShowLobbyOptionsSheet(false)}
-          title={lang === 'es' ? 'Ajustes, Cuenta y App' : 'Settings, Account & App'}
+          title={lang === 'es' ? 'Ajustes, Cuenta y App APK' : 'Settings, Account & APK'}
           subtitle={
             lang === 'es'
-              ? 'Sincronización en la nube, modo de vista e instalación APK'
-              : 'Cloud sync, view mode, and APK installation'
+              ? 'Sincronización en la nube, modo de vista e instalación Android / Google TV'
+              : 'Cloud sync, view mode, and Android / Google TV installation'
           }
           icon={<Settings className="w-5 h-5" />}
         >
@@ -815,37 +802,24 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             <SecondaryButton
               onClick={() => {
                 triggerHaptic('light');
-                onChangeLang(lang === 'es' ? 'en' : 'es');
+                onChangeLang(lang === 'es' ? 'ca' : lang === 'ca' ? 'en' : 'es');
               }}
               fullWidth
             >
               <Globe className="w-4 h-4 text-sky-400" />
-              <span>{lang === 'es' ? 'Idioma: Español' : 'Language: English'}</span>
-            </SecondaryButton>
-          </div>
-
-          {onOpenTvPairLobby && (
-            <SecondaryButton
-              onClick={() => {
-                setShowLobbyOptionsSheet(false);
-                onOpenTvPairLobby();
-              }}
-              fullWidth
-            >
-              <Tv className="w-4 h-4 text-[#BF94FF]" />
               <span>
-                {lang === 'es'
-                  ? 'Abrir Pantalla Receptora Smart TV (/tv)'
-                  : 'Open Smart TV Receiver Screen (/tv)'}
+                {lang === 'es' ? 'Idioma: ES' : lang === 'ca' ? 'Idioma: CA' : 'Lang: EN'}
               </span>
             </SecondaryButton>
-          )}
+          </div>
 
           <div className="pt-2 border-t border-white/[0.07]">
             <div className="flex items-center gap-2 text-xs font-bold text-zinc-300 mb-2.5">
               <Download className="w-4 h-4 text-[#BF94FF]" />
               <span>
-                {lang === 'es' ? 'Instalar Aplicación (APK / Móvil / Google TV)' : 'Install App (APK / Mobile / Google TV)'}
+                {lang === 'es'
+                  ? 'Instalar Aplicación (APK Android / Google TV / iOS)'
+                  : 'Install App (Android APK / Google TV / iOS)'}
               </span>
             </div>
             <PWAInstallLandingCard lang={lang} isDesktop={isDesktop} />

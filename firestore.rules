@@ -294,7 +294,7 @@ service cloud.firestore {
         );
 
       allow list: if isVerified() &&
-        existing().uid == request.auth.uid;
+        resource.data.uid == request.auth.uid;
 
       allow create: if isVerified() &&
         isValidId(historyId) &&
@@ -358,7 +358,7 @@ service cloud.firestore {
         );
 
       allow list: if isVerified() &&
-        existing().uid == request.auth.uid;
+        resource.data.uid == request.auth.uid;
 
       allow create: if isVerified() &&
         isValidId(favoriteId) &&
@@ -414,7 +414,7 @@ service cloud.firestore {
         );
 
       allow list: if isVerified() &&
-        existing().uid == request.auth.uid;
+        resource.data.uid == request.auth.uid;
 
       allow create: if isVerified() &&
         isValidId(savedRoomId) &&
@@ -463,7 +463,7 @@ service cloud.firestore {
         );
 
       allow list: if isVerified() &&
-        existing().uid == request.auth.uid;
+        resource.data.uid == request.auth.uid;
 
       allow create: if isVerified() &&
         isValidId(friendDocId) &&

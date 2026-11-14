@@ -334,17 +334,18 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
   const digits = pairingCode ? pairingCode.split('') : ['•', '•', '•', '•'];
 
   return (
-    <div className="min-h-screen w-full bg-[#0E0E10] text-[#EFEFF1] flex flex-col justify-between p-5 sm:p-10 lg:p-12 relative overflow-x-hidden select-none">
-      {/* Ambient Broadcast Lighting */}
-      <div className="pointer-events-none fixed -top-48 left-1/2 -translate-x-1/2 w-[780px] h-[360px] rounded-full bg-[#9146FF]/16 blur-[150px]" />
+    <div className="min-h-screen w-full bg-[#0B0B0E] text-[#EFEFF1] flex flex-col justify-between p-5 sm:p-10 lg:p-12 relative overflow-x-hidden select-none">
+      {/* Ambient Aurora & Broadcast Lighting */}
+      <div className="pointer-events-none fixed inset-0 nc-aurora-ambient" />
+      <div className="pointer-events-none fixed -top-48 left-1/2 -translate-x-1/2 w-[780px] h-[360px] rounded-full bg-[#9146FF]/18 blur-[150px]" />
 
       {/* Top TV Header */}
       <header className="relative z-10 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <NaimBrandLogo size={46} />
+          <NaimBrandLogo size={46} className="shadow-[0_0_26px_rgba(145,70,255,0.4)]" />
           <div>
             <div className="font-display font-bold text-lg sm:text-2xl tracking-[0.14em] text-white">
-              NAIM <span className="text-[#9146FF]">CINE</span>{' '}
+              NAIM <span className="text-[#A970FF]">CINE</span>{' '}
               <span className="text-zinc-300 font-semibold text-sm sm:text-base tracking-normal ml-1">
                 Smart TV
               </span>
@@ -352,15 +353,15 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
             <div className="text-xs sm:text-sm text-zinc-400">
               {liveTvLabel} ·{' '}
               {lang === 'es'
-                ? 'Receptor compatible con Samsung Tizen, LG webOS y Android TV'
-                : 'Compatible with Samsung Tizen, LG webOS & Android TV'}
+                ? 'Receptor compatible con Google TV, Samsung Tizen y LG webOS'
+                : 'Compatible with Google TV, Samsung Tizen & LG webOS'}
             </div>
           </div>
         </div>
 
         <div className="flex items-center gap-3">
           <div
-            className={`px-3.5 py-2 rounded-2xl border text-xs sm:text-sm font-medium flex items-center gap-2 ${
+            className={`px-3.5 py-2 rounded-2xl border text-xs sm:text-sm font-medium flex items-center gap-2 backdrop-blur-xl ${
               connected || pairingCode
                 ? 'bg-emerald-500/12 border-emerald-400/35 text-emerald-300'
                 : 'bg-amber-500/12 border-amber-400/35 text-amber-300'
@@ -392,12 +393,12 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
       {/* Center 10-Foot Giant 4-Digit Code Display */}
       <main className="relative z-10 my-auto py-6 max-w-4xl mx-auto w-full flex flex-col items-center text-center space-y-7">
         <div className="space-y-2.5 max-w-2xl">
-          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-zinc-300 tracking-wide uppercase">
-            <Tv className="w-4 h-4 text-[#9146FF]" />
+          <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-[#C6A2FF] tracking-wide uppercase">
+            <Tv className="w-4 h-4 text-[#A970FF]" />
             <span>
               {lang === 'es'
-                ? 'Código de vinculación rápida para Samsung TV / Smart TV'
-                : 'Quick pairing code for Samsung TV / Smart TV'}
+                ? 'Código de vinculación rápida para Google TV / Smart TV'
+                : 'Quick pairing code for Google TV / Smart TV'}
             </span>
           </div>
           <h1 className="font-display font-bold text-2xl sm:text-4xl lg:text-5xl text-white tracking-tight">
@@ -407,17 +408,17 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           </h1>
           <p className="text-sm sm:text-lg text-zinc-400 leading-relaxed">
             {lang === 'es'
-              ? 'En tu móvil entra a tu sala de NAIM CINE, toca el botón Smart TV (o Cast en el vídeo) y escribe este código:'
-              : 'On your phone, open your NAIM CINE room, tap the Smart TV button, and enter this code:'}
+              ? 'En tu móvil entra a tu sala de NAIM CINE, toca el botón TV y escribe este código:'
+              : 'On your phone, open your NAIM CINE room, tap the TV button, and enter this code:'}
           </p>
         </div>
 
-        {/* 4 Giant Illuminated Broadcast Digit Tiles */}
+        {/* 4 Giant Illuminated Specular Broadcast Digit Tiles */}
         <div className="flex items-center justify-center gap-3 sm:gap-6">
           {digits.map((digit, index) => (
             <div
               key={index}
-              className="w-20 h-28 sm:w-28 sm:h-36 lg:w-36 lg:h-44 rounded-3xl bg-[#18181B] border-2 border-[#9146FF]/35 shadow-[0_24px_80px_rgba(0,0,0,0.9),0_0_40px_rgba(145,70,255,0.18)] flex items-center justify-center font-mono font-bold text-5xl sm:text-7xl lg:text-8xl text-white tabular-nums"
+              className="w-20 h-28 sm:w-28 sm:h-36 lg:w-36 lg:h-44 rounded-3xl bg-gradient-to-b from-[#1B1B24] to-[#111116] border border-[#9146FF]/45 shadow-[0_24px_80px_rgba(0,0,0,0.9),0_0_40px_rgba(145,70,255,0.22),inset_0_1px_0_rgba(255,255,255,0.16)] flex items-center justify-center font-mono font-bold text-5xl sm:text-7xl lg:text-8xl text-white tabular-nums"
             >
               {digit}
             </div>
