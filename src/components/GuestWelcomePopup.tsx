@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
 import { getMonogramInitials } from './MobileViewportGuard';
 
 interface GuestWelcomePopupProps {
@@ -52,7 +53,11 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
 
   return (
     <aside
-      aria-label={lang === 'es' ? 'Personalizar tu nombre en la sala' : 'Set your display name'}
+      aria-label={pickLang(lang, {
+        es: 'Personalizar tu nombre en la sala',
+        ca: 'Personalitza el teu nom a la sala',
+        en: 'Set your display name',
+      })}
       className="fixed bottom-[78px] inset-x-3 sm:inset-x-auto sm:right-5 sm:bottom-5 sm:w-[360px] z-30 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border border-white/[0.12] shadow-[0_24px_60px_rgba(0,0,0,0.9)] p-4 animate-room-warp"
     >
       <div className="flex items-start justify-between gap-3">
@@ -65,7 +70,11 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
               {roomName}
             </div>
             <h3 className="font-display font-semibold text-sm text-white leading-snug">
-              {lang === 'es' ? '¿Cómo te llamas?' : 'What’s your name?'}
+              {pickLang(lang, {
+                es: '¿Cómo te llamas?',
+                ca: 'Com et dius?',
+                en: 'What’s your name?',
+              })}
             </h3>
           </div>
         </div>
@@ -76,8 +85,16 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
             triggerHaptic('light');
             onDismissKeepRandom();
           }}
-          title={lang === 'es' ? `Seguir como ${currentName}` : `Keep ${currentName}`}
-          aria-label="Cerrar"
+          title={pickLang(lang, {
+            es: `Seguir como ${currentName}`,
+            ca: `Continuar com a ${currentName}`,
+            en: `Keep ${currentName}`,
+          })}
+          aria-label={pickLang(lang, {
+            es: 'Cerrar',
+            ca: 'Tancar',
+            en: 'Close',
+          })}
           className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/12 flex items-center justify-center text-zinc-400 hover:text-white shrink-0 cursor-pointer transition-colors"
         >
           <X className="w-4 h-4" />
@@ -89,9 +106,11 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
           type="text"
           value={draftName}
           onChange={(e) => setDraftName(e.target.value)}
-          placeholder={
-            lang === 'es' ? `Tu nombre (o ${currentName})` : `Your name (or ${currentName})`
-          }
+          placeholder={pickLang(lang, {
+            es: `Tu nombre (o ${currentName})`,
+            ca: `El teu nom (o ${currentName})`,
+            en: `Your name (or ${currentName})`,
+          })}
           maxLength={24}
           className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-white/[0.05] focus:bg-white/[0.08] border border-white/12 focus:border-[#9146FF] text-base sm:text-xs text-white placeholder:text-[#ADADB8] outline-none transition-all"
         />
@@ -100,14 +119,22 @@ export const GuestWelcomePopup: React.FC<GuestWelcomePopupProps> = ({
           className="h-11 px-4 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 active:scale-95 text-xs font-bold text-white flex items-center gap-1.5 shrink-0 cursor-pointer transition-all shadow-[0_6px_18px_rgba(145,70,255,0.35)]"
         >
           <Check className="w-3.5 h-3.5" />
-          <span>{lang === 'es' ? 'Guardar' : 'Save'}</span>
+          <span>
+            {pickLang(lang, {
+              es: 'Guardar',
+              ca: 'Desar',
+              en: 'Save',
+            })}
+          </span>
         </button>
       </form>
 
       <p className="text-[11px] text-zinc-500 mt-2">
-        {lang === 'es'
-          ? `Cierra si prefieres quedarte como "${currentName}".`
-          : `Close anytime to stay as "${currentName}".`}
+        {pickLang(lang, {
+          es: `Cierra si prefieres quedarte como "${currentName}".`,
+          ca: `Tanca si prefereixes quedar-te com a "${currentName}".`,
+          en: `Close anytime to stay as "${currentName}".`,
+        })}
       </p>
     </aside>
   );

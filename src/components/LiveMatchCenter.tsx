@@ -23,6 +23,7 @@ import type {
   FootballMatchStatItem,
 } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
 
 export type MatchCenterTab = 'commentary' | 'lineups' | 'stats' | 'events';
 type LineupMetric = 'rating' | 'club' | 'age' | 'marketValue' | 'height';
@@ -61,7 +62,8 @@ function getRatingBadgeClasses(ratingStr?: string): string {
 
 function getPlayerMetricText(
   player: FootballMatchLineupPlayer,
-  metric: LineupMetric
+  metric: LineupMetric,
+  lang: AppLanguage
 ): { text: string; isRating: boolean } {
   switch (metric) {
     case 'club':
@@ -71,7 +73,9 @@ function getPlayerMetricText(
       };
     case 'age':
       return {
-        text: player.age ? `${player.age} años` : '—',
+        text: player.age
+          ? `${player.age} ${pickLang(lang, { es: 'años', ca: 'anys', en: 'yrs' })}`
+          : '—',
         isRating: false,
       };
     case 'marketValue':
@@ -182,8 +186,9 @@ const TacticalPitchHalf: React.FC<{
   lineup: FootballMatchLineupTeam;
   side: 'home' | 'away';
   metric: LineupMetric;
+  lang: AppLanguage;
   onSelectPlayer: (p: FootballMatchLineupPlayer) => void;
-}> = ({ lineup, side, metric, onSelectPlayer }) => {
+}> = ({ lineup, side, metric, lang, onSelectPlayer }) => {
   const starters = lineup.starters || [];
   const fallbackCoords = useMemo(
     () => computeFallbackPitchCoords(starters, lineup.formation),
@@ -256,7 +261,7 @@ const TacticalPitchHalf: React.FC<{
           const rawCoord = player.layout || fallbackCoords[idx] || { x: 0.5, y: 0.5 };
           const posX = rawCoord.x * 100;
           const posY = side === 'home' ? rawCoord.y * 100 : (1 - rawCoord.y) * 100;
-          const metricBadge = getPlayerMetricText(player, metric);
+          const metricBadge = getPlayerMetricText(player, metric, lang);
 
           return (
             <button
@@ -328,18 +333,19 @@ const TacticalPitchHalf: React.FC<{
       <div className="rounded-2xl bg-[#1A1E29] border border-white/[0.07] p-3 space-y-2.5">
         <div className="flex items-center justify-between text-xs border-b border-white/[0.06] pb-2">
           <span className="font-bold uppercase tracking-wider text-zinc-400 text-[10px]">
-            Suplentes ({lineup.substitutes.length})
+            {pickLang(lang, { es: 'Suplentes', ca: 'Suplents', en: 'Substitutes' })} ({lineup.substitutes.length})
           </span>
           {lineup.coach && (
             <span className="text-zinc-300 text-[11px]">
-              DT: <strong className="text-white">{lineup.coach}</strong>
+              {pickLang(lang, { es: 'DT:', ca: 'Entr.:', en: 'Coach:' })}{' '}
+              <strong className="text-white">{lineup.coach}</strong>
             </span>
           )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-52 overflow-y-auto pr-1">
           {lineup.substitutes.map((sub, idx) => {
-            const metricBadge = getPlayerMetricText(sub, metric);
+            const metricBadge = getPlayerMetricText(sub, metric, lang);
             return (
               <button
                 key={`${sub.id}-${idx}`}
@@ -364,7 +370,7 @@ const TacticalPitchHalf: React.FC<{
                     </div>
                     {sub.subInMinute && (
                       <div className="text-[10px] text-emerald-400 font-mono">
-                        ↑ Entró {sub.subInMinute}
+                        ↑ {pickLang(lang, { es: 'Entró', ca: 'Entrà', en: 'Subbed in' })} {sub.subInMinute}
                       </div>
                     )}
                   </div>
@@ -494,15 +500,19 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               {resolvedState === 'live' ? (
                 <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 font-bold uppercase tracking-wider">
                   <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-                  EN VIVO
+                  {pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE' })}
                 </span>
               ) : (
                 <span className="px-2.5 py-0.5 rounded-full bg-white/[0.08] text-zinc-300 font-semibold">
-                  {resolvedState === 'finished' ? 'Finalizado' : 'Previa'}
+                  {resolvedState === 'finished'
+                    ? pickLang(lang, { es: 'Finalizado', ca: 'Finalitzat', en: 'Finished' })
+                    : pickLang(lang, { es: 'Previa', ca: 'Prèvia', en: 'Preview' })}
                 </span>
               )}
               <span className="text-zinc-400 truncate">
-                {details?.tournamentName || competition || 'Fútbol en Directo'}
+                {details?.tournamentName ||
+                  competition ||
+                  pickLang(lang, { es: 'Fútbol en Directo', ca: 'Futbol en Directe', en: 'Live Football' })}
                 {details?.venue ? ` · ${details.venue}` : ''}
               </span>
             </div>
@@ -515,7 +525,16 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                     triggerHaptic('light');
                     onRefresh();
                   }}
-                  title="Actualizar datos en vivo"
+                  aria-label={pickLang(lang, {
+                    es: 'Actualizar datos en vivo',
+                    ca: 'Actualitzar dades en directe',
+                    en: 'Refresh live data',
+                  })}
+                  title={pickLang(lang, {
+                    es: 'Actualizar datos en vivo',
+                    ca: 'Actualitzar dades en directe',
+                    en: 'Refresh live data',
+                  })}
                   className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#FFBD0F]' : ''}`} />
@@ -524,7 +543,32 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               <button
                 type="button"
                 onClick={() => setIsCollapsed((c) => !c)}
-                title={isCollapsed ? 'Expandir estadísticas y alineaciones' : 'Contraer panel'}
+                aria-label={
+                  isCollapsed
+                    ? pickLang(lang, {
+                        es: 'Expandir estadísticas y alineaciones',
+                        ca: 'Expandir estadístiques i alineacions',
+                        en: 'Expand stats and lineups',
+                      })
+                    : pickLang(lang, {
+                        es: 'Contraer panel',
+                        ca: 'Contraure panell',
+                        en: 'Collapse panel',
+                      })
+                }
+                title={
+                  isCollapsed
+                    ? pickLang(lang, {
+                        es: 'Expandir estadísticas y alineaciones',
+                        ca: 'Expandir estadístiques i alineacions',
+                        en: 'Expand stats and lineups',
+                      })
+                    : pickLang(lang, {
+                        es: 'Contraer panel',
+                        ca: 'Contraure panell',
+                        en: 'Collapse panel',
+                      })
+                }
                 className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
               >
                 {isCollapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
@@ -533,7 +577,16 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                 <button
                   type="button"
                   onClick={onCloseDock}
-                  title="Cerrar panel de datos en vivo"
+                  aria-label={pickLang(lang, {
+                    es: 'Cerrar panel de datos en vivo',
+                    ca: 'Tancar panell de dades en directe',
+                    en: 'Close live match panel',
+                  })}
+                  title={pickLang(lang, {
+                    es: 'Cerrar panel de datos en vivo',
+                    ca: 'Tancar panell de dades en directe',
+                    en: 'Close live match panel',
+                  })}
                   className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-rose-500/20 flex items-center justify-center text-zinc-400 hover:text-rose-300 cursor-pointer"
                 >
                   <X className="w-4 h-4" />
@@ -584,24 +637,28 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               [
                 {
                   key: 'commentary',
-                  labelEs: 'Comentario',
-                  labelEn: 'Commentary',
+                  es: 'Comentario',
+                  ca: 'Comentari',
+                  en: 'Commentary',
                   liveDot: resolvedState === 'live',
                 },
                 {
                   key: 'lineups',
-                  labelEs: 'Alineaciones',
-                  labelEn: 'Lineups',
+                  es: 'Alineaciones',
+                  ca: 'Alineacions',
+                  en: 'Lineups',
                 },
                 {
                   key: 'stats',
-                  labelEs: 'Estadísticas',
-                  labelEn: 'Statistics',
+                  es: 'Estadísticas',
+                  ca: 'Estadístiques',
+                  en: 'Statistics',
                 },
                 {
                   key: 'events',
-                  labelEs: 'Eventos',
-                  labelEn: 'Events',
+                  es: 'Eventos',
+                  ca: 'Esdeveniments',
+                  en: 'Events',
                 },
               ] as const
             ).map((tab) => (
@@ -621,22 +678,23 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                 {'liveDot' in tab && tab.liveDot && (
                   <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400]" />
                 )}
-                <span>{lang === 'es' ? tab.labelEs : tab.labelEn}</span>
+                <span>{pickLang(lang, tab)}</span>
               </button>
             ))}
 
             <div className="ml-auto pb-2 flex items-center gap-2 text-[11px] text-zinc-400 shrink-0">
               {details?.referee && (
                 <span className="hidden md:inline truncate max-w-[160px]">
-                  Árb: {details.referee}
+                  {pickLang(lang, { es: 'Árb:', ca: 'Àrb:', en: 'Ref:' })} {details.referee}
                 </span>
               )}
               {variant === 'expanded' && onRefresh && (
                 <button
                   type="button"
                   onClick={onRefresh}
+                  aria-label={pickLang(lang, { es: 'Actualizar', ca: 'Actualitzar', en: 'Refresh' })}
                   className="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white cursor-pointer"
-                  title="Actualizar"
+                  title={pickLang(lang, { es: 'Actualizar', ca: 'Actualitzar', en: 'Refresh' })}
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#FFBD0F]' : ''}`} />
                 </button>
@@ -648,14 +706,16 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
             <div className="py-10 flex items-center justify-center gap-2.5 text-xs text-zinc-300">
               <Loader2 className="w-5 h-5 animate-spin text-[#FFBD0F]" />
               <span>
-                {lang === 'es'
-                  ? 'Sincronizando datos en tiempo real del partido...'
-                  : 'Syncing live match intelligence...'}
+                {pickLang(lang, {
+                  es: 'Sincronizando datos en tiempo real del partido...',
+                  ca: 'Sincronitzant dades en temps real del partit...',
+                  en: 'Syncing live match intelligence...',
+                })}
               </span>
             </div>
           ) : activeTab === 'lineups' ? (
             /* ================================================================ */
-            /* TAB: LINEUPS & TACTICAL PITCH (Matches Screenshots 2 & 3)        */
+            /* TAB: LINEUPS & TACTICAL PITCH                                    */
             /* ================================================================ */
             <div className="space-y-3.5">
               {/* Metric Filter Bar + Team View Toggle */}
@@ -663,11 +723,11 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                 <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
                   {(
                     [
-                      { id: 'rating', label: 'Rendimiento' },
-                      { id: 'club', label: 'Club' },
-                      { id: 'age', label: 'Edad' },
-                      { id: 'marketValue', label: 'Valor de mercado' },
-                      ...(hasAnyHeight ? [{ id: 'height' as const, label: 'Altura' }] : []),
+                      { id: 'rating', es: 'Rendimiento', ca: 'Rendiment', en: 'Rating' },
+                      { id: 'club', es: 'Club', ca: 'Club', en: 'Club' },
+                      { id: 'age', es: 'Edad', ca: 'Edat', en: 'Age' },
+                      { id: 'marketValue', es: 'Valor de mercado', ca: 'Valor de mercat', en: 'Market value' },
+                      ...(hasAnyHeight ? [{ id: 'height' as const, es: 'Altura', ca: 'Alçada', en: 'Height' }] : []),
                     ] as const
                   ).map((m) => (
                     <button
@@ -683,7 +743,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                           : 'bg-[#242833] hover:bg-[#313746] text-zinc-300 border border-white/[0.08]'
                       }`}
                     >
-                      {m.label}
+                      {pickLang(lang, m)}
                     </button>
                   ))}
                 </div>
@@ -691,9 +751,9 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                 <div className="flex items-center gap-1 rounded-xl bg-[#1D212B] p-1 border border-white/[0.06] shrink-0">
                   {(
                     [
-                      { id: 'both', label: 'Ambos' },
-                      { id: 'home', label: homeShort || 'Local' },
-                      { id: 'away', label: awayShort || 'Visit.' },
+                      { id: 'both', label: pickLang(lang, { es: 'Ambos', ca: 'Ambdós', en: 'Both' }) },
+                      { id: 'home', label: homeShort || pickLang(lang, { es: 'Local', ca: 'Local', en: 'Home' }) },
+                      { id: 'away', label: awayShort || pickLang(lang, { es: 'Visit.', ca: 'Visit.', en: 'Away' }) },
                     ] as const
                   ).map((v) => (
                     <button
@@ -724,6 +784,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                         lineup={details.homeLineup}
                         side="home"
                         metric={lineupMetric}
+                        lang={lang}
                         onSelectPlayer={setSelectedPlayer}
                       />
                     )}
@@ -733,6 +794,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                         lineup={details.awayLineup}
                         side="away"
                         metric={lineupMetric}
+                        lang={lang}
                         onSelectPlayer={setSelectedPlayer}
                       />
                     )}
@@ -742,8 +804,16 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                   <Users className="w-6 h-6 text-zinc-500 mx-auto" />
                   <p className="text-xs sm:text-sm font-semibold text-zinc-200">
                     {resolvedState === 'upcoming'
-                      ? 'Las alineaciones oficiales se publican ~60 minutos antes del inicio.'
-                      : 'No hay alineaciones oficiales publicadas en las fuentes para esta competición.'}
+                      ? pickLang(lang, {
+                          es: 'Las alineaciones oficiales se publican ~60 minutos antes del inicio.',
+                          ca: 'Les alineacions oficials es publiquen ~60 minuts abans de l’inici.',
+                          en: 'Official lineups are published ~60 minutes before kickoff.',
+                        })
+                      : pickLang(lang, {
+                          es: 'No hay alineaciones oficiales publicadas en las fuentes para esta competición.',
+                          ca: 'No hi ha alineacions oficials publicades a les fonts per a aquesta competició.',
+                          en: 'No official lineups published for this competition.',
+                        })}
                   </p>
                 </div>
               )}
@@ -775,9 +845,17 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                       </div>
                       <div className="text-xs text-zinc-400 flex flex-wrap items-center gap-2 mt-0.5">
                         {selectedPlayer.club && <span>Club: {selectedPlayer.club}</span>}
-                        {selectedPlayer.age && <span>· {selectedPlayer.age} años</span>}
+                        {selectedPlayer.age && (
+                          <span>
+                            · {selectedPlayer.age}{' '}
+                            {pickLang(lang, { es: 'años', ca: 'anys', en: 'yrs' })}
+                          </span>
+                        )}
                         {selectedPlayer.marketValue && (
-                          <span>· Valor: {selectedPlayer.marketValue}</span>
+                          <span>
+                            · {pickLang(lang, { es: 'Valor:', ca: 'Valor:', en: 'Value:' })}{' '}
+                            {selectedPlayer.marketValue}
+                          </span>
                         )}
                         {selectedPlayer.country && <span>· {selectedPlayer.country}</span>}
                       </div>
@@ -786,6 +864,11 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                   <button
                     type="button"
                     onClick={() => setSelectedPlayer(null)}
+                    aria-label={pickLang(lang, {
+                      es: 'Cerrar ficha de jugador',
+                      ca: 'Tancar fitxa de jugador',
+                      en: 'Close player card',
+                    })}
                     className="p-1.5 rounded-full bg-white/[0.06] text-zinc-400 hover:text-white cursor-pointer"
                   >
                     <X className="w-4 h-4" />
@@ -798,13 +881,13 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
             /* TAB: STATISTICS + SHOT MAP + GOAL FRAME (Matches Screenshot 1)   */
             /* ================================================================ */
             <div className="space-y-4">
-              {/* Period Filter: TODOS | 1.ª | 2.ª */}
+              {/* Period Filter */}
               <div className="grid grid-cols-3 rounded-full bg-[#1C202B] p-1 border border-white/[0.07] max-w-sm">
                 {(
                   [
-                    { id: 'all', label: 'TODOS', enabled: true },
-                    { id: 'firstHalf', label: '1.ª', enabled: hasFirstHalfStats },
-                    { id: 'secondHalf', label: '2.ª', enabled: hasSecondHalfStats },
+                    { id: 'all', label: pickLang(lang, { es: 'TODOS', ca: 'TOTS', en: 'ALL' }), enabled: true },
+                    { id: 'firstHalf', label: pickLang(lang, { es: '1.ª', ca: '1a', en: '1st' }), enabled: hasFirstHalfStats },
+                    { id: 'secondHalf', label: pickLang(lang, { es: '2.ª', ca: '2a', en: '2nd' }), enabled: hasSecondHalfStats },
                   ] as const
                 ).map((p) => (
                   <button
@@ -827,10 +910,14 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               </div>
 
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {/* Left Card: Resumen del Partido */}
+                {/* Left Card: Match Summary */}
                 <div className="rounded-2xl bg-[#1A1E29] border border-white/[0.07] p-4 space-y-3.5">
                   <h4 className="font-display font-bold text-sm text-white text-center">
-                    Resumen del partido
+                    {pickLang(lang, {
+                      es: 'Resumen del partido',
+                      ca: 'Resum del partit',
+                      en: 'Match summary',
+                    })}
                   </h4>
 
                   {possessionStat && (
@@ -894,16 +981,24 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                   ) : (
                     <p className="text-xs text-zinc-400 text-center py-6">
                       {resolvedState === 'upcoming'
-                        ? 'Las estadísticas comenzarán en tiempo real cuando arranque el partido.'
-                        : 'Esperando actualización de estadísticas oficiales para esta competición.'}
+                        ? pickLang(lang, {
+                            es: 'Las estadísticas comenzarán en tiempo real cuando arranque el partido.',
+                            ca: 'Les estadístiques començaran en temps real quan arrenqui el partit.',
+                            en: 'Live statistics will start as soon as the match kicks off.',
+                          })
+                        : pickLang(lang, {
+                            es: 'Esperando actualización de estadísticas oficiales para esta competición.',
+                            ca: 'Esperant actualització d’estadístiques oficials per a aquesta competició.',
+                            en: 'Waiting for official match stats update.',
+                          })}
                     </p>
                   )}
                 </div>
 
-                {/* Right Card: Tiros + Mapa de Tiros + Portería Frontal */}
+                {/* Right Card: Shots + Shot Map + Goal Frame */}
                 <div className="rounded-2xl bg-[#1A1E29] border border-white/[0.07] p-4 space-y-3.5">
                   <h4 className="font-display font-bold text-sm text-white text-center">
-                    Tiros
+                    {pickLang(lang, { es: 'Tiros', ca: 'Xuts', en: 'Shots' })}
                   </h4>
 
                   {(shotsTotalStat || shotsOnTargetStat) && (
@@ -938,16 +1033,21 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                     </div>
                   )}
 
-                  {/* Todos | Tiros a puerta */}
+                  {/* All | On target */}
                   <div className="flex items-center gap-2 pt-1">
                     {(
                       [
-                        { id: 'all', label: `Todos (${details?.shotsMap?.length || 0})` },
+                        {
+                          id: 'all',
+                          label: `${pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' })} (${details?.shotsMap?.length || 0})`,
+                        },
                         {
                           id: 'onTarget',
-                          label: `Tiros a puerta (${
-                            (details?.shotsMap || []).filter((s) => s.onTarget).length
-                          })`,
+                          label: `${pickLang(lang, {
+                            es: 'Tiros a puerta',
+                            ca: 'Xuts a porteria',
+                            en: 'On target',
+                          })} (${(details?.shotsMap || []).filter((s) => s.onTarget).length})`,
                         },
                       ] as const
                     ).map((f) => (
@@ -971,9 +1071,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                     <div className="absolute inset-2 border border-white/40 rounded pointer-events-none" />
                     <div className="absolute left-1/2 top-2 bottom-2 w-[1px] bg-white/40 pointer-events-none" />
                     <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-16 h-16 border border-white/40 rounded-full pointer-events-none" />
-                    {/* Left Penalty Area (Away targets) */}
                     <div className="absolute left-2 top-1/2 -translate-y-1/2 w-10 h-24 border-r border-y border-white/40 pointer-events-none" />
-                    {/* Right Penalty Area (Home targets) */}
                     <div className="absolute right-2 top-1/2 -translate-y-1/2 w-10 h-24 border-l border-y border-white/40 pointer-events-none" />
 
                     {visibleShots.length > 0 ? (
@@ -982,6 +1080,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                           key={sh.id || sIdx}
                           type="button"
                           onClick={() => setSelectedShot(sh)}
+                          aria-label={`${sh.minute} · ${sh.player}${sh.xG ? ` · xG ${sh.xG}` : ''}`}
                           title={`${sh.minute} · ${sh.player}${sh.xG ? ` · xG ${sh.xG}` : ''}`}
                           style={{ left: `${sh.x}%`, top: `${sh.y}%` }}
                           className={`absolute w-3.5 h-3.5 rounded-full -translate-x-1/2 -translate-y-1/2 border transition-transform hover:scale-125 cursor-pointer ${
@@ -995,7 +1094,11 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                       ))
                     ) : (
                       <div className="absolute inset-0 flex items-center justify-center text-[11px] font-medium text-white/80 bg-black/25">
-                        Sin disparos registrados aún en el campo
+                        {pickLang(lang, {
+                          es: 'Sin disparos registrados aún en el campo',
+                          ca: 'Sense xuts registrats encara al camp',
+                          en: 'No shots recorded on the pitch yet',
+                        })}
                       </div>
                     )}
                   </div>
@@ -1012,13 +1115,23 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                           {selectedShot.player}
                         </span>
                         <span className="text-zinc-400">
-                          · {selectedShot.isGoal ? 'GOL' : selectedShot.onTarget ? 'A puerta' : 'Fuera/Bloq.'}
+                          ·{' '}
+                          {selectedShot.isGoal
+                            ? pickLang(lang, { es: 'GOL', ca: 'GOL', en: 'GOAL' })
+                            : selectedShot.onTarget
+                            ? pickLang(lang, { es: 'A puerta', ca: 'A porteria', en: 'On target' })
+                            : pickLang(lang, { es: 'Fuera/Bloq.', ca: 'Fora/Bloq.', en: 'Off target' })}
                           {selectedShot.xG != null ? ` · xG ${selectedShot.xG}` : ''}
                         </span>
                       </div>
                       <button
                         type="button"
                         onClick={() => setSelectedShot(null)}
+                        aria-label={pickLang(lang, {
+                          es: 'Cerrar detalle de disparo',
+                          ca: 'Tancar detall de xut',
+                          en: 'Close shot details',
+                        })}
                         className="text-zinc-400 hover:text-white cursor-pointer"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -1030,11 +1143,19 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                   {shotsWithGoalFrame.length > 0 && (
                     <div className="space-y-1.5 pt-1">
                       <div className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 flex items-center justify-between">
-                        <span>Precisión en Portería</span>
-                        <span className="text-emerald-400">● Gol · ○ A puerta</span>
+                        <span>
+                          {pickLang(lang, {
+                            es: 'Precisión en Portería',
+                            ca: 'Precisió a Porteria',
+                            en: 'Shot Placement',
+                          })}
+                        </span>
+                        <span className="text-emerald-400">
+                          ● {pickLang(lang, { es: 'Gol', ca: 'Gol', en: 'Goal' })} · ○{' '}
+                          {pickLang(lang, { es: 'A puerta', ca: 'A porteria', en: 'On target' })}
+                        </span>
                       </div>
                       <div className="relative w-full h-24 rounded-xl bg-[#10131A] border border-white/[0.08] overflow-hidden flex items-end justify-center px-6 pb-2">
-                        {/* Goalpost Frame */}
                         <div className="relative w-full max-w-[240px] h-16 border-t-2 border-x-2 border-white/70 rounded-t-sm bg-white/[0.02]">
                           {shotsWithGoalFrame.map((sh, idx) => {
                             const gx = Math.max(2, Math.min(98, (sh.onGoalShot!.x / 2) * 100));
@@ -1071,12 +1192,22 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                   <div className="flex items-center justify-between text-xs">
                     <span className="font-bold text-white flex items-center gap-1.5">
                       <TrendingUp className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Ritmo de Ataque en Directo</span>
+                      <span>
+                        {pickLang(lang, {
+                          es: 'Ritmo de Ataque en Directo',
+                          ca: 'Ritme d’Atac en Directe',
+                          en: 'Live Attack Momentum',
+                        })}
+                      </span>
                     </span>
                     <span className="text-[11px] text-zinc-400">
-                      <span className="text-emerald-400 font-semibold">{homeShort || 'Local'}</span>
+                      <span className="text-emerald-400 font-semibold">
+                        {homeShort || pickLang(lang, { es: 'Local', ca: 'Local', en: 'Home' })}
+                      </span>
                       {' vs '}
-                      <span className="text-indigo-400 font-semibold">{awayShort || 'Visit.'}</span>
+                      <span className="text-indigo-400 font-semibold">
+                        {awayShort || pickLang(lang, { es: 'Visit.', ca: 'Visit.', en: 'Away' })}
+                      </span>
                     </span>
                   </div>
                   <div className="relative h-14 flex items-center gap-[1px] bg-black/25 rounded-lg px-1.5 overflow-hidden">
@@ -1110,7 +1241,13 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               <div className="space-y-2">
                 <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 flex items-center gap-1.5">
                   <Activity className="w-3.5 h-3.5 text-rose-400" />
-                  <span>Minuto a Minuto en Directo</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Minuto a Minuto en Directo',
+                      ca: 'Minut a Minut en Directe',
+                      en: 'Live Play-by-Play',
+                    })}
+                  </span>
                 </h4>
 
                 {details?.commentary && details.commentary.length > 0 ? (
@@ -1134,8 +1271,16 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                 ) : (
                   <p className="text-xs text-zinc-400 p-4 rounded-2xl bg-[#1A1E29] border border-white/[0.06]">
                     {resolvedState === 'upcoming'
-                      ? 'La narración minuto a minuto comenzará cuando el árbitro pite el inicio.'
-                      : 'Sin comentarios minuto a minuto disponibles para esta competición.'}
+                      ? pickLang(lang, {
+                          es: 'La narración minuto a minuto comenzará cuando el árbitro pite el inicio.',
+                          ca: 'La narració minut a minut començarà quan l’àrbitre xiuli l’inici.',
+                          en: 'Live commentary will begin at kickoff.',
+                        })
+                      : pickLang(lang, {
+                          es: 'Sin comentarios minuto a minuto disponibles para esta competición.',
+                          ca: 'Sense comentaris minut a minut disponibles per a aquesta competició.',
+                          en: 'No minute-by-minute commentary available for this competition.',
+                        })}
                   </p>
                 )}
               </div>
@@ -1147,7 +1292,13 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
             <div className="space-y-2">
               <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 flex items-center gap-1.5">
                 <Clock className="w-3.5 h-3.5 text-[#FFBD0F]" />
-                <span>Incidencias del Partido</span>
+                <span>
+                  {pickLang(lang, {
+                    es: 'Incidencias del Partido',
+                    ca: 'Incidències del Partit',
+                    en: 'Match Events',
+                  })}
+                </span>
               </h4>
 
               {details?.events && details.events.length > 0 ? (
@@ -1181,8 +1332,8 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                           {ev.assistOrSubName && (
                             <div className="text-[11px] text-zinc-400 truncate">
                               {ev.type === 'goal'
-                                ? `Asistencia: ${ev.assistOrSubName}`
-                                : `Sale: ${ev.assistOrSubName}`}
+                                ? `${pickLang(lang, { es: 'Asistencia:', ca: 'Assistència:', en: 'Assist:' })} ${ev.assistOrSubName}`
+                                : `${pickLang(lang, { es: 'Sale:', ca: 'Surt:', en: 'Out:' })} ${ev.assistOrSubName}`}
                             </div>
                           )}
                         </div>
@@ -1200,8 +1351,16 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               ) : (
                 <p className="text-xs text-zinc-400 p-4 rounded-2xl bg-[#1A1E29] border border-white/[0.06]">
                   {resolvedState === 'upcoming'
-                    ? 'Aún no ha comenzado el encuentro.'
-                    : 'Sin goles, tarjetas ni sustituciones registradas todavía.'}
+                    ? pickLang(lang, {
+                        es: 'Aún no ha comenzado el encuentro.',
+                        ca: 'Encara no ha començat el partit.',
+                        en: 'Match has not kicked off yet.',
+                      })
+                    : pickLang(lang, {
+                        es: 'Sin goles, tarjetas ni sustituciones registradas todavía.',
+                        ca: 'Sense gols, targetes ni substitucions registrades encara.',
+                        en: 'No goals, cards, or substitutions recorded yet.',
+                      })}
                 </p>
               )}
             </div>
@@ -1219,7 +1378,8 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               {details.attendance && (
                 <span className="inline-flex items-center gap-1">
                   <UserCheck className="w-3.5 h-3.5 text-zinc-500" />
-                  {details.attendance} espectadores
+                  {details.attendance}{' '}
+                  {pickLang(lang, { es: 'espectadores', ca: 'espectadors', en: 'attendance' })}
                 </span>
               )}
             </div>

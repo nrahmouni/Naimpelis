@@ -3,6 +3,7 @@ import Hls from 'hls.js';
 import { ArrowLeftRight, Columns2, Move, PictureInPicture2, VolumeX, X, Loader2 } from 'lucide-react';
 import { AppLanguage, SecondaryStreamState } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
 
 interface SecondaryHlsStageProps {
   secondaryStream: SecondaryStreamState;
@@ -118,11 +119,11 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
           triggerHaptic('medium');
           onSwapWithPrimary();
         }}
-        title={
-          lang === 'es'
-            ? 'Toca para escuchar este partido en pantalla principal'
-            : 'Tap to swap to main audio'
-        }
+        title={pickLang(lang, {
+          es: 'Toca para escuchar este partido en pantalla principal',
+          ca: 'Toca per escoltar aquest partit a la pantalla principal',
+          en: 'Tap to swap to main audio',
+        })}
         className="w-full h-full object-contain bg-black cursor-pointer"
       />
 
@@ -146,16 +147,16 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
               triggerHaptic('medium');
               onSwapWithPrimary();
             }}
-            title={
-              lang === 'es'
-                ? 'Pasar este partido al principal con sonido'
-                : 'Swap to main screen with audio'
-            }
+            title={pickLang(lang, {
+              es: 'Pasar este partido al principal con sonido',
+              ca: 'Passar aquest partit al principal amb so',
+              en: 'Swap to main screen with audio',
+            })}
             className="h-6 px-2 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-sm"
           >
             <ArrowLeftRight className="w-3 h-3" />
             <span className="hidden sm:inline">
-              {lang === 'es' ? 'Audio' : 'Swap'}
+              {pickLang(lang, { es: 'Audio', ca: 'Àudio', en: 'Swap' })}
             </span>
           </button>
 
@@ -166,7 +167,16 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
                 triggerHaptic('light');
                 setCornerIndex((prev) => ((prev + 1) % 4) as 0 | 1 | 2 | 3);
               }}
-              title={lang === 'es' ? 'Cambiar de esquina' : 'Move corner'}
+              aria-label={pickLang(lang, {
+                es: 'Cambiar de esquina',
+                ca: 'Canviar de cantonada',
+                en: 'Move corner',
+              })}
+              title={pickLang(lang, {
+                es: 'Cambiar de esquina',
+                ca: 'Canviar de cantonada',
+                en: 'Move corner',
+              })}
               className="w-6 h-6 rounded-lg bg-black/70 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
             >
               <Move className="w-3 h-3" />
@@ -179,14 +189,23 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
               triggerHaptic('light');
               onToggleLayout();
             }}
+            aria-label={
+              isSplit
+                ? pickLang(lang, { es: 'Modo esquina', ca: 'Mode cantonada', en: 'Corner view' })
+                : pickLang(lang, {
+                    es: 'Dividir pantalla 50/50',
+                    ca: 'Dividir pantalla 50/50',
+                    en: 'Split 50/50',
+                  })
+            }
             title={
               isSplit
-                ? lang === 'es'
-                  ? 'Modo esquina'
-                  : 'Corner view'
-                : lang === 'es'
-                ? 'Dividir pantalla 50/50'
-                : 'Split 50/50'
+                ? pickLang(lang, { es: 'Modo esquina', ca: 'Mode cantonada', en: 'Corner view' })
+                : pickLang(lang, {
+                    es: 'Dividir pantalla 50/50',
+                    ca: 'Dividir pantalla 50/50',
+                    en: 'Split 50/50',
+                  })
             }
             className="w-6 h-6 rounded-lg bg-black/70 hover:bg-white/20 text-white flex items-center justify-center cursor-pointer transition-colors"
           >
@@ -203,7 +222,16 @@ export const SecondaryHlsStage: React.FC<SecondaryHlsStageProps> = ({
               triggerHaptic('light');
               onCloseSecondary();
             }}
-            title={lang === 'es' ? 'Cerrar 2ª pantalla' : 'Close 2nd screen'}
+            aria-label={pickLang(lang, {
+              es: 'Cerrar 2ª pantalla',
+              ca: 'Tancar 2a pantalla',
+              en: 'Close 2nd screen',
+            })}
+            title={pickLang(lang, {
+              es: 'Cerrar 2ª pantalla',
+              ca: 'Tancar 2a pantalla',
+              en: 'Close 2nd screen',
+            })}
             className="w-6 h-6 rounded-lg bg-black/70 hover:bg-rose-600 text-white flex items-center justify-center cursor-pointer transition-colors"
           >
             <X className="w-3 h-3" />

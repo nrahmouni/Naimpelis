@@ -14,26 +14,34 @@ import {
   VolumeX,
 } from 'lucide-react';
 import { useNotificationStore } from '../store/useNotificationStore';
-import type { AppNotificationItem, NotificationCategory } from '../types';
+import type { AppLanguage, AppNotificationItem, NotificationCategory } from '../types';
+import { pickLang } from '../utils/i18n';
 import { BottomSheet, EmptyStateCard, SecondaryButton } from './ui/DesignSystem';
 
 interface NotificationCenterSheetProps {
   isOpen: boolean;
   onClose: () => void;
+  lang?: AppLanguage;
   onActionNotification?: (item: AppNotificationItem) => void;
 }
 
-const CATEGORY_TABS: Array<{ id: NotificationCategory; label: string }> = [
-  { id: 'all', label: 'Todas' },
-  { id: 'invite', label: 'Invitaciones' },
-  { id: 'football', label: 'Fútbol' },
-  { id: 'series', label: 'Series' },
-  { id: 'update', label: 'App' },
+const CATEGORY_TABS: Array<{
+  id: NotificationCategory;
+  es: string;
+  ca: string;
+  en: string;
+}> = [
+  { id: 'all', es: 'Todas', ca: 'Totes', en: 'All' },
+  { id: 'invite', es: 'Invitaciones', ca: 'Invitacions', en: 'Invites' },
+  { id: 'football', es: 'Fútbol', ca: 'Futbol', en: 'Football' },
+  { id: 'series', es: 'Series', ca: 'Sèries', en: 'Series' },
+  { id: 'update', es: 'App', ca: 'App', en: 'App' },
 ];
 
 export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = ({
   isOpen,
   onClose,
+  lang = 'es',
   onActionNotification,
 }) => {
   const {
@@ -74,8 +82,17 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
     <BottomSheet
       isOpen={isOpen}
       onClose={onClose}
-      title="Notificaciones"
-      subtitle="Invitaciones a salas, goles en directo, estrenos y actualizaciones"
+      lang={lang}
+      title={pickLang(lang, {
+        es: 'Notificaciones',
+        ca: 'Notificacions',
+        en: 'Notifications',
+      })}
+      subtitle={pickLang(lang, {
+        es: 'Invitaciones a salas, goles en directo, estrenos y actualizaciones',
+        ca: 'Invitacions a sales, gols en directe, estrenes i actualitzacions',
+        en: 'Room invites, live goals, premieres and app updates',
+      })}
       icon={<Bell className="w-5 h-5" />}
       maxWidth="sm:max-w-xl"
     >
@@ -95,7 +112,7 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                     : 'bg-white/[0.045] text-[#EFEFF1] hover:bg-white/[0.1] border border-white/[0.08]'
                 }`}
               >
-                {tab.label}
+                {pickLang(lang, tab)}
               </button>
             );
           })}
@@ -107,10 +124,14 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
               type="button"
               onClick={markAllRead}
               className="min-h-9 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] text-xs font-medium text-zinc-200 flex items-center gap-1.5 cursor-pointer"
-              title="Marcar todas como leídas"
+              title={pickLang(lang, {
+                es: 'Marcar todas como leídas',
+                ca: 'Marcar totes com a llegides',
+                en: 'Mark all as read',
+              })}
             >
               <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Leídas</span>
+              <span>{pickLang(lang, { es: 'Leídas', ca: 'Llegides', en: 'Mark read' })}</span>
             </button>
           )}
           <button
@@ -121,7 +142,11 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                 ? 'bg-[#9146FF]/20 text-white border border-[#9146FF]/45'
                 : 'bg-white/[0.045] border border-white/[0.08] text-[#EFEFF1] hover:bg-white/[0.1]'
             }`}
-            aria-label="Preferencias de notificaciones"
+            aria-label={pickLang(lang, {
+              es: 'Preferencias de notificaciones',
+              ca: 'Preferències de notificacions',
+              en: 'Notification preferences',
+            })}
           >
             <Settings className="w-4 h-4" />
           </button>
@@ -134,7 +159,13 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs font-bold text-white">
               <Moon className="w-4 h-4 text-sky-400" />
-              <span>Horas de silencio ({preferences.quietStart} – {preferences.quietEnd})</span>
+              <span>
+                {pickLang(lang, {
+                  es: `Horas de silencio (${preferences.quietStart} – ${preferences.quietEnd})`,
+                  ca: `Hores de silenci (${preferences.quietStart} – ${preferences.quietEnd})`,
+                  en: `Quiet hours (${preferences.quietStart} – ${preferences.quietEnd})`,
+                })}
+              </span>
             </div>
             <button
               type="button"
@@ -147,19 +178,21 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                   : 'bg-white/10 text-zinc-400'
               }`}
             >
-              {preferences.quietHoursEnabled ? 'Activo' : 'Desactivado'}
+              {preferences.quietHoursEnabled
+                ? pickLang(lang, { es: 'Activo', ca: 'Actiu', en: 'Active' })
+                : pickLang(lang, { es: 'Desactivado', ca: 'Desactivat', en: 'Off' })}
             </button>
           </div>
 
           <div className="grid grid-cols-2 gap-2">
             {(
               [
-                ['invites', 'Invitaciones'],
-                ['football', 'Goles y partidos'],
-                ['series', 'Nuevos episodios'],
-                ['updates', 'Actualizaciones App'],
+                ['invites', { es: 'Invitaciones', ca: 'Invitacions', en: 'Invites' }],
+                ['football', { es: 'Goles y partidos', ca: 'Gols i partits', en: 'Goals & matches' }],
+                ['series', { es: 'Nuevos episodios', ca: 'Nous episodis', en: 'New episodes' }],
+                ['updates', { es: 'Actualizaciones App', ca: 'Actualitzacions App', en: 'App updates' }],
               ] as const
-            ).map(([key, label]) => (
+            ).map(([key, labels]) => (
               <button
                 key={key}
                 type="button"
@@ -170,7 +203,7 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                     : 'bg-white/[0.02] border-white/[0.06] text-zinc-500'
                 }`}
               >
-                <span>{label}</span>
+                <span>{pickLang(lang, labels)}</span>
                 <span>{preferences[key] ? 'ON' : 'OFF'}</span>
               </button>
             ))}
@@ -187,9 +220,19 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
               ) : (
                 <VolumeX className="w-4 h-4 text-zinc-500" />
               )}
-              <span>Sonido de alertas en vivo</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Sonido de alertas en vivo',
+                  ca: 'So d’alertes en directe',
+                  en: 'Live alert sound',
+                })}
+              </span>
             </span>
-            <span>{preferences.soundEnabled ? 'Activado' : 'Silenciado'}</span>
+            <span>
+              {preferences.soundEnabled
+                ? pickLang(lang, { es: 'Activado', ca: 'Activat', en: 'On' })
+                : pickLang(lang, { es: 'Silenciado', ca: 'Silenciat', en: 'Muted' })}
+            </span>
           </button>
         </div>
       )}
@@ -198,22 +241,42 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
       {filtered.length === 0 ? (
         <EmptyStateCard
           icon={<BellOff className="w-6 h-6" />}
-          title="Sin notificaciones pendientes"
-          description="Cuando un amigo te invite a su sala, empiece un partido o haya una mejora de app, aparecerá aquí."
+          title={pickLang(lang, {
+            es: 'Sin notificaciones pendientes',
+            ca: 'Sense notificacions pendents',
+            en: 'No pending notifications',
+          })}
+          description={pickLang(lang, {
+            es: 'Cuando un amigo te invite a su sala, empiece un partido o haya una mejora de app, aparecerá aquí.',
+            ca: 'Quan un amic et convidi a la seva sala, comenci un partit o hi hagi una millora de l’app, apareixerà aquí.',
+            en: 'When a friend invites you to a room, a match kicks off, or an update arrives, it will show up here.',
+          })}
         />
       ) : (
         <div className="space-y-2.5">
           {filtered.map((item) => (
             <div
               key={item.id}
-              onClick={() => markRead(item.id)}
-              className={`p-3.5 rounded-2xl border transition-colors flex items-start justify-between gap-3 ${
+              className={`relative p-3.5 rounded-2xl border transition-colors flex items-start justify-between gap-3 ${
                 item.read
                   ? 'bg-white/[0.03] border-white/[0.07]'
                   : 'bg-[#9146FF]/[0.12] nc-specular-surface border-[#9146FF]/40'
               }`}
             >
-              <div className="flex items-start gap-3 min-w-0">
+              {!item.read && (
+                <button
+                  type="button"
+                  onClick={() => markRead(item.id)}
+                  aria-label={pickLang(lang, {
+                    es: `Marcar ${item.title} como leída`,
+                    ca: `Marcar ${item.title} com a llegida`,
+                    en: `Mark ${item.title} as read`,
+                  })}
+                  className="absolute inset-0 z-0 rounded-2xl cursor-pointer focus-visible:outline-2 focus-visible:outline-[#9146FF]"
+                />
+              )}
+
+              <div className="relative z-[1] flex items-start gap-3 min-w-0 pointer-events-none">
                 <div className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
                   {renderCategoryIcon(item.category)}
                 </div>
@@ -239,7 +302,7 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                           onActionNotification(item);
                           onClose();
                         }}
-                        className="text-xs font-bold text-[#BF94FF] hover:underline cursor-pointer"
+                        className="relative z-10 pointer-events-auto text-xs font-bold text-[#BF94FF] hover:underline cursor-pointer"
                       >
                         {item.actionLabel} →
                       </button>
@@ -253,8 +316,12 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                   e.stopPropagation();
                   dismissNotification(item.id);
                 }}
-                className="min-h-8 min-w-8 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-white/[0.06] flex items-center justify-center shrink-0 cursor-pointer"
-                aria-label="Descartar notificación"
+                className="relative z-10 min-h-8 min-w-8 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-white/[0.06] flex items-center justify-center shrink-0 cursor-pointer"
+                aria-label={pickLang(lang, {
+                  es: 'Descartar notificación',
+                  ca: 'Descartar notificació',
+                  en: 'Dismiss notification',
+                })}
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -267,7 +334,13 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
         <div className="pt-2 flex justify-end">
           <SecondaryButton onClick={clearAll}>
             <Trash2 className="w-3.5 h-3.5" />
-            <span>Vaciar bandeja</span>
+            <span>
+              {pickLang(lang, {
+                es: 'Vaciar bandeja',
+                ca: 'Buidar safata',
+                en: 'Clear inbox',
+              })}
+            </span>
           </SecondaryButton>
         </div>
       )}

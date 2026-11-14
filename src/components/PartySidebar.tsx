@@ -45,7 +45,7 @@ import {
   RoomRole,
 } from '../types';
 import type { TypingUserPayload } from '../shared/protocol';
-import { UI_COPY } from '../utils/i18n';
+import { UI_COPY, pickLang } from '../utils/i18n';
 import { buildShortInviteUrl } from '../utils/shortLink';
 import { deriveFriendCode } from '../utils/storage';
 import { triggerHaptic } from '../utils/haptics';
@@ -63,6 +63,7 @@ import {
   EmptyStateCard,
   HapticTvRemote,
 } from './ui/DesignSystem';
+import { PosterImage } from './ui/PosterImage';
 
 interface PartySidebarProps {
   roomId: string;
@@ -278,8 +279,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
   const handleShareInvite = async () => {
     const shareText = activeMediaTitle
-      ? `🍿 Estamos viendo «${activeMediaTitle}» en directo en la sala de ${currentUser.name}. ¡Entra en 1 toque:`
-      : `🍿 Únete a nuestra sala de cine y fútbol en directo (${roomName}):`;
+      ? pickLang(lang, {
+          es: `🍿 Estamos viendo «${activeMediaTitle}» en directo en la sala de ${currentUser.name}. ¡Entra en 1 toque:`,
+          ca: `🍿 Estem veient «${activeMediaTitle}» en directe a la sala de ${currentUser.name}. Entra en 1 toc:`,
+          en: `🍿 We're watching "${activeMediaTitle}" live in ${currentUser.name}'s room. Join in 1 tap:`,
+        })
+      : pickLang(lang, {
+          es: `🍿 Únete a nuestra sala de cine y fútbol en directo (${roomName}):`,
+          ca: `🍿 Uneix-te a la nostra sala de cinema i futbol en directe (${roomName}):`,
+          en: `🍿 Join our live cinema & sports watch room (${roomName}):`,
+        });
 
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
@@ -344,7 +353,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
   const formatTime = (ts: number) => {
     const d = new Date(ts);
-    return d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
+    const locale = lang === 'ca' ? 'ca-ES' : lang === 'en' ? 'en-US' : 'es-ES';
+    return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
   };
 
   const getInitials = (name: string) => {
@@ -378,7 +388,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               },
               {
                 id: 'queue',
-                label: lang === 'es' ? 'Cola' : 'Queue',
+                label: pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' }),
                 icon: <ListVideo className="w-4 h-4 shrink-0" />,
                 badge: roomQueue.length,
               },
@@ -395,8 +405,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             <IconButton
               onClick={onOpenFloatingChatOnVideo}
               variant="glass"
-              title="Superponer chat flotante sobre el vídeo"
-              aria-label="Chat flotante sobre el vídeo"
+              title={pickLang(lang, {
+                es: 'Superponer chat flotante sobre el vídeo',
+                ca: 'Superposar xat flotant sobre el vídeo',
+                en: 'Overlay floating chat on video',
+              })}
+              aria-label={pickLang(lang, {
+                es: 'Chat flotante sobre el vídeo',
+                ca: 'Xat flotant sobre el vídeo',
+                en: 'Floating chat over video',
+              })}
             >
               <Maximize2 className="w-4 h-4 text-[#BF94FF]" />
             </IconButton>
@@ -408,7 +426,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               variant={copiedLink ? 'crimson' : 'glass'}
               title={
                 onOpenFriendsModal
-                  ? 'Amigos e Invitación Directa'
+                  ? pickLang(lang, {
+                      es: 'Amigos e Invitación Directa',
+                      ca: 'Amics i Invitació Directa',
+                      en: 'Friends & Direct Invite',
+                    })
                   : t.invite
               }
               aria-label={t.invite}
@@ -438,7 +460,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               <div className="flex items-center justify-between gap-2">
                 <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#BF94FF]">
                   <BarChart2 className="w-3.5 h-3.5" />
-                  <span>Encuesta en Vivo</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Encuesta en Vivo',
+                      ca: 'Enquesta en Directe',
+                      en: 'Live Poll',
+                    })}
+                  </span>
                 </div>
                 {isHost && (
                   <button
@@ -446,7 +474,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     onClick={() => onClosePoll(activePoll.id)}
                     className="text-xs text-[#ADADB8] hover:text-white cursor-pointer"
                   >
-                    Cerrar
+                    {pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}
                   </button>
                 )}
               </div>
@@ -504,12 +532,27 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   }
                 />
                 <div className="flex flex-wrap items-center justify-center gap-1.5 px-2">
-                  {[
-                    '👋 ¡Hola a todos!',
-                    '🍿 ¡Empezamos!',
-                    '🔥 ¡Qué pasada!',
-                    '⏸️ Un segundo porfa',
-                  ].map((chip) => (
+                  {(lang === 'ca'
+                    ? [
+                        '👋 Hola a tots!',
+                        '🍿 Comencem!',
+                        '🔥 Quina passada!',
+                        '⏸️ Un segon si us plau',
+                      ]
+                    : lang === 'en'
+                    ? [
+                        '👋 Hey everyone!',
+                        '🍿 Let’s start!',
+                        '🔥 So good!',
+                        '⏸️ One sec please',
+                      ]
+                    : [
+                        '👋 ¡Hola a todos!',
+                        '🍿 ¡Empezamos!',
+                        '🔥 ¡Qué pasada!',
+                        '⏸️ Un segundo porfa',
+                      ]
+                  ).map((chip) => (
                     <button
                       key={chip}
                       type="button"
@@ -583,7 +626,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                                           onSeekToTimestamp(secs);
                                         }}
                                         className="inline-flex items-center gap-1 px-1.5 py-0.5 mx-0.5 rounded-md bg-[#9146FF]/20 hover:bg-[#9146FF]/35 border border-[#9146FF]/45 font-mono text-xs font-bold text-[#BF94FF] cursor-pointer"
-                                        title={`Saltar a ${part}`}
+                                        title={pickLang(lang, {
+                                          es: `Saltar a ${part}`,
+                                          ca: `Saltar a ${part}`,
+                                          en: `Jump to ${part}`,
+                                        })}
                                       >
                                         <Clock className="w-2.5 h-2.5" />
                                         <span>{part}</span>
@@ -620,7 +667,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                       type="button"
                       onClick={() => onSendReaction(emoji)}
                       className="w-8 h-8 rounded-full hover:bg-white/[0.12] active:scale-125 transition-transform flex items-center justify-center text-base shrink-0 cursor-pointer"
-                      title={`Enviar ${emoji}`}
+                      title={pickLang(lang, {
+                        es: `Enviar ${emoji}`,
+                        ca: `Enviar ${emoji}`,
+                        en: `Send ${emoji}`,
+                      })}
+                      aria-label={pickLang(lang, {
+                        es: `Enviar reacción ${emoji}`,
+                        ca: `Enviar reacció ${emoji}`,
+                        en: `Send reaction ${emoji}`,
+                      })}
                     >
                       {emoji}
                     </button>
@@ -629,8 +685,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     type="button"
                     onClick={() => setShowFloatingReactions(false)}
                     className="w-7 h-7 rounded-full hover:bg-white/15 text-[#ADADB8] hover:text-white flex items-center justify-center shrink-0 cursor-pointer ml-0.5 sticky right-0 bg-[#141418]/95"
-                    title="Ocultar barra de emojis"
-                    aria-label="Ocultar emojis"
+                    title={pickLang(lang, {
+                      es: 'Ocultar barra de emojis',
+                      ca: 'Amagar barra d’emojis',
+                      en: 'Hide emoji bar',
+                    })}
+                    aria-label={pickLang(lang, {
+                      es: 'Ocultar emojis',
+                      ca: 'Amagar emojis',
+                      en: 'Hide emojis',
+                    })}
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
@@ -646,7 +710,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 .filter((u) => u.userId !== currentUser.id)
                 .map((u) => u.userName)
                 .join(', ')}{' '}
-              {lang === 'en' ? 'is typing...' : lang === 'ca' ? 'està escrivint...' : 'está escribiendo...'}
+              {pickLang(lang, {
+                es: 'está escribiendo...',
+                ca: 'està escrivint...',
+                en: 'is typing...',
+              })}
             </div>
           )}
 
@@ -660,8 +728,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 type="button"
                 onClick={() => setShowFloatingReactions(true)}
                 variant="ghost"
-                title="Mostrar reacciones"
-                aria-label="Mostrar reacciones"
+                title={pickLang(lang, {
+                  es: 'Mostrar reacciones',
+                  ca: 'Mostrar reaccions',
+                  en: 'Show reactions',
+                })}
+                aria-label={pickLang(lang, {
+                  es: 'Mostrar reacciones',
+                  ca: 'Mostrar reaccions',
+                  en: 'Show reactions',
+                })}
               >
                 <Smile className="w-5 h-5 text-[#ADADB8]" />
               </IconButton>
@@ -677,8 +753,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     prev ? `${prev.trim()} ${stamp} ` : `${stamp} `
                   );
                 }}
-                title="Insertar minuto exacto del vídeo"
-                aria-label="Insertar minuto actual"
+                title={pickLang(lang, {
+                  es: 'Insertar minuto exacto del vídeo',
+                  ca: 'Inserir minut exacte del vídeo',
+                  en: 'Insert current video timestamp',
+                })}
+                aria-label={pickLang(lang, {
+                  es: 'Insertar minuto actual',
+                  ca: 'Inserir minut actual',
+                  en: 'Insert current timestamp',
+                })}
                 className="min-h-11 px-2.5 rounded-xl bg-[#26262C] hover:bg-white/[0.12] border border-white/[0.08] font-mono text-[11px] font-bold text-[#EFEFF1] hover:text-white flex items-center gap-1 shrink-0 cursor-pointer transition-colors"
               >
                 <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
@@ -701,7 +785,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 <button
                   type="submit"
                   disabled={!inputText.trim()}
-                  aria-label="Enviar mensaje"
+                  aria-label={pickLang(lang, {
+                    es: 'Enviar mensaje',
+                    ca: 'Enviar missatge',
+                    en: 'Send message',
+                  })}
                   className="w-9 h-9 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] disabled:opacity-30 text-white flex items-center justify-center transition-all active:scale-90 cursor-pointer"
                 >
                   <Send className="w-4 h-4" />
@@ -721,23 +809,46 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           <div className="flex items-center justify-between gap-2">
             <div>
               <h4 className="text-sm font-bold text-white">
-                {lang === 'es' ? 'Cola de Reproducción' : 'Playback Queue'}
+                {pickLang(lang, {
+                  es: 'Cola de Reproducción',
+                  ca: 'Cua de Reproducció',
+                  en: 'Playback Queue',
+                })}
               </h4>
               <p className="text-xs text-zinc-400">
-                {roomQueue.length} {roomQueue.length === 1 ? 'vídeo en lista' : 'vídeos en lista'}
+                {roomQueue.length}{' '}
+                {roomQueue.length === 1
+                  ? pickLang(lang, {
+                      es: 'vídeo en lista',
+                      ca: 'vídeo en llista',
+                      en: 'video in queue',
+                    })
+                  : pickLang(lang, {
+                      es: 'vídeos en lista',
+                      ca: 'vídeos en llista',
+                      en: 'videos in queue',
+                    })}
               </p>
             </div>
             <div className="flex items-center gap-2">
               {roomQueue.length >= 2 && (
                 <SecondaryButton onClick={onStartPollFromQueue}>
                   <BarChart2 className="w-4 h-4 text-[#BF94FF]" />
-                  <span>Votar Cola</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Votar Cola',
+                      ca: 'Votar Cua',
+                      en: 'Vote Queue',
+                    })}
+                  </span>
                 </SecondaryButton>
               )}
 
               <SecondaryButton onClick={() => setShowUrlLoaderSheet(true)}>
                 <Link2 className="w-4 h-4 text-sky-400" />
-                <span>Enlace</span>
+                <span>
+                  {pickLang(lang, { es: 'Enlace', ca: 'Enllaç', en: 'Link' })}
+                </span>
               </SecondaryButton>
             </div>
           </div>
@@ -745,9 +856,21 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {roomQueue.length === 0 ? (
             <EmptyStateCard
               icon={<ListVideo className="w-6 h-6" />}
-              title={lang === 'ca' ? 'La cua és buida' : lang === 'es' ? 'La cola está vacía' : 'Queue is empty'}
-              description="Añade películas, episodios o vídeos desde el catálogo con el botón + Cola, o abre un enlace directo."
-              actionLabel="Pegar enlace o abrir web"
+              title={pickLang(lang, {
+                es: 'La cola está vacía',
+                ca: 'La cua és buida',
+                en: 'Queue is empty',
+              })}
+              description={pickLang(lang, {
+                es: 'Añade películas, episodios o vídeos desde el catálogo con el botón + Cola, o abre un enlace directo.',
+                ca: 'Afegeix pel·lícules, episodis o vídeos des del catàleg amb el botó + Cua, o obre un enllaç directe.',
+                en: 'Add movies, episodes, or videos from the catalog with + Queue, or open a direct link.',
+              })}
+              actionLabel={pickLang(lang, {
+                es: 'Pegar enlace o abrir web',
+                ca: 'Enganxar enllaç o obrir web',
+                en: 'Paste link or open web',
+              })}
               onAction={() => setShowUrlLoaderSheet(true)}
             />
           ) : (
@@ -758,19 +881,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   className="group relative overflow-hidden rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.07] p-2.5 flex items-center gap-3 transition-all"
                 >
                   <div className="relative w-20 aspect-video rounded-xl overflow-hidden bg-black shrink-0">
-                    {item.poster ? (
-                      <img
-                        src={item.poster}
-                        alt={item.title}
-                        className="w-full h-full object-cover"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center text-xs font-mono text-zinc-500">
-                        #{idx + 1}
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 to-transparent flex items-end p-1.5">
+                    <PosterImage
+                      src={item.poster}
+                      alt={item.title}
+                      aspect="none"
+                      className="w-full h-full"
+                      fallbackIcon={
+                        <span className="text-xs font-mono text-zinc-500">#{idx + 1}</span>
+                      }
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 to-transparent flex items-end p-1.5 pointer-events-none">
                       <span className="text-[0.65rem] font-mono font-bold text-white">
                         #{idx + 1}
                       </span>
@@ -782,7 +902,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                       {item.title}
                     </div>
                     <div className="text-xs text-zinc-400 truncate mt-0.5">
-                      Añadido por {item.addedBy}
+                      {pickLang(lang, {
+                        es: `Añadido por ${item.addedBy}`,
+                        ca: `Afegit per ${item.addedBy}`,
+                        en: `Added by ${item.addedBy}`,
+                      })}
                     </div>
                   </div>
 
@@ -795,7 +919,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                             triggerHaptic('light');
                             onVoteQueueItem(item.id);
                           }}
-                          title="Votar este título en la cola"
+                          title={pickLang(lang, {
+                            es: 'Votar este título en la cola',
+                            ca: 'Votar aquest títol a la cua',
+                            en: 'Vote for this title in queue',
+                          })}
+                          aria-label={pickLang(lang, {
+                            es: 'Votar este título en la cola',
+                            ca: 'Votar aquest títol a la cua',
+                            en: 'Vote for this title in queue',
+                          })}
                           className={`min-h-9 px-2.5 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
                             item.voterIds?.includes(currentUser.id)
                               ? 'bg-[#9146FF]/25 border border-[#9146FF]/55 text-[#BF94FF]'
@@ -813,7 +946,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                             triggerHaptic('light');
                             onPromoteQueueItem(item.id);
                           }}
-                          title="Poner siguiente en reproducirse"
+                          title={pickLang(lang, {
+                            es: 'Poner siguiente en reproducirse',
+                            ca: 'Posar següent a reproduir-se',
+                            en: 'Move to play next',
+                          })}
+                          aria-label={pickLang(lang, {
+                            es: 'Poner siguiente en reproducirse',
+                            ca: 'Posar següent a reproduir-se',
+                            en: 'Move to play next',
+                          })}
                           className="min-h-9 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[10px] font-bold text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
                         >
                           <span>↑ #1</span>
@@ -822,14 +964,32 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                       <IconButton
                         onClick={() => onPlayQueueItem(item)}
                         variant="crimson"
-                        title="Reproducir ahora"
+                        title={pickLang(lang, {
+                          es: 'Reproducir ahora',
+                          ca: 'Reproduir ara',
+                          en: 'Play now',
+                        })}
+                        aria-label={pickLang(lang, {
+                          es: 'Reproducir ahora',
+                          ca: 'Reproduir ara',
+                          en: 'Play now',
+                        })}
                       >
                         <Play className="w-4 h-4 fill-current" />
                       </IconButton>
                       <IconButton
                         onClick={() => onRemoveFromQueue(item.id)}
                         variant="ghost"
-                        title="Quitar de la cola"
+                        title={pickLang(lang, {
+                          es: 'Quitar de la cola',
+                          ca: 'Treure de la cua',
+                          en: 'Remove from queue',
+                        })}
+                        aria-label={pickLang(lang, {
+                          es: 'Quitar de la cola',
+                          ca: 'Treure de la cua',
+                          en: 'Remove from queue',
+                        })}
                       >
                         <Trash2 className="w-4 h-4 text-zinc-400 hover:text-rose-400" />
                       </IconButton>
@@ -856,22 +1016,39 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   {hasPin && <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />}
                 </div>
                 <p className="text-xs text-zinc-400 font-mono mt-0.5">
-                  Código: <span className="text-white font-bold">{roomId}</span>
+                  {pickLang(lang, { es: 'Código:', ca: 'Codi:', en: 'Code:' })}{' '}
+                  <span className="text-white font-bold">{roomId}</span>
                 </p>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
                 <IconButton
                   onClick={() => setShowQrInviteSheet(true)}
-                  title="Ver Código QR de la Sala"
-                  aria-label="Código QR"
+                  title={pickLang(lang, {
+                    es: 'Ver Código QR de la Sala',
+                    ca: 'Veure Codi QR de la Sala',
+                    en: 'View Room QR Code',
+                  })}
+                  aria-label={pickLang(lang, {
+                    es: 'Código QR',
+                    ca: 'Codi QR',
+                    en: 'QR Code',
+                  })}
                 >
                   <QrCode className="w-4 h-4 text-[#BF94FF]" />
                 </IconButton>
                 <IconButton
                   onClick={() => setShowRoomSettingsSheet(true)}
-                  title="Ajustes de Sala"
-                  aria-label="Ajustes de Sala"
+                  title={pickLang(lang, {
+                    es: 'Ajustes de Sala',
+                    ca: 'Ajustos de Sala',
+                    en: 'Room Settings',
+                  })}
+                  aria-label={pickLang(lang, {
+                    es: 'Ajustes de Sala',
+                    ca: 'Ajustos de Sala',
+                    en: 'Room Settings',
+                  })}
                 >
                   <SlidersHorizontal className="w-4 h-4" />
                 </IconButton>
@@ -888,7 +1065,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 ) : (
                   <>
                     <Share2 className="w-4 h-4 text-[#BF94FF] shrink-0" />
-                    <span>Compartir</span>
+                    <span>
+                      {pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
+                    </span>
                   </>
                 )}
               </SecondaryButton>
@@ -900,7 +1079,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 className="whitespace-nowrap"
               >
                 <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
-                <span>{hasConnectedSmartTv ? 'TV Activa' : 'Mando TV'}</span>
+                <span>
+                  {hasConnectedSmartTv
+                    ? pickLang(lang, { es: 'TV Activa', ca: 'TV Activa', en: 'TV Active' })
+                    : pickLang(lang, { es: 'Mando TV', ca: 'Comandament TV', en: 'TV Remote' })}
+                </span>
               </SecondaryButton>
             </div>
           </div>
@@ -920,7 +1103,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               </span>
               <span className="text-xs text-[#00F593] font-medium flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-[#00F593]" />
-                Sala en vivo
+                {pickLang(lang, {
+                  es: 'Sala en vivo',
+                  ca: 'Sala en directe',
+                  en: 'Live room',
+                })}
               </span>
             </div>
 
@@ -976,12 +1163,28 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                           />
                           <span>
                             {isTvDevice
-                              ? '📺 En Smart TV'
+                              ? pickLang(lang, {
+                                  es: '📺 En Smart TV',
+                                  ca: '📺 A Smart TV',
+                                  en: '📺 On Smart TV',
+                                })
                               : isRoomPlaying
-                              ? '▶ Viendo en directo'
+                              ? pickLang(lang, {
+                                  es: '▶ Viendo en directo',
+                                  ca: '▶ Veient en directe',
+                                  en: '▶ Watching live',
+                                })
                               : activeMediaTitle
-                              ? '⏸ En pausa'
-                              : 'Sincronizado en sala'}
+                              ? pickLang(lang, {
+                                  es: '⏸ En pausa',
+                                  ca: '⏸ En pausa',
+                                  en: '⏸ Paused',
+                                })
+                              : pickLang(lang, {
+                                  es: 'Sincronizado en sala',
+                                  ca: 'Sincronitzat a la sala',
+                                  en: 'Synced in room',
+                                })}
                           </span>
                         </span>
                       </div>
@@ -991,7 +1194,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                         alreadyFriend ? (
                           <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs font-bold flex items-center gap-1">
                             <Check className="w-3.5 h-3.5" />
-                            <span>Amigo</span>
+                            <span>
+                              {pickLang(lang, { es: 'Amigo', ca: 'Amic', en: 'Friend' })}
+                            </span>
                           </span>
                         ) : (
                           <button
@@ -1006,10 +1211,16 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                               })
                             }
                             className="min-h-9 px-3 rounded-xl bg-[#9146FF]/15 hover:bg-[#9146FF]/30 border border-[#9146FF]/45 text-xs font-bold text-[#BF94FF] flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
-                            title="Guardar en tu lista de amigos"
+                            title={pickLang(lang, {
+                              es: 'Guardar en tu lista de amigos',
+                              ca: "Desar a la teva llista d'amics",
+                              en: 'Save to your friends list',
+                            })}
                           >
                             <UserPlus className="w-3.5 h-3.5" />
-                            <span>+ Amigo</span>
+                            <span>
+                              {pickLang(lang, { es: '+ Amigo', ca: '+ Amic', en: '+ Friend' })}
+                            </span>
                           </button>
                         )
                       )}
@@ -1032,7 +1243,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                                   ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
                                   : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.08] text-zinc-300'
                               }`}
-                              title="Alternar rol de Moderador"
+                              title={pickLang(lang, {
+                                es: 'Alternar rol de Moderador',
+                                ca: 'Alternar rol de Moderador',
+                                en: 'Toggle Moderator role',
+                              })}
                             >
                               <Shield className="w-3 h-3 inline mr-1" />
                               {p.role === 'mod' ? 'Mod' : 'Viewer'}
@@ -1059,7 +1274,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           <div className="space-y-2.5 pt-1">
             <div className="flex items-center justify-between px-1">
               <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                Mis Amigos ({savedFriends.length})
+                {pickLang(lang, {
+                  es: `Mis Amigos (${savedFriends.length})`,
+                  ca: `Els meus Amics (${savedFriends.length})`,
+                  en: `My Friends (${savedFriends.length})`,
+                })}
               </span>
               {onOpenFriendsModal && (
                 <button
@@ -1068,7 +1287,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   className="text-xs font-semibold text-[#BF94FF] hover:underline flex items-center gap-1.5 cursor-pointer"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span>Buscar o añadir amigos</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Buscar o añadir amigos',
+                      ca: 'Cercar o afegir amics',
+                      en: 'Search or add friends',
+                    })}
+                  </span>
                 </button>
               )}
             </div>
@@ -1076,12 +1301,22 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             {savedFriends.length === 0 ? (
               <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-3">
                 <p className="text-xs text-zinc-300 leading-relaxed">
-                  Añade a tus amigos por su código o desde la sala para invitarlos con 1 toque sin salir de la app.
+                  {pickLang(lang, {
+                    es: 'Añade a tus amigos por su código o desde la sala para invitarlos con 1 toque sin salir de la app.',
+                    ca: "Afegeix els teus amics pel seu codi o des de la sala per convidar-los amb 1 toc sense sortir de l'app.",
+                    en: 'Add friends by code or from the room to invite them in 1 tap without leaving the app.',
+                  })}
                 </p>
                 {onOpenFriendsModal && (
                   <PrimaryButton onClick={onOpenFriendsModal} fullWidth>
                     <UserPlus className="w-4 h-4 shrink-0" />
-                    <span>Añadir e Invitar Amigos</span>
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Añadir e Invitar Amigos',
+                        ca: 'Afegir i Convidar Amics',
+                        en: 'Add & Invite Friends',
+                      })}
+                    </span>
                   </PrimaryButton>
                 )}
               </div>
@@ -1128,15 +1363,27 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                           <div className="text-xs truncate mt-0.5">
                             {inCurrentRoom ? (
                               <span className="text-emerald-400 font-semibold">
-                                Ya está en tu sala
+                                {pickLang(lang, {
+                                  es: 'Ya está en tu sala',
+                                  ca: 'Ja és a la teva sala',
+                                  en: 'Already in your room',
+                                })}
                               </span>
                             ) : isOnline ? (
                               <span className="text-emerald-400 font-medium">
-                                🟢 En línea en la app
+                                {pickLang(lang, {
+                                  es: '🟢 En línea en la app',
+                                  ca: "🟢 En línia a l'app",
+                                  en: '🟢 Online in app',
+                                })}
                               </span>
                             ) : (
                               <span className="text-zinc-500">
-                                Desconectado · #{friend.friendCode}
+                                {pickLang(lang, {
+                                  es: `Desconectado · #${friend.friendCode}`,
+                                  ca: `Desconnectat · #${friend.friendCode}`,
+                                  en: `Offline · #${friend.friendCode}`,
+                                })}
                               </span>
                             )}
                           </div>
@@ -1156,7 +1403,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                           className="min-h-9 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shrink-0"
                         >
                           <Send className="w-3.5 h-3.5" />
-                          <span>Invitar</span>
+                          <span>
+                            {pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}
+                          </span>
                         </button>
                       )}
                     </div>
@@ -1184,9 +1433,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               <LogOut className={`w-4 h-4 ${confirmLeave ? 'text-white' : 'text-[#BF94FF]'}`} />
               <span>
                 {confirmLeave
-                  ? lang === 'es'
-                    ? '¿Seguro? Pulsa para salir'
-                    : 'Sure? Tap to leave'
+                  ? pickLang(lang, {
+                      es: '¿Seguro? Pulsa para salir',
+                      ca: 'Segur? Prem per sortir',
+                      en: 'Sure? Tap to leave',
+                    })
                   : t.leaveRoom}
               </span>
             </SecondaryButton>
@@ -1200,8 +1451,17 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       <BottomSheet
         isOpen={showUrlLoaderSheet}
         onClose={() => setShowUrlLoaderSheet(false)}
-        title="Enlace directo o navegador web"
-        subtitle="Reproduce archivos de vídeo directos o abre cualquier web de forma segura"
+        lang={lang}
+        title={pickLang(lang, {
+          es: 'Enlace directo o navegador web',
+          ca: 'Enllaç directe o navegador web',
+          en: 'Direct link or web browser',
+        })}
+        subtitle={pickLang(lang, {
+          es: 'Reproduce archivos de vídeo directos o abre cualquier web de forma segura',
+          ca: 'Reprodueix arxius de vídeo directes o obre qualsevol web de manera segura',
+          en: 'Play direct video files or open any website securely',
+        })}
         icon={<Link2 className="w-5 h-5" />}
       >
         <div className="space-y-3">
@@ -1209,7 +1469,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             type="url"
             value={customUrlInput}
             onChange={(e) => setCustomUrlInput(e.target.value)}
-            placeholder="https://ejemplo.com/stream.m3u8 o web..."
+            placeholder={pickLang(lang, {
+              es: 'https://ejemplo.com/stream.m3u8 o web...',
+              ca: 'https://exemple.com/stream.m3u8 o web...',
+              en: 'https://example.com/stream.m3u8 or website...',
+            })}
           />
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <PrimaryButton
@@ -1248,11 +1512,32 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       <BottomSheet
         isOpen={showTvRemoteSheet}
         onClose={() => setShowTvRemoteSheet(false)}
-        title={hasConnectedSmartTv ? 'Mando Haptic Touch TV' : 'Vincular Smart TV'}
+        lang={lang}
+        title={
+          hasConnectedSmartTv
+            ? pickLang(lang, {
+                es: 'Mando Haptic Touch TV',
+                ca: 'Comandament Haptic Touch TV',
+                en: 'Haptic Touch TV Remote',
+              })
+            : pickLang(lang, {
+                es: 'Vincular Smart TV',
+                ca: 'Vincular Smart TV',
+                en: 'Pair Smart TV',
+              })
+        }
         subtitle={
           hasConnectedSmartTv
-            ? `Control táctil en tiempo real · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : 'Sala Activa'}`
-            : 'Introduce los 4 dígitos que aparecen en /tv'
+            ? pickLang(lang, {
+                es: `Control táctil en tiempo real · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : 'Sala Activa'}`,
+                ca: `Control tàctil en temps real · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : 'Sala Activa'}`,
+                en: `Real-time touch control · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : 'Active Room'}`,
+              })
+            : pickLang(lang, {
+                es: 'Introduce los 4 dígitos que aparecen en /tv',
+                ca: 'Introdueix els 4 dígits que apareixen a /tv',
+                en: 'Enter the 4 digits shown on /tv',
+              })
         }
         icon={<Tv className="w-5 h-5" />}
       >
@@ -1271,7 +1556,10 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         {hasConnectedSmartTv ? (
           <div className="space-y-3">
             <HapticTvRemote
-              pairedTvCode={pairedCodeLabel || 'ACTIVA'}
+              pairedTvCode={
+                pairedCodeLabel ||
+                pickLang(lang, { es: 'ACTIVA', ca: 'ACTIVA', en: 'ACTIVE' })
+              }
               onCommand={handleMapTvCommand}
               onDisconnect={() => {
                 onSendTvRemoteCommand('disconnect_tv');
@@ -1286,7 +1574,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               }}
               fullWidth
             >
-              Vincular otro televisor con código
+              {pickLang(lang, {
+                es: 'Vincular otro televisor con código',
+                ca: 'Vincular un altre televisor amb codi',
+                en: 'Pair another TV with code',
+              })}
             </SecondaryButton>
           </div>
         ) : (
@@ -1303,7 +1595,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             className="space-y-4 text-center"
           >
             <p className="text-xs text-zinc-400">
-              Abre <span className="text-white font-mono">{window.location.origin}/tv</span> en tu televisor e introduce el código de 4 dígitos:
+              {pickLang(lang, { es: 'Abre', ca: 'Obre', en: 'Open' })}{' '}
+              <span className="text-white font-mono">{window.location.origin}/tv</span>{' '}
+              {pickLang(lang, {
+                es: 'en tu televisor e introduce el código de 4 dígitos:',
+                ca: 'al teu televisor i introdueix el codi de 4 dígits:',
+                en: 'on your TV and enter the 4-digit code:',
+              })}
             </p>
             <input
               type="text"
@@ -1315,6 +1613,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 setTvCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))
               }
               placeholder="0000"
+              aria-label={pickLang(lang, {
+                es: 'Código de 4 dígitos',
+                ca: 'Codi de 4 dígits',
+                en: '4-digit pairing code',
+              })}
               className="w-full h-16 rounded-2xl bg-[#0E0E10] border-2 border-white/15 focus:border-[#9146FF] text-center font-mono text-3xl font-bold tracking-[0.4em] text-white focus:outline-none"
             />
             <PrimaryButton
@@ -1324,14 +1627,24 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               size="lg"
             >
               <Tv className="w-4 h-4" />
-              <span>Conectar Smart TV</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Conectar Smart TV',
+                  ca: 'Connectar Smart TV',
+                  en: 'Connect Smart TV',
+                })}
+              </span>
             </PrimaryButton>
             <SecondaryButton
               type="button"
               onClick={() => setForceShowRemote(true)}
               fullWidth
             >
-              Abrir Mando Haptic Touch directamente
+              {pickLang(lang, {
+                es: 'Abrir Mando Haptic Touch directamente',
+                ca: 'Obrir Comandament Haptic Touch directament',
+                en: 'Open Haptic Touch Remote directly',
+              })}
             </SecondaryButton>
           </form>
         )}
@@ -1343,7 +1656,12 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       <BottomSheet
         isOpen={showQrInviteSheet}
         onClose={() => setShowQrInviteSheet(false)}
-        title="Código QR de Invitación"
+        lang={lang}
+        title={pickLang(lang, {
+          es: 'Código QR de Invitación',
+          ca: 'Codi QR d’Invitació',
+          en: 'Invitation QR Code',
+        })}
         subtitle={roomName}
         icon={<QrCode className="w-5 h-5" />}
       >
@@ -1353,16 +1671,30 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
                 inviteUrl
               )}`}
-              alt="QR Sala"
+              alt={pickLang(lang, {
+                es: 'QR Sala',
+                ca: 'QR Sala',
+                en: 'Room QR',
+              })}
               className="w-44 h-44 rounded-xl"
             />
           </div>
           <p className="text-xs text-zinc-400 text-center max-w-xs">
-            Escanea con la cámara del móvil para entrar directamente a esta sala.
+            {pickLang(lang, {
+              es: 'Escanea con la cámara del móvil para entrar directamente a esta sala.',
+              ca: 'Escaneja amb la càmera del mòbil per entrar directament a aquesta sala.',
+              en: 'Scan with your phone camera to join this room directly.',
+            })}
           </p>
           <PrimaryButton onClick={handleShareInvite} fullWidth>
             <Share2 className="w-4 h-4" />
-            <span>Compartir enlace corto</span>
+            <span>
+              {pickLang(lang, {
+                es: 'Compartir enlace corto',
+                ca: 'Compartir enllaç curt',
+                en: 'Share short link',
+              })}
+            </span>
           </PrimaryButton>
         </div>
       </BottomSheet>
@@ -1373,15 +1705,30 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       <BottomSheet
         isOpen={showRoomSettingsSheet}
         onClose={() => setShowRoomSettingsSheet(false)}
-        title="Ajustes y Seguridad de Sala"
-        subtitle="Personaliza tu nombre, permisos, PIN y preferencias"
+        lang={lang}
+        title={pickLang(lang, {
+          es: 'Ajustes y Seguridad de Sala',
+          ca: 'Ajustos i Seguretat de Sala',
+          en: 'Room Settings & Security',
+        })}
+        subtitle={pickLang(lang, {
+          es: 'Personaliza tu nombre, permisos, PIN y preferencias',
+          ca: 'Personalitza el teu nom, permisos, PIN i preferències',
+          en: 'Customize your display name, permissions, PIN & preferences',
+        })}
         icon={<Shield className="w-5 h-5" />}
       >
         {/* 0. User Display Name */}
         <div className="space-y-2">
           <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
             <UserCheck className="w-3.5 h-3.5 text-[#BF94FF]" />
-            <span>Tu nombre en la sala</span>
+            <span>
+              {pickLang(lang, {
+                es: 'Tu nombre en la sala',
+                ca: 'El teu nom a la sala',
+                en: 'Your name in room',
+              })}
+            </span>
           </label>
           <div className="flex items-center gap-2">
             <StandardInput
@@ -1400,7 +1747,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 }
               }}
             >
-              Guardar
+              {pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
             </PrimaryButton>
           </div>
         </div>
@@ -1410,7 +1757,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           <div className="space-y-2 pt-2 border-t border-white/[0.07]">
             <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
               <Edit3 className="w-3.5 h-3.5 text-[#BF94FF]" />
-              <span>Nombre de la sala</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Nombre de la sala',
+                  ca: 'Nom de la sala',
+                  en: 'Room name',
+                })}
+              </span>
             </label>
             <div className="flex items-center gap-2">
               <StandardInput
@@ -1425,7 +1778,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   }
                 }}
               >
-                Guardar
+                {pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
               </PrimaryButton>
             </div>
           </div>
@@ -1446,10 +1799,18 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               ) : (
                 <Unlock className="w-4 h-4 text-emerald-400" />
               )}
-              <span>Modo Anfitrión (Solo Host controla el vídeo)</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Modo Anfitrión (Solo Host controla el vídeo)',
+                  ca: 'Mode Amfitrió (Només el Host controla el vídeo)',
+                  en: 'Host Mode (Only host controls playback)',
+                })}
+              </span>
             </span>
             <span className="text-xs font-mono uppercase">
-              {hostOnlyControl ? 'ACTIVO' : 'LIBRE'}
+              {hostOnlyControl
+                ? pickLang(lang, { es: 'ACTIVO', ca: 'ACTIU', en: 'ON' })
+                : pickLang(lang, { es: 'LIBRE', ca: 'LLIURE', en: 'OPEN' })}
             </span>
           </SecondaryButton>
 
@@ -1462,10 +1823,18 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           >
             <span className="flex items-center gap-2">
               <Bookmark className="w-4 h-4 text-[#BF94FF]" />
-              <span>Sala Permanente 24/7</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Sala Permanente 24/7',
+                  ca: 'Sala Permanent 24/7',
+                  en: '24/7 Permanent Room',
+                })}
+              </span>
             </span>
             <span className="text-xs font-mono uppercase">
-              {isCurrentRoomPermanent ? 'GUARDADA' : 'TEMPORAL'}
+              {isCurrentRoomPermanent
+                ? pickLang(lang, { es: 'GUARDADA', ca: 'DESADA', en: 'SAVED' })
+                : pickLang(lang, { es: 'TEMPORAL', ca: 'TEMPORAL', en: 'TEMP' })}
             </span>
           </SecondaryButton>
         </div>
@@ -1475,7 +1844,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           <div className="space-y-2 pt-2 border-t border-white/[0.07]">
             <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
               <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-              <span>PIN de 4 dígitos {hasPin ? '(Activo)' : '(Opcional)'}</span>
+              <span>
+                {pickLang(lang, {
+                  es: `PIN de 4 dígitos ${hasPin ? '(Activo)' : '(Opcional)'}`,
+                  ca: `PIN de 4 dígits ${hasPin ? '(Actiu)' : '(Opcional)'}`,
+                  en: `4-digit PIN ${hasPin ? '(Active)' : '(Optional)'}`,
+                })}
+              </span>
             </label>
             <div className="flex items-center gap-2">
               <StandardInput
@@ -1486,7 +1861,19 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 onChange={(e) =>
                   setPinDraft(e.target.value.replace(/\D/g, '').slice(0, 4))
                 }
-                placeholder={hasPin ? 'Cambiar PIN (4 dígitos)' : 'Ej. 1234'}
+                placeholder={
+                  hasPin
+                    ? pickLang(lang, {
+                        es: 'Cambiar PIN (4 dígitos)',
+                        ca: 'Canviar PIN (4 dígits)',
+                        en: 'Change PIN (4 digits)',
+                      })
+                    : pickLang(lang, {
+                        es: 'Ej. 1234',
+                        ca: 'Ex. 1234',
+                        en: 'e.g. 1234',
+                      })
+                }
               />
               <PrimaryButton
                 disabled={pinDraft.length !== 4}
@@ -1497,11 +1884,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   }
                 }}
               >
-                Activar
+                {pickLang(lang, { es: 'Activar', ca: 'Activar', en: 'Enable' })}
               </PrimaryButton>
               {hasPin && (
                 <SecondaryButton onClick={() => onSetRoomPin('')}>
-                  Quitar
+                  {pickLang(lang, { es: 'Quitar', ca: 'Treure', en: 'Remove' })}
                 </SecondaryButton>
               )}
             </div>
@@ -1514,11 +1901,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
               <Plus className="w-3.5 h-3.5 text-[#BF94FF]" />
               <span>
-                {lang === 'es'
-                  ? 'Crear nueva sala'
-                  : lang === 'ca'
-                  ? 'Crear nova sala'
-                  : 'Create new room'}
+                {pickLang(lang, {
+                  es: 'Crear nueva sala',
+                  ca: 'Crear nova sala',
+                  en: 'Create new room',
+                })}
               </span>
             </label>
             <div className="flex items-center gap-2">
@@ -1534,11 +1921,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     setShowRoomSettingsSheet(false);
                   }
                 }}
-                placeholder={
-                  lang === 'es'
-                    ? 'Nombre opcional (ej. Noche de Cine)'
-                    : 'Optional name (e.g. Movie Night)'
-                }
+                placeholder={pickLang(lang, {
+                  es: 'Nombre opcional (ej. Noche de Cine)',
+                  ca: 'Nom opcional (ex. Nit de Cinema)',
+                  en: 'Optional name (e.g. Movie Night)',
+                })}
               />
               <PrimaryButton
                 onClick={() => {
@@ -1548,7 +1935,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 }}
               >
                 <Plus className="w-4 h-4" />
-                <span>{lang === 'es' ? 'Crear' : 'Create'}</span>
+                <span>
+                  {pickLang(lang, { es: 'Crear', ca: 'Crear', en: 'Create' })}
+                </span>
               </PrimaryButton>
             </div>
           </div>
@@ -1556,7 +1945,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
         {/* 5. View Mode Switcher */}
         <div className="pt-2 border-t border-white/[0.07] flex items-center justify-between">
-          <span className="text-xs text-zinc-400">Formato de pantalla</span>
+          <span className="text-xs text-zinc-400">
+            {pickLang(lang, {
+              es: 'Formato de pantalla',
+              ca: 'Format de pantalla',
+              en: 'Screen layout',
+            })}
+          </span>
           <ViewModeSwitchButton
             effectiveView={effectiveView}
             onToggle={onToggleViewMode}

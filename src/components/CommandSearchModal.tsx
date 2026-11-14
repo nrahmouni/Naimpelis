@@ -1,12 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { CornerDownLeft, Film, Search, Sparkles, Trophy, Tv, X } from 'lucide-react';
-import type { CatalogMovie, SpanishTdtChannel } from '../types';
+import type { AppLanguage, CatalogMovie, SpanishTdtChannel } from '../types';
+import { pickLang } from '../utils/i18n';
 import { BottomSheet, StandardInput } from './ui/DesignSystem';
+import { PosterImage } from './ui/PosterImage';
 
 interface CommandSearchModalProps {
   isOpen: boolean;
   onClose: () => void;
+  lang?: AppLanguage;
   movies: CatalogMovie[];
   series: CatalogMovie[];
   tdtChannels: SpanishTdtChannel[];
@@ -23,6 +26,7 @@ type FlatSearchAction =
 export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
   isOpen,
   onClose,
+  lang = 'es',
   movies,
   series,
   tdtChannels,
@@ -158,8 +162,17 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
     <BottomSheet
       isOpen={isOpen}
       onClose={onClose}
-      title="Búsqueda Spotlight"
-      subtitle="Películas, series y TV en directo · ↑↓ y Enter para abrir"
+      lang={lang}
+      title={pickLang(lang, {
+        es: 'Búsqueda Spotlight',
+        ca: 'Cerca Spotlight',
+        en: 'Spotlight Search',
+      })}
+      subtitle={pickLang(lang, {
+        es: 'Películas, series y TV en directo · ↑↓ y Enter para abrir',
+        ca: 'Pel·lícules, sèries i TV en directe · ↑↓ i Enter per obrir',
+        en: 'Movies, series and Live TV · ↑↓ & Enter to open',
+      })}
       icon={<Search className="w-5 h-5" />}
       maxWidth="sm:max-w-2xl"
     >
@@ -168,7 +181,11 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
           ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Escribe título, género o canal..."
+          placeholder={pickLang(lang, {
+            es: 'Escribe título, género o canal...',
+            ca: 'Escriu títol, gènere o canal...',
+            en: 'Type title, genre or channel...',
+          })}
           icon={<Search className="w-4 h-4" />}
           rightElement={
             query ? (
@@ -176,7 +193,11 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                 type="button"
                 onClick={() => setQuery('')}
                 className="min-h-8 min-w-8 rounded-lg text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer"
-                aria-label="Limpiar búsqueda"
+                aria-label={pickLang(lang, {
+                  es: 'Limpiar búsqueda',
+                  ca: 'Netejar cerca',
+                  en: 'Clear search',
+                })}
               >
                 <X className="w-4 h-4" />
               </button>
@@ -190,7 +211,9 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
 
         {!normQuery && recentQueries.length > 0 && (
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="text-[11px] font-semibold text-zinc-500 mr-1">Recientes:</span>
+            <span className="text-[11px] font-semibold text-zinc-500 mr-1">
+              {pickLang(lang, { es: 'Recientes:', ca: 'Recents:', en: 'Recent:' })}
+            </span>
             {recentQueries.map((rq) => (
               <button
                 key={rq}
@@ -207,9 +230,19 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
         {flatActions.length === 0 ? (
           <div className="py-10 text-center space-y-2 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
             <Sparkles className="w-6 h-6 text-[#BF94FF] mx-auto" />
-            <p className="text-sm font-semibold text-white">Sin coincidencias rápidas</p>
+            <p className="text-sm font-semibold text-white">
+              {pickLang(lang, {
+                es: 'Sin coincidencias rápidas',
+                ca: 'Sense coincidències ràpides',
+                en: 'No quick matches',
+              })}
+            </p>
             <p className="text-xs text-zinc-400">
-              Prueba con otro título o abre la sección Películas / Series para explorar todo el catálogo.
+              {pickLang(lang, {
+                es: 'Prueba con otro título o abre Películas / Series para explorar todo el catálogo.',
+                ca: 'Prova un altre títol o obre Pel·lícules / Sèries per explorar tot el catàleg.',
+                en: 'Try another title or browse Movies / Series to explore the full catalog.',
+              })}
             </p>
           </div>
         ) : (
@@ -218,7 +251,13 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
               <section className="space-y-2">
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   <Film className="w-3.5 h-3.5 text-[#BF94FF]" />
-                  <span>Películas ({matchedMovies.length})</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: `Películas (${matchedMovies.length})`,
+                      ca: `Pel·lícules (${matchedMovies.length})`,
+                      en: `Movies (${matchedMovies.length})`,
+                    })}
+                  </span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {matchedMovies.map((item) => {
@@ -242,11 +281,13 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                             : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.07]'
                         }`}
                       >
-                        <img
-                          src={item.poster || '/icon.svg'}
-                          alt={item.title}
-                          className="w-10 aspect-[2/3] rounded-lg object-cover bg-zinc-900 shrink-0"
-                        />
+                        <div className="w-10 shrink-0 rounded-lg overflow-hidden">
+                          <PosterImage
+                            src={item.poster || '/icon.svg'}
+                            alt={item.title}
+                            aspect="poster"
+                          />
+                        </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-bold text-white truncate">{item.title}</div>
                           <div className="text-[11px] text-zinc-400 tabular-nums">
@@ -267,7 +308,13 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
               <section className="space-y-2">
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   <Tv className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Series ({matchedSeries.length})</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: `Series (${matchedSeries.length})`,
+                      ca: `Sèries (${matchedSeries.length})`,
+                      en: `Series (${matchedSeries.length})`,
+                    })}
+                  </span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {matchedSeries.map((item) => {
@@ -291,15 +338,18 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                             : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.07]'
                         }`}
                       >
-                        <img
-                          src={item.poster || '/icon.svg'}
-                          alt={item.title}
-                          className="w-10 aspect-[2/3] rounded-lg object-cover bg-zinc-900 shrink-0"
-                        />
+                        <div className="w-10 shrink-0 rounded-lg overflow-hidden">
+                          <PosterImage
+                            src={item.poster || '/icon.svg'}
+                            alt={item.title}
+                            aspect="poster"
+                          />
+                        </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-bold text-white truncate">{item.title}</div>
                           <div className="text-[11px] text-zinc-400 tabular-nums">
-                            Serie {item.year ? `· ${item.year}` : ''}
+                            {pickLang(lang, { es: 'Serie', ca: 'Sèrie', en: 'Series' })}{' '}
+                            {item.year ? `· ${item.year}` : ''}
                           </div>
                         </div>
                         {isFocused && (
@@ -316,7 +366,13 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
               <section className="space-y-2">
                 <h4 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                   <Trophy className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>TV en directo ({matchedChannels.length})</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: `TV en directo (${matchedChannels.length})`,
+                      ca: `TV en directe (${matchedChannels.length})`,
+                      en: `Live TV (${matchedChannels.length})`,
+                    })}
+                  </span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {matchedChannels.map((ch) => {
@@ -346,7 +402,12 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-bold text-white truncate">{ch.name}</div>
                           <div className="text-[11px] text-emerald-400">
-                            EN DIRECTO · {ch.quality}
+                            {pickLang(lang, {
+                              es: 'EN DIRECTO',
+                              ca: 'EN DIRECTE',
+                              en: 'LIVE',
+                            })}{' '}
+                            · {ch.quality}
                           </div>
                         </div>
                       </motion.button>

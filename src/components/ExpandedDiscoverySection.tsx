@@ -14,6 +14,9 @@ import {
 } from 'lucide-react';
 import type { AppLanguage, CatalogMovie, RoomQueueItem } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
+import { PosterImage } from './ui/PosterImage';
+import { VirtualizedPosterGrid } from './VirtualizedPosterGrid';
 import cosmosBannerImg from '../assets/images/documentary_cosmos_banner_1794673308607.jpg';
 
 interface CatalogGenreItem {
@@ -53,16 +56,16 @@ interface FastChannelItem {
 }
 
 const DISCOVERY_PROVIDERS = [
-  { id: 'all', label: 'Todas' },
-  { id: 'netflix', label: 'Netflix' },
-  { id: 'hbomax', label: 'HBO Max' },
-  { id: 'disney', label: 'Disney+' },
-  { id: 'prime', label: 'Prime Video' },
-  { id: 'apple', label: 'Apple TV+' },
-  { id: 'movistar', label: 'Movistar+' },
-  { id: 'filmin', label: 'Filmin' },
-  { id: 'crunchyroll', label: 'Crunchyroll' },
-  { id: 'skyshowtime', label: 'SkyShowtime' },
+  { id: 'all', es: 'Todas', ca: 'Totes', en: 'All' },
+  { id: 'netflix', es: 'Netflix', ca: 'Netflix', en: 'Netflix' },
+  { id: 'hbomax', es: 'HBO Max', ca: 'HBO Max', en: 'HBO Max' },
+  { id: 'disney', es: 'Disney+', ca: 'Disney+', en: 'Disney+' },
+  { id: 'prime', es: 'Prime Video', ca: 'Prime Video', en: 'Prime Video' },
+  { id: 'apple', es: 'Apple TV+', ca: 'Apple TV+', en: 'Apple TV+' },
+  { id: 'movistar', es: 'Movistar+', ca: 'Movistar+', en: 'Movistar+' },
+  { id: 'filmin', es: 'Filmin', ca: 'Filmin', en: 'Filmin' },
+  { id: 'crunchyroll', es: 'Crunchyroll', ca: 'Crunchyroll', en: 'Crunchyroll' },
+  { id: 'skyshowtime', es: 'SkyShowtime', ca: 'SkyShowtime', en: 'SkyShowtime' },
 ] as const;
 
 interface ExpandedDiscoverySectionProps {
@@ -100,7 +103,6 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
 
   const [fastCategory, setFastCategory] = useState<string>('all');
   const [bannerImgBroken, setBannerImgBroken] = useState(false);
-  const [brokenImages, setBrokenImages] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     let active = true;
@@ -179,7 +181,12 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
   );
 
   const getLocalizedGenreLabel = (g: CatalogGenreItem) =>
-    lang === 'ca' ? g.ca : lang === 'en' ? g.en : g.es;
+    pickLang(lang, { es: g.es, ca: g.ca, en: g.en });
+
+  const mediaTypeBadgeLabel =
+    mediaType === 'tv'
+      ? pickLang(lang, { es: 'Serie', ca: 'Sèrie', en: 'Series' })
+      : pickLang(lang, { es: 'Película', ca: 'Pel·lícula', en: 'Movie' });
 
   return (
     <div className="space-y-10 pt-2">
@@ -207,34 +214,36 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
             <div className="relative z-10 p-5 sm:p-7 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
               <div className="space-y-1.5 max-w-2xl">
                 <p className="text-xs font-mono uppercase tracking-[0.16em] text-[#BF94FF]">
-                  {lang === 'ca'
-                    ? 'EMISSIÓ CONTINUA 24/7 · SENSE REGISTRE'
-                    : lang === 'en'
-                    ? '24/7 LIVE FAST CHANNELS · INSTANT SYNC'
-                    : 'EMISIÓN CONTINUA 24/7 · SIN ANUNCIOS'}
+                  {pickLang(lang, {
+                    es: 'EMISIÓN CONTINUA 24/7 · SIN ANUNCIOS',
+                    ca: 'EMISSIÓ CONTINUA 24/7 · SENSE REGISTRE',
+                    en: '24/7 LIVE FAST CHANNELS · INSTANT SYNC',
+                  })}
                 </p>
                 <h3 className="font-display font-bold text-xl sm:text-2xl text-white tracking-tight">
-                  {lang === 'ca'
-                    ? 'Canals Temàtics FAST, Documentals i Música'
-                    : lang === 'en'
-                    ? 'Thematic FAST Channels, Documentaries & Live Radio'
-                    : 'Canales Temáticos 24/7, Documentales y Directos'}
+                  {pickLang(lang, {
+                    es: 'Canales Temáticos 24/7, Documentales y Directos',
+                    ca: 'Canals Temàtics FAST, Documentals i Música',
+                    en: 'Thematic FAST Channels, Documentaries & Live Radio',
+                  })}
                 </h3>
                 <p className="text-xs sm:text-sm text-zinc-300">
-                  {lang === 'es'
-                    ? 'Noticias 24h, Teledeporte, NASA Live desde la órbita, SX3 Anime, DW Documental y música ambiental en un clic.'
-                    : 'Live 24h news, sports, NASA Earth orbit feed, anime and investigative documentaries with 1-click room sync.'}
+                  {pickLang(lang, {
+                    es: 'Noticias 24h, Teledeporte, NASA Live desde la órbita, SX3 Anime, DW Documental y música ambiental en un clic.',
+                    ca: 'Notícies 24h, Teledeporte, NASA Live des de l’òrbita, SX3 Anime, DW Documental i música ambiental en un clic.',
+                    en: 'Live 24h news, sports, NASA Earth orbit feed, anime and investigative documentaries with 1-click room sync.',
+                  })}
                 </p>
               </div>
 
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
                 {[
-                  { id: 'all', es: 'Todos', en: 'All' },
-                  { id: 'sports', es: 'Deportes', en: 'Sports' },
-                  { id: 'documentary', es: 'Docs & Ciencia', en: 'Docs' },
-                  { id: 'news', es: 'Noticias', en: 'News' },
-                  { id: 'anime', es: 'Anime', en: 'Anime' },
-                  { id: 'music', es: 'Música', en: 'Music' },
+                  { id: 'all', es: 'Todos', ca: 'Tots', en: 'All' },
+                  { id: 'sports', es: 'Deportes', ca: 'Esports', en: 'Sports' },
+                  { id: 'documentary', es: 'Docs & Ciencia', ca: 'Docs i Ciència', en: 'Docs' },
+                  { id: 'news', es: 'Noticias', ca: 'Notícies', en: 'News' },
+                  { id: 'anime', es: 'Anime', ca: 'Anime', en: 'Anime' },
+                  { id: 'music', es: 'Música', ca: 'Música', en: 'Music' },
                 ].map((cat) => (
                   <button
                     key={cat.id}
@@ -249,7 +258,7 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                         : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-[#EFEFF1] hover:text-white'
                     }`}
                   >
-                    {lang === 'en' ? cat.en : cat.es}
+                    {pickLang(lang, cat)}
                   </button>
                 ))}
               </div>
@@ -281,11 +290,11 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                     <Play className="w-3.5 h-3.5 text-[#ADADB8] group-hover:text-white shrink-0" />
                   </div>
                   <p className="text-xs text-[#ADADB8] line-clamp-2 leading-relaxed">
-                    {lang === 'ca'
-                      ? ch.descriptionCa
-                      : lang === 'en'
-                      ? ch.descriptionEn
-                      : ch.descriptionEs}
+                    {pickLang(lang, {
+                      es: ch.descriptionEs,
+                      ca: ch.descriptionCa,
+                      en: ch.descriptionEn,
+                    })}
                   </p>
                   <div className="text-[11px] font-mono text-[#ADADB8] pt-0.5 flex items-center gap-1.5">
                     <span className="inline-flex items-end gap-[2px] h-2.5 shrink-0" aria-hidden="true">
@@ -294,7 +303,9 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                       <span className="w-[2px] h-full rounded-full bg-[#EB0400] nc-eq-bar-3" />
                     </span>
                     <Radio className="w-3 h-3 text-[#EB0400]" />
-                    <span>EN VIVO · {ch.quality}</span>
+                    <span>
+                      {pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE' })} · {ch.quality}
+                    </span>
                   </div>
                 </div>
               </button>
@@ -309,14 +320,26 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
       {loadingCollections ? (
         <div className="py-8 flex items-center justify-center gap-2 text-xs text-[#ADADB8]">
           <Loader2 className="w-4 h-4 animate-spin text-[#9146FF]" />
-          <span>{lang === 'es' ? 'Cargando colecciones editoriales...' : 'Loading collections...'}</span>
+          <span>
+            {pickLang(lang, {
+              es: 'Cargando colecciones editoriales...',
+              ca: 'Carregant col·leccions editorials...',
+              en: 'Loading editorial collections...',
+            })}
+          </span>
         </div>
       ) : (
         collections.map((col, colIndex) => {
-          const title =
-            lang === 'ca' ? col.titleCa : lang === 'en' ? col.titleEn : col.titleEs;
-          const subtitle =
-            lang === 'ca' ? col.subtitleCa : lang === 'en' ? col.subtitleEn : col.subtitleEs;
+          const title = pickLang(lang, {
+            es: col.titleEs,
+            ca: col.titleCa,
+            en: col.titleEn,
+          });
+          const subtitle = pickLang(lang, {
+            es: col.subtitleEs,
+            ca: col.subtitleCa,
+            en: col.subtitleEn,
+          });
 
           return (
             <section key={col.id} className="space-y-3">
@@ -328,55 +351,41 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                   <p className="text-xs text-zinc-400">{subtitle}</p>
                 </div>
                 <span className="text-xs font-mono text-zinc-500 tabular-nums shrink-0">
-                  {col.items.length} títulos
+                  {col.items.length}{' '}
+                  {pickLang(lang, { es: 'títulos', ca: 'títols', en: 'titles' })}
                 </span>
               </div>
 
               <div className="flex items-stretch gap-3 sm:gap-4 overflow-x-auto no-scrollbar pb-2">
                 {col.items.map((item, idx) => {
                   const key = `${col.id}-${item.id}`;
-                  const imgBroken = Boolean(brokenImages[key]);
                   const bookmarked = isBookmarked(item);
                   const showRank = colIndex === 0 && idx < 10;
 
                   return (
                     <div
                       key={key}
-                      className="group w-[148px] sm:w-[172px] shrink-0 flex flex-col gap-2"
+                      className="group relative w-[148px] sm:w-[172px] shrink-0 flex flex-col gap-2"
                     >
-                      <div
-                        role="button"
-                        tabIndex={0}
+                      <button
+                        type="button"
                         onClick={() => {
                           triggerHaptic('light');
                           onSelectItem({ ...item, mediaType: col.mediaType });
                         }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            onSelectItem({ ...item, mediaType: col.mediaType });
-                          }
-                        }}
-                        className="nc-card-sheen relative aspect-[2/3] rounded-2xl overflow-hidden bg-[#121218] border border-white/[0.09] hover:border-[#9146FF]/55 cursor-pointer transition-all duration-200 hover:-translate-y-1 shadow-[0_14px_30px_rgba(0,0,0,0.6)]"
-                      >
-                        {!imgBroken && item.poster ? (
-                          <img
-                            src={item.poster}
-                            alt={item.title}
-                            loading="lazy"
-                            referrerPolicy="no-referrer"
-                            onError={() =>
-                              setBrokenImages((prev) => ({ ...prev, [key]: true }))
-                            }
-                            className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
-                          />
-                        ) : (
-                          <div className="w-full h-full p-3 flex flex-col items-center justify-center text-center">
-                            <Film className="w-6 h-6 text-zinc-500 mb-2" />
-                            <span className="text-xs font-semibold text-white line-clamp-2">
-                              {item.title}
-                            </span>
-                          </div>
-                        )}
+                        aria-label={item.title}
+                        className="absolute inset-0 z-0 rounded-2xl cursor-pointer focus-visible:outline-2 focus-visible:outline-[#9146FF]"
+                      />
+
+                      <div className="relative z-[1] pointer-events-none nc-card-sheen aspect-[2/3] rounded-2xl overflow-hidden bg-[#121218] border border-white/[0.09] group-hover:border-[#9146FF]/55 transition-all duration-200 group-hover:-translate-y-1 shadow-[0_14px_30px_rgba(0,0,0,0.6)]">
+                        <PosterImage
+                          src={item.poster}
+                          alt={item.title}
+                          aspect="none"
+                          className="w-full h-full"
+                          imgClassName="object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                          fallbackTitle={item.title}
+                        />
 
                         <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent opacity-80 group-hover:opacity-95 transition-opacity" />
 
@@ -386,7 +395,7 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                           </span>
                         )}
 
-                        <div className="absolute top-2 right-2 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="absolute top-2 right-2 z-10 pointer-events-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -394,8 +403,12 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                               triggerHaptic('light');
                               onToggleBookmark({ ...item, mediaType: col.mediaType });
                             }}
-                            aria-label="Guardar en Mi Lista"
-                            className={`w-8 h-8 rounded-full flex items-center justify-center backdrop-blur-md cursor-pointer transition-colors ${
+                            aria-label={pickLang(lang, {
+                              es: 'Guardar en Mi Lista',
+                              ca: 'Desar a La Meva Llista',
+                              en: 'Save to My List',
+                            })}
+                            className={`w-9 h-9 rounded-full flex items-center justify-center backdrop-blur-md cursor-pointer transition-colors ${
                               bookmarked
                                 ? 'bg-[#9146FF] text-white'
                                 : 'bg-black/65 hover:bg-black/85 text-white'
@@ -414,18 +427,22 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                                 subtitle: `${item.year || 'HD'} · ★ ${item.rating || '7.5'}`,
                                 poster: item.poster,
                                 tmdbId: item.tmdbId,
-                                preferLang: 'ES',
+                                preferLang: lang === 'en' ? 'EN' : 'ES',
                               });
                             }}
-                            aria-label="Añadir a la cola"
-                            className="w-8 h-8 rounded-full bg-black/65 hover:bg-black/85 text-white flex items-center justify-center backdrop-blur-md cursor-pointer"
+                            aria-label={pickLang(lang, {
+                              es: 'Añadir a la cola',
+                              ca: 'Afegir a la cua',
+                              en: 'Add to queue',
+                            })}
+                            className="w-9 h-9 rounded-full bg-black/65 hover:bg-black/85 text-white flex items-center justify-center backdrop-blur-md cursor-pointer"
                           >
                             <Plus className="w-3.5 h-3.5" />
                           </button>
                         </div>
                       </div>
 
-                      <div className="px-0.5 space-y-0.5">
+                      <div className="relative z-[1] pointer-events-none px-0.5 space-y-0.5">
                         <h4 className="font-display font-semibold text-xs text-white line-clamp-1">
                           {item.title}
                         </h4>
@@ -451,17 +468,19 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
             <div className="flex items-center gap-2 text-white">
               <Compass className="w-5 h-5 text-[#BF94FF]" />
               <h3 className="font-display font-bold text-lg sm:text-xl tracking-tight">
-                {lang === 'ca'
-                  ? 'Explorador Complet per Gèneres i Plataformes'
-                  : lang === 'en'
-                  ? 'Expanded Genre & Streaming Platform Explorer'
-                  : 'Explorador Expandido por Géneros y Plataformas'}
+                {pickLang(lang, {
+                  es: 'Explorador Expandido por Géneros y Plataformas',
+                  ca: 'Explorador Complet per Gèneres i Plataformes',
+                  en: 'Expanded Genre & Streaming Platform Explorer',
+                })}
               </h3>
             </div>
             <p className="text-xs text-[#ADADB8]">
-              {lang === 'es'
-                ? 'Combina formato, 14 géneros y catálogos de Filmin, Crunchyroll, Netflix, Max, Disney+ y más.'
-                : 'Combine format, 14 genres, and streaming catalogs including Filmin, Crunchyroll, Netflix, Max, Disney+, and Apple TV+.'}
+              {pickLang(lang, {
+                es: 'Combina formato, 14 géneros y catálogos de Filmin, Crunchyroll, Netflix, Max, Disney+ y más.',
+                ca: 'Combina format, 14 gèneres i catàlegs de Filmin, Crunchyroll, Netflix, Max, Disney+ i més.',
+                en: 'Combine format, 14 genres, and streaming catalogs including Filmin, Crunchyroll, Netflix, Max, Disney+, and Apple TV+.',
+              })}
             </p>
           </div>
 
@@ -480,7 +499,7 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                 }`}
               >
                 <Film className="w-3.5 h-3.5" />
-                <span>{lang === 'es' ? 'Películas' : 'Movies'}</span>
+                <span>{pickLang(lang, { es: 'Películas', ca: 'Pel·lícules', en: 'Movies' })}</span>
               </button>
               <button
                 type="button"
@@ -495,24 +514,28 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                 }`}
               >
                 <Tv className="w-3.5 h-3.5" />
-                <span>{lang === 'es' ? 'Series' : 'Series'}</span>
+                <span>{pickLang(lang, { es: 'Series', ca: 'Sèries', en: 'Series' })}</span>
               </button>
             </div>
 
             <select
-              aria-label="Ordenar catálogo"
+              aria-label={pickLang(lang, {
+                es: 'Ordenar catálogo',
+                ca: 'Ordenar catàleg',
+                en: 'Sort catalog',
+              })}
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
               className="min-h-11 px-3.5 rounded-2xl bg-white/[0.05] border border-white/[0.1] text-xs font-semibold text-[#EFEFF1] outline-none cursor-pointer"
             >
               <option value="popularity.desc" className="bg-[#141418]">
-                {lang === 'es' ? 'Más Populares' : 'Most Popular'}
+                {pickLang(lang, { es: 'Más Populares', ca: 'Més Populars', en: 'Most Popular' })}
               </option>
               <option value="vote_average.desc" className="bg-[#141418]">
-                {lang === 'es' ? 'Mejor Valoradas' : 'Top Rated'}
+                {pickLang(lang, { es: 'Mejor Valoradas', ca: 'Més Ben Valorades', en: 'Top Rated' })}
               </option>
               <option value="primary_release_date.desc" className="bg-[#141418]">
-                {lang === 'es' ? 'Más Recientes' : 'Newest Releases'}
+                {pickLang(lang, { es: 'Más Recientes', ca: 'Més Recents', en: 'Newest Releases' })}
               </option>
             </select>
           </div>
@@ -560,7 +583,7 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                     : 'text-[#ADADB8] hover:text-white hover:bg-white/[0.05]'
                 }`}
               >
-                {prov.label}
+                {pickLang(lang, prov)}
               </button>
             );
           })}
@@ -570,78 +593,71 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
         {loadingDiscover && discoverItems.length === 0 ? (
           <div className="py-12 flex items-center justify-center gap-2 text-xs text-[#ADADB8]">
             <Loader2 className="w-5 h-5 animate-spin text-[#9146FF]" />
-            <span>{lang === 'es' ? 'Explorando catálogo...' : 'Discovering titles...'}</span>
+            <span>
+              {pickLang(lang, {
+                es: 'Explorando catálogo...',
+                ca: 'Explorant catàleg...',
+                en: 'Discovering titles...',
+              })}
+            </span>
           </div>
         ) : discoverItems.length === 0 ? (
           <div className="py-10 text-center space-y-2">
             <Sparkles className="w-6 h-6 text-zinc-500 mx-auto" />
             <p className="text-xs text-zinc-400">
-              {lang === 'es'
-                ? 'No hay títulos para esta combinación exacta de género y plataforma. Prueba con otra plataforma.'
-                : 'No titles match this exact genre and platform filter.'}
+              {pickLang(lang, {
+                es: 'No hay títulos para esta combinación exacta de género y plataforma. Prueba con otra plataforma.',
+                ca: 'No hi ha títols per a aquesta combinació exacta de gènere i plataforma. Prova amb una altra plataforma.',
+                en: 'No titles match this exact genre and platform filter.',
+              })}
             </p>
           </div>
         ) : (
           <div className="space-y-5">
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3.5 sm:gap-4">
-              {discoverItems.map((item) => {
-                const key = `exp-${mediaType}-${item.id}`;
-                const imgBroken = Boolean(brokenImages[key]);
-                return (
-                  <div
-                    key={key}
-                    role="button"
-                    tabIndex={0}
+            <VirtualizedPosterGrid
+              items={discoverItems}
+              variant="poster"
+              gapPx={14}
+              getKey={(item) => `exp-${mediaType}-${item.id}`}
+              renderItem={(item) => (
+                <div className="group relative flex flex-col gap-2">
+                  <button
+                    type="button"
                     onClick={() => {
                       triggerHaptic('light');
                       onSelectItem({ ...item, mediaType });
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        onSelectItem({ ...item, mediaType });
-                      }
-                    }}
-                    className="group flex flex-col gap-2 cursor-pointer"
-                  >
-                    <div className="nc-card-sheen relative aspect-[2/3] rounded-2xl overflow-hidden bg-[#121218] border border-white/[0.09] hover:border-[#9146FF]/55 transition-all duration-200 hover:-translate-y-1 shadow-[0_12px_28px_rgba(0,0,0,0.55)]">
-                      {!imgBroken && item.poster ? (
-                        <img
-                          src={item.poster}
-                          alt={item.title}
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          onError={() =>
-                            setBrokenImages((prev) => ({ ...prev, [key]: true }))
-                          }
-                          className="w-full h-full object-cover sm:group-hover:scale-105 transition-transform duration-300"
-                        />
-                      ) : (
-                        <div className="w-full h-full p-3 flex flex-col items-center justify-center text-center">
-                          <Film className="w-6 h-6 text-zinc-500 mb-2" />
-                          <span className="text-xs font-semibold text-white line-clamp-2">
-                            {item.title}
-                          </span>
-                        </div>
-                      )}
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
-                      <span className="absolute bottom-2 right-2 text-[11px] font-mono font-semibold text-amber-300 flex items-center gap-0.5 tabular-nums">
-                        <Star className="w-3 h-3 fill-current" />
-                        {item.rating || '7.5'}
-                      </span>
-                    </div>
+                    aria-label={item.title}
+                    className="absolute inset-0 z-0 rounded-2xl cursor-pointer focus-visible:outline-2 focus-visible:outline-[#9146FF]"
+                  />
 
-                    <div className="px-0.5">
-                      <h4 className="font-display font-semibold text-xs text-white line-clamp-1 group-hover:text-[#BF94FF] transition-colors">
-                        {item.title}
-                      </h4>
-                      <p className="text-[11px] text-zinc-400 tabular-nums">
-                        {item.year || 'HD'} · {mediaType === 'tv' ? 'Serie' : 'Película'}
-                      </p>
-                    </div>
+                  <div className="relative z-[1] pointer-events-none nc-card-sheen aspect-[2/3] rounded-2xl overflow-hidden bg-[#121218] border border-white/[0.09] group-hover:border-[#9146FF]/55 transition-all duration-200 group-hover:-translate-y-1 shadow-[0_12px_28px_rgba(0,0,0,0.55)]">
+                    <PosterImage
+                      src={item.poster}
+                      alt={item.title}
+                      aspect="none"
+                      className="w-full h-full"
+                      imgClassName="object-cover sm:group-hover:scale-105 transition-transform duration-300"
+                      fallbackTitle={item.title}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent" />
+                    <span className="absolute bottom-2 right-2 text-[11px] font-mono font-semibold text-amber-300 flex items-center gap-0.5 tabular-nums">
+                      <Star className="w-3 h-3 fill-current" />
+                      {item.rating || '7.5'}
+                    </span>
                   </div>
-                );
-              })}
-            </div>
+
+                  <div className="relative z-[1] pointer-events-none px-0.5">
+                    <h4 className="font-display font-semibold text-xs text-white line-clamp-1 group-hover:text-[#BF94FF] transition-colors">
+                      {item.title}
+                    </h4>
+                    <p className="text-[11px] text-zinc-400 tabular-nums">
+                      {item.year || 'HD'} · {mediaTypeBadgeLabel}
+                    </p>
+                  </div>
+                </div>
+              )}
+            />
 
             {hasMoreDiscover && (
               <div className="flex justify-center pt-1">
@@ -656,7 +672,13 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                   ) : (
                     <ChevronRight className="w-4 h-4" />
                   )}
-                  <span>{lang === 'es' ? 'Cargar más títulos' : 'Load more titles'}</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Cargar más títulos',
+                      ca: 'Carregar més títols',
+                      en: 'Load more titles',
+                    })}
+                  </span>
                 </button>
               </div>
             )}
@@ -666,3 +688,4 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
     </div>
   );
 };
+

@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { NaimBrandLogo } from './NaimBrandLogo';
+import { pickLang } from '../utils/i18n';
 import {
   extractRoomCodeFromInput,
   getDisplayAppHost,
@@ -40,7 +41,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
   const [directRoomDraft, setDirectRoomDraft] = useState<string>('');
   const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const [pairedByBanner, setPairedByBanner] = useState<string | null>(null);
-  const [lastSavedRoom, setLastSavedRoom] = useState<{
+  const [lastSavedRoom] = useState<{
     roomId: string;
     roomName: string;
     claimedBy: string;
@@ -105,12 +106,25 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
       hasPairedRef.current = true;
       const cleanRoomId = String(params.roomId).trim().toLowerCase();
       const resolvedTitle =
-        params.roomName || `Sala ${cleanRoomId.toUpperCase()}`;
+        params.roomName ||
+        pickLang(lang, {
+          es: `Sala ${cleanRoomId.toUpperCase()}`,
+          ca: `Sala ${cleanRoomId.toUpperCase()}`,
+          en: `Room ${cleanRoomId.toUpperCase()}`,
+        });
 
+      const deviceFallback = pickLang(lang, {
+        es: 'tu móvil',
+        ca: 'el teu mòbil',
+        en: 'your phone',
+      });
+      const who = params.claimedBy || deviceFallback;
       setPairedByBanner(
-        lang === 'es'
-          ? `✓ Vinculada por ${params.claimedBy || 'tu móvil'} · Entrando a ${resolvedTitle}...`
-          : `✓ Paired by ${params.claimedBy || 'your phone'} · Entering ${resolvedTitle}...`
+        pickLang(lang, {
+          es: `✓ Vinculada por ${who} · Entrando a ${resolvedTitle}...`,
+          ca: `✓ Vinculada per ${who} · Entrant a ${resolvedTitle}...`,
+          en: `✓ Paired by ${who} · Entering ${resolvedTitle}...`,
+        })
       );
 
       try {
@@ -119,7 +133,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           JSON.stringify({
             roomId: cleanRoomId,
             roomName: resolvedTitle,
-            claimedBy: params.claimedBy || 'tu móvil',
+            claimedBy: who,
             time: Date.now(),
           })
         );
@@ -243,7 +257,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
               completePairingOnce({
                 roomId: String(roomId),
                 roomName: roomName ? String(roomName) : undefined,
-                claimedBy: String(claimedBy || pairedBy || 'tu móvil'),
+                claimedBy: claimedBy || pairedBy ? String(claimedBy || pairedBy) : undefined,
                 tvAuthToken: String(tvAuthToken || ''),
               });
             }
@@ -281,7 +295,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           completePairingOnce({
             roomId: String(data.roomId),
             roomName: data.roomName ? String(data.roomName) : undefined,
-            claimedBy: String(data.claimedBy || 'tu móvil'),
+            claimedBy: data.claimedBy ? String(data.claimedBy) : undefined,
             tvAuthToken: String(data.tvAuthToken || ''),
           });
         } else if (data?.expired) {
@@ -325,8 +339,16 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
     unlockTvAudioGesture();
     completePairingOnce({
       roomId: parsed,
-      roomName: `Sala ${parsed.toUpperCase()}`,
-      claimedBy: 'Mando TV',
+      roomName: pickLang(lang, {
+        es: `Sala ${parsed.toUpperCase()}`,
+        ca: `Sala ${parsed.toUpperCase()}`,
+        en: `Room ${parsed.toUpperCase()}`,
+      }),
+      claimedBy: pickLang(lang, {
+        es: 'Mando TV',
+        ca: 'Comandament TV',
+        en: 'TV Remote',
+      }),
       tvAuthToken: '',
     });
   };
@@ -352,9 +374,11 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
             </div>
             <div className="text-xs sm:text-sm text-zinc-400">
               {liveTvLabel} ·{' '}
-              {lang === 'es'
-                ? 'Receptor compatible con Google TV, Samsung Tizen y LG webOS'
-                : 'Compatible with Google TV, Samsung Tizen & LG webOS'}
+              {pickLang(lang, {
+                es: 'Receptor compatible con Google TV, Samsung Tizen y LG webOS',
+                ca: 'Receptor compatible amb Google TV, Samsung Tizen i LG webOS',
+                en: 'Compatible with Google TV, Samsung Tizen & LG webOS',
+              })}
             </div>
           </div>
         </div>
@@ -370,12 +394,16 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
             <Wifi className="w-4 h-4" />
             <span>
               {connected || pairingCode
-                ? lang === 'es'
-                  ? 'TV lista esperando tu móvil'
-                  : 'TV ready for your phone'
-                : lang === 'es'
-                ? 'Conectando...'
-                : 'Connecting...'}
+                ? pickLang(lang, {
+                    es: 'TV lista esperando tu móvil',
+                    ca: 'TV llesta esperant el teu mòbil',
+                    en: 'TV ready for your phone',
+                  })
+                : pickLang(lang, {
+                    es: 'Conectando...',
+                    ca: 'Connectant...',
+                    en: 'Connecting...',
+                  })}
             </span>
           </div>
 
@@ -385,7 +413,13 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
             className="min-h-[44px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs sm:text-sm font-semibold text-zinc-200 flex items-center gap-2 cursor-pointer transition-colors"
           >
             <ArrowLeft className="w-4 h-4" />
-            <span>{lang === 'es' ? 'Salir de Modo TV' : 'Exit TV Mode'}</span>
+            <span>
+              {pickLang(lang, {
+                es: 'Salir de Modo TV',
+                ca: 'Sortir de Mode TV',
+                en: 'Exit TV Mode',
+              })}
+            </span>
           </button>
         </div>
       </header>
@@ -396,25 +430,42 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           <div className="inline-flex items-center gap-2 text-xs sm:text-sm font-semibold text-[#C6A2FF] tracking-wide uppercase">
             <Tv className="w-4 h-4 text-[#A970FF]" />
             <span>
-              {lang === 'es'
-                ? 'Código de vinculación rápida para Google TV / Smart TV'
-                : 'Quick pairing code for Google TV / Smart TV'}
+              {pickLang(lang, {
+                es: 'Código de vinculación rápida para Google TV / Smart TV',
+                ca: 'Codi de vinculació ràpida per a Google TV / Smart TV',
+                en: 'Quick pairing code for Google TV / Smart TV',
+              })}
             </span>
           </div>
           <h1 className="font-display font-bold text-2xl sm:text-4xl lg:text-5xl text-white tracking-tight">
-            {lang === 'es'
-              ? 'Introduce estos 4 números en tu móvil'
-              : 'Enter these 4 digits on your phone'}
+            {pickLang(lang, {
+              es: 'Introduce estos 4 números en tu móvil',
+              ca: 'Introdueix aquests 4 números al teu mòbil',
+              en: 'Enter these 4 digits on your phone',
+            })}
           </h1>
           <p className="text-sm sm:text-lg text-zinc-400 leading-relaxed">
-            {lang === 'es'
-              ? 'En tu móvil entra a tu sala de NAIM CINE, toca el botón TV y escribe este código:'
-              : 'On your phone, open your NAIM CINE room, tap the TV button, and enter this code:'}
+            {pickLang(lang, {
+              es: 'En tu móvil entra a tu sala de NAIM CINE, toca el botón TV y escribe este código:',
+              ca: 'Al teu mòbil entra a la teva sala de NAIM CINE, toca el botó TV i escriu aquest codi:',
+              en: 'On your phone, open your NAIM CINE room, tap the TV button, and enter this code:',
+            })}
           </p>
         </div>
 
         {/* 4 Giant Illuminated Specular Broadcast Digit Tiles */}
-        <div className="flex items-center justify-center gap-3 sm:gap-6">
+        <div
+          className="flex items-center justify-center gap-3 sm:gap-6"
+          aria-label={
+            pairingCode
+              ? pickLang(lang, {
+                  es: `Código de vinculación ${pairingCode.split('').join(' ')}`,
+                  ca: `Codi de vinculació ${pairingCode.split('').join(' ')}`,
+                  en: `Pairing code ${pairingCode.split('').join(' ')}`,
+                })
+              : undefined
+          }
+        >
           {digits.map((digit, index) => (
             <div
               key={index}
@@ -442,9 +493,11 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
             >
               <Tv className="w-5 h-5 text-[#9146FF]" />
               <span>
-                {lang === 'es'
-                  ? `Reconectar a ${lastSavedRoom.roomName} (Pulsa OK)`
-                  : `Reconnect to ${lastSavedRoom.roomName} (Press OK)`}
+                {pickLang(lang, {
+                  es: `Reconectar a ${lastSavedRoom.roomName} (Pulsa OK)`,
+                  ca: `Reconnectar a ${lastSavedRoom.roomName} (Prem OK)`,
+                  en: `Reconnect to ${lastSavedRoom.roomName} (Press OK)`,
+                })}
               </span>
             </button>
           </div>
@@ -470,18 +523,22 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                   <>
                     <Check className="w-5 h-5" />
                     <span>
-                      {lang === 'es'
-                        ? 'Sonido de TV activado y listo'
-                        : 'TV Audio Enabled & Ready'}
+                      {pickLang(lang, {
+                        es: 'Sonido de TV activado y listo',
+                        ca: 'So de la TV activat i llest',
+                        en: 'TV Audio Enabled & Ready',
+                      })}
                     </span>
                   </>
                 ) : (
                   <>
                     <Volume2 className="w-5 h-5" />
                     <span>
-                      {lang === 'es'
-                        ? 'Pulsa OK aquí con el mando de la TV para activar sonido'
-                        : 'Press OK once with TV remote to enable sound'}
+                      {pickLang(lang, {
+                        es: 'Pulsa OK aquí con el mando de la TV para activar sonido',
+                        ca: 'Prem OK aquí amb el comandament de la TV per activar el so',
+                        en: 'Press OK once with TV remote to enable sound',
+                      })}
                     </span>
                   </>
                 )}
@@ -495,12 +552,24 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                 {isFullscreen ? (
                   <>
                     <Minimize className="w-4 h-4" />
-                    <span>{lang === 'es' ? 'Salir Pantalla Completa' : 'Exit Fullscreen'}</span>
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Salir Pantalla Completa',
+                        ca: 'Sortir de Pantalla Completa',
+                        en: 'Exit Fullscreen',
+                      })}
+                    </span>
                   </>
                 ) : (
                   <>
                     <Maximize className="w-4 h-4 text-[#9146FF]" />
-                    <span>{lang === 'es' ? 'Pantalla Completa TV' : 'TV Fullscreen'}</span>
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Pantalla Completa TV',
+                        ca: 'Pantalla Completa TV',
+                        en: 'TV Fullscreen',
+                      })}
+                    </span>
                   </>
                 )}
               </button>
@@ -511,7 +580,13 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                 className="min-h-[52px] px-5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-sm font-semibold text-zinc-200 flex items-center gap-2 cursor-pointer transition-colors"
               >
                 <RefreshCw className="w-4 h-4 text-zinc-300" />
-                <span>{lang === 'es' ? 'Nuevo código' : 'New code'}</span>
+                <span>
+                  {pickLang(lang, {
+                    es: 'Nuevo código',
+                    ca: 'Nou codi',
+                    en: 'New code',
+                  })}
+                </span>
               </button>
             </div>
 
@@ -521,16 +596,27 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
               className="mx-auto max-w-lg p-3 rounded-2xl bg-[#18181B] border border-white/[0.09] flex flex-col sm:flex-row items-center gap-2.5"
             >
               <span className="text-xs text-zinc-400 shrink-0 px-1">
-                {lang === 'es'
-                  ? '¿O entrar directo con código de sala?'
-                  : 'Or enter room code directly:'}
+                {pickLang(lang, {
+                  es: '¿O entrar directo con código de sala?',
+                  ca: 'O entrar directe amb codi de sala?',
+                  en: 'Or enter room code directly:',
+                })}
               </span>
               <div className="flex items-center gap-2 w-full sm:flex-1">
                 <input
                   type="text"
                   value={directRoomDraft}
                   onChange={(e) => setDirectRoomDraft(e.target.value)}
-                  placeholder={lang === 'es' ? 'Ej: k8x4' : 'e.g. k8x4'}
+                  placeholder={pickLang(lang, {
+                    es: 'Ej: k8x4',
+                    ca: 'Ex: k8x4',
+                    en: 'e.g. k8x4',
+                  })}
+                  aria-label={pickLang(lang, {
+                    es: 'Código de sala directo',
+                    ca: 'Codi de sala directe',
+                    en: 'Direct room code',
+                  })}
                   maxLength={24}
                   className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#0E0E10] border border-white/12 focus:border-[#9146FF] text-center font-mono font-bold text-sm uppercase text-white placeholder:text-zinc-600 outline-none"
                 />
@@ -539,7 +625,9 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                   disabled={!directRoomDraft.trim()}
                   className="h-11 px-4 rounded-xl bg-white text-[#0E0E10] hover:bg-zinc-200 disabled:opacity-35 text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer disabled:cursor-not-allowed"
                 >
-                  <span>{lang === 'es' ? 'Entrar' : 'Join'}</span>
+                  <span>
+                    {pickLang(lang, { es: 'Entrar', ca: 'Entrar', en: 'Join' })}
+                  </span>
                   <ArrowRight className="w-3.5 h-3.5" />
                 </button>
               </div>
@@ -556,12 +644,18 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           </div>
           <div className="text-xs sm:text-sm text-zinc-300 min-w-0">
             <strong className="text-white block mb-0.5">
-              {lang === 'es' ? 'Abre tu sala en el móvil' : 'Open room on phone'}
+              {pickLang(lang, {
+                es: 'Abre tu sala en el móvil',
+                ca: 'Obre la teva sala al mòbil',
+                en: 'Open room on phone',
+              })}
             </strong>
             <span className="break-all">
-              {lang === 'es'
-                ? `Entra en ${liveHostLabel || 'NAIM CINE'} desde tu teléfono.`
-                : `Open ${liveHostLabel || 'NAIM CINE'} on your smartphone.`}
+              {pickLang(lang, {
+                es: `Entra en ${liveHostLabel || 'NAIM CINE'} desde tu teléfono.`,
+                ca: `Entra a ${liveHostLabel || 'NAIM CINE'} des del teu telèfon.`,
+                en: `Open ${liveHostLabel || 'NAIM CINE'} on your smartphone.`,
+              })}
             </span>
           </div>
         </div>
@@ -572,11 +666,17 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           </div>
           <div className="text-xs sm:text-sm text-zinc-300">
             <strong className="text-white block mb-0.5">
-              {lang === 'es' ? 'Pulsa Smart TV o Cast' : 'Tap Smart TV or Cast'}
+              {pickLang(lang, {
+                es: 'Pulsa Smart TV o Cast',
+                ca: 'Prem Smart TV o Cast',
+                en: 'Tap Smart TV or Cast',
+              })}
             </strong>
-            {lang === 'es'
-              ? 'Arriba en la barra o dentro del reproductor → escribe estos 4 números.'
-              : 'In the top bar or inside the video player → enter these 4 digits.'}
+            {pickLang(lang, {
+              es: 'Arriba en la barra o dentro del reproductor → escribe estos 4 números.',
+              ca: 'A dalt a la barra o dins del reproductor → escriu aquests 4 números.',
+              en: 'In the top bar or inside the video player → enter these 4 digits.',
+            })}
           </div>
         </div>
 
@@ -586,11 +686,17 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           </div>
           <div className="text-xs sm:text-sm text-zinc-300">
             <strong className="text-white block mb-0.5">
-              {lang === 'es' ? 'Mando en tu teléfono' : 'Phone becomes remote'}
+              {pickLang(lang, {
+                es: 'Mando en tu teléfono',
+                ca: 'Comandament al teu telèfon',
+                en: 'Phone becomes remote',
+              })}
             </strong>
-            {lang === 'es'
-              ? 'Controla Play, Pausa, Volumen y Ambilight desde el sofá.'
-              : 'Control Play, Pause, Volume & Ambilight from your couch.'}
+            {pickLang(lang, {
+              es: 'Controla Play, Pausa, Volumen y Ambilight desde el sofá.',
+              ca: 'Controla Play, Pausa, Volum i Ambilight des del sofà.',
+              en: 'Control Play, Pause, Volume & Ambilight from your couch.',
+            })}
           </div>
         </div>
       </footer>

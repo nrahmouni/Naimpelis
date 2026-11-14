@@ -1424,8 +1424,9 @@
         </div>
 
         <div class="hub-right-actions">
+          <button type="button" id="btn-hub-lang" class="tv-btn" tabindex="0" aria-label="Idioma">🌐 ES</button>
           <button type="button" id="btn-go-pairing" class="pair-pill-btn" tabindex="0">
-            📺 Móvil · <strong id="hub-pair-code">••••</strong>
+            <span id="hub-pair-label">📺 Móvil · </span><strong id="hub-pair-code">••••</strong>
           </button>
           <button type="button" id="btn-hub-fs" class="tv-btn-fullscreen" tabindex="0">
             ⛶ Pantalla
@@ -1435,7 +1436,7 @@
 
       <div class="hub-scroll-body" id="hub-scroll-body">
         <div id="hub-dynamic-content">
-          <div style="padding: 80px 20px; text-align: center; color: #adadb8; font-size: 18px; font-weight: 700;">
+          <div id="hub-initial-loading" style="padding: 80px 20px; text-align: center; color: #adadb8; font-size: 18px; font-weight: 700;">
             Cargando cartelera, series, anime y canales en directo...
           </div>
         </div>
@@ -1500,6 +1501,7 @@
 
         <div class="status-row">
           <div id="conn-badge" class="status-badge connecting">Conectando...</div>
+          <button type="button" id="btn-pairing-lang" class="tv-btn" tabindex="0" aria-label="Idioma">🌐 ES</button>
           <button type="button" id="btn-back-to-hub" class="tv-btn-primary" style="height: 42px; font-size: 14px;" tabindex="0">
             ← Volver al Menú TV
           </button>
@@ -1510,9 +1512,9 @@
       </div>
 
       <div class="center-stage">
-        <div class="eyebrow">VINCULACIÓN RÁPIDA EN 5 SEGUNDOS</div>
-        <h1 class="main-heading">Introduce estos 4 números en tu móvil</h1>
-        <p class="sub-heading">
+        <div class="eyebrow" id="pair-eyebrow">VINCULACIÓN RÁPIDA EN 5 SEGUNDOS</div>
+        <h1 class="main-heading" id="pair-heading">Introduce estos 4 números en tu móvil</h1>
+        <p class="sub-heading" id="pair-sub">
           Abre tu sala de <strong>NAIM CINE</strong> en el teléfono, toca el botón
           <strong>Smart TV</strong> y escribe este código:
         </p>
@@ -1540,7 +1542,7 @@
           </div>
 
           <form id="direct-room-form" class="direct-room-box">
-            <span class="direct-room-label">
+            <span class="direct-room-label" id="direct-room-label">
               ¿Prefieres entrar directo con código de sala?
             </span>
             <div style="display: -webkit-flex; display: flex; -webkit-align-items: center; align-items: center;">
@@ -1552,7 +1554,7 @@
                 maxlength="24"
                 tabindex="0"
               />
-              <button type="submit" class="direct-room-submit" tabindex="0">
+              <button type="submit" id="btn-direct-room-submit" class="direct-room-submit" tabindex="0">
                 Entrar
               </button>
             </div>
@@ -1564,22 +1566,22 @@
         <div class="step-card">
           <div class="step-num">1</div>
           <div class="step-text">
-            <strong>Abre tu sala en el móvil</strong>
-            Entra en <span id="step-domain-label">la app web</span> desde tu smartphone.
+            <strong id="step1-title">Abre tu sala en el móvil</strong>
+            <span id="step1-desc">Entra en <span id="step-domain-label">la app web</span> desde tu smartphone.</span>
           </div>
         </div>
         <div class="step-card">
           <div class="step-num">2</div>
           <div class="step-text">
-            <strong>Pulsa el botón Smart TV</strong>
-            Arriba en la barra o en el reproductor y escribe los 4 dígitos.
+            <strong id="step2-title">Pulsa el botón Smart TV</strong>
+            <span id="step2-desc">Arriba en la barra o en el reproductor y escribe los 4 dígitos.</span>
           </div>
         </div>
         <div class="step-card">
           <div class="step-num">3</div>
           <div class="step-text">
-            <strong>Tu móvil es el mando</strong>
-            Envía películas, series, fútbol o YouTube al televisor al instante.
+            <strong id="step3-title">Tu móvil es el mando</strong>
+            <span id="step3-desc">Envía películas, series, fútbol o YouTube al televisor al instante.</span>
           </div>
         </div>
       </div>
@@ -1722,18 +1724,568 @@
           }
         } catch (e) {}
 
+        var activeTvLang = 'es';
+        try {
+          var qLangMatch = searchStr.match(/[?&]lang=(es|ca|en)\b/i);
+          if (qLangMatch && qLangMatch[1]) {
+            activeTvLang = qLangMatch[1].toLowerCase();
+            localStorage.setItem('naim_lang', activeTvLang);
+          } else {
+            var storedLang = localStorage.getItem('naim_lang');
+            if (storedLang === 'es' || storedLang === 'ca' || storedLang === 'en') {
+              activeTvLang = storedLang;
+            }
+          }
+        } catch (e) {}
+
+        var TV_I18N = {
+          es: {
+            docTitle: 'NAIM CINE Google TV — Hub & Receptor 1080p',
+            hubVer: 'Google TV v' + TV_WEB_VERSION + ' · D-Pad + Código TV',
+            tabSearch: '🔍 Buscar',
+            tabHome: 'Inicio',
+            tabTdt: 'TDT Directo',
+            tabReleases: 'Estrenos',
+            tabMovies: 'Cine',
+            tabSeries: 'Series',
+            tabAnime: 'Anime',
+            pairPill: '📺 Móvil · ',
+            fsBtn: '⛶ Pantalla',
+            fsActive: '✓ TV Full',
+            langBtn: '🌐 ES',
+            langToast: 'Idioma: Español',
+            initialLoading: 'Cargando cartelera, series, anime y canales en directo...',
+            smBadge: 'SERIE HD',
+            smBack: '✕ Volver',
+            smLangEs: 'Castellano',
+            smLangLat: 'Latino',
+            smLangVose: 'VOSE (Sub ES)',
+            hostSub: 'Receptor 1080p para Google TV, Samsung y LG',
+            connecting: 'Conectando...',
+            tvReady: '✓ TV lista esperando móvil',
+            backToMenu: '← Volver al Menú TV',
+            webHome: 'Portada Web',
+            pairEyebrow: 'VINCULACIÓN RÁPIDA EN 5 SEGUNDOS',
+            pairHeading: 'Introduce estos 4 números en tu móvil',
+            pairSub: 'Abre tu sala de <strong>NAIM CINE</strong> en el teléfono, toca el botón <strong>Smart TV</strong> y escribe este código:',
+            unlockAudio: '🔊 Activar Sonido + Pantalla Completa',
+            audioUnlocked: '✓ Sonido activado y listo',
+            pairFs: '⛶ Pantalla Completa TV',
+            newCode: 'Nuevo código',
+            directRoomLabel: '¿Prefieres entrar directo con código de sala?',
+            directRoomPh: 'EJ: K8X4',
+            enterBtn: 'Entrar',
+            stepDomainFallback: 'la app web',
+            step1Title: 'Abre tu sala en el móvil',
+            step1DescPre: 'Entra en ',
+            step1DescPost: ' desde tu smartphone.',
+            step2Title: 'Pulsa el botón Smart TV',
+            step2Desc: 'Arriba en la barra o en el reproductor y escribe los 4 dígitos.',
+            step3Title: 'Tu móvil es el mando',
+            step3Desc: 'Envía películas, series, fútbol o YouTube al televisor al instante.',
+            standbyPill: 'Conectando señal HD...',
+            standbyTitle: 'Preparando reproducción en 1080p',
+            standbySub: 'Cargando servidor de emisión directo para Google TV...',
+            retryServer: '↻ Probar otro servidor',
+            hudBack: '← Volver',
+            hudSubDefault: 'Reproducción HD',
+            hudReload: '↻ Resincronizar',
+            chPrev: '‹ Canal Ant.',
+            chNext: 'Canal Sig. ›',
+            trackBtn: '🌐 Pista',
+            pauseBtn: '⏸ Pausar',
+            resumeBtn: '▶ Reanudar',
+            playPauseBtn: '⏯ Play / Pausa',
+            muteBtn: '🔇 Silenciar',
+            aspectOrig: '↔ Original',
+            aspectCover: '↔ Sin bordes',
+            aspectFill: '↔ 16:9 Total',
+            aspectToastOrig: 'Formato · Original',
+            aspectToastCover: 'Formato · Sin bordes negros',
+            aspectToastFill: 'Formato · 16:9 completo',
+            unmuteNow: '🔊 Pulsa OK para activar Sonido',
+            confirmFs: '⛶ Pulsa OK para Pantalla Completa',
+            otaAvail: 'Nueva versión APK disponible',
+            otaBtn: 'Actualizar APK',
+            liveNow: 'EN VIVO',
+            liveBadge: 'DIRECTO',
+            dialPrefix: 'DIAL ',
+            broadcast247: 'Emisión 24/7 HD',
+            seriesLabel: 'Serie',
+            movieLabel: 'Película',
+            heroSeriesMeta: 'SERIE DESTACADA',
+            heroMovieMeta: 'ESTRENO EN CINE',
+            heroDescFallback: 'Reproduce al instante en calidad 1080p desde tu Google TV.',
+            heroWatchSeasons: '📺 Ver Temporadas y Capítulos',
+            heroPlayNow: '▶ Reproducir ahora',
+            heroSurprise: '🎲 Sorpréndeme',
+            searchPh: 'Buscar películas, series, anime o canales (Sky Sports, La 1, From...)',
+            searchSubmit: '🔍 Buscar',
+            searching: 'Buscando en todo el catálogo...',
+            searchResultsFor: 'Resultados para',
+            secLiveTitle: 'TV & Deportes en Directo',
+            secLiveSub: 'TDT España, Movistar+, DAZN y Sky Sports UK',
+            secReleasesTitle: 'Últimos Estrenos en Cine',
+            secReleasesSub: 'Cartelera reciente lista en HD',
+            secSeasonsTitle: 'Nuevas Temporadas de Series',
+            secSeasonsSub: 'Estrenos y capítulos semanales',
+            secMoviesTitle: 'Cine Destacado',
+            secMoviesSub: 'Tendencias del día',
+            secAnimeTitle: 'Anime en HD',
+            secAnimeSub: 'Jujutsu Kaisen, Solo Leveling, DBZ, AOT',
+            filterAll: 'Todos',
+            filterEsTdt: 'TDT España',
+            filterEsSports: 'Fútbol & Motor ES',
+            filterUkSports: 'UK Sports (Sky / Eurosport)',
+            filterIntlSports: 'ESPN & Internacional',
+            filterCine: 'Cine & Series',
+            filterKidsReg: 'Autonómicas & Infantil',
+            liveGridTitle: 'Canales en Directo 24/7',
+            liveGridSubSuffix: ' canales · Pulsa OK para ver, ↑/↓ en vídeo para zapping',
+            releasesAllSub: 'Todos los estrenos recientes',
+            seasonsAllTitle: 'Nuevas Temporadas Recientes',
+            seasonsAllSub: 'Series recién estrenadas',
+            moviesCatalogTitle: 'Catálogo de Cine',
+            moviesCatalogSub: 'Navega con las flechas del mando',
+            seriesCatalogTitle: 'Series Completas',
+            seriesCatalogSub: 'Elige temporada y episodio',
+            animeCatalogSub: 'Castellano / Sub Español',
+            loadingEpisodes: 'Cargando episodios...',
+            loadingSeasons: 'Cargando temporadas y episodios...',
+            noTmdbId: 'Esta serie no tiene TMDB ID vinculado.',
+            loadingSeasonNum: 'Cargando Temporada ',
+            seasonFallback: 'Temporada ',
+            episodeFallback: 'Episodio ',
+            episodesLoadErr: 'No se pudieron cargar los episodios.',
+            noEpisodesSeason: 'No hay episodios disponibles en esta temporada.',
+            langChosen: 'Idioma elegido: ',
+            switchingBackup: 'Cambiando a señal de respaldo...',
+            connectingIptv: 'Conectando vía pasarela IPTV directa...',
+            switchingServer: 'Cambiando a servidor alternativo...',
+            noServerAvail: 'Ningún servidor respondió para este título en este momento.',
+            signalUnavailable: '⚠ Señal temporalmente no disponible',
+            standbySubFallback: 'Pulsa Volver para elegir otro canal o película.',
+            roomPrefix: 'Sala ',
+            tryingAltServer: '⏳ Probando servidor alternativo...',
+            loadingHdTv: '⏳ Cargando señal HD en Google TV...',
+            connectingEngine: 'Conectando con el motor de streaming NAIM CINE...',
+            pickAnotherSource: 'Pulsa Volver para elegir otra fuente o idioma.',
+            signalTempUnavail: 'Señal temporalmente no disponible',
+            tuningLive: '📡 Sintonizando canal en directo...',
+            nowPrefix: 'Ahora: ',
+            noBroadcast: 'Señal temporalmente sin emisión.',
+            volumeToast: '🔊 Volumen · ',
+            mutedToast: '🔇 Silenciado',
+            unmutedToast: '🔊 Sonido activo',
+            resyncCh: 'Resincronizando canal...',
+            resyncHd: 'Resincronizando señal HD...',
+            pairedWith: '✓ Vinculada con ',
+            enteringRoom: 'Entrando a ',
+            tvConnected: '✓ Smart TV Conectada · ',
+            tvReadyTitle: 'Televisor listo para proyectar en 1080p',
+            tvReadySub: 'Elige cualquier título desde tu móvil y empezará aquí automáticamente.',
+            changingSignal: 'Cambiando señal...',
+            changingTrack: 'Cambiando pista...',
+            tvRemoteLabel: 'Mando TV',
+            directLinkLabel: 'Enlace directo',
+            yourPhone: 'tu móvil'
+          },
+          ca: {
+            docTitle: 'NAIM CINE Google TV — Hub & Receptor 1080p',
+            hubVer: 'Google TV v' + TV_WEB_VERSION + ' · D-Pad + Codi TV',
+            tabSearch: '🔍 Cercar',
+            tabHome: 'Inici',
+            tabTdt: 'TDT Directe',
+            tabReleases: 'Estrenes',
+            tabMovies: 'Cinema',
+            tabSeries: 'Sèries',
+            tabAnime: 'Anime',
+            pairPill: '📺 Mòbil · ',
+            fsBtn: '⛶ Pantalla',
+            fsActive: '✓ TV Full',
+            langBtn: '🌐 CA',
+            langToast: 'Idioma: Català',
+            initialLoading: 'Carregant cartellera, sèries, anime i canals en directe...',
+            smBadge: 'SÈRIE HD',
+            smBack: '✕ Tornar',
+            smLangEs: 'Castellà',
+            smLangLat: 'Llatí',
+            smLangVose: 'VOSE (Sub ES)',
+            hostSub: 'Receptor 1080p per a Google TV, Samsung i LG',
+            connecting: 'Connectant...',
+            tvReady: '✓ TV llesta esperant mòbil',
+            backToMenu: '← Tornar al Menú TV',
+            webHome: 'Portada Web',
+            pairEyebrow: 'VINCULACIÓ RÀPIDA EN 5 SEGONS',
+            pairHeading: 'Introdueix aquests 4 números al teu mòbil',
+            pairSub: 'Obre la teva sala de <strong>NAIM CINE</strong> al telèfon, toca el botó <strong>Smart TV</strong> i escriu aquest codi:',
+            unlockAudio: '🔊 Activar So + Pantalla Completa',
+            audioUnlocked: '✓ So activat i llest',
+            pairFs: '⛶ Pantalla Completa TV',
+            newCode: 'Nou codi',
+            directRoomLabel: 'Prefereixes entrar directe amb codi de sala?',
+            directRoomPh: 'EX: K8X4',
+            enterBtn: 'Entrar',
+            stepDomainFallback: 'l’app web',
+            step1Title: 'Obre la sala al mòbil',
+            step1DescPre: 'Entra a ',
+            step1DescPost: ' des del teu telèfon.',
+            step2Title: 'Prem el botó Smart TV',
+            step2Desc: 'Amunt a la barra o al reproductor i escriu els 4 dígits.',
+            step3Title: 'El teu mòbil és el comandament',
+            step3Desc: 'Envia pel·lícules, sèries, futbol o YouTube al televisor a l’instant.',
+            standbyPill: 'Connectant senyal HD...',
+            standbyTitle: 'Preparant reproducció en 1080p',
+            standbySub: 'Carregant servidor d’emissió directe per a Google TV...',
+            retryServer: '↻ Provar un altre servidor',
+            hudBack: '← Tornar',
+            hudSubDefault: 'Reproducció HD',
+            hudReload: '↻ Resincronitzar',
+            chPrev: '‹ Canal Ant.',
+            chNext: 'Canal Seg. ›',
+            trackBtn: '🌐 Pista',
+            pauseBtn: '⏸ Pausar',
+            resumeBtn: '▶ Reprendre',
+            playPauseBtn: '⏯ Play / Pausa',
+            muteBtn: '🔇 Silenciar',
+            aspectOrig: '↔ Original',
+            aspectCover: '↔ Sense vores',
+            aspectFill: '↔ 16:9 Total',
+            aspectToastOrig: 'Format · Original',
+            aspectToastCover: 'Format · Sense vores negres',
+            aspectToastFill: 'Format · 16:9 complet',
+            unmuteNow: '🔊 Prem OK per activar So',
+            confirmFs: '⛶ Prem OK per Pantalla Completa',
+            otaAvail: 'Nova versió APK disponible',
+            otaBtn: 'Actualitzar APK',
+            liveNow: 'EN DIRECTE',
+            liveBadge: 'DIRECTE',
+            dialPrefix: 'DIAL ',
+            broadcast247: 'Emissió 24/7 HD',
+            seriesLabel: 'Sèrie',
+            movieLabel: 'Pel·lícula',
+            heroSeriesMeta: 'SÈRIE DESTACADA',
+            heroMovieMeta: 'ESTRENA AL CINEMA',
+            heroDescFallback: 'Reprodueix a l’instant en qualitat 1080p des del teu Google TV.',
+            heroWatchSeasons: '📺 Veure Temporades i Capítols',
+            heroPlayNow: '▶ Reproduir ara',
+            heroSurprise: '🎲 Sorprèn-me',
+            searchPh: 'Cercar pel·lícules, sèries, anime o canals (Sky Sports, TV3, La 1...)',
+            searchSubmit: '🔍 Cercar',
+            searching: 'Cercant a tot el catàleg...',
+            searchResultsFor: 'Resultats per a',
+            secLiveTitle: 'TV & Esports en Directe',
+            secLiveSub: 'TDT, 3Cat, Movistar+, DAZN i Sky Sports UK',
+            secReleasesTitle: 'Últimes Estrenes de Cinema',
+            secReleasesSub: 'Cartellera recent llesta en HD',
+            secSeasonsTitle: 'Noves Temporades de Sèries',
+            secSeasonsSub: 'Estrenes i capítols setmanals',
+            secMoviesTitle: 'Cinema Destacat',
+            secMoviesSub: 'Tendències del dia',
+            secAnimeTitle: 'Anime en HD',
+            secAnimeSub: 'Jujutsu Kaisen, Solo Leveling, DBZ, AOT',
+            filterAll: 'Tots',
+            filterEsTdt: 'TDT Espanya',
+            filterEsSports: 'Futbol & Motor ES',
+            filterUkSports: 'UK Sports (Sky / Eurosport)',
+            filterIntlSports: 'ESPN & Internacional',
+            filterCine: 'Cinema & Sèries',
+            filterKidsReg: 'Autonòmiques & Infantil',
+            liveGridTitle: 'Canals en Directe 24/7',
+            liveGridSubSuffix: ' canals · Prem OK per veure, ↑/↓ al vídeo per fer zàping',
+            releasesAllSub: 'Totes les estrenes recents',
+            seasonsAllTitle: 'Noves Temporades Recents',
+            seasonsAllSub: 'Sèries acabades d’estrenar',
+            moviesCatalogTitle: 'Catàleg de Cinema',
+            moviesCatalogSub: 'Navega amb les fletxes del comandament',
+            seriesCatalogTitle: 'Sèries Completes',
+            seriesCatalogSub: 'Tria temporada i episodi',
+            animeCatalogSub: 'Català / Castellà / Subtítols',
+            loadingEpisodes: 'Carregant episodis...',
+            loadingSeasons: 'Carregant temporades i episodis...',
+            noTmdbId: 'Aquesta sèrie no té TMDB ID vinculat.',
+            loadingSeasonNum: 'Carregant Temporada ',
+            seasonFallback: 'Temporada ',
+            episodeFallback: 'Episodi ',
+            episodesLoadErr: 'No s’han pogut carregar els episodis.',
+            noEpisodesSeason: 'No hi ha episodis disponibles en aquesta temporada.',
+            langChosen: 'Idioma escollit: ',
+            switchingBackup: 'Canviant a senyal de suport...',
+            connectingIptv: 'Connectant via passarel·la IPTV directa...',
+            switchingServer: 'Canviant a servidor alternatiu...',
+            noServerAvail: 'Cap servidor ha respost per a aquest títol ara mateix.',
+            signalUnavailable: '⚠ Senyal temporalment no disponible',
+            standbySubFallback: 'Prem Tornar per triar un altre canal o pel·lícula.',
+            roomPrefix: 'Sala ',
+            tryingAltServer: '⏳ Provant servidor alternatiu...',
+            loadingHdTv: '⏳ Carregant senyal HD a Google TV...',
+            connectingEngine: 'Connectant amb el motor d’streaming NAIM CINE...',
+            pickAnotherSource: 'Prem Tornar per triar una altra font o idioma.',
+            signalTempUnavail: 'Senyal temporalment no disponible',
+            tuningLive: '📡 Sintonitzant canal en directe...',
+            nowPrefix: 'Ara: ',
+            noBroadcast: 'Senyal temporalment sense emissió.',
+            volumeToast: '🔊 Volum · ',
+            mutedToast: '🔇 Silenciat',
+            unmutedToast: '🔊 So actiu',
+            resyncCh: 'Resincronitzant canal...',
+            resyncHd: 'Resincronitzant senyal HD...',
+            pairedWith: '✓ Vinculada amb ',
+            enteringRoom: 'Entrant a ',
+            tvConnected: '✓ Smart TV Connectada · ',
+            tvReadyTitle: 'Televisor llest per projectar en 1080p',
+            tvReadySub: 'Tria qualsevol títol des del mòbil i començarà aquí automàticament.',
+            changingSignal: 'Canviant senyal...',
+            changingTrack: 'Canviant pista...',
+            tvRemoteLabel: 'Comandament TV',
+            directLinkLabel: 'Enllaç directe',
+            yourPhone: 'el teu mòbil'
+          },
+          en: {
+            docTitle: 'NAIM CINE Google TV — 1080p Hub & Receiver',
+            hubVer: 'Google TV v' + TV_WEB_VERSION + ' · D-Pad + TV Code',
+            tabSearch: '🔍 Search',
+            tabHome: 'Home',
+            tabTdt: 'Live TV',
+            tabReleases: 'Releases',
+            tabMovies: 'Movies',
+            tabSeries: 'Series',
+            tabAnime: 'Anime',
+            pairPill: '📺 Phone · ',
+            fsBtn: '⛶ Fullscreen',
+            fsActive: '✓ TV Full',
+            langBtn: '🌐 EN',
+            langToast: 'Language: English',
+            initialLoading: 'Loading releases, series, anime, and live channels...',
+            smBadge: 'HD SERIES',
+            smBack: '✕ Back',
+            smLangEs: 'Spanish',
+            smLangLat: 'Latin',
+            smLangVose: 'Subtitled',
+            hostSub: '1080p Receiver for Google TV, Samsung & LG',
+            connecting: 'Connecting...',
+            tvReady: '✓ TV ready for phone pairing',
+            backToMenu: '← Back to TV Menu',
+            webHome: 'Web Home',
+            pairEyebrow: '5-SECOND QUICK PAIRING',
+            pairHeading: 'Enter these 4 digits on your phone',
+            pairSub: 'Open your <strong>NAIM CINE</strong> room on your phone, tap <strong>Smart TV</strong> and enter this code:',
+            unlockAudio: '🔊 Enable Sound + Fullscreen',
+            audioUnlocked: '✓ Sound active and ready',
+            pairFs: '⛶ TV Fullscreen',
+            newCode: 'New code',
+            directRoomLabel: 'Prefer joining directly with a room code?',
+            directRoomPh: 'EX: K8X4',
+            enterBtn: 'Join',
+            stepDomainFallback: 'the web app',
+            step1Title: 'Open your room on mobile',
+            step1DescPre: 'Visit ',
+            step1DescPost: ' on your smartphone.',
+            step2Title: 'Tap Smart TV',
+            step2Desc: 'In the top bar or player and type the 4 digits.',
+            step3Title: 'Your phone is the remote',
+            step3Desc: 'Cast movies, series, football, or YouTube to your TV instantly.',
+            standbyPill: 'Connecting HD stream...',
+            standbyTitle: 'Preparing 1080p playback',
+            standbySub: 'Loading direct stream server for Google TV...',
+            retryServer: '↻ Try another server',
+            hudBack: '← Back',
+            hudSubDefault: 'HD Playback',
+            hudReload: '↻ Resync',
+            chPrev: '‹ Prev Ch',
+            chNext: 'Next Ch ›',
+            trackBtn: '🌐 Track',
+            pauseBtn: '⏸ Pause',
+            resumeBtn: '▶ Resume',
+            playPauseBtn: '⏯ Play / Pause',
+            muteBtn: '🔇 Mute',
+            aspectOrig: '↔ Original',
+            aspectCover: '↔ Crop Fit',
+            aspectFill: '↔ 16:9 Fill',
+            aspectToastOrig: 'Aspect · Original',
+            aspectToastCover: 'Aspect · Borderless Crop',
+            aspectToastFill: 'Aspect · 16:9 Fill',
+            unmuteNow: '🔊 Press OK to Unmute',
+            confirmFs: '⛶ Press OK for Fullscreen',
+            otaAvail: 'New APK version available',
+            otaBtn: 'Update APK',
+            liveNow: 'LIVE',
+            liveBadge: 'LIVE',
+            dialPrefix: 'CH ',
+            broadcast247: '24/7 HD Broadcast',
+            seriesLabel: 'Series',
+            movieLabel: 'Movie',
+            heroSeriesMeta: 'FEATURED SERIES',
+            heroMovieMeta: 'NEW IN CINEMA',
+            heroDescFallback: 'Watch instantly in 1080p quality on your Google TV.',
+            heroWatchSeasons: '📺 Browse Seasons & Episodes',
+            heroPlayNow: '▶ Watch Now',
+            heroSurprise: '🎲 Surprise Me',
+            searchPh: 'Search movies, series, anime, or channels (Sky Sports, La 1, From...)',
+            searchSubmit: '🔍 Search',
+            searching: 'Searching catalog...',
+            searchResultsFor: 'Results for',
+            secLiveTitle: 'Live TV & Sports',
+            secLiveSub: 'Spanish DTT, Movistar+, DAZN & Sky Sports UK',
+            secReleasesTitle: 'Latest Cinema Releases',
+            secReleasesSub: 'Recent releases ready in HD',
+            secSeasonsTitle: 'New Series Seasons',
+            secSeasonsSub: 'Premieres and weekly episodes',
+            secMoviesTitle: 'Featured Movies',
+            secMoviesSub: 'Trending today',
+            secAnimeTitle: 'Anime in HD',
+            secAnimeSub: 'Jujutsu Kaisen, Solo Leveling, DBZ, AOT',
+            filterAll: 'All',
+            filterEsTdt: 'Spain DTT',
+            filterEsSports: 'Football & Motor ES',
+            filterUkSports: 'UK Sports (Sky / Eurosport)',
+            filterIntlSports: 'ESPN & International',
+            filterCine: 'Movies & Series',
+            filterKidsReg: 'Regional & Kids',
+            liveGridTitle: '24/7 Live Channels',
+            liveGridSubSuffix: ' channels · Press OK to watch, ↑/↓ in player to zap',
+            releasesAllSub: 'All recent releases',
+            seasonsAllTitle: 'Recent New Seasons',
+            seasonsAllSub: 'Newly released series',
+            moviesCatalogTitle: 'Movie Catalog',
+            moviesCatalogSub: 'Browse with remote arrows',
+            seriesCatalogTitle: 'Full Series',
+            seriesCatalogSub: 'Pick season and episode',
+            animeCatalogSub: 'Subtitled & Dubbed HD',
+            loadingEpisodes: 'Loading episodes...',
+            loadingSeasons: 'Loading seasons & episodes...',
+            noTmdbId: 'This series has no linked TMDB ID.',
+            loadingSeasonNum: 'Loading Season ',
+            seasonFallback: 'Season ',
+            episodeFallback: 'Episode ',
+            episodesLoadErr: 'Could not load episodes.',
+            noEpisodesSeason: 'No episodes available in this season.',
+            langChosen: 'Selected language: ',
+            switchingBackup: 'Switching to backup signal...',
+            connectingIptv: 'Connecting via direct IPTV gateway...',
+            switchingServer: 'Switching to backup server...',
+            noServerAvail: 'No server responded for this title right now.',
+            signalUnavailable: '⚠ Signal temporarily unavailable',
+            standbySubFallback: 'Press Back to choose another channel or movie.',
+            roomPrefix: 'Room ',
+            tryingAltServer: '⏳ Trying backup server...',
+            loadingHdTv: '⏳ Loading HD stream on Google TV...',
+            connectingEngine: 'Connecting to NAIM CINE streaming engine...',
+            pickAnotherSource: 'Press Back to choose another source or language.',
+            signalTempUnavail: 'Signal temporarily unavailable',
+            tuningLive: '📡 Tuning live channel...',
+            nowPrefix: 'Now: ',
+            noBroadcast: 'Stream temporarily offline.',
+            volumeToast: '🔊 Volume · ',
+            mutedToast: '🔇 Muted',
+            unmutedToast: '🔊 Sound on',
+            resyncCh: 'Resyncing channel...',
+            resyncHd: 'Resyncing HD stream...',
+            pairedWith: '✓ Paired with ',
+            enteringRoom: 'Entering ',
+            tvConnected: '✓ Smart TV Connected · ',
+            tvReadyTitle: 'TV ready to stream in 1080p',
+            tvReadySub: 'Choose any title on your phone and it will start here automatically.',
+            changingSignal: 'Switching signal...',
+            changingTrack: 'Switching track...',
+            tvRemoteLabel: 'TV Remote',
+            directLinkLabel: 'Direct link',
+            yourPhone: 'your phone'
+          }
+        };
+
+        function tvT(key) {
+          var dict = TV_I18N[activeTvLang] || TV_I18N.es;
+          return dict[key] !== undefined ? dict[key] : (TV_I18N.es[key] || key);
+        }
+
+        function setElText(id, txt) {
+          var el = document.getElementById(id);
+          if (el) el.textContent = txt;
+        }
+
         var hostLabel = window.location.host || 'localhost';
-        var hostEl = document.getElementById('host-url-label');
-        var stepDomainEl = document.getElementById('step-domain-label');
-        var hubVerLabel = document.getElementById('hub-version-label');
-        if (hostEl) {
-          hostEl.textContent = hostLabel + '/tv · Receptor 1080p para Google TV, Samsung y LG';
-        }
-        if (stepDomainEl) {
-          stepDomainEl.textContent = hostLabel;
-        }
-        if (hubVerLabel) {
-          hubVerLabel.textContent = 'Google TV v' + TV_WEB_VERSION + ' · D-Pad + Código TV';
+
+        function applyTvLanguage(nextLang) {
+          if (nextLang === 'es' || nextLang === 'ca' || nextLang === 'en') {
+            activeTvLang = nextLang;
+            try { localStorage.setItem('naim_lang', activeTvLang); } catch (e) {}
+          }
+          try { document.documentElement.lang = activeTvLang; } catch (e) {}
+          try { document.title = tvT('docTitle'); } catch (e) {}
+
+          setElText('hub-version-label', tvT('hubVer'));
+          setElText('host-url-label', hostLabel + '/tv · ' + tvT('hostSub'));
+          setElText('step-domain-label', hostLabel || tvT('stepDomainFallback'));
+          setElText('btn-hub-lang', tvT('langBtn'));
+          setElText('btn-pairing-lang', tvT('langBtn'));
+          setElText('hub-pair-label', tvT('pairPill'));
+          setElText('hub-initial-loading', tvT('initialLoading'));
+
+          var tabMap = {
+            search: 'tabSearch',
+            home: 'tabHome',
+            tdt: 'tabTdt',
+            releases: 'tabReleases',
+            movies: 'tabMovies',
+            series: 'tabSeries',
+            anime: 'tabAnime'
+          };
+          var tabEls = document.querySelectorAll('#hub-nav-tabs .hub-tab-btn');
+          for (var i = 0; i < tabEls.length; i++) {
+            var dk = tabEls[i].getAttribute('data-tab');
+            if (dk && tabMap[dk]) tabEls[i].textContent = tvT(tabMap[dk]);
+          }
+
+          setElText('btn-close-series-modal', tvT('smBack'));
+          var langBtnEls = document.querySelectorAll('#sm-lang-row .series-pill-btn');
+          for (var j = 0; j < langBtnEls.length; j++) {
+            var dl = langBtnEls[j].getAttribute('data-lang');
+            if (dl === 'ES') langBtnEls[j].textContent = tvT('smLangEs');
+            else if (dl === 'LAT') langBtnEls[j].textContent = tvT('smLangLat');
+            else if (dl === 'VOSE') langBtnEls[j].textContent = tvT('smLangVose');
+          }
+
+          setElText('btn-back-to-hub', tvT('backToMenu'));
+          setElText('btn-web-mode', tvT('webHome'));
+          setElText('pair-eyebrow', tvT('pairEyebrow'));
+          setElText('pair-heading', tvT('pairHeading'));
+          var pairSubEl = document.getElementById('pair-sub');
+          if (pairSubEl) pairSubEl.innerHTML = tvT('pairSub');
+          setElText('btn-pairing-fs', tvT('pairFs'));
+          setElText('btn-new-code', tvT('newCode'));
+          setElText('direct-room-label', tvT('directRoomLabel'));
+          var dirInput = document.getElementById('direct-room-input');
+          if (dirInput) dirInput.placeholder = tvT('directRoomPh');
+          setElText('btn-direct-room-submit', tvT('enterBtn'));
+          setElText('step1-title', tvT('step1Title'));
+          setElText('step1-desc', tvT('step1DescPre') + (hostLabel || tvT('stepDomainFallback')) + tvT('step1DescPost'));
+          setElText('step2-title', tvT('step2Title'));
+          setElText('step2-desc', tvT('step2Desc'));
+          setElText('step3-title', tvT('step3Title'));
+          setElText('step3-desc', tvT('step3Desc'));
+
+          setElText('btn-standby-retry', tvT('retryServer'));
+          setElText('btn-standby-exit', tvT('backToMenu'));
+          setElText('btn-hud-exit', tvT('hudBack'));
+          setElText('btn-hud-reload', tvT('hudReload'));
+          setElText('btn-dock-chprev', tvT('chPrev'));
+          setElText('btn-dock-chnext', tvT('chNext'));
+          setElText('btn-dock-mute', tvT('muteBtn'));
+          setElText('btn-unmute-now', tvT('unmuteNow'));
+          setElText('btn-confirm-remote-fs', tvT('confirmFs'));
+          setElText('btn-ota-install', tvT('otaBtn'));
+
+          var btnAudioEl = document.getElementById('btn-unlock-audio');
+          if (btnAudioEl && typeof audioUnlocked !== 'undefined') {
+            btnAudioEl.textContent = audioUnlocked ? tvT('audioUnlocked') : tvT('unlockAudio');
+          }
+          if (typeof syncFullscreenButtons === 'function') syncFullscreenButtons();
+          if (typeof syncPlayPauseButton === 'function') syncPlayPauseButton();
+          if (typeof setServerReady === 'function') setServerReady(Boolean(pairingCode));
+          if (typeof catalogData !== 'undefined' && catalogData.loaded) {
+            renderHubContent();
+          }
         }
 
         // Core State
@@ -1911,7 +2463,7 @@
           for (var i = 0; i < ids.length; i++) {
             var b = document.getElementById(ids[i]);
             if (b) {
-              b.textContent = active ? '✓ TV Full' : '⛶ Pantalla';
+              b.textContent = active ? tvT('fsActive') : tvT('fsBtn');
               b.className = active ? 'tv-btn-fullscreen active-fs' : 'tv-btn-fullscreen';
             }
           }
@@ -1968,16 +2520,16 @@
           var aspectBtn = document.getElementById('btn-dock-aspect');
           if (aspectModeIndex === 0) {
             videoEl.className = '';
-            if (aspectBtn) aspectBtn.textContent = '↔ Original';
-            showToast('Formato · Original');
+            if (aspectBtn) aspectBtn.textContent = tvT('aspectOrig');
+            showToast(tvT('aspectToastOrig'));
           } else if (aspectModeIndex === 1) {
             videoEl.className = 'aspect-cover';
-            if (aspectBtn) aspectBtn.textContent = '↔ Sin bordes';
-            showToast('Formato · Sin bordes negros');
+            if (aspectBtn) aspectBtn.textContent = tvT('aspectCover');
+            showToast(tvT('aspectToastCover'));
           } else {
             videoEl.className = 'aspect-fill';
-            if (aspectBtn) aspectBtn.textContent = '↔ 16:9 Total';
-            showToast('Formato · 16:9 completo');
+            if (aspectBtn) aspectBtn.textContent = tvT('aspectFill');
+            showToast(tvT('aspectToastFill'));
           }
         }
 
@@ -2006,9 +2558,9 @@
         function syncPlayPauseButton() {
           if (!btnPlayPause) return;
           if (currentMode === 'hls' || currentMode === 'direct') {
-            btnPlayPause.textContent = videoEl && videoEl.paused ? '▶ Reanudar' : '⏸ Pausar';
+            btnPlayPause.textContent = videoEl && videoEl.paused ? tvT('resumeBtn') : tvT('pauseBtn');
           } else {
-            btnPlayPause.textContent = '⏯ Play / Pausa';
+            btnPlayPause.textContent = tvT('playPauseBtn');
           }
         }
 
@@ -2019,7 +2571,7 @@
           if (btnDockChNext) btnDockChNext.style.display = isLiveFlag && activeLiveChannel ? 'inline-block' : 'none';
           if (isLiveFlag) {
             var chEpg = activeLiveChannel && catalogData.epg ? catalogData.epg[activeLiveChannel.id] : null;
-            if (dockTimeCur) dockTimeCur.textContent = 'EN VIVO';
+            if (dockTimeCur) dockTimeCur.textContent = tvT('liveNow');
             if (dockTimeDur) dockTimeDur.textContent = chEpg && chEpg.now ? chEpg.now.startLabel + '-' + chEpg.now.stopLabel : '24/7 HD';
             if (dockProgressFill) {
               dockProgressFill.className = 'dock-progress-fill live-fill';
@@ -2077,10 +2629,10 @@
           if (!connBadge) return;
           if (ready) {
             connBadge.className = 'status-badge';
-            connBadge.textContent = '✓ TV lista esperando móvil';
+            connBadge.textContent = tvT('tvReady');
           } else {
             connBadge.className = 'status-badge connecting';
-            connBadge.textContent = 'Conectando...';
+            connBadge.textContent = tvT('connecting');
           }
         }
 
@@ -2114,7 +2666,7 @@
           var btnAudio = document.getElementById('btn-unlock-audio');
           if (btnAudio) {
             btnAudio.className = 'tv-btn-primary unlocked';
-            btnAudio.textContent = '✓ Sonido activado y listo';
+            btnAudio.textContent = tvT('audioUnlocked');
           }
         }
 
@@ -2417,7 +2969,7 @@
             var ch = activeLiveChannel;
             var totalChTracks = ch.channels ? ch.channels.length : 0;
             if (activeLiveTrackIdx + 1 < totalChTracks) {
-              showToast('Cambiando a señal de respaldo...');
+              showToast(tvT('switchingBackup'));
               setTimeout(function () {
                 autoFailoverLock = false;
                 playTdtChannelOnTv(ch, activeLiveTrackIdx + 1);
@@ -2425,7 +2977,7 @@
               return;
             }
             if (ch.id && currentUrl.indexOf('/api/iptv/live/') === -1) {
-              showToast('Conectando vía pasarela IPTV directa...');
+              showToast(tvT('connectingIptv'));
               setTimeout(function () {
                 autoFailoverLock = false;
                 applyVideoState(
@@ -2433,7 +2985,7 @@
                     mode: 'hls',
                     url: '/api/iptv/live/' + encodeURIComponent(ch.id) + '.m3u8',
                     title: ch.name,
-                    subtitle: (ch.network || 'TDT / TV') + ' · Respaldo Directo',
+                    subtitle: (ch.network || 'TDT / TV') + ' · IPTV',
                     isPlaying: true,
                     isLive: true,
                     currentTime: 0
@@ -2443,13 +2995,13 @@
               }, 250);
               return;
             }
-            showStandbyError(ch.name, 'Señal temporalmente no disponible (' + (reasonText || 'sin respuesta') + '). Pulsa ↑/↓ para cambiar de canal.');
+            showStandbyError(ch.name, tvT('signalTempUnavail') + (reasonText ? ' (' + reasonText + ')' : '') + '.');
             return;
           }
 
           // VOD Movie / Series multi-track failover
           if (localTracks && localTrackIdx + 1 < localTracks.length) {
-            showToast('Cambiando a servidor alternativo...');
+            showToast(tvT('switchingServer'));
             setTimeout(function () {
               autoFailoverLock = false;
               switchToLocalTrack(localTrackIdx + 1, !currentIsLive ? (videoEl.currentTime || 0) : 0);
@@ -2457,7 +3009,7 @@
             return;
           }
 
-          showStandbyError(hudTitle.textContent || 'Contenido', 'Ningún servidor respondió para este título en este momento.');
+          showStandbyError(hudTitle.textContent || 'NAIM CINE', tvT('noServerAvail'));
         }
 
         function showStandbyError(titleStr, msgStr) {
@@ -2474,9 +3026,9 @@
             btnStandbyRetry.style.display = (localTracks && localTracks.length > 1) ? 'inline-block' : 'none';
           }
           standbyOverlay.style.display = 'flex';
-          standbyRoomPill.textContent = '⚠ Señal temporalmente no disponible';
+          standbyRoomPill.textContent = tvT('signalUnavailable');
           standbyTitleText.textContent = titleStr || 'NAIM CINE';
-          standbySubText.textContent = msgStr || 'Pulsa Volver para elegir otro canal o película.';
+          standbySubText.textContent = msgStr || tvT('standbySubFallback');
           setTimeout(function () {
             var exitB = document.getElementById('btn-standby-exit');
             if (exitB && exitB.focus) exitB.focus();
@@ -2702,11 +3254,11 @@
                 if (currentVolume > 0 && ytPlayer.unMute) ytPlayer.unMute();
               } catch (e) {}
             }
-            showToast('🔊 Volumen · ' + Math.round(currentVolume * 100) + '%');
+            showToast(tvT('volumeToast') + Math.round(currentVolume * 100) + '%');
           } else if (cmd === 'toggle_mute') {
             if (videoEl) {
               videoEl.muted = !videoEl.muted;
-              showToast(videoEl.muted ? '🔇 Silenciado' : '🔊 Sonido activo');
+              showToast(videoEl.muted ? tvT('mutedToast') : tvT('unmutedToast'));
             }
             if (ytPlayer) {
               try {
@@ -2724,7 +3276,7 @@
           } else if (cmd === 'reload_tv') {
             if (activeLiveChannel) {
               playTdtChannelOnTv(activeLiveChannel, activeLiveTrackIdx);
-              showToast('Resincronizando canal...');
+              showToast(tvT('resyncCh'));
             } else if (currentMode !== 'idle' && currentUrl) {
               applyVideoState(
                 {
@@ -2738,7 +3290,7 @@
                 },
                 true
               );
-              showToast('Resincronizando señal HD...');
+              showToast(tvT('resyncHd'));
             }
           } else if (cmd === 'disconnect_tv') {
             exitPlayerToHubOrPairing();
@@ -2774,7 +3326,7 @@
           localTracks = [];
           if (btnDockAudio) btnDockAudio.style.display = 'none';
           currentRoomId = roomId.toLowerCase();
-          currentRoomName = roomName || 'Sala ' + currentRoomId.toUpperCase();
+          currentRoomName = roomName || tvT('roomPrefix') + currentRoomId.toUpperCase();
           tvAuthToken = token || '';
           seriesModal.style.display = 'none';
 
@@ -2786,7 +3338,7 @@
           if (pairedBanner) {
             pairedBanner.style.display = 'block';
             pairedBanner.textContent =
-              '✓ Vinculada con ' + (claimedBy || 'tu móvil') + ' · Entrando a ' + currentRoomName + '...';
+              tvT('pairedWith') + (claimedBy || tvT('yourPhone')) + ' · ' + tvT('enteringRoom') + currentRoomName + '...';
           }
           if (pairingControls) pairingControls.style.display = 'none';
           try {
@@ -2795,9 +3347,9 @@
 
           setTimeout(function () {
             switchTvScreen('player');
-            standbyRoomPill.textContent = '✓ Smart TV Conectada · ' + currentRoomName;
-            standbyTitleText.textContent = 'Televisor listo para proyectar en 1080p';
-            standbySubText.textContent = 'Elige cualquier título desde tu móvil y empezará aquí automáticamente.';
+            standbyRoomPill.textContent = tvT('tvConnected') + currentRoomName;
+            standbyTitleText.textContent = tvT('tvReadyTitle');
+            standbySubText.textContent = tvT('tvReadySub');
             revealHud();
             connectRoomWs();
             pollRoomStateHttp();
@@ -2831,7 +3383,7 @@
                 if (msg.type === 'ROOM_STATE' && msg.payload) {
                   if (msg.payload.name) {
                     currentRoomName = msg.payload.name;
-                    standbyRoomPill.textContent = '✓ Smart TV Conectada · ' + currentRoomName;
+                    standbyRoomPill.textContent = tvT('tvConnected') + currentRoomName;
                   }
                   if (msg.payload.videoState) applyVideoState(msg.payload.videoState, false);
                 } else if (msg.type === 'VIDEO_STATE_UPDATED' && msg.payload && msg.payload.videoState) {
@@ -2959,7 +3511,7 @@
           }
           standbyOverlay.style.display = 'flex';
           if (standbySpinner) standbySpinner.style.display = 'block';
-          standbyRoomPill.textContent = '⏳ Probando servidor alternativo...';
+          standbyRoomPill.textContent = tvT('tryingAltServer');
           var q =
             'resolverType=' + encodeURIComponent(nextTr.resolverType || '') +
             '&url=' + encodeURIComponent(rawSource) +
@@ -2968,7 +3520,7 @@
           xhrJson('GET', '/api/extract/stream?' + q, null, function (err, data) {
             if (!isLocalPlayback) return;
             if (err || !data || !data.success || !data.streamUrl) {
-              triggerPlaybackFailover('Servidor alternativo sin señal');
+              triggerPlaybackFailover('Backup server error');
               return;
             }
             nextTr.resolvedStreamUrl = data.streamUrl;
@@ -2996,17 +3548,17 @@
           if (standbySpinner) standbySpinner.style.display = 'block';
           if (btnStandbyRetry) btnStandbyRetry.style.display = 'none';
           standbyOverlay.style.display = 'flex';
-          standbyRoomPill.textContent = '⏳ Cargando señal HD en Google TV...';
+          standbyRoomPill.textContent = tvT('loadingHdTv');
           standbyTitleText.textContent = itemTitle;
-          standbySubText.textContent = itemSub || 'Conectando con el motor de streaming NAIM CINE...';
+          standbySubText.textContent = itemSub || tvT('connectingEngine');
           syncPlayerDockMode(false);
           revealHud();
 
           xhrJson('GET', '/api/extract/stream?' + extractQueryUrl, null, function (err, data) {
             if (!isLocalPlayback) return;
             if (err || !data || !data.success || !data.streamUrl) {
-              showStandbyError(itemTitle, (data && data.error) || 'Pulsa Volver para elegir otra fuente o idioma.');
-              showToast('Señal temporalmente no disponible');
+              showStandbyError(itemTitle, (data && data.error) || tvT('pickAnotherSource'));
+              showToast(tvT('signalTempUnavail'));
               return;
             }
             localTracks = Array.isArray(data.tracks) ? data.tracks : [];
@@ -3020,7 +3572,7 @@
             if (btnDockAudio) {
               if (localTracks.length > 1) {
                 btnDockAudio.style.display = 'inline-block';
-                btnDockAudio.textContent = '🌐 ' + (localTracks[localTrackIdx].label || 'Idioma');
+                btnDockAudio.textContent = '🌐 ' + (localTracks[localTrackIdx].label || 'Audio');
               } else {
                 btnDockAudio.style.display = 'none';
               }
@@ -3066,14 +3618,14 @@
           if (btnDockAudio) {
             if (ch.channels.length > 1) {
               btnDockAudio.style.display = 'inline-block';
-              btnDockAudio.textContent = '📡 ' + (track.label || 'Señal ' + (idx + 1));
+              btnDockAudio.textContent = '📡 ' + (track.label || 'Signal ' + (idx + 1));
             } else {
               btnDockAudio.style.display = 'none';
             }
           }
 
           var chEpg = catalogData.epg ? catalogData.epg[ch.id] : null;
-          var epgLabel = chEpg && chEpg.now ? chEpg.now.title : (ch.description || ch.network || 'En Directo');
+          var epgLabel = chEpg && chEpg.now ? chEpg.now.title : (ch.description || ch.network || tvT('liveBadge'));
           var rType = track.resolverType || 'tdt_hls';
           var q =
             'resolverType=' +
@@ -3081,12 +3633,12 @@
             '&url=' +
             encodeURIComponent(streamUrl) +
             '&title=' +
-            encodeURIComponent(ch.name || 'TV Directo');
+            encodeURIComponent(ch.name || 'Live TV');
 
           if (standbySpinner) standbySpinner.style.display = 'block';
           if (btnStandbyRetry) btnStandbyRetry.style.display = 'none';
           standbyOverlay.style.display = 'flex';
-          standbyRoomPill.textContent = '📡 Sintonizando canal en directo...';
+          standbyRoomPill.textContent = tvT('tuningLive');
           standbyTitleText.textContent = ch.name;
           standbySubText.textContent = epgLabel;
           syncPlayerDockMode(true);
@@ -3098,8 +3650,8 @@
                 {
                   mode: data.mode || 'hls',
                   url: data.streamUrl,
-                  title: ch.name + (ch.dial ? ' · Dial ' + ch.dial : ''),
-                  subtitle: (chEpg && chEpg.now ? 'Ahora: ' + chEpg.now.title : (ch.network || 'TV En Directo')) + ' · ' + (track.quality || 'HD'),
+                  title: ch.name + (ch.dial ? ' · ' + tvT('dialPrefix') + ch.dial : ''),
+                  subtitle: (chEpg && chEpg.now ? tvT('nowPrefix') + chEpg.now.title : (ch.network || tvT('broadcast247'))) + ' · ' + (track.quality || 'HD'),
                   isPlaying: true,
                   isLive: true,
                   currentTime: 0,
@@ -3116,8 +3668,8 @@
                 {
                   mode: 'hls',
                   url: '/api/iptv/live/' + encodeURIComponent(ch.id) + '.m3u8',
-                  title: ch.name + (ch.dial ? ' · Dial ' + ch.dial : ''),
-                  subtitle: (chEpg && chEpg.now ? 'Ahora: ' + chEpg.now.title : (ch.network || 'IPTV HD')),
+                  title: ch.name + (ch.dial ? ' · ' + tvT('dialPrefix') + ch.dial : ''),
+                  subtitle: (chEpg && chEpg.now ? tvT('nowPrefix') + chEpg.now.title : (ch.network || 'IPTV HD')),
                   isPlaying: true,
                   isLive: true,
                   currentTime: 0,
@@ -3125,7 +3677,7 @@
                 true
               );
             } else {
-              showStandbyError(ch.name, 'Señal temporalmente sin emisión.');
+              showStandbyError(ch.name, tvT('noBroadcast'));
             }
           });
         }
@@ -3144,7 +3696,7 @@
           var nextIdx = curIdx === -1 ? 0 : (curIdx + step + pool.length) % pool.length;
           var nextCh = pool[nextIdx];
           if (nextCh) {
-            showToast((nextCh.dial ? 'Dial ' + nextCh.dial + ' · ' : '') + nextCh.name);
+            showToast((nextCh.dial ? tvT('dialPrefix') + nextCh.dial + ' · ' : '') + nextCh.name);
             playTdtChannelOnTv(nextCh, 0);
           }
         }
@@ -3159,7 +3711,7 @@
           if (movie.tmdbId) parts.push('tmdbId=' + encodeURIComponent(String(movie.tmdbId)));
           if (movie.movidyUrl) parts.push('movidyUrl=' + encodeURIComponent(movie.movidyUrl));
           if (movie.vestUrl) parts.push('vestUrl=' + encodeURIComponent(movie.vestUrl));
-          playLocalStream(movie.title, (movie.year || 'HD') + ' · Película', parts.join('&'));
+          playLocalStream(movie.title, (movie.year || 'HD') + ' · ' + tvT('movieLabel'), parts.join('&'));
         }
 
         function openSeriesModalOnTv(item) {
@@ -3173,16 +3725,16 @@
           var smSeasons = document.getElementById('sm-seasons-row');
           var smEpisodes = document.getElementById('sm-episodes-grid');
 
-          smTitle.textContent = item.title || 'Serie';
-          smOverview.textContent = item.overview || 'Cargando temporadas y episodios...';
-          smBadge.textContent = item.year ? 'SERIE · ' + item.year : 'SERIE HD';
+          smTitle.textContent = item.title || tvT('seriesLabel');
+          smOverview.textContent = item.overview || tvT('loadingSeasons');
+          smBadge.textContent = item.year ? tvT('smBadge') + ' · ' + item.year : tvT('smBadge');
           smPoster.src = item.poster || '/icon.svg';
           smSeasons.innerHTML = '';
-          smEpisodes.innerHTML = '<div style="color:#adadb8;font-size:14px;padding:12px;">Cargando episodios...</div>';
+          smEpisodes.innerHTML = '<div style="color:#adadb8;font-size:14px;padding:12px;">' + escapeHtml(tvT('loadingEpisodes')) + '</div>';
           seriesModal.style.display = 'block';
 
           if (!item.tmdbId) {
-            smEpisodes.innerHTML = '<div style="color:#fda4af;font-size:14px;">Esta serie no tiene TMDB ID vinculado.</div>';
+            smEpisodes.innerHTML = '<div style="color:#fda4af;font-size:14px;">' + escapeHtml(tvT('noTmdbId')) + '</div>';
             setTimeout(function () {
               var cBtn = document.getElementById('btn-close-series-modal');
               if (cBtn && cBtn.focus) cBtn.focus();
@@ -3195,11 +3747,11 @@
         function loadTvSeriesSeason(tmdbId, seasonNum) {
           var smSeasons = document.getElementById('sm-seasons-row');
           var smEpisodes = document.getElementById('sm-episodes-grid');
-          smEpisodes.innerHTML = '<div style="color:#adadb8;font-size:14px;padding:12px;">Cargando Temporada ' + seasonNum + '...</div>';
+          smEpisodes.innerHTML = '<div style="color:#adadb8;font-size:14px;padding:12px;">' + escapeHtml(tvT('loadingSeasonNum') + seasonNum) + '...</div>';
 
-          xhrJson('GET', '/api/catalog/tv/' + encodeURIComponent(String(tmdbId)) + '?season=' + seasonNum + '&lang=es', null, function (err, res) {
+          xhrJson('GET', '/api/catalog/tv/' + encodeURIComponent(String(tmdbId)) + '?season=' + seasonNum + '&lang=' + encodeURIComponent(activeTvLang), null, function (err, res) {
             if (err || !res || !res.details) {
-              smEpisodes.innerHTML = '<div style="color:#fda4af;font-size:14px;">No se pudieron cargar los episodios.</div>';
+              smEpisodes.innerHTML = '<div style="color:#fda4af;font-size:14px;">' + escapeHtml(tvT('episodesLoadErr')) + '</div>';
               return;
             }
             var details = res.details;
@@ -3214,7 +3766,7 @@
                 var sb = document.createElement('button');
                 sb.type = 'button';
                 sb.className = 'series-pill-btn' + (Number(s.seasonNumber) === Number(details.activeSeason || seasonNum) ? ' active' : '');
-                sb.textContent = s.name || 'Temporada ' + s.seasonNumber;
+                sb.textContent = s.name || tvT('seasonFallback') + s.seasonNumber;
                 sb.tabIndex = 0;
                 sb.onclick = function () {
                   activeSeriesSeason = s.seasonNumber;
@@ -3227,7 +3779,7 @@
             var eps = Array.isArray(details.episodes) ? details.episodes : [];
             smEpisodes.innerHTML = '';
             if (!eps.length) {
-              smEpisodes.innerHTML = '<div style="color:#adadb8;font-size:14px;padding:12px;">No hay episodios disponibles en esta temporada.</div>';
+              smEpisodes.innerHTML = '<div style="color:#adadb8;font-size:14px;padding:12px;">' + escapeHtml(tvT('noEpisodesSeason')) + '</div>';
               return;
             }
             for (var j = 0; j < eps.length; j++) {
@@ -3239,7 +3791,7 @@
                 var epNumStr = String(ep.episodeNumber < 10 ? '0' + ep.episodeNumber : ep.episodeNumber);
                 eb.innerHTML =
                   '<div class="ep-tile-num">' + ep.seasonNumber + 'x' + epNumStr + '</div>' +
-                  '<div class="ep-tile-title">' + escapeHtml(ep.title || 'Episodio ' + ep.episodeNumber) + '</div>';
+                  '<div class="ep-tile-title">' + escapeHtml(ep.title || tvT('episodeFallback') + ep.episodeNumber) + '</div>';
                 eb.onclick = function () {
                   unlockAudio();
                   seriesModal.style.display = 'none';
@@ -3254,7 +3806,7 @@
                   ].join('&');
                   playLocalStream(
                     (details.title || activeSeriesItem.title) + ' (' + ep.seasonNumber + 'x' + epNumStr + ')',
-                    (ep.title || 'Episodio') + ' · ' + activeSeriesLang,
+                    (ep.title || tvT('episodeFallback')) + ' · ' + activeSeriesLang,
                     q
                   );
                 };
@@ -3324,17 +3876,17 @@
           btn.tabIndex = 0;
 
           if (kind === 'tdt') {
-            var dialText = item.dial ? 'DIAL ' + item.dial : 'EN VIVO';
+            var dialText = item.dial ? tvT('dialPrefix') + item.dial : tvT('liveNow');
             var grad = getChannelBrandGradient(item);
             var chEpg = catalogData.epg ? catalogData.epg[item.id] : null;
-            var nowTitle = chEpg && chEpg.now ? chEpg.now.title : (item.network || 'Emisión 24/7 HD');
+            var nowTitle = chEpg && chEpg.now ? chEpg.now.title : (item.network || tvT('broadcast247'));
             var pct = chEpg && typeof chEpg.progressPct === 'number' ? Math.max(6, Math.min(100, chEpg.progressPct)) : 35;
 
             btn.innerHTML =
               '<div class="tv-channel-stage" style="background:' + grad + ';">' +
               '<div class="tv-channel-stage-top">' +
               '<span class="tv-channel-dial">' + escapeHtml(dialText) + '</span>' +
-              '<span class="tv-channel-live"><span class="tv-live-dot"></span>DIRECTO</span>' +
+              '<span class="tv-channel-live"><span class="tv-live-dot"></span>' + escapeHtml(tvT('liveBadge')) + '</span>' +
               '</div>' +
               '<div class="tv-channel-mark">' + escapeHtml(item.shortMark || item.name || 'TV') + '</div>' +
               '</div>' +
@@ -3352,7 +3904,7 @@
             var isTv = item.mediaType === 'tv';
             var metaParts = [];
             if (item.seasonNumber) metaParts.push('T' + item.seasonNumber);
-            else metaParts.push(isTv ? 'Serie' : 'Película');
+            else metaParts.push(isTv ? tvT('seriesLabel') : tvT('movieLabel'));
             if (item.year && item.year !== 'HD') metaParts.push(item.year);
             if (item.rating) metaParts.push('★ ' + item.rating);
 
@@ -3407,12 +3959,12 @@
             (bgSrc ? '<img class="tv-hero-bg" src="' + escapeHtml(bgSrc) + '" alt="" />' : '') +
             '<div class="tv-hero-grad"></div>' +
             '<div class="tv-hero-content">' +
-            '<div class="tv-hero-meta">' + escapeHtml((isTv ? 'SERIE DESTACADA' : 'ESTRENO EN CINE') + (featured.year ? ' · ' + featured.year : '') + (featured.rating ? ' · ★ ' + featured.rating : '')) + '</div>' +
+            '<div class="tv-hero-meta">' + escapeHtml((isTv ? tvT('heroSeriesMeta') : tvT('heroMovieMeta')) + (featured.year ? ' · ' + featured.year : '') + (featured.rating ? ' · ★ ' + featured.rating : '')) + '</div>' +
             '<h1 class="tv-hero-title">' + escapeHtml(featured.title) + '</h1>' +
-            '<p class="tv-hero-desc">' + escapeHtml(featured.overview || 'Reproduce al instante en calidad 1080p desde tu Google TV.') + '</p>' +
+            '<p class="tv-hero-desc">' + escapeHtml(featured.overview || tvT('heroDescFallback')) + '</p>' +
             '<div class="tv-hero-btns">' +
-            '<button type="button" class="tv-btn-primary" id="btn-hero-play" tabindex="0">' + (isTv ? '📺 Ver Temporadas y Capítulos' : '▶ Reproducir ahora') + '</button>' +
-            '<button type="button" class="tv-btn" id="btn-hero-surprise" tabindex="0">🎲 Sorpréndeme</button>' +
+            '<button type="button" class="tv-btn-primary" id="btn-hero-play" tabindex="0">' + escapeHtml(isTv ? tvT('heroWatchSeasons') : tvT('heroPlayNow')) + '</button>' +
+            '<button type="button" class="tv-btn" id="btn-hero-surprise" tabindex="0">' + escapeHtml(tvT('heroSurprise')) + '</button>' +
             '</div></div>';
 
           setTimeout(function () {
@@ -3461,13 +4013,13 @@
             catalogData.searchResults = collected;
             renderHubContent(true);
           }
-          xhrJson('GET', '/api/catalog/movies?query=' + encodeURIComponent(clean) + '&page=1', null, function (_e, d) {
+          xhrJson('GET', '/api/catalog/movies?query=' + encodeURIComponent(clean) + '&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (_e, d) {
             if (d && Array.isArray(d.movies)) {
               for (var i = 0; i < Math.min(12, d.movies.length); i++) collected.push(d.movies[i]);
             }
             finishOne();
           });
-          xhrJson('GET', '/api/catalog/series?query=' + encodeURIComponent(clean) + '&lang=es&page=1', null, function (_e, d) {
+          xhrJson('GET', '/api/catalog/series?query=' + encodeURIComponent(clean) + '&lang=' + encodeURIComponent(activeTvLang) + '&page=1', null, function (_e, d) {
             if (d && Array.isArray(d.series)) {
               for (var i = 0; i < Math.min(12, d.series.length); i++) collected.push(d.series[i]);
             }
@@ -3498,8 +4050,8 @@
             panel.className = 'tv-search-panel';
             panel.innerHTML =
               '<form id="tv-search-form" class="tv-search-row">' +
-              '<input type="text" id="tv-search-input" class="tv-search-input" placeholder="Buscar películas, series, anime o canales (Sky Sports, La 1, From...)" value="' + escapeHtml(catalogData.searchQuery) + '" tabindex="0" />' +
-              '<button type="submit" class="tv-btn-primary" tabindex="0">🔍 Buscar</button>' +
+              '<input type="text" id="tv-search-input" class="tv-search-input" placeholder="' + escapeHtml(tvT('searchPh')) + '" value="' + escapeHtml(catalogData.searchQuery) + '" tabindex="0" />' +
+              '<button type="submit" class="tv-btn-primary" tabindex="0">' + escapeHtml(tvT('searchSubmit')) + '</button>' +
               '</form>' +
               '<div class="tv-chips-row">' +
               '<button type="button" class="tv-chip-btn" data-q="Sky Sports" tabindex="0">Sky Sports UK</button>' +
@@ -3539,7 +4091,7 @@
             if (catalogData.searching) {
               var ld = document.createElement('div');
               ld.style.cssText = 'padding:30px;text-align:center;color:#adadb8;font-size:16px;';
-              ld.textContent = 'Buscando en todo el catálogo...';
+              ld.textContent = tvT('searching');
               hubDynamicContent.appendChild(ld);
               return;
             }
@@ -3547,7 +4099,7 @@
             if (catalogData.searchResults.length > 0) {
               var mixedSec = document.createElement('div');
               mixedSec.className = 'tv-section';
-              mixedSec.innerHTML = '<div class="tv-section-head"><div class="tv-section-title">Resultados para "' + escapeHtml(catalogData.searchQuery) + '"</div></div>';
+              mixedSec.innerHTML = '<div class="tv-section-head"><div class="tv-section-title">' + escapeHtml(tvT('searchResultsFor')) + ' "' + escapeHtml(catalogData.searchQuery) + '"</div></div>';
               var grid = document.createElement('div');
               grid.className = 'tv-grid';
               for (var r = 0; r < catalogData.searchResults.length; r++) {
@@ -3571,20 +4123,20 @@
             var featured = catalogData.cinemaReleases[0] || catalogData.movies[0] || catalogData.newSeasons[0];
             var hero = buildHeroCard(featured);
             if (hero) hubDynamicContent.appendChild(hero);
-            appendSection(hubDynamicContent, 'TV & Deportes en Directo', 'TDT España, Movistar+, DAZN y Sky Sports UK', catalogData.tdt, 'tdt', false);
-            appendSection(hubDynamicContent, 'Últimos Estrenos en Cine', 'Cartelera reciente lista en HD', catalogData.cinemaReleases, 'media', false);
-            appendSection(hubDynamicContent, 'Nuevas Temporadas de Series', 'Estrenos y capítulos semanales', catalogData.newSeasons, 'media', false);
-            appendSection(hubDynamicContent, 'Cine Destacado', 'Tendencias del día', catalogData.movies, 'media', false);
-            appendSection(hubDynamicContent, 'Anime en HD', 'Jujutsu Kaisen, Solo Leveling, DBZ, AOT', catalogData.anime, 'media', false);
+            appendSection(hubDynamicContent, tvT('secLiveTitle'), tvT('secLiveSub'), catalogData.tdt, 'tdt', false);
+            appendSection(hubDynamicContent, tvT('secReleasesTitle'), tvT('secReleasesSub'), catalogData.cinemaReleases, 'media', false);
+            appendSection(hubDynamicContent, tvT('secSeasonsTitle'), tvT('secSeasonsSub'), catalogData.newSeasons, 'media', false);
+            appendSection(hubDynamicContent, tvT('secMoviesTitle'), tvT('secMoviesSub'), catalogData.movies, 'media', false);
+            appendSection(hubDynamicContent, tvT('secAnimeTitle'), tvT('secAnimeSub'), catalogData.anime, 'media', false);
           } else if (activeHubTab === 'tdt') {
             var filters = [
-              { key: 'all', label: 'Todos (' + catalogData.tdt.length + ')' },
-              { key: 'es_tdt', label: 'TDT España' },
-              { key: 'es_sports', label: 'Fútbol & Motor ES' },
-              { key: 'uk_sports', label: 'UK Sports (Sky / Eurosport)' },
-              { key: 'intl_sports', label: 'ESPN & Internacional' },
-              { key: 'cine', label: 'Cine & Series' },
-              { key: 'kids_reg', label: 'Autonómicas & Infantil' }
+              { key: 'all', label: tvT('filterAll') + ' (' + catalogData.tdt.length + ')' },
+              { key: 'es_tdt', label: tvT('filterEsTdt') },
+              { key: 'es_sports', label: tvT('filterEsSports') },
+              { key: 'uk_sports', label: tvT('filterUkSports') },
+              { key: 'intl_sports', label: tvT('filterIntlSports') },
+              { key: 'cine', label: tvT('filterCine') },
+              { key: 'kids_reg', label: tvT('filterKidsReg') }
             ];
             var filterRow = document.createElement('div');
             filterRow.className = 'tv-filter-row';
@@ -3611,8 +4163,8 @@
             var filteredList = filterTdtChannels(activeLiveFilter);
             appendSection(
               hubDynamicContent,
-              'Canales en Directo 24/7',
-              filteredList.length + ' canales · Pulsa OK para ver, ↑/↓ en vídeo para zapping',
+              tvT('liveGridTitle'),
+              filteredList.length + tvT('liveGridSubSuffix'),
               filteredList,
               'tdt',
               true
@@ -3620,20 +4172,20 @@
           } else if (activeHubTab === 'releases') {
             var rHero = buildHeroCard(catalogData.cinemaReleases[0] || catalogData.newSeasons[0]);
             if (rHero) hubDynamicContent.appendChild(rHero);
-            appendSection(hubDynamicContent, 'Últimos Estrenos en Cine', 'Todos los estrenos recientes', catalogData.cinemaReleases, 'media', true);
-            appendSection(hubDynamicContent, 'Nuevas Temporadas Recientes', 'Series recién estrenadas', catalogData.newSeasons, 'media', true);
+            appendSection(hubDynamicContent, tvT('secReleasesTitle'), tvT('releasesAllSub'), catalogData.cinemaReleases, 'media', true);
+            appendSection(hubDynamicContent, tvT('seasonsAllTitle'), tvT('seasonsAllSub'), catalogData.newSeasons, 'media', true);
           } else if (activeHubTab === 'movies') {
             var mHero = buildHeroCard(catalogData.movies[0] || catalogData.cinemaReleases[0]);
             if (mHero) hubDynamicContent.appendChild(mHero);
-            appendSection(hubDynamicContent, 'Catálogo de Cine', 'Navega con las flechas del mando', catalogData.movies, 'media', true);
+            appendSection(hubDynamicContent, tvT('moviesCatalogTitle'), tvT('moviesCatalogSub'), catalogData.movies, 'media', true);
           } else if (activeHubTab === 'series') {
             var sHero = buildHeroCard(catalogData.series[0] || catalogData.newSeasons[0]);
             if (sHero) hubDynamicContent.appendChild(sHero);
-            appendSection(hubDynamicContent, 'Series Completas', 'Elige temporada y episodio', catalogData.series, 'media', true);
+            appendSection(hubDynamicContent, tvT('seriesCatalogTitle'), tvT('seriesCatalogSub'), catalogData.series, 'media', true);
           } else if (activeHubTab === 'anime') {
             var aHero = buildHeroCard(catalogData.anime[0]);
             if (aHero) hubDynamicContent.appendChild(aHero);
-            appendSection(hubDynamicContent, 'Anime en HD', 'Castellano / Sub Español', catalogData.anime, 'media', true);
+            appendSection(hubDynamicContent, tvT('secAnimeTitle'), tvT('animeCatalogSub'), catalogData.anime, 'media', true);
           }
         }
 
@@ -3659,22 +4211,22 @@
               renderHubContent();
             }
           }
-          xhrJson('GET', '/api/catalog/latest-releases?lang=es', null, function (_e, d) {
+          xhrJson('GET', '/api/catalog/latest-releases?lang=' + encodeURIComponent(activeTvLang), null, function (_e, d) {
             if (d) {
               if (Array.isArray(d.cinemaReleases)) catalogData.cinemaReleases = d.cinemaReleases;
               if (Array.isArray(d.newSeasons)) catalogData.newSeasons = d.newSeasons;
             }
             checkDone();
           });
-          xhrJson('GET', '/api/catalog/movies?category=trending&page=1', null, function (_e, d) {
+          xhrJson('GET', '/api/catalog/movies?category=trending&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (_e, d) {
             if (d && Array.isArray(d.movies)) catalogData.movies = d.movies;
             checkDone();
           });
-          xhrJson('GET', '/api/catalog/series?category=trending&page=1&lang=es', null, function (_e, d) {
+          xhrJson('GET', '/api/catalog/series?category=trending&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (_e, d) {
             if (d && Array.isArray(d.series)) catalogData.series = d.series;
             checkDone();
           });
-          xhrJson('GET', '/api/catalog/series?provider=crunchyroll&category=trending&page=1&lang=es', null, function (_e, d) {
+          xhrJson('GET', '/api/catalog/series?provider=crunchyroll&category=trending&page=1&lang=' + encodeURIComponent(activeTvLang), null, function (_e, d) {
             if (d && Array.isArray(d.series)) catalogData.anime = d.series;
             checkDone();
           });
@@ -3844,10 +4396,21 @@
               }
               lb.className = 'series-pill-btn active';
               activeSeriesLang = lb.getAttribute('data-lang') || 'ES';
-              showToast('Idioma elegido: ' + activeSeriesLang);
+              showToast(tvT('langChosen') + activeSeriesLang);
             };
           })(langBtns[l]);
         }
+
+        function cycleTvLanguage() {
+          var nextL = activeTvLang === 'es' ? 'ca' : (activeTvLang === 'ca' ? 'en' : 'es');
+          applyTvLanguage(nextL);
+          showToast(tvT('langToast'));
+          loadTvCatalog();
+        }
+        var btnHubLang = document.getElementById('btn-hub-lang');
+        if (btnHubLang) btnHubLang.onclick = cycleTvLanguage;
+        var btnPairingLang = document.getElementById('btn-pairing-lang');
+        if (btnPairingLang) btnPairingLang.onclick = cycleTvLanguage;
 
         document.getElementById('btn-close-series-modal').onclick = function () {
           seriesModal.style.display = 'none';
@@ -3892,7 +4455,7 @@
         if (btnStandbyRetry) {
           btnStandbyRetry.onclick = function () {
             autoFailoverLock = false;
-            triggerPlaybackFailover('Cambio manual');
+            triggerPlaybackFailover('Manual retry');
           };
         }
         if (btnDockChPrev) {
@@ -3924,11 +4487,11 @@
             if (!localTracks || localTracks.length < 2) return;
             var nextIdx = (localTrackIdx + 1) % localTracks.length;
             if (activeLiveChannel) {
-              showToast('Cambiando señal...');
+              showToast(tvT('changingSignal'));
               playTdtChannelOnTv(activeLiveChannel, nextIdx);
             } else {
               var resumeT = !currentIsLive && videoEl.currentTime > 2 ? videoEl.currentTime : 0;
-              showToast('Cambiando pista...');
+              showToast(tvT('changingTrack'));
               switchToLocalTrack(nextIdx, resumeT);
             }
           };
@@ -3960,7 +4523,7 @@
           var clean = raw.replace(/[^a-zA-Z0-9-_]/g, '').toLowerCase();
           if (!clean) return false;
           unlockAudio();
-          enterRoomReceiver(clean, 'Sala ' + clean.toUpperCase(), '', 'Mando TV');
+          enterRoomReceiver(clean, tvT('roomPrefix') + clean.toUpperCase(), '', tvT('tvRemoteLabel'));
           return false;
         };
 
@@ -4106,6 +4669,7 @@
           }
         });
 
+        applyTvLanguage(activeTvLang);
         syncFullscreenButtons();
 
         // Boot sequence
@@ -4116,7 +4680,7 @@
         loadTvCatalog();
 
         if (roomMatch && roomMatch[1]) {
-          enterRoomReceiver(roomMatch[1], 'Sala ' + roomMatch[1].toUpperCase(), '', 'Enlace directo');
+          enterRoomReceiver(roomMatch[1], tvT('roomPrefix') + roomMatch[1].toUpperCase(), '', tvT('directLinkLabel'));
         } else if (pairMatch) {
           switchTvScreen('pairing');
         } else {

@@ -6,6 +6,7 @@ import { LruTtlCache } from '../utils/lruCache.ts';
 import { logger } from '../utils/logger.ts';
 import { serviceMesh } from '../gateway/serviceMesh.ts';
 import { buildSignedApkBuffer } from '../services/apkBuilderService.ts';
+import { channelHealthMonitor } from '../services/channelHealthMonitor.ts';
 
 export interface QoeSample {
   id: string;
@@ -29,6 +30,7 @@ export interface HealthRouteDeps {
     uptimeSec: number;
   };
   getPublicOrigin: (req: express.Request) => string;
+  refreshChannelHealth?: (force?: boolean) => Promise<void>;
 }
 
 export function registerOperationalRoutes(
@@ -51,6 +53,29 @@ export function registerOperationalRoutes(
         avgLatencyMs: s.avgLatencyMs,
         requestsTotal: s.requestsTotal,
       })),
+      channelHealth: channelHealthMonitor.getSummary(),
+      ts: Date.now(),
+    });
+  });
+
+  app.get('/api/channels/health', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      summary: channelHealthMonitor.getSummary(),
+      tracks: channelHealthMonitor.getAllTrackStatuses(),
+      ts: Date.now(),
+    });
+  });
+
+  app.post('/api/channels/health/refresh', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    if (deps.refreshChannelHealth) {
+      await deps.refreshChannelHealth(true);
+    }
+    res.json({
+      ok: true,
+      summary: channelHealthMonitor.getSummary(),
       ts: Date.now(),
     });
   });

@@ -22,6 +22,23 @@ export type PlaybackEngineMode =
   | 'embed'
   | 'cloud';
 
+export type ChannelHealthStatus = 'up' | 'degraded' | 'down' | 'unknown';
+
+export interface TrackHealthInfo {
+  status: ChannelHealthStatus;
+  latencyMs?: number;
+  failCount?: number;
+  checkedAt?: number;
+  statusCode?: number;
+}
+
+export interface ChannelHealthSummary {
+  bestStatus: ChannelHealthStatus;
+  upCount: number;
+  totalCount: number;
+  bestLatencyMs?: number;
+}
+
 export interface StreamTrack {
   id: string;
   label: string;
@@ -45,6 +62,8 @@ export interface StreamTrack {
     | 'cloud_browser';
   /** Cached proxied HLS or direct URL ready for <video> */
   resolvedStreamUrl?: string;
+  /** Live health status measured by server channel health monitor */
+  health?: TrackHealthInfo;
 }
 
 export interface ActiveSeriesContext {
@@ -321,6 +340,7 @@ export interface SportsMatch {
   isLive: boolean;
   is247Channel?: boolean;
   channels: StreamTrack[];
+  healthSummary?: ChannelHealthSummary;
   matchMeta?: {
     eventId?: string;
     fotmobMatchId?: string;
@@ -520,6 +540,7 @@ export interface SpanishTdtChannel {
   quality: string;
   description: string;
   channels: StreamTrack[];
+  healthSummary?: ChannelHealthSummary;
 }
 
 export interface EpgProgramItem {

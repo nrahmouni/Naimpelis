@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import {
   X,
@@ -43,6 +43,9 @@ import { PWAInstallButton } from './PWAInstallPrompt';
 import { useThemeStore } from '../store/useThemeStore';
 import { useAppStore } from '../store/useAppStore';
 import { SegmentedControl } from './ui/DesignSystem';
+import { PosterImage } from './ui/PosterImage';
+import { pickLang } from '../utils/i18n';
+import { useFocusTrap } from '../utils/useFocusTrap';
 
 function formatResumeClock(sec?: number): string {
   if (!sec || !Number.isFinite(sec) || sec <= 0) return '00:00';
@@ -146,6 +149,9 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
   const [joinCode, setJoinCode] = useState('');
   const [copiedInvite, setCopiedInvite] = useState(false);
   const [photoBroken, setPhotoBroken] = useState(false);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useFocusTrap(isOpen, onClose, dialogRef);
 
   useEffect(() => {
     if (isOpen) {
@@ -158,15 +164,6 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
   useEffect(() => {
     setPhotoBroken(false);
   }, [authUser?.photoURL]);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
@@ -214,15 +211,21 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
 
   return (
     <div
-      role="dialog"
-      aria-modal="true"
-      aria-label={lang === 'es' ? 'Mi Perfil NAIM CINE' : 'My Profile'}
       onClick={onClose}
       className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4"
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={pickLang(lang, {
+          es: 'Mi Perfil NAIM CINE',
+          ca: 'El meu Perfil NAIM CINE',
+          en: 'My Profile',
+        })}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[880px] max-h-[92dvh] sm:max-h-[86dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden animate-sheet-up"
+        className="w-full sm:max-w-[880px] max-h-[92dvh] sm:max-h-[86dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden animate-sheet-up outline-none"
       >
         {/* Mobile iOS Sheet Grab Handle */}
         <div className="sm:hidden pt-2.5 flex justify-center">
@@ -261,9 +264,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
               </div>
               <div className="text-xs text-zinc-400 truncate">
                 {authUser?.email ||
-                  (lang === 'es'
-                    ? 'Perfil local · Conecta Google para sincronizar entre dispositivos'
-                    : 'Local profile · Sign in to sync across devices')}
+                  pickLang(lang, {
+                    es: 'Perfil local · Conecta Google para sincronizar entre dispositivos',
+                    ca: 'Perfil local · Connecta Google per sincronitzar entre dispositius',
+                    en: 'Local profile · Sign in to sync across devices',
+                  })}
               </div>
             </div>
           </div>
@@ -271,7 +276,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            aria-label={lang === 'es' ? 'Cerrar mi perfil' : 'Close profile'}
+            aria-label={pickLang(lang, {
+              es: 'Cerrar mi perfil',
+              ca: 'Tancar el meu perfil',
+              en: 'Close profile',
+            })}
             className="min-h-[44px] min-w-[44px] rounded-2xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
@@ -292,21 +301,27 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
             options={[
               {
                 id: 'history',
-                label:
-                  lang === 'es'
-                    ? `Continuar Viendo (${watchHistory.length})`
-                    : `History (${watchHistory.length})`,
+                label: pickLang(lang, {
+                  es: `Continuar Viendo (${watchHistory.length})`,
+                  ca: `Continuar Veient (${watchHistory.length})`,
+                  en: `History (${watchHistory.length})`,
+                }),
               },
               {
                 id: 'favorites',
-                label:
-                  lang === 'es'
-                    ? `Guardados (${totalSavedCount})`
-                    : `Saved (${totalSavedCount})`,
+                label: pickLang(lang, {
+                  es: `Guardados (${totalSavedCount})`,
+                  ca: `Desats (${totalSavedCount})`,
+                  en: `Saved (${totalSavedCount})`,
+                }),
               },
               {
                 id: 'account',
-                label: lang === 'es' ? 'Cuenta y Salas' : 'Account & Rooms',
+                label: pickLang(lang, {
+                  es: 'Cuenta y Salas',
+                  ca: 'Compte i Sales',
+                  en: 'Account & Rooms',
+                }),
               },
             ]}
           />
@@ -326,21 +341,20 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   {/* Spotlight Resume Card */}
                   <div className="relative rounded-2xl overflow-hidden border border-white/[0.09] bg-white/[0.04] nc-specular-surface p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-center gap-3.5 min-w-0">
-                      {latestWatched.poster ? (
-                        <img
-                          src={latestWatched.poster}
-                          alt={latestWatched.title}
-                          referrerPolicy="no-referrer"
-                          className="w-16 h-24 rounded-xl object-cover border border-white/10 shrink-0"
-                        />
-                      ) : (
-                        <div className="w-16 h-24 rounded-xl bg-[#26262C] flex items-center justify-center shrink-0">
-                          <Film className="w-6 h-6 text-zinc-500" />
-                        </div>
-                      )}
+                      <PosterImage
+                        src={latestWatched.poster}
+                        alt={latestWatched.title}
+                        aspect="poster"
+                        className="w-16 rounded-xl border border-white/10 shrink-0"
+                        fallbackIcon={<Film className="w-6 h-6 text-zinc-500" />}
+                      />
                       <div className="min-w-0 space-y-1">
                         <div className="text-[11px] font-medium text-[#BF94FF]">
-                          {lang === 'es' ? 'Última reproducción' : 'Last watched'}
+                          {pickLang(lang, {
+                            es: 'Última reproducción',
+                            ca: 'Última reproducció',
+                            en: 'Last watched',
+                          })}
                         </div>
                         <h3 className="font-display font-bold text-base sm:text-lg text-white truncate">
                           {latestWatched.title}
@@ -351,7 +365,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         {latestWatched.resumeTimeSec && latestWatched.resumeTimeSec > 5 ? (
                           <div className="pt-1 space-y-1 max-w-[240px]">
                             <div className="text-[11px] font-mono tabular-nums text-zinc-300">
-                              {lang === 'es' ? 'Punto guardado:' : 'Saved at:'}{' '}
+                              {pickLang(lang, {
+                                es: 'Punto guardado:',
+                                ca: 'Punt desat:',
+                                en: 'Saved at:',
+                              })}{' '}
                               {formatResumeClock(latestWatched.resumeTimeSec)}
                               {latestWatched.durationSec
                                 ? ` / ${formatResumeClock(latestWatched.durationSec)}`
@@ -397,12 +415,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         <Play className="w-4 h-4 fill-current" />
                         <span>
                           {latestWatched.resumeTimeSec && latestWatched.resumeTimeSec > 5
-                            ? lang === 'es'
-                              ? `Seguir en ${formatResumeClock(latestWatched.resumeTimeSec)}`
-                              : `Resume ${formatResumeClock(latestWatched.resumeTimeSec)}`
-                            : lang === 'es'
-                            ? 'Reproducir'
-                            : 'Play'}
+                            ? pickLang(lang, {
+                                es: `Seguir en ${formatResumeClock(latestWatched.resumeTimeSec)}`,
+                                ca: `Continuar a ${formatResumeClock(latestWatched.resumeTimeSec)}`,
+                                en: `Resume ${formatResumeClock(latestWatched.resumeTimeSec)}`,
+                              })
+                            : pickLang(lang, {
+                                es: 'Reproducir',
+                                ca: 'Reproduir',
+                                en: 'Play',
+                              })}
                         </span>
                       </button>
 
@@ -414,7 +436,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             onReplayHistoryItem(latestWatched, true);
                             onClose();
                           }}
-                          title={lang === 'es' ? 'Empezar desde 00:00' : 'Start from 00:00'}
+                          title={pickLang(lang, {
+                            es: 'Empezar desde 00:00',
+                            ca: 'Començar des de 00:00',
+                            en: 'Start from 00:00',
+                          })}
+                          aria-label={pickLang(lang, {
+                            es: 'Empezar desde 00:00',
+                            ca: 'Començar des de 00:00',
+                            en: 'Start from 00:00',
+                          })}
                           className="w-11 h-11 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 flex items-center justify-center text-zinc-300 cursor-pointer"
                         >
                           <RotateCcw className="w-4 h-4" />
@@ -426,9 +457,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   {/* Full History List */}
                   <div className="flex items-center justify-between">
                     <h4 className="text-xs font-medium text-zinc-400">
-                      {lang === 'es'
-                        ? 'Todo tu historial de visualización'
-                        : 'Complete watch history'}
+                      {pickLang(lang, {
+                        es: 'Todo tu historial de visualización',
+                        ca: 'Tot el teu historial de visualització',
+                        en: 'Complete watch history',
+                      })}
                     </h4>
                     <button
                       type="button"
@@ -441,17 +474,35 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         } else {
                           btn.dataset.confirm = '1';
                           const span = btn.querySelector('span');
-                          if (span) span.textContent = lang === 'es' ? '¿Confirmar borrar?' : 'Confirm clear?';
+                          if (span) {
+                            span.textContent = pickLang(lang, {
+                              es: '¿Confirmar borrar?',
+                              ca: 'Confirmes esborrar?',
+                              en: 'Confirm clear?',
+                            });
+                          }
                           setTimeout(() => {
                             btn.dataset.confirm = '0';
-                            if (span) span.textContent = lang === 'es' ? 'Borrar todo' : 'Clear all';
+                            if (span) {
+                              span.textContent = pickLang(lang, {
+                                es: 'Borrar todo',
+                                ca: 'Esborrar tot',
+                                en: 'Clear all',
+                              });
+                            }
                           }, 3000);
                         }
                       }}
                       className="min-h-[36px] px-2.5 rounded-xl bg-white/[0.04] hover:bg-rose-500/20 border border-white/[0.08] text-xs font-medium text-zinc-300 hover:text-rose-300 flex items-center gap-1 cursor-pointer transition-colors"
                     >
                       <Trash2 className="w-3.5 h-3.5" />
-                      <span>{lang === 'es' ? 'Borrar todo' : 'Clear all'}</span>
+                      <span>
+                        {pickLang(lang, {
+                          es: 'Borrar todo',
+                          ca: 'Esborrar tot',
+                          en: 'Clear all',
+                        })}
+                      </span>
                     </button>
                   </div>
 
@@ -485,18 +536,13 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             className="flex items-center gap-3 flex-1 min-w-0 text-left cursor-pointer"
                           >
                             <div className="relative w-12 h-16 rounded-lg overflow-hidden bg-[#26262C] shrink-0">
-                              {item.poster ? (
-                                <img
-                                  src={item.poster}
-                                  alt={item.title}
-                                  referrerPolicy="no-referrer"
-                                  className="w-full h-full object-cover"
-                                />
-                              ) : (
-                                <div className="w-full h-full flex items-center justify-center">
-                                  <Film className="w-4 h-4 text-zinc-500" />
-                                </div>
-                              )}
+                              <PosterImage
+                                src={item.poster}
+                                alt={item.title}
+                                aspect="none"
+                                className="w-full h-full"
+                                fallbackIcon={<Film className="w-4 h-4 text-zinc-500" />}
+                              />
                               {pct > 0 && (
                                 <div className="absolute bottom-0 inset-x-0 h-1 bg-black/70">
                                   <div
@@ -516,12 +562,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               </div>
                               <div className="text-[11px] font-mono tabular-nums text-[#BF94FF] mt-1">
                                 {item.resumeTimeSec && item.resumeTimeSec > 5
-                                  ? `${
-                                      lang === 'es' ? 'Seguir en' : 'Resume'
-                                    } ${formatResumeClock(item.resumeTimeSec)}`
-                                  : lang === 'es'
-                                  ? 'Volver a ver'
-                                  : 'Watch again'}
+                                  ? `${pickLang(lang, {
+                                      es: 'Seguir en',
+                                      ca: 'Continuar a',
+                                      en: 'Resume',
+                                    })} ${formatResumeClock(item.resumeTimeSec)}`
+                                  : pickLang(lang, {
+                                      es: 'Volver a ver',
+                                      ca: 'Tornar a veure',
+                                      en: 'Watch again',
+                                    })}
                               </div>
                             </div>
                           </button>
@@ -532,7 +582,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               triggerHaptic('light');
                               onRemoveHistoryItem(item.id);
                             }}
-                            aria-label="Eliminar del historial"
+                            aria-label={pickLang(lang, {
+                              es: 'Eliminar del historial',
+                              ca: "Eliminar de l'historial",
+                              en: 'Remove from history',
+                            })}
                             className="w-9 h-9 rounded-xl bg-white/[0.04] hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 flex items-center justify-center shrink-0 cursor-pointer transition-colors"
                           >
                             <X className="w-4 h-4" />
@@ -546,14 +600,18 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 <div className="py-12 text-center space-y-2">
                   <Clock className="w-8 h-8 text-zinc-600 mx-auto" />
                   <p className="font-display font-semibold text-sm sm:text-base text-white">
-                    {lang === 'es'
-                      ? 'Aún no tienes películas ni series en tu historial'
-                      : 'Your watch history is empty'}
+                    {pickLang(lang, {
+                      es: 'Aún no tienes películas ni series en tu historial',
+                      ca: 'Encara no tens pel·lícules ni sèries al teu historial',
+                      en: 'Your watch history is empty',
+                    })}
                   </p>
                   <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                    {lang === 'es'
-                      ? 'Cualquier película o episodio que reproduzcas se guardará aquí automáticamente con el segundo exacto donde lo dejaste.'
-                      : 'Movies and episodes you play will automatically appear here with your exact resume timestamp.'}
+                    {pickLang(lang, {
+                      es: 'Cualquier película o episodio que reproduzcas se guardará aquí automáticamente con el segundo exacto donde lo dejaste.',
+                      ca: 'Qualsevol pel·lícula o episodi que reprodueixis es desarà aquí automàticament amb el segon exacte on ho vas deixar.',
+                      en: 'Movies and episodes you play will automatically appear here with your exact resume timestamp.',
+                    })}
                   </p>
                 </div>
               )}
@@ -570,28 +628,35 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   [
                     {
                       id: 'all',
-                      label: lang === 'es' ? `Todo (${totalSavedCount})` : `All (${totalSavedCount})`,
+                      label: pickLang(lang, {
+                        es: `Todo (${totalSavedCount})`,
+                        ca: `Tot (${totalSavedCount})`,
+                        en: `All (${totalSavedCount})`,
+                      }),
                     },
                     {
                       id: 'movie',
-                      label:
-                        lang === 'es'
-                          ? `Películas (${watchlist.filter((w) => w.mediaType !== 'tv').length})`
-                          : 'Movies',
+                      label: pickLang(lang, {
+                        es: `Películas (${watchlist.filter((w) => w.mediaType !== 'tv').length})`,
+                        ca: `Pel·lícules (${watchlist.filter((w) => w.mediaType !== 'tv').length})`,
+                        en: `Movies (${watchlist.filter((w) => w.mediaType !== 'tv').length})`,
+                      }),
                     },
                     {
                       id: 'tv',
-                      label:
-                        lang === 'es'
-                          ? `Series (${watchlist.filter((w) => w.mediaType === 'tv').length})`
-                          : 'Series',
+                      label: pickLang(lang, {
+                        es: `Series (${watchlist.filter((w) => w.mediaType === 'tv').length})`,
+                        ca: `Sèries (${watchlist.filter((w) => w.mediaType === 'tv').length})`,
+                        en: `Series (${watchlist.filter((w) => w.mediaType === 'tv').length})`,
+                      }),
                     },
                     {
                       id: 'channels',
-                      label:
-                        lang === 'es'
-                          ? `Canales TV (${favoriteChannels.length})`
-                          : `Channels (${favoriteChannels.length})`,
+                      label: pickLang(lang, {
+                        es: `Canales TV (${favoriteChannels.length})`,
+                        ca: `Canals TV (${favoriteChannels.length})`,
+                        en: `Channels (${favoriteChannels.length})`,
+                      }),
                     },
                   ] as const
                 ).map((f) => (
@@ -617,7 +682,13 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     {favFilter === 'all' && (
                       <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                         <Trophy className="w-3.5 h-3.5 text-amber-400" />
-                        <span>Canales y Partidos Guardados ({favoriteChannels.length})</span>
+                        <span>
+                          {pickLang(lang, {
+                            es: `Canales y Partidos Guardados (${favoriteChannels.length})`,
+                            ca: `Canals i Partits Desats (${favoriteChannels.length})`,
+                            en: `Saved Channels & Matches (${favoriteChannels.length})`,
+                          })}
+                        </span>
                       </h4>
                     )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -659,7 +730,9 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer"
                             >
                               <Play className="w-3 h-3 fill-current" />
-                              <span>{lang === 'es' ? 'Ver' : 'Watch'}</span>
+                              <span>
+                                {pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}
+                              </span>
                             </button>
                             <button
                               type="button"
@@ -667,8 +740,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                                 triggerHaptic('light');
                                 onRemoveFavoriteChannel(ch);
                               }}
-                              title={lang === 'es' ? 'Quitar canal favorito' : 'Remove channel'}
-                              aria-label="Quitar canal favorito"
+                              title={pickLang(lang, {
+                                es: 'Quitar canal favorito',
+                                ca: 'Treure canal favorit',
+                                en: 'Remove favorite channel',
+                              })}
+                              aria-label={pickLang(lang, {
+                                es: 'Quitar canal favorito',
+                                ca: 'Treure canal favorit',
+                                en: 'Remove favorite channel',
+                              })}
                               className="w-9 h-9 rounded-xl bg-white/[0.04] hover:bg-rose-500/20 text-amber-400 hover:text-rose-300 flex items-center justify-center cursor-pointer transition-colors"
                             >
                               <Star className="w-4 h-4 fill-current" />
@@ -686,7 +767,13 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   {favFilter === 'all' && favoriteChannels.length > 0 && (
                     <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
                       <Film className="w-3.5 h-3.5 text-[#9146FF]" />
-                      <span>Películas y Series en Mi Lista ({filteredWatchlist.length})</span>
+                      <span>
+                        {pickLang(lang, {
+                          es: `Películas y Series en Mi Lista (${filteredWatchlist.length})`,
+                          ca: `Pel·lícules i Sèries a La meva llista (${filteredWatchlist.length})`,
+                          en: `Movies & Series in My List (${filteredWatchlist.length})`,
+                        })}
+                      </span>
                     </h4>
                   )}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3.5">
@@ -704,33 +791,36 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               onPlayCatalogItem(item);
                               onClose();
                             }}
+                            aria-label={item.title}
                             className="relative aspect-[2/3] w-full overflow-hidden bg-[#26262C] text-left cursor-pointer"
                           >
-                            {item.poster ? (
-                              <img
-                                src={item.poster}
-                                alt={item.title}
-                                referrerPolicy="no-referrer"
-                                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                              />
-                            ) : (
-                              <div className="w-full h-full flex items-center justify-center">
-                                {isSeries ? (
+                            <PosterImage
+                              src={item.poster}
+                              alt={item.title}
+                              aspect="none"
+                              className="w-full h-full"
+                              imgClassName="group-hover:scale-105 transition-transform duration-300"
+                              fallbackIcon={
+                                isSeries ? (
                                   <Tv className="w-7 h-7 text-zinc-600" />
                                 ) : (
                                   <Film className="w-7 h-7 text-zinc-600" />
-                                )}
-                              </div>
-                            )}
+                                )
+                              }
+                            />
                             <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/25 to-transparent flex flex-col justify-end p-3">
                               <div className="text-[10px] text-zinc-300">
                                 {isSeries
-                                  ? lang === 'es'
-                                    ? 'Serie TV'
-                                    : 'TV Series'
-                                  : lang === 'es'
-                                  ? 'Película'
-                                  : 'Movie'}
+                                  ? pickLang(lang, {
+                                      es: 'Serie TV',
+                                      ca: 'Sèrie TV',
+                                      en: 'TV Series',
+                                    })
+                                  : pickLang(lang, {
+                                      es: 'Película',
+                                      ca: 'Pel·lícula',
+                                      en: 'Movie',
+                                    })}
                                 {item.year ? ` · ${item.year}` : ''}
                               </div>
                               <div className="font-display font-semibold text-xs sm:text-sm text-white line-clamp-2 mt-0.5">
@@ -745,8 +835,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               triggerHaptic('light');
                               onToggleCatalogFavorite(item);
                             }}
-                            title={lang === 'es' ? 'Quitar de favoritos' : 'Remove favorite'}
-                            aria-label="Quitar de favoritos"
+                            title={pickLang(lang, {
+                              es: 'Quitar de favoritos',
+                              ca: 'Treure de favorits',
+                              en: 'Remove favorite',
+                            })}
+                            aria-label={pickLang(lang, {
+                              es: 'Quitar de favoritos',
+                              ca: 'Treure de favorits',
+                              en: 'Remove favorite',
+                            })}
                             className="absolute top-2 right-2 w-8 h-8 rounded-full bg-black/70 hover:bg-[#9146FF] flex items-center justify-center text-[#BF94FF] hover:text-white cursor-pointer transition-colors"
                           >
                             <Heart className="w-3.5 h-3.5 fill-current" />
@@ -766,14 +864,18 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 <div className="py-12 text-center space-y-2">
                   <Heart className="w-8 h-8 text-zinc-600 mx-auto" />
                   <p className="font-display font-semibold text-sm sm:text-base text-white">
-                    {lang === 'es'
-                      ? 'No tienes elementos guardados en esta sección'
-                      : 'No saved items in this section'}
+                    {pickLang(lang, {
+                      es: 'No tienes elementos guardados en esta sección',
+                      ca: 'No tens elements desats en aquesta secció',
+                      en: 'No saved items in this section',
+                    })}
                   </p>
                   <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                    {lang === 'es'
-                      ? 'Pulsa el corazón (♥) en cualquier película o serie, o la estrella (★) en los canales de fútbol para tenerlos siempre a mano aquí.'
-                      : 'Tap the heart on movies/series or the star on sports channels to save them here.'}
+                    {pickLang(lang, {
+                      es: 'Pulsa el corazón (♥) en cualquier película o serie, o la estrella (★) en los canales de fútbol para tenerlos siempre a mano aquí.',
+                      ca: 'Prem el cor (♥) a qualsevol pel·lícula o sèrie, o l’estrella (★) als canals de futbol per tenir-los sempre a mà aquí.',
+                      en: 'Tap the heart on movies/series or the star on sports channels to save them here.',
+                    })}
                   </p>
                 </div>
               )}
@@ -790,10 +892,19 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 <div className="flex items-center justify-between gap-2">
                   <div>
                     <div className="text-xs font-medium text-zinc-400">
-                      {lang === 'es' ? 'Sala actual' : 'Current room'}
+                      {pickLang(lang, {
+                        es: 'Sala actual',
+                        ca: 'Sala actual',
+                        en: 'Current room',
+                      })}
                     </div>
                     <div className="font-display font-bold text-sm sm:text-base text-white">
-                      {roomName || `Sala ${roomId.toUpperCase()}`}{' '}
+                      {roomName ||
+                        pickLang(lang, {
+                          es: `Sala ${roomId.toUpperCase()}`,
+                          ca: `Sala ${roomId.toUpperCase()}`,
+                          en: `Room ${roomId.toUpperCase()}`,
+                        })}{' '}
                       <span className="font-mono text-xs text-zinc-400">#{roomId}</span>
                     </div>
                   </div>
@@ -805,12 +916,24 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     {copiedInvite ? (
                       <>
                         <Check className="w-3.5 h-3.5 text-[#00F593]" />
-                        <span>{lang === 'es' ? 'Copiado' : 'Copied'}</span>
+                        <span>
+                          {pickLang(lang, {
+                            es: 'Copiado',
+                            ca: 'Copiat',
+                            en: 'Copied',
+                          })}
+                        </span>
                       </>
                     ) : (
                       <>
                         <Share2 className="w-3.5 h-3.5 text-[#BF94FF]" />
-                        <span>{lang === 'es' ? 'Copiar link' : 'Copy link'}</span>
+                        <span>
+                          {pickLang(lang, {
+                            es: 'Copiar link',
+                            ca: 'Copiar enllaç',
+                            en: 'Copy link',
+                          })}
+                        </span>
                       </>
                     )}
                   </button>
@@ -828,7 +951,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   >
                     <Plus className="w-4 h-4" />
                     <span>
-                      {lang === 'es' ? 'Nueva sala' : 'New room'}
+                      {pickLang(lang, {
+                        es: 'Nueva sala',
+                        ca: 'Nova sala',
+                        en: 'New room',
+                      })}
                     </span>
                   </button>
 
@@ -848,12 +975,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       <Bookmark className="w-3.5 h-3.5 fill-current" />
                       <span>
                         {isCurrentRoomPermanent
-                          ? lang === 'es'
-                            ? 'Sala Permanente ✓'
-                            : 'Permanent Room ✓'
-                          : lang === 'es'
-                          ? 'Hacer Permanente'
-                          : 'Save Permanent'}
+                          ? pickLang(lang, {
+                              es: 'Sala Permanente ✓',
+                              ca: 'Sala Permanent ✓',
+                              en: 'Permanent Room ✓',
+                            })
+                          : pickLang(lang, {
+                              es: 'Hacer Permanente',
+                              ca: 'Fer Permanent',
+                              en: 'Save Permanent',
+                            })}
                       </span>
                     </button>
                   )}
@@ -870,7 +1001,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     >
                       <LogOut className="w-4 h-4 text-[#BF94FF]" />
                       <span>
-                        {lang === 'es' ? 'Salir al Inicio' : 'Exit to Home'}
+                        {pickLang(lang, {
+                          es: 'Salir al Inicio',
+                          ca: "Sortir a l'Inici",
+                          en: 'Exit to Home',
+                        })}
                       </span>
                     </button>
                   )}
@@ -881,11 +1016,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     type="text"
                     value={joinCode}
                     onChange={(e) => setJoinCode(e.target.value)}
-                    placeholder={
-                      lang === 'es'
-                        ? 'Unirse a código o link de amigo...'
-                        : 'Join friend code or link...'
-                    }
+                    placeholder={pickLang(lang, {
+                      es: 'Unirse a código o link de amigo...',
+                      ca: "Unir-se a codi o enllaç d'amic...",
+                      en: 'Join friend code or link...',
+                    })}
                     className="flex-1 min-w-0 h-11 px-3.5 rounded-xl bg-[#26262C] border border-white/10 focus:border-[#9146FF] text-base sm:text-xs font-mono text-white placeholder:text-zinc-500 outline-none"
                   />
                   <button
@@ -893,7 +1028,9 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     disabled={!joinCode.trim()}
                     className="h-11 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-40 border border-white/12 text-xs font-semibold text-white flex items-center gap-1 cursor-pointer disabled:cursor-not-allowed"
                   >
-                    <span>{lang === 'es' ? 'Ir' : 'Join'}</span>
+                    <span>
+                      {pickLang(lang, { es: 'Ir', ca: 'Anar', en: 'Join' })}
+                    </span>
                     <ArrowRight className="w-3.5 h-3.5" />
                   </button>
                 </form>
@@ -903,9 +1040,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     <div className="text-[11px] font-semibold text-emerald-400 flex items-center gap-1.5">
                       <Cloud className="w-3.5 h-3.5" />
                       <span>
-                        {lang === 'es'
-                          ? `Salas permanentes en la nube (${savedRooms.length})`
-                          : `Permanent cloud rooms (${savedRooms.length})`}
+                        {pickLang(lang, {
+                          es: `Salas permanentes en la nube (${savedRooms.length})`,
+                          ca: `Sales permanents al núvol (${savedRooms.length})`,
+                          en: `Permanent cloud rooms (${savedRooms.length})`,
+                        })}
                       </span>
                     </div>
                     <div className="space-y-1.5 max-h-[168px] overflow-y-auto pr-1">
@@ -941,7 +1080,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               <div className="text-[10px] text-zinc-400 font-mono truncate">
                                 #{sr.roomCode}
                                 {sr.queueItems.length > 0
-                                  ? ` · ${sr.queueItems.length} en cola`
+                                  ? ` · ${sr.queueItems.length} ${pickLang(lang, {
+                                      es: 'en cola',
+                                      ca: 'a la cua',
+                                      en: 'in queue',
+                                    })}`
                                   : ''}
                               </div>
                             </button>
@@ -953,11 +1096,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                                   triggerHaptic('light');
                                   onDeleteSavedRoom(sr.roomCode);
                                 }}
-                                title={
-                                  lang === 'es'
-                                    ? 'Quitar de salas permanentes'
-                                    : 'Remove permanent room'
-                                }
+                                title={pickLang(lang, {
+                                  es: 'Quitar de salas permanentes',
+                                  ca: 'Treure de sales permanents',
+                                  en: 'Remove permanent room',
+                                })}
+                                aria-label={pickLang(lang, {
+                                  es: 'Quitar de salas permanentes',
+                                  ca: 'Treure de sales permanents',
+                                  en: 'Remove permanent room',
+                                })}
                                 className="w-8 h-8 rounded-lg hover:bg-rose-500/20 text-zinc-400 hover:text-rose-300 flex items-center justify-center shrink-0 cursor-pointer"
                               >
                                 <Trash2 className="w-3.5 h-3.5" />
@@ -973,7 +1121,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 {recentRooms.filter((r) => r.id.toLowerCase() !== roomId.toLowerCase()).length > 0 && (
                   <div className="pt-2 border-t border-white/[0.06] space-y-2">
                     <div className="text-[11px] font-medium text-zinc-400">
-                      {lang === 'es' ? 'Otras salas recientes' : 'Other recent rooms'}
+                      {pickLang(lang, {
+                        es: 'Otras salas recientes',
+                        ca: 'Altres sales recents',
+                        en: 'Other recent rooms',
+                      })}
                     </div>
                     <div className="flex flex-wrap gap-1.5">
                       {recentRooms
@@ -1005,11 +1157,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   <div className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1.5">
                     <CalendarPlus className="w-3.5 h-3.5 text-[#BF94FF]" />
                     <span>
-                      {lang === 'es'
-                        ? 'Programar sesión en sala'
-                        : lang === 'ca'
-                        ? 'Programar sessió a la sala'
-                        : 'Schedule watch session'}
+                      {pickLang(lang, {
+                        es: 'Programar sesión en sala',
+                        ca: 'Programar sessió a la sala',
+                        en: 'Schedule watch session',
+                      })}
                     </span>
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -1017,9 +1169,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       type="text"
                       value={scheduleTitle}
                       onChange={(e) => setScheduleTitle(e.target.value)}
-                      placeholder={
-                        lang === 'es' ? 'Película o partido hoy...' : 'Movie or match tonight...'
-                      }
+                      placeholder={pickLang(lang, {
+                        es: 'Película o partido hoy...',
+                        ca: 'Pel·lícula o partit avui...',
+                        en: 'Movie or match tonight...',
+                      })}
                       className="flex-1 min-w-0 h-9 px-3 rounded-xl bg-[#26262C] border border-white/10 focus:border-[#9146FF] text-xs text-white placeholder:text-zinc-500 outline-none"
                     />
                     <input
@@ -1030,6 +1184,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     />
                     <button
                       type="button"
+                      aria-label={pickLang(lang, {
+                        es: 'Añadir recordatorio',
+                        ca: 'Afegir recordatori',
+                        en: 'Add reminder',
+                      })}
                       onClick={() => {
                         if (!scheduleTitle.trim()) return;
                         triggerHaptic('success');
@@ -1071,7 +1230,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             type="button"
                             onClick={() => removeScheduledRoom(sr.id)}
                             className="p-1 text-zinc-400 hover:text-rose-400 cursor-pointer"
-                            aria-label="Eliminar recordatorio"
+                            aria-label={pickLang(lang, {
+                              es: 'Eliminar recordatorio',
+                              ca: 'Eliminar recordatori',
+                              en: 'Delete reminder',
+                            })}
                           >
                             <Trash2 className="w-3.5 h-3.5" />
                           </button>
@@ -1086,7 +1249,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
               <div className="rounded-2xl bg-white/[0.04] nc-specular-surface border border-white/[0.08] p-4 space-y-4">
                 <form onSubmit={handleSaveName} className="space-y-2">
                   <label className="block text-xs font-medium text-zinc-400">
-                    {lang === 'es' ? 'Tu nombre visible en sala' : 'Display name'}
+                    {pickLang(lang, {
+                      es: 'Tu nombre visible en sala',
+                      ca: 'El teu nom visible a la sala',
+                      en: 'Display name',
+                    })}
                   </label>
                   <div className="flex items-center gap-2">
                     <input
@@ -1101,12 +1268,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       className="h-11 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-xs font-semibold text-white shrink-0 cursor-pointer"
                     >
                       {savedNameFeedback
-                        ? lang === 'es'
-                          ? 'Guardado'
-                          : 'Saved'
-                        : lang === 'es'
-                        ? 'Guardar'
-                        : 'Save'}
+                        ? pickLang(lang, { es: 'Guardado', ca: 'Desat', en: 'Saved' })
+                        : pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
                     </button>
                   </div>
                 </form>
@@ -1116,16 +1279,24 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   <div className="flex items-center justify-between gap-3">
                     <div>
                       <div className="text-xs font-medium text-white">
-                        {lang === 'es' ? 'Vista de la aplicación' : 'Application view'}
+                        {pickLang(lang, {
+                          es: 'Vista de la aplicación',
+                          ca: "Vista de l'aplicació",
+                          en: 'Application view',
+                        })}
                       </div>
                       <div className="text-[11px] text-zinc-400">
                         {effectiveView === 'desktop'
-                          ? lang === 'es'
-                            ? 'Actualmente en modo Escritorio'
-                            : 'Currently in Desktop mode'
-                          : lang === 'es'
-                          ? 'Actualmente en modo Móvil'
-                          : 'Currently in Mobile mode'}
+                          ? pickLang(lang, {
+                              es: 'Actualmente en modo Escritorio',
+                              ca: "Actualment en mode d'Escriptori",
+                              en: 'Currently in Desktop mode',
+                            })
+                          : pickLang(lang, {
+                              es: 'Actualmente en modo Móvil',
+                              ca: 'Actualment en mode Mòbil',
+                              en: 'Currently in Mobile mode',
+                            })}
                       </div>
                     </div>
                     <button
@@ -1139,12 +1310,24 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       {effectiveView === 'desktop' ? (
                         <>
                           <Smartphone className="w-3.5 h-3.5 text-zinc-300" />
-                          <span>{lang === 'es' ? 'Ver como móvil' : 'Mobile view'}</span>
+                          <span>
+                            {pickLang(lang, {
+                              es: 'Ver como móvil',
+                              ca: 'Veure com a mòbil',
+                              en: 'Mobile view',
+                            })}
+                          </span>
                         </>
                       ) : (
                         <>
                           <Monitor className="w-3.5 h-3.5 text-zinc-300" />
-                          <span>{lang === 'es' ? 'Ver como PC' : 'Desktop view'}</span>
+                          <span>
+                            {pickLang(lang, {
+                              es: 'Ver como PC',
+                              ca: 'Veure com a PC',
+                              en: 'Desktop view',
+                            })}
+                          </span>
                         </>
                       )}
                     </button>
@@ -1160,22 +1343,37 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   <div className="flex items-center gap-1.5 text-xs font-medium text-white">
                     <Palette className="w-4 h-4 text-[#BF94FF]" />
                     <span>
-                      {lang === 'es'
-                        ? 'Apariencia, Rendimiento e Idioma'
-                        : lang === 'ca'
-                        ? 'Aparença, Rendiment i Idioma'
-                        : 'Appearance, Performance & Language'}
+                      {pickLang(lang, {
+                        es: 'Apariencia, Rendimiento e Idioma',
+                        ca: 'Aparença, Rendiment i Idioma',
+                        en: 'Appearance, Performance & Language',
+                      })}
                     </span>
                   </div>
 
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                     {(
                       [
-                        { id: 'light', label: 'Tema Claro' },
-                        { id: 'dark', label: 'Tema Oscuro' },
-                        { id: 'oled', label: 'OLED Negro' },
-                        { id: 'soft-dark', label: 'Noche Suave' },
-                        { id: 'high-contrast', label: 'Alto Contraste' },
+                        {
+                          id: 'light',
+                          label: pickLang(lang, { es: 'Tema Claro', ca: 'Tema Clar', en: 'Light Theme' }),
+                        },
+                        {
+                          id: 'dark',
+                          label: pickLang(lang, { es: 'Tema Oscuro', ca: 'Tema Fosc', en: 'Dark Theme' }),
+                        },
+                        {
+                          id: 'oled',
+                          label: pickLang(lang, { es: 'OLED Negro', ca: 'OLED Negre', en: 'OLED Black' }),
+                        },
+                        {
+                          id: 'soft-dark',
+                          label: pickLang(lang, { es: 'Noche Suave', ca: 'Nit Suau', en: 'Soft Night' }),
+                        },
+                        {
+                          id: 'high-contrast',
+                          label: pickLang(lang, { es: 'Alto Contraste', ca: 'Alt Contrast', en: 'High Contrast' }),
+                        },
                       ] as { id: AppTheme; label: string }[]
                     ).map((opt) => (
                       <button
@@ -1209,7 +1407,9 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                               : 'bg-[#26262C] border-white/[0.08] text-zinc-300'
                           }`}
                         >
-                          {d === 'comfortable' ? 'Cómoda' : 'Compacta'}
+                          {d === 'comfortable'
+                            ? pickLang(lang, { es: 'Cómoda', ca: 'Còmoda', en: 'Comfortable' })
+                            : pickLang(lang, { es: 'Compacta', ca: 'Compacta', en: 'Compact' })}
                         </button>
                       ))}
                       <button
@@ -1248,7 +1448,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   {/* Annual Stats Snapshot + Design System / GDPR links */}
                   <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.07] flex items-center justify-between gap-2 text-[11px] text-zinc-300">
                     <span>
-                      🎬 {watchHistory.length} vistos · ♥ {watchlist.length} guardados · ⭐ {favoriteChannels.length} canales
+                      {pickLang(lang, {
+                        es: `🎬 ${watchHistory.length} vistos · ♥ ${watchlist.length} guardados · ⭐ ${favoriteChannels.length} canales`,
+                        ca: `🎬 ${watchHistory.length} vistos · ♥ ${watchlist.length} desats · ⭐ ${favoriteChannels.length} canals`,
+                        en: `🎬 ${watchHistory.length} watched · ♥ ${watchlist.length} saved · ⭐ ${favoriteChannels.length} channels`,
+                      })}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">
                       {onOpenDesignSystem && (
@@ -1259,7 +1463,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             onOpenDesignSystem();
                           }}
                           className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 cursor-pointer"
-                          title="Design System & Tokens"
+                          title={pickLang(lang, {
+                            es: 'Sistema de diseño y tokens',
+                            ca: 'Sistema de disseny i tokens',
+                            en: 'Design System & Tokens',
+                          })}
+                          aria-label={pickLang(lang, {
+                            es: 'Sistema de diseño y tokens',
+                            ca: 'Sistema de disseny i tokens',
+                            en: 'Design System & Tokens',
+                          })}
                         >
                           <Sparkles className="w-3.5 h-3.5" />
                         </button>
@@ -1272,7 +1485,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             onOpenLegalModal();
                           }}
                           className="p-1.5 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] text-zinc-200 cursor-pointer"
-                          title="Privacidad y RGPD"
+                          title={pickLang(lang, {
+                            es: 'Privacidad y RGPD',
+                            ca: 'Privacitat i RGPD',
+                            en: 'Privacy & GDPR',
+                          })}
+                          aria-label={pickLang(lang, {
+                            es: 'Privacidad y RGPD',
+                            ca: 'Privacitat i RGPD',
+                            en: 'Privacy & GDPR',
+                          })}
                         >
                           <Scale className="w-3.5 h-3.5" />
                         </button>
@@ -1291,12 +1513,16 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                     />
                     <span>
                       {authUser
-                        ? lang === 'es'
-                          ? 'Cuenta de Google vinculada'
-                          : 'Google account linked'
-                        : lang === 'es'
-                        ? 'Sincronización con Google'
-                        : 'Google Cloud Sync'}
+                        ? pickLang(lang, {
+                            es: 'Cuenta de Google vinculada',
+                            ca: 'Compte de Google vinculat',
+                            en: 'Google account linked',
+                          })
+                        : pickLang(lang, {
+                            es: 'Sincronización con Google',
+                            ca: 'Sincronització amb Google',
+                            en: 'Google Cloud Sync',
+                          })}
                     </span>
                   </div>
                   {!authLoading &&
@@ -1311,7 +1537,13 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         className="w-full min-h-[42px] px-4 rounded-xl bg-white/[0.05] hover:bg-rose-500/20 border border-white/10 text-xs font-semibold text-zinc-200 hover:text-rose-200 flex items-center justify-center gap-2 cursor-pointer transition-colors"
                       >
                         <LogOut className="w-3.5 h-3.5" />
-                        <span>{lang === 'es' ? 'Cerrar sesión' : 'Sign out'}</span>
+                        <span>
+                          {pickLang(lang, {
+                            es: 'Cerrar sesión',
+                            ca: 'Tancar sessió',
+                            en: 'Sign out',
+                          })}
+                        </span>
                       </button>
                     ) : (
                       <button
@@ -1324,9 +1556,11 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       >
                         <LogIn className="w-3.5 h-3.5" />
                         <span>
-                          {lang === 'es'
-                            ? 'Iniciar sesión con Google'
-                            : 'Sign in with Google'}
+                          {pickLang(lang, {
+                            es: 'Iniciar sesión con Google',
+                            ca: 'Iniciar sessió amb Google',
+                            en: 'Sign in with Google',
+                          })}
                         </span>
                       </button>
                     ))}

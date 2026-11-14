@@ -3,6 +3,7 @@ import { User } from 'firebase/auth';
 import { Cloud, Loader2, LogIn, User as UserIcon } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
 import { getMonogramInitials } from './MobileViewportGuard';
 
 interface CloudAccountButtonProps {
@@ -59,7 +60,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
       displayName ||
       user?.displayName?.split(' ')[0] ||
       user?.email?.split('@')[0] ||
-      (lang === 'es' ? 'Perfil' : 'Profile');
+      pickLang(lang, { es: 'Perfil', ca: 'Perfil', en: 'Profile' });
 
     return (
       <button
@@ -71,11 +72,11 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
         className={`min-h-[36px] ${
           compact && !isDesktop ? 'px-2' : 'px-2.5'
         } rounded-xl bg-white/[0.06] hover:bg-white/[0.12] active:scale-95 border border-white/[0.1] text-xs font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
-        title={
-          lang === 'es'
-            ? 'Abrir Mi Perfil (Historial, Favoritos, Salas y Vista)'
-            : 'Open My Profile (History, Favorites, Rooms & View)'
-        }
+        title={pickLang(lang, {
+          es: 'Abrir Mi Perfil (Historial, Favoritos, Salas y Vista)',
+          ca: 'Obrir El Meu Perfil (Historial, Preferits, Sales i Vista)',
+          en: 'Open My Profile (History, Favorites, Rooms & View)',
+        })}
       >
         {user?.photoURL && !imgBroken ? (
           <img
@@ -91,7 +92,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
           </span>
         )}
         <span className={compact && !isDesktop ? 'hidden' : 'inline max-w-24 truncate'}>
-          {lang === 'es' ? 'Perfil' : 'Profile'}
+          {pickLang(lang, { es: 'Perfil', ca: 'Perfil', en: 'Profile' })}
         </span>
         {user && (
           <span
@@ -114,11 +115,11 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
         className={`min-h-[32px] ${
           compact && !isDesktop ? 'px-2' : 'px-3'
         } rounded-lg bg-white/[0.05] hover:bg-white/[0.1] active:scale-95 border border-white/[0.09] text-xs font-semibold text-zinc-100 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all`}
-        title={
-          lang === 'es'
-            ? 'Iniciar sesión con Google y sincronizar en la nube'
-            : 'Sign in with Google and sync to cloud'
-        }
+        title={pickLang(lang, {
+          es: 'Iniciar sesión con Google y sincronizar en la nube',
+          ca: 'Iniciar sessió amb Google i sincronitzar al núvol',
+          en: 'Sign in with Google and sync to cloud',
+        })}
       >
         {busy ? (
           <Loader2 className="w-4 h-4 animate-spin text-white" />
@@ -126,7 +127,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
           <LogIn className="w-4 h-4 text-zinc-300" />
         )}
         <span className={compact && !isDesktop ? 'hidden' : 'inline'}>
-          {lang === 'es' ? 'Acceder' : 'Sign in'}
+          {pickLang(lang, { es: 'Acceder', ca: 'Accedir', en: 'Sign in' })}
         </span>
       </button>
     );
@@ -135,7 +136,7 @@ export const CloudAccountButton: React.FC<CloudAccountButtonProps> = ({
   const shortName =
     user.displayName?.split(' ')[0] ||
     user.email?.split('@')[0] ||
-    (lang === 'es' ? 'Cuenta' : 'Account');
+    pickLang(lang, { es: 'Cuenta', ca: 'Compte', en: 'Account' });
 
   return (
     <button

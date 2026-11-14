@@ -24,6 +24,7 @@ import {
 } from './ui/DesignSystem';
 import { buildTvPairingUrl, getDisplayAppHost } from '../utils/shortLink';
 import { triggerApkDownload } from '../utils/apkDownload';
+import { pickLang } from '../utils/i18n';
 
 interface SmartTvQuickModalProps {
   isOpen: boolean;
@@ -46,6 +47,7 @@ type SmartTvTab = 'pair' | 'apps' | 'remote';
 export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
   isOpen,
   onClose,
+  lang = 'es',
   hasConnectedSmartTv,
   onClaimTvCode,
   tvClaimStatus,
@@ -182,15 +184,42 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
     }
   };
 
+  const activeRoomLabel = pickLang(lang, {
+    es: 'Sala activa',
+    ca: 'Sala activa',
+    en: 'Active room',
+  });
+
   return (
     <BottomSheet
       isOpen={isOpen}
       onClose={onClose}
-      title={activeTab === 'remote' ? 'Mando Haptic Touch TV' : 'Smart TV y Apps Android'}
+      lang={lang}
+      title={
+        activeTab === 'remote'
+          ? pickLang(lang, {
+              es: 'Mando Haptic Touch TV',
+              ca: 'Comandament Haptic Touch TV',
+              en: 'Haptic Touch TV Remote',
+            })
+          : pickLang(lang, {
+              es: 'Smart TV y Apps Android',
+              ca: 'Smart TV i Apps Android',
+              en: 'Smart TV & Android Apps',
+            })
+      }
       subtitle={
         activeTab === 'remote'
-          ? `Control táctil directo · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : 'Sala activa'}`
-          : 'Envía a tu televisor o descarga las APK nativas de Móvil y Google TV'
+          ? pickLang(lang, {
+              es: `Control táctil directo · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : activeRoomLabel}`,
+              ca: `Control tàctil directe · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : activeRoomLabel}`,
+              en: `Direct touch control · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : activeRoomLabel}`,
+            })
+          : pickLang(lang, {
+              es: 'Envía a tu televisor o descarga las APK nativas de Móvil y Google TV',
+              ca: 'Envia al teu televisor o descarrega les APK natives de Mòbil i Google TV',
+              en: 'Cast to your TV or download native Mobile & Google TV APKs',
+            })
       }
       icon={<Tv className="w-5 h-5" />}
       maxWidth="sm:max-w-lg"
@@ -199,9 +228,21 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
         value={activeTab}
         onChange={setActiveTab}
         options={[
-          { id: 'pair', label: 'Vincular TV', icon: <Cast className="w-3.5 h-3.5" /> },
-          { id: 'apps', label: 'Apps APK', icon: <Download className="w-3.5 h-3.5" /> },
-          { id: 'remote', label: 'Mando', icon: <Tv className="w-3.5 h-3.5" /> },
+          {
+            id: 'pair',
+            label: pickLang(lang, { es: 'Vincular TV', ca: 'Vincular TV', en: 'Pair TV' }),
+            icon: <Cast className="w-3.5 h-3.5" />,
+          },
+          {
+            id: 'apps',
+            label: 'Apps APK',
+            icon: <Download className="w-3.5 h-3.5" />,
+          },
+          {
+            id: 'remote',
+            label: pickLang(lang, { es: 'Mando', ca: 'Comandament', en: 'Remote' }),
+            icon: <Tv className="w-3.5 h-3.5" />,
+          },
         ]}
       />
 
@@ -220,7 +261,10 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
       {activeTab === 'remote' && (
         <div className="space-y-3">
           <HapticTvRemote
-            pairedTvCode={pairedCodeLabel || 'ACTIVA'}
+            pairedTvCode={
+              pairedCodeLabel ||
+              pickLang(lang, { es: 'ACTIVA', ca: 'ACTIVA', en: 'ACTIVE' })
+            }
             onCommand={handleMapCommand}
             onDisconnect={() => {
               onSendTvRemoteCommand('disconnect_tv');
@@ -236,7 +280,11 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             }}
             fullWidth
           >
-            Vincular otro televisor con código
+            {pickLang(lang, {
+              es: 'Vincular otro televisor con código',
+              ca: 'Vincular un altre televisor amb codi',
+              en: 'Pair another TV with code',
+            })}
           </SecondaryButton>
         </div>
       )}
@@ -248,10 +296,20 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             <div className="min-w-0 flex-1">
               <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF] flex items-center gap-1.5">
                 <Cast className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">Envío inalámbrico 1 toque</span>
+                <span className="truncate">
+                  {pickLang(lang, {
+                    es: 'Envío inalámbrico 1 toque',
+                    ca: 'Enviament sense fils 1 toc',
+                    en: '1-Tap Wireless Cast',
+                  })}
+                </span>
               </div>
               <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
-                Chromecast, AirPlay 2 o Samsung Smart View sin escribir código.
+                {pickLang(lang, {
+                  es: 'Chromecast, AirPlay 2 o Samsung Smart View sin escribir código.',
+                  ca: 'Chromecast, AirPlay 2 o Samsung Smart View sense escriure codi.',
+                  en: 'Chromecast, AirPlay 2 or Samsung Smart View without typing a code.',
+                })}
               </p>
             </div>
             <PrimaryButton
@@ -267,7 +325,9 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               className="shrink-0 whitespace-nowrap !px-3.5 sm:!px-4"
             >
               <Cast className="w-4 h-4 shrink-0" />
-              <span>Enviar</span>
+              <span>
+                {pickLang(lang, { es: 'Enviar', ca: 'Enviar', en: 'Cast' })}
+              </span>
             </PrimaryButton>
           </div>
 
@@ -278,14 +338,22 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
           >
             <div className="min-w-0">
               <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF]">
-                Código Smart TV (4 dígitos)
+                {pickLang(lang, {
+                  es: 'Código Smart TV (4 dígitos)',
+                  ca: 'Codi Smart TV (4 dígits)',
+                  en: 'Smart TV Code (4 digits)',
+                })}
               </div>
               <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
-                Abre{' '}
+                {pickLang(lang, { es: 'Abre', ca: 'Obre', en: 'Open' })}{' '}
                 <span className="font-mono font-bold text-white break-all">
                   {tvUrl.replace(/^https?:\/\//, '')}
                 </span>{' '}
-                en tu TV e introduce el código:
+                {pickLang(lang, {
+                  es: 'en tu TV e introduce el código:',
+                  ca: 'a la teva TV i introdueix el codi:',
+                  en: 'on your TV and enter the code:',
+                })}
               </p>
             </div>
 
@@ -301,6 +369,11 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                   setTvCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))
                 }
                 placeholder="0000"
+                aria-label={pickLang(lang, {
+                  es: 'Código de 4 dígitos de la Smart TV',
+                  ca: 'Codi de 4 dígits de la Smart TV',
+                  en: '4-digit Smart TV pairing code',
+                })}
                 className="w-0 min-w-0 flex-1 h-12 sm:h-14 px-2 rounded-2xl bg-[#0B0B0E] border border-white/15 focus:border-[#9146FF] text-center font-mono text-xl sm:text-2xl font-bold tracking-[0.22em] sm:tracking-[0.4em] text-white placeholder:text-zinc-700 focus:outline-none transition-all tabular-nums"
               />
 
@@ -311,7 +384,13 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 className="shrink-0 !h-12 sm:!h-14 !px-3.5 sm:!px-5 whitespace-nowrap"
               >
                 <Sparkles className="w-4 h-4 shrink-0" />
-                <span>Vincular</span>
+                <span>
+                  {pickLang(lang, {
+                    es: 'Vincular',
+                    ca: 'Vincular',
+                    en: 'Pair',
+                  })}
+                </span>
               </PrimaryButton>
             </div>
 
@@ -323,7 +402,13 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               >
                 <span className="flex items-center gap-1.5">
                   <QrCode className="w-3.5 h-3.5 text-[#BF94FF]" />
-                  <span>Ver enlace rápido y QR para tu televisor</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Ver enlace rápido y QR para tu televisor',
+                      ca: 'Veure enllaç ràpid i QR per al teu televisor',
+                      en: 'View quick link & QR for your TV',
+                    })}
+                  </span>
                 </span>
                 {showTvGuide ? (
                   <ChevronUp className="w-4 h-4" />
@@ -346,12 +431,24 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                       {copiedUrl ? (
                         <>
                           <Check className="w-3.5 h-3.5 text-emerald-400" />
-                          <span>Copiado</span>
+                          <span>
+                            {pickLang(lang, {
+                              es: 'Copiado',
+                              ca: 'Copiat',
+                              en: 'Copied',
+                            })}
+                          </span>
                         </>
                       ) : (
                         <>
                           <Copy className="w-3.5 h-3.5" />
-                          <span>Copiar URL</span>
+                          <span>
+                            {pickLang(lang, {
+                              es: 'Copiar URL',
+                              ca: 'Copiar URL',
+                              en: 'Copy URL',
+                            })}
+                          </span>
                         </>
                       )}
                     </button>
@@ -365,7 +462,11 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                       loading="lazy"
                     />
                     <p className="text-[11px] text-zinc-400 leading-relaxed">
-                      Abre el navegador de tu Smart TV y entra en la dirección superior para obtener el código de 4 dígitos al instante.
+                      {pickLang(lang, {
+                        es: 'Abre el navegador de tu Smart TV y entra en la dirección superior para obtener el código de 4 dígitos al instante.',
+                        ca: 'Obre el navegador de la teva Smart TV i entra a la direcció superior per obtenir el codi de 4 dígits a l’instant.',
+                        en: 'Open your Smart TV browser and visit the address above to get the 4-digit pairing code immediately.',
+                      })}
                     </p>
                   </div>
                 </div>
@@ -409,7 +510,9 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 className="flex-col !py-2.5 !px-1.5 sm:!px-3 min-w-0 w-full text-[11px]"
               >
                 <MonitorPlay className="w-4 h-4 text-[#BF94FF] shrink-0" />
-                <span className="truncate max-w-full">Modo TV</span>
+                <span className="truncate max-w-full">
+                  {pickLang(lang, { es: 'Modo TV', ca: 'Mode TV', en: 'TV Mode' })}
+                </span>
               </SecondaryButton>
             ) : (
               <SecondaryButton
@@ -435,10 +538,20 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             <div className="min-w-0 flex-1">
               <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF] flex items-center gap-1.5">
                 <Smartphone className="w-3.5 h-3.5 shrink-0" />
-                <span className="truncate">App Android Móvil (.APK)</span>
+                <span className="truncate">
+                  {pickLang(lang, {
+                    es: 'App Android Móvil (.APK)',
+                    ca: 'App Android Mòbil (.APK)',
+                    en: 'Android Mobile App (.APK)',
+                  })}
+                </span>
               </div>
               <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
-                Mismo diseño Obsidian & Violeta, actualización automática y salas en vivo.
+                {pickLang(lang, {
+                  es: 'Mismo diseño Obsidian & Violeta, actualización automática y salas en vivo.',
+                  ca: 'Mateix disseny Obsidian & Violeta, actualització automàtica i sales en directe.',
+                  en: 'Same Obsidian & Violet design, auto-updates and live watch rooms.',
+                })}
               </p>
             </div>
             <a
@@ -456,10 +569,10 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               )}
               <span>
                 {apkStatus.flavor === 'mobile' && apkStatus.state === 'downloading'
-                  ? 'Preparando...'
+                  ? pickLang(lang, { es: 'Preparando...', ca: 'Preparant...', en: 'Preparing...' })
                   : apkStatus.flavor === 'mobile' && apkStatus.state === 'done'
-                  ? 'Descargada'
-                  : 'APK Móvil'}
+                  ? pickLang(lang, { es: 'Descargada', ca: 'Descarregada', en: 'Downloaded' })
+                  : pickLang(lang, { es: 'APK Móvil', ca: 'APK Mòbil', en: 'Mobile APK' })}
               </span>
             </a>
           </div>
@@ -469,10 +582,20 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             <div className="min-w-0 flex-1">
               <div className="text-[11px] font-bold uppercase tracking-wider text-zinc-200 flex items-center gap-1.5">
                 <Tv className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
-                <span className="truncate">App Google TV (.APK)</span>
+                <span className="truncate">
+                  {pickLang(lang, {
+                    es: 'App Google TV (.APK)',
+                    ca: 'App Google TV (.APK)',
+                    en: 'Google TV App (.APK)',
+                  })}
+                </span>
               </div>
               <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
-                Interfaz 10-foot navegable con mando físico D-Pad + código 4 dígitos y OTA.
+                {pickLang(lang, {
+                  es: 'Interfaz 10-foot navegable con mando físico D-Pad + código 4 dígitos y OTA.',
+                  ca: 'Interfície 10-foot navegable amb comandament físic D-Pad + codi 4 dígits i OTA.',
+                  en: '10-foot interface for physical D-Pad remote + 4-digit pairing code & OTA.',
+                })}
               </p>
             </div>
             <a
@@ -490,16 +613,20 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               )}
               <span>
                 {apkStatus.flavor === 'tv' && apkStatus.state === 'downloading'
-                  ? 'Preparando...'
+                  ? pickLang(lang, { es: 'Preparando...', ca: 'Preparant...', en: 'Preparing...' })
                   : apkStatus.flavor === 'tv' && apkStatus.state === 'done'
-                  ? 'Descargada'
+                  ? pickLang(lang, { es: 'Descargada', ca: 'Descarregada', en: 'Downloaded' })
                   : 'APK TV'}
               </span>
             </a>
           </div>
           {apkStatus.state === 'error' && apkStatus.message && (
             <div className="p-2.5 rounded-xl bg-rose-500/15 border border-rose-500/35 text-xs text-rose-200">
-              Error al descargar APK: {apkStatus.message}
+              {pickLang(lang, {
+                es: `Error al descargar APK: ${apkStatus.message}`,
+                ca: `Error en descarregar l'APK: ${apkStatus.message}`,
+                en: `APK download error: ${apkStatus.message}`,
+              })}
             </div>
           )}
 
@@ -512,7 +639,11 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                   <span>Samsung / LG IPTV (.M3U + EPG)</span>
                 </div>
                 <p className="text-xs text-zinc-300 mt-0.5 leading-snug">
-                  Canales en directo listos para OTTplayer, IPTV Smarters o Smart IPTV.
+                  {pickLang(lang, {
+                    es: 'Canales en directo listos para OTTplayer, IPTV Smarters o Smart IPTV.',
+                    ca: 'Canals en directe llestos per a OTTplayer, IPTV Smarters o Smart IPTV.',
+                    en: 'Live channels ready for OTTplayer, IPTV Smarters or Smart IPTV.',
+                  })}
                 </p>
               </div>
               <a
@@ -534,12 +665,24 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 {copiedIptv === 'm3u' ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>URL Copiada</span>
+                    <span>
+                      {pickLang(lang, {
+                        es: 'URL Copiada',
+                        ca: 'URL Copiada',
+                        en: 'URL Copied',
+                      })}
+                    </span>
                   </>
                 ) : (
                   <>
                     <Copy className="w-3.5 h-3.5 text-sky-400" />
-                    <span>Copiar .M3U</span>
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Copiar .M3U',
+                        ca: 'Copiar .M3U',
+                        en: 'Copy .M3U',
+                      })}
+                    </span>
                   </>
                 )}
               </button>
@@ -552,12 +695,24 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 {copiedIptv === 'epg' ? (
                   <>
                     <Check className="w-3.5 h-3.5 text-emerald-400" />
-                    <span>EPG Copiada</span>
+                    <span>
+                      {pickLang(lang, {
+                        es: 'EPG Copiada',
+                        ca: 'EPG Copiada',
+                        en: 'EPG Copied',
+                      })}
+                    </span>
                   </>
                 ) : (
                   <>
                     <Copy className="w-3.5 h-3.5 text-zinc-300" />
-                    <span>Copiar EPG</span>
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Copiar EPG',
+                        ca: 'Copiar EPG',
+                        en: 'Copy EPG',
+                      })}
+                    </span>
                   </>
                 )}
               </button>

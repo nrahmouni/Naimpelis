@@ -2,11 +2,14 @@ import React, { useEffect, useId, useRef, useState } from 'react';
 import { Volume2 } from 'lucide-react';
 import { playNaimcineIntroSound, triggerHaptic } from '../utils/haptics';
 import { NaimBrandLogo } from './NaimBrandLogo';
+import { pickLang } from '../utils/i18n';
+import type { AppLanguage } from '../types';
 
 interface NaimcineIntroProps {
   onComplete: () => void;
   withSound?: boolean;
   subtitle?: string;
+  lang?: AppLanguage;
 }
 
 interface CinemaMote {
@@ -36,6 +39,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
   onComplete,
   withSound = false,
   subtitle,
+  lang = 'es',
 }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const onCompleteRef = useRef(onComplete);
@@ -435,7 +439,13 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
             className="min-h-[38px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-[11px] font-medium text-zinc-300 flex items-center gap-1.5 transition-colors cursor-pointer"
           >
             <Volume2 className="w-3.5 h-3.5 text-[#9146FF]" />
-            <span>Sonido Cinema</span>
+            <span>
+              {pickLang(lang, {
+                es: 'Sonido Cinema',
+                ca: 'So Cinema',
+                en: 'Cinema Sound',
+              })}
+            </span>
           </button>
         ) : (
           <div />
@@ -449,7 +459,11 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
           }}
           className="min-h-[38px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/12 text-xs font-medium text-zinc-200 transition-colors cursor-pointer"
         >
-          Saltar intro
+          {pickLang(lang, {
+            es: 'Saltar intro',
+            ca: 'Saltar intro',
+            en: 'Skip intro',
+          })}
         </button>
       </div>
     </div>

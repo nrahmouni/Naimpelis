@@ -24,7 +24,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { AppLanguage } from '../types';
-import { UI_COPY } from '../utils/i18n';
+import { UI_COPY, pickLang } from '../utils/i18n';
 import { RecentRoomEntry, StoredProfile } from '../utils/storage';
 import { triggerHaptic } from '../utils/haptics';
 import {
@@ -124,7 +124,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     if (!profile) return;
     triggerHaptic('success');
     const code = generateShortRoomCode(4);
-    onEnterRoom(code, profile, `Sala de ${profile.name}`);
+    const defaultRoomTitle = pickLang(lang, {
+      es: `Sala de ${profile.name}`,
+      ca: `Sala de ${profile.name}`,
+      en: `${profile.name}'s Room`,
+    });
+    onEnterRoom(code, profile, defaultRoomTitle);
   };
 
   const handleJoinByCode = (e: React.FormEvent) => {
@@ -254,7 +259,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               onReplayIntro();
             }}
             className="flex items-center gap-3 min-w-0 cursor-pointer text-left group py-1 whitespace-nowrap shrink-0"
-            title={lang === 'es' ? 'Ver Intro NAIMCINE' : 'Play NAIMCINE Intro'}
+            title={pickLang(lang, {
+              es: 'Ver Intro NAIMCINE',
+              ca: 'Veure Intro NAIMCINE',
+              en: 'Play NAIMCINE Intro',
+            })}
           >
             <NaimBrandLogo
               size={isDesktop ? 42 : 34}
@@ -274,11 +283,19 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   onOpenTvPairLobby();
                 }}
                 className="!px-3.5"
-                title="Abrir Receptor Smart TV (/tv)"
+                title={pickLang(lang, {
+                  es: 'Abrir Receptor Smart TV (/tv)',
+                  ca: 'Obrir Receptor Smart TV (/tv)',
+                  en: 'Open Smart TV Receiver (/tv)',
+                })}
               >
                 <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
                 <span className="hidden sm:inline">
-                  {lang === 'es' ? 'Receptor Smart TV' : 'Smart TV'}
+                  {pickLang(lang, {
+                    es: 'Receptor Smart TV',
+                    ca: 'Receptor Smart TV',
+                    en: 'Smart TV',
+                  })}
                 </span>
                 <span className="sm:hidden">TV</span>
               </SecondaryButton>
@@ -290,8 +307,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 triggerHaptic('light');
                 setShowLobbyOptionsSheet(true);
               }}
-              aria-label="Ajustes, idioma y descarga APK"
-              title="Ajustes, cuenta Google, idioma y descarga APK"
+              aria-label={pickLang(lang, {
+                es: 'Ajustes, idioma y descarga APK',
+                ca: 'Ajustos, idioma i descàrrega APK',
+                en: 'Settings, language and APK download',
+              })}
+              title={pickLang(lang, {
+                es: 'Ajustes, cuenta Google, idioma y descarga APK',
+                ca: 'Ajustos, compte Google, idioma i descàrrega APK',
+                en: 'Settings, Google account, language and APK download',
+              })}
             >
               <Settings className="w-5 h-5" />
             </IconButton>
@@ -315,18 +340,26 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 </div>
                 <div>
                   <div className="font-display font-bold text-sm text-white">
-                    {lang === 'es' ? 'Smart TV detectada' : 'Smart TV detected'}
+                    {pickLang(lang, {
+                      es: 'Smart TV detectada',
+                      ca: 'Smart TV detectada',
+                      en: 'Smart TV detected',
+                    })}
                   </div>
                   <p className="text-xs text-[#ADADB8]">
-                    {lang === 'es'
-                      ? 'Muestra el código de 4 dígitos y controla desde tu teléfono.'
-                      : 'Display the 4-digit pairing code and control from your phone.'}
+                    {pickLang(lang, {
+                      es: 'Muestra el código de 4 dígitos y controla desde tu teléfono.',
+                      ca: 'Mostra el codi de 4 dígits i controla des del teu telèfon.',
+                      en: 'Display the 4-digit pairing code and control from your phone.',
+                    })}
                   </p>
                 </div>
               </div>
               <PrimaryButton onClick={onOpenTvPairLobby}>
                 <Tv className="w-4 h-4" />
-                <span>{lang === 'es' ? 'Modo TV' : 'TV Mode'}</span>
+                <span>
+                  {pickLang(lang, { es: 'Modo TV', ca: 'Mode TV', en: 'TV Mode' })}
+                </span>
               </PrimaryButton>
             </motion.div>
           )}
@@ -344,52 +377,66 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 initial={{ opacity: 0, y: 14 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
-                className="hidden lg:flex lg:col-span-7 rounded-3xl overflow-hidden nc-specular-surface relative flex-col justify-between min-h-[32rem]"
+                className="hidden lg:flex lg:col-span-7 rounded-3xl overflow-hidden nc-specular-surface relative flex-col justify-between min-h-[34rem] bg-[#101016]"
               >
-                <div className="relative flex-1 min-h-[19rem] overflow-hidden bg-[#18181D]">
+                <div className="relative flex-1 min-h-[21rem] overflow-hidden bg-[#18181D]">
                   {!heroImgFailed && (
                     <img
                       src={twitchBroadcastHeroImg}
-                      alt="Sala privada NAIMCINE"
+                      alt={pickLang(lang, {
+                        es: 'Sala privada NAIMCINE',
+                        ca: 'Sala privada NAIMCINE',
+                        en: 'NAIMCINE private theater',
+                      })}
                       referrerPolicy="no-referrer"
                       onError={() => setHeroImgFailed(true)}
-                      className="w-full h-full object-cover object-center"
+                      className="w-full h-full object-cover object-center scale-[1.03] transition-transform duration-[4000ms]"
                     />
                   )}
-                  <div className="absolute inset-0 bg-gradient-to-t from-[#121217] via-[#121217]/35 to-transparent" />
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#121217]/85 via-transparent to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#101016] via-[#101016]/45 to-transparent" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#101016]/90 via-[#101016]/35 to-transparent" />
                 </div>
 
-                <div className="relative z-10 p-8 -mt-20 space-y-4">
+                <div className="relative z-10 p-8 xl:p-9 -mt-28 space-y-4">
                   <p className="text-xs font-mono uppercase tracking-[0.18em] text-[#C6A2FF]">
-                    {lang === 'ca'
-                      ? 'EMISSIÓ EN DIRECTE · SINCRONITZACIÓ < 40 MS · MULTIPLATAFORMA'
-                      : lang === 'en'
-                      ? 'LIVE BROADCAST ROOMS · SUB-40MS SYNC · WEB, ANDROID & GOOGLE TV'
-                      : 'EMISIÓN EN DIRECTO · SINCRONIZACIÓN < 40 MS · WEB, ANDROID Y GOOGLE TV'}
+                    {pickLang(lang, {
+                      es: 'EMISIÓN EN DIRECTO · SINCRONIZACIÓN < 40 MS · WEB, ANDROID Y GOOGLE TV',
+                      ca: 'EMISSIÓ EN DIRECTE · SINCRONITZACIÓ < 40 MS · WEB, ANDROID I GOOGLE TV',
+                      en: 'LIVE BROADCAST ROOMS · SUB-40MS SYNC · WEB, ANDROID & GOOGLE TV',
+                    })}
                   </p>
 
-                  <h1 className="font-display font-bold text-4xl xl:text-[2.75rem] leading-[1.08] tracking-tight text-white text-balance">
+                  <h1 className="font-display font-bold text-4xl xl:text-[2.85rem] leading-[1.06] tracking-tight text-white text-balance">
                     {t.heroHeadline}
                   </h1>
 
                   <p className="text-sm text-[#ADADB8] max-w-2xl leading-relaxed">
-                    {lang === 'ca'
-                      ? 'Catàleg ampliat amb 14 gèneres, futbol en directe, canals FAST 24/7 i la mateixa experiència a Web, Android APK i Google TV.'
-                      : lang === 'en'
-                      ? 'Expanded catalog across 14 genres, live football matchboards, 24/7 FAST channels, and unified rooms across Web, Android APK, and Google TV.'
-                      : 'Salas de emisión en vivo con chat en directo, 14 géneros, fútbol, canales TDT/FAST 24/7 y la misma interfaz unificada en Web, Android APK y Google TV.'}
+                    {pickLang(lang, {
+                      es: 'Salas de emisión en vivo con chat en directo, 14 géneros, fútbol, canales TDT/FAST 24/7 y la misma interfaz unificada en Web, Android APK y Google TV.',
+                      ca: 'Catàleg ampliat amb 14 gèneres, futbol en directe, canals TDT/FAST 24/7 i la mateixa experiència a Web, Android APK i Google TV.',
+                      en: 'Expanded catalog across 14 genres, live football matchboards, 24/7 FAST channels, and unified rooms across Web, Android APK, and Google TV.',
+                    })}
                   </p>
 
                   <div className="pt-3 flex flex-wrap items-center gap-x-5 gap-y-2 text-xs font-medium text-[#ADADB8] border-t border-white/[0.08]">
                     <span className="flex items-center gap-1.5 text-[#EFEFF1]">
                       <ShieldCheck className="w-4 h-4 text-[#00F593]" />
-                      {lang === 'es' ? 'Salas privadas cifradas' : 'Encrypted private rooms'}
+                      {pickLang(lang, {
+                        es: 'Salas privadas cifradas',
+                        ca: 'Sales privades xifrades',
+                        en: 'Encrypted private rooms',
+                      })}
                     </span>
-                    <span>·</span>
+                    <span aria-hidden="true">·</span>
                     <span>Web · Android APK · Google TV</span>
-                    <span>·</span>
-                    <span className="font-mono text-[#EFEFF1] tabular-nums">14 Géneros · +500 Canales</span>
+                    <span aria-hidden="true">·</span>
+                    <span className="font-mono text-[#EFEFF1] tabular-nums">
+                      {pickLang(lang, {
+                        es: '14 Géneros · +500 Canales',
+                        ca: '14 Gèneres · +500 Canals',
+                        en: '14 Genres · 500+ Channels',
+                      })}
+                    </span>
                   </div>
                 </div>
               </motion.section>
@@ -404,9 +451,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 className="text-center space-y-1.5 px-1"
               >
                 <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-[#C6A2FF]">
-                  {lang === 'es'
-                    ? 'Directos · Cine · Fútbol · Google TV'
-                    : 'Live · Movies · Football · Google TV'}
+                  {pickLang(lang, {
+                    es: 'Directos · Cine · Fútbol · Google TV',
+                    ca: 'Directes · Cinema · Futbol · Google TV',
+                    en: 'Live · Movies · Football · Google TV',
+                  })}
                 </p>
                 <h1 className="font-display font-bold text-2xl sm:text-3xl leading-[1.12] tracking-tight text-white text-balance">
                   {t.heroHeadline}
@@ -430,7 +479,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     <div className="flex items-center justify-between text-xs text-[#ADADB8]">
                       <span className="font-semibold flex items-center gap-1.5 text-[#EFEFF1]">
                         <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
-                        {lang === 'es' ? 'Continuar en tus salas' : 'Continue in your rooms'}
+                        {pickLang(lang, {
+                          es: 'Continuar en tus salas',
+                          ca: 'Continuar a les teves sales',
+                          en: 'Continue in your rooms',
+                        })}
                       </span>
                     </div>
                     <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
@@ -490,12 +543,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     </svg>
                     <span>
                       {authLoading
-                        ? lang === 'es'
-                          ? 'Conectando con Google...'
-                          : 'Connecting to Google...'
-                        : lang === 'es'
-                        ? 'Continuar con Google (Sincronizar Todo)'
-                        : 'Continue with Google'}
+                        ? pickLang(lang, {
+                            es: 'Conectando con Google...',
+                            ca: 'Connectant amb Google...',
+                            en: 'Connecting to Google...',
+                          })
+                        : pickLang(lang, {
+                            es: 'Continuar con Google (Sincronizar Todo)',
+                            ca: 'Continuar amb Google (Sincronitzar Tot)',
+                            en: 'Continue with Google (Sync Everything)',
+                          })}
                     </span>
                   </button>
                 ) : (
@@ -510,9 +567,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                             {authUser.displayName || authUser.email}
                           </div>
                           <div className="text-xs text-emerald-400 truncate">
-                            {lang === 'es'
-                              ? 'Nube sincronizada · Progreso e historial'
-                              : 'Cloud synced · Progress & history'}
+                            {pickLang(lang, {
+                              es: 'Nube sincronizada · Progreso e historial',
+                              ca: 'Núvol sincronitzat · Progrés i historial',
+                              en: 'Cloud synced · Progress & history',
+                            })}
                           </div>
                         </div>
                       </div>
@@ -521,7 +580,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                         onClick={onSignOut}
                         className="px-3 py-1.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-semibold text-zinc-300 cursor-pointer shrink-0"
                       >
-                        {lang === 'es' ? 'Salir' : 'Switch'}
+                        {pickLang(lang, { es: 'Salir', ca: 'Sortir', en: 'Switch' })}
                       </button>
                     </div>
 
@@ -542,7 +601,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                             onEnterRoom(recentRooms[0].id, profile, recentRooms[0].name);
                           } else {
                             const code = generateShortRoomCode(4);
-                            onEnterRoom(code, profile, `Sala de ${profile.name}`);
+                            onEnterRoom(
+                              code,
+                              profile,
+                              pickLang(lang, {
+                                es: `Sala de ${profile.name}`,
+                                ca: `Sala de ${profile.name}`,
+                                en: `${profile.name}'s Room`,
+                              })
+                            );
                           }
                         }}
                         fullWidth
@@ -550,9 +617,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       >
                         <Play className="w-4 h-4 fill-current shrink-0" />
                         <span>
-                          {lang === 'es'
-                            ? `Abrir Sala (${authUser.displayName?.split(' ')[0] || 'Directo'})`
-                            : 'Enter My Room'}
+                          {pickLang(lang, {
+                            es: `Abrir Sala (${authUser.displayName?.split(' ')[0] || 'Directo'})`,
+                            ca: `Obrir Sala (${authUser.displayName?.split(' ')[0] || 'Directe'})`,
+                            en: `Open Room (${authUser.displayName?.split(' ')[0] || 'Live'})`,
+                          })}
                         </span>
                         <ArrowRight className="w-4 h-4 shrink-0" />
                       </PrimaryButton>
@@ -571,12 +640,20 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   options={[
                     {
                       id: 'create',
-                      label: lang === 'es' ? 'Crear sala nueva' : 'Create room',
+                      label: pickLang(lang, {
+                        es: 'Crear sala nueva',
+                        ca: 'Crear sala nova',
+                        en: 'Create room',
+                      }),
                       icon: <Sparkles className="w-3.5 h-3.5" />,
                     },
                     {
                       id: 'join',
-                      label: lang === 'es' ? 'Unirse con código' : 'Join with code',
+                      label: pickLang(lang, {
+                        es: 'Unirse con código',
+                        ca: 'Unir-se amb codi',
+                        en: 'Join with code',
+                      }),
                       icon: <KeyRound className="w-3.5 h-3.5" />,
                     },
                   ]}
@@ -591,6 +668,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       >
                         {getMonogramInitials(name)}
                       </div>
+                      <label htmlFor="lobby-nickname" className="sr-only">
+                        {t.nicknameLabel}
+                      </label>
                       <input
                         id="lobby-nickname"
                         type="text"
@@ -616,8 +696,16 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       <IconButton
                         type="button"
                         onClick={handleRandomName}
-                        title={lang === 'es' ? 'Generar alias aleatorio' : 'Random alias'}
-                        aria-label="Generar alias aleatorio"
+                        title={pickLang(lang, {
+                          es: 'Generar alias aleatorio',
+                          ca: 'Generar àlies aleatori',
+                          en: 'Random alias',
+                        })}
+                        aria-label={pickLang(lang, {
+                          es: 'Generar alias aleatorio',
+                          ca: 'Generar àlies aleatori',
+                          en: 'Generate random alias',
+                        })}
                       >
                         <Shuffle className="w-4 h-4" />
                       </IconButton>
@@ -630,7 +718,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       size="lg"
                     >
                       <Play className="w-4 h-4 fill-current shrink-0" />
-                      <span>{lang === 'es' ? 'Entrar y Crear Sala' : t.createRoomBtn}</span>
+                      <span>
+                        {pickLang(lang, {
+                          es: 'Entrar y Crear Sala',
+                          ca: 'Entrar i Crear Sala',
+                          en: t.createRoomBtn,
+                        })}
+                      </span>
                       <ArrowRight className="w-4 h-4 shrink-0" />
                     </PrimaryButton>
                   </div>
@@ -639,6 +733,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 {entryMode === 'join' && (
                   <form onSubmit={handleJoinByCode} className="space-y-3">
                     <div className="flex items-center gap-2">
+                      <label htmlFor="lobby-room-code" className="sr-only">
+                        {t.joinRoomLabel}
+                      </label>
                       <input
                         id="lobby-room-code"
                         type="text"
@@ -670,9 +767,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   <span className="flex items-center gap-2">
                     <Download className="w-4 h-4 text-[#BF94FF]" />
                     <span>
-                      {lang === 'es'
-                        ? 'Descargar APK Android / Google TV e Idioma'
-                        : 'Download Android / Google TV APK & Settings'}
+                      {pickLang(lang, {
+                        es: 'Descargar APK Android / Google TV e Idioma',
+                        ca: 'Descarregar APK Android / Google TV i Idioma',
+                        en: 'Download Android / Google TV APK & Settings',
+                      })}
                     </span>
                   </span>
                   <ChevronRight className="w-4 h-4 text-zinc-400" />
@@ -705,7 +804,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         </main>
 
         <footer className="w-full max-w-[1440px] mx-auto px-6 py-4 flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-500">
-          <span>NAIM CINE · Arquitectura sincronizada multiplataforma</span>
+          <span>
+            {pickLang(lang, {
+              es: 'NAIM CINE · Arquitectura sincronizada multiplataforma',
+              ca: 'NAIM CINE · Arquitectura sincronitzada multiplataforma',
+              en: 'NAIM CINE · Cross-platform synchronized architecture',
+            })}
+          </span>
           {onOpenAdsPage && (
             <button
               type="button"
@@ -715,7 +820,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               }}
               className="hover:text-zinc-300 transition-colors cursor-pointer py-1 px-2"
             >
-              {lang === 'ca' ? 'Sobre la plataforma' : lang === 'en' ? 'About' : 'Sobre la plataforma'}
+              {pickLang(lang, {
+                es: 'Sobre la plataforma',
+                ca: 'Sobre la plataforma',
+                en: 'About',
+              })}
             </button>
           )}
         </footer>
@@ -724,12 +833,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         <BottomSheet
           isOpen={showLobbyOptionsSheet}
           onClose={() => setShowLobbyOptionsSheet(false)}
-          title={lang === 'es' ? 'Ajustes, Cuenta y App APK' : 'Settings, Account & APK'}
-          subtitle={
-            lang === 'es'
-              ? 'Sincronización en la nube, modo de vista e instalación Android / Google TV'
-              : 'Cloud sync, view mode, and Android / Google TV installation'
-          }
+          lang={lang}
+          title={pickLang(lang, {
+            es: 'Ajustes, Cuenta y App APK',
+            ca: 'Ajustos, Compte i App APK',
+            en: 'Settings, Account & APK',
+          })}
+          subtitle={pickLang(lang, {
+            es: 'Sincronización en la nube, modo de vista e instalación Android / Google TV',
+            ca: 'Sincronització al núvol, mode de vista i instal·lació Android / Google TV',
+            en: 'Cloud sync, view mode, and Android / Google TV installation',
+          })}
           icon={<Settings className="w-5 h-5" />}
         >
           <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
@@ -748,18 +862,24 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   <div className="text-sm font-bold text-white truncate">
                     {authUser
                       ? authUser.displayName || authUser.email
-                      : lang === 'es'
-                      ? 'Sincronización con Google'
-                      : 'Google Cloud Sync'}
+                      : pickLang(lang, {
+                          es: 'Sincronización con Google',
+                          ca: 'Sincronització amb Google',
+                          en: 'Google Cloud Sync',
+                        })}
                   </div>
                   <div className="text-xs text-zinc-400 truncate">
                     {authUser
-                      ? lang === 'es'
-                        ? 'Historial, minuto exacto y salas guardadas'
-                        : 'History, resume points & saved rooms active'
-                      : lang === 'es'
-                      ? 'Guarda tu progreso y salas en todos tus dispositivos'
-                      : 'Save your watch progress across devices'}
+                      ? pickLang(lang, {
+                          es: 'Historial, minuto exacto y salas guardadas',
+                          ca: 'Historial, minut exacte i sales desades',
+                          en: 'History, resume points & saved rooms active',
+                        })
+                      : pickLang(lang, {
+                          es: 'Guarda tu progreso y salas en todos tus dispositivos',
+                          ca: 'Desa el teu progrés i sales a tots els dispositius',
+                          en: 'Save your watch progress across devices',
+                        })}
                   </div>
                 </div>
               </div>
@@ -767,12 +887,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               {authUser ? (
                 <SecondaryButton onClick={onSignOut}>
                   <LogOut className="w-4 h-4 text-rose-400" />
-                  <span>{lang === 'es' ? 'Salir' : 'Sign out'}</span>
+                  <span>{pickLang(lang, { es: 'Salir', ca: 'Sortir', en: 'Sign out' })}</span>
                 </SecondaryButton>
               ) : (
                 <PrimaryButton onClick={onSignIn} disabled={authLoading}>
                   <LogIn className="w-4 h-4" />
-                  <span>{lang === 'es' ? 'Conectar' : 'Sign in'}</span>
+                  <span>{pickLang(lang, { es: 'Conectar', ca: 'Connectar', en: 'Sign in' })}</span>
                 </PrimaryButton>
               )}
             </div>
@@ -789,12 +909,24 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               {effectiveView === 'desktop' ? (
                 <>
                   <Smartphone className="w-4 h-4 text-[#BF94FF]" />
-                  <span>{lang === 'es' ? 'Vista Móvil' : 'Mobile View'}</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Vista Móvil',
+                      ca: 'Vista Mòbil',
+                      en: 'Mobile View',
+                    })}
+                  </span>
                 </>
               ) : (
                 <>
                   <Monitor className="w-4 h-4 text-[#BF94FF]" />
-                  <span>{lang === 'es' ? 'Vista PC' : 'Desktop View'}</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Vista PC',
+                      ca: 'Vista PC',
+                      en: 'Desktop View',
+                    })}
+                  </span>
                 </>
               )}
             </SecondaryButton>
@@ -817,9 +949,11 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             <div className="flex items-center gap-2 text-xs font-bold text-zinc-300 mb-2.5">
               <Download className="w-4 h-4 text-[#BF94FF]" />
               <span>
-                {lang === 'es'
-                  ? 'Instalar Aplicación (APK Android / Google TV / iOS)'
-                  : 'Install App (Android APK / Google TV / iOS)'}
+                {pickLang(lang, {
+                  es: 'Instalar Aplicación (APK Android / Google TV / iOS)',
+                  ca: 'Instal·lar Aplicació (APK Android / Google TV / iOS)',
+                  en: 'Install App (Android APK / Google TV / iOS)',
+                })}
               </span>
             </div>
             <PWAInstallLandingCard lang={lang} isDesktop={isDesktop} />

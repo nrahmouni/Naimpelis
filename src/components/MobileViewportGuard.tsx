@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Monitor, Smartphone } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
 
 export type ViewPreference = 'auto' | 'mobile' | 'desktop';
 export type EffectiveViewMode = 'mobile' | 'desktop';
@@ -195,21 +196,29 @@ export const ViewModeSwitchButton: React.FC<ViewModeSwitchButtonProps> = ({
       }}
       title={
         switchToMobile
-          ? lang === 'es'
-            ? 'Ver en modo móvil'
-            : 'Switch to mobile view'
-          : lang === 'es'
-          ? 'Ver en modo escritorio'
-          : 'Switch to desktop view'
+          ? pickLang(lang, {
+              es: 'Ver en modo móvil',
+              ca: 'Veure en mode mòbil',
+              en: 'Switch to mobile view',
+            })
+          : pickLang(lang, {
+              es: 'Ver en modo escritorio',
+              ca: 'Veure en mode escriptori',
+              en: 'Switch to desktop view',
+            })
       }
       aria-label={
         switchToMobile
-          ? lang === 'es'
-            ? 'Ver en modo móvil'
-            : 'Switch to mobile view'
-          : lang === 'es'
-          ? 'Ver en modo escritorio'
-          : 'Switch to desktop view'
+          ? pickLang(lang, {
+              es: 'Ver en modo móvil',
+              ca: 'Veure en mode mòbil',
+              en: 'Switch to mobile view',
+            })
+          : pickLang(lang, {
+              es: 'Ver en modo escritorio',
+              ca: 'Veure en mode escriptori',
+              en: 'Switch to desktop view',
+            })
       }
       className={`min-h-10 ${
         compact ? 'px-2.5' : 'px-3.5'
@@ -219,14 +228,14 @@ export const ViewModeSwitchButton: React.FC<ViewModeSwitchButtonProps> = ({
         <>
           <Smartphone className="w-4 h-4 text-zinc-300 shrink-0" />
           <span className={compact ? 'hidden xl:inline' : 'inline'}>
-            {lang === 'es' ? 'Vista móvil' : 'Mobile view'}
+            {pickLang(lang, { es: 'Vista móvil', ca: 'Vista mòbil', en: 'Mobile view' })}
           </span>
         </>
       ) : (
         <>
           <Monitor className="w-4 h-4 text-zinc-300 shrink-0" />
           <span className={compact ? 'hidden xl:inline' : 'inline'}>
-            {lang === 'es' ? 'Vista PC' : 'Desktop view'}
+            {pickLang(lang, { es: 'Vista PC', ca: 'Vista PC', en: 'Desktop view' })}
           </span>
         </>
       )}

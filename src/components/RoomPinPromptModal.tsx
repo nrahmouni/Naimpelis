@@ -2,6 +2,8 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Lock, ArrowRight, LogOut, AlertCircle } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
+import { useFocusTrap } from '../utils/useFocusTrap';
 
 interface RoomPinPromptModalProps {
   isOpen: boolean;
@@ -24,6 +26,9 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
 }) => {
   const [pin, setPin] = useState<string>('');
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useFocusTrap(isOpen, onLeaveProtectedRoom, dialogRef);
 
   useEffect(() => {
     if (isOpen) {
@@ -52,21 +57,43 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-[90] bg-[#0B0B0E]/92 backdrop-blur-2xl flex items-center justify-center p-4">
-      <div className="w-full max-w-[390px] rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border border-white/12 shadow-[0_30px_100px_rgba(0,0,0,0.92)] p-6 space-y-5 animate-sheet-up">
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={pickLang(lang, {
+          es: 'Introducir PIN de la sala',
+          ca: 'Introdueix el PIN de la sala',
+          en: 'Enter room PIN',
+        })}
+        tabIndex={-1}
+        className="w-full max-w-[390px] rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border border-white/12 shadow-[0_30px_100px_rgba(0,0,0,0.92)] p-6 space-y-5 animate-sheet-up outline-none"
+      >
         <div className="flex flex-col items-center text-center space-y-2">
           <div className="w-14 h-14 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/40 flex items-center justify-center text-[#BF94FF]">
             <Lock className="w-6 h-6" />
           </div>
           <div className="text-[11px] font-mono uppercase tracking-widest text-zinc-400">
-            {lang === 'es' ? 'Sala Privada Protegida' : 'PIN-Protected Private Room'}
+            {pickLang(lang, {
+              es: 'Sala Privada Protegida',
+              ca: 'Sala Privada Protegida',
+              en: 'PIN-Protected Private Room',
+            })}
           </div>
           <h2 className="font-display font-bold text-xl text-white">
-            {roomName || `Sala #${roomCode.toUpperCase()}`}
+            {roomName ||
+              pickLang(lang, {
+                es: `Sala #${roomCode.toUpperCase()}`,
+                ca: `Sala #${roomCode.toUpperCase()}`,
+                en: `Room #${roomCode.toUpperCase()}`,
+              })}
           </h2>
           <p className="text-xs text-zinc-400 leading-relaxed">
-            {lang === 'es'
-              ? 'Introduce el PIN de 4 dígitos configurado por el anfitrión para desbloquear y entrar a la proyección.'
-              : 'Enter the 4-digit PIN set by the host to unlock and join this screening room.'}
+            {pickLang(lang, {
+              es: 'Introduce el PIN de 4 dígitos configurado por el anfitrión para desbloquear y entrar a la proyección.',
+              ca: "Introdueix el PIN de 4 dígits configurat per l'amfitrió per desbloquejar i entrar a la projecció.",
+              en: 'Enter the 4-digit PIN set by the host to unlock and join this screening room.',
+            })}
           </p>
         </div>
 
@@ -81,7 +108,11 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
               value={pin}
               onChange={(e) => handlePinChange(e.target.value)}
               placeholder="• • • •"
-              aria-label={lang === 'es' ? 'PIN de 4 dígitos' : '4-digit PIN'}
+              aria-label={pickLang(lang, {
+                es: 'PIN de 4 dígitos',
+                ca: 'PIN de 4 dígits',
+                en: '4-digit PIN',
+              })}
               className={`w-full h-14 px-4 rounded-2xl bg-white/[0.045] focus:bg-white/[0.075] border ${
                 invalidAttempt
                   ? 'border-[#EB0400] focus:border-[#EB0400]'
@@ -94,9 +125,11 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
             <div className="px-3.5 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/35 text-xs text-rose-200 flex items-center justify-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
               <span>
-                {lang === 'es'
-                  ? 'PIN incorrecto. Verifica los 4 dígitos con el anfitrión.'
-                  : 'Incorrect PIN. Check the 4 digits with the room host.'}
+                {pickLang(lang, {
+                  es: 'PIN incorrecto. Verifica los 4 dígitos con el anfitrión.',
+                  ca: "PIN incorrecte. Verifica els 4 dígits amb l'amfitrió.",
+                  en: 'Incorrect PIN. Check the 4 digits with the room host.',
+                })}
               </span>
             </div>
           )}
@@ -108,7 +141,13 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
               className="h-12 px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-zinc-300 flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
             >
               <LogOut className="w-4 h-4" />
-              <span>{lang === 'es' ? 'Salir' : 'Leave'}</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Salir',
+                  ca: 'Sortir',
+                  en: 'Leave',
+                })}
+              </span>
             </button>
 
             <button
@@ -116,7 +155,13 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
               disabled={pin.length !== 4}
               className="h-12 px-4 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 disabled:opacity-40 text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed transition-all shadow-[0_8px_24px_rgba(145,70,255,0.34)]"
             >
-              <span>{lang === 'es' ? 'Desbloquear' : 'Unlock'}</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Desbloquear',
+                  ca: 'Desbloquejar',
+                  en: 'Unlock',
+                })}
+              </span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

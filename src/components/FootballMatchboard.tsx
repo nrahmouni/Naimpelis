@@ -23,6 +23,7 @@ import type {
   SportsMatch,
 } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
 import { buildChannelFavId } from '../utils/storage';
 import { LiveMatchCenter } from './LiveMatchCenter';
 
@@ -43,6 +44,7 @@ type StatusTab = 'all' | 'live' | 'upcoming' | 'finished';
 function formatOffsetDateKey(dayOffset: number): {
   dateKey: string;
   labelEs: string;
+  labelCa: string;
   labelEn: string;
 } {
   const d = new Date();
@@ -51,15 +53,20 @@ function formatOffsetDateKey(dayOffset: number): {
     .format(d)
     .replace(/-/g, '');
   if (dayOffset === 0) {
-    return { dateKey, labelEs: 'Hoy', labelEn: 'Today' };
+    return { dateKey, labelEs: 'Hoy', labelCa: 'Avui', labelEn: 'Today' };
   }
   if (dayOffset === -1) {
-    return { dateKey, labelEs: 'Ayer', labelEn: 'Yesterday' };
+    return { dateKey, labelEs: 'Ayer', labelCa: 'Ahir', labelEn: 'Yesterday' };
   }
   if (dayOffset === 1) {
-    return { dateKey, labelEs: 'Mañana', labelEn: 'Tomorrow' };
+    return { dateKey, labelEs: 'Mañana', labelCa: 'Demà', labelEn: 'Tomorrow' };
   }
   const shortEs = new Intl.DateTimeFormat('es-ES', {
+    timeZone: 'Europe/Madrid',
+    day: '2-digit',
+    month: 'short',
+  }).format(d);
+  const shortCa = new Intl.DateTimeFormat('ca-ES', {
     timeZone: 'Europe/Madrid',
     day: '2-digit',
     month: 'short',
@@ -69,16 +76,19 @@ function formatOffsetDateKey(dayOffset: number): {
     day: '2-digit',
     month: 'short',
   }).format(d);
-  return { dateKey, labelEs: shortEs, labelEn: shortEn };
+  return { dateKey, labelEs: shortEs, labelCa: shortCa, labelEn: shortEn };
 }
 
-function toSportsMatch(item: FootballMatchboardItem): SportsMatch {
+function toSportsMatch(item: FootballMatchboardItem, lang: AppLanguage): SportsMatch {
   return {
     id: item.id,
     title: `${item.homeTeam} vs ${item.awayTeam}`,
     competition: item.groupTitle,
     sport: 'soccer',
-    time: item.statusState === 'live' ? item.statusLabel || 'EN DIRECTO' : item.kickoffTime,
+    time:
+      item.statusState === 'live'
+        ? item.statusLabel || pickLang(lang, { es: 'EN DIRECTO', ca: 'EN DIRECTE', en: 'LIVE' })
+        : item.kickoffTime,
     isLive: item.statusState === 'live',
     is247Channel: false,
     channels: item.channels,
@@ -174,6 +184,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
 
   const activeDateInfo = useMemo(() => formatOffsetDateKey(dayOffset), [dayOffset]);
+  const activeDateLabel = pickLang(lang, {
+    es: activeDateInfo.labelEs,
+    ca: activeDateInfo.labelCa,
+    en: activeDateInfo.labelEn,
+  });
 
   const fetchBoard = useCallback(
     async (silent = false) => {
@@ -247,7 +262,6 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     [activeDateInfo.dateKey, detailsMap]
   );
 
-  // Auto-poll live match details every 15s while user has a live match expanded
   const expandedMatchObj = useMemo(
     () => matches.find((m) => m.id === expandedMatchId) || null,
     [matches, expandedMatchId]
@@ -342,7 +356,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     setExpandedMatchId(item.id);
     loadMatchDetails(item, true);
     if (item.channels.length > 0) {
-      onPlaySportsMatch(toSportsMatch(item), 0);
+      onPlaySportsMatch(toSportsMatch(item, lang), 0);
     }
   };
 
@@ -354,20 +368,33 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           <div className="flex items-center gap-3 min-w-0 relative z-10">
             <div className="px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shrink-0">
               <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-              <span>{featuredLiveMatch.statusState === 'live' ? featuredLiveMatch.statusLabel || 'EN VIVO' : featuredLiveMatch.kickoffTime}</span>
+              <span>
+                {featuredLiveMatch.statusState === 'live'
+                  ? featuredLiveMatch.statusLabel ||
+                    pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE' })
+                  : featuredLiveMatch.kickoffTime}
+              </span>
             </div>
             <div className="min-w-0">
               <div className="text-[11px] text-zinc-400 truncate">
                 {featuredLiveMatch.groupTitle}
               </div>
               <div className="font-display font-bold text-sm sm:text-base text-white truncate flex items-center gap-2">
-                <TeamCrestImg src={featuredLiveMatch.homeLogo} shortCode={featuredLiveMatch.homeShort} alt={featuredLiveMatch.homeTeam} />
+                <TeamCrestImg
+                  src={featuredLiveMatch.homeLogo}
+                  shortCode={featuredLiveMatch.homeShort}
+                  alt={featuredLiveMatch.homeTeam}
+                />
                 <span className="truncate">{featuredLiveMatch.homeTeam}</span>
                 <span className="font-mono text-[#FFBD0F] tabular-nums shrink-0">
                   {featuredLiveMatch.homeScore} - {featuredLiveMatch.awayScore}
                 </span>
                 <span className="truncate">{featuredLiveMatch.awayTeam}</span>
-                <TeamCrestImg src={featuredLiveMatch.awayLogo} shortCode={featuredLiveMatch.awayShort} alt={featuredLiveMatch.awayTeam} />
+                <TeamCrestImg
+                  src={featuredLiveMatch.awayLogo}
+                  shortCode={featuredLiveMatch.awayShort}
+                  alt={featuredLiveMatch.awayTeam}
+                />
               </div>
             </div>
           </div>
@@ -376,19 +403,25 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             <button
               type="button"
               onClick={() => handleToggleExpand(featuredLiveMatch)}
-              className="min-h-[42px] px-3.5 rounded-2xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-semibold text-white cursor-pointer transition-all active:scale-95"
+              className="min-h-[42px] px-3.5 rounded-2xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-semibold text-white cursor-pointer transition-all active:scale-95 whitespace-nowrap"
             >
-              {lang === 'es' ? 'Ver Estadísticas y XI' : 'Stats & Lineups'}
+              {pickLang(lang, {
+                es: 'Ver Estadísticas y XI',
+                ca: 'Estadístiques i XI',
+                en: 'Stats & Lineups',
+              })}
             </button>
             {featuredLiveMatch.channels.length > 0 && (
               <button
                 type="button"
                 disabled={Boolean(loadingItemId)}
                 onClick={(e) => handleQuickPlayTv(e, featuredLiveMatch)}
-                className="min-h-[42px] px-4 rounded-2xl bg-[#FFBD0F] hover:bg-amber-300 text-[#11131A] text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-[0_6px_18px_rgba(255,189,15,0.28)]"
+                className="min-h-[42px] px-4 rounded-2xl bg-[#FFBD0F] hover:bg-amber-300 text-[#11131A] text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-[0_6px_18px_rgba(255,189,15,0.28)] whitespace-nowrap"
               >
                 <Play className="w-3.5 h-3.5 fill-current" />
-                <span>{lang === 'es' ? 'Ver Partido' : 'Watch Live'}</span>
+                <span>
+                  {pickLang(lang, { es: 'Ver Partido', ca: 'Veure Partit', en: 'Watch Live' })}
+                </span>
               </button>
             )}
           </div>
@@ -398,7 +431,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
       {/* Top Toolbar: Status Filter Buttons + Day Switcher + Search */}
       <div className="p-3 sm:p-4 bg-[#171A23] border-b border-white/[0.07] space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* Status Filter Buttons: Todas | En vivo (N) | Próximos | Terminados */}
+          {/* Status Filter Buttons */}
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
             <button
               type="button"
@@ -412,7 +445,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                   : 'bg-[#2A2F3D] hover:bg-[#343A4B] text-zinc-300'
               }`}
             >
-              {lang === 'es' ? `Todas (${matches.length})` : `All (${matches.length})`}
+              {pickLang(lang, {
+                es: `Todas (${matches.length})`,
+                ca: `Tots (${matches.length})`,
+                en: `All (${matches.length})`,
+              })}
             </button>
 
             <button
@@ -429,11 +466,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             >
               <Radio className="w-3.5 h-3.5 shrink-0" />
               <span>
-                {lang === 'ca'
-                  ? `En directe (${liveCount})`
-                  : lang === 'es'
-                  ? `En vivo (${liveCount})`
-                  : `Live (${liveCount})`}
+                {pickLang(lang, {
+                  es: `En vivo (${liveCount})`,
+                  ca: `En directe (${liveCount})`,
+                  en: `Live (${liveCount})`,
+                })}
               </span>
             </button>
 
@@ -449,7 +486,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                   : 'bg-[#2A2F3D] hover:bg-[#343A4B] text-zinc-300'
               }`}
             >
-              {lang === 'es' ? `Próximos (${upcomingCount})` : `Upcoming (${upcomingCount})`}
+              {pickLang(lang, {
+                es: `Próximos (${upcomingCount})`,
+                ca: `Pròxims (${upcomingCount})`,
+                en: `Upcoming (${upcomingCount})`,
+              })}
             </button>
 
             <button
@@ -464,11 +505,15 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                   : 'bg-[#2A2F3D] hover:bg-[#343A4B] text-zinc-300'
               }`}
             >
-              {lang === 'es' ? `Terminados (${finishedCount})` : `Finished (${finishedCount})`}
+              {pickLang(lang, {
+                es: `Terminados (${finishedCount})`,
+                ca: `Finalitzats (${finishedCount})`,
+                en: `Finished (${finishedCount})`,
+              })}
             </button>
           </div>
 
-          {/* Date Navigation (Ayer / Hoy / Mañana) + Refresh */}
+          {/* Date Navigation + Refresh */}
           <div className="flex items-center gap-1.5 ml-auto">
             <div className="inline-flex items-center rounded-lg bg-[#242833] border border-white/[0.07]">
               <button
@@ -478,7 +523,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                   setDayOffset((d) => Math.max(-2, d - 1));
                   setStatusTab('all');
                 }}
-                aria-label="Día anterior"
+                aria-label={pickLang(lang, {
+                  es: 'Día anterior',
+                  ca: 'Dia anterior',
+                  en: 'Previous day',
+                })}
                 className="min-w-[38px] min-h-[38px] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
               >
                 <ChevronLeft className="w-4 h-4" />
@@ -491,7 +540,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                 }}
                 className="px-2.5 min-h-[38px] text-xs font-semibold text-white whitespace-nowrap cursor-pointer"
               >
-                {lang === 'es' ? activeDateInfo.labelEs : activeDateInfo.labelEn}
+                {activeDateLabel}
               </button>
               <button
                 type="button"
@@ -500,7 +549,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                   setDayOffset((d) => Math.min(2, d + 1));
                   setStatusTab('all');
                 }}
-                aria-label="Día siguiente"
+                aria-label={pickLang(lang, {
+                  es: 'Día siguiente',
+                  ca: 'Dia següent',
+                  en: 'Next day',
+                })}
                 className="min-w-[38px] min-h-[38px] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
               >
                 <ChevronRight className="w-4 h-4" />
@@ -513,7 +566,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                 triggerHaptic('light');
                 fetchBoard(false);
               }}
-              aria-label="Actualizar marcadores y señales"
+              aria-label={pickLang(lang, {
+                es: 'Actualizar marcadores y señales',
+                ca: 'Actualitzar marcadors i senyals',
+                en: 'Refresh scores and streams',
+              })}
               className="min-w-[38px] min-h-[38px] rounded-lg bg-[#242833] hover:bg-[#2E3442] border border-white/[0.07] flex items-center justify-center text-zinc-200 cursor-pointer transition-colors"
             >
               <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#FFBD0F]' : ''}`} />
@@ -528,18 +585,22 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             type="text"
             value={searchQuery}
             onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder={
-              lang === 'es'
-                ? 'Buscar selección, club o liga (España, Real Madrid, Champions, LaLiga...)'
-                : 'Search national team, club or league...'
-            }
+            placeholder={pickLang(lang, {
+              es: 'Buscar selección, club o liga (España, Real Madrid, Champions, LaLiga...)',
+              ca: 'Cercar selecció, club o lliga (Espanya, Barça, Champions, LaLiga...)',
+              en: 'Search national team, club or league...',
+            })}
             className="w-full h-10 pl-10 pr-9 rounded-xl bg-[#242833] border border-white/[0.07] focus:border-[#FFBD0F]/60 text-sm text-white placeholder:text-zinc-400 outline-none transition-colors"
           />
           {searchQuery && (
             <button
               type="button"
               onClick={() => onSearchQueryChange('')}
-              aria-label="Limpiar búsqueda"
+              aria-label={pickLang(lang, {
+                es: 'Limpiar búsqueda',
+                ca: 'Netejar cerca',
+                en: 'Clear search',
+              })}
               className="w-9 h-9 absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -569,12 +630,16 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         <div className="p-8 text-center bg-[#18181B] space-y-3">
           <p className="text-sm text-zinc-300 font-medium">
             {statusTab === 'live'
-              ? lang === 'es'
-                ? 'No hay partidos en juego en este preciso instante.'
-                : 'No matches are currently in play right now.'
-              : lang === 'es'
-              ? 'No se encontraron partidos con ese filtro.'
-              : 'No matches found for this filter.'}
+              ? pickLang(lang, {
+                  es: 'No hay partidos en juego en este preciso instante.',
+                  ca: 'No hi ha partits en joc en aquest precís instant.',
+                  en: 'No matches are currently in play right now.',
+                })
+              : pickLang(lang, {
+                  es: 'No se encontraron partidos con ese filtro.',
+                  ca: 'No s’han trobat partits amb aquest filtre.',
+                  en: 'No matches found for this filter.',
+                })}
           </p>
           {statusTab !== 'all' && matches.length > 0 && (
             <button
@@ -582,9 +647,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
               onClick={() => setStatusTab('all')}
               className="min-h-[40px] px-4 rounded-lg bg-[#FFBD0F] text-[#141720] text-xs font-bold cursor-pointer"
             >
-              {lang === 'es'
-                ? `Ver todos los partidos de ${activeDateInfo.labelEs.toLowerCase()} (${matches.length})`
-                : `View all matches (${matches.length})`}
+              {pickLang(lang, {
+                es: `Ver todos los partidos de ${activeDateInfo.labelEs.toLowerCase()} (${matches.length})`,
+                ca: `Veure tots els partits d’${activeDateInfo.labelCa.toLowerCase()} (${matches.length})`,
+                en: `View all matches (${matches.length})`,
+              })}
             </button>
           )}
         </div>
@@ -604,7 +671,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
               <div className="divide-y divide-white/[0.06]">
                 {group.items.map((item) => {
                   const isExpanded = expandedMatchId === item.id;
-                  const sportsMatchObj = toSportsMatch(item);
+                  const sportsMatchObj = toSportsMatch(item, lang);
                   const primaryCh = item.channels[0];
                   const favId = primaryCh
                     ? buildChannelFavId(primaryCh.sourceUrl, `${item.homeTeam} vs ${item.awayTeam}`)
@@ -619,16 +686,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                   return (
                     <div key={item.id} className="bg-[#242833]">
                       <div
-                        role="button"
-                        tabIndex={0}
-                        onClick={() => handleToggleExpand(item)}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter' || e.key === ' ') {
-                            e.preventDefault();
-                            handleToggleExpand(item);
-                          }
-                        }}
-                        className={`px-3 sm:px-4 py-2.5 min-h-[68px] flex items-center gap-3 cursor-pointer transition-colors ${
+                        className={`relative px-3 sm:px-4 py-2.5 min-h-[68px] flex items-center gap-3 transition-colors ${
                           isPlayingThisMatch
                             ? 'bg-[#2C3242]'
                             : isExpanded
@@ -636,8 +694,17 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                             : 'hover:bg-[#2A2F3D]'
                         }`}
                       >
+                        {/* Non-nested semantic full-row trigger */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleExpand(item)}
+                          aria-expanded={isExpanded}
+                          aria-label={`${item.homeTeam} vs ${item.awayTeam} (${item.kickoffTime})`}
+                          className="absolute inset-0 z-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#FFBD0F]"
+                        />
+
                         {/* Left Column: Kickoff HH:MM + Live Minute / Status */}
-                        <div className="w-12 sm:w-14 shrink-0 flex flex-col items-center justify-center text-center">
+                        <div className="relative z-[1] pointer-events-none w-12 sm:w-14 shrink-0 flex flex-col items-center justify-center text-center">
                           <span className="text-xs font-mono tabular-nums text-zinc-300">
                             {item.kickoffTime}
                           </span>
@@ -653,7 +720,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                         </div>
 
                         {/* Middle Column: Flags / Club Crests + Home & Away Team Names */}
-                        <div className="flex-1 min-w-0 space-y-2">
+                        <div className="relative z-[1] pointer-events-none flex-1 min-w-0 space-y-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <TeamCrestImg
                               src={item.homeLogo}
@@ -666,7 +733,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                             {(item.homeRedCards || 0) > 0 && (
                               <span
                                 className="w-2 h-3 rounded-[2px] bg-rose-500 shrink-0"
-                                title="Tarjeta roja"
+                                title={pickLang(lang, {
+                                  es: 'Tarjeta roja',
+                                  ca: 'Targeta vermella',
+                                  en: 'Red card',
+                                })}
                               />
                             )}
                           </div>
@@ -682,14 +753,18 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                             {(item.awayRedCards || 0) > 0 && (
                               <span
                                 className="w-2 h-3 rounded-[2px] bg-rose-500 shrink-0"
-                                title="Tarjeta roja"
+                                title={pickLang(lang, {
+                                  es: 'Tarjeta roja',
+                                  ca: 'Targeta vermella',
+                                  en: 'Red card',
+                                })}
                               />
                             )}
                           </div>
                         </div>
 
                         {/* Score Column (Tabular Numerals) */}
-                        <div className="w-7 shrink-0 flex flex-col items-end justify-center space-y-2 text-right">
+                        <div className="relative z-[1] pointer-events-none w-7 shrink-0 flex flex-col items-end justify-center space-y-2 text-right">
                           <span
                             className={`text-sm font-mono font-bold tabular-nums ${
                               item.statusState === 'live' ? 'text-white' : 'text-zinc-200'
@@ -707,18 +782,22 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                         </div>
 
                         {/* Right Action Column: Direct TV Play Button + Favorite Star */}
-                        <div className="shrink-0 flex flex-col items-center justify-center -my-1">
+                        <div className="relative z-10 pointer-events-auto shrink-0 flex flex-col items-center justify-center -my-1">
                           {item.channels.length > 0 && (
                             <button
                               type="button"
                               disabled={Boolean(loadingItemId)}
                               onClick={(e) => handleQuickPlayTv(e, item)}
-                              title={
-                                lang === 'es'
-                                  ? `Ver señal en directo: ${item.homeTeam} vs ${item.awayTeam}`
-                                  : `Watch live: ${item.homeTeam} vs ${item.awayTeam}`
-                              }
-                              aria-label={`Ver en directo ${item.homeTeam} contra ${item.awayTeam}`}
+                              title={pickLang(lang, {
+                                es: `Ver señal en directo: ${item.homeTeam} vs ${item.awayTeam}`,
+                                ca: `Veure senyal en directe: ${item.homeTeam} vs ${item.awayTeam}`,
+                                en: `Watch live: ${item.homeTeam} vs ${item.awayTeam}`,
+                              })}
+                              aria-label={pickLang(lang, {
+                                es: `Ver en directo ${item.homeTeam} contra ${item.awayTeam}`,
+                                ca: `Veure en directe ${item.homeTeam} contra ${item.awayTeam}`,
+                                en: `Watch live ${item.homeTeam} versus ${item.awayTeam}`,
+                              })}
                               className="min-w-[44px] min-h-[34px] flex items-center justify-center text-[#FFBD0F] hover:text-amber-300 cursor-pointer transition-transform active:scale-95"
                             >
                               {isExtracting ? (
@@ -741,13 +820,23 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                 onToggleChannelFavorite({
                                   favId,
                                   title: `${item.homeTeam} vs ${item.awayTeam}`,
-                                  channelLabel: primaryCh.label || 'Señal Principal',
+                                  channelLabel:
+                                    primaryCh.label ||
+                                    pickLang(lang, {
+                                      es: 'Señal Principal',
+                                      ca: 'Senyal Principal',
+                                      en: 'Main Feed',
+                                    }),
                                   channelUrl: primaryCh.sourceUrl,
                                   competition: item.groupTitle,
                                   sport: 'soccer',
                                 });
                               }}
-                              aria-label="Guardar partido en favoritos"
+                              aria-label={pickLang(lang, {
+                                es: 'Guardar partido en favoritos',
+                                ca: 'Desar partit a preferits',
+                                en: 'Save match to favorites',
+                              })}
                               className="min-w-[44px] min-h-[32px] flex items-center justify-center text-zinc-400 hover:text-[#FFBD0F] cursor-pointer"
                             >
                               <Star
@@ -760,7 +849,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                         </div>
                       </div>
 
-                      {/* Expanded Panel: Direct Broadcast Servers + Full Sofascore-Grade LiveMatchCenter */}
+                      {/* Expanded Panel: Direct Broadcast Servers + LiveMatchCenter */}
                       <AnimatePresence initial={false}>
                         {isExpanded && (
                           <motion.div
@@ -775,16 +864,24 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                               <div className="space-y-2">
                                 <div className="flex items-center justify-between gap-2 text-xs text-zinc-400">
                                   <span className="font-semibold text-zinc-200">
-                                    {lang === 'es'
-                                      ? 'Señales en Directo Disponibles'
-                                      : 'Available Live Signals'}
+                                    {pickLang(lang, {
+                                      es: 'Señales en Directo Disponibles',
+                                      ca: 'Senyals en Directe Disponibles',
+                                      en: 'Available Live Signals',
+                                    })}
                                   </span>
                                   <button
                                     type="button"
                                     onClick={() => setExpandedMatchId(null)}
                                     className="inline-flex items-center gap-1 text-zinc-400 hover:text-white cursor-pointer"
                                   >
-                                    <span>{lang === 'es' ? 'Cerrar' : 'Close'}</span>
+                                    <span>
+                                      {pickLang(lang, {
+                                        es: 'Cerrar',
+                                        ca: 'Tancar',
+                                        en: 'Close',
+                                      })}
+                                    </span>
                                     <ChevronDown className="w-3.5 h-3.5 rotate-180" />
                                   </button>
                                 </div>
@@ -793,6 +890,15 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                   <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
                                     {item.channels.map((ch, idx) => {
                                       const isActiveServer = activeVideoRawUrl === ch.sourceUrl;
+                                      const latency = ch.health?.latencyMs;
+                                      const statusColor =
+                                        ch.health?.status === 'up'
+                                          ? 'bg-emerald-400'
+                                          : ch.health?.status === 'degraded'
+                                          ? 'bg-amber-400'
+                                          : ch.health?.status === 'down'
+                                          ? 'bg-rose-500'
+                                          : '';
                                       return (
                                         <div
                                           key={`${item.id}-${ch.id}-${idx}`}
@@ -813,6 +919,14 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                           >
                                             <Play className="w-3 h-3 fill-current" />
                                             <span>{ch.label}</span>
+                                            {statusColor && (
+                                              <span className="inline-flex items-center gap-1 text-[10px] font-mono opacity-80">
+                                                <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
+                                                {typeof latency === 'number' && latency > 0
+                                                  ? `${latency}ms`
+                                                  : null}
+                                              </span>
+                                            )}
                                           </button>
 
                                           {activeVideoRawUrl &&
@@ -824,8 +938,16 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                                   triggerHaptic('light');
                                                   onPlaySecondaryChannel(sportsMatchObj, idx);
                                                 }}
-                                                title="Abrir en segunda pantalla Multiview"
-                                                aria-label="Abrir en Multiview"
+                                                title={pickLang(lang, {
+                                                  es: 'Abrir en segunda pantalla Multiview',
+                                                  ca: 'Obrir en segona pantalla Multiview',
+                                                  en: 'Open in Multiview second screen',
+                                                })}
+                                                aria-label={pickLang(lang, {
+                                                  es: 'Abrir en Multiview',
+                                                  ca: 'Obrir en Multiview',
+                                                  en: 'Open in Multiview',
+                                                })}
                                                 className="min-h-[42px] px-2.5 bg-[#1D212B] hover:bg-[#2A3040] border-l border-white/[0.08] text-sky-300 flex items-center justify-center cursor-pointer"
                                               >
                                                 <Columns2 className="w-3.5 h-3.5" />
@@ -838,16 +960,22 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                 ) : (
                                   <div className="px-3.5 py-2.5 rounded-xl bg-[#1E222D] border border-white/[0.07] text-xs text-zinc-300">
                                     {item.statusState === 'finished'
-                                      ? lang === 'es'
-                                        ? 'Encuentro finalizado.'
-                                        : 'Match finished.'
+                                      ? pickLang(lang, {
+                                          es: 'Encuentro finalizado.',
+                                          ca: 'Partit finalitzat.',
+                                          en: 'Match finished.',
+                                        })
                                       : item.statusState === 'upcoming'
-                                      ? lang === 'es'
-                                        ? `Las señales dedicadas de este partido se activarán minutos antes del inicio (${item.kickoffTime}). También puedes sintonizar beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+ o DAZN arriba.`
-                                        : `Dedicated live streams open shortly before kickoff (${item.kickoffTime}).`
-                                      : lang === 'es'
-                                      ? 'Sin enlace dedicado para este encuentro; sintoniza arriba el canal oficial en vivo (beIN SPORTS, ESPN 1–7, DSports, TNT Sports, Movistar+ o DAZN).'
-                                      : 'Check the live sports channels bar above (beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+, DAZN).'}
+                                      ? pickLang(lang, {
+                                          es: `Las señales dedicadas de este partido se activarán minutos antes del inicio (${item.kickoffTime}). También puedes sintonizar beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+ o DAZN arriba.`,
+                                          ca: `Els senyals dedicats d’aquest partit s’activaran minuts abans de l’inici (${item.kickoffTime}). També pots sintonitzar beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+ o DAZN a dalt.`,
+                                          en: `Dedicated live streams open shortly before kickoff (${item.kickoffTime}).`,
+                                        })
+                                      : pickLang(lang, {
+                                          es: 'Sin enlace dedicado para este encuentro; sintoniza arriba el canal oficial en vivo (beIN SPORTS, ESPN 1–7, DSports, TNT Sports, Movistar+ o DAZN).',
+                                          ca: 'Sense enllaç dedicat per a aquest partit; sintonitza a dalt el canal oficial en directe (beIN SPORTS, ESPN 1–7, DSports, TNT Sports, Movistar+ o DAZN).',
+                                          en: 'Check the live sports channels bar above (beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+, DAZN).',
+                                        })}
                                   </div>
                                 )}
                               </div>
@@ -887,3 +1015,4 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     </section>
   );
 };
+

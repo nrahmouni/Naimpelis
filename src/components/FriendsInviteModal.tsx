@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Users,
   UserPlus,
@@ -25,6 +25,8 @@ import {
 import { deriveFriendCode } from '../utils/storage';
 import { buildShortInviteUrl } from '../utils/shortLink';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
+import { useFocusTrap } from '../utils/useFocusTrap';
 
 interface FriendsInviteModalProps {
   isOpen: boolean;
@@ -61,7 +63,6 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
   currentUser,
   roomId,
   roomName,
-  activeMediaTitle,
   participants,
   savedFriends,
   onlineUsers,
@@ -77,6 +78,9 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
   const [copiedRoomLink, setCopiedRoomLink] = useState(false);
   const [showQr, setShowQr] = useState(false);
   const [invitedIds, setInvitedIds] = useState<Record<string, boolean>>({});
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useFocusTrap(isOpen, onClose, dialogRef);
 
   if (!isOpen) return null;
 
@@ -104,7 +108,6 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     );
   };
 
-  // Discoverable users: in current room or online in the app right now (excluding self and TVs)
   const discoverableUsers = (() => {
     const map = new Map<
       string,
@@ -167,7 +170,11 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
       try {
         await navigator.share({
           title: `${roomName} — NAIM CINE`,
-          text: `Únete a mi sala en directo (${roomName}):`,
+          text: pickLang(lang, {
+            es: `Únete a mi sala en directo (${roomName}):`,
+            ca: `Uneix-te a la meva sala en directe (${roomName}):`,
+            en: `Join my live watch room (${roomName}):`,
+          }),
           url: inviteUrl,
         });
         return;
@@ -190,7 +197,6 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     const rawCode = manualCodeInput.trim().replace(/^#/, '').toUpperCase();
     if (!rawName && !rawCode) return;
 
-    // Check if there is an online user matching that code or name
     const matchedOnline = onlineUsers.find(
       (u) =>
         (rawCode && u.friendCode.toUpperCase() === rawCode) ||
@@ -206,10 +212,14 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
         friendCode: matchedOnline.friendCode,
       });
     } else {
-      const generatedId = rawCode ? `code-${rawCode}` : `friend-${rawName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
+      const generatedId = rawCode
+        ? `code-${rawCode}`
+        : `friend-${rawName.toLowerCase().replace(/[^a-z0-9]/g, '')}`;
       onAddFriend({
         friendId: generatedId,
-        name: rawName || `Amigo #${rawCode}`,
+        name:
+          rawName ||
+          `${pickLang(lang, { es: 'Amigo', ca: 'Amic', en: 'Friend' })} #${rawCode}`,
         avatar: '🎬',
         color: '#9146FF',
         friendCode: rawCode || deriveFriendCode(generatedId),
@@ -238,13 +248,19 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Amigos e Invitaciones Directas"
+      aria-label={pickLang(lang, {
+        es: 'Amigos e Invitaciones Directas',
+        ca: 'Amics i Invitacions Directes',
+        en: 'Friends & Direct Invites',
+      })}
       onClick={onClose}
       className="fixed inset-0 z-[75] bg-black/80 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 animate-fade-in"
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-[540px] max-h-[90dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.12] shadow-[0_30px_100px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden animate-sheet-up"
+        className="w-full sm:max-w-[540px] max-h-[90dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.12] shadow-[0_30px_100px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden animate-sheet-up outline-none"
       >
         {/* Mobile grab handle */}
         <div className="sm:hidden pt-2.5 flex justify-center">
@@ -259,12 +275,18 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
             </div>
             <div className="min-w-0">
               <h2 className="font-display font-bold text-base sm:text-lg text-white truncate">
-                {lang === 'es' ? 'Amigos e Invitación Directa' : 'Friends & Direct Invite'}
+                {pickLang(lang, {
+                  es: 'Amigos e Invitación Directa',
+                  ca: 'Amics i Invitació Directa',
+                  en: 'Friends & Direct Invite',
+                })}
               </h2>
               <p className="text-xs text-zinc-400 truncate">
-                {lang === 'es'
-                  ? `Invita sin salir de la app a ${roomName}`
-                  : `Invite friends directly to ${roomName}`}
+                {pickLang(lang, {
+                  es: `Invita sin salir de la app a ${roomName}`,
+                  ca: `Convida sense sortir de l’app a ${roomName}`,
+                  en: `Invite friends directly to ${roomName}`,
+                })}
               </p>
             </div>
           </div>
@@ -272,8 +294,8 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Cerrar"
-            className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
+            aria-label={pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}
+            className="w-10 h-10 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
@@ -281,7 +303,6 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-5 custom-scrollbar">
-          {/* Live Feedback Banner */}
           {inviteSentFeedback && (
             <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/35 text-xs font-semibold text-emerald-200 flex items-center gap-2 animate-fade-in">
               <Check className="w-4 h-4 text-emerald-400 shrink-0" />
@@ -294,7 +315,11 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
             <div className="flex items-center justify-between gap-2 flex-wrap">
               <div>
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-zinc-400">
-                  {lang === 'es' ? 'Tu perfil y código de amigo' : 'Your Friend Code'}
+                  {pickLang(lang, {
+                    es: 'Tu perfil y código de amigo',
+                    ca: 'El teu perfil i codi d’amic',
+                    en: 'Your Friend Code',
+                  })}
                 </span>
                 <div className="flex items-center gap-2 mt-0.5">
                   <span className="text-sm font-bold text-white">{currentUser.name}</span>
@@ -313,12 +338,16 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                   {copiedMyCode ? (
                     <>
                       <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span>Copiado</span>
+                      <span>
+                        {pickLang(lang, { es: 'Copiado', ca: 'Copiat', en: 'Copied' })}
+                      </span>
                     </>
                   ) : (
                     <>
                       <Copy className="w-3.5 h-3.5 text-zinc-400" />
-                      <span>Copiar #{myFriendCode}</span>
+                      <span>
+                        {pickLang(lang, { es: 'Copiar', ca: 'Copiar', en: 'Copy' })} #{myFriendCode}
+                      </span>
                     </>
                   )}
                 </button>
@@ -326,8 +355,17 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowQr((v) => !v)}
+                  aria-label={pickLang(lang, {
+                    es: 'Mostrar código QR de la sala',
+                    ca: 'Mostrar codi QR de la sala',
+                    en: 'Show room QR code',
+                  })}
                   className="w-9 h-9 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-zinc-300 flex items-center justify-center cursor-pointer"
-                  title="Mostrar código QR de la sala"
+                  title={pickLang(lang, {
+                    es: 'Mostrar código QR de la sala',
+                    ca: 'Mostrar codi QR de la sala',
+                    en: 'Show room QR code',
+                  })}
                 >
                   <QrCode className="w-4 h-4" />
                 </button>
@@ -346,7 +384,11 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                   />
                 </div>
                 <span className="text-[11px] text-zinc-400">
-                  Escanea para entrar directo a {roomName}
+                  {pickLang(lang, {
+                    es: `Escanea para entrar directo a ${roomName}`,
+                    ca: `Escaneja per entrar directe a ${roomName}`,
+                    en: `Scan to join ${roomName} directly`,
+                  })}
                 </span>
               </div>
             )}
@@ -359,25 +401,47 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
               {copiedRoomLink ? (
                 <>
                   <Check className="w-4 h-4 text-emerald-400" />
-                  <span>¡Enlace de sala copiado al portapapeles!</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: '¡Enlace de sala copiado al portapapeles!',
+                      ca: 'Enllaç de sala copiat al porta-retalls!',
+                      en: 'Room link copied to clipboard!',
+                    })}
+                  </span>
                 </>
               ) : (
                 <>
                   <Share2 className="w-4 h-4 text-[#BF94FF]" />
-                  <span>Compartir enlace de la sala (WhatsApp / Copiar)</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Compartir enlace de la sala (WhatsApp / Copiar)',
+                      ca: 'Compartir enllaç de la sala (WhatsApp / Copiar)',
+                      en: 'Share room link (WhatsApp / Copy)',
+                    })}
+                  </span>
                 </>
               )}
             </button>
           </div>
 
-          {/* 2. Saved Friends List (1-Tap Direct In-App Invite) */}
+          {/* 2. Saved Friends List */}
           <div className="space-y-2.5">
             <div className="flex items-center justify-between px-0.5">
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-                <span>Mis Amigos Guardados ({savedFriends.length})</span>
+                <span>
+                  {pickLang(lang, {
+                    es: `Mis Amigos Guardados (${savedFriends.length})`,
+                    ca: `Els Meus Amics Desats (${savedFriends.length})`,
+                    en: `Saved Friends (${savedFriends.length})`,
+                  })}
+                </span>
               </h3>
               <span className="text-[11px] text-emerald-400 font-medium">
-                Invitación instantánea en la app
+                {pickLang(lang, {
+                  es: 'Invitación instantánea en la app',
+                  ca: 'Invitació instantània a l’app',
+                  en: 'Instant in-app invite',
+                })}
               </span>
             </div>
 
@@ -385,10 +449,18 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
               <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/[0.06] text-center space-y-1.5">
                 <UserPlus className="w-6 h-6 text-zinc-500 mx-auto" />
                 <p className="text-xs font-semibold text-zinc-200">
-                  Aún no has guardado amigos en tu lista
+                  {pickLang(lang, {
+                    es: 'Aún no has guardado amigos en tu lista',
+                    ca: 'Encara no has desat amics a la teva llista',
+                    en: 'No saved friends yet',
+                  })}
                 </p>
                 <p className="text-[11px] text-zinc-400 max-w-xs mx-auto">
-                  Añade a las personas que están en tu sala o escribe su nombre / código abajo para invitarlos siempre con 1 toque sin salir de la app.
+                  {pickLang(lang, {
+                    es: 'Añade a las personas que están en tu sala o escribe su nombre / código abajo para invitarlos siempre con 1 toque sin salir de la app.',
+                    ca: 'Afegeix les persones de la sala o escriu el seu nom / codi a sota per convidar-les amb 1 toc sense sortir de l’app.',
+                    en: 'Add people in your room or enter their name / code below to invite them in 1 tap.',
+                  })}
                 </p>
               </div>
             ) : (
@@ -421,9 +493,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                           </div>
                           <span
                             className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#18181B] ${
-                              onlineInfo || isInSameRoom
-                                ? 'bg-emerald-400'
-                                : 'bg-zinc-600'
+                              onlineInfo || isInSameRoom ? 'bg-emerald-400' : 'bg-zinc-600'
                             }`}
                           />
                         </div>
@@ -443,20 +513,40 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                           <div className="text-[11px] truncate mt-0.5">
                             {isInSameRoom ? (
                               <span className="text-emerald-400 font-semibold">
-                                Ya está contigo en esta sala
+                                {pickLang(lang, {
+                                  es: 'Ya está contigo en esta sala',
+                                  ca: 'Ja és amb tu en aquesta sala',
+                                  en: 'Already in this room with you',
+                                })}
                               </span>
                             ) : onlineInfo ? (
                               <span className="text-emerald-400 font-medium">
-                                En línea en la app
+                                {pickLang(lang, {
+                                  es: 'En línea en la app',
+                                  ca: 'En línia a l’app',
+                                  en: 'Online in app',
+                                })}
                                 {onlineInfo.mediaTitle
-                                  ? ` · Viendo "${onlineInfo.mediaTitle}"`
+                                  ? ` · ${pickLang(lang, {
+                                      es: 'Viendo',
+                                      ca: 'Veient',
+                                      en: 'Watching',
+                                    })} "${onlineInfo.mediaTitle}"`
                                   : onlineInfo.roomName
-                                  ? ` · En ${onlineInfo.roomName}`
+                                  ? ` · ${pickLang(lang, {
+                                      es: 'En',
+                                      ca: 'A',
+                                      en: 'In',
+                                    })} ${onlineInfo.roomName}`
                                   : ''}
                               </span>
                             ) : (
                               <span className="text-zinc-500">
-                                Fuera de la app · Recibirá tu aviso al entrar
+                                {pickLang(lang, {
+                                  es: 'Fuera de la app · Recibirá tu aviso al entrar',
+                                  ca: 'Fora de l’app · Rebrà l’avís en entrar',
+                                  en: 'Offline · Will get notified on return',
+                                })}
                               </span>
                             )}
                           </div>
@@ -483,12 +573,16 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                             {justInvited ? (
                               <>
                                 <Check className="w-3.5 h-3.5" />
-                                <span>Enviada</span>
+                                <span>
+                                  {pickLang(lang, { es: 'Enviada', ca: 'Enviada', en: 'Sent' })}
+                                </span>
                               </>
                             ) : (
                               <>
                                 <Send className="w-3.5 h-3.5" />
-                                <span>Invitar</span>
+                                <span>
+                                  {pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}
+                                </span>
                               </>
                             )}
                           </button>
@@ -508,10 +602,16 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                                 );
                                 onClose();
                               }}
-                              title={`Ir a ${onlineInfo.roomName || 'su sala'}`}
+                              title={pickLang(lang, {
+                                es: `Ir a ${onlineInfo.roomName || 'su sala'}`,
+                                ca: `Anar a ${onlineInfo.roomName || 'la seva sala'}`,
+                                en: `Go to ${onlineInfo.roomName || 'their room'}`,
+                              })}
                               className="min-h-9 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-[11px] font-semibold text-zinc-200 flex items-center gap-1 cursor-pointer"
                             >
-                              <span>Unirme</span>
+                              <span>
+                                {pickLang(lang, { es: 'Unirme', ca: 'Unir-me', en: 'Join' })}
+                              </span>
                               <ArrowRight className="w-3 h-3" />
                             </button>
                           )}
@@ -522,8 +622,16 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                             triggerHaptic('light');
                             onRemoveFriend(friend.friendId);
                           }}
-                          title="Eliminar de amigos"
-                          aria-label="Eliminar de amigos"
+                          title={pickLang(lang, {
+                            es: 'Eliminar de amigos',
+                            ca: 'Eliminar d’amics',
+                            en: 'Remove friend',
+                          })}
+                          aria-label={pickLang(lang, {
+                            es: 'Eliminar de amigos',
+                            ca: 'Eliminar d’amics',
+                            en: 'Remove friend',
+                          })}
                           className="w-8 h-8 rounded-xl hover:bg-rose-500/20 text-zinc-500 hover:text-rose-300 flex items-center justify-center cursor-pointer transition-colors"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
@@ -536,12 +644,18 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
             )}
           </div>
 
-          {/* 3. People in Your Room or Online Right Now (1-Tap Add or Invite) */}
+          {/* 3. People in Your Room or Online Right Now */}
           {discoverableUsers.length > 0 && (
             <div className="space-y-2.5 pt-2 border-t border-white/[0.07]">
               <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-[#BF94FF]" />
-                <span>Personas Conectadas Ahora ({discoverableUsers.length})</span>
+                <span>
+                  {pickLang(lang, {
+                    es: `Personas Conectadas Ahora (${discoverableUsers.length})`,
+                    ca: `Persones Connectades Ara (${discoverableUsers.length})`,
+                    en: `Online Now (${discoverableUsers.length})`,
+                  })}
+                </span>
               </h3>
 
               <div className="space-y-2">
@@ -571,10 +685,22 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                           </div>
                           <div className="text-[11px] text-emerald-400 truncate">
                             {u.inMyRoom
-                              ? 'En tu sala ahora mismo'
+                              ? pickLang(lang, {
+                                  es: 'En tu sala ahora mismo',
+                                  ca: 'A la teva sala ara mateix',
+                                  en: 'In your room right now',
+                                })
                               : u.roomName
-                              ? `Conectado en ${u.roomName}`
-                              : 'Conectado en la app'}
+                              ? pickLang(lang, {
+                                  es: `Conectado en ${u.roomName}`,
+                                  ca: `Connectat a ${u.roomName}`,
+                                  en: `Online in ${u.roomName}`,
+                                })
+                              : pickLang(lang, {
+                                  es: 'Conectado en la app',
+                                  ca: 'Connectat a l’app',
+                                  en: 'Online in app',
+                                })}
                           </div>
                         </div>
                       </div>
@@ -593,14 +719,20 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                             className="min-h-8 px-2.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-[11px] font-bold text-white flex items-center gap-1 cursor-pointer"
                           >
                             <Send className="w-3 h-3" />
-                            <span>{justInvited ? 'Enviada' : 'Invitar'}</span>
+                            <span>
+                              {justInvited
+                                ? pickLang(lang, { es: 'Enviada', ca: 'Enviada', en: 'Sent' })
+                                : pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}
+                            </span>
                           </button>
                         )}
 
                         {alreadyFriend ? (
                           <span className="min-h-8 px-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-[11px] font-semibold text-emerald-300 flex items-center gap-1">
                             <UserCheck className="w-3.5 h-3.5" />
-                            <span>Amigo</span>
+                            <span>
+                              {pickLang(lang, { es: 'Amigo', ca: 'Amic', en: 'Friend' })}
+                            </span>
                           </span>
                         ) : (
                           <button
@@ -618,7 +750,9 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                             className="min-h-8 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/15 text-[11px] font-semibold text-white flex items-center gap-1 cursor-pointer"
                           >
                             <UserPlus className="w-3.5 h-3.5 text-[#BF94FF]" />
-                            <span>+ Guardar</span>
+                            <span>
+                              + {pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
+                            </span>
                           </button>
                         )}
                       </div>
@@ -629,14 +763,20 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
             </div>
           )}
 
-          {/* 4. Add Friend Manually by Name or Friend Code (Single Unified Input) */}
+          {/* 4. Add Friend Manually */}
           <form
             onSubmit={handleManualAddFriend}
             className="p-3 rounded-2xl bg-white/[0.02] border border-white/[0.08] space-y-2"
           >
             <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
               <UserPlus className="w-3.5 h-3.5 text-[#BF94FF]" />
-              <span>Añadir amigo por Nombre o #Código</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Añadir amigo por Nombre o #Código',
+                  ca: 'Afegir amic per Nom o #Codi',
+                  en: 'Add friend by Name or #Code',
+                })}
+              </span>
             </label>
             <div className="flex items-center gap-2">
               <input
@@ -654,7 +794,11 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                     setManualCodeInput('');
                   }
                 }}
-                placeholder="Ej: Carlos o #A8F92B"
+                placeholder={pickLang(lang, {
+                  es: 'Ej: Carlos o #A8F92B',
+                  ca: 'Ex: Marc o #A8F92B',
+                  en: 'e.g. Alex or #A8F92B',
+                })}
                 className="flex-1 h-10 px-3.5 rounded-xl bg-[#26262C] border border-white/10 focus:border-[#9146FF] text-xs text-white placeholder:text-[#ADADB8] outline-none"
               />
               <button
@@ -663,7 +807,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                 className="h-10 px-4 rounded-xl bg-[#9146FF] text-white hover:bg-[#772CE8] disabled:opacity-35 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shrink-0 transition-colors"
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                <span>Guardar</span>
+                <span>{pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}</span>
               </button>
             </div>
           </form>
@@ -675,9 +819,9 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
 
 // ============================================================================
 // GLOBAL FLOATING IN-APP ROOM INVITATION & FRIEND REQUEST BANNER
-// Appears at the top of the screen anywhere in the app (Lobby or inside any room)
 // ============================================================================
 interface GlobalIncomingInviteBannerProps {
+  lang?: AppLanguage;
   invite: IncomingRoomInvite | null;
   friendAddedNotice: IncomingFriendAddedNotice | null;
   isAlreadyFriend?: boolean;
@@ -688,6 +832,7 @@ interface GlobalIncomingInviteBannerProps {
 }
 
 export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProps> = ({
+  lang = 'es',
   invite,
   friendAddedNotice,
   isAlreadyFriend,
@@ -715,11 +860,19 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
               <div className="min-w-0">
                 <div className="flex items-center gap-1.5">
                   <span className="px-2 py-0.5 rounded-full bg-[#9146FF]/25 text-[#BF94FF] text-[10px] font-bold uppercase tracking-wider">
-                    Invitación en Directo
+                    {pickLang(lang, {
+                      es: 'Invitación en Directo',
+                      ca: 'Invitació en Directe',
+                      en: 'Live Invite',
+                    })}
                   </span>
                 </div>
                 <h4 className="text-sm font-bold text-white truncate mt-0.5">
-                  {invite.fromUserName} te invita a su sala
+                  {pickLang(lang, {
+                    es: `${invite.fromUserName} te invita a su sala`,
+                    ca: `${invite.fromUserName} et convida a la seva sala`,
+                    en: `${invite.fromUserName} invited you to a room`,
+                  })}
                 </h4>
                 <p className="text-xs text-zinc-300 truncate">
                   {invite.roomName}
@@ -731,7 +884,11 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
             <button
               type="button"
               onClick={onDismissInvite}
-              aria-label="Cerrar invitación"
+              aria-label={pickLang(lang, {
+                es: 'Cerrar invitación',
+                ca: 'Tancar invitació',
+                en: 'Dismiss invite',
+              })}
               className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.14] text-zinc-400 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
             >
               <X className="w-4 h-4" />
@@ -745,7 +902,13 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
               className="min-h-10 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-[0_8px_24px_rgba(145,70,255,0.4)] cursor-pointer transition-all"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Unirme a la sala</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Unirme a la sala',
+                  ca: 'Unir-me a la sala',
+                  en: 'Join room',
+                })}
+              </span>
             </button>
 
             <button
@@ -753,7 +916,7 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
               onClick={onDismissInvite}
               className="min-h-10 px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-zinc-300 flex items-center justify-center cursor-pointer transition-colors"
             >
-              Ahora no
+              {pickLang(lang, { es: 'Ahora no', ca: 'Ara no', en: 'Not now' })}
             </button>
           </div>
         </div>
@@ -770,10 +933,15 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
             </div>
             <div className="min-w-0">
               <div className="text-xs font-bold text-white truncate">
-                {friendAddedNotice.fromUserName} te añadió como amigo
+                {pickLang(lang, {
+                  es: `${friendAddedNotice.fromUserName} te añadió como amigo`,
+                  ca: `${friendAddedNotice.fromUserName} t’ha afegit com a amic`,
+                  en: `${friendAddedNotice.fromUserName} added you as a friend`,
+                })}
               </div>
               <div className="text-[11px] text-zinc-400 font-mono">
-                Código #{friendAddedNotice.fromFriendCode}
+                {pickLang(lang, { es: 'Código', ca: 'Codi', en: 'Code' })} #
+                {friendAddedNotice.fromFriendCode}
               </div>
             </div>
           </div>
@@ -786,12 +954,15 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
                 className="min-h-8 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[11px] font-bold text-slate-950 flex items-center gap-1 cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                <span>+ Guardar</span>
+                <span>
+                  + {pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
+                </span>
               </button>
             )}
             <button
               type="button"
               onClick={onDismissFriendNotice}
+              aria-label={pickLang(lang, { es: 'Cerrar aviso', ca: 'Tancar avís', en: 'Dismiss' })}
               className="w-7 h-7 rounded-lg bg-white/5 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer"
             >
               <X className="w-3.5 h-3.5" />
@@ -802,3 +973,4 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
     </div>
   );
 };
+

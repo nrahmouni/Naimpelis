@@ -56,6 +56,7 @@ import {
   type VestSubtitleItem,
 } from './server/services/vestMirrorService.ts';
 import { buildSignedApkBuffer } from './server/services/apkBuilderService.ts';
+import { channelHealthMonitor } from './server/services/channelHealthMonitor.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -3047,6 +3048,15 @@ registerOperationalRoutes(app, {
     uptimeSec: Math.round(process.uptime()),
   }),
   getPublicOrigin,
+  refreshChannelHealth: async (force = true) => {
+    const channels = [
+      ...SPANISH_TDT_CHANNELS,
+      ...CATALA_LIVE_CHANNELS,
+      ...getPermanent247SportsMatches(),
+      ...(cachedSportsSchedule?.matches || []),
+    ];
+    await channelHealthMonitor.runSweep(channels, { force });
+  },
 });
 
 registerExpandedCatalogRoutes(app);
@@ -7768,7 +7778,10 @@ async function fetchLiveSportsAgendaFeeds(): Promise<{
 
 app.get('/api/catalog/sports', async (_req, res) => {
   if (cachedSportsSchedule && Date.now() - cachedSportsSchedule.ts < 90 * 1000) {
-    return res.json({ success: true, events: cachedSportsSchedule.matches });
+    return res.json({
+      success: true,
+      events: channelHealthMonitor.prioritizeChannels(cachedSportsSchedule.matches),
+    });
   }
 
   const permanentChannels = getPermanent247SportsMatches();
@@ -7778,7 +7791,10 @@ app.get('/api/catalog/sports', async (_req, res) => {
   const combined = [...permanentChannels, ...rojaMatches.slice(0, 40)];
   cachedSportsSchedule = { matches: combined, ts: Date.now() };
 
-  res.json({ success: true, events: combined });
+  res.json({
+    success: true,
+    events: channelHealthMonitor.prioritizeChannels(combined),
+  });
 });
 
 // ============================================================================
@@ -10205,7 +10221,7 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
 app.get('/api/catalog/tdt', (_req, res) => {
   res.json({
     success: true,
-    channels: SPANISH_TDT_CHANNELS,
+    channels: channelHealthMonitor.prioritizeChannels(SPANISH_TDT_CHANNELS),
   });
 });
 
@@ -12971,10 +12987,18 @@ app.get('/api/sports/football-board', async (req, res) => {
     });
 
     cachedFootballBoard = { dateKey, matches: items, ts: Date.now() };
-    res.json({ success: true, dateKey, matches: items });
+    const prioritizedItems = items.map((m) => ({
+      ...m,
+      channels: channelHealthMonitor.prioritizeTracks(m.channels || []),
+    }));
+    res.json({ success: true, dateKey, matches: prioritizedItems });
   } catch (err) {
     console.warn('Football matchboard fetch error:', err);
-    res.json({ success: true, dateKey, matches: cachedFootballBoard?.matches || [] });
+    const fallbackItems = (cachedFootballBoard?.matches || []).map((m: any) => ({
+      ...m,
+      channels: channelHealthMonitor.prioritizeTracks(m.channels || []),
+    }));
+    res.json({ success: true, dateKey, matches: fallbackItems });
   }
 });
 
@@ -14938,7 +14962,7 @@ app.get('/api/catalog/catala', async (req, res) => {
     res.json({
       success: true,
       items: [...hydratedItems, ...dynamicArchiveItems],
-      liveChannels: CATALA_LIVE_CHANNELS,
+      liveChannels: channelHealthMonitor.prioritizeChannels(CATALA_LIVE_CHANNELS),
       communityLinks: [
         {
           id: 'totsrucs-cat',
@@ -15163,7 +15187,7 @@ function getAllIptvChannels(): any[] {
     seen.add(ch.id);
     combined.push(ch);
   }
-  return combined;
+  return channelHealthMonitor.prioritizeChannels(combined);
 }
 
 function getIptvEpgId(channelId: string): string {
@@ -15816,6 +15840,19 @@ app.get(['/sw.js', '/service-worker.js'], (_req, res) => {
 async function startServer() {
   const PORT = ENV.port;
   const isProd = ENV.isProd;
+
+  if (ENV.nodeEnv !== 'test') {
+    channelHealthMonitor.startScheduler(
+      () => [
+        ...SPANISH_TDT_CHANNELS,
+        ...CATALA_LIVE_CHANNELS,
+        ...getPermanent247SportsMatches(),
+        ...(cachedSportsSchedule?.matches || []),
+      ],
+      3 * 60 * 1000,
+      8_000
+    );
+  }
 
   // Mount global API error handler prior to Vite / SPA fallback
   app.use(expressErrorHandler);

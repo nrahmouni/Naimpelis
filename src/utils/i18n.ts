@@ -1,5 +1,21 @@
 import type { AppLanguage } from '../types';
 
+export interface LocalizedTextMap {
+  es: string;
+  ca: string;
+  en: string;
+}
+
+/**
+ * Type-safe 3-language selector ensuring Spanish (es), Catalan (ca), and English (en)
+ * never silently fall back to Spanish when Catalan or English is active.
+ */
+export function pickLang(lang: AppLanguage, copy: LocalizedTextMap): string {
+  if (lang === 'ca') return copy.ca;
+  if (lang === 'en') return copy.en;
+  return copy.es;
+}
+
 export interface UiCopyShape {
   appTagline: string;
   heroHeadline: string;
@@ -13,6 +29,13 @@ export interface UiCopyShape {
   roomCodePlaceholder: string;
   joinBtn: string;
   recentRooms: string;
+  // 5-Pillar Consolidated Navigation
+  pillarExplore: string;
+  pillarCatalog: string;
+  pillarAnime: string;
+  pillarLive: string;
+  pillarMyList: string;
+  // Legacy tab aliases preserved for backward compatibility
   tabMovies: string;
   tabVose: string;
   tabSeries: string;
@@ -62,6 +85,17 @@ export interface UiCopyShape {
   notificationsTitle: string;
   surpriseMeTitle: string;
   legalTitle: string;
+  // Player HUD & Modals
+  qualityLabel: string;
+  qualityAuto: string;
+  audioTrackLabel: string;
+  audioTrackEmbedded: string;
+  closeModal: string;
+  watchNow: string;
+  addToQueue: string;
+  infoLabel: string;
+  trailerPreviewMute: string;
+  trailerPreviewUnmute: string;
 }
 
 export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
@@ -79,6 +113,11 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     roomCodePlaceholder: 'Código o link (ej. a8f2)',
     joinBtn: 'Unirse',
     recentRooms: 'Salas recientes',
+    pillarExplore: 'Explorar',
+    pillarCatalog: 'Series y Cine',
+    pillarAnime: 'Anime',
+    pillarLive: 'En Directo',
+    pillarMyList: 'Mi Lista',
     tabMovies: 'Películas',
     tabVose: 'VO · Inglés',
     tabSeries: 'Series TV',
@@ -129,6 +168,16 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     notificationsTitle: 'Centro de notificaciones',
     surpriseMeTitle: 'Sorpréndeme',
     legalTitle: 'Privacidad, Términos y Aviso Legal',
+    qualityLabel: 'Calidad de vídeo',
+    qualityAuto: 'Auto',
+    audioTrackLabel: 'Pista de audio',
+    audioTrackEmbedded: 'Audio del vídeo',
+    closeModal: 'Cerrar ventana',
+    watchNow: 'Ver ahora',
+    addToQueue: 'A la cola',
+    infoLabel: 'Ficha',
+    trailerPreviewMute: 'Silenciar avance',
+    trailerPreviewUnmute: 'Sonido del avance',
   },
   ca: {
     appTagline: 'NAIM CINE · Cinema, Sèries, TV en directe, Futbol i YouTube sincronitzat',
@@ -144,6 +193,11 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     roomCodePlaceholder: 'Codi o enllaç (ex. a8f2)',
     joinBtn: 'Unir-se',
     recentRooms: 'Sales recents',
+    pillarExplore: 'Explorar',
+    pillarCatalog: 'Sèries i Cinema',
+    pillarAnime: 'Anime',
+    pillarLive: 'En Directe',
+    pillarMyList: 'La meva llista',
     tabMovies: 'Pel·lícules',
     tabVose: 'VO · Anglès',
     tabSeries: 'Sèries TV',
@@ -194,6 +248,16 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     notificationsTitle: 'Centre de notificacions',
     surpriseMeTitle: 'Sorprèn-me',
     legalTitle: 'Privacitat, Termes i Avís Legal',
+    qualityLabel: 'Qualitat de vídeo',
+    qualityAuto: 'Auto',
+    audioTrackLabel: 'Pista d’àudio',
+    audioTrackEmbedded: 'Àudio del vídeo',
+    closeModal: 'Tancar finestra',
+    watchNow: 'Veure ara',
+    addToQueue: 'A la cua',
+    infoLabel: 'Fitxa',
+    trailerPreviewMute: 'Silenciar avançament',
+    trailerPreviewUnmute: 'So de l’avançament',
   },
   en: {
     appTagline: 'NAIM CINE · Synchronized Movies, Series, Live TV, Sports & YouTube',
@@ -209,6 +273,11 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     roomCodePlaceholder: 'Code or link (e.g. a8f2)',
     joinBtn: 'Join',
     recentRooms: 'Recent rooms',
+    pillarExplore: 'Explore',
+    pillarCatalog: 'Series & Movies',
+    pillarAnime: 'Anime',
+    pillarLive: 'Live TV & Sports',
+    pillarMyList: 'My List',
     tabMovies: 'Movies',
     tabVose: 'VO · English',
     tabSeries: 'TV Series',
@@ -259,5 +328,15 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     notificationsTitle: 'Notifications',
     surpriseMeTitle: 'Surprise Me',
     legalTitle: 'Privacy, Terms & Legal Notice',
+    qualityLabel: 'Video quality',
+    qualityAuto: 'Auto',
+    audioTrackLabel: 'Audio track',
+    audioTrackEmbedded: 'Embedded audio',
+    closeModal: 'Close dialog',
+    watchNow: 'Watch now',
+    addToQueue: 'Add to queue',
+    infoLabel: 'Details',
+    trailerPreviewMute: 'Mute preview',
+    trailerPreviewUnmute: 'Unmute preview',
   },
 };

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { motion } from 'motion/react';
 import {
+  Bookmark,
   Compass,
   Film,
   Flame,
@@ -8,12 +9,11 @@ import {
   PanelLeftOpen,
   Play,
   Radio,
-  Sparkles,
-  Trophy,
   Users,
 } from 'lucide-react';
 import type { AppLanguage, FavoriteChannelItem } from '../types';
 import type { RecentRoomEntry } from '../utils/storage';
+import { UI_COPY, pickLang } from '../utils/i18n';
 import type { CatalogSection } from './MediaCatalogHub';
 import { triggerHaptic } from '../utils/haptics';
 import { getMonogramInitials } from './MobileViewportGuard';
@@ -40,10 +40,12 @@ interface TwitchChannelRailProps {
   activeRoomId: string;
   activeVideoUrl: string;
   catalogSection: CatalogSection;
+  showWatchlistOnly?: boolean;
   onSelectRoom: (roomId: string, roomName?: string) => void;
   onSelectFastChannel: (channel: FastChannelItem) => void;
   onSelectFavoriteChannel: (channel: FavoriteChannelItem) => void;
   onChangeCatalogSection: (section: CatalogSection) => void;
+  onOpenMyList?: () => void;
   onOpenTvModal?: () => void;
 }
 
@@ -56,6 +58,8 @@ const FAST_CATEGORY_LABELS: Record<FastChannelItem['category'], { es: string; ca
   news: { es: 'Noticias 24h', ca: 'Notícies 24h', en: '24h News' },
 };
 
+type RailPillarId = 'explore' | 'catalog' | 'anime' | 'live' | 'mylist';
+
 export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
   lang,
   recentRooms,
@@ -63,11 +67,14 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
   activeRoomId,
   activeVideoUrl,
   catalogSection,
+  showWatchlistOnly = false,
   onSelectRoom,
   onSelectFastChannel,
   onSelectFavoriteChannel,
   onChangeCatalogSection,
+  onOpenMyList,
 }) => {
+  const t = UI_COPY[lang];
   const [collapsed, setCollapsed] = useState(false);
   const [fastChannels, setFastChannels] = useState<FastChannelItem[]>([]);
 
@@ -89,57 +96,80 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
   }, []);
 
   const directoryItems: {
-    id: CatalogSection;
+    id: RailPillarId;
+    targetSection: CatalogSection;
     label: string;
     icon: React.ComponentType<{ className?: string }>;
   }[] = [
     {
-      id: 'home',
-      label: lang === 'ca' ? 'Explorar' : lang === 'en' ? 'Explore' : 'Explorar',
+      id: 'explore',
+      targetSection: 'home',
+      label: t.pillarExplore,
       icon: Compass,
     },
     {
-      id: 'movies',
-      label: lang === 'ca' ? 'Pel·lícules' : lang === 'en' ? 'Movies' : 'Películas',
+      id: 'catalog',
+      targetSection: 'movies',
+      label: t.pillarCatalog,
       icon: Film,
     },
     {
-      id: 'series',
-      label: lang === 'ca' ? 'Sèries' : 'Series',
-      icon: Sparkles,
-    },
-    {
       id: 'anime',
-      label: 'Anime',
+      targetSection: 'anime',
+      label: t.pillarAnime,
       icon: Flame,
     },
     {
-      id: 'sports',
-      label: lang === 'ca' ? 'Futbol' : lang === 'en' ? 'Football' : 'Fútbol',
-      icon: Trophy,
+      id: 'live',
+      targetSection: 'tdt',
+      label: t.pillarLive,
+      icon: Radio,
     },
     {
-      id: 'tdt',
-      label: lang === 'ca' ? 'TV en Directe' : lang === 'en' ? 'Live TV' : 'TV Directo',
-      icon: Radio,
+      id: 'mylist',
+      targetSection: 'direct',
+      label: t.pillarMyList,
+      icon: Bookmark,
     },
   ];
 
-  const isDirectorySectionActive = (id: CatalogSection) => {
-    if (id === 'movies') return catalogSection === 'movies' || catalogSection === 'vose';
-    if (id === 'series') return catalogSection === 'series' || catalogSection === 'castellano';
-    if (id === 'anime') return catalogSection === 'anime' || catalogSection === 'catala';
-    return catalogSection === id;
+  const isDirectorySectionActive = (id: RailPillarId) => {
+    if (showWatchlistOnly || catalogSection === 'direct') {
+      return id === 'mylist';
+    }
+    if (id === 'explore') return catalogSection === 'home';
+    if (id === 'catalog') {
+      return (
+        catalogSection === 'movies' ||
+        catalogSection === 'vose' ||
+        catalogSection === 'series' ||
+        catalogSection === 'castellano'
+      );
+    }
+    if (id === 'anime') {
+      return catalogSection === 'anime' || catalogSection === 'catala';
+    }
+    if (id === 'live') {
+      return (
+        catalogSection === 'tdt' ||
+        catalogSection === 'sports' ||
+        catalogSection === 'youtube'
+      );
+    }
+    return false;
   };
 
   const getCategoryLabel = (cat: FastChannelItem['category']) => {
-    const entry = FAST_CATEGORY_LABELS[cat];
-    return lang === 'ca' ? entry.ca : lang === 'en' ? entry.en : entry.es;
+    return pickLang(lang, FAST_CATEGORY_LABELS[cat]);
   };
 
   return (
     <aside
-      aria-label="Directorio principal y canales en vivo"
+      aria-label={pickLang(lang, {
+        es: 'Directorio principal y canales en vivo',
+        ca: 'Directori principal i canals en directe',
+        en: 'Main directory and live channels',
+      })}
       className={`hidden lg:flex flex-col shrink-0 h-full bg-[#111115]/95 backdrop-blur-xl border-r border-white/[0.07] select-none transition-[width] duration-200 ease-out overflow-hidden ${
         collapsed ? 'w-[4.25rem]' : 'w-60'
       }`}
@@ -152,7 +182,11 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
       >
         {!collapsed && (
           <span className="font-display font-bold text-[11px] uppercase tracking-[0.14em] text-zinc-400">
-            {lang === 'ca' ? 'Navegació' : lang === 'en' ? 'Browse' : 'Directorio'}
+            {pickLang(lang, {
+              es: 'Directorio',
+              ca: 'Navegació',
+              en: 'Browse',
+            })}
           </span>
         )}
         <button
@@ -161,8 +195,32 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
             triggerHaptic('light');
             setCollapsed((v) => !v);
           }}
-          title={collapsed ? 'Expandir barra lateral' : 'Colapsar barra lateral'}
-          aria-label={collapsed ? 'Expandir barra lateral' : 'Colapsar barra lateral'}
+          title={
+            collapsed
+              ? pickLang(lang, {
+                  es: 'Expandir barra lateral',
+                  ca: 'Expandir barra lateral',
+                  en: 'Expand sidebar',
+                })
+              : pickLang(lang, {
+                  es: 'Colapsar barra lateral',
+                  ca: 'Contraure barra lateral',
+                  en: 'Collapse sidebar',
+                })
+          }
+          aria-label={
+            collapsed
+              ? pickLang(lang, {
+                  es: 'Expandir barra lateral',
+                  ca: 'Expandir barra lateral',
+                  en: 'Expand sidebar',
+                })
+              : pickLang(lang, {
+                  es: 'Colapsar barra lateral',
+                  ca: 'Contraure barra lateral',
+                  en: 'Collapse sidebar',
+                })
+          }
           className="w-8 h-8 rounded-xl hover:bg-white/[0.08] text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
         >
           {collapsed ? (
@@ -175,7 +233,7 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
 
       {/* Scrollable Sections */}
       <div className="flex-1 overflow-y-auto custom-scrollbar py-2.5 space-y-5">
-        {/* 1. Primary Directory (Single Source of Truth on Desktop) */}
+        {/* 1. Primary 5-Pillar Directory */}
         <section className="space-y-1 px-2">
           <div className="space-y-0.5">
             {directoryItems.map((item) => {
@@ -187,7 +245,11 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
                   type="button"
                   onClick={() => {
                     triggerHaptic('light');
-                    onChangeCatalogSection(item.id);
+                    if (item.id === 'mylist' && onOpenMyList) {
+                      onOpenMyList();
+                    } else {
+                      onChangeCatalogSection(item.targetSection);
+                    }
                   }}
                   title={item.label}
                   className={`relative w-full flex items-center gap-3 min-h-10 rounded-xl text-left cursor-pointer transition-colors ${
@@ -228,11 +290,11 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
             {!collapsed && (
               <div className="px-2 pb-0.5 flex items-center justify-between">
                 <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                  {lang === 'ca'
-                    ? 'Canals en Directe'
-                    : lang === 'en'
-                    ? 'Live Channels'
-                    : 'Canales en Directo'}
+                  {pickLang(lang, {
+                    es: 'Canales en Directo',
+                    ca: 'Canals en Directe',
+                    en: 'Live Channels',
+                  })}
                 </h2>
                 <span className="text-[10px] font-mono text-zinc-500 tabular-nums">
                   {fastChannels.length}
@@ -314,11 +376,11 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
             {!collapsed && (
               <div className="px-2 pb-0.5 flex items-center justify-between">
                 <h2 className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                  {lang === 'ca'
-                    ? 'Sales i Favorits'
-                    : lang === 'en'
-                    ? 'Rooms & Favorites'
-                    : 'Salas y Favoritos'}
+                  {pickLang(lang, {
+                    es: 'Salas y Favoritos',
+                    ca: 'Sales i Favorits',
+                    en: 'Rooms & Favorites',
+                  })}
                 </h2>
                 <Users className="w-3.5 h-3.5 text-zinc-500" />
               </div>
@@ -357,7 +419,7 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
                       <>
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-semibold text-zinc-100 truncate leading-tight">
-                            {room.name || `Sala ${room.id.toUpperCase()}`}
+                            {room.name || `${pickLang(lang, { es: 'Sala', ca: 'Sala', en: 'Room' })} ${room.id.toUpperCase()}`}
                           </div>
                           <div className="text-[11px] font-mono text-zinc-400 truncate leading-tight mt-0.5">
                             #{room.id.toUpperCase()}
@@ -394,7 +456,13 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
                         {fav.title}
                       </div>
                       <div className="text-[11px] text-zinc-400 truncate leading-tight mt-0.5">
-                        {fav.channelLabel || fav.competition || 'Canal Favorito'}
+                        {fav.channelLabel ||
+                          fav.competition ||
+                          pickLang(lang, {
+                            es: 'Canal Favorito',
+                            ca: 'Canal Favorit',
+                            en: 'Favorite Channel',
+                          })}
                       </div>
                     </div>
                   )}

@@ -20,6 +20,7 @@ import {
   Sparkles,
   RefreshCw,
   Download,
+  Bookmark,
 } from 'lucide-react';
 import {
   checkRemoteAppVersion,
@@ -59,7 +60,7 @@ import {
   WatchHistoryItem,
   YouTubeSearchItem,
 } from './types';
-import { UI_COPY } from './utils/i18n';
+import { UI_COPY, pickLang } from './utils/i18n';
 import {
   addRecentRoom,
   addWatchHistoryItem,
@@ -576,10 +577,11 @@ export function App() {
   const showHostLockNotice = useCallback(
     (hostDisplayName?: string) => {
       if (lockToastTimerRef.current) clearTimeout(lockToastTimerRef.current);
-      const msg =
-        lang === 'es'
-          ? `Modo Cineasta activo · Solo ${hostDisplayName || 'el anfitrión'} controla el reproductor`
-          : `Director Mode active · Only ${hostDisplayName || 'the host'} controls playback`;
+      const msg = pickLang(lang, {
+        es: `Modo Cineasta activo · Solo ${hostDisplayName || 'el anfitrión'} controla el reproductor`,
+        ca: `Mode Cineasta actiu · Només ${hostDisplayName || 'l’amfitrió'} controla el reproductor`,
+        en: `Director Mode active · Only ${hostDisplayName || 'the host'} controls playback`,
+      });
       setLockNoticeToast(msg);
       lockToastTimerRef.current = setTimeout(() => {
         setLockNoticeToast(null);
@@ -1393,19 +1395,22 @@ export function App() {
           playCinemaSound('join');
           setTvClaimStatus({
             type: 'success',
-            message:
-              lang === 'es'
-                ? '✓ Smart TV vinculada y proyectando en esta sala'
-                : '✓ Smart TV paired and projecting in this room',
+            message: pickLang(lang, {
+              es: '✓ Smart TV vinculada y proyectando en esta sala',
+              ca: '✓ Smart TV vinculada i projectant en aquesta sala',
+              en: '✓ Smart TV paired and projecting in this room',
+            }),
           });
         } else {
           setTvClaimStatus({
             type: 'error',
             message:
               payload?.error ||
-              (lang === 'es'
-                ? 'Código de TV no encontrado o caducado.'
-                : 'TV code not found or expired.'),
+              pickLang(lang, {
+                es: 'Código de TV no encontrado o caducado.',
+                ca: 'Codi de TV no trobat o caducat.',
+                en: 'TV code not found or expired.',
+              }),
           });
         }
         tvClaimTimerRef.current = setTimeout(() => {
@@ -3448,7 +3453,11 @@ export function App() {
       .slice(0, 4)
       .map(({ id: _id, addedBy: _addedBy, ...proposal }) => proposal);
     socketService.startPoll(
-      lang === 'es' ? '¿Qué vemos ahora en la sala?' : 'What should we watch next?',
+      pickLang(lang, {
+        es: '¿Qué vemos ahora en la sala?',
+        ca: 'Què veiem ara a la sala?',
+        en: 'What should we watch next?',
+      }),
       proposals,
       25
     );
@@ -3675,19 +3684,22 @@ export function App() {
         playCinemaSound('join');
         setTvClaimStatus({
           type: 'success',
-          message:
-            lang === 'es'
-              ? '✓ Smart TV vinculada y proyectando en esta sala'
-              : '✓ Smart TV paired and projecting in this room',
+          message: pickLang(lang, {
+            es: '✓ Smart TV vinculada y proyectando en esta sala',
+            ca: '✓ Smart TV vinculada i projectant en aquesta sala',
+            en: '✓ Smart TV paired and projecting in this room',
+          }),
         });
       } else {
         setTvClaimStatus({
           type: 'error',
           message:
             data?.error ||
-            (lang === 'es'
-              ? 'Código de TV no encontrado o caducado.'
-              : 'TV code not found or expired.'),
+            pickLang(lang, {
+              es: 'Código de TV no encontrado o caducado.',
+              ca: 'Codi de TV no trobat o caducat.',
+              en: 'TV code not found or expired.',
+            }),
         });
       }
       tvClaimTimerRef.current = setTimeout(() => {
@@ -3978,12 +3990,14 @@ export function App() {
         {showIntro && (
           <NaimcineIntro
             withSound={introWithSound}
+            lang={lang}
             onComplete={() => setShowIntro(false)}
           />
         )}
         <GlobalIncomingInviteBanner
           invite={incomingInvite}
           friendAddedNotice={friendAddedNotice}
+          lang={lang}
           isAlreadyFriend={
             Boolean(friendAddedNotice) &&
             savedFriends.some(
@@ -4262,6 +4276,7 @@ export function App() {
         <GlobalIncomingInviteBanner
           invite={incomingInvite}
           friendAddedNotice={friendAddedNotice}
+          lang={lang}
           isAlreadyFriend={
             Boolean(friendAddedNotice) &&
             savedFriends.some(
@@ -4310,7 +4325,16 @@ export function App() {
         {showIntro && (
           <NaimcineIntro
             withSound={introWithSound}
-            subtitle={roomName ? `Entrando a ${roomName}` : undefined}
+            lang={lang}
+            subtitle={
+              roomName
+                ? `${pickLang(lang, {
+                    es: 'Entrando a',
+                    ca: 'Entrant a',
+                    en: 'Entering',
+                  })} ${roomName}`
+                : undefined
+            }
             onComplete={() => setShowIntro(false)}
           />
         )}
@@ -4447,7 +4471,11 @@ export function App() {
                 setMobileTab('home');
                 catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              title="NAIM CINE · Inicio"
+              title={pickLang(lang, {
+                es: 'NAIM CINE · Inicio',
+                ca: 'NAIM CINE · Inici',
+                en: 'NAIM CINE · Home',
+              })}
               className="shrink-0 cursor-pointer rounded-xl overflow-hidden hover:scale-105 active:scale-95 transition-transform shadow-[0_0_18px_rgba(145,70,255,0.28)]"
             >
               <NaimBrandLogo size={isDesktopLayout ? 36 : 32} />
@@ -4465,11 +4493,11 @@ export function App() {
                 setProfileHubOpen(true);
               }}
               className="min-h-9 px-2.5 py-1 rounded-xl bg-white/[0.045] hover:bg-white/[0.09] border border-white/[0.08] flex items-center gap-2 min-w-0 text-left cursor-pointer group transition-all"
-              title={
-                lang === 'es'
-                  ? 'Gestionar sala activa o cambiar de sala'
-                  : 'Manage active room or switch room'
-              }
+              title={pickLang(lang, {
+                es: 'Gestionar sala activa o cambiar de sala',
+                ca: 'Gestionar sala activa o canviar de sala',
+                en: 'Manage active room or switch room',
+              })}
             >
               <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_#34d399]" />
               <span className="font-display font-bold text-xs sm:text-[13px] text-white truncate max-w-[7rem] sm:max-w-44">
@@ -4483,7 +4511,11 @@ export function App() {
               {roomHasPin && (
                 <Lock
                   className="w-3 h-3 text-amber-400 shrink-0"
-                  aria-label="Sala con PIN privado"
+                  aria-label={pickLang(lang, {
+                    es: 'Sala con PIN privado',
+                    ca: 'Sala amb PIN privat',
+                    en: 'Private PIN room',
+                  })}
                 />
               )}
             </button>
@@ -4498,16 +4530,26 @@ export function App() {
                   triggerHaptic('light');
                   setShowCommandSearch(true);
                 }}
-                title="Búsqueda universal (Ctrl/⌘ + K)"
-                aria-label="Búsqueda rápida"
+                title={pickLang(lang, {
+                  es: 'Búsqueda universal (Ctrl/⌘ + K)',
+                  ca: 'Cerca universal (Ctrl/⌘ + K)',
+                  en: 'Universal search (Ctrl/⌘ + K)',
+                })}
+                aria-label={pickLang(lang, {
+                  es: 'Búsqueda rápida',
+                  ca: 'Cerca ràpida',
+                  en: 'Quick search',
+                })}
                 className="flex-1 h-9 px-3.5 rounded-xl bg-white/[0.045] hover:bg-white/[0.085] border border-white/[0.09] hover:border-[#9146FF]/45 text-zinc-400 hover:text-zinc-100 text-xs flex items-center justify-between gap-2 cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
               >
                 <span className="flex items-center gap-2 truncate">
                   <Search className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
                   <span className="truncate">
-                    {lang === 'es'
-                      ? 'Buscar películas, series, canales...'
-                      : 'Search movies, series, channels...'}
+                    {pickLang(lang, {
+                      es: 'Buscar películas, series, canales...',
+                      ca: 'Cercar pel·lícules, sèries, canals...',
+                      en: 'Search movies, series, channels...',
+                    })}
                   </span>
                 </span>
                 <kbd className="px-1.5 py-0.5 rounded-md bg-white/[0.07] border border-white/[0.08] text-[10px] font-mono text-zinc-300 shrink-0">
@@ -4521,8 +4563,16 @@ export function App() {
                   triggerHaptic('light');
                   setShowSurpriseModal(true);
                 }}
-                title="Sorpréndeme · Recomendación al instante"
-                aria-label="Sorpréndeme"
+                title={pickLang(lang, {
+                  es: 'Sorpréndeme · Recomendación al instante',
+                  ca: 'Sorprèn-me · Recomanació a l’instant',
+                  en: 'Surprise Me · Instant pick',
+                })}
+                aria-label={pickLang(lang, {
+                  es: 'Sorpréndeme',
+                  ca: 'Sorprèn-me',
+                  en: 'Surprise Me',
+                })}
                 className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-[#9146FF]/22 border border-white/[0.09] hover:border-[#9146FF]/45 text-amber-300 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
               >
                 <Sparkles className="w-4 h-4 shrink-0" />
@@ -4530,7 +4580,7 @@ export function App() {
             </div>
           )}
 
-          {/* Zone 3: Focused Workspace Actions (Available seamlessly on Desktop & Android Mobile APK) */}
+          {/* Zone 3: Focused Workspace Actions */}
           <div className="flex items-center gap-1.5 shrink-0">
             {!isDesktopLayout && (
               <>
@@ -4540,8 +4590,16 @@ export function App() {
                     triggerHaptic('light');
                     setShowCommandSearch(true);
                   }}
-                  title="Buscar catálogo"
-                  aria-label="Buscar catálogo"
+                  title={pickLang(lang, {
+                    es: 'Buscar catálogo',
+                    ca: 'Cercar catàleg',
+                    en: 'Search catalog',
+                  })}
+                  aria-label={pickLang(lang, {
+                    es: 'Buscar catálogo',
+                    ca: 'Cercar catàleg',
+                    en: 'Search catalog',
+                  })}
                   className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
                 >
                   <Search className="w-4 h-4 shrink-0" />
@@ -4552,8 +4610,16 @@ export function App() {
                     triggerHaptic('light');
                     setShowSurpriseModal(true);
                   }}
-                  title="Sorpréndeme"
-                  aria-label="Sorpréndeme"
+                  title={pickLang(lang, {
+                    es: 'Sorpréndeme',
+                    ca: 'Sorprèn-me',
+                    en: 'Surprise Me',
+                  })}
+                  aria-label={pickLang(lang, {
+                    es: 'Sorpréndeme',
+                    ca: 'Sorprèn-me',
+                    en: 'Surprise Me',
+                  })}
                   className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.09] text-amber-300 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
                 >
                   <Sparkles className="w-4 h-4 shrink-0" />
@@ -4567,8 +4633,16 @@ export function App() {
                 triggerHaptic('light');
                 setShowNotificationCenter(true);
               }}
-              title="Centro de notificaciones"
-              aria-label="Centro de notificaciones"
+              title={pickLang(lang, {
+                es: 'Centro de notificaciones',
+                ca: 'Centre de notificacions',
+                en: 'Notification center',
+              })}
+              aria-label={pickLang(lang, {
+                es: 'Centro de notificaciones',
+                ca: 'Centre de notificacions',
+                en: 'Notification center',
+              })}
               className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all relative"
             >
               <Bell className="w-4 h-4 shrink-0" />
@@ -4585,11 +4659,11 @@ export function App() {
                 triggerHaptic('light');
                 setSmartTvModalOpen(true);
               }}
-              title={
-                lang === 'es'
-                  ? 'Conectar Smart TV y Mando'
-                  : 'Connect Smart TV & Remote'
-              }
+              title={pickLang(lang, {
+                es: 'Conectar Smart TV y Mando',
+                ca: 'Connectar Smart TV i Comandament',
+                en: 'Connect Smart TV & Remote',
+              })}
               className={`min-h-[36px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all relative ${
                 hasConnectedSmartTv
                   ? 'bg-[#00F593]/15 hover:bg-[#00F593]/25 border-[#00F593]/45 text-[#00F593]'
@@ -4603,7 +4677,11 @@ export function App() {
             <button
               type="button"
               onClick={handleShareOrCopyHeaderInvite}
-              title="Amigos e Invitación Directa a la Sala"
+              title={pickLang(lang, {
+                es: 'Amigos e Invitación Directa a la Sala',
+                ca: 'Amics i Invitació Directa a la Sala',
+                en: 'Friends & Direct Room Invite',
+              })}
               className="min-h-[36px] px-3 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] hover:from-[#A96EFF] hover:to-[#8738F5] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_6px_18px_rgba(145,70,255,0.34),inset_0_1px_0_rgba(255,255,255,0.24)] relative"
             >
               {copiedHeaderInvite ? (
@@ -4615,7 +4693,9 @@ export function App() {
                 <>
                   <UserPlus className="w-3.5 h-3.5 shrink-0" />
                   <span className={isDesktopLayout ? 'inline' : 'hidden sm:inline'}>
-                    {isDesktopLayout ? 'Invitar' : t.invite}
+                    {isDesktopLayout
+                      ? pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })
+                      : t.invite}
                   </span>
                   {onlineSavedFriendsCount > 0 && (
                     <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-black/40 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
@@ -4638,11 +4718,27 @@ export function App() {
                     ? 'bg-[#9146FF]/22 text-[#C6A2FF] border-[#9146FF]/55 shadow-[0_0_18px_rgba(145,70,255,0.22)]'
                     : 'bg-white/[0.055] hover:bg-white/[0.12] border-white/[0.09] text-[#EFEFF1]'
                 }`}
-                title={sidebarOpen ? 'Ocultar Sala y Chat' : 'Abrir Sala, Cola y Chat'}
-                aria-label="Alternar Sala y Chat"
+                title={
+                  sidebarOpen
+                    ? pickLang(lang, {
+                        es: 'Ocultar Sala y Chat',
+                        ca: 'Amagar Sala i Xat',
+                        en: 'Hide Room & Chat',
+                      })
+                    : pickLang(lang, {
+                        es: 'Abrir Sala, Cola y Chat',
+                        ca: 'Obrir Sala, Cua i Xat',
+                        en: 'Open Room, Queue & Chat',
+                      })
+                }
+                aria-label={pickLang(lang, {
+                  es: 'Alternar Sala y Chat',
+                  ca: 'Alternar Sala i Xat',
+                  en: 'Toggle Room & Chat',
+                })}
               >
                 <MessageSquare className="w-3.5 h-3.5" />
-                <span>Sala</span>
+                <span>{pickLang(lang, { es: 'Sala', ca: 'Sala', en: 'Room' })}</span>
                 {!sidebarOpen && unreadChatCount + roomQueue.length > 0 && (
                   <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-[#9146FF] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
                     {unreadChatCount + roomQueue.length > 9
@@ -4682,7 +4778,7 @@ export function App() {
           </div>
         </header>
 
-        {/* Main 3-Pane Twitch Broadcast Workspace (Left Rail + Center Stage + Right Chat Dock) */}
+        {/* Main 3-Pane Twitch Broadcast Workspace */}
         <div
           className={`flex-1 min-h-0 min-w-0 flex ${
             isDesktopLayout ? 'flex-row' : 'flex-col'
@@ -4696,6 +4792,7 @@ export function App() {
               activeRoomId={roomId}
               activeVideoUrl={videoState.rawSourceUrl || videoState.url}
               catalogSection={catalogSection}
+              showWatchlistOnly={showWatchlistOnly}
               onSelectRoom={(targetCode, targetName) =>
                 handleSwitchActiveRoom(targetCode, targetName)
               }
@@ -4719,6 +4816,11 @@ export function App() {
               onChangeCatalogSection={(sec) => {
                 setShowWatchlistOnly(false);
                 setCatalogSection(sec);
+                mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+              }}
+              onOpenMyList={() => {
+                setShowWatchlistOnly(true);
+                setCatalogSection('movies');
                 mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               onOpenTvModal={() => setSmartTvModalOpen(true)}
@@ -4908,7 +5010,11 @@ export function App() {
                 <div className="flex items-center gap-2 min-w-0">
                   <ListVideo className="w-4 h-4 text-[#BF94FF] shrink-0" />
                   <span className="truncate font-medium">
-                    {lang === 'es' ? 'En la cola:' : 'Queued:'}{' '}
+                    {pickLang(lang, {
+                      es: 'En la cola:',
+                      ca: 'A la cua:',
+                      en: 'Queued:',
+                    })}{' '}
                     <strong className="text-white">{queueAddedNotice}</strong>
                   </span>
                 </div>
@@ -4917,9 +5023,11 @@ export function App() {
                   onClick={handleOpenRoomQueueView}
                   className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-semibold text-white whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
                 >
-                  {lang === 'es'
-                    ? `Ver Cola (${roomQueue.length})`
-                    : `View Queue (${roomQueue.length})`}
+                  {pickLang(lang, {
+                    es: `Ver Cola (${roomQueue.length})`,
+                    ca: `Veure Cua (${roomQueue.length})`,
+                    en: `View Queue (${roomQueue.length})`,
+                  })}
                 </button>
               </div>
             )}
@@ -5073,7 +5181,11 @@ export function App() {
                           }}
                           className="min-h-8 px-3 rounded-xl bg-[#FFBD0F] text-[#141720] text-xs font-extrabold whitespace-nowrap cursor-pointer hover:bg-[#ffc93b] transition-colors"
                         >
-                          {lang === 'es' ? 'Ver estadísticas en vivo' : 'Show Live Stats'}
+                          {pickLang(lang, {
+                            es: 'Ver estadísticas en vivo',
+                            ca: 'Veure estadístiques en directe',
+                            en: 'Show Live Stats',
+                          })}
                         </button>
                       </div>
                     )
@@ -5084,7 +5196,11 @@ export function App() {
                   <div className="p-3.5 rounded-2xl bg-[#18181B] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
                       <div className="text-xs font-medium text-[#BF94FF]">
-                        {lang === 'es' ? 'Reproduciendo en la sala' : 'Playing in room'}
+                        {pickLang(lang, {
+                          es: 'Reproduciendo en la sala',
+                          ca: 'Reproduint a la sala',
+                          en: 'Playing in room',
+                        })}
                       </div>
                       <div className="text-xs sm:text-sm font-semibold text-white truncate">
                         {videoState.title}
@@ -5100,7 +5216,13 @@ export function App() {
                         className="min-h-11 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
-                        <span>{lang === 'es' ? 'Volver a abrir' : 'Reopen'}</span>
+                        <span>
+                          {pickLang(lang, {
+                            es: 'Volver a abrir',
+                            ca: 'Tornar a obrir',
+                            en: 'Reopen',
+                          })}
+                        </span>
                       </button>
                       <button
                         type="button"
@@ -5108,7 +5230,13 @@ export function App() {
                         className="min-h-11 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/12 text-xs font-medium text-zinc-300 flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                       >
                         <Square className="w-3 h-3 fill-current" />
-                        <span>{lang === 'es' ? 'Detener sala' : 'Stop room'}</span>
+                        <span>
+                          {pickLang(lang, {
+                            es: 'Detener sala',
+                            ca: 'Aturar sala',
+                            en: 'Stop room',
+                          })}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -5290,19 +5418,29 @@ export function App() {
           <div className="shrink-0 px-2.5 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#0B0B0E] via-[#0B0B0E]/92 to-transparent z-30">
             <nav
               className="bg-[#141418]/92 backdrop-blur-2xl border border-white/[0.11] rounded-2xl p-1 grid grid-cols-5 gap-1 shadow-[0_14px_38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.1)]"
-              aria-label="Navegación móvil NAIM CINE"
+              aria-label={pickLang(lang, {
+                es: 'Navegación móvil NAIM CINE',
+                ca: 'Navegació mòbil NAIM CINE',
+                en: 'NAIM CINE mobile navigation',
+              })}
             >
               {(
                 [
                   {
                     id: 'home',
-                    label: lang === 'es' ? 'Inicio' : 'Home',
+                    label: pickLang(lang, {
+                      es: 'Explorar',
+                      ca: 'Explorar',
+                      en: 'Explore',
+                    }),
                     icon: LayoutGrid,
                     isActive:
                       mobileTab !== 'chat' &&
                       mobileTab !== 'room' &&
+                      !showWatchlistOnly &&
                       catalogSection === 'home',
                     onSelect: () => {
+                      setShowWatchlistOnly(false);
                       setMobileTab('home');
                       setCatalogSection('home');
                       catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
@@ -5310,19 +5448,24 @@ export function App() {
                   },
                   {
                     id: 'movies',
-                    label: lang === 'es' ? 'Catálogo' : 'Browse',
+                    label: pickLang(lang, {
+                      es: 'Catálogo',
+                      ca: 'Catàleg',
+                      en: 'Browse',
+                    }),
                     icon: Film,
                     isActive:
                       mobileTab !== 'chat' &&
                       mobileTab !== 'room' &&
+                      !showWatchlistOnly &&
                       (catalogSection === 'movies' ||
                         catalogSection === 'vose' ||
                         catalogSection === 'series' ||
                         catalogSection === 'anime' ||
                         catalogSection === 'castellano' ||
-                        catalogSection === 'catala' ||
-                        catalogSection === 'youtube'),
+                        catalogSection === 'catala'),
                     onSelect: () => {
+                      setShowWatchlistOnly(false);
                       setMobileTab('movies');
                       if (
                         catalogSection !== 'movies' &&
@@ -5337,34 +5480,55 @@ export function App() {
                     },
                   },
                   {
-                    id: 'sports',
-                    label: lang === 'es' ? 'Fútbol' : 'Football',
-                    icon: Trophy,
-                    isActive:
-                      mobileTab !== 'chat' &&
-                      mobileTab !== 'room' &&
-                      catalogSection === 'sports',
-                    onSelect: () => {
-                      setMobileTab('sports');
-                      setCatalogSection('sports');
-                    },
-                  },
-                  {
-                    id: 'tdt',
-                    label: lang === 'es' ? 'En Vivo' : 'Live TV',
+                    id: 'live',
+                    label: pickLang(lang, {
+                      es: 'En Directo',
+                      ca: 'En Directe',
+                      en: 'Live TV',
+                    }),
                     icon: Radio,
                     isActive:
                       mobileTab !== 'chat' &&
                       mobileTab !== 'room' &&
-                      catalogSection === 'tdt',
+                      !showWatchlistOnly &&
+                      (catalogSection === 'tdt' ||
+                        catalogSection === 'sports' ||
+                        catalogSection === 'youtube'),
                     onSelect: () => {
-                      setMobileTab('tdt');
-                      setCatalogSection('tdt');
+                      setShowWatchlistOnly(false);
+                      if (
+                        catalogSection !== 'tdt' &&
+                        catalogSection !== 'sports' &&
+                        catalogSection !== 'youtube'
+                      ) {
+                        setMobileTab('tdt');
+                        setCatalogSection('tdt');
+                      } else {
+                        setMobileTab(catalogSection === 'sports' ? 'sports' : catalogSection === 'youtube' ? 'youtube' : 'tdt');
+                      }
+                    },
+                  },
+                  {
+                    id: 'mylist',
+                    label: pickLang(lang, {
+                      es: 'Mi Lista',
+                      ca: 'Meva Llista',
+                      en: 'My List',
+                    }),
+                    icon: Bookmark,
+                    isActive:
+                      mobileTab !== 'chat' &&
+                      mobileTab !== 'room' &&
+                      (showWatchlistOnly || catalogSection === 'direct'),
+                    onSelect: () => {
+                      setShowWatchlistOnly(true);
+                      setMobileTab('movies');
+                      setCatalogSection('movies');
                     },
                   },
                   {
                     id: 'chat',
-                    label: lang === 'es' ? 'Sala' : 'Room',
+                    label: pickLang(lang, { es: 'Sala', ca: 'Sala', en: 'Room' }),
                     icon: MessageSquare,
                     isActive: mobileTab === 'chat' || mobileTab === 'room',
                     badge: unreadChatCount + roomQueue.length || undefined,
@@ -5437,8 +5601,16 @@ export function App() {
           <div className="fixed bottom-20 sm:bottom-6 right-4 z-[70] max-w-xs px-4 py-3 rounded-2xl bg-[#18181B]/95 backdrop-blur-xl border border-[#9146FF]/40 shadow-2xl flex items-center justify-between gap-3">
             <div className="text-xs text-white font-semibold">
               {nativeApkUpdate
-                ? `Nueva APK v${nativeApkUpdate.versionName} lista`
-                : 'Nueva versión de NAIM CINE disponible'}
+                ? pickLang(lang, {
+                    es: `Nueva APK v${nativeApkUpdate.versionName} lista`,
+                    ca: `Nova APK v${nativeApkUpdate.versionName} llesta`,
+                    en: `New APK v${nativeApkUpdate.versionName} ready`,
+                  })
+                : pickLang(lang, {
+                    es: 'Nueva versión de NAIM CINE disponible',
+                    ca: 'Nova versió de NAIM CINE disponible',
+                    en: 'New version of NAIM CINE available',
+                  })}
             </div>
             {nativeApkUpdate ? (
               <button
@@ -5452,7 +5624,9 @@ export function App() {
                 className="min-h-8 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
-                <span>Instalar</span>
+                <span>
+                  {pickLang(lang, { es: 'Instalar', ca: 'Instal·lar', en: 'Install' })}
+                </span>
               </button>
             ) : (
               <button
@@ -5461,7 +5635,9 @@ export function App() {
                 className="min-h-8 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />
-                <span>Actualizar</span>
+                <span>
+                  {pickLang(lang, { es: 'Actualizar', ca: 'Actualitzar', en: 'Update' })}
+                </span>
               </button>
             )}
           </div>
@@ -5472,6 +5648,7 @@ export function App() {
           <NotificationCenterSheet
             isOpen={showNotificationCenter}
             onClose={() => setShowNotificationCenter(false)}
+            lang={lang}
             onActionNotification={(item) => {
               setShowNotificationCenter(false);
               if (item.roomId && item.roomId !== roomId) {
@@ -5483,6 +5660,7 @@ export function App() {
           <CommandSearchModal
             isOpen={showCommandSearch}
             onClose={() => setShowCommandSearch(false)}
+            lang={lang}
             movies={quickPool.movies}
             series={quickPool.series}
             tdtChannels={quickPool.tdt}
@@ -5515,6 +5693,7 @@ export function App() {
           <SurpriseMeModal
             isOpen={showSurpriseModal}
             onClose={() => setShowSurpriseModal(false)}
+            lang={lang}
             movies={quickPool.movies}
             series={quickPool.series}
             isLoading={quickPoolLoading}
@@ -5549,6 +5728,7 @@ export function App() {
           <LegalPrivacyModal
             isOpen={showLegalModal}
             onClose={() => setShowLegalModal(false)}
+            lang={lang}
           />
         </React.Suspense>
       </div>

@@ -1,10 +1,12 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Download, Smartphone, X, Share, MoreVertical, Monitor, Tv, Loader2, Check } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { useOnlineStatus, usePWAInstall } from '../utils/usePWAInstall';
 import { NaimBrandLogo } from './NaimBrandLogo';
 import { triggerHaptic } from '../utils/haptics';
 import { triggerApkDownload } from '../utils/apkDownload';
+import { pickLang } from '../utils/i18n';
+import { useFocusTrap } from '../utils/useFocusTrap';
 
 interface PWAInstallButtonProps {
   lang: AppLanguage;
@@ -37,11 +39,19 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         className={`min-h-[40px] ${
           compact ? 'px-2.5 sm:px-3' : 'px-3.5'
         } rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-xs font-semibold text-white flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer`}
-        title={lang === 'es' ? 'Descargar App NAIM CINE' : 'Download NAIM CINE App'}
+        title={pickLang(lang, {
+          es: 'Descargar App NAIM CINE',
+          ca: 'Descarregar App NAIM CINE',
+          en: 'Download NAIM CINE App',
+        })}
       >
         <Download className="w-3.5 h-3.5 text-[#BF94FF]" />
         <span className={compact ? 'hidden md:inline' : 'inline'}>
-          {lang === 'es' ? 'Descargar App' : 'Download App'}
+          {pickLang(lang, {
+            es: 'Descargar App',
+            ca: 'Descarregar App',
+            en: 'Download App',
+          })}
         </span>
       </button>
 
@@ -94,7 +104,14 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
       setApkDone(flavor);
       setTimeout(() => setApkDone(null), 3200);
     } else {
-      setApkError(res.error || 'Error al descargar');
+      setApkError(
+        res.error ||
+          pickLang(lang, {
+            es: 'Error al descargar',
+            ca: 'Error en descarregar',
+            en: 'Download failed',
+          })
+      );
     }
   };
 
@@ -111,9 +128,11 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
     <>
       <div
         role="region"
-        aria-label={
-          lang === 'es' ? 'Descargar aplicación NAIM CINE' : 'Download NAIM CINE App'
-        }
+        aria-label={pickLang(lang, {
+          es: 'Descargar aplicación NAIM CINE',
+          ca: 'Descarregar aplicació NAIM CINE',
+          en: 'Download NAIM CINE App',
+        })}
         className={`rounded-3xl nc-specular-surface backdrop-blur-xl border border-white/[0.1] p-4 ${
           isDesktop ? 'lg:p-5 lg:flex-row lg:items-center' : ''
         } flex flex-col justify-between gap-4 shadow-[0_24px_64px_rgba(0,0,0,0.68)]`}
@@ -146,15 +165,19 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
             </div>
 
             <h2 className="font-display font-bold text-sm text-white">
-              {lang === 'es'
-                ? 'Instala NAIM CINE · Misma experiencia en Web, Android y Google TV'
-                : 'Install NAIM CINE · Unified Web, Android Mobile & Google TV Apps'}
+              {pickLang(lang, {
+                es: 'Instala NAIM CINE · Misma experiencia en Web, Android y Google TV',
+                ca: 'Instal·la NAIM CINE · Mateixa experiència a Web, Android i Google TV',
+                en: 'Install NAIM CINE · Unified Web, Android Mobile & Google TV Apps',
+              })}
             </h2>
 
             <p className="text-xs text-zinc-400 leading-relaxed">
-              {lang === 'es'
-                ? 'Descarga el APK para Móvil Android o Google TV / Chromecast con el mismo diseño en directo, motor Media3 HD, Fútbol y TDT.'
-                : 'Download the native Android Mobile or Google TV / Chromecast APK with the exact same live interface, Media3 HD engine, Sports & Live TV.'}
+              {pickLang(lang, {
+                es: 'Descarga el APK para Móvil Android o Google TV / Chromecast con el mismo diseño en directo, motor Media3 HD, Fútbol y TDT.',
+                ca: "Descarrega l'APK per a Mòbil Android o Google TV / Chromecast amb el mateix disseny en directe, motor Media3 HD, Futbol i TDT.",
+                en: 'Download the native Android Mobile or Google TV / Chromecast APK with the exact same live interface, Media3 HD engine, Sports & Live TV.',
+              })}
             </p>
           </div>
         </div>
@@ -179,12 +202,22 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
             )}
             <span>
               {apkDownloading === 'mobile'
-                ? lang === 'es' ? 'Descargando APK...' : 'Downloading APK...'
+                ? pickLang(lang, {
+                    es: 'Descargando APK...',
+                    ca: 'Descarregant APK...',
+                    en: 'Downloading APK...',
+                  })
                 : apkDone === 'mobile'
-                ? lang === 'es' ? 'APK Móvil Descargada' : 'Mobile APK Downloaded'
-                : lang === 'es'
-                ? 'APK Móvil Android (Nativo HD)'
-                : 'Android Mobile APK (Native HD)'}
+                ? pickLang(lang, {
+                    es: 'APK Móvil Descargada',
+                    ca: 'APK Mòbil Descarregada',
+                    en: 'Mobile APK Downloaded',
+                  })
+                : pickLang(lang, {
+                    es: 'APK Móvil Android (Nativo HD)',
+                    ca: 'APK Mòbil Android (Nadiu HD)',
+                    en: 'Android Mobile APK (Native HD)',
+                  })}
             </span>
           </a>
 
@@ -203,12 +236,22 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
             )}
             <span>
               {apkDownloading === 'tv'
-                ? lang === 'es' ? 'Descargando TV...' : 'Downloading TV...'
+                ? pickLang(lang, {
+                    es: 'Descargando TV...',
+                    ca: 'Descarregant TV...',
+                    en: 'Downloading TV...',
+                  })
                 : apkDone === 'tv'
-                ? lang === 'es' ? 'APK TV Descargada' : 'TV APK Downloaded'
-                : lang === 'es'
-                ? 'APK Google TV / Chromecast'
-                : 'Google TV / Chromecast APK'}
+                ? pickLang(lang, {
+                    es: 'APK TV Descargada',
+                    ca: 'APK TV Descarregada',
+                    en: 'TV APK Downloaded',
+                  })
+                : pickLang(lang, {
+                    es: 'APK Google TV / Chromecast',
+                    ca: 'APK Google TV / Chromecast',
+                    en: 'Google TV / Chromecast APK',
+                  })}
             </span>
           </a>
 
@@ -218,9 +261,7 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
             className="min-h-11 px-4 rounded-2xl bg-white hover:bg-zinc-200 active:scale-[0.98] text-[#0E0E10] font-display font-bold text-xs flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer transition-all"
           >
             <Smartphone className="w-4 h-4 text-[#0E0E10] shrink-0" />
-            <span>
-              {lang === 'es' ? 'iPhone / PC' : 'iPhone / PC'}
-            </span>
+            <span>iPhone / PC</span>
           </button>
         </div>
       </div>
@@ -256,14 +297,26 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
   isAndroid,
   onClose,
 }) => {
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+  useFocusTrap(true, onClose, dialogRef);
+
   return (
     <div
       onClick={onClose}
       className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xl flex items-end sm:items-center justify-center p-0 sm:p-4"
     >
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label={pickLang(lang, {
+          es: 'Descargar NAIM CINE',
+          ca: 'Descarregar NAIM CINE',
+          en: 'Download NAIM CINE',
+        })}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-[#18181B] border-t sm:border border-white/12 p-6 pb-safe shadow-[0_28px_90px_rgba(0,0,0,0.92)] space-y-4"
+        className="w-full sm:max-w-sm rounded-t-3xl sm:rounded-3xl bg-[#18181B] border-t sm:border border-white/12 p-6 pb-safe shadow-[0_28px_90px_rgba(0,0,0,0.92)] space-y-4 outline-none"
       >
         <div className="sm:hidden pt-0.5">
           <div className="sheet-handle" />
@@ -274,23 +327,33 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
             <NaimBrandLogo size={42} />
             <div>
               <h3 className="font-display font-bold text-base text-white">
-                {lang === 'es' ? 'Descargar NAIM CINE' : 'Download NAIM CINE'}
+                {pickLang(lang, {
+                  es: 'Descargar NAIM CINE',
+                  ca: 'Descarregar NAIM CINE',
+                  en: 'Download NAIM CINE',
+                })}
               </h3>
               <p className="text-xs text-zinc-400">
                 {isIOS
                   ? 'iPhone / iPad (Safari)'
                   : isAndroid
-                    ? 'Android · APK o Chrome'
-                    : lang === 'es'
-                      ? 'Android APK · iPhone · PC'
-                      : 'Android APK · iPhone · PC'}
+                    ? pickLang(lang, {
+                        es: 'Android · APK o Chrome',
+                        ca: 'Android · APK o Chrome',
+                        en: 'Android · APK or Chrome',
+                      })
+                    : 'Android APK · iPhone · PC'}
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label={lang === 'es' ? 'Cerrar' : 'Close'}
+            aria-label={pickLang(lang, {
+              es: 'Cerrar',
+              ca: 'Tancar',
+              en: 'Close',
+            })}
             className="w-9 h-9 rounded-full bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
           >
             <X className="w-4 h-4" />
@@ -304,6 +367,15 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                 <>
                   <strong>Google TV &amp; Chromecast (Mando físico TV):</strong> Descarga{' '}
                   <span className="font-mono text-white">NAIM-CINE-TV.apk</span> y envíalo a tu tele (Send Files to TV / USB / Downloader{' '}
+                  <span className="font-mono text-[#BF94FF]">
+                    {typeof window !== 'undefined' ? `${window.location.host}/tv.apk` : '/tv.apk'}
+                  </span>
+                  ).
+                </>
+              ) : lang === 'ca' ? (
+                <>
+                  <strong>Google TV &amp; Chromecast (Comandament físic TV):</strong> Descarrega{' '}
+                  <span className="font-mono text-white">NAIM-CINE-TV.apk</span> i envia-ho a la teva tele (Send Files to TV / USB / Downloader{' '}
                   <span className="font-mono text-[#BF94FF]">
                     {typeof window !== 'undefined' ? `${window.location.host}/tv.apk` : '/tv.apk'}
                   </span>
@@ -327,9 +399,11 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
             >
               <Download className="w-4 h-4 shrink-0" />
               <span>
-                {lang === 'es'
-                  ? 'Descargar APK Móvil Android (NAIM-CINE.apk)'
-                  : 'Download Android Mobile APK (NAIM-CINE.apk)'}
+                {pickLang(lang, {
+                  es: 'Descargar APK Móvil Android (NAIM-CINE.apk)',
+                  ca: 'Descarregar APK Mòbil Android (NAIM-CINE.apk)',
+                  en: 'Download Android Mobile APK (NAIM-CINE.apk)',
+                })}
               </span>
             </a>
 
@@ -344,9 +418,11 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
             >
               <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
               <span>
-                {lang === 'es'
-                  ? 'Descargar APK Google TV / Chromecast'
-                  : 'Download Google TV / Chromecast APK'}
+                {pickLang(lang, {
+                  es: 'Descargar APK Google TV / Chromecast',
+                  ca: 'Descarregar APK Google TV / Chromecast',
+                  en: 'Download Google TV / Chromecast APK',
+                })}
               </span>
             </a>
           </div>
@@ -361,6 +437,10 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                   <>
                     1. Pulsa el botón <strong>Compartir</strong> en la barra inferior de Safari.
                   </>
+                ) : lang === 'ca' ? (
+                  <>
+                    1. Prem el botó <strong>Compartir</strong> a la barra inferior de Safari.
+                  </>
                 ) : (
                   <>
                     1. Tap the <strong>Share</strong> button in the Safari toolbar.
@@ -374,6 +454,10 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                 {lang === 'es' ? (
                   <>
                     2. Desliza hacia abajo y toca <strong>«Añadir a pantalla de inicio»</strong>.
+                  </>
+                ) : lang === 'ca' ? (
+                  <>
+                    2. Llisca cap avall i toca <strong>«Afegir a la pantalla d&apos;inici»</strong>.
                   </>
                 ) : (
                   <>
@@ -396,6 +480,14 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                     </strong>{' '}
                     o el menú <strong>⋮ → Instalar aplicación</strong>.
                   </>
+                ) : lang === 'ca' ? (
+                  <>
+                    <strong>En PC / Mac o Chrome sense APK:</strong> toca la icona d&apos;instal·lar a la barra de{' '}
+                    <strong className="text-white">
+                      {typeof window !== 'undefined' ? window.location.host : 'NAIM CINE'}
+                    </strong>{' '}
+                    o el menú <strong>⋮ → Instal·lar aplicació</strong>.
+                  </>
                 ) : (
                   <>
                     <strong>On PC / Mac or Chrome:</strong> click the install icon in the address bar or menu{' '}
@@ -412,7 +504,11 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
           onClick={onClose}
           className="w-full min-h-[44px] rounded-xl bg-white/[0.08] hover:bg-white/[0.14] text-xs sm:text-sm font-semibold text-white cursor-pointer transition-colors"
         >
-          {lang === 'es' ? 'Cerrar' : 'Close'}
+          {pickLang(lang, {
+            es: 'Cerrar',
+            ca: 'Tancar',
+            en: 'Close',
+          })}
         </button>
       </div>
     </div>
@@ -427,9 +523,11 @@ export const OfflineIndicator: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
     <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl bg-amber-500/95 px-3.5 py-2 text-xs font-semibold text-zinc-950 shadow-lg">
       <span className="h-2 w-2 rounded-full bg-zinc-950" />
       <span>
-        {lang === 'es'
-          ? 'Sin conexión — Reconectando automáticamente...'
-          : 'Offline — Reconnecting automatically...'}
+        {pickLang(lang, {
+          es: 'Sin conexión — Reconectando automáticamente...',
+          ca: 'Sense connexió — Reconnectant automàticament...',
+          en: 'Offline — Reconnecting automatically...',
+        })}
       </span>
     </div>
   );

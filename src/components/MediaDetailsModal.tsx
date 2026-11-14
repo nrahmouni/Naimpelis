@@ -20,7 +20,10 @@ import {
   RoomQueueItem,
 } from '../types';
 import { triggerHaptic } from '../utils/haptics';
+import { pickLang } from '../utils/i18n';
 import { extractSafeAmbientColor } from '../utils/imageUrl';
+import { useFocusTrap } from '../utils/useFocusTrap';
+import { PosterImage } from './ui/PosterImage';
 
 export type MovieAudioLangPreference = 'ES' | 'LAT' | 'VOSE' | 'EN';
 
@@ -41,40 +44,50 @@ const AUDIO_LANGUAGE_OPTIONS: {
   code: MovieAudioLangPreference;
   flag: string;
   labelEs: string;
+  labelCa: string;
   labelEn: string;
   subEs: string;
+  subCa: string;
   subEn: string;
 }[] = [
   {
     code: 'ES',
     flag: '🇪🇸',
     labelEs: 'Castellano',
+    labelCa: 'Castellà',
     labelEn: 'Spanish (Spain)',
     subEs: 'Audio España HD',
+    subCa: 'Àudio Espanya HD',
     subEn: 'Castilian HD',
   },
   {
     code: 'LAT',
     flag: '🇲🇽',
     labelEs: 'Español Latino',
+    labelCa: 'Espanyol Llatí',
     labelEn: 'Latin Spanish',
     subEs: 'Audio Latino HD',
+    subCa: 'Àudio Llatí HD',
     subEn: 'LatAm HD',
   },
   {
     code: 'VOSE',
     flag: '💬',
     labelEs: 'Subtitulado (VOSE)',
+    labelCa: 'Subtitulat (VOSE)',
     labelEn: 'Subtitled (VOSE)',
     subEs: 'V.O. + Subtítulos ES',
-    subEn: 'Original + ES Subs',
+    subCa: 'V.O. + Subtítols',
+    subEn: 'Original + Subs',
   },
   {
     code: 'EN',
     flag: '🇬🇧',
     labelEs: 'Inglés Original',
+    labelCa: 'Anglès Original',
     labelEn: 'Original English',
     subEs: 'Audio V.O. 1080p',
+    subCa: 'Àudio V.O. 1080p',
     subEn: 'Original 1080p',
   },
 ];
@@ -99,6 +112,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const [selectedAudioLang, setSelectedAudioLang] =
     useState<MovieAudioLangPreference>(defaultAudioLang);
   const trailerIframeRef = useRef<HTMLIFrameElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
+
+  useFocusTrap(Boolean(item), onClose, dialogRef);
 
   const sendTrailerCommand = useCallback((func: string, args: unknown[] = []) => {
     const win = trailerIframeRef.current?.contentWindow;
@@ -172,19 +188,13 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     };
   }, [item?.id, item?.tmdbId, item?.mediaType, item?.title, item?.movidyUrl, item?.vestUrl, lang]);
 
-  useEffect(() => {
-    if (!item) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [item, onClose]);
-
   if (!item) return null;
 
   const isSeries = (details?.mediaType || item.mediaType) === 'tv';
-  const title = item.title || details?.title || 'Película';
+  const title =
+    item.title ||
+    details?.title ||
+    pickLang(lang, { es: 'Película', ca: 'Pel·lícula', en: 'Movie' });
   const year = (item.year && item.year !== 'HD' ? item.year : details?.year) || item.year || 'HD';
   const rating = details?.rating || item.rating;
   const overview = details?.overview || item.overview;
@@ -195,6 +205,14 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     : [];
 
   const ambientGlow = details?.dominantColor || extractSafeAmbientColor(title);
+  const selectedOpt = visibleAudioOptions.find((o) => o.code === selectedAudioLang);
+  const selectedOptLabel = selectedOpt
+    ? pickLang(lang, {
+        es: selectedOpt.labelEs,
+        ca: selectedOpt.labelCa,
+        en: selectedOpt.labelEn,
+      })
+    : pickLang(lang, { es: 'Sala', ca: 'Sala', en: 'Room' });
 
   return (
     <div
@@ -205,9 +223,11 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       className="fixed inset-0 z-[65] bg-black/85 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4"
     >
       <div
+        ref={dialogRef}
+        tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
         style={{ ['--ambient-poster-glow' as string]: ambientGlow }}
-        className="w-full sm:max-w-[860px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden ambient-poster-aura animate-sheet-up"
+        className="w-full sm:max-w-[860px] max-h-[92dvh] sm:max-h-[88dvh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.1] shadow-[0_32px_110px_rgba(0,0,0,0.96)] flex flex-col overflow-hidden ambient-poster-aura animate-sheet-up outline-none"
       >
         {/* Top Hero: Inline 4K Official Trailer or High-Res Backdrop */}
         <div className="relative w-full aspect-video max-h-[36dvh] sm:max-h-[380px] bg-black shrink-0 overflow-hidden">
@@ -229,13 +249,19 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
             />
           ) : backdrop ? (
             <>
-              <img
+              <PosterImage
                 src={backdrop}
                 alt={title}
-                referrerPolicy="no-referrer"
-                className="w-full h-full object-cover"
+                aspect="none"
+                priority
+                className="w-full h-full"
+                imgClassName="object-cover"
+                fallbackTitle={title}
+                fallbackIcon={
+                  isSeries ? <Tv className="w-6 h-6 text-zinc-500" /> : <Film className="w-6 h-6 text-zinc-500" />
+                }
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-[#141418] via-[#141418]/35 to-black/30" />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#141418] via-[#141418]/35 to-black/30 pointer-events-none" />
               {details?.trailerKey && (
                 <button
                   type="button"
@@ -247,7 +273,13 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   className="absolute left-4 bottom-4 z-20 min-h-[42px] px-4 rounded-xl bg-[#141418]/85 hover:bg-[#1C1C22] border border-white/15 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 backdrop-blur-xl shadow-xl cursor-pointer transition-all active:scale-95"
                 >
                   <Youtube className="w-4 h-4 text-[#BF94FF]" />
-                  <span>{lang === 'es' ? '▶ Ver Tráiler 4K' : '▶ Watch 4K Trailer'}</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: '▶ Ver Tráiler 4K',
+                      ca: '▶ Veure Tràiler 4K',
+                      en: '▶ Watch 4K Trailer',
+                    })}
+                  </span>
                 </button>
               )}
             </>
@@ -272,22 +304,40 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               <button
                 type="button"
                 onClick={handleToggleTrailerMute}
-                  className={`min-h-[36px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 backdrop-blur-md cursor-pointer transition-colors ${
+                className={`min-h-[36px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 backdrop-blur-md cursor-pointer transition-colors ${
                   trailerMuted
                     ? 'bg-[#9146FF] border-[#9146FF] text-white'
                     : 'bg-[#18181B]/80 hover:bg-[#18181B] border-white/20 text-white'
                 }`}
-                title={trailerMuted ? 'Activar sonido del tráiler' : 'Silenciar tráiler'}
+                title={
+                  trailerMuted
+                    ? pickLang(lang, {
+                        es: 'Activar sonido del tráiler',
+                        ca: 'Activar so del tràiler',
+                        en: 'Unmute trailer',
+                      })
+                    : pickLang(lang, {
+                        es: 'Silenciar tráiler',
+                        ca: 'Silenciar tràiler',
+                        en: 'Mute trailer',
+                      })
+                }
               >
                 {trailerMuted ? (
                   <>
                     <VolumeX className="w-3.5 h-3.5" />
-                    <span>{lang === 'es' ? 'Activar sonido' : 'Unmute'}</span>
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Activar sonido',
+                        ca: 'Activar so',
+                        en: 'Unmute',
+                      })}
+                    </span>
                   </>
                 ) : (
                   <>
                     <Volume2 className="w-3.5 h-3.5 text-[#00F593]" />
-                    <span>{lang === 'es' ? 'Sonido' : 'Sound'}</span>
+                    <span>{pickLang(lang, { es: 'Sonido', ca: 'So', en: 'Sound' })}</span>
                   </>
                 )}
               </button>
@@ -307,19 +357,27 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 <Youtube className="w-3.5 h-3.5 text-[#BF94FF]" />
                 <span>
                   {playTrailer
-                    ? lang === 'es'
-                      ? 'Ocultar tráiler'
-                      : 'Hide trailer'
-                    : lang === 'es'
-                    ? 'Tráiler 4K'
-                    : 'Watch trailer'}
+                    ? pickLang(lang, {
+                        es: 'Ocultar tráiler',
+                        ca: 'Amagar tràiler',
+                        en: 'Hide trailer',
+                      })
+                    : pickLang(lang, {
+                        es: 'Tráiler 4K',
+                        ca: 'Tràiler 4K',
+                        en: 'Watch trailer',
+                      })}
                 </span>
               </button>
             )}
             <button
               type="button"
               onClick={onClose}
-              aria-label="Cerrar ficha"
+              aria-label={pickLang(lang, {
+                es: 'Cerrar ficha',
+                ca: 'Tancar fitxa',
+                en: 'Close details',
+              })}
               className="w-10 h-10 rounded-xl bg-[#141418]/80 hover:bg-[#9146FF] border border-white/20 flex items-center justify-center text-white backdrop-blur-md cursor-pointer transition-colors"
             >
               <X className="w-4 h-4" />
@@ -333,12 +391,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
             <div className="flex flex-wrap items-center gap-2 text-xs text-zinc-400">
               <span className="font-semibold uppercase tracking-wider text-[#BF94FF]">
                 {isSeries
-                  ? lang === 'es'
-                    ? 'Serie TV'
-                    : 'TV Series'
-                  : lang === 'es'
-                  ? 'Película HD'
-                  : 'HD Movie'}
+                  ? pickLang(lang, { es: 'Serie TV', ca: 'Sèrie TV', en: 'TV Series' })
+                  : pickLang(lang, { es: 'Película HD', ca: 'Pel·lícula HD', en: 'HD Movie' })}
               </span>
               {(details?.watchProviders?.length || item.platform) ? (
                 <>
@@ -400,25 +454,23 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               </p>
             )}
 
-            {/* Pre-Screening Audio & Language Selector (For Movies — ONLY verified available languages) */}
+            {/* Pre-Screening Audio & Language Selector */}
             {!isSeries && (
               <div className="pt-2 space-y-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
                     <Globe className="w-3.5 h-3.5 text-[#9146FF]" />
                     <span>
-                      {lang === 'es'
-                        ? 'Idiomas disponibles para proyectar'
-                        : 'Available audio languages'}
+                      {pickLang(lang, {
+                        es: 'Idiomas disponibles para proyectar',
+                        ca: 'Idiomes disponibles per projectar',
+                        en: 'Available audio languages',
+                      })}
                     </span>
                   </span>
                   {visibleAudioOptions.length > 0 && (
                     <span className="text-[11px] font-semibold text-[#BF94FF]">
-                      {
-                        visibleAudioOptions.find((o) => o.code === selectedAudioLang)?.[
-                          lang === 'es' ? 'labelEs' : 'labelEn'
-                        ]
-                      }
+                      {selectedOptLabel}
                     </span>
                   )}
                 </div>
@@ -427,9 +479,11 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   <div className="min-h-[52px] px-4 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center gap-2.5 text-xs text-zinc-300">
                     <Loader2 className="w-4 h-4 animate-spin text-[#9146FF] shrink-0" />
                     <span>
-                      {lang === 'es'
-                        ? 'Comprobando idiomas disponibles en tiempo real...'
-                        : 'Checking available audio languages...'}
+                      {pickLang(lang, {
+                        es: 'Comprobando idiomas disponibles en tiempo real...',
+                        ca: 'Comprovant idiomes disponibles en temps real...',
+                        en: 'Checking available audio languages...',
+                      })}
                     </span>
                   </div>
                 ) : visibleAudioOptions.length > 0 ? (
@@ -467,14 +521,22 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                                 active ? 'text-white' : 'text-[#EFEFF1]'
                               }`}
                             >
-                              {lang === 'es' ? opt.labelEs : opt.labelEn}
+                              {pickLang(lang, {
+                                es: opt.labelEs,
+                                ca: opt.labelCa,
+                                en: opt.labelEn,
+                              })}
                             </div>
                             <div
                               className={`text-[10px] truncate ${
                                 active ? 'text-[#EFEFF1]/85 font-medium' : 'text-zinc-400'
                               }`}
                             >
-                              {lang === 'es' ? opt.subEs : opt.subEn}
+                              {pickLang(lang, {
+                                es: opt.subEs,
+                                ca: opt.subCa,
+                                en: opt.subEn,
+                              })}
                             </div>
                           </div>
                         </button>
@@ -483,9 +545,11 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   </div>
                 ) : (
                   <div className="min-h-[48px] px-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center text-xs text-zinc-400">
-                    {lang === 'es'
-                      ? 'Este título no tiene pistas directas activas en este momento.'
-                      : 'No direct audio tracks currently active for this title.'}
+                    {pickLang(lang, {
+                      es: 'Este título no tiene pistas directas activas en este momento.',
+                      ca: 'Aquest títol no té pistes directes actives en aquest moment.',
+                      en: 'No direct audio tracks currently active for this title.',
+                    })}
                   </div>
                 )}
               </div>
@@ -506,7 +570,11 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 >
                   <Play className="w-4 h-4 fill-current" />
                   <span>
-                    {lang === 'es' ? 'Elegir Temporada y Episodio' : 'Browse Episodes'}
+                    {pickLang(lang, {
+                      es: 'Elegir Temporada y Episodio',
+                      ca: 'Triar Temporada i Episodi',
+                      en: 'Browse Episodes',
+                    })}
                   </span>
                 </button>
               ) : (
@@ -531,22 +599,22 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   )}
                   <span>
                     {loading && !hasProbedLanguages
-                      ? lang === 'es'
-                        ? 'Verificando idiomas...'
-                        : 'Checking languages...'
+                      ? pickLang(lang, {
+                          es: 'Verificando idiomas...',
+                          ca: 'Verificant idiomes...',
+                          en: 'Checking languages...',
+                        })
                       : visibleAudioOptions.length === 0 && hasProbedLanguages
-                      ? lang === 'es'
-                        ? 'No disponible ahora'
-                        : 'Unavailable right now'
-                      : lang === 'es'
-                      ? `Proyectar en ${
-                          AUDIO_LANGUAGE_OPTIONS.find((o) => o.code === selectedAudioLang)
-                            ?.labelEs || 'Sala'
-                        } (${selectedAudioLang})`
-                      : `Screen in ${
-                          AUDIO_LANGUAGE_OPTIONS.find((o) => o.code === selectedAudioLang)
-                            ?.labelEn || 'Room'
-                        }`}
+                      ? pickLang(lang, {
+                          es: 'No disponible ahora',
+                          ca: 'No disponible ara',
+                          en: 'Unavailable right now',
+                        })
+                      : pickLang(lang, {
+                          es: `Proyectar en ${selectedOptLabel} (${selectedAudioLang})`,
+                          ca: `Projectar en ${selectedOptLabel} (${selectedAudioLang})`,
+                          en: `Screen in ${selectedOptLabel}`,
+                        })}
                   </span>
                 </button>
               )}
@@ -574,12 +642,16 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                   <Plus className="w-4 h-4" />
                   <span>
                     {queuedFeedback
-                      ? lang === 'es'
-                        ? `En cola (${selectedAudioLang}) ✓`
-                        : `Queued (${selectedAudioLang}) ✓`
-                      : lang === 'es'
-                      ? `Añadir a Cola (${selectedAudioLang})`
-                      : `Add to Queue (${selectedAudioLang})`}
+                      ? pickLang(lang, {
+                          es: `En cola (${selectedAudioLang}) ✓`,
+                          ca: `A la cua (${selectedAudioLang}) ✓`,
+                          en: `Queued (${selectedAudioLang}) ✓`,
+                        })
+                      : pickLang(lang, {
+                          es: `Añadir a Cola (${selectedAudioLang})`,
+                          ca: `Afegir a la Cua (${selectedAudioLang})`,
+                          en: `Add to Queue (${selectedAudioLang})`,
+                        })}
                   </span>
                 </button>
               )}
@@ -599,12 +671,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                 />
                 <span>
                   {isBookmarked
-                    ? lang === 'es'
-                      ? 'En Mi Lista'
-                      : 'Saved'
-                    : lang === 'es'
-                    ? 'Mi Lista'
-                    : 'My List'}
+                    ? pickLang(lang, { es: 'En Mi Lista', ca: 'A La Meva Llista', en: 'Saved' })
+                    : pickLang(lang, { es: 'Mi Lista', ca: 'La Meva Llista', en: 'My List' })}
                 </span>
               </button>
             </div>
@@ -613,18 +681,22 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
           {/* Synopsis */}
           <p className="text-xs sm:text-sm text-zinc-300 leading-relaxed">
             {overview ||
-              (lang === 'es'
-                ? 'Proyección sincronizada en alta definición disponible para toda tu sala.'
-                : 'Synchronized HD screening ready for your watch party.')}
+              pickLang(lang, {
+                es: 'Proyección sincronizada en alta definición disponible para toda tu sala.',
+                ca: 'Projecció sincronitzada en alta definició disponible per a tota la sala.',
+                en: 'Synchronized HD screening ready for your watch party.',
+              })}
           </p>
 
           {loading && (
             <div className="flex items-center gap-2 text-xs text-zinc-400">
               <Loader2 className="w-4 h-4 animate-spin text-[#9146FF]" />
               <span>
-                {lang === 'es'
-                  ? 'Cargando reparto y recomendaciones...'
-                  : 'Loading cast & recommendations...'}
+                {pickLang(lang, {
+                  es: 'Cargando reparto y recomendaciones...',
+                  ca: 'Carregant repartiment i recomanacions...',
+                  en: 'Loading cast & recommendations...',
+                })}
               </span>
             </div>
           )}
@@ -635,11 +707,19 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               <div className="flex items-center justify-between">
                 <h3 className="font-display font-semibold text-xs sm:text-sm text-zinc-200 flex items-center gap-1.5">
                   <Users className="w-4 h-4 text-[#9146FF]" />
-                  <span>{lang === 'es' ? 'Reparto Principal' : 'Top Cast'}</span>
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Reparto Principal',
+                      ca: 'Repartiment Principal',
+                      en: 'Top Cast',
+                    })}
+                  </span>
                 </h3>
                 {details.directorOrCreator && (
                   <span className="text-xs text-zinc-400">
-                    {isSeries ? 'Creada por ' : 'Dir. '}
+                    {isSeries
+                      ? pickLang(lang, { es: 'Creada por ', ca: 'Creada per ', en: 'Created by ' })
+                      : 'Dir. '}
                     <strong className="text-zinc-200 font-medium">
                       {details.directorOrCreator}
                     </strong>
@@ -684,7 +764,11 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
           {details?.similar && details.similar.length > 0 && (
             <div className="space-y-2.5">
               <h3 className="font-display font-semibold text-xs sm:text-sm text-zinc-200">
-                {lang === 'es' ? 'Títulos Similares' : 'More Like This'}
+                {pickLang(lang, {
+                  es: 'Títulos Similares',
+                  ca: 'Títols Similars',
+                  en: 'More Like This',
+                })}
               </h3>
               <div className="grid grid-cols-3 sm:grid-cols-4 gap-2.5">
                 {details.similar.slice(0, 8).map((sim) => (
@@ -697,17 +781,14 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     }}
                     className="group text-left rounded-2xl overflow-hidden bg-white/[0.04] nc-card-sheen border border-white/[0.08] hover:border-[#9146FF]/50 transition-all cursor-pointer flex flex-col"
                   >
-                    <div className="aspect-[2/3] w-full bg-white/[0.05] overflow-hidden">
-                      {sim.poster ? (
-                        <img
-                          src={sim.poster}
-                          alt={sim.title}
-                          loading="lazy"
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        />
-                      ) : null}
-                    </div>
+                    <PosterImage
+                      src={sim.poster}
+                      alt={sim.title}
+                      aspect="poster"
+                      className="w-full"
+                      imgClassName="object-cover group-hover:scale-105 transition-transform duration-300"
+                      fallbackTitle={sim.title}
+                    />
                     <div className="p-2">
                       <div className="text-[11px] font-semibold text-white truncate">
                         {sim.title}
@@ -727,3 +808,4 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     </div>
   );
 };
+
