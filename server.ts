@@ -27,11 +27,13 @@ import { createRoomHub } from './server/ws/roomHub.ts';
 import {
   CHROME_UA,
   TDT_DVB_UA,
+  areTitlesStrictlyEqual,
   buildHlsProxyUrl,
   buildTsProxyUrl,
   curlGetText,
   isDvbHeadendStream,
   markHostNeedsCurlFallback,
+  matchesYouTubeFallbackTitle,
   normalizeTitleForMatch,
   resolveKnownUpstreamReferer,
   shouldBypassNodeFetch,
@@ -50,6 +52,7 @@ import {
   fetchMovidyPageMetadata,
   findMovidyUrlByTitle,
   probeAvailableLanguages,
+  verifyMovidyMetaMatch,
   type MovidyPageMetadata,
 } from './server/extractors/bingetrixMovidy.ts';
 import {
@@ -989,7 +992,7 @@ app.get('/api/catalog/movies', async (req, res) => {
     const category = String(req.query.category || 'trending').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const mergedCacheKey = `merged-es-v7|${provider}|${category}|${page}|${query}`;
+    const mergedCacheKey = `merged-es-v9|${provider}|${category}|${page}|${query}`;
     const cachedMerged = movieCatalogCache.get(mergedCacheKey);
     if (cachedMerged && Date.now() - cachedMerged.ts < 5 * 60 * 1000) {
       return res.json({
@@ -1027,18 +1030,33 @@ app.get('/api/catalog/movies', async (req, res) => {
       fetchTmdbMovieCatalog({ lang: 'es-ES', category, page, query, provider }),
     ]);
 
-    const tmdbByNormTitle = new Map<string, any>();
+    const tmdbTitleKeys = new Set<string>();
     for (const tm of tmdbData.movies) {
       const kTitle = normalizeTitleForMatch(tm.title);
       const kOrig = normalizeTitleForMatch(tm.originalTitle || '');
-      if (kTitle && !tmdbByNormTitle.has(kTitle)) tmdbByNormTitle.set(kTitle, tm);
-      if (kOrig && !tmdbByNormTitle.has(kOrig)) tmdbByNormTitle.set(kOrig, tm);
+      if (kTitle) tmdbTitleKeys.add(kTitle);
+      if (kOrig) tmdbTitleKeys.add(kOrig);
     }
 
     const seenNormTitles = new Set<string>();
+    const seenTmdbIds = new Set<number>();
     const combinedMovies: any[] = [];
 
-    // 1. Place relevant Movidy Spanish catalog movies (when searching, drop irrelevant fuzzy WP hits)
+    // 1. Place verified TMDB movies first with authentic TMDB posters/IDs (never attach unverified Movidy URLs across mismatched years)
+    for (const tm of tmdbData.movies) {
+      const numTmdb = Number(tm.tmdbId || 0);
+      if (numTmdb > 0) {
+        if (seenTmdbIds.has(numTmdb)) continue;
+        seenTmdbIds.add(numTmdb);
+      }
+      const kTitle = normalizeTitleForMatch(tm.title);
+      const kOrig = normalizeTitleForMatch(tm.originalTitle || '');
+      if (kTitle) seenNormTitles.add(kTitle);
+      if (kOrig) seenNormTitles.add(kOrig);
+      combinedMovies.push(tm);
+    }
+
+    // 2. Append pure Movidy movies that are not already covered by TMDB results (e.g. Spanish/exclusive premieres)
     const filteredMovidyMovies = query
       ? movidyData.movies.filter(
           (mv) => scoreTitleRelevance(mv.title, mv.originalTitle, query) >= 70
@@ -1050,6 +1068,15 @@ app.get('/api/catalog/movies', async (req, res) => {
       const kOutside = normalizeTitleForMatch(String(mv.title || '').replace(/\s*\([^)]*\)/g, ''));
       const kInside = normalizeTitleForMatch(String(mv.title || '').match(/\(([^)]+)\)/)?.[1] || '');
 
+      const matchesExistingTitle =
+        (kFull && tmdbTitleKeys.has(kFull)) ||
+        (kOutside && tmdbTitleKeys.has(kOutside)) ||
+        (kInside && !/^(?:19|20)\d{2}$/.test(kInside) && tmdbTitleKeys.has(kInside));
+
+      if (matchesExistingTitle) {
+        continue;
+      }
+
       if (
         (kFull && seenNormTitles.has(kFull)) ||
         (kOutside && seenNormTitles.has(kOutside))
@@ -1058,43 +1085,8 @@ app.get('/api/catalog/movies', async (req, res) => {
       }
       if (kFull) seenNormTitles.add(kFull);
       if (kOutside) seenNormTitles.add(kOutside);
-      if (kInside) seenNormTitles.add(kInside);
-
-      const matchedTmdb =
-        (kFull ? tmdbByNormTitle.get(kFull) : undefined) ||
-        (kOutside ? tmdbByNormTitle.get(kOutside) : undefined) ||
-        (kInside ? tmdbByNormTitle.get(kInside) : undefined);
-
-      if (matchedTmdb) {
-        const kTitle = normalizeTitleForMatch(matchedTmdb.title || '');
-        const kOrig = normalizeTitleForMatch(matchedTmdb.originalTitle || '');
-        if (kTitle) seenNormTitles.add(kTitle);
-        if (kOrig) seenNormTitles.add(kOrig);
-        combinedMovies.push({
-          ...matchedTmdb,
-          id: mv.id,
-          title: mv.title,
-          poster: mv.poster || matchedTmdb.poster,
-          backdrop: matchedTmdb.backdrop || mv.poster,
-          movidyUrl: mv.movidyUrl,
-          bingetrixUrl: matchedTmdb.bingetrixUrl,
-          languages: ['Castellano', 'Latino', 'VOSE', 'EN'],
-        });
-      } else {
-        combinedMovies.push(mv);
-      }
-    }
-
-    // 2. Append verified released TMDB Spanish movies (backed by Embed69 + Movidy search + Bingetrix)
-    for (const tm of tmdbData.movies) {
-      const kTitle = normalizeTitleForMatch(tm.title);
-      const kOrig = normalizeTitleForMatch(tm.originalTitle || '');
-      if ((kTitle && seenNormTitles.has(kTitle)) || (kOrig && seenNormTitles.has(kOrig))) {
-        continue;
-      }
-      if (kTitle) seenNormTitles.add(kTitle);
-      if (kOrig) seenNormTitles.add(kOrig);
-      combinedMovies.push(tm);
+      if (kInside && !/^(?:19|20)\d{2}$/.test(kInside)) seenNormTitles.add(kInside);
+      combinedMovies.push(mv);
     }
 
     // 3. Merge multi-source indexed titles & live on-demand fallback search when querying
@@ -1111,6 +1103,15 @@ app.get('/api/catalog/movies', async (req, res) => {
 
       for (const extra of [...indexedHits, ...fallbackHits]) {
         if (extra.tmdbId && combinedMovies.some((m) => Number(m.tmdbId) === Number(extra.tmdbId))) {
+          continue;
+        }
+        // Skip undated external-only hits (movidy/gnula/serieskao) whose title already matches an existing TMDB entry
+        if (
+          !extra.tmdbId &&
+          combinedMovies.some((m) =>
+            areTitlesStrictlyEqual(extra.title, [m.title, m.originalTitle].filter(Boolean))
+          )
+        ) {
           continue;
         }
         const kEx = normalizeTitleForMatch(extra.title);
@@ -1317,13 +1318,12 @@ async function resolveMovidyShowToTmdbSeries(rawItem: {
       const results: any[] = Array.isArray(tJson?.results) ? tJson.results : [];
       if (results.length === 0) continue;
 
-      const normQ = normalizeTitleForMatch(q);
       bestMatch =
         results.find(
           (r) =>
-            normalizeTitleForMatch(r.name || '') === normQ ||
-            normalizeTitleForMatch(r.original_name || '') === normQ
-        ) || results[0];
+            areTitlesStrictlyEqual(String(r.name || ''), [q]) ||
+            areTitlesStrictlyEqual(String(r.original_name || ''), [q])
+        ) || null;
       if (bestMatch) break;
     }
 
@@ -2090,37 +2090,61 @@ app.get('/api/catalog/tv/:tmdbId/languages', async (req, res) => {
 
     const seasonNum = Math.max(1, parseInt(String(req.query.season || '1'), 10) || 1);
     const episodeNum = Math.max(1, parseInt(String(req.query.episode || '1'), 10) || 1);
-    const cacheKey = `${cleanId}:${seasonNum}:${episodeNum}`;
+    const cacheKey = `v2|${cleanId}:${seasonNum}:${episodeNum}`;
 
     const cached = tvLangProbeCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
+    if (cached && cached.availableLanguages.length > 0 && Date.now() - cached.ts < 15 * 60 * 1000) {
       return res.json({ success: true, availableLanguages: cached.availableLanguages });
     }
 
     const titleHint = String(req.query.title || '').trim();
     const origTitleHint = String(req.query.origTitle || '').trim();
     let hints = [titleHint, origTitleHint].filter(Boolean);
+    let imdbId: string | null = null;
+    let yearHint = '';
+    let isReleasedShow = false;
 
-    if (hints.length === 0) {
-      const showRes = await fetch(
-        `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=es-ES`,
-        { signal: AbortSignal.timeout(3500) }
-      ).catch(() => null);
-      if (showRes?.ok) {
-        const showJson: any = await showRes.json();
-        hints = [showJson?.name, showJson?.original_name].filter(Boolean);
-      }
+    const showRes = await fetch(
+      `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=es-ES&append_to_response=external_ids,translations`,
+      { signal: AbortSignal.timeout(3500) }
+    ).catch(() => null);
+    if (showRes?.ok) {
+      const showJson: any = await showRes.json();
+      imdbId = showJson?.external_ids?.imdb_id || null;
+      const firstAirDate = String(showJson?.first_air_date || '').trim();
+      yearHint = firstAirDate.split('-')[0] || '';
+      const todayIso = new Date().toISOString().slice(0, 10);
+      const tvStatus = String(showJson?.status || '').trim();
+      isReleasedShow =
+        !/^(Planned|In Production|Rumored)$/i.test(tvStatus) &&
+        (!firstAirDate || firstAirDate <= todayIso);
+
+      const trTitles: string[] = Array.isArray(showJson?.translations?.translations)
+        ? showJson.translations.translations
+            .map((tr: any) => String(tr?.data?.name || tr?.data?.title || '').trim())
+            .filter(Boolean)
+        : [];
+      hints = Array.from(
+        new Set([...hints, showJson?.name, showJson?.original_name, ...trTitles].filter(Boolean))
+      );
     }
 
-    const availableLanguages = await probeAvailableLanguages({
+    const probedLanguages = await probeAvailableLanguages({
       tmdbId: cleanId,
+      imdbId,
       mediaType: 'tv',
       season: seasonNum,
       episode: episodeNum,
       titleHints: hints,
+      yearHint: yearHint || undefined,
     });
 
-    tvLangProbeCache.set(cacheKey, { availableLanguages, ts: Date.now() });
+    const availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[] =
+      probedLanguages.length > 0 ? probedLanguages : isReleasedShow ? ['EN'] : [];
+
+    if (availableLanguages.length > 0) {
+      tvLangProbeCache.set(cacheKey, { availableLanguages, ts: Date.now() });
+    }
     res.json({ success: true, availableLanguages });
   } catch {
     res.json({ success: false, availableLanguages: [] });
@@ -5540,50 +5564,55 @@ async function resolveTmdbIdByTitle(
   try {
     const rawStr = String(title || '').trim();
     const clean = rawStr.replace(/\s*\([^)]*\)/g, '').trim();
-    const parenPart = (rawStr.match(/\(([^)]+)\)/)?.[1] || '').trim();
-    const normClean = normalizeTitleForMatch(clean || rawStr);
-    const normParen = normalizeTitleForMatch(parenPart);
-    if (!clean || normClean.length < 2) return null;
+    const parenYear = rawStr.match(/\(((?:19|20)\d{2})\)/)?.[1] || '';
+    if (!clean || normalizeTitleForMatch(clean).length < 2) return null;
 
-    const yearNum =
-      expectedYear && /^\d{4}$/.test(expectedYear.trim()) ? Number(expectedYear.trim()) : 0;
-
-    const res = await fetch(
-      `https://api.themoviedb.org/3/search/${mediaType}?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(clean)}&page=1`,
-      { signal: AbortSignal.timeout(3500) }
-    );
-    if (!res.ok) return null;
-    const json: any = await res.json();
-    const results: any[] = Array.isArray(json?.results) ? json.results : [];
-    if (results.length === 0) return null;
+    const yearHint = expectedYear && /^(?:19|20)\d{2}$/.test(expectedYear.trim())
+      ? expectedYear.trim()
+      : parenYear;
+    const yearNum = yearHint ? Number(yearHint) : 0;
 
     const matchesTitle = (r: any): boolean => {
-      const rTitle = normalizeTitleForMatch(String(r?.title || r?.name || ''));
-      const rOrig = normalizeTitleForMatch(String(r?.original_title || r?.original_name || ''));
+      const rTitle = String(r?.title || r?.name || '').trim();
+      const rOrig = String(r?.original_title || r?.original_name || '').trim();
       return (
-        (rTitle.length >= 2 && (rTitle === normClean || (normParen.length >= 2 && rTitle === normParen))) ||
-        (rOrig.length >= 2 && (rOrig === normClean || (normParen.length >= 2 && rOrig === normParen)))
+        areTitlesStrictlyEqual(rawStr, [rTitle, rOrig].filter(Boolean)) ||
+        areTitlesStrictlyEqual(clean, [rTitle, rOrig].filter(Boolean))
       );
     };
 
-    const matchesYear = (r: any): boolean => {
-      if (!yearNum) return true;
-      const rawDate = String(r?.release_date || r?.first_air_date || '').trim();
-      const ry = rawDate.split('-')[0];
-      if (!/^\d{4}$/.test(ry)) return false;
-      return Math.abs(Number(ry) - yearNum) <= 1;
+    const pickFromResults = (results: any[]): number | null => {
+      if (results.length === 0) return null;
+      if (yearNum > 0) {
+        const exactYearHit = results.find(
+          (r) =>
+            matchesTitle(r) &&
+            Number(String(r?.release_date || r?.first_air_date || '').split('-')[0]) === yearNum
+        );
+        if (exactYearHit?.id) return Number(exactYearHit.id);
+        const adjacentYearHit = results.find((r) => {
+          if (!matchesTitle(r)) return false;
+          const ry = Number(String(r?.release_date || r?.first_air_date || '').split('-')[0]);
+          return ry > 1900 && Math.abs(ry - yearNum) <= 1;
+        });
+        return adjacentYearHit?.id ? Number(adjacentYearHit.id) : null;
+      }
+      const exactTitleHit = results.find((r) => matchesTitle(r));
+      return exactTitleHit?.id ? Number(exactTitleHit.id) : null;
     };
 
-    const exactYearAndTitle = results.find(
-      (r) =>
-        matchesTitle(r) &&
-        yearNum > 0 &&
-        Number(String(r?.release_date || r?.first_air_date || '').split('-')[0]) === yearNum
-    );
-    if (exactYearAndTitle?.id) return Number(exactYearAndTitle.id);
-
-    const exactCompatible = results.find((r) => matchesTitle(r) && matchesYear(r));
-    return exactCompatible?.id ? Number(exactCompatible.id) : null;
+    for (const lang of ['es-ES', 'en-US'] as const) {
+      const res = await fetch(
+        `https://api.themoviedb.org/3/search/${mediaType}?api_key=${TMDB_API_KEY}&language=${lang}&query=${encodeURIComponent(clean)}&page=1&include_adult=false`,
+        { signal: AbortSignal.timeout(3500) }
+      ).catch(() => null);
+      if (!res?.ok) continue;
+      const json: any = await res.json().catch(() => null);
+      const results: any[] = Array.isArray(json?.results) ? json.results : [];
+      const foundId = pickFromResults(results);
+      if (foundId) return foundId;
+    }
+    return null;
   } catch {
     return null;
   }
@@ -5684,6 +5713,9 @@ app.get('/api/extract/stream', async (req, res) => {
   const resolverType = String(req.query.resolverType || '').trim();
   const preferLang = String(req.query.preferLang || req.query.lang || 'ES').toUpperCase();
   const titleHint = String(req.query.title || '').trim();
+  const origTitleHint = String(req.query.origTitle || '').trim();
+  const rawYearParam = String(req.query.year || '').trim();
+  const yearParam = /^(?:19|20)\d{2}$/.test(rawYearParam) ? rawYearParam : '';
   const mediaTypeParam = String(req.query.mediaType || req.query.type || '').toLowerCase();
   const tmdbIdParam = String(req.query.tmdbId || '').replace(/\D/g, '');
   const seasonParam = parseInt(String(req.query.season || '0'), 10) || undefined;
@@ -5695,7 +5727,7 @@ app.get('/api/extract/stream', async (req, res) => {
     return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
   }
 
-  const cacheKey = `${mediaTypeParam}|${tmdbIdParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${rawInput}|${movidyUrlParam}|${vestUrlParam}|${titleHint}`;
+  const cacheKey = `v2|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${rawInput}|${movidyUrlParam}|${vestUrlParam}|${titleHint}`;
   const cached = extractionCache.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
     return res.json(formatExtractResponseForClient(req, cached));
@@ -5996,7 +6028,7 @@ app.get('/api/extract/stream', async (req, res) => {
         }
       }
 
-      const hasExplicitMovidyUrl =
+      let hasExplicitMovidyUrl =
         movidyUrlParam.includes('movidy.pw/ver/') || rawInput.includes('movidy.pw/ver/');
       let effectiveMovidyUrl = movidyUrlParam.includes('movidy.pw/ver/')
         ? movidyUrlParam
@@ -6010,20 +6042,25 @@ app.get('/api/extract/stream', async (req, res) => {
         ? rawInput
         : '';
 
+      let extractedMovidyMeta: MovidyPageMetadata | null = null;
       let extractedMovidyCleanTitle = '';
       let extractedMovidyYear = '';
       let extractedVestDetail: VestParsedDetail | null = null;
       let tmdbVerifiedYear = '';
+      let tmdbDirector = '';
+      let tmdbRuntimeMin = 0;
+      let tmdbImdbId: string | null = null;
+      const tmdbAltTitles: string[] = [];
 
-      // Inspect direct Movidy `/ver/...` link to detect TV Series (`id="eps"`), exact title, and exact release year
-      if (effectiveMovidyUrl && (!mediaTypeParam || !resolvedTmdbId)) {
-        const mvMeta = await fetchMovidyPageMetadata(effectiveMovidyUrl);
-        if (mvMeta) {
-          if (!mediaTypeParam && mvMeta.isTvShow) {
+      // Inspect direct Movidy `/ver/...` link whenever present so we can verify year/title/type/director against TMDB
+      if (effectiveMovidyUrl) {
+        extractedMovidyMeta = await fetchMovidyPageMetadata(effectiveMovidyUrl);
+        if (extractedMovidyMeta) {
+          if (!mediaTypeParam && extractedMovidyMeta.isTvShow) {
             effectiveMediaType = 'tv';
           }
-          extractedMovidyCleanTitle = mvMeta.cleanTitle;
-          extractedMovidyYear = mvMeta.year;
+          extractedMovidyCleanTitle = extractedMovidyMeta.cleanTitle;
+          extractedMovidyYear = extractedMovidyMeta.year;
         }
       }
 
@@ -6052,23 +6089,26 @@ app.get('/api/extract/stream', async (req, res) => {
         }
       }
 
-      if (!resolvedTmdbId && titleHint) {
-        resolvedTmdbId = await resolveTmdbIdByTitle(
-          titleHint,
-          effectiveMediaType,
-          extractedMovidyYear || undefined
-        );
+      if (!resolvedTmdbId && (titleHint || origTitleHint)) {
+        for (const qTitle of [titleHint, origTitleHint].filter(Boolean)) {
+          resolvedTmdbId = await resolveTmdbIdByTitle(
+            qTitle,
+            effectiveMediaType,
+            extractedMovidyYear || yearParam || undefined
+          );
+          if (resolvedTmdbId) break;
+        }
       }
 
-      if (!resolvedTmdbId && extractedMovidyCleanTitle) {
+      if (!resolvedTmdbId && extractedMovidyCleanTitle && extractedMovidyYear) {
         resolvedTmdbId = await resolveTmdbIdByTitle(
           extractedMovidyCleanTitle,
           effectiveMediaType,
-          extractedMovidyYear || undefined
+          extractedMovidyYear
         );
       }
 
-      if (!resolvedTmdbId && effectiveMovidyUrl) {
+      if (!resolvedTmdbId && effectiveMovidyUrl && extractedMovidyYear) {
         const slug =
           effectiveMovidyUrl
             .split('/ver/')[1]
@@ -6079,63 +6119,109 @@ app.get('/api/extract/stream', async (req, res) => {
           resolvedTmdbId = await resolveTmdbIdByTitle(
             slug,
             effectiveMediaType,
-            extractedMovidyYear || undefined
+            extractedMovidyYear
           );
         }
       }
 
       let tmdbResolvedTitle = '';
-      if (resolvedTmdbId && (!hasExplicitMovidyUrl || !titleHint)) {
+      if (resolvedTmdbId) {
         try {
           const tmEndpoint =
             effectiveMediaType === 'tv'
-              ? `https://api.themoviedb.org/3/tv/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`
-              : `https://api.themoviedb.org/3/movie/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES`;
-          const tmRes = await fetch(tmEndpoint, { signal: AbortSignal.timeout(3000) });
+              ? `https://api.themoviedb.org/3/tv/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES&append_to_response=credits,translations,external_ids`
+              : `https://api.themoviedb.org/3/movie/${resolvedTmdbId}?api_key=${TMDB_API_KEY}&language=es-ES&append_to_response=credits,translations,external_ids`;
+          const tmRes = await fetch(tmEndpoint, { signal: AbortSignal.timeout(3500) });
           if (tmRes.ok) {
             const tmJson: any = await tmRes.json();
             const esTitle = String(tmJson?.title || tmJson?.name || '').trim();
             const origTitle = String(tmJson?.original_title || tmJson?.original_name || '').trim();
             tmdbResolvedTitle = esTitle || origTitle;
             tmdbVerifiedYear = String(tmJson?.release_date || tmJson?.first_air_date || '').split('-')[0] || '';
+            tmdbImdbId = tmJson?.imdb_id || tmJson?.external_ids?.imdb_id || null;
+            if (effectiveMediaType === 'movie') {
+              const crew: any[] = Array.isArray(tmJson?.credits?.crew) ? tmJson.credits.crew : [];
+              tmdbDirector = String(crew.find((c) => c?.job === 'Director')?.name || '').trim();
+              tmdbRuntimeMin = Number(tmJson?.runtime || 0) || 0;
+            }
+            if (esTitle) tmdbAltTitles.push(esTitle);
+            if (origTitle && !tmdbAltTitles.includes(origTitle)) tmdbAltTitles.push(origTitle);
+            const translations: any[] = Array.isArray(tmJson?.translations?.translations)
+              ? tmJson.translations.translations
+              : [];
+            for (const tr of translations) {
+              const trName = String(tr?.data?.title || tr?.data?.name || '').trim();
+              if (trName && !tmdbAltTitles.includes(trName)) tmdbAltTitles.push(trName);
+            }
 
-            if (effectiveMediaType === 'movie' && !hasExplicitMovidyUrl) {
-              if (!effectiveMovidyUrl && titleHint) {
-                effectiveMovidyUrl =
-                  (await findMovidyUrlByTitle(titleHint, tmdbVerifiedYear)) || '';
+            // CRITICAL: Always verify explicit Movidy URL matches this TMDB movie (rejects mismatched remakes/homonyms!)
+            if (effectiveMovidyUrl && extractedMovidyMeta) {
+              const mvCheck = verifyMovidyMetaMatch(extractedMovidyMeta, {
+                titleHints: [titleHint, ...tmdbAltTitles].filter(Boolean),
+                expectedYear: tmdbVerifiedYear || undefined,
+                expectedDirector: tmdbDirector || undefined,
+                expectedRuntimeMin: tmdbRuntimeMin || undefined,
+                expectedMediaType: effectiveMediaType,
+              });
+              if (!mvCheck.ok) {
+                effectiveMovidyUrl = '';
+                hasExplicitMovidyUrl = false;
               }
-              if (
-                !effectiveMovidyUrl &&
-                esTitle &&
-                esTitle.toLowerCase() !== titleHint.toLowerCase()
-              ) {
-                effectiveMovidyUrl =
-                  (await findMovidyUrlByTitle(esTitle, tmdbVerifiedYear)) || '';
-              }
-              if (
-                !effectiveMovidyUrl &&
-                origTitle &&
-                origTitle.toLowerCase() !== esTitle.toLowerCase()
-              ) {
-                effectiveMovidyUrl =
-                  (await findMovidyUrlByTitle(origTitle, tmdbVerifiedYear)) || '';
+            }
+
+            if (effectiveMediaType === 'movie' && !effectiveMovidyUrl) {
+              const searchTitlePool = Array.from(
+                new Set([titleHint, esTitle, origTitle].filter(Boolean))
+              );
+              for (const qTitle of searchTitlePool) {
+                const foundMv = await findMovidyUrlByTitle(qTitle, tmdbVerifiedYear, {
+                  expectedDirector: tmdbDirector || undefined,
+                  expectedRuntimeMin: tmdbRuntimeMin || undefined,
+                  titleHints: [titleHint, ...tmdbAltTitles].filter(Boolean),
+                });
+                if (foundMv) {
+                  effectiveMovidyUrl = foundMv;
+                  break;
+                }
               }
             }
           }
         } catch {
           // ignore
         }
-      } else if (effectiveMediaType === 'movie' && !effectiveMovidyUrl && titleHint) {
-        effectiveMovidyUrl = (await findMovidyUrlByTitle(titleHint)) || '';
+      } else if (effectiveMediaType === 'movie' && !effectiveMovidyUrl && (titleHint || origTitleHint)) {
+        const effectiveYearHint = extractedMovidyYear || yearParam || undefined;
+        for (const qTitle of [titleHint, origTitleHint].filter(Boolean)) {
+          const foundMv = await findMovidyUrlByTitle(qTitle, effectiveYearHint, {
+            titleHints: [titleHint, origTitleHint].filter(Boolean),
+          });
+          if (foundMv) {
+            effectiveMovidyUrl = foundMv;
+            break;
+          }
+        }
       }
 
-      const combinedTitleHints = [titleHint, extractedMovidyCleanTitle, tmdbResolvedTitle].filter(Boolean);
+      const combinedTitleHints = Array.from(
+        new Set(
+          [
+            titleHint,
+            origTitleHint,
+            extractedMovidyCleanTitle,
+            tmdbResolvedTitle,
+            ...tmdbAltTitles,
+          ].filter(Boolean)
+        )
+      );
+      const effectiveYearForExtract = tmdbVerifiedYear || extractedMovidyYear || yearParam || undefined;
 
       const shouldQueryVest =
         Boolean(effectiveVestUrl) ||
         Boolean(
           findVestSeedForMedia({
             tmdbId: resolvedTmdbId,
+            mediaType: effectiveMediaType,
+            yearHint: effectiveYearForExtract,
             titleHints: combinedTitleHints,
             preferLang,
             season: effectiveSeason,
@@ -6145,20 +6231,26 @@ app.get('/api/extract/stream', async (req, res) => {
 
       const [movidyTracks, esTracks, bingetrixEnTracks, twoEmbedEnTracks, vestExtracted] = await Promise.all([
         effectiveMediaType === 'movie' && effectiveMovidyUrl
-          ? extractMovidyPageTracks(
-              effectiveMovidyUrl,
-              hasExplicitMovidyUrl
-                ? undefined
-                : { expectedYear: tmdbVerifiedYear || undefined, requireMovieOnly: true }
-            )
+          ? extractMovidyPageTracks(effectiveMovidyUrl, {
+              expectedYear: effectiveYearForExtract,
+              requireMovieOnly: true,
+              expectedTitleHints:
+                resolvedTmdbId || combinedTitleHints.length > 0 ? combinedTitleHints : undefined,
+              expectedDirector: tmdbDirector || undefined,
+              expectedRuntimeMin: tmdbRuntimeMin || undefined,
+            })
           : Promise.resolve([]),
         resolvedTmdbId || combinedTitleHints.length > 0
           ? extractEmbed69SpanishTracks({
               tmdbId: resolvedTmdbId || undefined,
+              imdbId: tmdbImdbId,
               mediaType: effectiveMediaType,
               season: effectiveSeason,
               episode: effectiveEpisode,
               titleHints: combinedTitleHints,
+              yearHint: effectiveYearForExtract,
+              directorHint: tmdbDirector || undefined,
+              runtimeMinHint: tmdbRuntimeMin || undefined,
             })
           : Promise.resolve([]),
         resolvedTmdbId
@@ -6172,6 +6264,7 @@ app.get('/api/extract/stream', async (req, res) => {
         resolvedTmdbId
           ? extract2EmbedEnglishTracks({
               tmdbId: resolvedTmdbId,
+              imdbId: tmdbImdbId,
               mediaType: effectiveMediaType,
               season: effectiveSeason,
               episode: effectiveEpisode,
@@ -6182,6 +6275,7 @@ app.get('/api/extract/stream', async (req, res) => {
               vestUrl: effectiveVestUrl || undefined,
               tmdbId: resolvedTmdbId,
               mediaType: effectiveMediaType,
+              yearHint: effectiveYearForExtract,
               season: effectiveSeason,
               episode: effectiveEpisode,
               preferLang,
@@ -6488,9 +6582,6 @@ app.get('/api/extract/stream', async (req, res) => {
           );
         }
 
-        const normMainTokens = normalizeTitleForMatch(shortMain)
-          .split(/\s+/)
-          .filter((w) => w.length >= 3);
         const normEpTitle = !isGenericEpTitle ? normalizeTitleForMatch(episodeTitleHint) : '';
         const epNumRegex = new RegExp(`\\b0*${effectiveEpisode}\\b`);
 
@@ -6531,21 +6622,19 @@ app.get('/api/extract/stream', async (req, res) => {
                 }
 
                 if (
-                  /\b(trailer|tráiler|teaser|reaction|reaccion|reacción|review|resumen|opening|ending|amv|ost|soundtrack|gameplay|parodia|parody|shorts|#shorts)\b/i.test(
+                  /\b(trailer|tráiler|teaser|reaction|reaccion|reacción|review|resumen|opening|ending|amv|ost|soundtrack|gameplay|parodia|parody|shorts|#shorts|podcast|entrevista|interview|documentary essay)\b/i.test(
                     vTitle
                   )
                 ) {
                   continue;
                 }
 
-                const normVTitle = normalizeTitleForMatch(vTitle);
-                if (
-                  normMainTokens.length > 0 &&
-                  !normMainTokens.some((tok) => normVTitle.includes(tok))
-                ) {
+                // Require ALL meaningful non-stopword title tokens as whole words (prevents 1-word hits like "the" or "you" playing unrelated videos)
+                if (!matchesYouTubeFallbackTitle(shortMain, vTitle)) {
                   continue;
                 }
 
+                const normVTitle = normalizeTitleForMatch(vTitle);
                 const exactEpisodeMatch =
                   effectiveMediaType === 'movie' ||
                   epNumRegex.test(vTitle) ||
@@ -6661,14 +6750,11 @@ app.get('/api/extract/stream', async (req, res) => {
                 },
               ];
 
-        // Put sandbox-friendly embeds first inside sandboxed iframes, limited to 2 cleanest backups
+        // Put sandbox-friendly embeds first inside sandboxed iframes, keeping up to 4 verified servers
         const orderedEntries = (isSandboxedFrame
-          ? [
-              ...baseEntries.filter((entry) => entry.sandboxSafe),
-              ...baseEntries.filter((entry) => !entry.sandboxSafe),
-            ]
+          ? baseEntries.filter((entry) => entry.sandboxSafe)
           : baseEntries
-        ).slice(0, 2);
+        ).slice(0, 4);
 
         return orderedEntries.map((entry) => ({
           id: entry.id,
@@ -6682,14 +6768,17 @@ app.get('/api/extract/stream', async (req, res) => {
       };
 
       const [ytFallback, embedFallbackTracks] = await Promise.all([
-        searchYouTubeFullFallback(),
+        // Only run YouTube search when TMDB web embeds aren't available (TMDB-keyed players guarantee exact movie match)
+        resolvedTmdbId ? Promise.resolve(null) : searchYouTubeFullFallback(),
         Promise.resolve(buildWebEmbedTracks()),
       ]);
 
-      // When a full clean YouTube stream is found, avoid flooding the bar with ad-heavy web embeds
-      const combinedFallbackTracks: TrackRecord[] = ytFallback
-        ? [ytFallback.track]
-        : embedFallbackTracks;
+      const combinedFallbackTracks: TrackRecord[] =
+        embedFallbackTracks.length > 0
+          ? embedFallbackTracks
+          : ytFallback
+          ? [ytFallback.track]
+          : [];
 
       if (combinedFallbackTracks.length > 0) {
         const firstTrack = combinedFallbackTracks[0];
@@ -6912,13 +7001,13 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
     if (!cleanId || cleanId === '0') return res.status(400).json({ success: false });
 
     const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
-    const cacheKey = `v4|${mediaType}|${cleanId}|${langParam}|${movidyUrlHint}`;
+    const cacheKey = `v5|${mediaType}|${cleanId}|${langParam}|${movidyUrlHint}`;
     const cached = richDetailsCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 10 * 60 * 1000) {
       return res.json({ success: true, details: cached.details });
     }
 
-    const url = `https://api.themoviedb.org/3/${mediaType}/${cleanId}?api_key=${TMDB_API_KEY}&language=${langParam}&append_to_response=videos,credits,recommendations,watch/providers`;
+    const url = `https://api.themoviedb.org/3/${mediaType}/${cleanId}?api_key=${TMDB_API_KEY}&language=${langParam}&append_to_response=videos,credits,recommendations,watch/providers,external_ids,translations`;
     const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
     if (!r.ok) return res.status(404).json({ success: false });
     const data: any = await r.json();
@@ -6959,42 +7048,13 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
     });
     const primaryTitle = localizedTitleData.title || titleHint || 'Título';
     const originalTitle = data.original_title || data.original_name || '';
-    const tmdbYear = String(data.release_date || data.first_air_date || '').split('-')[0] || '';
-
-    const [allVideosResolved, availableLanguages, titleLogoUrl] = await Promise.all([
-      (async () => {
-        let vids: any[] = Array.isArray(data?.videos?.results) ? data.videos.results : [];
-        if (vids.length === 0 && langParam !== 'en-US') {
-          const enVideosRes = await fetch(
-            `https://api.themoviedb.org/3/${mediaType}/${cleanId}/videos?api_key=${TMDB_API_KEY}&language=en-US`,
-            { signal: AbortSignal.timeout(3500) }
-          ).catch(() => null);
-          if (enVideosRes?.ok) {
-            const enJson: any = await enVideosRes.json();
-            vids = Array.isArray(enJson?.results) ? enJson.results : [];
-          }
-        }
-        return vids;
-      })(),
-      probeAvailableLanguages({
-        tmdbId: cleanId,
-        mediaType,
-        season: mediaType === 'tv' ? 1 : undefined,
-        episode: mediaType === 'tv' ? 1 : undefined,
-        titleHints: [primaryTitle, originalTitle, titleHint],
-        movidyUrl: movidyUrlHint || undefined,
-        vestUrl: String(req.query.vestUrl || '').trim() || undefined,
-        yearHint: tmdbYear || undefined,
-      }),
-      fetchTmdbTitleLogo(Number(cleanId), mediaType, req.query.lang === 'en' ? 'en' : 'es'),
-    ]);
-
-    const ytVideos = allVideosResolved.filter((v) => v && v.site === 'YouTube' && v.key);
-    const officialTrailer =
-      ytVideos.find((v) => v.type === 'Trailer' && v.official) ||
-      ytVideos.find((v) => v.type === 'Trailer') ||
-      ytVideos.find((v) => v.type === 'Teaser') ||
-      ytVideos[0];
+    const rawReleaseDate = String(data.release_date || data.first_air_date || '').trim();
+    const tmdbYear = rawReleaseDate.split('-')[0] || '';
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const tmdbStatus = String(data.status || '').trim();
+    const isReleasedTmdbTitle =
+      !/^(Planned|In Production|Rumored)$/i.test(tmdbStatus) &&
+      (!rawReleaseDate || rawReleaseDate <= todayIso);
 
     const rawCast: any[] = Array.isArray(data?.credits?.cast) ? data.credits.cast : [];
     const rawCrew: any[] = Array.isArray(data?.credits?.crew) ? data.credits.crew : [];
@@ -7016,6 +7076,61 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         ? `${Math.floor(runtimeMin / 60)}h ${runtimeMin % 60}m`
         : undefined;
 
+    const tmdbImdbId = data?.imdb_id || data?.external_ids?.imdb_id || null;
+    const altTranslationTitles: string[] = Array.isArray(data?.translations?.translations)
+      ? data.translations.translations
+          .map((tr: any) => String(tr?.data?.title || tr?.data?.name || '').trim())
+          .filter(Boolean)
+      : [];
+    const allTitleHints = Array.from(
+      new Set([primaryTitle, originalTitle, titleHint, ...altTranslationTitles].filter(Boolean))
+    );
+
+    const [allVideosResolved, probedLanguages, titleLogoUrl] = await Promise.all([
+      (async () => {
+        let vids: any[] = Array.isArray(data?.videos?.results) ? data.videos.results : [];
+        if (vids.length === 0 && langParam !== 'en-US') {
+          const enVideosRes = await fetch(
+            `https://api.themoviedb.org/3/${mediaType}/${cleanId}/videos?api_key=${TMDB_API_KEY}&language=en-US`,
+            { signal: AbortSignal.timeout(3500) }
+          ).catch(() => null);
+          if (enVideosRes?.ok) {
+            const enJson: any = await enVideosRes.json();
+            vids = Array.isArray(enJson?.results) ? enJson.results : [];
+          }
+        }
+        return vids;
+      })(),
+      probeAvailableLanguages({
+        tmdbId: cleanId,
+        imdbId: tmdbImdbId,
+        mediaType,
+        season: mediaType === 'tv' ? 1 : undefined,
+        episode: mediaType === 'tv' ? 1 : undefined,
+        titleHints: allTitleHints,
+        movidyUrl: movidyUrlHint || undefined,
+        vestUrl: String(req.query.vestUrl || '').trim() || undefined,
+        yearHint: tmdbYear || undefined,
+        directorHint: director || undefined,
+        runtimeMinHint: runtimeMin || undefined,
+      }),
+      fetchTmdbTitleLogo(Number(cleanId), mediaType, req.query.lang === 'en' ? 'en' : 'es'),
+    ]);
+
+    const availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[] =
+      probedLanguages.length > 0
+        ? probedLanguages
+        : isReleasedTmdbTitle
+        ? ['EN']
+        : [];
+
+    const ytVideos = allVideosResolved.filter((v) => v && v.site === 'YouTube' && v.key);
+    const officialTrailer =
+      ytVideos.find((v) => v.type === 'Trailer' && v.official) ||
+      ytVideos.find((v) => v.type === 'Trailer') ||
+      ytVideos.find((v) => v.type === 'Teaser') ||
+      ytVideos[0];
+
     const recs: any[] = Array.isArray(data?.recommendations?.results)
       ? data.recommendations.results
       : [];
@@ -7026,7 +7141,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
       title: primaryTitle,
       originalTitle,
       tagline: data.tagline || undefined,
-      year: String(data.release_date || data.first_air_date || '').split('-')[0] || 'HD',
+      year: tmdbYear || 'HD',
       rating: data.vote_average ? Number(data.vote_average).toFixed(1) : '',
       runtimeText,
       genres: (Array.isArray(data?.genres) ? data.genres : [])
@@ -7066,7 +7181,9 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
       watchProviders,
     };
 
-    richDetailsCache.set(cacheKey, { details, ts: Date.now() });
+    if (availableLanguages.length > 0) {
+      richDetailsCache.set(cacheKey, { details, ts: Date.now() });
+    }
     res.json({ success: true, details });
   } catch (err) {
     console.warn('Rich details error:', err);
@@ -8193,7 +8310,7 @@ app.get('/api/catalog/castellano', async (req, res) => {
     const query = String(req.query.query || '').trim();
     const page = Math.max(1, Math.min(50, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const cacheKey = `${kind}|${provider}|${category}|${page}|${query.toLowerCase()}`;
+    const cacheKey = `v2|${kind}|${provider}|${category}|${page}|${query.toLowerCase()}`;
     const cached = castellanoCatalogCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
       return res.json({
@@ -8336,30 +8453,6 @@ app.get('/api/catalog/castellano', async (req, res) => {
         : Promise.resolve({ movies: [], hasMore: false }),
     ]);
 
-    const movidyCastellanoFiltered = query
-      ? movidyData.movies.filter(
-          (mv) => scoreTitleRelevance(mv.title, mv.originalTitle, query) >= 70
-        )
-      : movidyData.movies;
-
-    for (const mv of movidyCastellanoFiltered.slice(0, 12)) {
-      pushUnique({
-        ...mv,
-        mediaType: 'movie',
-        languages: ['Castellano', 'Latino', 'VOSE'],
-      });
-    }
-
-    if (page === 1 || query) {
-      const vestEntries = listVestCatalogEntries({
-        mediaType: kind === 'series' ? 'tv' : kind === 'movies' ? 'movie' : 'all',
-        query,
-      });
-      for (const ve of vestEntries) {
-        pushUnique(ve);
-      }
-    }
-
     const mapTmdbEntry = (raw: any, mType: 'tv' | 'movie') => {
       if (!raw?.id || (!raw.poster_path && !raw.backdrop_path)) return null;
       return {
@@ -8392,10 +8485,59 @@ app.get('/api/catalog/castellano', async (req, res) => {
       if (movArr[i]) pushUnique(mapTmdbEntry(movArr[i], 'movie'));
     }
 
+    const movidyCastellanoFiltered = query
+      ? movidyData.movies.filter(
+          (mv) => scoreTitleRelevance(mv.title, mv.originalTitle, query) >= 70
+        )
+      : movidyData.movies;
+
+    for (const mv of movidyCastellanoFiltered.slice(0, 12)) {
+      if (
+        items.some((existing) =>
+          areTitlesStrictlyEqual(mv.title, [existing.title, existing.originalTitle].filter(Boolean))
+        )
+      ) {
+        continue;
+      }
+      pushUnique({
+        ...mv,
+        mediaType: 'movie',
+        languages: ['Castellano', 'Latino', 'VOSE'],
+      });
+    }
+
+    if (page === 1 || query) {
+      const vestEntries = listVestCatalogEntries({
+        mediaType: kind === 'series' ? 'tv' : kind === 'movies' ? 'movie' : 'all',
+        query,
+      });
+      for (const ve of vestEntries) {
+        if (
+          !ve.tmdbId &&
+          items.some((existing) =>
+            areTitlesStrictlyEqual(ve.title, [existing.title, existing.originalTitle].filter(Boolean))
+          )
+        ) {
+          continue;
+        }
+        pushUnique(ve);
+      }
+    }
+
     if (query) {
       const wantType = kind === 'series' ? 'tv' : kind === 'movies' ? 'movie' : 'all';
       const fallbackEntries = await liveOnDemandFallbackSearch(query, wantType);
-      for (const fe of fallbackEntries) pushUnique(fe);
+      for (const fe of fallbackEntries) {
+        if (
+          !fe.tmdbId &&
+          items.some((existing) =>
+            areTitlesStrictlyEqual(fe.title, [existing.title, existing.originalTitle].filter(Boolean))
+          )
+        ) {
+          continue;
+        }
+        pushUnique(fe);
+      }
       items.sort(
         (a, b) =>
           scoreTitleRelevance(b.title, b.originalTitle, query, { altTitle: b.altTitle }) -

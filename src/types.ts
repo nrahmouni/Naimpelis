@@ -18,10 +18,15 @@ import type {
   PinturilloStroke,
 } from './shared/pinturillo';
 import type {
-  KartInputState,
-  KartTrackId,
-  TurboKartState,
-} from './shared/turboKart';
+  Pool8BallState,
+  PoolBallGroup,
+  PoolBallState,
+  PoolDifficulty,
+  PoolFoulType,
+  PoolPocketId,
+  PoolShotInput,
+  PoolSimRuntime,
+} from './shared/pool8Ball';
 
 export type {
   BoardClockMinutes,
@@ -30,8 +35,6 @@ export type {
   BoardGameType,
   BoardSide,
   ChessPromotionPiece,
-  KartInputState,
-  KartTrackId,
   LegalBoardMove,
   ParchisGameState,
   PartyColor,
@@ -39,7 +42,14 @@ export type {
   PartyGameType,
   PinturilloGameState,
   PinturilloStroke,
-  TurboKartState,
+  Pool8BallState,
+  PoolBallGroup,
+  PoolBallState,
+  PoolDifficulty,
+  PoolFoulType,
+  PoolPocketId,
+  PoolShotInput,
+  PoolSimRuntime,
 };
 
 export type AppLanguage = 'es' | 'ca' | 'en';
@@ -774,7 +784,7 @@ export interface RoomData {
   gameState?: BoardGameState | null;
   partyGameState?: import('./shared/partyGames').PartyGameState | null;
   pinturilloState?: PinturilloGameState | null;
-  kartGameState?: TurboKartState | null;
+  poolGameState?: Pool8BallState | null;
   videoState: VideoState;
   queue?: RoomQueueItem[];
   cloudState?: CloudBrowserState;

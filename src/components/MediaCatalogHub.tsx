@@ -48,8 +48,6 @@ import {
   ChessPromotionPiece,
   EpgProgramItem,
   FavoriteChannelItem,
-  KartInputState,
-  KartTrackId,
   LiveScoreMatch,
   Participant,
   PartyColor,
@@ -57,12 +55,15 @@ import {
   PartyGameType,
   PinturilloGameState,
   PinturilloStroke,
+  Pool8BallState,
+  PoolDifficulty,
+  PoolPocketId,
+  PoolShotInput,
   RoomQueueItem,
   SpanishTdtChannel,
   SportsMatch,
   StreamingProviderId,
   TdtCategory,
-  TurboKartState,
   TvEpisodeItem,
   TvSeriesDetails,
   WatchHistoryItem,
@@ -666,7 +667,7 @@ interface MediaCatalogHubProps {
   roomBoardGame?: BoardGameState | null;
   roomPartyGame?: PartyGameState | null;
   roomPinturilloGame?: PinturilloGameState | null;
-  roomKartGame?: TurboKartState | null;
+  roomPoolGame?: Pool8BallState | null;
   gameMoveError?: string | null;
   isHost?: boolean;
   voiceChat?: GameVoiceChatState;
@@ -699,13 +700,15 @@ interface MediaCatalogHubProps {
   onPinturilloGuess?: (text: string) => void;
   onPinturilloRematch?: () => void;
   onCloseRoomPinturillo?: () => void;
-  onStartRoomKart?: (trackId?: KartTrackId) => void;
-  onKartSelectTrack?: (trackId: KartTrackId) => void;
-  onKartBeginRace?: () => void;
-  onKartInput?: (input: KartInputState) => void;
-  onKartUseItem?: () => void;
-  onKartRematch?: (trackId?: KartTrackId) => void;
-  onCloseRoomKart?: () => void;
+  onStartRoomPool?: (difficulty?: PoolDifficulty) => void;
+  onPoolJoinSeat?: (seatIndex: 0 | 1 | 'spectate') => void;
+  onPoolCallPocket?: (pocketId: PoolPocketId) => void;
+  onPoolPlaceCue?: (x: number, y: number) => void;
+  onPoolTakeShot?: (shot: PoolShotInput) => void;
+  onPoolSyncChecksum?: (turnNumber: number, checksum: number) => void;
+  onPoolForfeit?: () => void;
+  onPoolRematch?: () => void;
+  onCloseRoomPool?: () => void;
 }
 
 export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
@@ -746,7 +749,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   roomBoardGame = null,
   roomPartyGame = null,
   roomPinturilloGame = null,
-  roomKartGame = null,
+  roomPoolGame = null,
   gameMoveError = null,
   isHost = false,
   voiceChat,
@@ -768,13 +771,15 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onPinturilloGuess,
   onPinturilloRematch,
   onCloseRoomPinturillo,
-  onStartRoomKart,
-  onKartSelectTrack,
-  onKartBeginRace,
-  onKartInput,
-  onKartUseItem,
-  onKartRematch,
-  onCloseRoomKart,
+  onStartRoomPool,
+  onPoolJoinSeat,
+  onPoolCallPocket,
+  onPoolPlaceCue,
+  onPoolTakeShot,
+  onPoolSyncChecksum,
+  onPoolForfeit,
+  onPoolRematch,
+  onCloseRoomPool,
 }) => {
   const t = UI_COPY[lang];
 
@@ -2498,7 +2503,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const isSectionSearchVisible = showSectionSearch || activeSectionQuery.trim().length > 0;
 
   return (
-    <div className="@container w-full min-w-0 max-w-full space-y-4 pb-24 sm:pb-6" data-pillar={activePillar}>
+    <div
+      className={
+        activeSection === 'games'
+          ? '@container w-full min-w-0 max-w-full flex-1 min-h-0 flex flex-col gap-1.5 pb-0.5'
+          : '@container w-full min-w-0 max-w-full space-y-4 pb-24 sm:pb-6'
+      }
+      data-pillar={activePillar}
+    >
       {/* Movie / Series Rich Details & Language Selector Modal */}
       <MediaDetailsModal
         item={previewItem}
@@ -4528,8 +4540,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* Replaces stacked navigation, language, platform & category rows    */}
       {/* ================================================================== */}
       {activeSection !== 'home' && (
-        <div className="space-y-2.5">
-          <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-white/[0.07]">
+        <div className={activeSection === 'games' ? 'shrink-0' : 'space-y-2.5'}>
+          <div
+            className={`flex items-center justify-between gap-2 border-b border-white/[0.07] ${
+              activeSection === 'games' ? 'pb-1' : 'pb-1.5'
+            }`}
+          >
             {/* Left: Compact back button (when deep in a hub) + single concise mode switch */}
             <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
               {(focusedHub !== 'all' ||
@@ -8283,7 +8299,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             roomBoardGame={roomBoardGame}
             roomPartyGame={roomPartyGame}
             roomPinturilloGame={roomPinturilloGame}
-            roomKartGame={roomKartGame}
+            roomPoolGame={roomPoolGame}
             gameMoveError={gameMoveError}
             isHost={isHost}
             voiceChat={voiceChat}
@@ -8305,13 +8321,15 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             onPinturilloGuess={onPinturilloGuess}
             onPinturilloRematch={onPinturilloRematch}
             onCloseRoomPinturillo={onCloseRoomPinturillo}
-            onStartRoomKart={onStartRoomKart}
-            onKartSelectTrack={onKartSelectTrack}
-            onKartBeginRace={onKartBeginRace}
-            onKartInput={onKartInput}
-            onKartUseItem={onKartUseItem}
-            onKartRematch={onKartRematch}
-            onCloseRoomKart={onCloseRoomKart}
+            onStartRoomPool={onStartRoomPool}
+            onPoolJoinSeat={onPoolJoinSeat}
+            onPoolCallPocket={onPoolCallPocket}
+            onPoolPlaceCue={onPoolPlaceCue}
+            onPoolTakeShot={onPoolTakeShot}
+            onPoolSyncChecksum={onPoolSyncChecksum}
+            onPoolForfeit={onPoolForfeit}
+            onPoolRematch={onPoolRematch}
+            onCloseRoomPool={onCloseRoomPool}
           />
         </React.Suspense>
       )}

@@ -192,22 +192,48 @@ export const wsPinturilloGuessSchema = z.object({
   text: z.string().trim().min(1).max(60),
 });
 
-export const wsKartRoomSchema = z.object({
+export const wsPoolRoomSchema = z.object({
   roomId: roomIdSchema,
 });
 
-export const wsKartTrackSchema = z.object({
+export const wsPoolStartSchema = z.object({
   roomId: roomIdSchema,
-  trackId: z.enum(['neon_sun', 'emerald_lake', 'volcano_turbo']).optional(),
+  difficulty: z.enum(['easy', 'medium', 'hard']).optional(),
 });
 
-export const wsKartInputSchema = z.object({
+export const wsPoolJoinSeatSchema = z.object({
   roomId: roomIdSchema,
-  input: z.object({
-    steer: z.number().min(-1).max(1),
-    throttle: z.number().min(-0.5).max(1),
-    drift: z.boolean(),
+  seatIndex: z.union([z.literal(0), z.literal(1), z.literal('spectate')]),
+});
+
+export const wsPoolCallPocketSchema = z.object({
+  roomId: roomIdSchema,
+  pocketId: z.enum(['TL', 'TM', 'TR', 'BL', 'BM', 'BR']),
+});
+
+export const wsPoolPlaceCueSchema = z.object({
+  roomId: roomIdSchema,
+  x: z.number().min(0).max(1000),
+  y: z.number().min(0).max(500),
+});
+
+export const wsPoolTakeShotSchema = z.object({
+  roomId: roomIdSchema,
+  shot: z.object({
+    angle: z.number().min(-Math.PI * 4).max(Math.PI * 4),
+    power: z.number().min(0).max(1),
+    spinX: z.number().min(-1).max(1),
+    spinY: z.number().min(-1).max(1),
+    calledPocketId: z.enum(['TL', 'TM', 'TR', 'BL', 'BM', 'BR']).nullable().optional(),
+    cueX: z.number().min(0).max(1000).optional(),
+    cueY: z.number().min(0).max(500).optional(),
   }),
+});
+
+export const wsPoolSyncChecksumSchema = z.object({
+  roomId: roomIdSchema,
+  turnNumber: z.number().int().min(0).max(10_000),
+  checksum: z.number().int().min(0),
 });
 
 export const wsEnvelopeSchema = z.object({
@@ -234,8 +260,10 @@ const WS_EVENT_LIMITS: Record<string, { max: number; windowMs: number }> = {
   VOICE_SIGNAL: { max: 120, windowMs: 10_000 },
   PINTURILLO_STROKE: { max: 90, windowMs: 5_000 },
   PINTURILLO_GUESS: { max: 15, windowMs: 5_000 },
-  KART_INPUT: { max: 120, windowMs: 5_000 },
-  KART_USE_ITEM: { max: 15, windowMs: 5_000 },
+  POOL_TAKE_SHOT: { max: 10, windowMs: 5_000 },
+  POOL_PLACE_CUE: { max: 30, windowMs: 5_000 },
+  POOL_CALL_POCKET: { max: 20, windowMs: 5_000 },
+  POOL_SYNC_CHECKSUM: { max: 20, windowMs: 5_000 },
   __GLOBAL__: { max: 240, windowMs: 10_000 },
 };
 

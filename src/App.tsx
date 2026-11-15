@@ -55,7 +55,7 @@ import {
   SpanishTdtChannel,
   SportsMatch,
   StreamTrack,
-  TurboKartState,
+  Pool8BallState,
   TvEpisodeItem,
   TvRemoteCommandType,
   TvSeriesDetails,
@@ -422,7 +422,7 @@ export function App() {
   const [roomGameState, setRoomGameState] = useState<BoardGameState | null>(null);
   const [partyGameState, setPartyGameState] = useState<PartyGameState | null>(null);
   const [pinturilloState, setPinturilloState] = useState<PinturilloGameState | null>(null);
-  const [kartGameState, setKartGameState] = useState<TurboKartState | null>(null);
+  const [poolGameState, setPoolGameState] = useState<Pool8BallState | null>(null);
   const [gameMoveError, setGameMoveError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1316,7 +1316,7 @@ export function App() {
         setRoomGameState(payload.gameState || null);
         setPartyGameState(payload.partyGameState || null);
         setPinturilloState(payload.pinturilloState || null);
-        setKartGameState(payload.kartGameState || null);
+        setPoolGameState(payload.poolGameState || null);
         setGameMoveError(null);
         setParticipants(payload.participants || []);
         setMessages(payload.messages || []);
@@ -1557,14 +1557,16 @@ export function App() {
             setUnreadChatCount((c) => c + 1);
           }
         }
-      } else if (type === 'KART_STATE_UPDATED') {
-        setKartGameState(payload.kartGameState || null);
+      } else if (type === 'POOL_STATE_UPDATED') {
+        setPoolGameState(payload.poolGameState || null);
         if (payload.message) {
           setMessages((prev) => [...prev.slice(-149), payload.message!]);
           if (mobileTabRef.current !== 'chat') {
             setUnreadChatCount((c) => c + 1);
           }
         }
+      } else if (type === 'POOL_SHOT_BROADCAST') {
+        setPoolGameState(payload.authoritativeState || null);
       }
     });
 
@@ -1872,6 +1874,8 @@ export function App() {
         vestUrl: movie.vestUrl || '',
         preferLang,
         title: movie.title,
+        ...(movie.originalTitle ? { origTitle: movie.originalTitle } : {}),
+        ...(movie.year && /^\d{4}$/.test(movie.year) ? { year: movie.year } : {}),
         ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
@@ -2018,6 +2022,8 @@ export function App() {
         episode: String(episode.episodeNumber),
         preferLang,
         title: series.title,
+        ...(series.originalTitle ? { origTitle: series.originalTitle } : {}),
+        ...(series.year && /^\d{4}$/.test(series.year) ? { year: series.year } : {}),
         episodeTitle: episode.title || '',
         ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });
@@ -3956,6 +3962,17 @@ export function App() {
     handleSelectTrack,
   });
 
+  const isOnMobileSocialTab =
+    !isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room');
+  const isGamesSectionActive = catalogSection === 'games' && !isOnMobileSocialTab;
+  const effectiveChromeHidden = isChromeHidden && !isGamesSectionActive;
+
+  useEffect(() => {
+    if (isGamesSectionActive && isChromeHidden) {
+      setIsChromeHidden(false);
+    }
+  }, [isGamesSectionActive, isChromeHidden]);
+
   if (showDesignSystem) {
     return (
       <React.Suspense fallback={null}>
@@ -4161,8 +4178,6 @@ export function App() {
     (effectiveVideoState.mode !== 'idle' || isExtracting) && !isPlayerClosedLocally;
   const isPlayingMediaReady =
     effectiveVideoState.mode !== 'idle' && !isExtracting && !isPlayerClosedLocally;
-  const isOnMobileSocialTab =
-    !isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room');
   const isDockedMini =
     isPlayerActive &&
     (isPlayerMinimized ||
@@ -4184,7 +4199,7 @@ export function App() {
     const delta = st - prevY;
     lastChromeScrollYRef.current = st;
 
-    if (!isOnMobileSocialTab && !isAutoImmersiveLandscape) {
+    if (!isOnMobileSocialTab && !isAutoImmersiveLandscape && !isGamesSectionActive) {
       if (st > 52 && delta > 10 && !isChromeHidden) {
         setIsChromeHidden(true);
       } else if ((delta < -16 || st <= 16) && isChromeHidden) {
@@ -4527,7 +4542,7 @@ export function App() {
           className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 z-30 ${
             isMobileChatWithKeyboard || isAutoImmersiveLandscape
               ? 'hidden'
-              : isChromeHidden
+              : effectiveChromeHidden
               ? 'grid-rows-[0fr] opacity-0 pointer-events-none'
               : 'grid-rows-[1fr] opacity-100'
           }`}
@@ -4537,7 +4552,7 @@ export function App() {
               className={`${
                 isDesktopLayout ? 'h-[58px] px-4 flex' : 'h-13 px-3 flex'
               } bg-[#111115]/90 backdrop-blur-2xl border-b border-white/[0.07] items-center justify-between gap-2.5 shadow-[0_6px_28px_rgba(0,0,0,0.4)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                isChromeHidden ? '-translate-y-full' : 'translate-y-0'
+                effectiveChromeHidden ? '-translate-y-full' : 'translate-y-0'
               }`}
             >
           {/* Zone 1: Brand + Active Room Switcher Pill */}
@@ -4842,26 +4857,28 @@ export function App() {
               compact
             />
 
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setIsChromeHidden(true);
-              }}
-              className="w-8 h-9 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.07] text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
-              title={pickLang(lang, {
-                es: 'Ocultar menús superior e inferior',
-                ca: 'Amagar menús superior i inferior',
-                en: 'Hide top & bottom bars',
-              })}
-              aria-label={pickLang(lang, {
-                es: 'Ocultar menús superior e inferior',
-                ca: 'Amagar menús superior i inferior',
-                en: 'Hide top & bottom bars',
-              })}
-            >
-              <ChevronUp className="w-4 h-4" />
-            </button>
+            {!isGamesSectionActive && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setIsChromeHidden(true);
+                }}
+                className="w-8 h-9 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.07] text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
+                title={pickLang(lang, {
+                  es: 'Ocultar menús superior e inferior',
+                  ca: 'Amagar menús superior i inferior',
+                  en: 'Hide top & bottom bars',
+                })}
+                aria-label={pickLang(lang, {
+                  es: 'Ocultar menús superior e inferior',
+                  ca: 'Amagar menús superior i inferior',
+                  en: 'Hide top & bottom bars',
+                })}
+              >
+                <ChevronUp className="w-4 h-4" />
+              </button>
+            )}
 
             {isDesktopLayout && (
               <button
@@ -5257,22 +5274,32 @@ export function App() {
               </div>
             )}
 
-            {/* Scrollable Catalog Hub */}
+            {/* Scrollable Catalog Hub (zero-scroll full-height fit inside Games Hub) */}
             <div
               ref={catalogScrollRef}
-              onScroll={!isDesktopLayout ? handleCatalogOrWorkspaceScroll : undefined}
-              onClick={!isDesktopLayout ? handleWorkspaceBackgroundClick : undefined}
+              onScroll={!isDesktopLayout && !isGamesSectionActive ? handleCatalogOrWorkspaceScroll : undefined}
+              onClick={!isDesktopLayout && !isGamesSectionActive ? handleWorkspaceBackgroundClick : undefined}
               className={`flex-1 min-h-0 min-w-0 ${
                 isDesktopLayout
                   ? 'overflow-visible px-6 py-5'
+                  : isGamesSectionActive
+                  ? 'overflow-hidden px-3 py-1.5 flex flex-col'
                   : 'overflow-y-auto overflow-x-clip overscroll-contain px-3.5 py-3'
               } ${
                 !isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room')
                   ? 'hidden'
+                  : isGamesSectionActive && !isDesktopLayout
+                  ? 'flex'
                   : 'block'
               }`}
             >
-              <div className="w-full min-w-0 max-w-7xl mx-auto space-y-4 pb-6">
+              <div
+                className={
+                  isGamesSectionActive
+                    ? 'w-full min-w-0 max-w-7xl mx-auto flex-1 min-h-0 flex flex-col'
+                    : 'w-full min-w-0 max-w-7xl mx-auto space-y-4 pb-6'
+                }
+              >
                 {/* REAL-TIME LIVE MATCH CENTER DOCKED RIGHT BELOW THE PLAYER */}
                 {videoState.mode !== 'idle' &&
                   !isPlayerClosedLocally &&
@@ -5482,7 +5509,7 @@ export function App() {
                   roomBoardGame={roomGameState}
                   roomPartyGame={partyGameState}
                   roomPinturilloGame={pinturilloState}
-                  roomKartGame={kartGameState}
+                  roomPoolGame={poolGameState}
                   gameMoveError={gameMoveError}
                   isHost={isHostUser}
                   voiceChat={voiceChat}
@@ -5506,32 +5533,38 @@ export function App() {
                   onPinturilloGuess={(text) => socketService.sendPinturilloGuess(text)}
                   onPinturilloRematch={() => socketService.rematchPinturillo()}
                   onCloseRoomPinturillo={() => socketService.closePinturillo()}
-                  onStartRoomKart={(trackId) => socketService.startTurboKart(trackId)}
-                  onKartSelectTrack={(trackId) => socketService.selectTurboKartTrack(trackId)}
-                  onKartBeginRace={() => socketService.beginTurboKartRace()}
-                  onKartInput={(input) => socketService.sendTurboKartInput(input)}
-                  onKartUseItem={() => socketService.useTurboKartItem()}
-                  onKartRematch={(trackId) => socketService.rematchTurboKart(trackId)}
-                  onCloseRoomKart={() => socketService.closeTurboKart()}
+                  onStartRoomPool={(difficulty) => socketService.startPoolGame(difficulty)}
+                  onPoolJoinSeat={(seat) => socketService.joinPoolSeat(seat)}
+                  onPoolCallPocket={(pocketId) => socketService.callPoolPocket(pocketId)}
+                  onPoolPlaceCue={(x, y) => socketService.placePoolCueBall(x, y)}
+                  onPoolTakeShot={(shot) => socketService.takePoolShot(shot)}
+                  onPoolSyncChecksum={(turnNumber, checksum) =>
+                    socketService.syncPoolChecksum(turnNumber, checksum)
+                  }
+                  onPoolForfeit={() => socketService.forfeitPoolGame()}
+                  onPoolRematch={() => socketService.rematchPoolGame()}
+                  onCloseRoomPool={() => socketService.closePoolGame()}
                 />
 
-                {/* Minimalist Footer (Legal & Design System live cleanly inside Mi Perfil) */}
-                <footer className="mt-14 pt-5 pb-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-3 text-[11px] text-zinc-500">
-                  <span>NAIM CINE · Web · Android APK · Google TV</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setIsAdsPageOpen(true);
-                      if (typeof window !== 'undefined') {
-                        window.history.pushState({}, '', '/naimcine-ads');
-                      }
-                    }}
-                    className="text-[11px] font-mono tracking-wider text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer py-1 px-2.5 rounded-full hover:bg-white/[0.05]"
-                  >
-                    naimcine ads
-                  </button>
-                </footer>
+                {/* Minimalist Footer (Hidden in Games Hub so grid fills viewport cleanly without gap or scroll) */}
+                {!isGamesSectionActive && (
+                  <footer className="mt-14 pt-5 pb-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-3 text-[11px] text-zinc-500">
+                    <span>NAIM CINE · Web · Android APK · Google TV</span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setIsAdsPageOpen(true);
+                        if (typeof window !== 'undefined') {
+                          window.history.pushState({}, '', '/naimcine-ads');
+                        }
+                      }}
+                      className="text-[11px] font-mono tracking-wider text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer py-1 px-2.5 rounded-full hover:bg-white/[0.05]"
+                    >
+                      naimcine ads
+                    </button>
+                  </footer>
+                )}
               </div>
             </div>
           </div>
@@ -5643,7 +5676,7 @@ export function App() {
             showWatchlistOnly={showWatchlistOnly}
             unreadChatCount={unreadChatCount}
             roomQueueCount={roomQueue.length}
-            isChromeHidden={isChromeHidden}
+            isChromeHidden={effectiveChromeHidden}
             onSelectHome={() => {
               setShowWatchlistOnly(false);
               setMobileTab('home');
@@ -5685,6 +5718,7 @@ export function App() {
             }}
             onSelectGames={() => {
               setShowWatchlistOnly(false);
+              setIsChromeHidden(false);
               setMobileTab('games');
               setCatalogSection('games');
             }}
@@ -5698,8 +5732,8 @@ export function App() {
           />
         )}
 
-        {/* Click-to-Reveal Floating Pill when Top/Bottom Chrome is Hidden (moved to PartySidebar corner when in mobile Sala) */}
-        {isChromeHidden && !isOnMobileSocialTab && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
+        {/* Click-to-Reveal Floating Pill when Top/Bottom Chrome is Hidden (disabled in Games Hub) */}
+        {effectiveChromeHidden && !isOnMobileSocialTab && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
           <div className="fixed bottom-[max(0.65rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 animate-fade-in">
             <button
               type="button"

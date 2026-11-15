@@ -22,14 +22,6 @@ export type GameSfxKind =
   | 'guess_correct'
   | 'streak_up'
   | 'round_end'
-  | 'kart_countdown'
-  | 'kart_go'
-  | 'kart_boost'
-  | 'kart_item'
-  | 'kart_throw'
-  | 'kart_hit'
-  | 'kart_bump'
-  | 'kart_lap'
   | 'victory'
   | 'error';
 
@@ -151,35 +143,6 @@ export function playGameSfx(kind: GameSfxKind, muted = false): void {
       case 'round_end':
         tone(392, 0.1, 'triangle', 0.08, 0);
         tone(329.63, 0.14, 'sine', 0.075, 0.08);
-        break;
-      case 'kart_countdown':
-        tone(440, 0.11, 'square', 0.055, 0);
-        break;
-      case 'kart_go':
-        tone(880, 0.24, 'triangle', 0.11, 0, 1046.5);
-        break;
-      case 'kart_boost':
-        tone(260, 0.14, 'sawtooth', 0.07, 0, 740);
-        tone(520, 0.16, 'triangle', 0.075, 0.03, 980);
-        break;
-      case 'kart_item':
-        tone(523.25, 0.06, 'sine', 0.08, 0);
-        tone(659.25, 0.06, 'sine', 0.08, 0.05);
-        tone(783.99, 0.12, 'triangle', 0.09, 0.1);
-        break;
-      case 'kart_throw':
-        tone(460, 0.09, 'triangle', 0.085, 0, 780);
-        break;
-      case 'kart_hit':
-        tone(180, 0.12, 'sawtooth', 0.09, 0, 75);
-        tone(320, 0.1, 'square', 0.05, 0.03, 140);
-        break;
-      case 'kart_bump':
-        tone(145, 0.06, 'triangle', 0.075, 0, 95);
-        break;
-      case 'kart_lap':
-        tone(587.33, 0.08, 'triangle', 0.09, 0);
-        tone(880, 0.14, 'triangle', 0.1, 0.07);
         break;
       case 'victory':
         tone(523.25, 0.12, 'triangle', 0.095, 0);

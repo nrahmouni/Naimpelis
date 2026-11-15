@@ -216,6 +216,7 @@ describe('Official 1971 Mattel UNO Rules', () => {
 
     const custom: UnoGameState = {
       ...state,
+      direction: 1,
       turnSeat: 0,
       activeColor: 'red',
       discardPile: [{ id: 'top', color: 'red', value: '4' }],
@@ -243,6 +244,7 @@ describe('Official 1971 Mattel UNO Rules', () => {
     // Draw 1 playable card -> sets drawnPlayableCardId; passing advances turn without forcing another draw
     const drawState: UnoGameState = {
       ...base,
+      direction: 1,
       turnSeat: 0,
       activeColor: 'blue',
       discardPile: [{ id: 'top', color: 'blue', value: '9' }],
@@ -270,6 +272,7 @@ describe('Official 1971 Mattel UNO Rules', () => {
       ...base,
       players: base.players.map((p, i) => ({ ...p, isBot: false, userId: `u${i + 1}` })),
       turnSeat: 0,
+      direction: 1,
       activeColor: 'red',
       discardPile: [{ id: 'top', color: 'red', value: '5' }],
       hands: {

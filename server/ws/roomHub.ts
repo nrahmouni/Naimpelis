@@ -26,9 +26,6 @@ import {
   wsEnvelopeSchema,
   wsGameMoveSchema,
   wsJoinRoomSchema,
-  wsKartInputSchema,
-  wsKartRoomSchema,
-  wsKartTrackSchema,
   wsPartyGameActionSchema,
   wsPartyGameStartSchema,
   wsPinChatSchema,
@@ -37,6 +34,13 @@ import {
   wsPinturilloRoomSchema,
   wsPinturilloStrokeSchema,
   wsPollStartSchema,
+  wsPoolCallPocketSchema,
+  wsPoolJoinSeatSchema,
+  wsPoolPlaceCueSchema,
+  wsPoolRoomSchema,
+  wsPoolStartSchema,
+  wsPoolSyncChecksumSchema,
+  wsPoolTakeShotSchema,
   wsQueueReorderSchema,
   WsRateLimiter,
   wsRegisterPresenceSchema,
@@ -101,14 +105,19 @@ import {
   type PinturilloGameState,
 } from '../../src/shared/pinturillo.ts';
 import {
-  createInitialTurboKartState,
-  setTurboKartTrack,
-  startTurboKartRace,
-  stepTurboKartSimulation,
-  useTurboKartItem,
-  type KartInputState,
-  type TurboKartState,
-} from '../../src/shared/turboKart.ts';
+  POOL_DISCONNECT_GRACE_MS,
+  POOL_HEAD_STRING_X,
+  POOL_FOOT_SPOT_Y,
+  applyPoolShot,
+  callPoolPocket,
+  computePoolChecksum,
+  createInitialPoolState,
+  forfeitPoolMatch,
+  isValidCueBallPlacement,
+  joinPoolSeat,
+  placePoolCueBall,
+  type Pool8BallState,
+} from '../../src/shared/pool8Ball.ts';
 import type { VoicePeerState } from '../../src/shared/protocol.ts';
 
 export interface CloudRoomSession extends CloudSessionLite {
@@ -193,7 +202,7 @@ export interface RoomRecord {
   gameState?: BoardGameState | null;
   partyGameState?: PartyGameState | null;
   pinturilloState?: PinturilloGameState | null;
-  kartGameState?: TurboKartState | null;
+  poolGameState?: Pool8BallState | null;
   createdAt: number;
 }
 
@@ -232,8 +241,8 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   const partyBotTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const boardTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const pinturilloTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  const kartRaceLoops = new Map<string, ReturnType<typeof setInterval>>();
-  const kartInputsByRoom = new Map<string, Map<string, KartInputState>>();
+  const poolTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const poolDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const roomVoicePeers = new Map<string, Map<string, VoicePeerState>>();
 
   const tvPairingSessions = new LruTtlCache<string, TvPairingSession>(400, 15 * 60 * 1000);
@@ -580,58 +589,57 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
     pinturilloTimers.set(room.id, t);
   }
 
-  function stopKartRaceLoop(roomId: string) {
-    const iv = kartRaceLoops.get(roomId);
-    if (iv) {
-      clearInterval(iv);
-      kartRaceLoops.delete(roomId);
+  function stopPoolTurnTimer(roomId: string) {
+    const t = poolTurnTimers.get(roomId);
+    if (t) {
+      clearTimeout(t);
+      poolTurnTimers.delete(roomId);
     }
   }
 
-  function startKartRaceLoop(room: RoomRecord) {
-    stopKartRaceLoop(room.id);
-    const ks = room.kartGameState;
-    if (!ks || (ks.status !== 'countdown' && ks.status !== 'racing')) return;
+  function clearPoolDisconnectTimer(roomId: string, userId: string) {
+    const key = `${roomId}:${userId}`;
+    const t = poolDisconnectTimers.get(key);
+    if (t) {
+      clearTimeout(t);
+      poolDisconnectTimers.delete(key);
+    }
+  }
 
-    let lastTick = Date.now();
-    const iv = setInterval(() => {
+  function schedulePoolTurnTimer(room: RoomRecord) {
+    stopPoolTurnTimer(room.id);
+    const ps = room.poolGameState;
+    if (!ps || ps.status !== 'playing' || !ps.turnDeadlineAt) return;
+    const delayMs = Math.max(250, ps.turnDeadlineAt - Date.now());
+    const expectedTurn = ps.turnNumber;
+    const expectedSeat = ps.turnSeat;
+
+    const timer = setTimeout(() => {
+      poolTurnTimers.delete(room.id);
       const latestRoom = rooms.get(room.id);
-      const curr = latestRoom?.kartGameState;
-      if (!latestRoom || !curr || (curr.status !== 'countdown' && curr.status !== 'racing')) {
-        stopKartRaceLoop(room.id);
+      const curr = latestRoom?.poolGameState;
+      if (
+        !latestRoom ||
+        !curr ||
+        curr.status !== 'playing' ||
+        curr.turnNumber !== expectedTurn ||
+        curr.turnSeat !== expectedSeat
+      ) {
         return;
       }
-      if (latestRoom.participants.length === 0) {
-        stopKartRaceLoop(room.id);
-        return;
-      }
-
-      const now = Date.now();
-      const dtSec = Math.max(0.02, Math.min(0.08, (now - lastTick) / 1000));
-      lastTick = now;
-
-      const inputMap = kartInputsByRoom.get(room.id);
-      const inputObj: Record<string, KartInputState> = {};
-      if (inputMap) {
-        inputMap.forEach((v, k) => {
-          inputObj[k] = v;
-        });
-      }
-
-      const nextState = stepTurboKartSimulation(curr, inputObj, dtSec, now);
-      latestRoom.kartGameState = nextState;
-
-      broadcastToRoom(room.id, {
-        type: 'KART_STATE_UPDATED',
-        payload: { kartGameState: nextState },
+      const timedOutSeat = curr.players[curr.turnSeat];
+      if (!timedOutSeat) return;
+      const forfeited = forfeitPoolMatch(curr, timedOutSeat.userId, 'timeout_forfeit');
+      if (!forfeited) return;
+      latestRoom.poolGameState = forfeited;
+      schedulePersistRoom(latestRoom.id);
+      broadcastToRoom(latestRoom.id, {
+        type: 'POOL_STATE_UPDATED',
+        payload: { poolGameState: latestRoom.poolGameState },
       });
-
-      if (nextState.status === 'finished') {
-        stopKartRaceLoop(room.id);
-      }
-    }, 55);
-    iv.unref?.();
-    kartRaceLoops.set(room.id, iv);
+    }, delayMs);
+    timer.unref?.();
+    poolTurnTimers.set(room.id, timer);
   }
 
   function broadcastToRoom(roomId: string, message: unknown, excludeWs?: WebSocket) {
@@ -1398,6 +1406,27 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           flushPendingInvitesForClient(ws, userId, friendCode);
           scheduleBroadcastOnlineUsers();
 
+          // Restore pool seat online status if reconnecting during an active match
+          let poolReconnected = false;
+          if (room.poolGameState) {
+            clearPoolDisconnectTimer(roomId, userId);
+            const seatIdx = room.poolGameState.players.findIndex((p) => p?.userId === userId);
+            if (seatIdx !== -1 && room.poolGameState.players[seatIdx]) {
+              const updatedPlayers: Pool8BallState['players'] = [
+                room.poolGameState.players[0] ? { ...room.poolGameState.players[0] } : null,
+                room.poolGameState.players[1] ? { ...room.poolGameState.players[1] } : null,
+              ];
+              updatedPlayers[seatIdx]!.connected = true;
+              updatedPlayers[seatIdx]!.disconnectedAt = null;
+              room.poolGameState = {
+                ...room.poolGameState,
+                players: updatedPlayers,
+                updatedAt: Date.now(),
+              };
+              poolReconnected = true;
+            }
+          }
+
           let joinMsg: RoomChatMessageRecord | null = null;
           if (
             shouldEmitJoinSystemMessage({
@@ -1444,6 +1473,16 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             },
             ws
           );
+          if (poolReconnected && room.poolGameState) {
+            broadcastToRoom(
+              roomId,
+              {
+                type: 'POOL_STATE_UPDATED',
+                payload: { poolGameState: room.poolGameState },
+              },
+              ws
+            );
+          }
           return;
         }
 
@@ -3058,9 +3097,9 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           return;
         }
 
-        // Turbo Kart (Mario Kart-style Multiplayer Racing · 2–6 Players + AI Bots)
-        if (type === 'KART_START') {
-          const valid = wsKartTrackSchema.safeParse(payload);
+        // Billar Bola 8 (Pro 8-Ball Pool · 1v1 Authoritative Turn & Deterministic Shot Sync)
+        if (type === 'POOL_START') {
+          const valid = wsPoolStartSchema.safeParse(payload);
           if (!valid.success) return;
           const roomId = valid.data.roomId.toLowerCase();
           const room = rooms.get(roomId);
@@ -3068,115 +3107,238 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
 
           const humans = room.participants
             .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
-            .slice(0, 6)
+            .slice(0, 2)
             .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
 
-          stopKartRaceLoop(room.id);
-          kartInputsByRoom.delete(room.id);
-          room.kartGameState = createInitialTurboKartState(humans, {
-            trackId: valid.data.trackId,
-            waitForHost: true,
+          stopPoolTurnTimer(room.id);
+          room.poolGameState = createInitialPoolState(humans, {
+            difficulty: valid.data.difficulty || 'medium',
           });
+          schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
-            type: 'KART_STATE_UPDATED',
-            payload: { kartGameState: room.kartGameState },
+            type: 'POOL_STATE_UPDATED',
+            payload: { poolGameState: room.poolGameState },
           });
+          schedulePoolTurnTimer(room);
           return;
         }
 
-        if (type === 'KART_SELECT_TRACK') {
-          const valid = wsKartTrackSchema.safeParse(payload);
-          if (!valid.success || !valid.data.trackId) return;
-          const room = rooms.get(valid.data.roomId.toLowerCase());
-          if (!room || !room.kartGameState || room.kartGameState.status !== 'waiting') return;
-          room.kartGameState = setTurboKartTrack(room.kartGameState, valid.data.trackId);
-          broadcastToRoom(room.id, {
-            type: 'KART_STATE_UPDATED',
-            payload: { kartGameState: room.kartGameState },
-          });
-          return;
-        }
-
-        if (type === 'KART_BEGIN_RACE') {
-          const valid = wsKartRoomSchema.safeParse(payload);
-          if (!valid.success) return;
-          const room = rooms.get(valid.data.roomId.toLowerCase());
-          if (!room || !room.kartGameState) return;
-          room.kartGameState = startTurboKartRace(room.kartGameState);
-          kartInputsByRoom.set(room.id, new Map());
-          broadcastToRoom(room.id, {
-            type: 'KART_STATE_UPDATED',
-            payload: { kartGameState: room.kartGameState },
-          });
-          startKartRaceLoop(room);
-          return;
-        }
-
-        if (type === 'KART_INPUT') {
-          const valid = wsKartInputSchema.safeParse(payload);
-          if (!valid.success) return;
-          const senderMeta = clients.get(ws);
-          const roomId = valid.data.roomId.toLowerCase();
-          if (!senderMeta?.userId) return;
-          let map = kartInputsByRoom.get(roomId);
-          if (!map) {
-            map = new Map();
-            kartInputsByRoom.set(roomId, map);
-          }
-          map.set(senderMeta.userId, valid.data.input);
-          return;
-        }
-
-        if (type === 'KART_USE_ITEM') {
-          const valid = wsKartRoomSchema.safeParse(payload);
+        if (type === 'POOL_JOIN_SEAT') {
+          const valid = wsPoolJoinSeatSchema.safeParse(payload);
           if (!valid.success) return;
           const room = rooms.get(valid.data.roomId.toLowerCase());
           const senderMeta = clients.get(ws);
-          if (!room || !room.kartGameState || !senderMeta?.userId) return;
-          const res = useTurboKartItem(room.kartGameState, senderMeta.userId);
+          if (!room || !room.poolGameState || !senderMeta?.userId) return;
+
+          const res = joinPoolSeat(
+            room.poolGameState,
+            {
+              id: senderMeta.userId,
+              name: senderMeta.userName || 'Jugador',
+              avatar: senderMeta.userAvatar || '🎱',
+              color: senderMeta.userColor || '#9146FF',
+            },
+            valid.data.seatIndex
+          );
           if (!res.ok) return;
-          room.kartGameState = res.state;
+          room.poolGameState = res.state;
+          schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
-            type: 'KART_STATE_UPDATED',
-            payload: { kartGameState: room.kartGameState },
+            type: 'POOL_STATE_UPDATED',
+            payload: { poolGameState: room.poolGameState },
+          });
+          schedulePoolTurnTimer(room);
+          return;
+        }
+
+        if (type === 'POOL_CALL_POCKET') {
+          const valid = wsPoolCallPocketSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.poolGameState || !senderMeta?.userId) return;
+
+          const res = callPoolPocket(room.poolGameState, senderMeta.userId, valid.data.pocketId);
+          if (!res.ok) return;
+          room.poolGameState = res.state;
+          broadcastToRoom(room.id, {
+            type: 'POOL_STATE_UPDATED',
+            payload: { poolGameState: room.poolGameState },
           });
           return;
         }
 
-        if (type === 'KART_REMATCH') {
-          const valid = wsKartTrackSchema.safeParse(payload);
+        if (type === 'POOL_PLACE_CUE') {
+          const valid = wsPoolPlaceCueSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.poolGameState || !senderMeta?.userId) return;
+
+          const res = placePoolCueBall(
+            room.poolGameState,
+            senderMeta.userId,
+            valid.data.x,
+            valid.data.y
+          );
+          if (!res.ok) return;
+          room.poolGameState = res.state;
+          broadcastToRoom(room.id, {
+            type: 'POOL_STATE_UPDATED',
+            payload: { poolGameState: room.poolGameState },
+          });
+          return;
+        }
+
+        if (type === 'POOL_TAKE_SHOT') {
+          const valid = wsPoolTakeShotSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.poolGameState || !senderMeta?.userId) return;
+
+          const preShotState = room.poolGameState;
+          const activeSeat = preShotState.players[preShotState.turnSeat];
+          if (!activeSeat || activeSeat.userId !== senderMeta.userId) return;
+
+          const shot = valid.data.shot;
+          const preCue = preShotState.balls.find((b) => b.id === 0);
+          let cueStartX = preCue?.x ?? POOL_HEAD_STRING_X;
+          let cueStartY = preCue?.y ?? POOL_FOOT_SPOT_Y;
+          if (
+            typeof shot.cueX === 'number' &&
+            typeof shot.cueY === 'number' &&
+            (preShotState.phase === 'BALL_IN_HAND' || preShotState.isBreakShot)
+          ) {
+            const behindHead = preShotState.isBreakShot && preShotState.breakOnlyBehindHeadString;
+            if (isValidCueBallPlacement(preShotState.balls, shot.cueX, shot.cueY, behindHead)) {
+              cueStartX = shot.cueX;
+              cueStartY = shot.cueY;
+            }
+          }
+
+          const preShotBalls = preShotState.balls.map((b) =>
+            b.id === 0
+              ? { ...b, x: cueStartX, y: cueStartY, vx: 0, vy: 0, pocketed: false, pocketId: null }
+              : { ...b }
+          );
+
+          const res = applyPoolShot(preShotState, senderMeta.userId, shot);
+          if (!res.ok) return;
+
+          room.poolGameState = res.state;
+          schedulePersistRoom(room.id);
+
+          broadcastToRoom(room.id, {
+            type: 'POOL_SHOT_BROADCAST',
+            payload: {
+              shot: {
+                ...shot,
+                shooterUserId: senderMeta.userId,
+                turnNumber: preShotState.turnNumber,
+                cueStartX,
+                cueStartY,
+              },
+              preShotBalls,
+              authoritativeState: res.state,
+              checksum: res.state.checksum,
+            },
+          });
+          schedulePoolTurnTimer(room);
+          return;
+        }
+
+        if (type === 'POOL_SYNC_CHECKSUM') {
+          const valid = wsPoolSyncChecksumSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room || !room.poolGameState) return;
+          if (
+            valid.data.turnNumber !== room.poolGameState.turnNumber ||
+            valid.data.checksum !== computePoolChecksum(room.poolGameState)
+          ) {
+            ws.send(
+              JSON.stringify({
+                type: 'POOL_STATE_UPDATED',
+                payload: { poolGameState: room.poolGameState },
+              })
+            );
+          }
+          return;
+        }
+
+        if (type === 'POOL_FORFEIT') {
+          const valid = wsPoolRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.poolGameState || !senderMeta?.userId) return;
+
+          const forfeited = forfeitPoolMatch(room.poolGameState, senderMeta.userId, 'forfeit');
+          if (!forfeited) return;
+          stopPoolTurnTimer(room.id);
+          room.poolGameState = forfeited;
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'POOL_STATE_UPDATED',
+            payload: { poolGameState: room.poolGameState },
+          });
+          return;
+        }
+
+        if (type === 'POOL_REMATCH') {
+          const valid = wsPoolRoomSchema.safeParse(payload);
           if (!valid.success) return;
           const room = rooms.get(valid.data.roomId.toLowerCase());
           if (!room) return;
-          const humans = room.participants
+
+          const prev = room.poolGameState;
+          let orderedHumans = room.participants
             .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
-            .slice(0, 6)
+            .slice(0, 2)
             .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
-          stopKartRaceLoop(room.id);
-          kartInputsByRoom.set(room.id, new Map());
-          room.kartGameState = createInitialTurboKartState(humans, {
-            trackId: valid.data.trackId || room.kartGameState?.trackId || 'neon_sun',
-            waitForHost: false,
+
+          if (prev?.players[0] && prev?.players[1]) {
+            orderedHumans = [
+              {
+                id: prev.players[1].userId,
+                name: prev.players[1].name,
+                avatar: prev.players[1].avatar,
+                color: prev.players[1].color,
+              },
+              {
+                id: prev.players[0].userId,
+                name: prev.players[0].name,
+                avatar: prev.players[0].avatar,
+                color: prev.players[0].color,
+              },
+            ];
+          }
+
+          stopPoolTurnTimer(room.id);
+          room.poolGameState = createInitialPoolState(orderedHumans, {
+            difficulty: prev?.difficulty || 'medium',
           });
+          schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
-            type: 'KART_STATE_UPDATED',
-            payload: { kartGameState: room.kartGameState },
+            type: 'POOL_STATE_UPDATED',
+            payload: { poolGameState: room.poolGameState },
           });
-          startKartRaceLoop(room);
+          schedulePoolTurnTimer(room);
           return;
         }
 
-        if (type === 'KART_CLOSE') {
-          const valid = wsKartRoomSchema.safeParse(payload);
+        if (type === 'POOL_CLOSE') {
+          const valid = wsPoolRoomSchema.safeParse(payload);
           if (!valid.success) return;
           const room = rooms.get(valid.data.roomId.toLowerCase());
           if (!room) return;
-          stopKartRaceLoop(room.id);
-          kartInputsByRoom.delete(room.id);
-          room.kartGameState = null;
+          stopPoolTurnTimer(room.id);
+          room.poolGameState = null;
+          schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
-            type: 'KART_STATE_UPDATED',
-            payload: { kartGameState: null },
+            type: 'POOL_STATE_UPDATED',
+            payload: { poolGameState: null },
           });
           return;
         }
@@ -3353,11 +3515,52 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         }
       }
 
+      let poolSeatDisconnected = false;
+      if (room.poolGameState && room.poolGameState.status === 'playing' && meta.userId) {
+        const seatIdx = room.poolGameState.players.findIndex((p) => p?.userId === meta.userId);
+        if (seatIdx !== -1 && room.poolGameState.players[seatIdx]) {
+          const updatedPlayers: Pool8BallState['players'] = [
+            room.poolGameState.players[0] ? { ...room.poolGameState.players[0] } : null,
+            room.poolGameState.players[1] ? { ...room.poolGameState.players[1] } : null,
+          ];
+          updatedPlayers[seatIdx]!.connected = false;
+          updatedPlayers[seatIdx]!.disconnectedAt = Date.now();
+          room.poolGameState = {
+            ...room.poolGameState,
+            players: updatedPlayers,
+            updatedAt: Date.now(),
+          };
+          poolSeatDisconnected = true;
+
+          const dcRoomId = meta.roomId;
+          const dcUserId = meta.userId;
+          clearPoolDisconnectTimer(dcRoomId, dcUserId);
+          const dcTimer = setTimeout(() => {
+            poolDisconnectTimers.delete(`${dcRoomId}:${dcUserId}`);
+            const latestRoom = rooms.get(dcRoomId);
+            const curr = latestRoom?.poolGameState;
+            if (!latestRoom || !curr || curr.status !== 'playing') return;
+            const seat = curr.players.find((p) => p?.userId === dcUserId);
+            if (!seat || seat.connected !== false) return;
+            const forfeited = forfeitPoolMatch(curr, dcUserId, 'disconnect_forfeit');
+            if (!forfeited) return;
+            latestRoom.poolGameState = forfeited;
+            stopPoolTurnTimer(dcRoomId);
+            schedulePersistRoom(dcRoomId);
+            broadcastToRoom(dcRoomId, {
+              type: 'POOL_STATE_UPDATED',
+              payload: { poolGameState: latestRoom.poolGameState },
+            });
+          }, POOL_DISCONNECT_GRACE_MS);
+          dcTimer.unref?.();
+          poolDisconnectTimers.set(`${dcRoomId}:${dcUserId}`, dcTimer);
+        }
+      }
+
       schedulePersistRoom(meta.roomId);
       if (room.participants.length === 0) {
         stopPinturilloTimer(meta.roomId);
-        stopKartRaceLoop(meta.roomId);
-        kartInputsByRoom.delete(meta.roomId);
+        stopPoolTurnTimer(meta.roomId);
         await stopCloudSession(meta.roomId);
         return;
       }
@@ -3401,6 +3604,12 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           payload: { partyGameState: room.partyGameState ?? null },
         });
         schedulePartyBotTurnIfNeeded(room);
+      }
+      if (poolSeatDisconnected && room.poolGameState) {
+        broadcastToRoom(meta.roomId, {
+          type: 'POOL_STATE_UPDATED',
+          payload: { poolGameState: room.poolGameState },
+        });
       }
     });
   });

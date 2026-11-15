@@ -6,8 +6,6 @@ import {
   CatalogMovie,
   ChatMessage,
   ChessPromotionPiece,
-  KartInputState,
-  KartTrackId,
   OnlineAppUser,
   Participant,
   PartyColor,
@@ -16,11 +14,15 @@ import {
   PinturilloGameState,
   PinturilloStroke,
   PollProposalItem,
+  Pool8BallState,
+  PoolBallState,
+  PoolDifficulty,
+  PoolPocketId,
+  PoolShotInput,
   RestoredRoomBlueprint,
   RoomPollState,
   RoomQueueItem,
   RoomRole,
-  TurboKartState,
   TvRemoteCommandType,
   VideoState,
 } from '../types';
@@ -50,7 +52,16 @@ export interface SocketPayload {
   partyGameState?: PartyGameState | null;
   pinturilloState?: PinturilloGameState | null;
   stroke?: PinturilloStroke;
-  kartGameState?: TurboKartState | null;
+  poolGameState?: Pool8BallState | null;
+  authoritativeState?: Pool8BallState | null;
+  shot?: PoolShotInput & {
+    shooterUserId: string;
+    turnNumber: number;
+    cueStartX: number;
+    cueStartY: number;
+  };
+  preShotBalls?: PoolBallState[];
+  checksum?: number;
   pinnedMessage?: ChatMessage | null;
   participants?: Participant[];
   messages?: ChatMessage[];
@@ -122,7 +133,7 @@ const NON_QUEUEABLE_TYPES = new Set([
   'VOICE_LEAVE',
   'VOICE_STATE_UPDATE',
   'VOICE_SIGNAL',
-  'KART_INPUT',
+  'POOL_SYNC_CHECKSUM',
 ]);
 
 class SocketService {
@@ -805,39 +816,49 @@ class SocketService {
     this.send('PINTURILLO_CLOSE', { roomId: this.roomId });
   }
 
-  startTurboKart(trackId?: KartTrackId) {
+  startPoolGame(difficulty?: PoolDifficulty) {
     if (!this.roomId) return;
-    this.send('KART_START', { roomId: this.roomId, trackId });
+    this.send('POOL_START', { roomId: this.roomId, difficulty });
   }
 
-  selectTurboKartTrack(trackId: KartTrackId) {
+  joinPoolSeat(seatIndex: 0 | 1 | 'spectate') {
     if (!this.roomId) return;
-    this.send('KART_SELECT_TRACK', { roomId: this.roomId, trackId });
+    this.send('POOL_JOIN_SEAT', { roomId: this.roomId, seatIndex });
   }
 
-  beginTurboKartRace() {
+  callPoolPocket(pocketId: PoolPocketId) {
     if (!this.roomId) return;
-    this.send('KART_BEGIN_RACE', { roomId: this.roomId });
+    this.send('POOL_CALL_POCKET', { roomId: this.roomId, pocketId });
   }
 
-  sendTurboKartInput(input: KartInputState) {
+  placePoolCueBall(x: number, y: number) {
     if (!this.roomId) return;
-    this.sendRaw('KART_INPUT', { roomId: this.roomId, input });
+    this.send('POOL_PLACE_CUE', { roomId: this.roomId, x, y });
   }
 
-  useTurboKartItem() {
+  takePoolShot(shot: PoolShotInput) {
     if (!this.roomId) return;
-    this.send('KART_USE_ITEM', { roomId: this.roomId });
+    this.send('POOL_TAKE_SHOT', { roomId: this.roomId, shot });
   }
 
-  rematchTurboKart(trackId?: KartTrackId) {
+  syncPoolChecksum(turnNumber: number, checksum: number) {
     if (!this.roomId) return;
-    this.send('KART_REMATCH', { roomId: this.roomId, trackId });
+    this.sendRaw('POOL_SYNC_CHECKSUM', { roomId: this.roomId, turnNumber, checksum });
   }
 
-  closeTurboKart() {
+  forfeitPoolGame() {
     if (!this.roomId) return;
-    this.send('KART_CLOSE', { roomId: this.roomId });
+    this.send('POOL_FORFEIT', { roomId: this.roomId });
+  }
+
+  rematchPoolGame() {
+    if (!this.roomId) return;
+    this.send('POOL_REMATCH', { roomId: this.roomId });
+  }
+
+  closePoolGame() {
+    if (!this.roomId) return;
+    this.send('POOL_CLOSE', { roomId: this.roomId });
   }
 }
 

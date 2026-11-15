@@ -7,10 +7,13 @@ import {
 import {
   CHROME_UA,
   type TrackRecord,
+  areTitlesStrictlyEqual,
   buildHlsProxyUrl,
   curlGetBuffer,
   curlGetText,
+  isMetadataCompatibleForMedia,
   normalizeTitleForMatch,
+  parseDurationTextToMinutes,
   probeHlsSegmentHealth,
 } from './httpHelpers.ts';
 import { extractEmbed69SpanishTracks, unpackVidhideToHls } from './vidhideEmbed69.ts';
@@ -223,21 +226,110 @@ export async function extractBingetrixEnglishTracks(opts: {
   }
 }
 
+export async function has2EmbedEnglishStreamFast(opts: {
+  tmdbId: string | number;
+  imdbId?: string | null;
+  mediaType?: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+}): Promise<boolean> {
+  try {
+    const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
+    const cleanImdb = String(opts.imdbId || '').trim();
+    if (!cleanId && !cleanImdb) return false;
+
+    const mType = opts.mediaType === 'tv' ? 'tv' : 'movie';
+    const primaryId = cleanId || cleanImdb;
+    const embedUrl =
+      mType === 'tv' && opts.season && opts.episode
+        ? `https://www.2embed.cc/embedtv/${primaryId}&s=${opts.season}&e=${opts.episode}`
+        : `https://www.2embed.cc/embed/${primaryId}`;
+
+    const html = (
+      await curlGetText(
+        embedUrl,
+        { Referer: 'https://www.2embed.cc/', 'User-Agent': CHROME_UA },
+        3,
+        true
+      ).catch(() => ({ text: '' }))
+    ).text;
+
+    if (html) {
+      if (/https:\/\/streamsrcs\.2embed\.cc\/swish\?id=[a-zA-Z0-9_-]+/i.test(html)) {
+        return true;
+      }
+      if (mType === 'tv') {
+        const titleTag = (html.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || '').trim();
+        if (titleTag && !/^2Embed\.cc\s*-?\s*Player$/i.test(titleTag)) {
+          return true;
+        }
+      }
+      if (mType === 'movie') {
+        const imdbEmbedMatch = html.match(/https:\/\/www\.2embed\.cc\/embed\/(tt\d+)/i);
+        if (imdbEmbedMatch) {
+          const innerHtml = (
+            await curlGetText(
+              imdbEmbedMatch[0],
+              { Referer: embedUrl, 'User-Agent': CHROME_UA },
+              3,
+              true
+            ).catch(() => ({ text: '' }))
+          ).text;
+          if (innerHtml && /https:\/\/streamsrcs\.2embed\.cc\/swish\?id=[a-zA-Z0-9_-]+/i.test(innerHtml)) {
+            return true;
+          }
+        }
+      }
+    }
+
+    if (cleanImdb && cleanImdb !== primaryId) {
+      const imdbUrl =
+        mType === 'tv' && opts.season && opts.episode
+          ? `https://www.2embed.cc/embedtv/${cleanImdb}&s=${opts.season}&e=${opts.episode}`
+          : `https://www.2embed.cc/embed/${cleanImdb}`;
+      const imdbHtml = (
+        await curlGetText(
+          imdbUrl,
+          { Referer: 'https://www.2embed.cc/', 'User-Agent': CHROME_UA },
+          3,
+          true
+        ).catch(() => ({ text: '' }))
+      ).text;
+      if (imdbHtml && /https:\/\/streamsrcs\.2embed\.cc\/swish\?id=[a-zA-Z0-9_-]+/i.test(imdbHtml)) {
+        return true;
+      }
+      if (mType === 'tv' && imdbHtml) {
+        const titleTag = (imdbHtml.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1] || '').trim();
+        if (titleTag && !/^2Embed\.cc\s*-?\s*Player$/i.test(titleTag)) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 export async function extract2EmbedEnglishTracks(opts: {
   tmdbId: string | number;
+  imdbId?: string | null;
   mediaType?: 'movie' | 'tv';
   season?: number;
   episode?: number;
 }): Promise<TrackRecord[]> {
   try {
-    const cleanId = String(opts.tmdbId).replace(/\D/g, '');
-    if (!cleanId) return [];
+    const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
+    const cleanImdb = String(opts.imdbId || '').trim();
+    if (!cleanId && !cleanImdb) return [];
 
     const mType = opts.mediaType === 'tv' ? 'tv' : 'movie';
+    const primaryId = cleanId || cleanImdb;
     const embedUrl =
       mType === 'tv' && opts.season && opts.episode
-        ? `https://www.2embed.cc/embedtv/${cleanId}&s=${opts.season}&e=${opts.episode}`
-        : `https://www.2embed.cc/embed/${cleanId}`;
+        ? `https://www.2embed.cc/embedtv/${primaryId}&s=${opts.season}&e=${opts.episode}`
+        : `https://www.2embed.cc/embed/${primaryId}`;
 
     const pageRes = await curlGetText(
       embedUrl,
@@ -246,10 +338,9 @@ export async function extract2EmbedEnglishTracks(opts: {
       true
     ).catch(() => ({ text: '', effectiveUrl: embedUrl }));
     let html = pageRes.text || '';
-    if (!html) return [];
 
     let swishMatch = html.match(/https:\/\/streamsrcs\.2embed\.cc\/swish\?id=([a-zA-Z0-9_-]+)/i);
-    if (!swishMatch && mType === 'movie') {
+    if (!swishMatch && mType === 'movie' && html) {
       const imdbEmbedMatch = html.match(/https:\/\/www\.2embed\.cc\/embed\/(tt\d+)/i);
       if (imdbEmbedMatch) {
         const innerRes = await curlGetText(
@@ -261,6 +352,20 @@ export async function extract2EmbedEnglishTracks(opts: {
         html = innerRes.text || '';
         swishMatch = html.match(/https:\/\/streamsrcs\.2embed\.cc\/swish\?id=([a-zA-Z0-9_-]+)/i);
       }
+    }
+    if (!swishMatch && cleanImdb && cleanImdb !== primaryId) {
+      const imdbUrl =
+        mType === 'tv' && opts.season && opts.episode
+          ? `https://www.2embed.cc/embedtv/${cleanImdb}&s=${opts.season}&e=${opts.episode}`
+          : `https://www.2embed.cc/embed/${cleanImdb}`;
+      const imdbRes = await curlGetText(
+        imdbUrl,
+        { Referer: 'https://www.2embed.cc/', 'User-Agent': CHROME_UA },
+        5,
+        true
+      ).catch(() => ({ text: '' }));
+      html = imdbRes.text || '';
+      swishMatch = html.match(/https:\/\/streamsrcs\.2embed\.cc\/swish\?id=([a-zA-Z0-9_-]+)/i);
     }
     if (!swishMatch) return [];
 
@@ -284,7 +389,7 @@ export async function extract2EmbedEnglishTracks(opts: {
 
     return [
       {
-        id: `2embed-en-${mType}-${cleanId}-${opts.season || 0}-${opts.episode || 0}`,
+        id: `2embed-en-${mType}-${cleanId || cleanImdb}-${opts.season || 0}-${opts.episode || 0}`,
         label: 'English 1080p · Direct',
         lang: 'EN',
         quality: '1080p HLS',
@@ -569,9 +674,44 @@ export function extractMovidyTracksFromHtml(html: string, slugHint = 'movidy'): 
   return rawTracks.sort((a, b) => (langOrder[a.lang] || 9) - (langOrder[b.lang] || 9));
 }
 
+export function verifyMovidyMetaMatch(
+  meta: Pick<MovidyPageMetadata, 'isTvShow' | 'cleanTitle' | 'year' | 'durationText' | 'director'>,
+  opts: {
+    titleHints: string[];
+    expectedYear?: string;
+    expectedDirector?: string;
+    expectedRuntimeMin?: number;
+    expectedMediaType?: 'movie' | 'tv';
+  }
+): { ok: boolean; exactYear: boolean; reason?: string } {
+  if (opts.expectedMediaType === 'movie' && meta.isTvShow) {
+    return { ok: false, exactYear: false, reason: 'tv_show_not_movie' };
+  }
+  if (opts.expectedMediaType === 'tv' && !meta.isTvShow) {
+    return { ok: false, exactYear: false, reason: 'movie_not_tv_show' };
+  }
+  const candRuntimeMin = parseDurationTextToMinutes(meta.durationText);
+  return isMetadataCompatibleForMedia({
+    candidateTitle: meta.cleanTitle || undefined,
+    targetTitleHints: opts.titleHints,
+    candidateYear: meta.year || undefined,
+    expectedYear: opts.expectedYear,
+    candidateDirector: meta.director || undefined,
+    expectedDirector: opts.expectedDirector,
+    candidateRuntimeMin: candRuntimeMin || undefined,
+    expectedRuntimeMin: opts.expectedRuntimeMin,
+  });
+}
+
 export async function extractMovidyPageTracks(
   movidyVerUrl: string,
-  opts?: { expectedYear?: string; requireMovieOnly?: boolean }
+  opts?: {
+    expectedYear?: string;
+    requireMovieOnly?: boolean;
+    expectedTitleHints?: string[];
+    expectedDirector?: string;
+    expectedRuntimeMin?: number;
+  }
 ): Promise<TrackRecord[]> {
   try {
     const cleanUrl = movidyVerUrl.trim();
@@ -585,12 +725,20 @@ export async function extractMovidyPageTracks(
     }
 
     if (
-      opts?.expectedYear &&
-      /^\d{4}$/.test(opts.expectedYear.trim()) &&
-      meta.year &&
-      /^\d{4}$/.test(meta.year)
+      opts &&
+      (opts.expectedYear ||
+        (opts.expectedTitleHints && opts.expectedTitleHints.length > 0) ||
+        opts.expectedDirector ||
+        opts.expectedRuntimeMin)
     ) {
-      if (Math.abs(Number(meta.year) - Number(opts.expectedYear.trim())) > 1) {
+      const check = verifyMovidyMetaMatch(meta, {
+        titleHints: opts.expectedTitleHints || [],
+        expectedYear: opts.expectedYear,
+        expectedDirector: opts.expectedDirector,
+        expectedRuntimeMin: opts.expectedRuntimeMin,
+        expectedMediaType: opts.requireMovieOnly ? 'movie' : undefined,
+      });
+      if (!check.ok) {
         return [];
       }
     }
@@ -610,17 +758,22 @@ export async function extractMovidyPageTracks(
 
 export async function findMovidyUrlByTitle(
   title: string,
-  expectedYear?: string
+  expectedYear?: string,
+  opts?: {
+    expectedDirector?: string;
+    expectedRuntimeMin?: number;
+    titleHints?: string[];
+  }
 ): Promise<string | null> {
   try {
     const rawClean = String(title || '').trim();
     const clean = rawClean.replace(/\s*\([^)]*\)/g, '').trim();
-    const parenPart = (rawClean.match(/\(([^)]+)\)/)?.[1] || '').trim();
     const queryTerm = clean || rawClean;
-    const normTarget = normalizeTitleForMatch(clean || rawClean);
-    const normParenTarget = normalizeTitleForMatch(parenPart);
+    const allHints = Array.from(
+      new Set([rawClean, ...(opts?.titleHints || [])].map((s) => String(s || '').trim()).filter(Boolean))
+    );
 
-    if (!queryTerm || queryTerm.length < 2 || !normTarget || normTarget.length < 2) {
+    if (!queryTerm || queryTerm.length < 2 || allHints.length === 0) {
       return null;
     }
 
@@ -654,39 +807,36 @@ export async function findMovidyUrlByTitle(
       if (!rawHref || !rawSpanTitle) continue;
 
       const fullUrl = rawHref.startsWith('http') ? rawHref : `https://movidy.pw${rawHref}`;
-      const fullNorm = normalizeTitleForMatch(rawSpanTitle);
-      const outsideNorm = normalizeTitleForMatch(rawSpanTitle.replace(/\s*\([^)]*\)/g, ''));
-      const insideNorm = normalizeTitleForMatch(rawSpanTitle.match(/\(([^)]+)\)/)?.[1] || '');
-
-      const isExact =
-        (fullNorm.length >= 2 && fullNorm === normTarget) ||
-        (outsideNorm.length >= 2 && outsideNorm === normTarget) ||
-        (insideNorm.length >= 2 && insideNorm === normTarget) ||
-        (normParenTarget.length >= 2 &&
-          (outsideNorm === normParenTarget || insideNorm === normParenTarget));
-
-      if (isExact && !exactMatches.includes(fullUrl)) {
+      if (areTitlesStrictlyEqual(rawSpanTitle, allHints) && !exactMatches.includes(fullUrl)) {
         exactMatches.push(fullUrl);
       }
     }
 
     if (exactMatches.length === 0) return null;
 
-    const expectedYearNum =
-      expectedYear && /^\d{4}$/.test(expectedYear.trim()) ? Number(expectedYear.trim()) : 0;
-
-    for (const candidateUrl of exactMatches.slice(0, 3)) {
+    let verifiedAdjacentFallback: string | null = null;
+    for (const candidateUrl of exactMatches.slice(0, 6)) {
       const meta = await fetchMovidyPageMetadata(candidateUrl);
       if (!meta || meta.isTvShow) continue;
-      if (expectedYearNum && meta.year && /^\d{4}$/.test(meta.year)) {
-        if (Math.abs(Number(meta.year) - expectedYearNum) > 1) {
-          continue;
-        }
+
+      const verdict = verifyMovidyMetaMatch(meta, {
+        titleHints: allHints,
+        expectedYear,
+        expectedDirector: opts?.expectedDirector,
+        expectedRuntimeMin: opts?.expectedRuntimeMin,
+        expectedMediaType: 'movie',
+      });
+      if (!verdict.ok) continue;
+
+      if (verdict.exactYear || !expectedYear) {
+        return candidateUrl;
       }
-      return candidateUrl;
+      if (!verifiedAdjacentFallback) {
+        verifiedAdjacentFallback = candidateUrl;
+      }
     }
 
-    return null;
+    return verifiedAdjacentFallback;
   } catch {
     return null;
   }
@@ -694,6 +844,7 @@ export async function findMovidyUrlByTitle(
 
 export async function probeAvailableLanguages(opts: {
   tmdbId: string | number;
+  imdbId?: string | null;
   mediaType: 'movie' | 'tv';
   season?: number;
   episode?: number;
@@ -701,11 +852,13 @@ export async function probeAvailableLanguages(opts: {
   movidyUrl?: string;
   vestUrl?: string;
   yearHint?: string;
+  directorHint?: string;
+  runtimeMinHint?: number;
 }): Promise<('ES' | 'LAT' | 'VOSE' | 'EN')[]> {
   const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
   const season = opts.mediaType === 'tv' ? opts.season || 1 : 0;
   const episode = opts.mediaType === 'tv' ? opts.episode || 1 : 0;
-  const cacheKey = `${opts.mediaType}|${cleanId || opts.movidyUrl || opts.vestUrl || ''}|${season}|${episode}`;
+  const cacheKey = `v3|${opts.mediaType}|${cleanId || opts.movidyUrl || opts.vestUrl || ''}|${opts.yearHint || ''}|${season}|${episode}`;
 
   const cached = availableLangsCache.get(cacheKey);
   if (cached) return cached;
@@ -721,9 +874,28 @@ export async function probeAvailableLanguages(opts: {
   const movidyPromise = (async (): Promise<TrackRecord[]> => {
     if (opts.mediaType !== 'movie') return [];
     let mvUrl = hasExplicitMovidy ? opts.movidyUrl! : '';
+    if (mvUrl && (cleanId || opts.yearHint || opts.directorHint || opts.runtimeMinHint)) {
+      const explicitMeta = await fetchMovidyPageMetadata(mvUrl);
+      if (
+        !explicitMeta ||
+        !verifyMovidyMetaMatch(explicitMeta, {
+          titleHints: cleanId ? hints : [],
+          expectedYear: opts.yearHint,
+          expectedDirector: opts.directorHint,
+          expectedRuntimeMin: opts.runtimeMinHint,
+          expectedMediaType: 'movie',
+        }).ok
+      ) {
+        mvUrl = '';
+      }
+    }
     if (!mvUrl) {
       for (const h of hints.slice(0, 2)) {
-        const found = await findMovidyUrlByTitle(h, opts.yearHint);
+        const found = await findMovidyUrlByTitle(h, opts.yearHint, {
+          expectedDirector: opts.directorHint,
+          expectedRuntimeMin: opts.runtimeMinHint,
+          titleHints: hints,
+        });
         if (found) {
           mvUrl = found;
           break;
@@ -731,33 +903,68 @@ export async function probeAvailableLanguages(opts: {
       }
     }
     if (!mvUrl) return [];
-    return extractMovidyPageTracks(
-      mvUrl,
-      hasExplicitMovidy
-        ? undefined
-        : { expectedYear: opts.yearHint, requireMovieOnly: true }
-    );
+    return extractMovidyPageTracks(mvUrl, {
+      expectedYear: opts.yearHint,
+      requireMovieOnly: true,
+      expectedTitleHints: cleanId ? hints : undefined,
+      expectedDirector: opts.directorHint,
+      expectedRuntimeMin: opts.runtimeMinHint,
+    });
   })();
 
   const embedPromise =
     cleanId || hints.length > 0
       ? extractEmbed69SpanishTracks({
           tmdbId: cleanId || undefined,
+          imdbId: opts.imdbId,
           mediaType: opts.mediaType,
           season: season || undefined,
           episode: episode || undefined,
           titleHints: hints,
+          yearHint: opts.yearHint,
+          directorHint: opts.directorHint,
+          runtimeMinHint: opts.runtimeMinHint,
         })
       : Promise.resolve([] as TrackRecord[]);
 
-  const enPromise = cleanId
-    ? hasBingetrixEnglishStreamFast({
-        tmdbId: cleanId,
+  const checkAnyEnglishStream = async (): Promise<boolean> => {
+    if (!cleanId && !opts.imdbId) return false;
+    const probes: Promise<boolean>[] = [
+      has2EmbedEnglishStreamFast({
+        tmdbId: cleanId || '0',
+        imdbId: opts.imdbId,
         mediaType: opts.mediaType,
         season: season || undefined,
         episode: episode || undefined,
-      })
-    : Promise.resolve(false);
+      }),
+    ];
+    if (cleanId) {
+      probes.push(
+        hasBingetrixEnglishStreamFast({
+          tmdbId: cleanId,
+          mediaType: opts.mediaType,
+          season: season || undefined,
+          episode: episode || undefined,
+        })
+      );
+    }
+    return new Promise<boolean>((resolve) => {
+      let pending = probes.length;
+      for (const p of probes) {
+        p.then((ok) => {
+          if (ok) {
+            resolve(true);
+            return;
+          }
+          pending -= 1;
+          if (pending <= 0) resolve(false);
+        }).catch(() => {
+          pending -= 1;
+          if (pending <= 0) resolve(false);
+        });
+      }
+    });
+  };
 
   const withProbeTimeout = <T>(p: Promise<T>, ms: number, fallback: T): Promise<T> =>
     Promise.race([
@@ -768,7 +975,7 @@ export async function probeAvailableLanguages(opts: {
   const [mvTracks, esTracks, hasEn] = await Promise.all([
     withProbeTimeout(movidyPromise, 4500, [] as TrackRecord[]),
     withProbeTimeout(embedPromise, 6500, [] as TrackRecord[]),
-    withProbeTimeout(enPromise, 4200, false),
+    withProbeTimeout(checkAnyEnglishStream(), 4200, false),
   ]);
   const foundSet = new Set<'ES' | 'LAT' | 'VOSE' | 'EN'>();
 
@@ -787,6 +994,8 @@ export async function probeAvailableLanguages(opts: {
     Boolean(
       findVestSeedForMedia({
         tmdbId: cleanId || undefined,
+        mediaType: opts.mediaType,
+        yearHint: opts.yearHint,
         titleHints: hints,
         season: season || undefined,
         episode: episode || undefined,

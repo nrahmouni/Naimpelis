@@ -627,3 +627,182 @@ export async function probeHlsSegmentHealth(rawM3u8Url: string, origin: string):
     return false;
   }
 }
+
+export function extractTitleMatchVariants(raw: string): string[] {
+  const str = String(raw || '').trim();
+  if (!str) return [];
+  const full = normalizeTitleForMatch(str);
+  const outside = normalizeTitleForMatch(str.replace(/\s*\([^)]*\)/g, ''));
+  const variants = new Set<string>();
+  if (full.length >= 2) variants.add(full);
+  if (outside.length >= 2) variants.add(outside);
+  const parenRe = /\(([^)]+)\)/g;
+  let pm: RegExpExecArray | null;
+  while ((pm = parenRe.exec(str)) !== null) {
+    const insideRaw = String(pm[1] || '').trim();
+    // Ignore pure release-year parentheses like "(2024)" unless the main title matches too
+    if (/^(?:19|20)\d{2}$/.test(insideRaw)) continue;
+    const insideNorm = normalizeTitleForMatch(insideRaw);
+    if (insideNorm.length >= 2) variants.add(insideNorm);
+  }
+  return Array.from(variants);
+}
+
+export function areTitlesStrictlyEqual(candidateTitle: string, targetHints: string[]): boolean {
+  const candVariants = extractTitleMatchVariants(candidateTitle);
+  if (candVariants.length === 0) return false;
+  const targetVariants = new Set(targetHints.flatMap((h) => extractTitleMatchVariants(h)));
+  if (targetVariants.size === 0) return false;
+  return candVariants.some((cv) => targetVariants.has(cv));
+}
+
+export function parseDurationTextToMinutes(rawDuration?: string | null): number {
+  const txt = String(rawDuration || '').trim();
+  if (!txt) return 0;
+  // ISO-8601 e.g. PT2H6M or PT118M
+  const isoMatch = txt.match(/^PT(?:(\d+)H)?(?:(\d+)M)?/i);
+  if (isoMatch) {
+    const h = Number(isoMatch[1] || 0);
+    const m = Number(isoMatch[2] || 0);
+    return h * 60 + m;
+  }
+  const hmMatch = txt.match(
+    /(\d+)\s*(?:hours?|hrs?\.?|h\.?)\s*(?:(\d+)\s*(?:minutos?|mins?\.?|m\.?)?)?/i
+  );
+  if (hmMatch) {
+    return Number(hmMatch[1] || 0) * 60 + Number(hmMatch[2] || 0);
+  }
+  const minMatch = txt.match(/(\d+)\s*(?:minutos?|mins?\.?|m\.?)(?!\w)/i);
+  if (minMatch) {
+    return Number(minMatch[1] || 0);
+  }
+  return 0;
+}
+
+export function directorsMatch(a?: string | null, b?: string | null): boolean {
+  const na = normalizeTitleForMatch(a || '');
+  const nb = normalizeTitleForMatch(b || '');
+  if (!na || !nb) return false;
+  if (na === nb) return true;
+  const aTokens = na.split(/\s+/).filter((t) => t.length >= 4);
+  const bTokens = nb.split(/\s+/).filter((t) => t.length >= 4);
+  return aTokens.some((tok) => bTokens.includes(tok));
+}
+
+export function isMetadataCompatibleForMedia(opts: {
+  candidateTitle?: string;
+  targetTitleHints: string[];
+  candidateYear?: string | number | null;
+  expectedYear?: string | number | null;
+  candidateDirector?: string | null;
+  expectedDirector?: string | null;
+  candidateRuntimeMin?: number | null;
+  expectedRuntimeMin?: number | null;
+  allowAdjacentYearWithoutProof?: boolean;
+}): { ok: boolean; exactYear: boolean; reason?: string } {
+  if (opts.candidateTitle && opts.targetTitleHints.length > 0) {
+    if (!areTitlesStrictlyEqual(opts.candidateTitle, opts.targetTitleHints)) {
+      return { ok: false, exactYear: false, reason: 'title_mismatch' };
+    }
+  }
+
+  const expYear = Number(String(opts.expectedYear || '').replace(/\D/g, '')) || 0;
+  const candYear = Number(String(opts.candidateYear || '').replace(/\D/g, '')) || 0;
+  const hasDirPair = Boolean(
+    normalizeTitleForMatch(opts.candidateDirector || '') &&
+      normalizeTitleForMatch(opts.expectedDirector || '')
+  );
+  const dirOk = hasDirPair && directorsMatch(opts.candidateDirector, opts.expectedDirector);
+
+  if (hasDirPair && !dirOk) {
+    return { ok: false, exactYear: false, reason: 'director_mismatch' };
+  }
+
+  const expRun = Number(opts.expectedRuntimeMin || 0);
+  const candRun = Number(opts.candidateRuntimeMin || 0);
+  const hasRunPair = expRun >= 30 && candRun >= 30;
+  if (hasRunPair && Math.abs(expRun - candRun) > 25) {
+    return { ok: false, exactYear: false, reason: 'runtime_mismatch' };
+  }
+  const tightRuntimeOk = hasRunPair && Math.abs(expRun - candRun) <= 3;
+
+  if (expYear > 1900) {
+    if (candYear > 1900) {
+      const yearDiff = Math.abs(candYear - expYear);
+      if (yearDiff > 1) {
+        return { ok: false, exactYear: false, reason: 'year_mismatch' };
+      }
+      if (yearDiff === 1 && !dirOk && !tightRuntimeOk && !opts.allowAdjacentYearWithoutProof) {
+        return { ok: false, exactYear: false, reason: 'adjacent_year_unverified' };
+      }
+      return { ok: true, exactYear: yearDiff === 0 };
+    }
+    // Candidate has no year: require corroborating director or tight runtime match
+    if (!dirOk && !tightRuntimeOk) {
+      return { ok: false, exactYear: false, reason: 'missing_candidate_year' };
+    }
+  }
+
+  return { ok: true, exactYear: candYear > 1900 && expYear > 1900 && candYear === expYear };
+}
+
+const YOUTUBE_TITLE_STOPWORDS = new Set([
+  'the',
+  'and',
+  'for',
+  'with',
+  'from',
+  'into',
+  'you',
+  'can',
+  'see',
+  'her',
+  'his',
+  'she',
+  'its',
+  'that',
+  'this',
+  'are',
+  'not',
+  'but',
+  'out',
+  'all',
+  'one',
+  'two',
+  'los',
+  'las',
+  'una',
+  'uno',
+  'unos',
+  'unas',
+  'del',
+  'con',
+  'por',
+  'para',
+  'que',
+  'sin',
+  'mas',
+  'sobre',
+]);
+
+export function matchesYouTubeFallbackTitle(movieTitle: string, videoTitle: string): boolean {
+  const normMovie = normalizeTitleForMatch(
+    String(movieTitle || '').replace(/\s*\([^)]*\)/g, '')
+  );
+  const normVideo = normalizeTitleForMatch(videoTitle);
+  if (!normMovie || !normVideo) return false;
+
+  const allTokens = normMovie.split(/\s+/).filter(Boolean);
+  const meaningfulTokens = allTokens.filter(
+    (tok) => tok.length >= 3 && !YOUTUBE_TITLE_STOPWORDS.has(tok)
+  );
+  const requiredTokens =
+    meaningfulTokens.length >= 1 && meaningfulTokens.length * 2 >= allTokens.length
+      ? meaningfulTokens
+      : allTokens.filter((tok) => tok.length >= 2);
+  if (requiredTokens.length === 0) return false;
+
+  const videoWords = new Set(normVideo.split(/\s+/).filter(Boolean));
+  return requiredTokens.every((tok) => videoWords.has(tok));
+}
+

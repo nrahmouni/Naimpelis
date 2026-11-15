@@ -12,14 +12,6 @@ import {
   undoPinturilloStroke,
 } from '../src/shared/pinturillo';
 import {
-  KART_TRACK_LIST,
-  createInitialTurboKartState,
-  setTurboKartTrack,
-  startTurboKartRace,
-  stepTurboKartSimulation,
-  useTurboKartItem,
-} from '../src/shared/turboKart';
-import {
   callUnoAction,
   createInitialUnoState,
   playUnoCard,
@@ -118,79 +110,6 @@ describe('Pinturillo Draw & Guess Engine', () => {
     expect(nextRound.round).toBe(2);
     expect(nextRound.drawerSeat).toBe(1);
     expect(nextRound.status).toBe('choosing');
-  });
-});
-
-describe('Turbo Kart Racing Engine', () => {
-  const host = { id: 'p1', name: 'Naim', avatar: '🏎️', color: '#E11D48' };
-  const p2 = { id: 'p2', name: 'Yuri', avatar: '⚡', color: '#3B82F6' };
-
-  it('supports 3 distinct tracks and transitions cleanly from countdown into live racing physics', () => {
-    expect(KART_TRACK_LIST).toHaveLength(3);
-    const lobby = createInitialTurboKartState([host, p2], { trackId: 'neon_sun', waitForHost: true });
-    expect(lobby.status).toBe('waiting');
-    expect(lobby.racers).toHaveLength(6); // 2 humans + 4 bots
-
-    const switched = setTurboKartTrack(lobby, 'volcano_turbo');
-    expect(switched.trackId).toBe('volcano_turbo');
-    expect(switched.itemBoxes.length).toBeGreaterThan(0);
-
-    const countdown = startTurboKartRace(switched, 1_000_000);
-    expect(countdown.status).toBe('countdown');
-
-    // Step past countdown
-    const racing = stepTurboKartSimulation(
-      countdown,
-      { p1: { throttle: 1, steer: 0, drift: false } },
-      100,
-      1_005_000
-    );
-    expect(racing.status).toBe('racing');
-
-    // Drive forward for several steps
-    let curr = racing;
-    for (let i = 0; i < 15; i += 1) {
-      curr = stepTurboKartSimulation(
-        curr,
-        { p1: { throttle: 1, steer: 0.25, drift: true } },
-        55,
-        1_005_000 + (i + 1) * 55
-      );
-    }
-    expect(curr.racers[0].speed).toBeGreaterThan(50);
-  });
-
-  it('activates all throwable and boost kart items cleanly', () => {
-    const base = startTurboKartRace(
-      createInitialTurboKartState([host, p2], { trackId: 'emerald_lake', waitForHost: true }),
-      10_000
-    );
-    let racing = stepTurboKartSimulation(base, {}, 55, 15_000);
-
-    const items = ['turbo', 'star', 'banana', 'green_shell', 'red_shell', 'shock'] as const;
-    for (const item of items) {
-      const prepared = {
-        ...racing,
-        racers: racing.racers.map((r, idx) =>
-          idx === 0 ? { ...r, item, boostUntil: 0, starUntil: 0 } : r
-        ),
-      };
-      const used = useTurboKartItem(prepared, 'p1', 16_000);
-      expect(used.ok).toBe(true);
-      if (!used.ok) continue;
-      expect(used.usedItem).toBe(item);
-      expect(used.state.racers[0].item).toBeNull();
-      if (item === 'turbo') expect(used.state.racers[0].boostUntil).toBeGreaterThan(16_000);
-      if (item === 'star') expect(used.state.racers[0].starUntil).toBeGreaterThan(16_000);
-      if (item === 'banana') expect(used.state.hazards.length).toBeGreaterThan(0);
-      if (item === 'green_shell' || item === 'red_shell') {
-        expect(used.state.projectiles.length).toBeGreaterThan(0);
-      }
-      if (item === 'shock') {
-        expect(used.state.racers[1].spinUntil).toBeGreaterThan(16_000);
-      }
-      racing = used.state;
-    }
   });
 });
 

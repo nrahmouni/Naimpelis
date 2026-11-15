@@ -586,6 +586,11 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     const enrichedMovie: CatalogMovie = {
                       ...item,
                       tmdbId: item.tmdbId || details?.tmdbId,
+                      originalTitle: item.originalTitle || details?.originalTitle,
+                      year:
+                        item.year && item.year !== 'HD'
+                          ? item.year
+                          : details?.year || item.year,
                     };
                     onClose();
                     onPlayMovie(enrichedMovie, selectedAudioLang);

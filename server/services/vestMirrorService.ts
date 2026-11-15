@@ -1,4 +1,5 @@
 import { execFile } from 'child_process';
+import { areTitlesStrictlyEqual } from '../extractors/httpHelpers.ts';
 
 export const VEST_MIRROR_ORIGINS = [
   'https://www3.dramasfree.com',
@@ -916,6 +917,8 @@ export async function resolveTmdbAbsoluteEpisodeNumber(
 
 export function findVestSeedWithEpisode(opts: {
   tmdbId?: string | number | null;
+  mediaType?: 'movie' | 'tv';
+  yearHint?: string;
   titleHints?: string[];
   preferLang?: string;
   season?: number;
@@ -925,6 +928,8 @@ export function findVestSeedWithEpisode(opts: {
   const reqSeason = Math.max(1, opts.season || 1);
   const reqEpisode = Math.max(1, opts.episode || 1);
   const prefUpper = String(opts.preferLang || 'ES').toUpperCase();
+  const expYear =
+    opts.yearHint && /^\d{4}$/.test(opts.yearHint.trim()) ? Number(opts.yearHint.trim()) : 0;
 
   const pickPreferred = (list: VestCatalogEntry[]): VestCatalogEntry => {
     if (prefUpper === 'VOSE' || prefUpper === 'EN') {
@@ -946,6 +951,7 @@ export function findVestSeedWithEpisode(opts: {
   if (numTmdb) {
     const matches: VestCatalogEntry[] = [];
     for (const entry of vestCatalogRegistry.values()) {
+      if (opts.mediaType && entry.mediaType !== opts.mediaType) continue;
       if (entry.tmdbId === numTmdb) matches.push(entry);
     }
 
@@ -989,6 +995,19 @@ export function findVestSeedWithEpisode(opts: {
     .filter((h) => h.length >= 3);
 
   for (const entry of vestCatalogRegistry.values()) {
+    if (opts.mediaType && entry.mediaType !== opts.mediaType) continue;
+    // Never hijack a TMDB-identified title using an unverified dynamic Vest entry with year 'HD'
+    if (numTmdb && entry.tmdbId && entry.tmdbId !== numTmdb) continue;
+    const entryYear = /^\d{4}$/.test(String(entry.year || '').trim())
+      ? Number(entry.year.trim())
+      : 0;
+    if (expYear > 1900) {
+      if (entryYear > 1900 && Math.abs(entryYear - expYear) > 1) continue;
+      if (numTmdb && !entry.tmdbId && entryYear === 0) continue;
+    } else if (numTmdb && !entry.tmdbId) {
+      continue;
+    }
+
     const entryNorm = entry.title
       .replace(/\s*\([^)]*\)\s*/g, ' ')
       .toLowerCase()
@@ -1009,6 +1028,8 @@ export function findVestSeedWithEpisode(opts: {
 
 export function findVestSeedForMedia(opts: {
   tmdbId?: string | number | null;
+  mediaType?: 'movie' | 'tv';
+  yearHint?: string;
   titleHints?: string[];
   preferLang?: string;
   season?: number;
@@ -1021,6 +1042,7 @@ export async function extractVestStreamsAndSubtitles(opts: {
   vestUrl?: string;
   tmdbId?: string | number | null;
   mediaType?: 'movie' | 'tv';
+  yearHint?: string;
   season?: number;
   episode?: number;
   preferLang?: string;
@@ -1038,6 +1060,8 @@ export async function extractVestStreamsAndSubtitles(opts: {
   if (!targetUrl || !isVestMirrorUrl(targetUrl)) {
     const found = findVestSeedWithEpisode({
       tmdbId: opts.tmdbId,
+      mediaType: opts.mediaType,
+      yearHint: opts.yearHint,
       titleHints: opts.titleHints,
       preferLang: opts.preferLang,
       season: opts.season,
@@ -1072,6 +1096,13 @@ export async function extractVestStreamsAndSubtitles(opts: {
 
   const primaryDetail = await fetchVestDetailPage(targetUrl, epOverride);
   if (!primaryDetail) return null;
+  if (opts.mediaType && primaryDetail.mediaType !== opts.mediaType) {
+    return null;
+  }
+  const cleanTitleHints = (opts.titleHints || []).map((t) => String(t || '').trim()).filter(Boolean);
+  if (cleanTitleHints.length > 0 && !areTitlesStrictlyEqual(primaryDetail.cleanTitle, cleanTitleHints)) {
+    return null;
+  }
 
   const tracks: VestTrackRecord[] = [];
   const seenUrls = new Set<string>();

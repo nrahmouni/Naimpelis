@@ -23,10 +23,14 @@ import type {
   PinturilloStroke,
 } from './pinturillo';
 import type {
-  KartInputState,
-  KartTrackId,
-  TurboKartState,
-} from './turboKart';
+  Pool8BallState,
+  PoolBallGroup,
+  PoolBallState,
+  PoolDifficulty,
+  PoolFoulType,
+  PoolPocketId,
+  PoolShotInput,
+} from './pool8Ball';
 
 export type {
   BoardClockMinutes,
@@ -35,15 +39,19 @@ export type {
   BoardGameType,
   BoardSide,
   ChessPromotionPiece,
-  KartInputState,
-  KartTrackId,
   ParchisGameState,
   PartyColor,
   PartyGameState,
   PartyGameType,
   PinturilloGameState,
   PinturilloStroke,
-  TurboKartState,
+  Pool8BallState,
+  PoolBallGroup,
+  PoolBallState,
+  PoolDifficulty,
+  PoolFoulType,
+  PoolPocketId,
+  PoolShotInput,
   UnoGameState,
 };
 
@@ -141,7 +149,7 @@ export interface RoomStatePayload {
   gameState?: BoardGameState | null;
   partyGameState?: PartyGameState | null;
   pinturilloState?: PinturilloGameState | null;
-  kartGameState?: TurboKartState | null;
+  poolGameState?: Pool8BallState | null;
   createdAt: number;
   serverTime?: number;
 }
@@ -394,31 +402,39 @@ export type ClientWsMessage =
       payload: { roomId: string };
     }
   | {
-      type: 'KART_START';
-      payload: { roomId: string; trackId?: KartTrackId };
+      type: 'POOL_START';
+      payload: { roomId: string; difficulty?: PoolDifficulty };
     }
   | {
-      type: 'KART_SELECT_TRACK';
-      payload: { roomId: string; trackId: KartTrackId };
+      type: 'POOL_JOIN_SEAT';
+      payload: { roomId: string; seatIndex: 0 | 1 | 'spectate' };
     }
   | {
-      type: 'KART_BEGIN_RACE';
+      type: 'POOL_CALL_POCKET';
+      payload: { roomId: string; pocketId: PoolPocketId };
+    }
+  | {
+      type: 'POOL_PLACE_CUE';
+      payload: { roomId: string; x: number; y: number };
+    }
+  | {
+      type: 'POOL_TAKE_SHOT';
+      payload: { roomId: string; shot: PoolShotInput };
+    }
+  | {
+      type: 'POOL_SYNC_CHECKSUM';
+      payload: { roomId: string; turnNumber: number; checksum: number };
+    }
+  | {
+      type: 'POOL_FORFEIT';
       payload: { roomId: string };
     }
   | {
-      type: 'KART_INPUT';
-      payload: { roomId: string; input: KartInputState };
-    }
-  | {
-      type: 'KART_USE_ITEM';
+      type: 'POOL_REMATCH';
       payload: { roomId: string };
     }
   | {
-      type: 'KART_REMATCH';
-      payload: { roomId: string; trackId?: KartTrackId };
-    }
-  | {
-      type: 'KART_CLOSE';
+      type: 'POOL_CLOSE';
       payload: { roomId: string };
     };
 
@@ -510,9 +526,24 @@ export type ServerWsMessage =
       };
     }
   | {
-      type: 'KART_STATE_UPDATED';
+      type: 'POOL_STATE_UPDATED';
       payload: {
-        kartGameState: TurboKartState | null;
+        poolGameState: Pool8BallState | null;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'POOL_SHOT_BROADCAST';
+      payload: {
+        shot: PoolShotInput & {
+          shooterUserId: string;
+          turnNumber: number;
+          cueStartX: number;
+          cueStartY: number;
+        };
+        preShotBalls: PoolBallState[];
+        authoritativeState: Pool8BallState;
+        checksum: number;
         message?: RoomChatMessage | null;
       };
     };

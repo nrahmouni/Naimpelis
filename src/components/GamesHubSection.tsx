@@ -18,12 +18,13 @@ import type {
   BoardGameType,
   BoardSide,
   ChessPromotionPiece,
-  KartInputState,
-  KartTrackId,
   Participant,
   PinturilloGameState,
   PinturilloStroke,
-  TurboKartState,
+  Pool8BallState,
+  PoolDifficulty,
+  PoolPocketId,
+  PoolShotInput,
 } from '../types';
 import {
   BOARD_TURN_DECISION_MS,
@@ -45,7 +46,7 @@ import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
 import { RoomBoardGamePanel } from './RoomBoardGamePanel';
 import { PartyGamesStage, type PartyOnlineAction } from './PartyGamesStage';
 import { PinturilloStage } from './PinturilloStage';
-import { TurboKartStage } from './TurboKartStage';
+import { Pool8BallStage } from './Pool8BallStage';
 import { GameMuteButton, useGameSoundMute } from './games/GameEffects';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
@@ -54,7 +55,7 @@ type UnifiedGameId =
   | 'parchis'
   | 'uno'
   | 'pinturillo'
-  | 'kart'
+  | 'pool'
   | 'chess'
   | 'checkers'
   | 'connect4';
@@ -66,7 +67,7 @@ interface GamesHubSectionProps {
   roomBoardGame: BoardGameState | null;
   roomPartyGame: PartyGameState | null;
   roomPinturilloGame?: PinturilloGameState | null;
-  roomKartGame?: TurboKartState | null;
+  roomPoolGame?: Pool8BallState | null;
   gameMoveError?: string | null;
   isHost?: boolean;
   voiceChat?: GameVoiceChatState;
@@ -91,13 +92,15 @@ interface GamesHubSectionProps {
   onPinturilloGuess?: (text: string) => void;
   onPinturilloRematch?: () => void;
   onCloseRoomPinturillo?: () => void;
-  onStartRoomKart?: (trackId?: KartTrackId) => void;
-  onKartSelectTrack?: (trackId: KartTrackId) => void;
-  onKartBeginRace?: () => void;
-  onKartInput?: (input: KartInputState) => void;
-  onKartUseItem?: () => void;
-  onKartRematch?: (trackId?: KartTrackId) => void;
-  onCloseRoomKart?: () => void;
+  onStartRoomPool?: (difficulty?: PoolDifficulty) => void;
+  onPoolJoinSeat?: (seatIndex: 0 | 1 | 'spectate') => void;
+  onPoolCallPocket?: (pocketId: PoolPocketId) => void;
+  onPoolPlaceCue?: (x: number, y: number) => void;
+  onPoolTakeShot?: (shot: PoolShotInput) => void;
+  onPoolSyncChecksum?: (turnNumber: number, checksum: number) => void;
+  onPoolForfeit?: () => void;
+  onPoolRematch?: () => void;
+  onCloseRoomPool?: () => void;
 }
 
 const PARTY_COLOR_HEX: Record<PartyColor, { hex: string; short: string }> = {
@@ -122,7 +125,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   roomBoardGame,
   roomPartyGame,
   roomPinturilloGame = null,
-  roomKartGame = null,
+  roomPoolGame = null,
   gameMoveError = null,
   isHost = false,
   voiceChat,
@@ -144,13 +147,15 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   onPinturilloGuess,
   onPinturilloRematch,
   onCloseRoomPinturillo,
-  onStartRoomKart,
-  onKartSelectTrack,
-  onKartBeginRace,
-  onKartInput,
-  onKartUseItem,
-  onKartRematch,
-  onCloseRoomKart,
+  onStartRoomPool,
+  onPoolJoinSeat,
+  onPoolCallPocket,
+  onPoolPlaceCue,
+  onPoolTakeShot,
+  onPoolSyncChecksum,
+  onPoolForfeit,
+  onPoolRematch,
+  onCloseRoomPool,
 }) => {
   const [selectedGame, setSelectedGame] = useState<UnifiedGameId | null>(null);
   const [hubMode, setHubMode] = useState<'offline' | 'online'>('online');
@@ -161,8 +166,8 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   // Track room-pushed games so when another room user launches a game, it opens cleanly unless dismissed
   const prevRoomGameKeyRef = React.useRef<string | null>(null);
   useEffect(() => {
-    const incomingKey = roomKartGame
-      ? `kart:${roomKartGame.updatedAt}`
+    const incomingKey = roomPoolGame
+      ? `pool:${roomPoolGame.updatedAt}`
       : roomPinturilloGame
       ? `pinturillo:${roomPinturilloGame.updatedAt}`
       : roomPartyGame
@@ -176,8 +181,8 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       return;
     }
 
-    const incomingType: UnifiedGameId = roomKartGame
-      ? 'kart'
+    const incomingType: UnifiedGameId = roomPoolGame
+      ? 'pool'
       : roomPinturilloGame
       ? 'pinturillo'
       : roomPartyGame
@@ -190,7 +195,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       setSelectedGame(incomingType);
     }
     prevRoomGameKeyRef.current = incomingType;
-  }, [roomKartGame, roomPinturilloGame, roomPartyGame, roomBoardGame]);
+  }, [roomPoolGame, roomPinturilloGame, roomPartyGame, roomBoardGame]);
 
   const makeOfflineBoardState = (gt: BoardGameType, humanSide: BoardSide = 'w'): BoardGameState => {
     const created = createInitialBoardGameState(
@@ -279,9 +284,9 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       if (!roomPinturilloGame) {
         onStartRoomPinturillo?.();
       }
-    } else if (gt === 'kart') {
-      if (!roomKartGame) {
-        onStartRoomKart?.();
+    } else if (gt === 'pool') {
+      if (!roomPoolGame) {
+        onStartRoomPool?.();
       }
     } else if (isPartyGame(gt)) {
       if (!roomPartyGame || roomPartyGame.gameType !== gt) {
@@ -304,9 +309,9 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         if (isHost && roomPinturilloGame) {
           onCloseRoomPinturillo?.();
         }
-      } else if (selectedGame === 'kart') {
-        if (isHost && roomKartGame) {
-          onCloseRoomKart?.();
+      } else if (selectedGame === 'pool') {
+        if (isHost && roomPoolGame) {
+          onCloseRoomPool?.();
         }
       } else if (isPartyGame(selectedGame)) {
         if (isHost && roomPartyGame?.gameType === selectedGame) {
@@ -335,9 +340,9 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         if (!roomPinturilloGame) {
           onStartRoomPinturillo?.();
         }
-      } else if (selectedGame === 'kart') {
-        if (!roomKartGame) {
-          onStartRoomKart?.();
+      } else if (selectedGame === 'pool') {
+        if (!roomPoolGame) {
+          onStartRoomPool?.();
         }
       } else if (isPartyGame(selectedGame)) {
         if (!roomPartyGame || roomPartyGame.gameType !== selectedGame) {
@@ -366,9 +371,9 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   if (selectedGame) {
     const isParty = isPartyGame(selectedGame);
     const isPinturillo = selectedGame === 'pinturillo';
-    const isKart = selectedGame === 'kart';
+    const isPool = selectedGame === 'pool';
     const activeBoardState =
-      !isParty && !isPinturillo && !isKart
+      !isParty && !isPinturillo && !isPool
         ? hubMode === 'offline'
           ? localBoardGame
           : roomBoardGame?.gameType === selectedGame
@@ -391,173 +396,250 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       parchis: pickLang(lang, { es: '🎲 Parchís', ca: '🎲 Parxís', en: '🎲 Parchís' }),
       uno: '🃏 UNO',
       pinturillo: '🎨 Pinturillo',
-      kart: '🏎️ Turbo Kart',
+      pool: pickLang(lang, { es: '🎱 Billar Bola 8', ca: '🎱 Billar Bola 8', en: '🎱 8-Ball Pool' }),
       chess: pickLang(lang, { es: '♟️ Ajedrez', ca: '♟️ Escacs', en: '♟️ Chess' }),
       checkers: pickLang(lang, { es: '🔴 Damas', ca: '🔴 Dames', en: '🔴 Checkers' }),
       connect4: pickLang(lang, { es: '🟡 Conecta 4', ca: '🟡 Connecta 4', en: '🟡 Connect 4' }),
     };
+
+    const poolMySeat =
+      hubMode === 'online' && roomPoolGame
+        ? roomPoolGame.players[0]?.userId === currentUser.id
+          ? roomPoolGame.players[0]
+          : roomPoolGame.players[1]?.userId === currentUser.id
+          ? roomPoolGame.players[1]
+          : null
+        : null;
+    const poolGroupShort =
+      poolMySeat?.group === 'solids'
+        ? pickLang(lang, { es: 'Lisas', ca: 'Llises', en: 'Solids' })
+        : poolMySeat?.group === 'stripes'
+        ? pickLang(lang, { es: 'Rayadas', ca: 'Ratllades', en: 'Stripes' })
+        : pickLang(lang, { es: 'Abierta', ca: 'Oberta', en: 'Open' });
+
+    const renderVoiceCompact = () =>
+      hubMode === 'online' && voiceChat ? (
+        <div className="flex items-center gap-1 shrink-0">
+          {voiceChat.isJoined ? (
+            <>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  voiceChat.toggleMute();
+                }}
+                className={`h-7 px-2 rounded-lg text-[10px] font-bold flex items-center gap-1 whitespace-nowrap border cursor-pointer ${
+                  voiceChat.isMuted
+                    ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
+                    : 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                }`}
+              >
+                {voiceChat.isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">{voiceChat.isMuted ? 'Mute' : 'Voz'}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  voiceChat.leaveVoice();
+                }}
+                aria-label="Colgar voz"
+                className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-rose-500/25 border border-white/[0.1] flex items-center justify-center text-zinc-300 hover:text-rose-200 cursor-pointer"
+              >
+                <PhoneOff className="w-3 h-3" />
+              </button>
+            </>
+          ) : (
+            <button
+              type="button"
+              disabled={voiceChat.status === 'requesting'}
+              onClick={() => {
+                triggerHaptic('medium');
+                void voiceChat.joinVoice();
+              }}
+              className="h-7 px-2 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-[10px] font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer"
+            >
+              {voiceChat.status === 'requesting' ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <PhoneCall className="w-3 h-3" />
+              )}
+              <span>Voz</span>
+            </button>
+          )}
+        </div>
+      ) : null;
 
     return (
       <div
         data-game-fullscreen="true"
         className="fixed inset-0 z-[185] h-[100dvh] w-full max-w-[100vw] bg-[#0B0D14] nc-tabletop-slate overflow-hidden flex flex-col pt-safe pb-safe"
       >
-        <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-2 sm:p-3.5 max-w-4xl w-full mx-auto gap-1.5">
-          {/* Header: ← Back to Games | Title | Sound Mute */}
-          <div className="flex items-center justify-between gap-2 shrink-0 px-0.5">
-            <button
-              type="button"
-              onClick={handleBackToGames}
-              className="min-h-9 px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
-            >
-              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-              <span>{pickLang(lang, { es: 'Volver a Juegos', ca: 'Tornar a Jocs', en: 'Back to Games' })}</span>
-            </button>
-
-            <h2 className="text-sm sm:text-base font-extrabold text-white truncate">
-              {titleMap[selectedGame]}
-            </h2>
-
-            <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
-          </div>
-
-          {/* Single Compact Control Bar Above the Board: Online vs AI | Seat/Color Picker | Voice Mic */}
-          <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0 overflow-x-auto no-scrollbar">
-            {/* 1. Online vs AI Toggle */}
-            <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#090A10] border border-white/[0.08] shrink-0">
+        <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-1.5 sm:p-3 max-w-5xl w-full mx-auto gap-1.5">
+          {isPool ? (
+            /* Ultra-compact single-row mobile header for Billar Bola 8 */
+            <div className="flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0">
               <button
                 type="button"
-                onClick={() => switchModeForActiveGame('online')}
-                className={`h-7 px-2.5 rounded-md text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
-                  hubMode === 'online' ? 'bg-[#E11D48] text-white' : 'text-zinc-400 hover:text-white'
-                }`}
+                onClick={handleBackToGames}
+                className="h-8 px-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
               >
-                <Users className="w-3 h-3 shrink-0" />
-                <span>Online</span>
+                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">
+                  {pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })}
+                </span>
               </button>
-              <button
-                type="button"
-                onClick={() => switchModeForActiveGame('offline')}
-                className={`h-7 px-2.5 rounded-md text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
-                  hubMode === 'offline' ? 'bg-[#9146FF] text-white' : 'text-zinc-400 hover:text-white'
-                }`}
-              >
-                <Bot className="w-3 h-3 shrink-0" />
-                <span>vs IA</span>
-              </button>
-            </div>
 
-            {/* 2. Party Color Picker (Only shown while waiting before match starts) */}
-            {showPartyWaitingColors && (
-              <div className="flex items-center gap-1 shrink-0">
-                {PARTY_COLORS.map((col, idx) => {
-                  const seat = activePartyState?.players[idx];
-                  const isMine = seat && !seat.isBot && seat.userId === currentUser.id;
-                  const canClaim =
-                    hubMode === 'online' &&
-                    activePartyState?.status === 'waiting' &&
-                    Boolean(seat?.isBot);
-                  return (
-                    <button
-                      key={col}
-                      type="button"
-                      disabled={!canClaim}
-                      onClick={() => {
-                        if (!canClaim) return;
-                        triggerHaptic('light');
-                        onRoomPartyAction?.('join_seat', { seatIndex: idx });
-                      }}
-                      aria-label={col}
-                      className={`h-7 px-2 rounded-lg text-[10px] font-extrabold flex items-center gap-1 border whitespace-nowrap ${
-                        isMine
-                          ? 'border-white bg-white/15 text-white'
-                          : canClaim
-                          ? 'border-white/20 bg-white/[0.05] hover:bg-white/[0.12] text-zinc-200 cursor-pointer'
-                          : 'border-white/10 bg-white/[0.03] text-zinc-400 opacity-75 cursor-default'
-                      }`}
-                    >
-                      <span
-                        className="w-2.5 h-2.5 rounded-full shrink-0"
-                        style={{ backgroundColor: PARTY_COLOR_HEX[col].hex }}
-                      />
-                      <span>{PARTY_COLOR_HEX[col].short}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            {/* 3. Voice Call Mic Button */}
-            {hubMode === 'online' && voiceChat && (
-              <div className="flex items-center gap-1 shrink-0">
-                {voiceChat.isJoined ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        voiceChat.toggleMute();
-                      }}
-                      className={`h-7 px-2.5 rounded-lg text-[10px] font-bold flex items-center gap-1 whitespace-nowrap border cursor-pointer ${
-                        voiceChat.isMuted
-                          ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
-                          : 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
-                      }`}
-                    >
-                      {voiceChat.isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                      <span>{voiceChat.isMuted ? 'Mute' : 'Voz'}</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        voiceChat.leaveVoice();
-                      }}
-                      aria-label="Colgar voz"
-                      className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-rose-500/25 border border-white/[0.1] flex items-center justify-center text-zinc-300 hover:text-rose-200 cursor-pointer"
-                    >
-                      <PhoneOff className="w-3 h-3" />
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    disabled={voiceChat.status === 'requesting'}
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      void voiceChat.joinVoice();
-                    }}
-                    className="h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-[10px] font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer"
-                  >
-                    {voiceChat.status === 'requesting' ? (
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                    ) : (
-                      <PhoneCall className="w-3 h-3" />
-                    )}
-                    <span>Voz</span>
-                  </button>
+              <div className="flex items-center gap-1.5 min-w-0">
+                <h2 className="text-xs sm:text-sm font-extrabold text-white truncate">
+                  {titleMap.pool}
+                </h2>
+                {hubMode === 'online' && roomPoolGame && (
+                  <span className="text-[10px] font-bold text-emerald-300 truncate hidden xs:inline sm:inline">
+                    · {poolGroupShort}
+                  </span>
                 )}
               </div>
-            )}
-          </div>
+
+              <div className="flex items-center gap-1 shrink-0">
+                <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#090A10] border border-white/[0.08]">
+                  <button
+                    type="button"
+                    onClick={() => switchModeForActiveGame('online')}
+                    className={`h-6 px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                      hubMode === 'online' ? 'bg-[#E11D48] text-white' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <Users className="w-3 h-3 shrink-0" />
+                    <span className="hidden xs:inline sm:inline">1v1</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchModeForActiveGame('offline')}
+                    className={`h-6 px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                      hubMode === 'offline' ? 'bg-[#9146FF] text-white' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <Bot className="w-3 h-3 shrink-0" />
+                    <span className="hidden xs:inline sm:inline">IA</span>
+                  </button>
+                </div>
+                <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
+                {renderVoiceCompact()}
+              </div>
+            </div>
+          ) : (
+            <>
+              {/* Header: ← Back to Games | Title | Sound Mute */}
+              <div className="flex items-center justify-between gap-2 shrink-0 px-0.5">
+                <button
+                  type="button"
+                  onClick={handleBackToGames}
+                  className="min-h-9 px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+                  <span>{pickLang(lang, { es: 'Volver a Juegos', ca: 'Tornar a Jocs', en: 'Back to Games' })}</span>
+                </button>
+
+                <h2 className="text-sm sm:text-base font-extrabold text-white truncate">
+                  {titleMap[selectedGame]}
+                </h2>
+
+                <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
+              </div>
+
+              {/* Single Compact Control Bar Above the Board: Online vs AI | Seat/Color Picker | Voice Mic */}
+              <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0 overflow-x-auto no-scrollbar">
+                {/* 1. Online vs AI Toggle */}
+                <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#090A10] border border-white/[0.08] shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => switchModeForActiveGame('online')}
+                    className={`h-7 px-2.5 rounded-md text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                      hubMode === 'online' ? 'bg-[#E11D48] text-white' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <Users className="w-3 h-3 shrink-0" />
+                    <span>Online</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => switchModeForActiveGame('offline')}
+                    className={`h-7 px-2.5 rounded-md text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                      hubMode === 'offline' ? 'bg-[#9146FF] text-white' : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    <Bot className="w-3 h-3 shrink-0" />
+                    <span>vs IA</span>
+                  </button>
+                </div>
+
+                {/* 2. Party Color Picker (Only shown while waiting before match starts) */}
+                {showPartyWaitingColors && (
+                  <div className="flex items-center gap-1 shrink-0">
+                    {PARTY_COLORS.map((col, idx) => {
+                      const seat = activePartyState?.players[idx];
+                      const isMine = seat && !seat.isBot && seat.userId === currentUser.id;
+                      const canClaim =
+                        hubMode === 'online' &&
+                        activePartyState?.status === 'waiting' &&
+                        Boolean(seat?.isBot);
+                      return (
+                        <button
+                          key={col}
+                          type="button"
+                          disabled={!canClaim}
+                          onClick={() => {
+                            if (!canClaim) return;
+                            triggerHaptic('light');
+                            onRoomPartyAction?.('join_seat', { seatIndex: idx });
+                          }}
+                          aria-label={col}
+                          className={`h-7 px-2 rounded-lg text-[10px] font-extrabold flex items-center gap-1 border whitespace-nowrap ${
+                            isMine
+                              ? 'border-white bg-white/15 text-white'
+                              : canClaim
+                              ? 'border-white/20 bg-white/[0.05] hover:bg-white/[0.12] text-zinc-200 cursor-pointer'
+                              : 'border-white/10 bg-white/[0.03] text-zinc-400 opacity-75 cursor-default'
+                          }`}
+                        >
+                          <span
+                            className="w-2.5 h-2.5 rounded-full shrink-0"
+                            style={{ backgroundColor: PARTY_COLOR_HEX[col].hex }}
+                          />
+                          <span>{PARTY_COLOR_HEX[col].short}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* 3. Voice Call Mic Button */}
+                {renderVoiceCompact()}
+              </div>
+            </>
+          )}
 
           {/* Single Game Stage */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            {isKart ? (
-              <TurboKartStage
-                key={`kart-${hubMode}`}
+            {isPool ? (
+              <Pool8BallStage
+                key={`pool-${hubMode}`}
                 lang={lang}
                 currentUser={currentUser}
-                kartGameState={hubMode === 'offline' ? null : roomKartGame}
+                participants={participants}
+                poolState={hubMode === 'offline' ? null : roomPoolGame}
                 isOffline={hubMode === 'offline'}
-                isHost={isHost}
                 voiceChat={voiceChat}
                 mutedOverride={muted}
-                onSelectTrackOnline={onKartSelectTrack}
-                onBeginRaceOnline={onKartBeginRace}
-                onSendInputOnline={onKartInput}
-                onUseItemOnline={onKartUseItem}
-                onRematchOnline={onKartRematch}
+                onStartOnline={onStartRoomPool}
+                onJoinSeatOnline={onPoolJoinSeat}
+                onPlaceCueOnline={onPoolPlaceCue}
+                onCallPocketOnline={onPoolCallPocket}
+                onTakeShotOnline={onPoolTakeShot}
+                onForfeitOnline={onPoolForfeit}
+                onRematchOnline={onPoolRematch}
+                onSyncChecksumOnline={onPoolSyncChecksum}
               />
             ) : isPinturillo ? (
               <PinturilloStage
@@ -671,51 +753,53 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   }
 
   // ==========================================================================
-  // ULTRA-CLEAN ZERO-SCROLL 2-COLUMN GAME HUB (7 GAMES, ZERO SCROLL)
+  // ULTRA-CLEAN ZERO-SCROLL 2-COLUMN GAME HUB (7 UNIFORM CARDS, ZERO SCROLL)
   // ==========================================================================
   return (
-    <div className="w-full max-w-2xl mx-auto px-1 py-0.5">
-      <div className="grid grid-cols-2 gap-2 sm:gap-3">
-        {/* 1. TURBO KART (Featured Full-Width Arcade Banner) */}
+    <div className="w-full max-w-3xl mx-auto flex-1 min-h-0 flex flex-col px-0.5 py-0.5">
+      <div className="flex-1 min-h-0 grid grid-cols-2 grid-rows-4 lg:grid-rows-none lg:auto-rows-[112px] gap-1.5 sm:gap-2.5">
+        {/* 1. BILLAR BOLA 8 */}
         <button
           type="button"
-          onClick={() => openGameCard('kart')}
-          className="col-span-2 group relative rounded-2xl px-3.5 py-2.5 sm:py-3.5 nc-tabletop-slate border border-amber-400/25 hover:border-amber-400/70 text-left flex items-center justify-between gap-3 min-h-[72px] sm:min-h-[84px] cursor-pointer active:scale-[0.99] transition-all overflow-hidden"
+          onClick={() => openGameCard('pool')}
+          className="group relative rounded-2xl p-2 sm:p-3 nc-tabletop-slate border border-emerald-400/25 hover:border-emerald-400/65 text-left flex flex-col justify-between gap-1 sm:gap-1.5 min-h-0 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
         >
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-12 h-11 rounded-xl bg-gradient-to-br from-[#F43F5E] via-[#F59E0B] to-[#9146FF] border border-white/25 flex items-center justify-center shadow-lg shrink-0">
-              <span className="text-2xl leading-none" aria-hidden="true">🏎️</span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-[#064E3B] via-[#0F766E] to-[#111827] border border-emerald-300/30 flex items-center justify-center shadow-md shrink-0">
+              <span className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 rounded-full bg-zinc-950 border border-white/25 flex items-center justify-center">
+                <span className="w-2.5 h-2.5 rounded-full bg-white text-[8px] font-black text-zinc-950 flex items-center justify-center leading-none">
+                  8
+                </span>
+              </span>
             </div>
-            <div className="min-w-0">
-              <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight truncate">
-                Turbo Kart
-              </h3>
-              <p className="text-[11px] text-zinc-300 truncate">
-                {pickLang(lang, {
-                  es: '3 circuitos · Caparazones, Nitro y 6 jugadores',
-                  ca: '3 circuits · Closques, Nitro i 6 jugadors',
-                  en: '3 tracks · Shells, Nitro & 6 players',
-                })}
-              </p>
-            </div>
+            <span className="text-[10px] font-mono text-emerald-300">8-BALL</span>
           </div>
-          <span className="text-xs font-black text-amber-300 group-hover:translate-x-0.5 transition-transform shrink-0">
-            →
-          </span>
+          <div className="min-w-0">
+            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight truncate">
+              {pickLang(lang, { es: 'Billar Bola 8', ca: 'Billar Bola 8', en: '8-Ball Pool' })}
+            </h3>
+            <p className="text-[10px] sm:text-[11px] text-zinc-400 whitespace-nowrap truncate">
+              {pickLang(lang, {
+                es: 'Física 60fps · 1v1 y IA',
+                ca: 'Física 60fps · 1v1 i IA',
+                en: '60fps Physics · 1v1 & AI',
+              })}
+            </p>
+          </div>
         </button>
 
         {/* 2. PARCHÍS */}
         <button
           type="button"
           onClick={() => openGameCard('parchis')}
-          className="group relative rounded-2xl p-2.5 sm:p-3.5 nc-tabletop-slate border border-white/[0.11] hover:border-amber-400/55 text-left flex flex-col justify-between gap-2 min-h-[88px] sm:min-h-[104px] cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
+          className="group relative rounded-2xl p-2 sm:p-3 nc-tabletop-slate border border-white/[0.11] hover:border-amber-400/55 text-left flex flex-col justify-between gap-1 sm:gap-1.5 min-h-0 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center -space-x-1.5">
               {(['red', 'blue', 'yellow', 'green'] as PartyColor[]).map((col) => (
                 <span
                   key={col}
-                  className="w-5 h-5 sm:w-6 sm:h-6 rounded-full border border-white/85 shadow-md"
+                  className="w-4.5 h-4.5 sm:w-5.5 sm:h-5.5 rounded-full border border-white/85 shadow-md"
                   style={{
                     background: `radial-gradient(circle at 32% 28%, rgba(255,255,255,0.88) 0%, ${PARTY_COLOR_HEX[col].hex} 46%, #111 95%)`,
                   }}
@@ -724,8 +808,8 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
             <span className="text-base sm:text-lg leading-none" aria-hidden="true">🎲</span>
           </div>
-          <div>
-            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight">
+          <div className="min-w-0">
+            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight truncate">
               {pickLang(lang, { es: 'Parchís', ca: 'Parxís', en: 'Parchís' })}
             </h3>
             <p className="text-[10px] sm:text-[11px] text-zinc-400 truncate">
@@ -738,27 +822,27 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('uno')}
-          className="group relative rounded-2xl p-2.5 sm:p-3.5 nc-tabletop-slate border border-white/[0.11] hover:border-rose-400/55 text-left flex flex-col justify-between gap-2 min-h-[88px] sm:min-h-[104px] cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
+          className="group relative rounded-2xl p-2 sm:p-3 nc-tabletop-slate border border-white/[0.11] hover:border-rose-400/55 text-left flex flex-col justify-between gap-1 sm:gap-1.5 min-h-0 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
         >
           <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center -space-x-2.5">
+            <div className="flex items-center -space-x-2">
               <img
                 src={getUnoCardSvgSrc('red', '7')}
                 alt=""
                 aria-hidden="true"
-                className="w-7 h-10 object-contain -rotate-8 drop-shadow-md pointer-events-none"
+                className="w-5.5 h-7 sm:w-7 sm:h-9 object-contain -rotate-8 drop-shadow-md pointer-events-none"
               />
               <img
                 src={getUnoCardSvgSrc('wild', 'wild4')}
                 alt=""
                 aria-hidden="true"
-                className="w-7 h-10 object-contain rotate-8 drop-shadow-md pointer-events-none"
+                className="w-5.5 h-7 sm:w-7 sm:h-9 object-contain rotate-8 drop-shadow-md pointer-events-none"
               />
             </div>
             <span className="text-[11px] font-black tracking-tight text-amber-300">108</span>
           </div>
-          <div>
-            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight">
+          <div className="min-w-0">
+            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight truncate">
               UNO
             </h3>
             <p className="text-[10px] sm:text-[11px] text-zinc-400 truncate">
@@ -771,7 +855,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('pinturillo')}
-          className="group relative rounded-2xl p-2.5 sm:p-3.5 nc-tabletop-slate border border-white/[0.11] hover:border-emerald-400/55 text-left flex flex-col justify-between gap-2 min-h-[88px] sm:min-h-[104px] cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
+          className="group relative rounded-2xl p-2 sm:p-3 nc-tabletop-slate border border-white/[0.11] hover:border-emerald-400/55 text-left flex flex-col justify-between gap-1 sm:gap-1.5 min-h-0 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-1">
@@ -781,8 +865,8 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
             <span className="text-base sm:text-lg leading-none" aria-hidden="true">🎨</span>
           </div>
-          <div>
-            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight">
+          <div className="min-w-0">
+            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight truncate">
               Pinturillo
             </h3>
             <p className="text-[10px] sm:text-[11px] text-zinc-400 truncate">
@@ -795,11 +879,11 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('chess')}
-          className="group relative rounded-2xl p-2.5 sm:p-3.5 nc-tabletop-slate border border-white/[0.11] hover:border-[#9146FF]/65 text-left flex flex-col justify-between gap-2 min-h-[88px] sm:min-h-[104px] cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
+          className="group relative rounded-2xl p-2 sm:p-3 nc-tabletop-slate border border-white/[0.11] hover:border-[#9146FF]/65 text-left flex flex-col justify-between gap-1 sm:gap-1.5 min-h-0 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
         >
           <div className="flex items-center justify-between gap-2">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#6c7488] to-[#2a2f3d] border border-white/15 flex items-center justify-center shadow-inner">
-              <svg viewBox="0 0 45 45" className="w-6 h-6" aria-hidden="true">
+            <div className="w-7 h-7 sm:w-9 sm:h-9 rounded-xl bg-gradient-to-br from-[#6c7488] to-[#2a2f3d] border border-white/15 flex items-center justify-center shadow-inner">
+              <svg viewBox="0 0 45 45" className="w-4.5 h-4.5 sm:w-6 sm:h-6" aria-hidden="true">
                 <path
                   d="M22.5 11.63V6M20 8h5"
                   stroke="#292018"
@@ -823,8 +907,8 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
             <span className="text-[10px] font-mono text-zinc-400">FIDE</span>
           </div>
-          <div>
-            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight">
+          <div className="min-w-0">
+            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight truncate">
               {pickLang(lang, { es: 'Ajedrez', ca: 'Escacs', en: 'Chess' })}
             </h3>
             <p className="text-[10px] sm:text-[11px] text-zinc-400 truncate">
@@ -837,19 +921,19 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('checkers')}
-          className="group relative rounded-2xl p-2.5 sm:p-3.5 nc-tabletop-slate border border-white/[0.11] hover:border-rose-400/55 text-left flex flex-col justify-between gap-2 min-h-[88px] sm:min-h-[104px] cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
+          className="group relative rounded-2xl p-2 sm:p-3 nc-tabletop-slate border border-white/[0.11] hover:border-rose-400/55 text-left flex flex-col justify-between gap-1 sm:gap-1.5 min-h-0 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
         >
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center -space-x-2">
-              <div className="w-7 h-7 rounded-full bg-gradient-to-b from-[#FB7185] via-[#E11D48] to-[#881337] border border-rose-200/80 shadow-md flex items-center justify-center">
-                <Crown className="w-3.5 h-3.5 fill-amber-300 text-amber-400" />
+              <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-gradient-to-b from-[#FB7185] via-[#E11D48] to-[#881337] border border-rose-200/80 shadow-md flex items-center justify-center">
+                <Crown className="w-3 h-3 fill-amber-300 text-amber-400" />
               </div>
-              <div className="w-7 h-7 rounded-full bg-gradient-to-b from-[#FFFDF7] to-[#C8B99B] border border-white shadow-md" />
+              <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-full bg-gradient-to-b from-[#FFFDF7] to-[#C8B99B] border border-white shadow-md" />
             </div>
             <span className="text-[10px] font-mono text-zinc-400">8×8</span>
           </div>
-          <div>
-            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight">
+          <div className="min-w-0">
+            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight truncate">
               {pickLang(lang, { es: 'Damas', ca: 'Dames', en: 'Checkers' })}
             </h3>
             <p className="text-[10px] sm:text-[11px] text-zinc-400 truncate">
@@ -862,10 +946,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('connect4')}
-          className="group relative rounded-2xl p-2.5 sm:p-3.5 nc-tabletop-slate border border-white/[0.11] hover:border-blue-400/60 text-left flex flex-col justify-between gap-2 min-h-[88px] sm:min-h-[104px] cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
+          className="group relative rounded-2xl p-2 sm:p-3 nc-tabletop-slate border border-white/[0.11] hover:border-blue-400/60 text-left flex flex-col justify-between gap-1 sm:gap-1.5 min-h-0 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
         >
           <div className="flex items-center justify-between gap-2">
-            <div className="w-11 h-8 rounded-lg bg-gradient-to-b from-[#2563EB] to-[#172554] border border-blue-300/35 p-1 grid grid-cols-3 grid-rows-2 gap-0.5 shrink-0 shadow-md">
+            <div className="w-9 h-6.5 sm:w-11 sm:h-8 rounded-lg bg-gradient-to-b from-[#2563EB] to-[#172554] border border-blue-300/35 p-1 grid grid-cols-3 grid-rows-2 gap-0.5 shrink-0 shadow-md">
               <span className="rounded-full bg-[#060912]" />
               <span className="rounded-full bg-amber-400" />
               <span className="rounded-full bg-[#060912]" />
@@ -875,8 +959,8 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
             <span className="text-[10px] font-mono text-zinc-400">7×6</span>
           </div>
-          <div>
-            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight">
+          <div className="min-w-0">
+            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight truncate">
               {pickLang(lang, { es: 'Conecta 4', ca: 'Connecta 4', en: 'Connect 4' })}
             </h3>
             <p className="text-[10px] sm:text-[11px] text-zinc-400 truncate">
