@@ -208,9 +208,38 @@ function findNextSpatialTarget(
   return bestEl;
 }
 
+export function announceTvA11y(message: string): void {
+  if (typeof document === 'undefined' || !message.trim()) return;
+  let region = document.getElementById('naim-tv-a11y-live');
+  if (!region) {
+    region = document.createElement('div');
+    region.id = 'naim-tv-a11y-live';
+    region.setAttribute('role', 'status');
+    region.setAttribute('aria-live', 'polite');
+    region.setAttribute('aria-atomic', 'true');
+    region.className = 'sr-only';
+    document.body.appendChild(region);
+  }
+  region.textContent = '';
+  window.setTimeout(() => {
+    if (region) region.textContent = message.trim().slice(0, 140);
+  }, 15);
+}
+
+function getFocusableAnnouncement(el: HTMLElement): string {
+  const aria = el.getAttribute('aria-label') || el.getAttribute('title') || '';
+  if (aria.trim()) return aria.trim();
+  const txt = (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+  return txt;
+}
+
 function focusElementForTv(el: HTMLElement) {
   document.documentElement.classList.add('tv-dpad-active');
   el.focus({ preventScroll: true });
+  const label = getFocusableAnnouncement(el);
+  if (label) {
+    announceTvA11y(label);
+  }
   try {
     el.scrollIntoView({
       behavior: 'smooth',
@@ -475,6 +504,26 @@ export function useTvSpatialRemote(callbacks: TvSpatialRemoteCallbacks) {
           break;
         default:
           break;
+      }
+
+      if (!mapped) {
+        const legacyCode = e.keyCode || e.which;
+        if (legacyCode === 10009 || legacyCode === 461) {
+          // Samsung Tizen Return (10009) & LG webOS Back (461)
+          mapped = 'BACK';
+        } else if (legacyCode === 415) {
+          mapped = 'PLAY';
+        } else if (legacyCode === 19 || legacyCode === 413) {
+          mapped = 'PAUSE';
+        } else if (legacyCode === 412) {
+          mapped = 'RW';
+        } else if (legacyCode === 417) {
+          mapped = 'FF';
+        } else if (legacyCode === 427) {
+          mapped = 'CH_UP';
+        } else if (legacyCode === 428) {
+          mapped = 'CH_DOWN';
+        }
       }
 
       if (mapped) {

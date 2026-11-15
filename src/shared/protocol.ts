@@ -89,6 +89,28 @@ export interface FloatingReactionEvent {
   timestamp: number;
 }
 
+export interface VoicePeerState {
+  userId: string;
+  userName: string;
+  avatar: string;
+  color: string;
+  isMuted: boolean;
+  joinedAt: number;
+}
+
+export interface VoiceSignalPayload {
+  roomId: string;
+  targetUserId: string;
+  signalType: 'offer' | 'answer' | 'ice';
+  sdp?: { type: string; sdp?: string };
+  candidate?: {
+    candidate: string;
+    sdpMid?: string | null;
+    sdpMLineIndex?: number | null;
+    usernameFragment?: string | null;
+  };
+}
+
 export interface RoomStatePayload {
   id: string;
   name: string;
@@ -96,6 +118,7 @@ export interface RoomStatePayload {
   creatorId?: string;
   coHostIds?: string[];
   participants: RoomParticipant[];
+  voicePeers?: VoicePeerState[];
   videoState: AuthoritativeVideoState;
   messages: RoomChatMessage[];
   pinnedMessage?: RoomChatMessage | null;
@@ -228,6 +251,12 @@ export type ClientWsMessage =
       };
     }
   | {
+      type: 'GAME_START_MATCH';
+      payload: {
+        roomId: string;
+      };
+    }
+  | {
       type: 'GAME_MOVE';
       payload: {
         roomId: string;
@@ -268,10 +297,23 @@ export type ClientWsMessage =
       type: 'PARTY_GAME_ACTION';
       payload: {
         roomId: string;
-        action: 'roll_dice' | 'move_piece' | 'play_card' | 'draw_card' | 'pass_turn' | 'rematch';
+        action:
+          | 'roll_dice'
+          | 'move_piece'
+          | 'play_card'
+          | 'draw_card'
+          | 'pass_turn'
+          | 'call_uno'
+          | 'catch_uno'
+          | 'accept_wild4'
+          | 'challenge_wild4'
+          | 'join_seat'
+          | 'start_match'
+          | 'rematch';
         pieceId?: number;
         cardId?: string;
         chosenColor?: PartyColor;
+        seatIndex?: number;
       };
     }
   | {
@@ -279,6 +321,29 @@ export type ClientWsMessage =
       payload: {
         roomId: string;
       };
+    }
+  | {
+      type: 'VOICE_JOIN';
+      payload: {
+        roomId: string;
+      };
+    }
+  | {
+      type: 'VOICE_LEAVE';
+      payload: {
+        roomId: string;
+      };
+    }
+  | {
+      type: 'VOICE_STATE_UPDATE';
+      payload: {
+        roomId: string;
+        isMuted: boolean;
+      };
+    }
+  | {
+      type: 'VOICE_SIGNAL';
+      payload: VoiceSignalPayload;
     };
 
 export type ServerWsMessage =
@@ -340,5 +405,18 @@ export type ServerWsMessage =
           currentRoomId?: string;
           currentRoomName?: string;
         }>;
+      };
+    }
+  | {
+      type: 'VOICE_PARTICIPANTS_UPDATED';
+      payload: {
+        roomId: string;
+        peers: VoicePeerState[];
+      };
+    }
+  | {
+      type: 'VOICE_SIGNAL';
+      payload: VoiceSignalPayload & {
+        fromUserId: string;
       };
     };

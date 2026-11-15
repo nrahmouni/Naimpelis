@@ -19,6 +19,7 @@ import {
   TvRemoteCommandType,
   VideoState,
 } from '../types';
+import type { VoicePeerState, VoiceSignalPayload } from '../shared/protocol';
 import { auth } from '../firebase';
 
 export interface SocketPayload {
@@ -76,6 +77,17 @@ export interface SocketPayload {
   command?: TvRemoteCommandType;
   commandId?: string;
   movie?: CatalogMovie;
+  voicePeers?: VoicePeerState[];
+  peers?: VoicePeerState[];
+  targetUserId?: string;
+  signalType?: 'offer' | 'answer' | 'ice';
+  sdp?: { type: string; sdp?: string };
+  candidate?: {
+    candidate: string;
+    sdpMid?: string | null;
+    sdpMLineIndex?: number | null;
+    usernameFragment?: string | null;
+  };
   [key: string]: unknown;
 }
 
@@ -98,6 +110,10 @@ const NON_QUEUEABLE_TYPES = new Set([
   'JOIN_ROOM',
   'REGISTER_PRESENCE',
   'CLOUD_BROWSER_INPUT',
+  'VOICE_JOIN',
+  'VOICE_LEAVE',
+  'VOICE_STATE_UPDATE',
+  'VOICE_SIGNAL',
 ]);
 
 class SocketService {
@@ -630,6 +646,13 @@ class SocketService {
     });
   }
 
+  startBoardMatch() {
+    if (!this.roomId) return;
+    this.send('GAME_START_MATCH', {
+      roomId: this.roomId,
+    });
+  }
+
   sendGameMove(from: BoardCoord, to: BoardCoord, promotionPiece?: ChessPromotionPiece) {
     if (!this.roomId) return;
     this.send('GAME_MOVE', {
@@ -677,8 +700,20 @@ class SocketService {
   }
 
   sendPartyGameAction(
-    action: 'roll_dice' | 'move_piece' | 'play_card' | 'draw_card' | 'pass_turn' | 'rematch',
-    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor }
+    action:
+      | 'roll_dice'
+      | 'move_piece'
+      | 'play_card'
+      | 'draw_card'
+      | 'pass_turn'
+      | 'call_uno'
+      | 'catch_uno'
+      | 'accept_wild4'
+      | 'challenge_wild4'
+      | 'join_seat'
+      | 'start_match'
+      | 'rematch',
+    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor; seatIndex?: number }
   ) {
     if (!this.roomId) return;
     this.send('PARTY_GAME_ACTION', {
@@ -687,6 +722,7 @@ class SocketService {
       pieceId: opts?.pieceId,
       cardId: opts?.cardId,
       chosenColor: opts?.chosenColor,
+      seatIndex: opts?.seatIndex,
     });
   }
 
@@ -694,6 +730,29 @@ class SocketService {
     if (!this.roomId) return;
     this.send('PARTY_GAME_CLOSE', {
       roomId: this.roomId,
+    });
+  }
+
+  joinVoiceCall() {
+    if (!this.roomId) return;
+    this.send('VOICE_JOIN', { roomId: this.roomId });
+  }
+
+  leaveVoiceCall() {
+    if (!this.roomId) return;
+    this.send('VOICE_LEAVE', { roomId: this.roomId });
+  }
+
+  updateVoiceMute(isMuted: boolean) {
+    if (!this.roomId) return;
+    this.send('VOICE_STATE_UPDATE', { roomId: this.roomId, isMuted });
+  }
+
+  sendVoiceSignal(payload: Omit<VoiceSignalPayload, 'roomId'>) {
+    if (!this.roomId) return;
+    this.send('VOICE_SIGNAL', {
+      roomId: this.roomId,
+      ...payload,
     });
   }
 }

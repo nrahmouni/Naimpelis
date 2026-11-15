@@ -103,6 +103,22 @@ function toMillis(ts: unknown, fallback = Date.now()): number {
   return fallback;
 }
 
+export function shouldSkipStaleCloudWrite(params: {
+  serverUpdatedMs: number;
+  clientUpdatedMs?: number;
+  serverResumeSec?: number;
+  clientResumeSec?: number;
+}): boolean {
+  const { serverUpdatedMs, clientUpdatedMs = 0, serverResumeSec, clientResumeSec } = params;
+  if (!Number.isFinite(serverUpdatedMs) || serverUpdatedMs <= 0) return false;
+  if (!Number.isFinite(clientUpdatedMs) || clientUpdatedMs <= 0) return false;
+  if (serverUpdatedMs <= clientUpdatedMs + 5000) return false;
+  if (typeof serverResumeSec === 'number' && typeof clientResumeSec === 'number') {
+    return serverResumeSec > clientResumeSec;
+  }
+  return true;
+}
+
 function isNotFoundError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
   const code =
@@ -425,12 +441,18 @@ export async function upsertCloudWatchHistory(
       existsOnServer = existingSnap.exists();
       if (existsOnServer) {
         const d = existingSnap.data();
-        serverUpdatedMs = toMillis(d?.updatedAt || d?.createdAt);
+        serverUpdatedMs = toMillis(d?.updatedAt || d?.createdAt, 0);
         const clientUpdatedMs = typeof item.watchedAt === 'number' ? item.watchedAt : 0;
         const serverResume = typeof d?.resumeTimeSec === 'number' ? d.resumeTimeSec : 0;
         const clientResume = typeof base.resumeTimeSec === 'number' ? base.resumeTimeSec : 0;
-        // Timestamp-based conflict resolution: never overwrite fresher multi-device progress with older snapshot
-        if (serverUpdatedMs > clientUpdatedMs + 5000 && serverResume > clientResume) {
+        if (
+          shouldSkipStaleCloudWrite({
+            serverUpdatedMs,
+            clientUpdatedMs,
+            serverResumeSec: serverResume,
+            clientResumeSec: clientResume,
+          })
+        ) {
           knownHistoryDocIds.add(docId);
           return;
         }
@@ -659,6 +681,15 @@ export async function upsertCloudCatalogFavorite(
     try {
       const existingSnap = await getDoc(docRef);
       existsOnServer = existingSnap.exists();
+      if (existsOnServer) {
+        const d = existingSnap.data();
+        const serverUpdatedMs = toMillis(d?.updatedAt || d?.createdAt, 0);
+        const clientUpdatedMs = typeof item.addedAt === 'number' ? item.addedAt : 0;
+        if (shouldSkipStaleCloudWrite({ serverUpdatedMs, clientUpdatedMs })) {
+          knownFavoriteDocIds.add(docId);
+          return;
+        }
+      }
     } catch (error) {
       if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.GET, path);
@@ -759,6 +790,15 @@ export async function upsertCloudChannelFavorite(
     try {
       const existingSnap = await getDoc(docRef);
       existsOnServer = existingSnap.exists();
+      if (existsOnServer) {
+        const d = existingSnap.data();
+        const serverUpdatedMs = toMillis(d?.updatedAt || d?.createdAt, 0);
+        const clientUpdatedMs = typeof ch.addedAt === 'number' ? ch.addedAt : 0;
+        if (shouldSkipStaleCloudWrite({ serverUpdatedMs, clientUpdatedMs })) {
+          knownFavoriteDocIds.add(docId);
+          return;
+        }
+      }
     } catch (error) {
       if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.GET, path);
@@ -960,6 +1000,15 @@ export async function upsertCloudSavedRoom(params: {
     try {
       const existingSnap = await getDoc(docRef);
       existsOnServer = existingSnap.exists();
+      if (existsOnServer) {
+        const d = existingSnap.data();
+        const serverUpdatedMs = toMillis(d?.updatedAt || d?.createdAt, 0);
+        const clientUpdatedMs = 0;
+        if (shouldSkipStaleCloudWrite({ serverUpdatedMs, clientUpdatedMs })) {
+          knownSavedRoomDocIds.add(docId);
+          return;
+        }
+      }
     } catch (error) {
       if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.GET, path);

@@ -96,10 +96,24 @@ export const wsPartyGameStartSchema = z.object({
 
 export const wsPartyGameActionSchema = z.object({
   roomId: roomIdSchema,
-  action: z.enum(['roll_dice', 'move_piece', 'play_card', 'draw_card', 'pass_turn', 'call_uno', 'rematch']),
+  action: z.enum([
+    'roll_dice',
+    'move_piece',
+    'play_card',
+    'draw_card',
+    'pass_turn',
+    'call_uno',
+    'catch_uno',
+    'accept_wild4',
+    'challenge_wild4',
+    'join_seat',
+    'start_match',
+    'rematch',
+  ]),
   pieceId: z.number().int().min(0).max(3).optional(),
   cardId: z.string().max(64).optional(),
   chosenColor: z.enum(['red', 'blue', 'yellow', 'green']).optional(),
+  seatIndex: z.number().int().min(0).max(3).optional(),
 });
 
 export const wsTypingStateSchema = z.object({
@@ -114,6 +128,35 @@ export const wsQueueReorderSchema = z.object({
   itemId: z.string().trim().min(1).max(120),
   direction: z.enum(['up', 'down']).optional(),
   targetIndex: z.number().int().min(0).max(40).optional(),
+});
+
+export const wsVoiceRoomSchema = z.object({
+  roomId: roomIdSchema,
+});
+
+export const wsVoiceStateSchema = z.object({
+  roomId: roomIdSchema,
+  isMuted: z.boolean(),
+});
+
+export const wsVoiceSignalSchema = z.object({
+  roomId: roomIdSchema,
+  targetUserId: safeIdSchema,
+  signalType: z.enum(['offer', 'answer', 'ice']),
+  sdp: z
+    .object({
+      type: z.string().min(1).max(32),
+      sdp: z.string().max(24_000).optional(),
+    })
+    .optional(),
+  candidate: z
+    .object({
+      candidate: z.string().max(4096),
+      sdpMid: z.string().max(64).nullable().optional(),
+      sdpMLineIndex: z.number().int().min(0).max(64).nullable().optional(),
+      usernameFragment: z.string().max(256).nullable().optional(),
+    })
+    .optional(),
 });
 
 export const wsEnvelopeSchema = z.object({
@@ -134,7 +177,11 @@ const WS_EVENT_LIMITS: Record<string, { max: number; windowMs: number }> = {
   GAME_MOVE: { max: 30, windowMs: 5_000 },
   PARTY_GAME_ACTION: { max: 30, windowMs: 5_000 },
   TYPING_STATE: { max: 20, windowMs: 5_000 },
-  __GLOBAL__: { max: 80, windowMs: 10_000 },
+  VOICE_JOIN: { max: 12, windowMs: 10_000 },
+  VOICE_LEAVE: { max: 12, windowMs: 10_000 },
+  VOICE_STATE_UPDATE: { max: 30, windowMs: 10_000 },
+  VOICE_SIGNAL: { max: 120, windowMs: 10_000 },
+  __GLOBAL__: { max: 200, windowMs: 10_000 },
 };
 
 export class WsRateLimiter {

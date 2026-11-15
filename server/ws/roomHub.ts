@@ -35,6 +35,9 @@ import {
   wsRegisterPresenceSchema,
   wsSendChatSchema,
   wsTypingStateSchema,
+  wsVoiceRoomSchema,
+  wsVoiceSignalSchema,
+  wsVoiceStateSchema,
 } from './wsSchemas.ts';
 import {
   isDistributedStoreEnabled,
@@ -45,10 +48,12 @@ import {
 } from '../services/distributedStore.ts';
 import {
   applyBoardMove,
+  chooseAutoBoardMove,
   createInitialBoardGameState,
   joinGameSeat,
   resetBoardGame,
   resignBoardGame,
+  startBoardMatch,
   type BoardClockMinutes,
   type BoardCoord,
   type BoardGameState,
@@ -56,17 +61,24 @@ import {
   type ChessPromotionPiece,
 } from '../../src/shared/boardGames.ts';
 import {
+  callUnoAction,
+  catchUnoFailureAction,
   chooseBotParchisAction,
   chooseBotUnoMove,
+  claimPartyBotSeat,
   createInitialParchisState,
   createInitialUnoState,
   drawUnoCardsAndAdvance,
   moveParchisPiece,
   playUnoCard,
+  resolveUnoWild4Challenge,
   rollParchisDice,
+  startPartyMatch,
+  vacatePartySeatToBot,
   type PartyGameState,
   type PartyGameType,
 } from '../../src/shared/partyGames.ts';
+import type { VoicePeerState } from '../../src/shared/protocol.ts';
 
 export interface CloudRoomSession extends CloudSessionLite {
   closed: boolean;
@@ -185,6 +197,8 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   const cloudSessions = new Map<string, CloudRoomSession>();
   const roomPollTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const partyBotTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const boardTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const roomVoicePeers = new Map<string, Map<string, VoicePeerState>>();
 
   const tvPairingSessions = new LruTtlCache<string, TvPairingSession>(400, 15 * 60 * 1000);
   const tvSocketToCode = new Map<WebSocket, string>();
@@ -377,11 +391,33 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
     return vs;
   }
 
+  function getVoicePeersForRoom(roomId: string): VoicePeerState[] {
+    const map = roomVoicePeers.get(roomId);
+    return map ? Array.from(map.values()) : [];
+  }
+
+  function removeVoicePeer(roomId: string, userId: string): void {
+    const map = roomVoicePeers.get(roomId);
+    if (!map || !map.has(userId)) return;
+    map.delete(userId);
+    if (map.size === 0) {
+      roomVoicePeers.delete(roomId);
+    }
+    broadcastToRoom(roomId, {
+      type: 'VOICE_PARTICIPANTS_UPDATED',
+      payload: {
+        roomId,
+        peers: getVoicePeersForRoom(roomId),
+      },
+    });
+  }
+
   function serializeRoomForClient(room: RoomRecord) {
     const { pinCode, ...safeRoom } = room;
     return {
       ...safeRoom,
       hasPin: Boolean(pinCode),
+      voicePeers: getVoicePeersForRoom(room.id),
       videoState: computeAuthoritativeVideoState(room),
     };
   }
@@ -679,6 +715,101 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
     });
   }
 
+  function scheduleBoardTurnTimer(room: RoomRecord): void {
+    const existing = boardTurnTimers.get(room.id);
+    if (existing) {
+      clearTimeout(existing);
+      boardTurnTimers.delete(room.id);
+    }
+    const gs = room.gameState;
+    if (!gs || gs.status !== 'playing') return;
+    const activeSeat = gs.players[gs.turn];
+    const delayMs = activeSeat?.isBot
+      ? 750
+      : Math.max(250, (gs.turnDeadlineAt || Date.now() + 15_000) - Date.now());
+    const expectedUpdatedAt = gs.updatedAt;
+    const expectedTurn = gs.turn;
+
+    const timer = setTimeout(() => {
+      boardTurnTimers.delete(room.id);
+      const latestRoom = rooms.get(room.id);
+      const state = latestRoom?.gameState;
+      if (
+        !latestRoom ||
+        !state ||
+        state.status !== 'playing' ||
+        state.turn !== expectedTurn ||
+        state.updatedAt !== expectedUpdatedAt
+      ) {
+        return;
+      }
+      const seat = state.players[state.turn];
+      const autoMove = chooseAutoBoardMove(state);
+      if (!autoMove) return;
+
+      const res = applyBoardMove(
+        state,
+        seat?.userId || `bot-board-${state.turn}`,
+        autoMove.from,
+        autoMove.to,
+        'Q'
+      );
+      if (!res.ok) return;
+
+      latestRoom.gameState = res.state;
+      let finishMsg: RoomChatMessageRecord | null = null;
+      if (!seat?.isBot && !res.finishedNow) {
+        finishMsg = {
+          id: `game-auto-${Date.now()}`,
+          senderId: 'system',
+          senderName: 'NAIM CINE',
+          senderAvatar: '⏱️',
+          senderColor: '#f59e0b',
+          text: `⏱️ 15s agotados · La máquina movió por ${seat?.name || 'el jugador'} (${res.notation}).`,
+          timestamp: Date.now(),
+          isSystem: true,
+        };
+      } else if (res.finishedNow) {
+        const winnerName =
+          res.state.winner === 'draw'
+            ? null
+            : res.state.winner
+              ? res.state.players[res.state.winner]?.name ||
+                (res.state.winner === 'w' ? 'Blancas' : 'Negras')
+              : null;
+        finishMsg = {
+          id: `game-end-${Date.now()}`,
+          senderId: 'system',
+          senderName: 'NAIM CINE',
+          senderAvatar: '🏆',
+          senderColor: '#10b981',
+          text:
+            res.state.winner === 'draw'
+              ? 'Tablas / empate en el tablero.'
+              : `🏆 ${winnerName} gana la partida (${res.notation}).`,
+          timestamp: Date.now(),
+          isSystem: true,
+        };
+      }
+      if (finishMsg) {
+        latestRoom.messages.push(finishMsg);
+        if (latestRoom.messages.length > 150) latestRoom.messages = latestRoom.messages.slice(-150);
+      }
+
+      schedulePersistRoom(latestRoom.id);
+      broadcastToRoom(latestRoom.id, {
+        type: 'GAME_STATE_UPDATED',
+        payload: {
+          gameState: latestRoom.gameState,
+          message: finishMsg,
+        },
+      });
+      scheduleBoardTurnTimer(latestRoom);
+    }, delayMs);
+    timer.unref?.();
+    boardTurnTimers.set(room.id, timer);
+  }
+
   function schedulePartyBotTurnIfNeeded(room: RoomRecord): void {
     const existingTimer = partyBotTimers.get(room.id);
     if (existingTimer) {
@@ -689,15 +820,30 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
     const pg = room.partyGameState;
     if (!pg || pg.status !== 'playing') return;
     const currentSeat = pg.players[pg.turnSeat];
-    if (!currentSeat || !currentSeat.isBot) return;
+    if (!currentSeat) return;
+
+    const isBotTurn = Boolean(currentSeat.isBot);
+    const delayMs = isBotTurn
+      ? 850
+      : Math.max(250, (pg.turnDeadlineAt || Date.now() + 15_000) - Date.now());
+    const expectedUpdatedAt = pg.updatedAt;
+    const expectedTurnSeat = pg.turnSeat;
 
     const t = setTimeout(() => {
       partyBotTimers.delete(room.id);
       const latestRoom = rooms.get(room.id);
       const state = latestRoom?.partyGameState;
-      if (!latestRoom || !state || state.status !== 'playing') return;
+      if (
+        !latestRoom ||
+        !state ||
+        state.status !== 'playing' ||
+        state.turnSeat !== expectedTurnSeat ||
+        state.updatedAt !== expectedUpdatedAt
+      ) {
+        return;
+      }
       const activeSeat = state.players[state.turnSeat];
-      if (!activeSeat || !activeSeat.isBot) return;
+      if (!activeSeat) return;
 
       if (state.gameType === 'parchis') {
         const moveSpec = chooseBotParchisAction(state);
@@ -710,13 +856,47 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         }
       } else {
         const unoMove = chooseBotUnoMove(state);
-        if (unoMove.action === 'play_card' && unoMove.cardId) {
-          const res = playUnoCard(state, activeSeat.userId, unoMove.cardId, unoMove.chosenColor);
+        if (unoMove.action === 'accept_wild4' || unoMove.action === 'challenge_wild4') {
+          const res = resolveUnoWild4Challenge(
+            state,
+            activeSeat.userId,
+            unoMove.action === 'challenge_wild4' && isBotTurn ? 'challenge' : 'accept'
+          );
           if (res.ok) latestRoom.partyGameState = res.state;
+        } else if (unoMove.action === 'play_card' && unoMove.cardId) {
+          const res = playUnoCard(state, activeSeat.userId, unoMove.cardId, unoMove.chosenColor);
+          if (res.ok) {
+            let nextUno = res.state;
+            // Bot automatically calls UNO most of the time when dropping to 1 card
+            if (
+              isBotTurn &&
+              nextUno.status === 'playing' &&
+              nextUno.vulnerableUnoSeat === activeSeat.seatIndex &&
+              Math.random() < 0.78
+            ) {
+              nextUno = {
+                ...nextUno,
+                vulnerableUnoSeat: null,
+                unoCalledSeats: Array.from(new Set([...nextUno.unoCalledSeats, activeSeat.seatIndex])),
+                log: [...nextUno.log.slice(-14), `📣 ¡${activeSeat.name} gritó ¡UNO!!`],
+              };
+            }
+            latestRoom.partyGameState = nextUno;
+          }
         } else {
           const res = drawUnoCardsAndAdvance(state, activeSeat.userId);
           if (res.ok) latestRoom.partyGameState = res.state;
         }
+      }
+
+      if (!isBotTurn && latestRoom.partyGameState) {
+        latestRoom.partyGameState = {
+          ...latestRoom.partyGameState,
+          log: [
+            ...latestRoom.partyGameState.log.slice(-13),
+            `⏱️ 15s agotados · Máquina movió por ${activeSeat.name}`,
+          ],
+        };
       }
 
       schedulePersistRoom(latestRoom.id);
@@ -725,7 +905,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         payload: { partyGameState: latestRoom.partyGameState },
       });
       schedulePartyBotTurnIfNeeded(latestRoom);
-    }, 850);
+    }, delayMs);
     t.unref?.();
     partyBotTimers.set(room.id, t);
   }
@@ -984,6 +1164,11 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             role: isHost ? 'host' : isCoHost || existingMember?.role === 'mod' ? 'mod' : 'viewer',
             joinedAt: existingMember?.joinedAt || Date.now(),
           });
+
+          const prevMeta = clients.get(ws);
+          if (prevMeta?.roomId && prevMeta.roomId !== roomId && prevMeta.userId) {
+            removeVoicePeer(prevMeta.roomId, prevMeta.userId);
+          }
 
           const friendCode = deriveServerFriendCode(userId);
           clients.set(ws, {
@@ -2067,20 +2252,21 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             soloLocal,
             undefined,
             clockMinutes,
-            room.gameState?.matchHistory || []
+            room.gameState?.matchHistory || [],
+            !soloLocal
           );
 
           const gameLabel =
-            gameType === 'chess' ? 'Ajedrez' : gameType === 'connect4' ? 'Conecta 4' : 'Damas';
+            gameType === 'chess' ? 'Ajedrez' : gameType === 'connect4' ? 'Conecta 4' : 'Damas Españolas';
           const sysMsg: RoomChatMessageRecord = {
             id: `game-start-${Date.now()}`,
             senderId: 'system',
             senderName: 'NAIM CINE',
             senderAvatar: gameType === 'chess' ? '♟️' : gameType === 'connect4' ? '🟡' : '🔴',
             senderColor: '#9146FF',
-            text: `${actor?.name || 'Un participante'} abrió una partida de ${gameLabel}${
+            text: `${actor?.name || 'Un participante'} abrió mesa de ${gameLabel}${
               clockMinutes > 0 ? ` (${clockMinutes} min)` : ''
-            }${soloLocal ? ' · Modo libre' : ''}.`,
+            }${soloLocal ? ' · Modo libre' : ' · Elige color y espera al anfitrión'}.`,
             timestamp: Date.now(),
             isSystem: true,
           };
@@ -2095,6 +2281,40 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
               message: sysMsg,
             },
           });
+          scheduleBoardTurnTimer(room);
+          return;
+        }
+
+        if (type === 'GAME_START_MATCH') {
+          const senderMeta = clients.get(ws);
+          const targetRoomId = String(payload?.roomId || senderMeta?.roomId || '')
+            .trim()
+            .toLowerCase();
+          const room = rooms.get(targetRoomId);
+          if (!room || !room.gameState || !senderMeta?.userId) return;
+
+          const isHostUser =
+            room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId;
+          if (!isHostUser && !room.gameState.soloLocal) {
+            ws.send(
+              JSON.stringify({
+                type: 'GAME_MOVE_REJECTED',
+                payload: {
+                  error: 'Solo el anfitrión puede pulsar Play para iniciar la partida.',
+                  gameState: room.gameState,
+                },
+              })
+            );
+            return;
+          }
+
+          room.gameState = startBoardMatch(room.gameState);
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'GAME_STATE_UPDATED',
+            payload: { gameState: room.gameState },
+          });
+          scheduleBoardTurnTimer(room);
           return;
         }
 
@@ -2138,6 +2358,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             type: 'GAME_STATE_UPDATED',
             payload: { gameState: room.gameState },
           });
+          scheduleBoardTurnTimer(room);
           return;
         }
 
@@ -2204,6 +2425,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
               message: finishMsg,
             },
           });
+          scheduleBoardTurnTimer(room);
           return;
         }
 
@@ -2240,6 +2462,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             type: 'GAME_STATE_UPDATED',
             payload: { gameState: room.gameState, message: sysMsg },
           });
+          scheduleBoardTurnTimer(room);
           return;
         }
 
@@ -2271,6 +2494,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             type: 'GAME_STATE_UPDATED',
             payload: { gameState: room.gameState },
           });
+          scheduleBoardTurnTimer(room);
           return;
         }
 
@@ -2281,6 +2505,11 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             .toLowerCase();
           const room = rooms.get(targetRoomId);
           if (!room || !room.gameState) return;
+          const existingTimer = boardTurnTimers.get(room.id);
+          if (existingTimer) {
+            clearTimeout(existingTimer);
+            boardTurnTimers.delete(room.id);
+          }
           room.gameState = null;
           schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
@@ -2290,7 +2519,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           return;
         }
 
-        // 4-Player Party Games (Parchís / Ludo & UNO with automatic AI Bot filling)
+        // 4-Player Party Games (Parchís Español & UNO Oficial with waiting lobby + 15s turn timer)
         if (type === 'PARTY_GAME_START') {
           const valid = wsPartyGameStartSchema.safeParse(payload);
           if (!valid.success) return;
@@ -2306,8 +2535,8 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const gameType: PartyGameType = valid.data.gameType;
           room.partyGameState =
             gameType === 'uno'
-              ? createInitialUnoState(humans)
-              : createInitialParchisState(humans);
+              ? createInitialUnoState(humans, { waitForHost: true })
+              : createInitialParchisState(humans, { waitForHost: true });
 
           const sysMsg: RoomChatMessageRecord = {
             id: `party-start-${Date.now()}`,
@@ -2315,7 +2544,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             senderName: 'NAIM CINE',
             senderAvatar: gameType === 'uno' ? '🃏' : '🎲',
             senderColor: '#10b981',
-            text: `Mesa de ${gameType === 'uno' ? 'UNO (4 jugadores)' : 'Parchís (4 jugadores)'} abierta con bots automáticos en asientos libres.`,
+            text: `Mesa de ${gameType === 'uno' ? 'UNO Oficial (108 cartas)' : 'Parchís Español (68 casillas)'} abierta · Escoge color y espera al anfitrión.`,
             timestamp: Date.now(),
             isSystem: true,
           };
@@ -2327,7 +2556,6 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             type: 'PARTY_GAME_STATE_UPDATED',
             payload: { partyGameState: room.partyGameState, message: sysMsg },
           });
-          schedulePartyBotTurnIfNeeded(room);
           return;
         }
 
@@ -2339,24 +2567,63 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const senderMeta = clients.get(ws);
           if (!room || !room.partyGameState || !senderMeta?.userId) return;
 
-          const { action, pieceId, cardId, chosenColor } = valid.data;
+          const { action, pieceId, cardId, chosenColor, seatIndex } = valid.data;
           if (action === 'rematch') {
+            const existingScores = room.partyGameState.players.map((p) => p.score);
             const humans = room.participants
               .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
               .slice(0, 4)
               .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar }));
+            const maxScore = Math.max(...existingScores, 0);
             room.partyGameState =
               room.partyGameState.gameType === 'uno'
-                ? createInitialUnoState(humans)
-                : createInitialParchisState(humans);
+                ? createInitialUnoState(humans, {
+                    waitForHost: false,
+                    existingScores: maxScore >= 500 ? [0, 0, 0, 0] : existingScores,
+                  })
+                : createInitialParchisState(humans, { waitForHost: false });
+          } else if (action === 'start_match') {
+            const isHostUser =
+              room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId;
+            if (!isHostUser) {
+              ws.send(
+                JSON.stringify({
+                  type: 'GAME_MOVE_REJECTED',
+                  payload: { error: 'Solo el anfitrión puede pulsar Play para comenzar.' },
+                })
+              );
+              return;
+            }
+            room.partyGameState = startPartyMatch(room.partyGameState);
+          } else if (action === 'join_seat') {
+            const res = claimPartyBotSeat(
+              room.partyGameState,
+              {
+                id: senderMeta.userId,
+                name: senderMeta.userName || 'Jugador',
+                avatar: senderMeta.userAvatar || '🎮',
+              },
+              seatIndex
+            );
+            if (!res.ok) {
+              ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+              return;
+            }
+            room.partyGameState = res.state;
           } else if (room.partyGameState.gameType === 'parchis') {
             if (action === 'roll_dice') {
               const res = rollParchisDice(room.partyGameState, senderMeta.userId);
-              if (!res.ok) return;
+              if (!res.ok) {
+                ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+                return;
+              }
               room.partyGameState = res.state;
             } else if (action === 'move_piece' && typeof pieceId === 'number') {
               const res = moveParchisPiece(room.partyGameState, senderMeta.userId, pieceId);
-              if (!res.ok) return;
+              if (!res.ok) {
+                ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+                return;
+              }
               room.partyGameState = res.state;
             }
           } else if (room.partyGameState.gameType === 'uno') {
@@ -2367,11 +2634,42 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
                 cardId,
                 chosenColor
               );
-              if (!res.ok) return;
+              if (!res.ok) {
+                ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+                return;
+              }
               room.partyGameState = res.state;
             } else if (action === 'draw_card' || action === 'pass_turn') {
               const res = drawUnoCardsAndAdvance(room.partyGameState, senderMeta.userId);
-              if (!res.ok) return;
+              if (!res.ok) {
+                ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+                return;
+              }
+              room.partyGameState = res.state;
+            } else if (action === 'call_uno') {
+              const res = callUnoAction(room.partyGameState, senderMeta.userId);
+              if (!res.ok) {
+                ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+                return;
+              }
+              room.partyGameState = res.state;
+            } else if (action === 'catch_uno') {
+              const res = catchUnoFailureAction(room.partyGameState, senderMeta.userId);
+              if (!res.ok) {
+                ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+                return;
+              }
+              room.partyGameState = res.state;
+            } else if (action === 'accept_wild4' || action === 'challenge_wild4') {
+              const res = resolveUnoWild4Challenge(
+                room.partyGameState,
+                senderMeta.userId,
+                action === 'challenge_wild4' ? 'challenge' : 'accept'
+              );
+              if (!res.ok) {
+                ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+                return;
+              }
               room.partyGameState = res.state;
             }
           }
@@ -2403,6 +2701,103 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             type: 'PARTY_GAME_STATE_UPDATED',
             payload: { partyGameState: null },
           });
+          return;
+        }
+
+        // WebRTC Live Voice Chat Signaling for Multiplayer Games
+        if (type === 'VOICE_JOIN') {
+          const valid = wsVoiceRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const senderMeta = clients.get(ws);
+          const roomId = valid.data.roomId.toLowerCase();
+          if (!senderMeta?.userId || senderMeta.roomId !== roomId) return;
+
+          let peersMap = roomVoicePeers.get(roomId);
+          if (!peersMap) {
+            peersMap = new Map();
+            roomVoicePeers.set(roomId, peersMap);
+          }
+          peersMap.set(senderMeta.userId, {
+            userId: senderMeta.userId,
+            userName: senderMeta.userName || 'Jugador',
+            avatar: senderMeta.userAvatar || '🎮',
+            color: senderMeta.userColor || '#9146FF',
+            isMuted: false,
+            joinedAt: Date.now(),
+          });
+
+          broadcastToRoom(roomId, {
+            type: 'VOICE_PARTICIPANTS_UPDATED',
+            payload: {
+              roomId,
+              peers: getVoicePeersForRoom(roomId),
+            },
+          });
+          return;
+        }
+
+        if (type === 'VOICE_LEAVE') {
+          const valid = wsVoiceRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const senderMeta = clients.get(ws);
+          const roomId = valid.data.roomId.toLowerCase();
+          if (!senderMeta?.userId || senderMeta.roomId !== roomId) return;
+          removeVoicePeer(roomId, senderMeta.userId);
+          return;
+        }
+
+        if (type === 'VOICE_STATE_UPDATE') {
+          const valid = wsVoiceStateSchema.safeParse(payload);
+          if (!valid.success) return;
+          const senderMeta = clients.get(ws);
+          const roomId = valid.data.roomId.toLowerCase();
+          if (!senderMeta?.userId || senderMeta.roomId !== roomId) return;
+          const peersMap = roomVoicePeers.get(roomId);
+          const existing = peersMap?.get(senderMeta.userId);
+          if (!existing) return;
+          peersMap!.set(senderMeta.userId, {
+            ...existing,
+            isMuted: valid.data.isMuted,
+          });
+          broadcastToRoom(roomId, {
+            type: 'VOICE_PARTICIPANTS_UPDATED',
+            payload: {
+              roomId,
+              peers: getVoicePeersForRoom(roomId),
+            },
+          });
+          return;
+        }
+
+        if (type === 'VOICE_SIGNAL') {
+          const valid = wsVoiceSignalSchema.safeParse(payload);
+          if (!valid.success) return;
+          const senderMeta = clients.get(ws);
+          const roomId = valid.data.roomId.toLowerCase();
+          if (!senderMeta?.userId || senderMeta.roomId !== roomId) return;
+          const { targetUserId, signalType, sdp, candidate } = valid.data;
+          if (!targetUserId || targetUserId === senderMeta.userId) return;
+
+          const packet = JSON.stringify({
+            type: 'VOICE_SIGNAL',
+            payload: {
+              roomId,
+              fromUserId: senderMeta.userId,
+              targetUserId,
+              signalType,
+              sdp,
+              candidate,
+            },
+          });
+          clients.forEach((meta, clientWs) => {
+            if (
+              meta.roomId === roomId &&
+              meta.userId === targetUserId &&
+              clientWs.readyState === WebSocket.OPEN
+            ) {
+              clientWs.send(packet);
+            }
+          });
         }
       } catch (err) {
         logger.error({ err }, 'ws_message_handling_error');
@@ -2421,6 +2816,8 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
       clients.delete(ws);
       scheduleBroadcastOnlineUsers();
       if (!meta?.roomId || !meta?.userId) return;
+
+      removeVoicePeer(meta.roomId, meta.userId);
 
       const room = rooms.get(meta.roomId);
       if (!room) return;
@@ -2450,6 +2847,15 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
                   : 'waiting',
             updatedAt: Date.now(),
           };
+        }
+      }
+
+      let partySeatChanged = false;
+      if (room.partyGameState) {
+        const vacated = vacatePartySeatToBot(room.partyGameState, meta.userId);
+        if (vacated.changed) {
+          room.partyGameState = vacated.state;
+          partySeatChanged = true;
         }
       }
 
@@ -2491,6 +2897,13 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           type: 'GAME_STATE_UPDATED',
           payload: { gameState: room.gameState ?? null },
         });
+      }
+      if (partySeatChanged) {
+        broadcastToRoom(meta.roomId, {
+          type: 'PARTY_GAME_STATE_UPDATED',
+          payload: { partyGameState: room.partyGameState ?? null },
+        });
+        schedulePartyBotTurnIfNeeded(room);
       }
     });
   });

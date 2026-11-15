@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { Suspense, useState, useRef, useEffect } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import type { User } from 'firebase/auth';
 import {
@@ -8,36 +8,21 @@ import {
   Share2,
   Check,
   Shield,
-  Edit3,
   Crown,
-  Lock,
-  Unlock,
   ListVideo,
-  BarChart2,
-  Trash2,
-  Play,
-  Bookmark,
   KeyRound,
   Tv,
   QrCode,
   SlidersHorizontal,
   Smile,
   X,
-  Link2,
-  Globe,
   Maximize2,
   LogOut,
-  UserCheck,
   UserPlus,
   Clock,
-  ThumbsUp,
-  Plus,
   ChevronUp,
   Gamepad2,
   Pin,
-  ArrowUp,
-  ArrowDown,
-  RotateCcw,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -58,28 +43,32 @@ import {
   PartyGameState,
   PartyGameType,
 } from '../types';
-import { RoomBoardGamePanel } from './RoomBoardGamePanel';
-import { PartyGamesStage } from './PartyGamesStage';
+import type { PartyOnlineAction } from './PartyGamesStage';
+import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
 import type { TypingUserPayload } from '../shared/protocol';
 import { UI_COPY, pickLang } from '../utils/i18n';
 import { buildShortInviteUrl } from '../utils/shortLink';
 import { deriveFriendCode } from '../utils/storage';
 import { triggerHaptic } from '../utils/haptics';
-import {
-  EffectiveViewMode,
-  ViewModeSwitchButton,
-} from './MobileViewportGuard';
+import { EffectiveViewMode } from './MobileViewportGuard';
 import {
   PrimaryButton,
   SecondaryButton,
   IconButton,
   StandardInput,
-  BottomSheet,
   SegmentedControl,
   EmptyStateCard,
-  HapticTvRemote,
 } from './ui/DesignSystem';
-import { PosterImage } from './ui/PosterImage';
+import { PartyPollCard } from './party/PartyPollCard';
+import { PartyQueuePanel } from './party/PartyQueuePanel';
+import { PartyModerationSheets } from './party/PartyModerationSheets';
+
+const RoomBoardGamePanel = React.lazy(() =>
+  import('./RoomBoardGamePanel').then((m) => ({ default: m.RoomBoardGamePanel }))
+);
+const PartyGamesStage = React.lazy(() =>
+  import('./PartyGamesStage').then((m) => ({ default: m.PartyGamesStage }))
+);
 
 interface PartySidebarProps {
   roomId: string;
@@ -169,6 +158,7 @@ interface PartySidebarProps {
     clockMinutes?: BoardClockMinutes
   ) => void;
   onJoinGameSeat?: (side: 'w' | 'b' | 'spectate') => void;
+  onStartBoardMatch?: () => void;
   onSendGameMove?: (from: BoardCoord, to: BoardCoord, promotionPiece?: ChessPromotionPiece) => void;
   onResignBoardGame?: () => void;
   onResetBoardGame?: (opts?: {
@@ -180,10 +170,11 @@ interface PartySidebarProps {
   partyGameState?: PartyGameState | null;
   onStartPartyGame?: (gameType: PartyGameType) => void;
   onPartyGameAction?: (
-    action: 'roll_dice' | 'move_piece' | 'play_card' | 'draw_card' | 'pass_turn' | 'rematch',
-    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor }
+    action: PartyOnlineAction,
+    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor; seatIndex?: number }
   ) => void;
   onClosePartyGame?: () => void;
+  voiceChat?: GameVoiceChatState;
 }
 
 const QUICK_REACTIONS = ['🔥', '😂', '❤️', '👏', '😱', '⚽', '🍿', '🎉'];
@@ -273,6 +264,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   gameMoveError = null,
   onStartBoardGame,
   onJoinGameSeat,
+  onStartBoardMatch,
   onSendGameMove,
   onResignBoardGame,
   onResetBoardGame,
@@ -281,6 +273,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   onStartPartyGame,
   onPartyGameAction,
   onClosePartyGame,
+  voiceChat,
 }) => {
   const t = UI_COPY[lang];
   const isHost = currentUser.isHost || currentUser.id === hostId;
@@ -460,9 +453,6 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
     return clean.slice(0, 2).toUpperCase();
   };
 
-  const totalVotes =
-    activePoll?.options.reduce((acc, o) => acc + o.voterIds.length, 0) || 0;
-
   return (
     <aside className="w-full h-full flex flex-col bg-[#18181B] border-l border-white/[0.08] select-none overflow-hidden relative">
       {/* ==================================================================== */}
@@ -593,68 +583,14 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         <div className="flex-1 flex flex-col min-h-0 relative">
           {/* Active Poll Banner (if open) */}
           {activePoll && !activePoll.isClosed && (
-            <motion.div
-              initial={{ opacity: 0, y: -8 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="mx-3 mt-2.5 p-3.5 rounded-2xl nc-specular-surface border border-[#9146FF]/40 space-y-2.5 shrink-0 shadow-lg"
-            >
-              <div className="flex items-center justify-between gap-2">
-                <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-[#BF94FF]">
-                  <BarChart2 className="w-3.5 h-3.5" />
-                  <span>
-                    {pickLang(lang, {
-                      es: 'Encuesta en Vivo',
-                      ca: 'Enquesta en Directe',
-                      en: 'Live Poll',
-                    })}
-                  </span>
-                </div>
-                {canManageMedia && (
-                  <button
-                    type="button"
-                    onClick={() => onClosePoll(activePoll.id)}
-                    className="text-xs text-[#ADADB8] hover:text-white cursor-pointer"
-                  >
-                    {pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}
-                  </button>
-                )}
-              </div>
-              <p className="text-xs font-bold text-white">{activePoll.question}</p>
-              <div className="space-y-1.5">
-                {activePoll.options.map((opt) => {
-                  const votes = opt.voterIds.length;
-                  const pct = totalVotes > 0 ? Math.round((votes / totalVotes) * 100) : 0;
-                  const voted = opt.voterIds.includes(currentUser.id);
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => onVotePoll(activePoll.id, opt.id)}
-                      className={`w-full relative overflow-hidden rounded-xl border px-3 py-2 text-left transition-all cursor-pointer ${
-                        voted
-                          ? 'border-[#9146FF]/65 bg-[#9146FF]/20'
-                          : 'border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08]'
-                      }`}
-                    >
-                      <motion.div
-                        initial={{ scaleX: 0 }}
-                        animate={{ scaleX: Math.max(0, pct / 100) }}
-                        transition={{ type: 'spring', stiffness: 260, damping: 28 }}
-                        className="absolute inset-y-0 left-0 w-full origin-left bg-[#9146FF]/30"
-                      />
-                      <div className="relative flex items-center justify-between gap-2 text-xs">
-                        <span className="font-semibold text-white truncate">
-                          {opt.item.title}
-                        </span>
-                        <span className="text-xs font-mono text-zinc-300 tabular-nums shrink-0">
-                          {pct}% ({votes})
-                        </span>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </motion.div>
+            <PartyPollCard
+              activePoll={activePoll}
+              currentUser={currentUser}
+              lang={lang}
+              canManageMedia={canManageMedia}
+              onVotePoll={onVotePoll}
+              onClosePoll={onClosePoll}
+            />
           )}
 
           {/* Pinned Chat Message Bar */}
@@ -1001,283 +937,26 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       {/* TAB 2: QUEUE & POLLS (Progressive Disclosure)                        */}
       {/* ==================================================================== */}
       {activeTab === 'queue' && (
-        <div className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar">
-          {/* Action Header */}
-          <div className="flex items-center justify-between gap-2">
-            <div>
-              <h4 className="text-sm font-bold text-white">
-                {pickLang(lang, {
-                  es: 'Cola de Reproducción',
-                  ca: 'Cua de Reproducció',
-                  en: 'Playback Queue',
-                })}
-              </h4>
-              <p className="text-xs text-zinc-400">
-                {roomQueue.length}{' '}
-                {roomQueue.length === 1
-                  ? pickLang(lang, {
-                      es: 'vídeo en lista',
-                      ca: 'vídeo en llista',
-                      en: 'video in queue',
-                    })
-                  : pickLang(lang, {
-                      es: 'vídeos en lista',
-                      ca: 'vídeos en llista',
-                      en: 'videos in queue',
-                    })}
-              </p>
-            </div>
-            {canManageMedia && (
-              <div className="flex items-center gap-2">
-                {roomQueue.length >= 2 && (
-                  <SecondaryButton onClick={onStartPollFromQueue}>
-                    <BarChart2 className="w-4 h-4 text-[#BF94FF]" />
-                    <span>
-                      {pickLang(lang, {
-                        es: 'Votar Cola',
-                        ca: 'Votar Cua',
-                        en: 'Vote Queue',
-                      })}
-                    </span>
-                  </SecondaryButton>
-                )}
-
-                <SecondaryButton onClick={() => setShowUrlLoaderSheet(true)}>
-                  <Link2 className="w-4 h-4 text-sky-400" />
-                  <span>
-                    {pickLang(lang, { es: 'Enlace', ca: 'Enllaç', en: 'Link' })}
-                  </span>
-                </SecondaryButton>
-              </div>
-            )}
-          </div>
-
-          {!canManageMedia && (
-            <div className="px-3 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs flex items-center gap-2">
-              <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-              <span>
-                {pickLang(lang, {
-                  es: 'Solo el Anfitrión o un Co-anfitrión puede cambiar de película o canal. Puedes votar los títulos en cola.',
-                  ca: 'Només l’Amfitrió o un Co-amfitrió pot canviar de pel·lícula o canal. Pots votar els títols a la cua.',
-                  en: 'Only the Host or a Co-host can change movies or channels. You can vote on queued items.',
-                })}
-              </span>
-            </div>
-          )}
-
-          {roomQueue.length === 0 ? (
-            <EmptyStateCard
-              icon={<ListVideo className="w-6 h-6" />}
-              title={pickLang(lang, {
-                es: 'La cola está vacía',
-                ca: 'La cua és buida',
-                en: 'Queue is empty',
-              })}
-              description={
-                canManageMedia
-                  ? pickLang(lang, {
-                      es: 'Añade películas, episodios o vídeos desde el catálogo con el botón + Cola, o abre un enlace directo.',
-                      ca: 'Afegeix pel·lícules, episodis o vídeos des del catàleg amb el botó + Cua, o obre un enllaç directe.',
-                      en: 'Add movies, episodes, or videos from the catalog with + Queue, or open a direct link.',
-                    })
-                  : pickLang(lang, {
-                      es: 'Puedes sugerir películas o vídeos a la cola con el botón + Cola para que el Anfitrión los ponga.',
-                      ca: 'Pots suggerir pel·lícules o vídeos a la cua amb el botó + Cua perquè l’Amfitrió els posi.',
-                      en: 'Suggest movies or videos to the queue with + Queue for the Host to play.',
-                    })
-              }
-              actionLabel={
-                canManageMedia
-                  ? pickLang(lang, {
-                      es: 'Pegar enlace o abrir web',
-                      ca: 'Enganxar enllaç o obrir web',
-                      en: 'Paste link or open web',
-                    })
-                  : undefined
-              }
-              onAction={canManageMedia ? () => setShowUrlLoaderSheet(true) : undefined}
-            />
-          ) : (
-            <div className="space-y-2.5">
-              {undoRemovedItem && onRestoreQueueItem && (
-                <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/35 flex items-center justify-between gap-2">
-                  <span className="text-xs text-amber-100 truncate">
-                    {pickLang(lang, {
-                      es: `Quitado "${undoRemovedItem.title}"`,
-                      ca: `Tret "${undoRemovedItem.title}"`,
-                      en: `Removed "${undoRemovedItem.title}"`,
-                    })}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-                      onRestoreQueueItem(undoRemovedItem);
-                      setUndoRemovedItem(null);
-                    }}
-                    className="px-2.5 py-1 rounded-lg bg-amber-400 text-[#140E02] text-xs font-bold flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
-                  >
-                    <RotateCcw className="w-3 h-3" />
-                    <span>{pickLang(lang, { es: 'Deshacer', ca: 'Desfer', en: 'Undo' })}</span>
-                  </button>
-                </div>
-              )}
-
-              {roomQueue.map((item, idx) => (
-                <div
-                  key={item.id}
-                  className="group relative overflow-hidden rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/[0.07] p-2.5 flex items-center gap-3 transition-all"
-                >
-                  <div className="relative w-20 aspect-video rounded-xl overflow-hidden bg-black shrink-0">
-                    <PosterImage
-                      src={item.poster}
-                      alt={item.title}
-                      aspect="none"
-                      className="w-full h-full"
-                      fallbackIcon={
-                        <span className="text-xs font-mono text-zinc-500">#{idx + 1}</span>
-                      }
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 to-transparent flex items-end p-1.5 pointer-events-none">
-                      <span className="text-[0.65rem] font-mono font-bold text-white">
-                        #{idx + 1}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="text-xs font-bold text-white truncate">
-                      {item.title}
-                    </div>
-                    <div className="text-xs text-zinc-400 truncate mt-0.5">
-                      {pickLang(lang, {
-                        es: `Añadido por ${item.addedBy}`,
-                        ca: `Afegit per ${item.addedBy}`,
-                        en: `Added by ${item.addedBy}`,
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1 shrink-0">
-                    {onVoteQueueItem && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          onVoteQueueItem(item.id);
-                        }}
-                        title={pickLang(lang, {
-                          es: 'Votar este título en la cola',
-                          ca: 'Votar aquest títol a la cua',
-                          en: 'Vote for this title in queue',
-                        })}
-                        aria-label={pickLang(lang, {
-                          es: 'Votar este título en la cola',
-                          ca: 'Votar aquest títol a la cua',
-                          en: 'Vote for this title in queue',
-                        })}
-                        className={`min-h-9 px-2 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
-                          item.voterIds?.includes(currentUser.id)
-                            ? 'bg-[#9146FF]/25 border border-[#9146FF]/55 text-[#BF94FF]'
-                            : 'bg-[#26262C] hover:bg-white/[0.12] text-[#EFEFF1]'
-                        }`}
-                      >
-                        <ThumbsUp className="w-3 h-3" />
-                        <span>{item.voterIds?.length || 0}</span>
-                      </button>
-                    )}
-                    {canManageMedia && (
-                      <>
-                        {onReorderQueueItem && roomQueue.length > 1 && (
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              type="button"
-                              disabled={idx === 0}
-                              onClick={() => {
-                                triggerHaptic('light');
-                                onReorderQueueItem(item.id, 'up');
-                              }}
-                              aria-label={pickLang(lang, { es: 'Subir en la cola', ca: 'Pujar a la cua', en: 'Move up' })}
-                              className="w-7 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-30 flex items-center justify-center text-zinc-300 cursor-pointer disabled:cursor-not-allowed"
-                            >
-                              <ArrowUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={idx === roomQueue.length - 1}
-                              onClick={() => {
-                                triggerHaptic('light');
-                                onReorderQueueItem(item.id, 'down');
-                              }}
-                              aria-label={pickLang(lang, { es: 'Bajar en la cola', ca: 'Baixar a la cua', en: 'Move down' })}
-                              className="w-7 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-30 flex items-center justify-center text-zinc-300 cursor-pointer disabled:cursor-not-allowed"
-                            >
-                              <ArrowDown className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                        {idx > 0 && onPromoteQueueItem && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic('light');
-                              onPromoteQueueItem(item.id);
-                            }}
-                            title={pickLang(lang, {
-                              es: 'Poner siguiente en reproducirse',
-                              ca: 'Posar següent a reproduir-se',
-                              en: 'Move to play next',
-                            })}
-                            aria-label={pickLang(lang, {
-                              es: 'Poner siguiente en reproducirse',
-                              ca: 'Posar següent a reproduir-se',
-                              en: 'Move to play next',
-                            })}
-                            className="min-h-8 px-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[10px] font-bold text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
-                          >
-                            <span>↑ #1</span>
-                          </button>
-                        )}
-                        <IconButton
-                          onClick={() => onPlayQueueItem(item)}
-                          variant="crimson"
-                          title={pickLang(lang, {
-                            es: 'Reproducir ahora',
-                            ca: 'Reproduir ara',
-                            en: 'Play now',
-                          })}
-                          aria-label={pickLang(lang, {
-                            es: 'Reproducir ahora',
-                            ca: 'Reproduir ara',
-                            en: 'Play now',
-                          })}
-                        >
-                          <Play className="w-4 h-4 fill-current" />
-                        </IconButton>
-                        <IconButton
-                          onClick={() => handleQueueDeleteWithUndo(item)}
-                          variant="ghost"
-                          title={pickLang(lang, {
-                            es: 'Quitar de la cola',
-                            ca: 'Treure de la cua',
-                            en: 'Remove from queue',
-                          })}
-                          aria-label={pickLang(lang, {
-                            es: 'Quitar de la cola',
-                            ca: 'Treure de la cua',
-                            en: 'Remove from queue',
-                          })}
-                        >
-                          <Trash2 className="w-4 h-4 text-zinc-400 hover:text-rose-400" />
-                        </IconButton>
-                      </>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
+        <PartyQueuePanel
+          lang={lang}
+          currentUser={currentUser}
+          roomQueue={roomQueue}
+          canManageMedia={canManageMedia}
+          undoRemovedItem={undoRemovedItem}
+          onRestoreUndoItem={(item) => {
+            if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+            onRestoreQueueItem?.(item);
+            setUndoRemovedItem(null);
+          }}
+          onDeleteQueueItemWithUndo={handleQueueDeleteWithUndo}
+          onPlayQueueItem={onPlayQueueItem}
+          onStartPollFromQueue={onStartPollFromQueue}
+          onOpenUrlLoaderSheet={() => setShowUrlLoaderSheet(true)}
+          onVoteQueueItem={onVoteQueueItem}
+          onPromoteQueueItem={onPromoteQueueItem}
+          onReorderQueueItem={onReorderQueueItem}
+          onRestoreQueueItem={onRestoreQueueItem}
+        />
       )}
 
       {/* ==================================================================== */}
@@ -1316,35 +995,49 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             </button>
           </div>
 
-          {gamesSubTab === 'board' ? (
-            <RoomBoardGamePanel
-              gameState={gameState}
-              currentUser={currentUser}
-              lang={lang}
-              moveError={gameMoveError}
-              onStartGame={(gt, solo, clockMin) => onStartBoardGame?.(gt, solo, clockMin)}
-              onJoinSeat={(side) => onJoinGameSeat?.(side)}
-              onMove={(from, to, promo) => onSendGameMove?.(from, to, promo)}
-              onResign={() => onResignBoardGame?.()}
-              onReset={(opts) => onResetBoardGame?.(opts)}
-              onCloseGame={() => onCloseBoardGame?.()}
-              onBack={hideInternalTabs ? () => setActiveTab('room') : undefined}
-            />
-          ) : (
-            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
-              <PartyGamesStage
-                lang={lang}
+          <Suspense
+            fallback={
+              <div className="flex-1 flex items-center justify-center p-6 text-xs text-zinc-400">
+                {pickLang(lang, { es: 'Cargando juego…', ca: 'Carregant joc…', en: 'Loading game…' })}
+              </div>
+            }
+          >
+            {gamesSubTab === 'board' ? (
+              <RoomBoardGamePanel
+                gameState={gameState}
                 currentUser={currentUser}
-                participants={participants}
-                partyGameState={partyGameState}
-                isOffline={false}
-                onStartOnline={onStartPartyGame}
-                onOnlineAction={onPartyGameAction}
-                onCloseOnline={onClosePartyGame}
+                lang={lang}
+                moveError={gameMoveError}
+                onStartGame={(gt, solo, clockMin) => onStartBoardGame?.(gt, solo, clockMin)}
+                onJoinSeat={(side) => onJoinGameSeat?.(side)}
+                onStartMatch={() => onStartBoardMatch?.()}
+                onMove={(from, to, promo) => onSendGameMove?.(from, to, promo)}
+                onResign={() => onResignBoardGame?.()}
+                onReset={(opts) => onResetBoardGame?.(opts)}
+                onCloseGame={() => onCloseBoardGame?.()}
                 onBack={hideInternalTabs ? () => setActiveTab('room') : undefined}
+                voiceChat={voiceChat}
+                isOnlineRoom={true}
+                isHost={isHost}
               />
-            </div>
-          )}
+            ) : (
+              <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+                <PartyGamesStage
+                  lang={lang}
+                  currentUser={currentUser}
+                  participants={participants}
+                  partyGameState={partyGameState}
+                  isOffline={false}
+                  isHost={isHost}
+                  voiceChat={voiceChat}
+                  onStartOnline={onStartPartyGame}
+                  onOnlineAction={onPartyGameAction}
+                  onCloseOnline={onClosePartyGame}
+                  onBack={hideInternalTabs ? () => setActiveTab('room') : undefined}
+                />
+              </div>
+            )}
+          </Suspense>
         </div>
       )}
 
@@ -1848,528 +1541,55 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         </div>
       )}
 
-      {/* ==================================================================== */}
-      {/* BOTTOM SHEET 1: DIRECT LINK / CLOUD BROWSER                          */}
-      {/* ==================================================================== */}
-      <BottomSheet
-        isOpen={showUrlLoaderSheet}
-        onClose={() => setShowUrlLoaderSheet(false)}
+      <PartyModerationSheets
         lang={lang}
-        title={pickLang(lang, {
-          es: 'Enlace directo o navegador web',
-          ca: 'Enllaç directe o navegador web',
-          en: 'Direct link or web browser',
-        })}
-        subtitle={pickLang(lang, {
-          es: 'Reproduce archivos de vídeo directos o abre cualquier web de forma segura',
-          ca: 'Reprodueix arxius de vídeo directes o obre qualsevol web de manera segura',
-          en: 'Play direct video files or open any website securely',
-        })}
-        icon={<Link2 className="w-5 h-5" />}
-      >
-        <div className="space-y-3">
-          <StandardInput
-            type="url"
-            value={customUrlInput}
-            onChange={(e) => setCustomUrlInput(e.target.value)}
-            placeholder={pickLang(lang, {
-              es: 'https://ejemplo.com/stream.m3u8 o web...',
-              ca: 'https://exemple.com/stream.m3u8 o web...',
-              en: 'https://example.com/stream.m3u8 or website...',
-            })}
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <PrimaryButton
-              disabled={!customUrlInput.trim()}
-              onClick={() => {
-                if (!customUrlInput.trim()) return;
-                onPlayCustomUrl(customUrlInput.trim());
-                setCustomUrlInput('');
-                setShowUrlLoaderSheet(false);
-              }}
-              fullWidth
-            >
-              <Play className="w-4 h-4 fill-current" />
-              <span>{t.playNativeBtn}</span>
-            </PrimaryButton>
-            <SecondaryButton
-              disabled={!customUrlInput.trim()}
-              onClick={() => {
-                if (!customUrlInput.trim()) return;
-                onOpenCloudBrowser(customUrlInput.trim());
-                setCustomUrlInput('');
-                setShowUrlLoaderSheet(false);
-              }}
-              fullWidth
-            >
-              <Globe className="w-4 h-4 text-sky-400" />
-              <span>{t.openCloudBtn}</span>
-            </SecondaryButton>
-          </div>
-        </div>
-      </BottomSheet>
-
-      {/* ==================================================================== */}
-      {/* BOTTOM SHEET 2: SMART TV HAPTIC REMOTE / PAIRING                     */}
-      {/* ==================================================================== */}
-      <BottomSheet
-        isOpen={showTvRemoteSheet}
-        onClose={() => setShowTvRemoteSheet(false)}
-        lang={lang}
-        title={
-          hasConnectedSmartTv
-            ? pickLang(lang, {
-                es: 'Mando Haptic Touch TV',
-                ca: 'Comandament Haptic Touch TV',
-                en: 'Haptic Touch TV Remote',
-              })
-            : pickLang(lang, {
-                es: 'Vincular Smart TV',
-                ca: 'Vincular Smart TV',
-                en: 'Pair Smart TV',
-              })
-        }
-        subtitle={
-          hasConnectedSmartTv
-            ? pickLang(lang, {
-                es: `Control táctil en tiempo real · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : 'Sala Activa'}`,
-                ca: `Control tàctil en temps real · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : 'Sala Activa'}`,
-                en: `Real-time touch control · ${pairedCodeLabel ? `TV #${pairedCodeLabel}` : 'Active Room'}`,
-              })
-            : pickLang(lang, {
-                es: 'Introduce los 4 dígitos que aparecen en /tv',
-                ca: 'Introdueix els 4 dígits que apareixen a /tv',
-                en: 'Enter the 4 digits shown on /tv',
-              })
-        }
-        icon={<Tv className="w-5 h-5" />}
-      >
-        {tvClaimStatus && (
-          <div
-            className={`p-3 rounded-2xl border text-xs font-semibold ${
-              tvClaimStatus.type === 'success'
-                ? 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200'
-                : 'bg-rose-500/15 border-rose-500/35 text-rose-200'
-            }`}
-          >
-            {tvClaimStatus.message}
-          </div>
-        )}
-
-        {hasConnectedSmartTv ? (
-          <div className="space-y-2.5">
-            <HapticTvRemote
-              pairedTvCode={
-                pairedCodeLabel ||
-                pickLang(lang, { es: 'ACTIVA', ca: 'ACTIVA', en: 'ACTIVE' })
-              }
-              onCommand={handleMapTvCommand}
-              onDisconnect={() => {
-                onSendTvRemoteCommand('disconnect_tv');
-                setPairedCodeLabel(null);
-                setForceShowRemote(false);
-              }}
-            />
-            <SecondaryButton
-              onClick={() => {
-                setForceShowRemote(false);
-                setPairedCodeLabel(null);
-              }}
-              fullWidth
-              className="!min-h-[38px] !py-1.5 text-xs"
-            >
-              {pickLang(lang, {
-                es: 'Vincular otro televisor con código',
-                ca: 'Vincular un altre televisor amb codi',
-                en: 'Pair another TV with code',
-              })}
-            </SecondaryButton>
-          </div>
-        ) : (
-          <form
-            onSubmit={async (e) => {
-              e.preventDefault();
-              const clean = tvCodeInput.replace(/\D/g, '').slice(0, 4);
-              if (clean.length === 4) {
-                await onClaimTvCode(clean);
-                setPairedCodeLabel(clean);
-                setTvCodeInput('');
-              }
-            }}
-            className="space-y-4 text-center"
-          >
-            <p className="text-xs text-zinc-400">
-              {pickLang(lang, { es: 'Abre', ca: 'Obre', en: 'Open' })}{' '}
-              <span className="text-white font-mono">{window.location.origin}/tv</span>{' '}
-              {pickLang(lang, {
-                es: 'en tu televisor e introduce el código de 4 dígitos:',
-                ca: 'al teu televisor i introdueix el codi de 4 dígits:',
-                en: 'on your TV and enter the 4-digit code:',
-              })}
-            </p>
-            <input
-              type="text"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              maxLength={4}
-              value={tvCodeInput}
-              onChange={(e) =>
-                setTvCodeInput(e.target.value.replace(/\D/g, '').slice(0, 4))
-              }
-              placeholder="0000"
-              aria-label={pickLang(lang, {
-                es: 'Código de 4 dígitos',
-                ca: 'Codi de 4 dígits',
-                en: '4-digit pairing code',
-              })}
-              className="w-full h-16 rounded-2xl bg-[#0E0E10] border-2 border-white/15 focus:border-[#9146FF] text-center font-mono text-3xl font-bold tracking-[0.4em] text-white focus:outline-none"
-            />
-            <PrimaryButton
-              type="submit"
-              disabled={tvCodeInput.length !== 4}
-              fullWidth
-              size="lg"
-            >
-              <Tv className="w-4 h-4" />
-              <span>
-                {pickLang(lang, {
-                  es: 'Conectar Smart TV',
-                  ca: 'Connectar Smart TV',
-                  en: 'Connect Smart TV',
-                })}
-              </span>
-            </PrimaryButton>
-            <SecondaryButton
-              type="button"
-              onClick={() => setForceShowRemote(true)}
-              fullWidth
-            >
-              {pickLang(lang, {
-                es: 'Abrir Mando Haptic Touch directamente',
-                ca: 'Obrir Comandament Haptic Touch directament',
-                en: 'Open Haptic Touch Remote directly',
-              })}
-            </SecondaryButton>
-          </form>
-        )}
-      </BottomSheet>
-
-      {/* ==================================================================== */}
-      {/* BOTTOM SHEET 3: QR INVITE                                            */}
-      {/* ==================================================================== */}
-      <BottomSheet
-        isOpen={showQrInviteSheet}
-        onClose={() => setShowQrInviteSheet(false)}
-        lang={lang}
-        title={pickLang(lang, {
-          es: 'Código QR de Invitación',
-          ca: 'Codi QR d’Invitació',
-          en: 'Invitation QR Code',
-        })}
-        subtitle={roomName}
-        icon={<QrCode className="w-5 h-5" />}
-      >
-        <div className="flex flex-col items-center gap-4 py-2">
-          <div className="p-3 rounded-3xl bg-white shadow-xl">
-            <img
-              src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(
-                inviteUrl
-              )}`}
-              alt={pickLang(lang, {
-                es: 'QR Sala',
-                ca: 'QR Sala',
-                en: 'Room QR',
-              })}
-              className="w-44 h-44 rounded-xl"
-            />
-          </div>
-          <p className="text-xs text-zinc-400 text-center max-w-xs">
-            {pickLang(lang, {
-              es: 'Escanea con la cámara del móvil para entrar directamente a esta sala.',
-              ca: 'Escaneja amb la càmera del mòbil per entrar directament a aquesta sala.',
-              en: 'Scan with your phone camera to join this room directly.',
-            })}
-          </p>
-          <PrimaryButton onClick={handleShareInvite} fullWidth>
-            <Share2 className="w-4 h-4" />
-            <span>
-              {pickLang(lang, {
-                es: 'Compartir enlace corto',
-                ca: 'Compartir enllaç curt',
-                en: 'Share short link',
-              })}
-            </span>
-          </PrimaryButton>
-        </div>
-      </BottomSheet>
-
-      {/* ==================================================================== */}
-      {/* BOTTOM SHEET 4: PROGRESSIVE DISCLOSURE ROOM SETTINGS                 */}
-      {/* ==================================================================== */}
-      <BottomSheet
-        isOpen={showRoomSettingsSheet}
-        onClose={() => setShowRoomSettingsSheet(false)}
-        lang={lang}
-        title={pickLang(lang, {
-          es: 'Ajustes y Seguridad de Sala',
-          ca: 'Ajustos i Seguretat de Sala',
-          en: 'Room Settings & Security',
-        })}
-        subtitle={pickLang(lang, {
-          es: 'Personaliza tu nombre, permisos, PIN y preferencias',
-          ca: 'Personalitza el teu nom, permisos, PIN i preferències',
-          en: 'Customize your display name, permissions, PIN & preferences',
-        })}
-        icon={<Shield className="w-5 h-5" />}
-      >
-        {/* 0. User Display Name */}
-        <div className="space-y-2">
-          <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-            <UserCheck className="w-3.5 h-3.5 text-[#BF94FF]" />
-            <span>
-              {pickLang(lang, {
-                es: 'Tu nombre en la sala',
-                ca: 'El teu nom a la sala',
-                en: 'Your name in room',
-              })}
-            </span>
-          </label>
-          <div className="flex items-center gap-2">
-            <StandardInput
-              type="text"
-              value={profileNameDraft}
-              onChange={(e) => setProfileNameDraft(e.target.value)}
-            />
-            <PrimaryButton
-              onClick={() => {
-                if (profileNameDraft.trim()) {
-                  onUpdateProfile(
-                    profileNameDraft.trim(),
-                    currentUser.avatar,
-                    currentUser.color
-                  );
-                }
-              }}
-            >
-              {pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
-            </PrimaryButton>
-          </div>
-        </div>
-
-        {/* 1. Rename Room */}
-        {isHost && (
-          <div className="space-y-2 pt-2 border-t border-white/[0.07]">
-            <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-              <Edit3 className="w-3.5 h-3.5 text-[#BF94FF]" />
-              <span>
-                {pickLang(lang, {
-                  es: 'Nombre de la sala',
-                  ca: 'Nom de la sala',
-                  en: 'Room name',
-                })}
-              </span>
-            </label>
-            <div className="flex items-center gap-2">
-              <StandardInput
-                type="text"
-                value={roomNameDraft}
-                onChange={(e) => setRoomNameDraft(e.target.value)}
-              />
-              <PrimaryButton
-                onClick={() => {
-                  if (roomNameDraft.trim()) {
-                    onRenameRoom(roomNameDraft.trim());
-                  }
-                }}
-              >
-                {pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
-              </PrimaryButton>
-            </div>
-          </div>
-        )}
-
-        {/* 2. Toggles: Host Lock & Permanent Room */}
-        <div className="space-y-2 pt-2 border-t border-white/[0.07]">
-          <SecondaryButton
-            onClick={() => onToggleHostLock(!hostOnlyControl)}
-            disabled={!isHost}
-            active={hostOnlyControl}
-            fullWidth
-            className="!justify-between"
-          >
-            <span className="flex items-center gap-2">
-              {hostOnlyControl ? (
-                <Lock className="w-4 h-4 text-amber-400" />
-              ) : (
-                <Unlock className="w-4 h-4 text-emerald-400" />
-              )}
-              <span>
-                {pickLang(lang, {
-                  es: 'Control de Reproducción (Solo Anfitrión / Co-anfitrión)',
-                  ca: 'Control de Reproducció (Només Amfitrió / Co-amfitrió)',
-                  en: 'Playback Control (Host / Co-host Only)',
-                })}
-              </span>
-            </span>
-            <span className="text-xs font-mono uppercase">
-              {hostOnlyControl
-                ? pickLang(lang, { es: 'ACTIVO', ca: 'ACTIU', en: 'ON' })
-                : pickLang(lang, { es: 'PAUSA LIBRE', ca: 'PAUSA LLIURE', en: 'PLAY/PAUSE OPEN' })}
-            </span>
-          </SecondaryButton>
-          <p className="text-[11px] text-zinc-400 px-1 leading-relaxed">
-            {pickLang(lang, {
-              es: 'Solo el creador de la sala es Anfitrión y puede cambiar canales o películas. Asigna Co-anfitriones en la lista de participantes para compartir ese control.',
-              ca: 'Només el creador de la sala és Amfitrió i pot canviar canals o pel·lícules. Assigna Co-amfitrions a la llista de participants per compartir aquest control.',
-              en: 'Only the room creator is Host and can change channels or movies. Assign Co-hosts in the participants list to share media control.',
-            })}
-          </p>
-
-          <SecondaryButton
-            onClick={onTogglePermanentRoom}
-            disabled={!isHost}
-            active={isCurrentRoomPermanent}
-            fullWidth
-            className="!justify-between"
-          >
-            <span className="flex items-center gap-2">
-              <Bookmark className="w-4 h-4 text-[#BF94FF]" />
-              <span>
-                {pickLang(lang, {
-                  es: 'Sala Permanente 24/7',
-                  ca: 'Sala Permanent 24/7',
-                  en: '24/7 Permanent Room',
-                })}
-              </span>
-            </span>
-            <span className="text-xs font-mono uppercase">
-              {isCurrentRoomPermanent
-                ? pickLang(lang, { es: 'GUARDADA', ca: 'DESADA', en: 'SAVED' })
-                : pickLang(lang, { es: 'TEMPORAL', ca: 'TEMPORAL', en: 'TEMP' })}
-            </span>
-          </SecondaryButton>
-        </div>
-
-        {/* 3. Room 4-Digit PIN */}
-        {isHost && (
-          <div className="space-y-2 pt-2 border-t border-white/[0.07]">
-            <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-              <KeyRound className="w-3.5 h-3.5 text-amber-400" />
-              <span>
-                {pickLang(lang, {
-                  es: `PIN de 4 dígitos ${hasPin ? '(Activo)' : '(Opcional)'}`,
-                  ca: `PIN de 4 dígits ${hasPin ? '(Actiu)' : '(Opcional)'}`,
-                  en: `4-digit PIN ${hasPin ? '(Active)' : '(Optional)'}`,
-                })}
-              </span>
-            </label>
-            <div className="flex items-center gap-2">
-              <StandardInput
-                type="password"
-                inputMode="numeric"
-                maxLength={4}
-                value={pinDraft}
-                onChange={(e) =>
-                  setPinDraft(e.target.value.replace(/\D/g, '').slice(0, 4))
-                }
-                placeholder={
-                  hasPin
-                    ? pickLang(lang, {
-                        es: 'Cambiar PIN (4 dígitos)',
-                        ca: 'Canviar PIN (4 dígits)',
-                        en: 'Change PIN (4 digits)',
-                      })
-                    : pickLang(lang, {
-                        es: 'Ej. 1234',
-                        ca: 'Ex. 1234',
-                        en: 'e.g. 1234',
-                      })
-                }
-              />
-              <PrimaryButton
-                disabled={pinDraft.length !== 4}
-                onClick={() => {
-                  if (pinDraft.length === 4) {
-                    onSetRoomPin(pinDraft);
-                    setPinDraft('');
-                  }
-                }}
-              >
-                {pickLang(lang, { es: 'Activar', ca: 'Activar', en: 'Enable' })}
-              </PrimaryButton>
-              {hasPin && (
-                <SecondaryButton onClick={() => onSetRoomPin('')}>
-                  {pickLang(lang, { es: 'Quitar', ca: 'Treure', en: 'Remove' })}
-                </SecondaryButton>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* 4. Create New Room */}
-        {onCreateNewRoom && (
-          <div className="space-y-2 pt-2 border-t border-white/[0.07]">
-            <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
-              <Plus className="w-3.5 h-3.5 text-[#BF94FF]" />
-              <span>
-                {pickLang(lang, {
-                  es: 'Crear nueva sala',
-                  ca: 'Crear nova sala',
-                  en: 'Create new room',
-                })}
-              </span>
-            </label>
-            <div className="flex items-center gap-2">
-              <StandardInput
-                type="text"
-                value={newRoomNameDraft}
-                onChange={(e) => setNewRoomNameDraft(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    onCreateNewRoom(newRoomNameDraft.trim() || undefined);
-                    setNewRoomNameDraft('');
-                    setShowRoomSettingsSheet(false);
-                  }
-                }}
-                placeholder={pickLang(lang, {
-                  es: 'Nombre opcional (ej. Noche de Cine)',
-                  ca: 'Nom opcional (ex. Nit de Cinema)',
-                  en: 'Optional name (e.g. Movie Night)',
-                })}
-              />
-              <PrimaryButton
-                onClick={() => {
-                  onCreateNewRoom(newRoomNameDraft.trim() || undefined);
-                  setNewRoomNameDraft('');
-                  setShowRoomSettingsSheet(false);
-                }}
-              >
-                <Plus className="w-4 h-4" />
-                <span>
-                  {pickLang(lang, { es: 'Crear', ca: 'Crear', en: 'Create' })}
-                </span>
-              </PrimaryButton>
-            </div>
-          </div>
-        )}
-
-        {/* 5. View Mode Switcher */}
-        <div className="pt-2 border-t border-white/[0.07] flex items-center justify-between">
-          <span className="text-xs text-zinc-400">
-            {pickLang(lang, {
-              es: 'Formato de pantalla',
-              ca: 'Format de pantalla',
-              en: 'Screen layout',
-            })}
-          </span>
-          <ViewModeSwitchButton
-            effectiveView={effectiveView}
-            onToggle={onToggleViewMode}
-            lang={lang}
-          />
-        </div>
-      </BottomSheet>
+        roomName={roomName}
+        inviteUrl={inviteUrl}
+        isHost={isHost}
+        hostOnlyControl={hostOnlyControl}
+        hasPin={hasPin}
+        isCurrentRoomPermanent={isCurrentRoomPermanent}
+        currentUser={currentUser}
+        effectiveView={effectiveView}
+        onToggleViewMode={onToggleViewMode}
+        showUrlLoaderSheet={showUrlLoaderSheet}
+        setShowUrlLoaderSheet={setShowUrlLoaderSheet}
+        customUrlInput={customUrlInput}
+        setCustomUrlInput={setCustomUrlInput}
+        onPlayCustomUrl={onPlayCustomUrl}
+        onOpenCloudBrowser={onOpenCloudBrowser}
+        showTvRemoteSheet={showTvRemoteSheet}
+        setShowTvRemoteSheet={setShowTvRemoteSheet}
+        hasConnectedSmartTv={hasConnectedSmartTv}
+        pairedCodeLabel={pairedCodeLabel}
+        setPairedCodeLabel={setPairedCodeLabel}
+        setForceShowRemote={setForceShowRemote}
+        tvClaimStatus={tvClaimStatus}
+        tvCodeInput={tvCodeInput}
+        setTvCodeInput={setTvCodeInput}
+        onClaimTvCode={onClaimTvCode}
+        handleMapTvCommand={handleMapTvCommand}
+        onSendTvRemoteCommand={onSendTvRemoteCommand}
+        showQrInviteSheet={showQrInviteSheet}
+        setShowQrInviteSheet={setShowQrInviteSheet}
+        handleShareInvite={handleShareInvite}
+        showRoomSettingsSheet={showRoomSettingsSheet}
+        setShowRoomSettingsSheet={setShowRoomSettingsSheet}
+        profileNameDraft={profileNameDraft}
+        setProfileNameDraft={setProfileNameDraft}
+        onUpdateProfile={onUpdateProfile}
+        roomNameDraft={roomNameDraft}
+        setRoomNameDraft={setRoomNameDraft}
+        onRenameRoom={onRenameRoom}
+        onToggleHostLock={onToggleHostLock}
+        onTogglePermanentRoom={onTogglePermanentRoom}
+        pinDraft={pinDraft}
+        setPinDraft={setPinDraft}
+        onSetRoomPin={onSetRoomPin}
+        onCreateNewRoom={onCreateNewRoom}
+        newRoomNameDraft={newRoomNameDraft}
+        setNewRoomNameDraft={setNewRoomNameDraft}
+      />
     </aside>
   );
 };

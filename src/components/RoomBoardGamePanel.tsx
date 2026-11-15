@@ -18,6 +18,8 @@ import {
   Trophy,
   ChevronDown,
   ChevronUp,
+  Play,
+  Timer,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -34,6 +36,8 @@ import {
   getLegalMovesForSquare,
   getPieceSide,
 } from '../shared/boardGames';
+import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
+import { GameVoiceBar, VoiceSpeakerIndicator } from './games/GameVoiceBar';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -43,12 +47,17 @@ interface RoomBoardGamePanelProps {
   lang: AppLanguage;
   onStartGame: (gameType: BoardGameType, soloLocal?: boolean, clockMinutes?: BoardClockMinutes) => void;
   onJoinSeat: (side: 'w' | 'b' | 'spectate') => void;
+  onStartMatch?: () => void;
   onMove: (from: BoardCoord, to: BoardCoord, promotionPiece?: ChessPromotionPiece) => void;
   onResign: () => void;
   onReset: (opts?: { gameType?: BoardGameType; swapColors?: boolean; clockMinutes?: BoardClockMinutes }) => void;
   onCloseGame: () => void;
   moveError?: string | null;
   onBack?: () => void;
+  voiceChat?: GameVoiceChatState;
+  isOnlineRoom?: boolean;
+  isHost?: boolean;
+  fullScreenMode?: boolean;
 }
 
 const CLOCK_OPTIONS: BoardClockMinutes[] = [0, 3, 5, 10];
@@ -171,12 +180,17 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
   lang,
   onStartGame,
   onJoinSeat,
+  onStartMatch,
   onMove,
   onResign,
   onReset,
   onCloseGame,
   moveError,
   onBack,
+  voiceChat,
+  isOnlineRoom = false,
+  isHost = false,
+  fullScreenMode = false,
 }) => {
   const [selected, setSelected] = useState<BoardCoord | null>(null);
   const [pendingPromo, setPendingPromo] = useState<{ from: BoardCoord; to: BoardCoord } | null>(null);
@@ -188,15 +202,25 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const [showHistory, setShowHistory] = useState(false);
 
-  // Tick live countdown when chess/board clock is active
+  const voicePeerMap = useMemo(() => {
+    const m = new Map<string, { isMuted: boolean }>();
+    if (voiceChat) {
+      for (const peer of voiceChat.voicePeers) {
+        m.set(peer.userId, { isMuted: peer.isMuted });
+      }
+    }
+    return m;
+  }, [voiceChat]);
+
+  // Tick live countdown when game is playing (for 15s turn timer & optional match clock)
   useEffect(() => {
-    if (!gameState?.clockMinutes || !gameState.clocksMs || gameState.status !== 'playing') {
+    if (!gameState || gameState.status !== 'playing') {
       return;
     }
     setNowTs(Date.now());
-    const id = window.setInterval(() => setNowTs(Date.now()), 500);
+    const id = window.setInterval(() => setNowTs(Date.now()), 250);
     return () => window.clearInterval(id);
-  }, [gameState?.clockMinutes, gameState?.clocksMs, gameState?.status, gameState?.updatedAt]);
+  }, [gameState?.status, gameState?.turnDeadlineAt, gameState?.updatedAt]);
 
   // Clear selection whenever turn or board updates
   useEffect(() => {
@@ -238,7 +262,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
   }, [gameState, currentUser.id]);
 
   const canInteractCurrentTurn = useMemo(() => {
-    if (!gameState || gameState.status === 'finished') return false;
+    if (!gameState || gameState.status !== 'playing') return false;
     if (gameState.soloLocal) return true;
     const activeSeat = gameState.players[gameState.turn];
     return Boolean(activeSeat && activeSeat.userId === currentUser.id);
@@ -331,6 +355,8 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
             <span>{pickLang(lang, { es: 'Volver a Sala', ca: 'Tornar a la Sala', en: 'Back to Room' })}</span>
           </button>
         )}
+
+        {isOnlineRoom && voiceChat && <GameVoiceBar lang={lang} voice={voiceChat} />}
 
         <div className="p-4 rounded-3xl nc-specular-surface border border-white/[0.1] space-y-2.5">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#BF94FF]">
@@ -607,10 +633,23 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
 
   const matchHistory = gameState.matchHistory || [];
 
+  const remainingTurnSec =
+    gameState.status === 'playing' && gameState.turnDeadlineAt
+      ? Math.max(0, Math.ceil((gameState.turnDeadlineAt - nowTs) / 1000))
+      : 15;
+
   const renderBoardContent = (largeMode: boolean) => (
-    <div className={`flex flex-col ${largeMode ? 'gap-3 max-w-[540px] w-full mx-auto' : 'gap-2.5 w-full'}`}>
+    <div
+      className={`flex flex-col ${
+        fullScreenMode
+          ? 'justify-between h-full overflow-hidden gap-2 max-w-[600px] w-full mx-auto'
+          : largeMode
+          ? 'gap-3 max-w-[540px] w-full mx-auto'
+          : 'gap-2.5 w-full'
+      }`}
+    >
       {/* Top Action Strip: Game Switcher + Expand + Close */}
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 shrink-0">
         <div className="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded-xl border border-white/[0.08] overflow-x-auto no-scrollbar">
           {(['connect4', 'checkers', 'chess'] as BoardGameType[]).map((gt) => {
             const active = gameState.gameType === gt;
@@ -633,8 +672,8 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                 {gt === 'connect4'
                   ? pickLang(lang, { es: '🟡 Conecta 4', ca: '🟡 Connecta 4', en: '🟡 Connect 4' })
                   : gt === 'checkers'
-                  ? pickLang(lang, { es: '🔴 Damas', ca: '🔴 Dames', en: '🔴 Checkers' })
-                  : pickLang(lang, { es: '♟️ Ajedrez', ca: '♟️ Escacs', en: '♟️ Chess' })}
+                  ? pickLang(lang, { es: '🔴 Damas Españolas', ca: '🔴 Dames Espanyoles', en: '🔴 Spanish Checkers' })
+                  : pickLang(lang, { es: '♟️ Ajedrez FIDE', ca: '♟️ Escacs FIDE', en: '♟️ FIDE Chess' })}
               </button>
             );
           })}
@@ -659,14 +698,16 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
           >
             {muted ? <VolumeX className="w-3.5 h-3.5 text-zinc-500" /> : <Volume2 className="w-3.5 h-3.5" />}
           </button>
-          <button
-            type="button"
-            onClick={() => setIsExpanded((v) => !v)}
-            title={largeMode ? 'Reducir' : 'Ampliar tablero'}
-            className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-[#BF94FF] cursor-pointer"
-          >
-            {largeMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
-          </button>
+          {!fullScreenMode && (
+            <button
+              type="button"
+              onClick={() => setIsExpanded((v) => !v)}
+              title={largeMode ? 'Reducir' : 'Ampliar tablero'}
+              className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-[#BF94FF] cursor-pointer"
+            >
+              {largeMode ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+            </button>
+          )}
           <button
             type="button"
             onClick={() => {
@@ -681,21 +722,31 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
         </div>
       </div>
 
-      {/* Player Seats Row (White/Yellow vs Black/Red) + Live Clocks */}
-      <div className="grid grid-cols-2 gap-2">
+      {isOnlineRoom && !gameState.soloLocal && voiceChat && (
+        <GameVoiceBar lang={lang} voice={voiceChat} compact />
+      )}
+
+      {/* Player Seats Row (White/Yellow vs Black/Red) + Voice Speaking Ring */}
+      <div className="grid grid-cols-2 gap-2 shrink-0">
         {(['w', 'b'] as BoardSide[]).map((side) => {
           const seat = gameState.players[side];
-          const isTurn = gameState.status !== 'finished' && gameState.turn === side;
+          const isTurn = gameState.status === 'playing' && gameState.turn === side;
           const isMe = seat?.userId === currentUser.id;
           const sideLabel = getSideLabel(side);
           const clockMs = getSideClockMs(side);
           const isLowClock = clockMs !== null && clockMs < 30_000;
+          const voiceInfo = seat && !seat.isBot ? voicePeerMap.get(seat.userId) : undefined;
+          const isSpeaking = Boolean(
+            seat && !seat.isBot && voiceChat?.speakingUserIds.includes(seat.userId)
+          );
 
           return (
             <div
               key={side}
               className={`p-2 rounded-xl border transition-colors flex items-center justify-between gap-1.5 min-w-0 ${
-                isTurn
+                isSpeaking
+                  ? 'ring-2 ring-emerald-400 bg-emerald-500/15 border-emerald-400/60 shadow-[0_0_12px_rgba(16,185,129,0.35)]'
+                  : isTurn
                   ? 'bg-[#9146FF]/15 border-[#9146FF]/60 shadow-[0_0_16px_rgba(145,70,255,0.2)]'
                   : 'bg-white/[0.03] border-white/[0.07]'
               }`}
@@ -719,6 +770,13 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                     <div className="text-[11px] font-bold text-white truncate flex items-center gap-1">
                       <span className="truncate">{seat.name}</span>
                       {isMe && <span className="text-[10px] text-[#BF94FF]">· Tú</span>}
+                      {!seat.isBot && (
+                        <VoiceSpeakerIndicator
+                          inVoice={Boolean(voiceInfo)}
+                          isSpeaking={isSpeaking}
+                          isMuted={Boolean(voiceInfo?.isMuted)}
+                        />
+                      )}
                     </div>
                     <div className="text-[10px] text-zinc-400 font-mono tabular-nums">
                       {sideLabel} · {seat.score} pts
@@ -730,7 +788,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                       {sideLabel}
                     </div>
                     <div className="text-[10px] text-zinc-500 truncate">
-                      {pickLang(lang, { es: 'Libre', ca: 'Lliure', en: 'Open' })}
+                      {pickLang(lang, { es: 'Libre (Bot si pulsas Play)', ca: 'Lliure', en: 'Open (Bot on Play)' })}
                     </div>
                   </div>
                 )}
@@ -759,7 +817,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                     }}
                     className="h-7 px-2 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-[10px] font-bold text-white whitespace-nowrap shrink-0 cursor-pointer"
                   >
-                    {pickLang(lang, { es: 'Jugar', ca: 'Jugar', en: 'Join' })}
+                    {pickLang(lang, { es: 'Elegir', ca: 'Triar', en: 'Pick' })}
                   </button>
                 )
               )}
@@ -768,9 +826,41 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
         })}
       </div>
 
-      {/* Turn / Alert Status Strip */}
+      {/* Waiting Lobby Host Play Bar */}
+      {gameState.status === 'waiting' && (
+        <div className="px-3 py-2 rounded-xl bg-amber-500/10 border border-amber-400/35 flex flex-wrap items-center justify-between gap-2 shrink-0">
+          <span className="text-[11px] font-semibold text-amber-100 truncate">
+            {isHost
+              ? pickLang(lang, {
+                  es: 'Escoged color y pulsa Play para iniciar (asiento vacío = Bot IA)',
+                  ca: 'Trieu color i prem Play per començar',
+                  en: 'Pick colors and click Play to start (empty seat = AI Bot)',
+                })
+              : pickLang(lang, {
+                  es: 'Esperando a que el anfitrión pulse Play...',
+                  ca: 'Esperant que l’amfitrió premi Play...',
+                  en: 'Waiting for Host to press Play...',
+                })}
+          </span>
+          {(isHost || gameState.soloLocal) && onStartMatch && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                onStartMatch();
+              }}
+              className="min-h-8 px-3.5 rounded-lg bg-gradient-to-r from-[#9146FF] to-emerald-500 text-xs font-extrabold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 shrink-0"
+            >
+              <Play className="w-3.5 h-3.5 fill-current" />
+              <span>Play · Iniciar</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Turn / Alert Status Strip with 15s Timer */}
       <div
-        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 ${
+        className={`px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center justify-between gap-2 shrink-0 ${
           gameState.status === 'finished'
             ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
             : gameState.inCheck
@@ -791,26 +881,44 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
               })}`
             : turnLabel}
         </span>
-        {mySide && mySide !== 'both' && !gameState.soloLocal && gameState.status !== 'finished' && (
-          <button
-            type="button"
-            onClick={() => onJoinSeat('spectate')}
-            className="text-[10px] text-zinc-400 hover:text-white underline whitespace-nowrap shrink-0 cursor-pointer"
-          >
-            {pickLang(lang, { es: 'Espectar', ca: 'Mirar', en: 'Spectate' })}
-          </button>
-        )}
+        <div className="flex items-center gap-2 shrink-0">
+          {gameState.status === 'playing' && (
+            <span
+              className={`px-1.5 py-0.5 rounded-md font-mono text-[10px] font-bold tabular-nums flex items-center gap-1 ${
+                remainingTurnSec <= 4
+                  ? 'bg-rose-500/25 text-rose-200 animate-pulse'
+                  : 'bg-white/[0.08] text-zinc-200'
+              }`}
+            >
+              <Timer className="w-3 h-3" />
+              <span>{remainingTurnSec}s</span>
+            </span>
+          )}
+          {mySide && mySide !== 'both' && !gameState.soloLocal && gameState.status !== 'finished' && (
+            <button
+              type="button"
+              onClick={() => onJoinSeat('spectate')}
+              className="text-[10px] text-zinc-400 hover:text-white underline whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              {pickLang(lang, { es: 'Espectar', ca: 'Mirar', en: 'Spectate' })}
+            </button>
+          )}
+        </div>
       </div>
 
       {moveError && (
-        <div className="px-2.5 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/35 text-[11px] text-rose-200">
+        <div className="px-2.5 py-1.5 rounded-xl bg-rose-500/15 border border-rose-500/35 text-[11px] text-rose-200 shrink-0">
           {moveError}
         </div>
       )}
 
       {/* Interactive Board: Connect 4 (6x7) OR Checkers/Chess (8x8) */}
       {gameState.gameType === 'connect4' ? (
-        <div className="relative w-full aspect-[7/6] rounded-2xl overflow-hidden border border-blue-400/30 bg-gradient-to-b from-[#1e3a8a] to-[#172554] p-2 shadow-[0_14px_40px_rgba(0,0,0,0.65)] select-none touch-manipulation">
+        <div
+          className={`relative mx-auto rounded-2xl overflow-hidden border border-blue-400/30 bg-gradient-to-b from-[#1e3a8a] to-[#172554] p-2 shadow-[0_14px_40px_rgba(0,0,0,0.65)] select-none touch-manipulation ${
+            fullScreenMode ? 'w-[min(88vw,50dvh)] max-w-[440px] aspect-[7/6]' : 'w-full aspect-[7/6]'
+          }`}
+        >
           <div className="grid grid-cols-7 grid-rows-6 gap-1.5 w-full h-full">
             {Array.from({ length: 6 }).map((_, r) =>
               Array.from({ length: 7 }).map((__, c) => {
@@ -891,7 +999,11 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
           )}
         </div>
       ) : (
-        <div className="relative w-full aspect-square rounded-2xl overflow-hidden border border-white/[0.14] shadow-[0_14px_40px_rgba(0,0,0,0.65)] select-none touch-manipulation">
+        <div
+          className={`relative mx-auto rounded-2xl overflow-hidden border border-white/[0.14] shadow-[0_14px_40px_rgba(0,0,0,0.65)] select-none touch-manipulation ${
+            fullScreenMode ? 'w-[min(86vw,50dvh)] max-w-[420px] aspect-square' : 'w-full aspect-square'
+          }`}
+        >
           <div className="grid grid-cols-8 grid-rows-8 w-full h-full">
             {displayRows.map((r) =>
               displayCols.map((c) => {
@@ -1000,7 +1112,13 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                   {gameState.winReason === 'checkmate'
                     ? pickLang(lang, { es: 'Jaque mate', ca: 'Escac i mat', en: 'Checkmate' })
                     : gameState.winReason === 'stalemate'
-                    ? pickLang(lang, { es: 'Rey ahogado', ca: 'Rei ofegat', en: 'Stalemate' })
+                    ? pickLang(lang, { es: 'Rey ahogado (Tablas)', ca: 'Rei ofegat', en: 'Stalemate (Draw)' })
+                    : gameState.winReason === 'threefold_repetition'
+                    ? pickLang(lang, { es: 'Tablas por triple repetición', ca: 'Taules per triple repetició', en: 'Draw by threefold repetition' })
+                    : gameState.winReason === 'fifty_moves'
+                    ? pickLang(lang, { es: 'Tablas por regla de 50 movimientos', ca: 'Taules regla 50 moviments', en: 'Draw by 50-move rule' })
+                    : gameState.winReason === 'insufficient_material'
+                    ? pickLang(lang, { es: 'Tablas por material insuficiente', ca: 'Taules per material insuficient', en: 'Draw by insufficient material' })
                     : gameState.winReason === 'timeout'
                     ? pickLang(lang, { es: 'Por tiempo agotado', ca: 'Per temps esgotat', en: 'Time out' })
                     : gameState.winReason === 'resign'
@@ -1121,12 +1239,18 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
 
   return (
     <>
-      <div className="flex-1 overflow-y-auto p-3 space-y-2.5 custom-scrollbar">
+      <div
+        className={`flex-1 ${
+          fullScreenMode
+            ? 'h-full overflow-hidden p-2.5 sm:p-4 flex flex-col'
+            : 'overflow-y-auto p-3 space-y-2.5 custom-scrollbar'
+        }`}
+      >
         {onBack && (
           <button
             type="button"
             onClick={onBack}
-            className="min-h-8 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer"
+            className="min-h-8 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer shrink-0"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
             <span>{pickLang(lang, { es: 'Volver a Sala', ca: 'Tornar a la Sala', en: 'Back to Room' })}</span>

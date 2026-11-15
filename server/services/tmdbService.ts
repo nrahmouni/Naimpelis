@@ -1,3 +1,5 @@
+import https from 'node:https';
+import zlib from 'node:zlib';
 import { ENV } from '../config/env.ts';
 import { LruTtlCache, SingleFlightRegistry } from '../utils/lruCache.ts';
 import { logger } from '../utils/logger.ts';
@@ -5,7 +7,62 @@ import { logger } from '../utils/logger.ts';
 export type SupportedCatalogLocale = 'es' | 'ca' | 'en';
 
 const tmdbResponseCache = new LruTtlCache<string, unknown>(400, 5 * 60 * 1000);
+const tmdbStaleFallbackCache = new LruTtlCache<string, unknown>(400, 24 * 60 * 60 * 1000);
 const tmdbSingleFlight = new SingleFlightRegistry<unknown>();
+
+// Dedicated IPv4 keepAlive agent avoids Node/undici Happy Eyeballs IPv6 stalls & socket timeouts
+const tmdbIpv4KeepAliveAgent = new https.Agent({
+  keepAlive: true,
+  family: 4,
+  maxSockets: 16,
+  keepAliveMsecs: 15_000,
+});
+
+function tmdbIpv4GetJson<T>(targetUrl: string, timeoutMs = 10_000): Promise<{ status: number; data: T | null }> {
+  return new Promise((resolve, reject) => {
+    const req = https.get(
+      targetUrl,
+      {
+        agent: tmdbIpv4KeepAliveAgent,
+        timeout: timeoutMs,
+        headers: {
+          Accept: 'application/json',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'User-Agent': 'NAIMCINE-Catalog/3.1',
+        },
+      },
+      (res) => {
+        const status = res.statusCode || 500;
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          if (status < 200 || status >= 300) {
+            resolve({ status, data: null });
+            return;
+          }
+          try {
+            let buf = Buffer.concat(chunks);
+            const enc = String(res.headers['content-encoding'] || '').toLowerCase();
+            if (enc === 'gzip') buf = zlib.gunzipSync(buf);
+            else if (enc === 'deflate') buf = zlib.inflateSync(buf);
+            else if (enc === 'br') buf = zlib.brotliDecompressSync(buf);
+            const parsed = JSON.parse(buf.toString('utf8')) as T;
+            resolve({ status, data: parsed });
+          } catch (parseErr) {
+            reject(parseErr);
+          }
+        });
+      }
+    );
+
+    req.on('timeout', () => {
+      const err = new Error(`TMDB upstream timeout after ${timeoutMs}ms`);
+      err.name = 'TimeoutError';
+      req.destroy(err);
+    });
+    req.on('error', reject);
+  });
+}
 
 export function resolveTmdbLanguageTag(lang?: string): string {
   const lower = String(lang || 'es').toLowerCase();
@@ -56,21 +113,38 @@ export async function fetchTmdbJson<T>(
   }
 
   return tmdbSingleFlight.run(cacheKey, async () => {
-    try {
-      const response = await fetch(cacheKey, {
-        signal: AbortSignal.timeout(7000),
-      });
-      if (!response.ok) {
-        logger.warn({ status: response.status, endpointPath }, 'tmdb_fetch_non_ok');
-        return null;
+    let lastErr: unknown = null;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        const timeoutMs = attempt === 0 ? 9000 : 12000;
+        const { status, data } = await tmdbIpv4GetJson<T>(cacheKey, timeoutMs);
+        if (data !== null) {
+          tmdbResponseCache.set(cacheKey, data, cacheTtlMs);
+          tmdbStaleFallbackCache.set(cacheKey, data);
+          return data;
+        }
+        if (status >= 400 && status < 500 && status !== 429) {
+          logger.warn({ status, endpointPath }, 'tmdb_fetch_non_ok');
+          return null;
+        }
+        lastErr = new Error(`TMDB HTTP ${status}`);
+      } catch (err) {
+        lastErr = err;
       }
-      const data = (await response.json()) as T;
-      tmdbResponseCache.set(cacheKey, data, cacheTtlMs);
-      return data;
-    } catch (err) {
-      logger.warn({ err, endpointPath }, 'tmdb_fetch_error');
-      return null;
+      if (attempt === 0) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
     }
+
+    const stale = tmdbStaleFallbackCache.get(cacheKey);
+    if (stale !== undefined) {
+      logger.info({ endpointPath }, 'tmdb_fetch_served_stale_cache');
+      return stale as T;
+    }
+
+    const errMsg = lastErr instanceof Error ? lastErr.message : String(lastErr || 'unknown');
+    logger.warn({ endpointPath, reason: errMsg }, 'tmdb_fetch_error');
+    return null;
   }) as Promise<T | null>;
 }
 

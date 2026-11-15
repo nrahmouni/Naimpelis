@@ -176,6 +176,7 @@ export interface CatalogMovie {
   languages: string[];
   platform?: string;
   providerId?: StreamingProviderId;
+  addedAt?: number;
 }
 
 export interface CastMemberItem {

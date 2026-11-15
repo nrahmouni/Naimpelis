@@ -8,6 +8,7 @@ export type BoardGameType = 'checkers' | 'chess' | 'connect4';
 export type BoardSide = 'w' | 'b';
 export type ChessPromotionPiece = 'Q' | 'R' | 'B' | 'N';
 export type BoardClockMinutes = 0 | 3 | 5 | 10;
+export const BOARD_TURN_DECISION_MS = 15_000;
 
 export interface BoardCoord {
   r: number;
@@ -29,6 +30,7 @@ export interface BoardPlayerSeat {
   avatar: string;
   color: string;
   score: number;
+  isBot?: boolean;
 }
 
 export interface BoardGameState {
@@ -42,7 +44,19 @@ export interface BoardGameState {
     b: BoardPlayerSeat | null;
   };
   winner: BoardSide | 'draw' | null;
-  winReason?: 'checkmate' | 'stalemate' | 'no_pieces' | 'no_moves' | 'resign' | 'connect4' | 'draw_full' | 'timeout' | null;
+  winReason?:
+    | 'checkmate'
+    | 'stalemate'
+    | 'threefold_repetition'
+    | 'fifty_moves'
+    | 'insufficient_material'
+    | 'no_pieces'
+    | 'no_moves'
+    | 'resign'
+    | 'connect4'
+    | 'draw_full'
+    | 'timeout'
+    | null;
   inCheck: BoardSide | null;
   lastMove: {
     from: BoardCoord;
@@ -59,10 +73,14 @@ export interface BoardGameState {
   };
   enPassant: BoardCoord | null;
   mustContinueFrom: BoardCoord | null;
+  halfmoveClock?: number;
+  positionCounts?: Record<string, number>;
   soloLocal: boolean;
+  awaitingHostStart?: boolean;
   clockMinutes?: BoardClockMinutes;
   clocksMs?: { w: number; b: number };
   turnStartedAt?: number;
+  turnDeadlineAt?: number;
   matchHistory?: Array<{
     id: string;
     gameType: BoardGameType;
@@ -139,7 +157,8 @@ export function createInitialBoardGameState(
   soloLocal = false,
   existingScores?: { w?: number; b?: number },
   clockMinutes: BoardClockMinutes = 0,
-  existingMatchHistory: BoardGameState['matchHistory'] = []
+  existingMatchHistory: BoardGameState['matchHistory'] = [],
+  waitForHost = false
 ): BoardGameState {
   const starterSeat: BoardPlayerSeat | null = starter
     ? {
@@ -151,12 +170,14 @@ export function createInitialBoardGameState(
       }
     : null;
 
+  const now = Date.now();
   const initialClockMs = clockMinutes > 0 ? clockMinutes * 60 * 1000 : 0;
+  const startImmediately = soloLocal && !waitForHost;
 
   return {
-    id: `game-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    id: `game-${now}-${Math.random().toString(36).slice(2, 6)}`,
     gameType,
-    status: soloLocal ? 'playing' : 'waiting',
+    status: startImmediately ? 'playing' : 'waiting',
     board:
       gameType === 'chess'
         ? createInitialChessBoard()
@@ -177,52 +198,93 @@ export function createInitialBoardGameState(
     enPassant: null,
     mustContinueFrom: null,
     soloLocal,
+    awaitingHostStart: waitForHost,
     ...(clockMinutes > 0
       ? {
           clockMinutes,
           clocksMs: { w: initialClockMs, b: initialClockMs },
-          turnStartedAt: Date.now(),
+          turnStartedAt: now,
         }
       : {}),
+    ...(startImmediately ? { turnDeadlineAt: now + BOARD_TURN_DECISION_MS } : {}),
     matchHistory: existingMatchHistory.slice(-15),
-    updatedAt: Date.now(),
+    updatedAt: now,
   };
 }
 
 // ============================================================================
-// CHECKERS (DAMAS) RULES
+// CHECKERS (DAMAS ESPAÑOLAS OFICIALES: Vuelo Largo + Ley de la Cantidad)
 // ============================================================================
+
+type CheckersJumpMove = LegalBoardMove & {
+  captureAt: BoardCoord;
+};
 
 function getCheckersJumpsFrom(
   board: (string | null)[][],
   r: number,
   c: number
-): LegalBoardMove[] {
+): CheckersJumpMove[] {
   const piece = board[r]?.[c];
   const side = getPieceSide(piece);
   if (!piece || !side) return [];
 
   const isKing = piece === 'W' || piece === 'B';
-  const rowDirs = isKing ? [-1, 1] : side === 'w' ? [-1] : [1];
-  const jumps: LegalBoardMove[] = [];
+  const jumps: CheckersJumpMove[] = [];
 
-  for (const dr of rowDirs) {
-    for (const dc of [-1, 1]) {
-      const mr = r + dr;
-      const mc = c + dc;
-      const tr = r + dr * 2;
-      const tc = c + dc * 2;
-      if (!inBounds(tr, tc)) continue;
-      const midPiece = board[mr][mc];
-      const midSide = getPieceSide(midPiece);
-      if (midSide && midSide !== side && board[tr][tc] === null) {
+  if (!isKing) {
+    // Peón español: avanza y captura solo 1 salto en diagonal hacia delante
+    const rowDirs = side === 'w' ? [-1] : [1];
+    for (const dr of rowDirs) {
+      for (const dc of [-1, 1]) {
+        const mr = r + dr;
+        const mc = c + dc;
+        const tr = r + dr * 2;
+        const tc = c + dc * 2;
+        if (!inBounds(tr, tc)) continue;
+        const midPiece = board[mr][mc];
+        const midSide = getPieceSide(midPiece);
+        if (midSide && midSide !== side && board[tr][tc] === null) {
+          jumps.push({
+            r: tr,
+            c: tc,
+            isCapture: true,
+            isPromotion: (side === 'w' && tr === 0) || (side === 'b' && tr === 7),
+            captureAt: { r: mr, c: mc },
+          });
+        }
+      }
+    }
+    return jumps;
+  }
+
+  // Dama / Reina española (Vuelo Largo): salta 1 pieza rival en cualquier diagonal y cae en cualquier casilla libre detrás
+  for (const [dr, dc] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    let nr = r + dr;
+    let nc = c + dc;
+    let enemyCoord: BoardCoord | null = null;
+    while (inBounds(nr, nc)) {
+      const cell = board[nr][nc];
+      if (!enemyCoord) {
+        if (!cell) {
+          nr += dr;
+          nc += dc;
+          continue;
+        }
+        if (getPieceSide(cell) === side) break; // Blocked by own piece
+        enemyCoord = { r: nr, c: nc };
+      } else {
+        if (cell !== null) break; // Second piece along diagonal blocks landing further
         jumps.push({
-          r: tr,
-          c: tc,
+          r: nr,
+          c: nc,
           isCapture: true,
-          isPromotion: !isKing && ((side === 'w' && tr === 0) || (side === 'b' && tr === 7)),
+          isPromotion: false,
+          captureAt: enemyCoord,
         });
       }
+      nr += dr;
+      nc += dc;
     }
   }
   return jumps;
@@ -238,34 +300,76 @@ function getCheckersSimpleMovesFrom(
   if (!piece || !side) return [];
 
   const isKing = piece === 'W' || piece === 'B';
-  const rowDirs = isKing ? [-1, 1] : side === 'w' ? [-1] : [1];
   const moves: LegalBoardMove[] = [];
 
-  for (const dr of rowDirs) {
-    for (const dc of [-1, 1]) {
-      const tr = r + dr;
-      const tc = c + dc;
-      if (!inBounds(tr, tc) || board[tr][tc] !== null) continue;
-      moves.push({
-        r: tr,
-        c: tc,
-        isCapture: false,
-        isPromotion: !isKing && ((side === 'w' && tr === 0) || (side === 'b' && tr === 7)),
-      });
+  if (!isKing) {
+    const rowDirs = side === 'w' ? [-1] : [1];
+    for (const dr of rowDirs) {
+      for (const dc of [-1, 1]) {
+        const tr = r + dr;
+        const tc = c + dc;
+        if (!inBounds(tr, tc) || board[tr][tc] !== null) continue;
+        moves.push({
+          r: tr,
+          c: tc,
+          isCapture: false,
+          isPromotion: (side === 'w' && tr === 0) || (side === 'b' && tr === 7),
+        });
+      }
+    }
+    return moves;
+  }
+
+  // Dama española (Vuelo Largo): recorre cualquier número de casillas libres en las 4 diagonales
+  for (const [dr, dc] of [[-1, -1], [-1, 1], [1, -1], [1, 1]]) {
+    let tr = r + dr;
+    let tc = c + dc;
+    while (inBounds(tr, tc) && board[tr][tc] === null) {
+      moves.push({ r: tr, c: tc, isCapture: false, isPromotion: false });
+      tr += dr;
+      tc += dc;
     }
   }
   return moves;
 }
 
-function sideHasAnyCheckersJump(board: (string | null)[][], side: BoardSide): boolean {
+function maxCheckersCaptureChain(
+  board: (string | null)[][],
+  r: number,
+  c: number,
+  side: BoardSide
+): number {
+  const jumps = getCheckersJumpsFrom(board, r, c);
+  if (jumps.length === 0) return 0;
+
+  let best = 0;
+  for (const j of jumps) {
+    const sim = cloneBoard(board);
+    const piece = sim[r][c]!;
+    sim[r][c] = null;
+    sim[j.captureAt.r][j.captureAt.c] = null;
+    if (j.isPromotion) {
+      sim[j.r][j.c] = side === 'w' ? 'W' : 'B';
+      best = Math.max(best, 1);
+    } else {
+      sim[j.r][j.c] = piece;
+      best = Math.max(best, 1 + maxCheckersCaptureChain(sim, j.r, j.c, side));
+    }
+  }
+  return best;
+}
+
+function getBestCaptureCountForSide(board: (string | null)[][], side: BoardSide): number {
+  let maxCap = 0;
   for (let r = 0; r < 8; r += 1) {
     for (let c = 0; c < 8; c += 1) {
-      if (getPieceSide(board[r][c]) === side && getCheckersJumpsFrom(board, r, c).length > 0) {
-        return true;
+      if (getPieceSide(board[r][c]) === side) {
+        const cap = maxCheckersCaptureChain(board, r, c, side);
+        if (cap > maxCap) maxCap = cap;
       }
     }
   }
-  return false;
+  return maxCap;
 }
 
 // ============================================================================
@@ -550,9 +654,23 @@ export function getLegalMovesForSquare(
     ) {
       return [];
     }
-    const mustJump = sideHasAnyCheckersJump(state.board, side);
-    if (mustJump) {
-      return getCheckersJumpsFrom(state.board, from.r, from.c);
+    const maxGlobalCaps = state.mustContinueFrom
+      ? maxCheckersCaptureChain(state.board, from.r, from.c, side)
+      : getBestCaptureCountForSide(state.board, side);
+
+    if (maxGlobalCaps > 0) {
+      // Ley de la Cantidad (Damas Españolas): solo son legales los saltos que alcanzan el máximo número de capturas posible
+      const jumps = getCheckersJumpsFrom(state.board, from.r, from.c);
+      return jumps.filter((j) => {
+        const sim = cloneBoard(state.board);
+        sim[from.r][from.c] = null;
+        sim[j.captureAt.r][j.captureAt.c] = null;
+        if (j.isPromotion) {
+          return 1 === maxGlobalCaps;
+        }
+        sim[j.r][j.c] = piece;
+        return 1 + maxCheckersCaptureChain(sim, j.r, j.c, side) === maxGlobalCaps;
+      });
     }
     return getCheckersSimpleMovesFrom(state.board, from.r, from.c);
   }
@@ -618,17 +736,27 @@ export function joinGameSeat(
     Boolean(nextPlayers.w && nextPlayers.b && nextPlayers.w.userId === nextPlayers.b.userId) ||
     (state.soloLocal && !(nextPlayers.w && nextPlayers.b && nextPlayers.w.userId !== nextPlayers.b.userId));
 
+  const now = Date.now();
+  const nextStatus =
+    state.status === 'finished'
+      ? 'finished'
+      : state.awaitingHostStart && state.status === 'waiting'
+      ? 'waiting'
+      : bothSeated || nextSolo
+      ? 'playing'
+      : 'waiting';
+
   return {
     ...state,
     players: nextPlayers,
     soloLocal: nextSolo,
-    status:
-      state.status === 'finished'
-        ? 'finished'
-        : bothSeated || nextSolo
-        ? 'playing'
-        : 'waiting',
-    updatedAt: Date.now(),
+    status: nextStatus,
+    turnStartedAt: nextStatus === 'playing' && state.status !== 'playing' ? now : state.turnStartedAt,
+    turnDeadlineAt:
+      nextStatus === 'playing'
+        ? state.turnDeadlineAt || now + BOARD_TURN_DECISION_MS
+        : undefined,
+    updatedAt: now,
   };
 }
 
@@ -714,8 +842,14 @@ export function applyBoardMove(
 ):
   | { ok: true; state: BoardGameState; notation: string; finishedNow: boolean }
   | { ok: false; error: string } {
-  if (state.status === 'finished') {
-    return { ok: false, error: 'La partida ya ha finalizado.' };
+  if (state.status !== 'playing') {
+    return {
+      ok: false,
+      error:
+        state.status === 'waiting'
+          ? 'Esperando a que el anfitrión pulse Iniciar Partida.'
+          : 'La partida ya ha finalizado.',
+    };
   }
 
   const activeSeat = state.players[state.turn];
@@ -723,7 +857,7 @@ export function applyBoardMove(
     if (!activeSeat) {
       return { ok: false, error: 'Falta un jugador sentado en ese turno.' };
     }
-    if (activeSeat.userId !== actorUserId) {
+    if (!activeSeat.isBot && activeSeat.userId !== actorUserId) {
       return { ok: false, error: 'No es tu turno.' };
     }
   }
@@ -785,6 +919,7 @@ export function applyBoardMove(
         winReason: won ? 'connect4' : full ? 'draw_full' : null,
         clocksMs,
         turnStartedAt: now,
+        turnDeadlineAt: finishedNow ? undefined : now + BOARD_TURN_DECISION_MS,
         lastMove: { from: { r: dropRow, c: to.c }, to: { r: dropRow, c: to.c }, notation },
         moveHistory: [...state.moveHistory.slice(-39), notation],
         matchHistory: finishedNow && winner
@@ -811,10 +946,16 @@ export function applyBoardMove(
     let capturedPiece: string | null = null;
 
     if (matched.isCapture) {
-      const mr = (from.r + to.r) / 2;
-      const mc = (from.c + to.c) / 2;
-      capturedPiece = nextBoard[mr][mc];
-      nextBoard[mr][mc] = null;
+      const capCoord = (matched as CheckersJumpMove).captureAt;
+      if (capCoord) {
+        capturedPiece = nextBoard[capCoord.r][capCoord.c];
+        nextBoard[capCoord.r][capCoord.c] = null;
+      } else {
+        const mr = Math.floor((from.r + to.r) / 2);
+        const mc = Math.floor((from.c + to.c) / 2);
+        capturedPiece = nextBoard[mr][mc];
+        nextBoard[mr][mc] = null;
+      }
     }
 
     let placedPiece = piece;
@@ -825,7 +966,7 @@ export function applyBoardMove(
     }
     nextBoard[to.r][to.c] = placedPiece;
 
-    // Multi-jump chain continuation (stops if freshly promoted to king or no further jumps)
+    // Multi-jump chain continuation (stops if freshly promoted to Dama or no further jumps)
     const chainJumps =
       matched.isCapture && !promoted
         ? getCheckersJumpsFrom(nextBoard, to.r, to.c)
@@ -856,6 +997,7 @@ export function applyBoardMove(
       moveHistory: [...state.moveHistory.slice(-39), notation],
       clocksMs,
       turnStartedAt: now,
+      turnDeadlineAt: now + BOARD_TURN_DECISION_MS,
       updatedAt: now,
     };
 
@@ -902,7 +1044,7 @@ export function applyBoardMove(
     return { ok: true, state: baseNext, notation, finishedNow: false };
   }
 
-  // CHESS MOVE APPLICATION
+  // CHESS MOVE APPLICATION (Leyes Oficiales de la FIDE)
   const nextBoard = simulateChessBoardMove(state.board, from, matched, promotionPiece);
   const capturedPiece = matched.isEnPassant
     ? state.board[from.r][to.c]
@@ -932,6 +1074,46 @@ export function applyBoardMove(
       ? { r: (from.r + to.r) / 2, c: from.c }
       : null;
 
+  // FIDE 50-move clock: reset on pawn move or any capture
+  const nextHalfmoveClock =
+    piece[1] === 'P' || Boolean(capturedPiece) ? 0 : (state.halfmoveClock || 0) + 1;
+
+  // FIDE Threefold repetition tracking key (board + turn + castling + ep)
+  const boardSig = nextBoard.map((row) => row.map((cell) => cell || '.').join(',')).join('/');
+  const castlingSig = `${nextCastling.wK ? 'K' : ''}${nextCastling.wQ ? 'Q' : ''}${nextCastling.bK ? 'k' : ''}${nextCastling.bQ ? 'q' : ''}`;
+  const epSig = nextEnPassant ? `${nextEnPassant.r},${nextEnPassant.c}` : '-';
+  const posKey = `${boardSig}|${opp}|${castlingSig}|${epSig}`;
+  const prevCounts = state.positionCounts || {};
+  const nextPosCount = (prevCounts[posKey] || 0) + 1;
+  const nextPositionCounts: Record<string, number> = {
+    ...prevCounts,
+    [posKey]: nextPosCount,
+  };
+
+  // FIDE Insufficient material check
+  const minors: Array<{ kind: string; color: 'l' | 'd' }> = [];
+  let hasMajorOrPawn = false;
+  for (let rr = 0; rr < 8 && !hasMajorOrPawn; rr += 1) {
+    for (let cc = 0; cc < 8; cc += 1) {
+      const p = nextBoard[rr][cc];
+      if (!p || p[1] === 'K') continue;
+      if (p[1] === 'P' || p[1] === 'R' || p[1] === 'Q') {
+        hasMajorOrPawn = true;
+        break;
+      }
+      minors.push({ kind: p, color: (rr + cc) % 2 === 0 ? 'l' : 'd' });
+    }
+  }
+  const insufficientMaterial =
+    !hasMajorOrPawn &&
+    (minors.length === 0 ||
+      minors.length === 1 ||
+      (minors.length === 2 &&
+        minors[0].kind[1] === 'B' &&
+        minors[1].kind[1] === 'B' &&
+        minors[0].kind[0] !== minors[1].kind[0] &&
+        minors[0].color === minors[1].color));
+
   const oppInCheck = isChessKingInCheck(nextBoard, opp);
   const baseChessNext: BoardGameState = {
     ...state,
@@ -941,22 +1123,41 @@ export function applyBoardMove(
     castlingRights: nextCastling,
     enPassant: nextEnPassant,
     mustContinueFrom: null,
+    halfmoveClock: nextHalfmoveClock,
+    positionCounts: nextPositionCounts,
     inCheck: oppInCheck ? opp : null,
     lastMove: { from, to, notation: '', captured: capturedPiece },
     moveHistory: state.moveHistory,
     clocksMs,
     turnStartedAt: now,
+    turnDeadlineAt: now + BOARD_TURN_DECISION_MS,
     updatedAt: now,
   };
 
   const oppLegal = getAllLegalMovesForSide(baseChessNext, opp);
-  const finishedNow = oppLegal.length === 0;
-  const winner: BoardSide | 'draw' | null = finishedNow
-    ? oppInCheck
-      ? side
-      : 'draw'
+  const noMovesDraw = oppLegal.length === 0 && !oppInCheck;
+  const checkmateWin = oppLegal.length === 0 && oppInCheck;
+  const isFiftyMovesDraw = !checkmateWin && nextHalfmoveClock >= 100;
+  const isThreefoldDraw = !checkmateWin && nextPosCount >= 3;
+  const finishedNow =
+    checkmateWin || noMovesDraw || insufficientMaterial || isFiftyMovesDraw || isThreefoldDraw;
+
+  const winner: BoardSide | 'draw' | null = checkmateWin
+    ? side
+    : finishedNow
+    ? 'draw'
     : null;
-  const winReason = finishedNow ? (oppInCheck ? 'checkmate' : 'stalemate') : null;
+  const winReason: BoardGameState['winReason'] = checkmateWin
+    ? 'checkmate'
+    : noMovesDraw
+    ? 'stalemate'
+    : isThreefoldDraw
+    ? 'threefold_repetition'
+    : isFiftyMovesDraw
+    ? 'fifty_moves'
+    : insufficientMaterial
+    ? 'insufficient_material'
+    : null;
 
   const piecePrefix = piece[1] === 'P' ? '' : piece[1];
   let notation = matched.isCastle === 'K'
@@ -967,7 +1168,7 @@ export function applyBoardMove(
         to.r,
         to.c
       )}${matched.isPromotion ? `=${promotionPiece}` : ''}`;
-  if (finishedNow && oppInCheck) notation += '#';
+  if (checkmateWin) notation += '#';
   else if (oppInCheck) notation += '+';
 
   const nextPlayers = { ...baseChessNext.players };
@@ -980,6 +1181,7 @@ export function applyBoardMove(
     state: {
       ...baseChessNext,
       status: finishedNow ? 'finished' : 'playing',
+      turnDeadlineAt: finishedNow ? undefined : now + BOARD_TURN_DECISION_MS,
       winner,
       winReason,
       players: nextPlayers,
@@ -1048,10 +1250,82 @@ export function resetBoardGame(
   };
   const bothSeated = Boolean(nextPlayers.w && nextPlayers.b);
 
+  const now = Date.now();
+  const nextStatus = bothSeated || state.soloLocal ? 'playing' : 'waiting';
+
   return {
     ...fresh,
     players: nextPlayers,
-    status: bothSeated || state.soloLocal ? 'playing' : 'waiting',
-    updatedAt: Date.now(),
+    awaitingHostStart: false,
+    status: nextStatus,
+    turnStartedAt: now,
+    turnDeadlineAt: nextStatus === 'playing' ? now + BOARD_TURN_DECISION_MS : undefined,
+    updatedAt: now,
   };
+}
+
+export function startBoardMatch(state: BoardGameState): BoardGameState {
+  if (state.status === 'playing') return state;
+  const now = Date.now();
+  const nextPlayers = {
+    w: state.players.w
+      ? { ...state.players.w }
+      : {
+          userId: 'bot-board-w',
+          name: 'Bot NAIM IA',
+          avatar: '🤖',
+          color: '#9146FF',
+          score: 0,
+          isBot: true,
+        },
+    b: state.players.b
+      ? { ...state.players.b }
+      : {
+          userId: 'bot-board-b',
+          name: 'Bot NAIM IA',
+          avatar: '🤖',
+          color: '#E11D48',
+          score: 0,
+          isBot: true,
+        },
+  };
+  return {
+    ...state,
+    players: nextPlayers,
+    awaitingHostStart: false,
+    status: 'playing',
+    turnStartedAt: now,
+    turnDeadlineAt: now + BOARD_TURN_DECISION_MS,
+    updatedAt: now,
+  };
+}
+
+export function chooseAutoBoardMove(state: BoardGameState): {
+  from: BoardCoord;
+  to: BoardCoord;
+} | null {
+  if (state.status !== 'playing') return null;
+  if (state.gameType === 'connect4') {
+    const validCols = [3, 2, 4, 1, 5, 0, 6].filter((c) => getConnect4DropRow(state.board, c) >= 0);
+    if (validCols.length === 0) return null;
+    // Prefer an immediate winning column if one exists
+    for (const col of validCols) {
+      const row = getConnect4DropRow(state.board, col);
+      const sim = cloneBoard(state.board);
+      sim[row][col] = state.turn;
+      if (checkConnect4Win(sim, row, col, state.turn)) {
+        return { from: { r: 0, c: col }, to: { r: row, c: col } };
+      }
+    }
+    const col = validCols[Math.random() < 0.5 ? 0 : Math.floor(Math.random() * validCols.length)];
+    const row = getConnect4DropRow(state.board, col);
+    return { from: { r: 0, c: col }, to: { r: row, c: col } };
+  }
+
+  const all = getAllLegalMovesForSide(state, state.turn);
+  if (all.length === 0) return null;
+  const captures = all.filter((m) => m.move.isCapture || m.move.isPromotion);
+  const pickList = captures.length > 0 ? captures : all;
+  const chosen = pickList[Math.floor(Math.random() * pickList.length)];
+  return { from: chosen.from, to: { r: chosen.move.r, c: chosen.move.c } };
 }

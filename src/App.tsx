@@ -1,11 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
-import { motion, MotionConfig } from 'motion/react';
+import { MotionConfig } from 'motion/react';
 import {
-  LayoutGrid,
-  Film,
   MessageSquare,
-  Radio,
   Check,
   LogOut,
   Play,
@@ -20,9 +17,7 @@ import {
   Sparkles,
   RefreshCw,
   Download,
-  Bookmark,
   ChevronUp,
-  Gamepad2,
 } from 'lucide-react';
 import {
   checkRemoteAppVersion,
@@ -32,7 +27,6 @@ import {
 import { triggerApkDownload } from './utils/apkDownload';
 import {
   AppLanguage,
-  BoardClockMinutes,
   BoardGameState,
   CatalaEpisodeItem,
   CatalaSeriesDetails,
@@ -48,9 +42,7 @@ import {
   LanguageNoticePopup,
   OnlineAppUser,
   Participant,
-  PartyColor,
   PartyGameState,
-  PartyGameType,
   PlaybackEngineMode,
   PollProposalItem,
   RestoredRoomBlueprint,
@@ -75,7 +67,6 @@ import {
   addWatchHistoryItem,
   canonicalizeHistoryItemId,
   clearWatchHistory,
-  deduplicateWatchlist,
   deriveFriendCode,
   dismissGuestPopupForRoom,
   getCatalogFavoriteKey,
@@ -85,8 +76,6 @@ import {
   getStoredProfile,
   getWatchHistory,
   getWatchlist,
-  isSameCatalogItem,
-  mergeCatalogItemMetadata,
   removeLocalFriend,
   removeWatchHistoryItem,
   sanitizeItemKey,
@@ -109,13 +98,9 @@ import {
   deleteCloudFriend,
   deleteCloudSavedRoom,
   deleteCloudWatchHistoryItem,
-  ensureCloudUserProfile,
   flushPendingCloudWatchProgress,
-  migrateLocalStateToCloud,
   signInWithGoogleAccount,
   signOutGoogleAccount,
-  subscribeAuthState,
-  subscribeUserCloudCollections,
   updateCloudUserProfile,
   updateCloudWatchProgressOnly,
   upsertCloudCatalogFavorite,
@@ -183,17 +168,23 @@ const DesignSystemShowcase = React.lazy(() =>
 
 import { NaimcineIntro } from './components/NaimcineIntro';
 import { LobbyScreen } from './components/LobbyScreen';
-import { NativeCinemaPlayer } from './components/NativeCinemaPlayer';
 import { CatalogSection, MediaCatalogHub } from './components/MediaCatalogHub';
-import { PartySidebar } from './components/PartySidebar';
+import { MobileBottomNav } from './components/MobileBottomNav';
 import { TwitchChannelRail, FastChannelItem } from './components/TwitchChannelRail';
 import { useThemeStore } from './store/useThemeStore';
 import { useAppStore } from './store/useAppStore';
 import { useNotificationStore } from './store/useNotificationStore';
-import {
-  isGoogleTvEnvironment,
-  useTvSpatialRemote,
-} from './utils/tvSpatialNav';
+import { useCloudSyncSubscriptions } from './hooks/useCloudSyncSubscriptions';
+import { useTvRemoteBridge } from './hooks/useTvRemoteBridge';
+import { useGameVoiceChat } from './hooks/useGameVoiceChat';
+import { isGoogleTvEnvironment } from './utils/tvSpatialNav';
+
+const NativeCinemaPlayer = React.lazy(() =>
+  import('./components/NativeCinemaPlayer').then((m) => ({ default: m.NativeCinemaPlayer }))
+);
+const PartySidebar = React.lazy(() =>
+  import('./components/PartySidebar').then((m) => ({ default: m.PartySidebar }))
+);
 
 function isAbortError(err: unknown): boolean {
   return err instanceof Error && err.name === 'AbortError';
@@ -622,6 +613,13 @@ export function App() {
   // Play/pause/seek follows hostOnlyControl toggle (still allowing Host + Co-anfitrión when locked)
   const canControlRoom = !hostOnlyControl || canChangeMedia;
 
+  const voiceChat = useGameVoiceChat({
+    roomId,
+    currentUserId: currentUser.id,
+    lang,
+    enabled: inRoom && Boolean(roomId),
+  });
+
   const showHostLockNotice = useCallback(
     (hostDisplayName?: string, reason?: string) => {
       if (lockToastTimerRef.current) clearTimeout(lockToastTimerRef.current);
@@ -891,153 +889,29 @@ export function App() {
   // ============================================================================
   // FIREBASE AUTHENTICATION, CLOUD SYNC & DIRECT ROOM AUTO-ENTRY FOR LOGGED USERS
   // ============================================================================
-  useEffect(() => {
-    let detachCloudListeners: (() => void) | null = null;
-    let migrationTimer: ReturnType<typeof setTimeout> | null = null;
-    let active = true;
-
-    const unsubAuth = subscribeAuthState(async (user) => {
-      if (detachCloudListeners) {
-        detachCloudListeners();
-        detachCloudListeners = null;
-      }
-      if (migrationTimer) {
-        clearTimeout(migrationTimer);
-        migrationTimer = null;
-      }
-
-      if (!active) return;
-      setAuthUser(user);
-
-      if (!user || !user.emailVerified) {
-        setAuthLoading(false);
-        setSavedRooms([]);
-        try {
-          localStorage.removeItem(SAVED_ROOMS_CACHE_KEY);
-        } catch {
-          // ignore
-        }
-        return;
-      }
-
-      const localHistorySnapshot = getWatchHistory();
-      const localWatchlistSnapshot = getWatchlist();
-      const localChannelsSnapshot = getFavoriteChannels();
-      const localFriendsSnapshot = getSavedFriends();
-
-      let resolvedProfile = getStoredProfile();
-      try {
-        const cloudProfile = await ensureCloudUserProfile(user, resolvedProfile);
-        if (!active) return;
-        resolvedProfile = cloudProfile;
-        saveStoredProfile(cloudProfile, true);
-        setProfile(cloudProfile);
-        setShowGuestPopup(false);
-      } catch {
-        // Error already logged by handleFirestoreError
-      } finally {
-        if (active) setAuthLoading(false);
-      }
-
-      if (!active) return;
-
-      // When logged in (and not in /tv receiver pairing lobby), skip initial landing page and enter permanent or last room directly!
-      if (
-        !inRoomRef.current &&
-        !manualLobbyStayRef.current &&
-        !isTvPairLobbyRef.current
-      ) {
-        const cachedCloudRooms = loadCachedSavedRooms();
-        const recentLocalRooms = getRecentRooms();
-        const primaryCloudRoom = cachedCloudRooms[0];
-        const lastLocalRoom = recentLocalRooms[0];
-        const targetCode =
-          primaryCloudRoom?.roomCode ||
-          lastLocalRoom?.id ||
-          generateShortRoomCode(4);
-        const firstName =
-          resolvedProfile.name?.split(' ')[0] ||
-          user.displayName?.split(' ')[0] ||
-          'Cine';
-        const targetRoomTitle =
-          primaryCloudRoom?.roomName ||
-          lastLocalRoom?.name ||
-          `Sala de ${firstName}`;
-        setShowIntro(false);
-        setCatalogSection('home');
-        setMobileTab('home');
-        setRoomId(targetCode);
-        setRoomName(targetRoomTitle);
-        setInRoom(true);
-      }
-
-      detachCloudListeners = subscribeUserCloudCollections(user.uid, {
-        onWatchHistory: (cloudItems) => {
-          const cleanItems = cloudItems.filter((item) => {
-            const isArcade =
-              String(item.movidyUrl || '').startsWith('arcade://') ||
-              String(item.bingetrixUrl || '').startsWith('arcade://') ||
-              String(item.id || '').startsWith('arcade');
-            if (isArcade) {
-              deleteCloudWatchHistoryItem(item.id).catch(() => {});
-              return false;
-            }
-            return true;
-          });
-          setWatchHistory(cleanItems);
-          saveWatchHistory(cleanItems);
-        },
-        onFavorites: (cloudWatchlist, cloudChannels) => {
-          setWatchlist((prev) => {
-            const merged = cloudWatchlist.map((cw) => {
-              const localMatch = prev.find((p) => isSameCatalogItem(p, cw));
-              return localMatch ? mergeCatalogItemMetadata(localMatch, cw) : cw;
-            });
-            return saveWatchlist(deduplicateWatchlist(merged));
-          });
-          setFavoriteChannels(cloudChannels);
-          saveFavoriteChannels(cloudChannels);
-        },
-        onSavedRooms: (cloudRooms) => {
-          setSavedRooms(cloudRooms);
-          try {
-            localStorage.setItem(
-              SAVED_ROOMS_CACHE_KEY,
-              JSON.stringify(cloudRooms)
-            );
-          } catch {
-            // ignore
-          }
-          // Hydrate session PIN map for any permanent PIN-protected rooms owned by user
-          cloudRooms.forEach((cr) => {
-            if (cr.hasPin && cr.pinCode) {
-              rememberSessionPin(cr.roomCode, cr.pinCode);
-            }
-          });
-        },
-        onFriends: (cloudFriends) => {
-          setSavedFriends(cloudFriends);
-          saveFriendsList(cloudFriends);
-        },
-      });
-
-      migrationTimer = setTimeout(() => {
-        migrateLocalStateToCloud({
-          localHistory: localHistorySnapshot,
-          localWatchlist: localWatchlistSnapshot,
-          localChannels: localChannelsSnapshot,
-          localFriends: localFriendsSnapshot,
-        }).catch(() => {});
-      }, 900);
-    });
-
-    return () => {
-      active = false;
-      unsubAuth();
-      if (detachCloudListeners) detachCloudListeners();
-      if (migrationTimer) clearTimeout(migrationTimer);
-    };
-  }, [rememberSessionPin]);
+  useCloudSyncSubscriptions({
+    savedRoomsCacheKey: SAVED_ROOMS_CACHE_KEY,
+    loadCachedSavedRooms,
+    rememberSessionPin,
+    inRoomRef,
+    manualLobbyStayRef,
+    isTvPairLobbyRef,
+    setAuthUser,
+    setAuthLoading,
+    setSavedRooms,
+    setProfile,
+    setShowGuestPopup,
+    setShowIntro,
+    setCatalogSection,
+    setMobileTab,
+    setRoomId,
+    setRoomName,
+    setInRoom,
+    setWatchHistory,
+    setWatchlist,
+    setFavoriteChannels,
+    setSavedFriends,
+  });
 
   const handleGoogleSignIn = async () => {
     manualLobbyStayRef.current = false;
@@ -4035,57 +3909,29 @@ export function App() {
   ).length;
 
   // Physical Google TV / Chromecast Remote Back & Channel Zapping Integration
-  useTvSpatialRemote({
-    onBackStep: () => {
-      if (isAdsPageOpen) {
-        setIsAdsPageOpen(false);
-        if (typeof window !== 'undefined') window.history.replaceState({}, '', '/');
-        return true;
-      }
-      if (smartTvModalOpen) {
-        setSmartTvModalOpen(false);
-        return true;
-      }
-      if (friendsModalOpen) {
-        setFriendsModalOpen(false);
-        return true;
-      }
-      if (profileHubOpen) {
-        setProfileHubOpen(false);
-        return true;
-      }
-      if (floatingChatOpen) {
-        setFloatingChatOpen(false);
-        return true;
-      }
-      if (sidebarOpen) {
-        setSidebarOpen(false);
-        return true;
-      }
-      if (
-        (videoState.mode !== 'idle' || isExtracting) &&
-        !isPlayerClosedLocally
-      ) {
-        setIsPlayerClosedLocally(true);
-        setIsExtracting(false);
-        return true;
-      }
-      if (inRoom && catalogSection !== 'home') {
-        setCatalogSection('home');
-        setMobileTab('home');
-        return true;
-      }
-      return false;
-    },
-    onChannelStep: (delta) => {
-      if (videoState.isLive && videoState.tracks.length > 1) {
-        const len = videoState.tracks.length;
-        const nextIdx = (videoState.activeTrackIndex + delta + len) % len;
-        handleSelectTrack(nextIdx, 0);
-        return true;
-      }
-      return false;
-    },
+  useTvRemoteBridge({
+    isAdsPageOpen,
+    setIsAdsPageOpen,
+    smartTvModalOpen,
+    setSmartTvModalOpen,
+    friendsModalOpen,
+    setFriendsModalOpen,
+    profileHubOpen,
+    setProfileHubOpen,
+    floatingChatOpen,
+    setFloatingChatOpen,
+    sidebarOpen,
+    setSidebarOpen,
+    videoState,
+    isExtracting,
+    isPlayerClosedLocally,
+    setIsPlayerClosedLocally,
+    setIsExtracting,
+    inRoom,
+    catalogSection,
+    setCatalogSection,
+    setMobileTab,
+    handleSelectTrack,
   });
 
   if (showDesignSystem) {
@@ -4249,37 +4095,39 @@ export function App() {
           onSubmitPin={handleSubmitGuestPin}
           onLeaveProtectedRoom={handleLeaveRoom}
         />
-        <NativeCinemaPlayer
-          videoState={videoState}
-          lang={lang}
-          userName={currentUser.name}
-          isExtracting={isExtracting}
-          extractionLabel={extractionLabel}
-          extractionError={extractionError}
-          languageNotice={languageNotice}
-          onDismissLanguageNotice={() => setLanguageNotice(null)}
-          cloudFrame={cloudFrame}
-          cloudState={cloudState}
-          floatingReactions={floatingReactions}
-          onSyncAction={handleSyncPlayerAction}
-          onSelectTrack={handleSelectTrack}
-          onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
-          onNextEpisode={handleNextEpisode}
-          roomCode={roomId}
-          roomDisplayName={roomName || `Sala ${roomId.toUpperCase()}`}
-          participantCount={participants.length}
-          onExitTvMode={() => {
-            socketService.disconnect();
-            setInRoom(false);
-            setIsTvMode(false);
-            setTvAuthToken('');
-            setIsTvPairLobby(true);
-            if (typeof window !== 'undefined') {
-              window.history.replaceState({}, '', '/tv');
-            }
-          }}
-          isTvMode
-        />
+        <React.Suspense fallback={null}>
+          <NativeCinemaPlayer
+            videoState={videoState}
+            lang={lang}
+            userName={currentUser.name}
+            isExtracting={isExtracting}
+            extractionLabel={extractionLabel}
+            extractionError={extractionError}
+            languageNotice={languageNotice}
+            onDismissLanguageNotice={() => setLanguageNotice(null)}
+            cloudFrame={cloudFrame}
+            cloudState={cloudState}
+            floatingReactions={floatingReactions}
+            onSyncAction={handleSyncPlayerAction}
+            onSelectTrack={handleSelectTrack}
+            onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
+            onNextEpisode={handleNextEpisode}
+            roomCode={roomId}
+            roomDisplayName={roomName || `Sala ${roomId.toUpperCase()}`}
+            participantCount={participants.length}
+            onExitTvMode={() => {
+              socketService.disconnect();
+              setInRoom(false);
+              setIsTvMode(false);
+              setTvAuthToken('');
+              setIsTvPairLobby(true);
+              if (typeof window !== 'undefined') {
+                window.history.replaceState({}, '', '/tv');
+              }
+            }}
+            isTvMode
+          />
+        </React.Suspense>
       </div>
     );
   }
@@ -5121,95 +4969,97 @@ export function App() {
                       className="hidden sm:block absolute -inset-6 w-[calc(100%+3rem)] h-[calc(100%+3rem)] object-cover blur-3xl opacity-30 scale-105 pointer-events-none select-none -z-10"
                     />
                   )}
-                <NativeCinemaPlayer
-                  videoState={effectiveVideoState}
-                  lang={lang}
-                  userName={currentUser.name}
-                  isExtracting={isExtracting}
-                  extractionLabel={extractionLabel}
-                  extractionError={extractionError}
-                  languageNotice={languageNotice}
-                  onDismissLanguageNotice={() => setLanguageNotice(null)}
-                  cloudFrame={cloudFrame}
-                  cloudState={cloudState}
-                  floatingReactions={floatingReactions}
-                  onSyncAction={handleSyncPlayerAction}
-                  onSelectTrack={handleSelectTrack}
-                  onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
-                  onNextEpisode={handleNextEpisode}
-                  onProgressUpdate={handlePlayerProgressUpdate}
-                  isCinemaMode={isCinemaMode}
-                  onToggleCinemaMode={handleToggleCinemaMode}
-                  secondaryStream={secondaryStream}
-                  onSwapSecondaryStream={handleSwapSecondaryStream}
-                  onToggleSecondaryLayout={handleToggleSecondaryLayout}
-                  onCloseSecondaryStream={handleCloseSecondaryStream}
-                  canControlRoom={canControlRoom}
-                  isMinimized={isDockedMini}
-                  isCompressed={isScrollCompressed}
-                  onExpandCompressed={() => {
-                    setIsAutoMiniByScroll(false);
-                    mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                    catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                  }}
-                  onToggleMinimize={() => {
-                    if (isDockedMini) {
-                      setIsPlayerMinimized(false);
+                <React.Suspense fallback={null}>
+                  <NativeCinemaPlayer
+                    videoState={effectiveVideoState}
+                    lang={lang}
+                    userName={currentUser.name}
+                    isExtracting={isExtracting}
+                    extractionLabel={extractionLabel}
+                    extractionError={extractionError}
+                    languageNotice={languageNotice}
+                    onDismissLanguageNotice={() => setLanguageNotice(null)}
+                    cloudFrame={cloudFrame}
+                    cloudState={cloudState}
+                    floatingReactions={floatingReactions}
+                    onSyncAction={handleSyncPlayerAction}
+                    onSelectTrack={handleSelectTrack}
+                    onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
+                    onNextEpisode={handleNextEpisode}
+                    onProgressUpdate={handlePlayerProgressUpdate}
+                    isCinemaMode={isCinemaMode}
+                    onToggleCinemaMode={handleToggleCinemaMode}
+                    secondaryStream={secondaryStream}
+                    onSwapSecondaryStream={handleSwapSecondaryStream}
+                    onToggleSecondaryLayout={handleToggleSecondaryLayout}
+                    onCloseSecondaryStream={handleCloseSecondaryStream}
+                    canControlRoom={canControlRoom}
+                    isMinimized={isDockedMini}
+                    isCompressed={isScrollCompressed}
+                    onExpandCompressed={() => {
                       setIsAutoMiniByScroll(false);
-                      if (isOnMobileSocialTab) {
-                        setPinFullPlayerOnChat(true);
+                      mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                      catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                    }}
+                    onToggleMinimize={() => {
+                      if (isDockedMini) {
+                        setIsPlayerMinimized(false);
+                        setIsAutoMiniByScroll(false);
+                        if (isOnMobileSocialTab) {
+                          setPinFullPlayerOnChat(true);
+                        } else {
+                          mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                          catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                        }
                       } else {
-                        mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                        catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                        setCinemaModePersist(false);
+                        if (isOnMobileSocialTab) {
+                          setPinFullPlayerOnChat(false);
+                        } else {
+                          setIsPlayerMinimized(true);
+                        }
                       }
-                    } else {
-                      setCinemaModePersist(false);
-                      if (isOnMobileSocialTab) {
-                        setPinFullPlayerOnChat(false);
-                      } else {
-                        setIsPlayerMinimized(true);
+                    }}
+                    onClosePlayer={handleClosePlayer}
+                    onOpenSmartTvModal={() => setSmartTvModalOpen(true)}
+                    hasConnectedSmartTv={hasConnectedSmartTv}
+                    onSendTvRemoteCommand={handleSendTvRemoteCommand}
+                    roomCode={roomId}
+                    roomDisplayName={roomName || `Sala ${roomId.toUpperCase()}`}
+                    participantCount={participants.length}
+                    messages={messages}
+                    currentUserId={currentUser.id}
+                    onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
+                    onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
+                    onOpenInCloudBrowser={(targetUrl) => {
+                      if (!canChangeMedia) {
+                        showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+                        return;
                       }
+                      socketService.startCloudBrowser(targetUrl, profile.name);
+                    }}
+                    floatingChatOpen={floatingChatOpen}
+                    onToggleFloatingChat={() => setFloatingChatOpen((v) => !v)}
+                    compactVideoForMobileKeyboard={
+                      !isDesktopLayout && isMobileKeyboardOpen && mobileTab === 'chat'
                     }
-                  }}
-                  onClosePlayer={handleClosePlayer}
-                  onOpenSmartTvModal={() => setSmartTvModalOpen(true)}
-                  hasConnectedSmartTv={hasConnectedSmartTv}
-                  onSendTvRemoteCommand={handleSendTvRemoteCommand}
-                  roomCode={roomId}
-                  roomDisplayName={roomName || `Sala ${roomId.toUpperCase()}`}
-                  participantCount={participants.length}
-                  messages={messages}
-                  currentUserId={currentUser.id}
-                  onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
-                  onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
-                  onOpenInCloudBrowser={(targetUrl) => {
-                    if (!canChangeMedia) {
-                      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
-                      return;
-                    }
-                    socketService.startCloudBrowser(targetUrl, profile.name);
-                  }}
-                  floatingChatOpen={floatingChatOpen}
-                  onToggleFloatingChat={() => setFloatingChatOpen((v) => !v)}
-                  compactVideoForMobileKeyboard={
-                    !isDesktopLayout && isMobileKeyboardOpen && mobileTab === 'chat'
-                  }
-                  onOpenCatalogSection={(sec) => {
-                    setCatalogSection(sec);
-                    if (
-                      sec === 'movies' ||
-                      sec === 'series' ||
-                      sec === 'anime' ||
-                      sec === 'castellano' ||
-                      sec === 'catala'
-                    ) {
-                      setMobileTab('movies');
-                    } else if (sec === 'tdt') setMobileTab('tdt');
-                    else if (sec === 'sports') setMobileTab('sports');
-                    else if (sec === 'youtube') setMobileTab('youtube');
-                    else if (sec === 'games') setMobileTab('games');
-                  }}
-                />
+                    onOpenCatalogSection={(sec) => {
+                      setCatalogSection(sec);
+                      if (
+                        sec === 'movies' ||
+                        sec === 'series' ||
+                        sec === 'anime' ||
+                        sec === 'castellano' ||
+                        sec === 'catala'
+                      ) {
+                        setMobileTab('movies');
+                      } else if (sec === 'tdt') setMobileTab('tdt');
+                      else if (sec === 'sports') setMobileTab('sports');
+                      else if (sec === 'youtube') setMobileTab('youtube');
+                      else if (sec === 'games') setMobileTab('games');
+                    }}
+                  />
+                </React.Suspense>
 
                 {/* 1-Tap Quick Multiview Bar if secondary stream active */}
                 {isPlayerActive && !isDockedMini && !isExtracting && secondaryStream && (
@@ -5271,113 +5121,117 @@ export function App() {
             {/* Mobile Chat / Queue / Room View with Floating Segmented Control */}
             {!isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room') && (
               <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-                <PartySidebar
-                  roomId={roomId}
-                  currentUser={currentUser}
-                  hostId={hostId}
-                  participants={participants}
-                  messages={messages}
-                  lang={lang}
-                  effectiveView={effectiveView}
-                  onToggleViewMode={toggleViewMode}
-                  authUser={authUser}
-                  authLoading={authLoading}
-                  onSignIn={handleGoogleSignIn}
-                  onSignOut={handleGoogleSignOut}
-                  hostOnlyControl={hostOnlyControl}
-                  onToggleHostLock={handleToggleHostLock}
-                  roomName={roomName}
-                  onRenameRoom={handleRenameRoom}
-                  hasPin={roomHasPin}
-                  currentHostPin={currentHostPin}
-                  onSetRoomPin={handleSetRoomPin}
-                  isCurrentRoomPermanent={isCurrentRoomPermanent}
-                  onTogglePermanentRoom={handleTogglePermanentRoom}
-                  onClaimTvCode={handleClaimTvCode}
-                  tvClaimStatus={tvClaimStatus}
-                  isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
-                  onRemoteTogglePlay={handleRemoteTogglePlay}
-                  onRemoteSeekDelta={handleRemoteSeekDelta}
-                  onSendTvRemoteCommand={handleSendTvRemoteCommand}
-                  onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
-                  activePoll={activePoll}
-                  roomQueue={roomQueue}
-                  onPlayQueueItem={handlePlayQueueItem}
-                  onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
-                  onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
-                  onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
-                  onRestoreQueueItem={(item) => socketService.addToQueue(item)}
-                  onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
-                  onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
-                  pinnedMessage={pinnedMessage}
-                  onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
-                  onUnpinMessage={() => socketService.unpinChatMessage()}
-                  typingUsers={typingUsers}
-                  onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
-                  activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
-                  currentVideoTimeSec={
-                    videoState.mode !== 'idle' && !videoState.isLive
-                      ? livePlaybackSec || videoState.currentTime || 0
-                      : 0
-                  }
-                  onSeekToTimestamp={
-                    videoState.mode !== 'idle' && !videoState.isLive
-                      ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
-                      : undefined
-                  }
-                  onPlayCustomUrl={handlePlayCustomUrl}
-                  onOpenCloudBrowser={handleOpenCloudBrowser}
-                  onStartPollFromQueue={handleStartPollFromQueue}
-                  onVotePoll={handleVotePoll}
-                  onClosePoll={handleClosePoll}
-                  initialView={
-                    mobileTab === 'room'
-                      ? 'room'
-                      : unreadChatCount === 0 && roomQueue.length > 0
-                      ? 'queue'
-                      : 'chat'
-                  }
-                  hideInternalTabs={mobileTab === 'room'}
-                  openQueueTrigger={openQueueTrigger}
-                  isKeyboardOpen={isMobileKeyboardOpen}
-                  showMenusButton={isChromeHidden && isOnMobileSocialTab}
-                  onShowMenus={() => setIsChromeHidden(false)}
-                  onOpenFloatingChatOnVideo={
-                    isPlayerActive
-                      ? () => {
-                          setFloatingChatOpen(true);
-                          setMobileTab('movies');
-                          mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                        }
-                      : undefined
-                  }
-                  savedFriends={savedFriends}
-                  onlineUsers={onlineUsers}
-                  onOpenFriendsModal={() => setFriendsModalOpen(true)}
-                  onAddFriend={handleAddFriend}
-                  onSendDirectRoomInvite={handleSendDirectRoomInvite}
-                  inviteSentFeedback={inviteSentFeedback}
-                  onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
-                  onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
-                  onTransferHost={(newId) => socketService.transferHost(newId)}
-                  onUpdateProfile={handleUpdateProfile}
-                  onCreateNewRoom={handleCreateFreshRoom}
-                  onLeaveRoom={handleLeaveRoom}
-                  gameState={roomGameState}
-                  gameMoveError={gameMoveError}
-                  onStartBoardGame={(gt, solo, clockMin) =>
-                    socketService.startBoardGame(gt, solo, clockMin)
-                  }
-                  onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
-                  onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
-                  onResignBoardGame={() => socketService.resignBoardGame()}
-                  onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
-                  onCloseBoardGame={() => socketService.closeBoardGame()}
-                  partyGameState={partyGameState}
-                  onStartPartyGame={(gt) => socketService.startPartyGame(gt)}
-                  onPartyGameAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
-                  onClosePartyGame={() => socketService.closePartyGame()}
-                />
+                <React.Suspense fallback={null}>
+                  <PartySidebar
+                    roomId={roomId}
+                    currentUser={currentUser}
+                    hostId={hostId}
+                    participants={participants}
+                    messages={messages}
+                    lang={lang}
+                    effectiveView={effectiveView}
+                    onToggleViewMode={toggleViewMode}
+                    authUser={authUser}
+                    authLoading={authLoading}
+                    onSignIn={handleGoogleSignIn}
+                    onSignOut={handleGoogleSignOut}
+                    hostOnlyControl={hostOnlyControl}
+                    onToggleHostLock={handleToggleHostLock}
+                    roomName={roomName}
+                    onRenameRoom={handleRenameRoom}
+                    hasPin={roomHasPin}
+                    currentHostPin={currentHostPin}
+                    onSetRoomPin={handleSetRoomPin}
+                    isCurrentRoomPermanent={isCurrentRoomPermanent}
+                    onTogglePermanentRoom={handleTogglePermanentRoom}
+                    onClaimTvCode={handleClaimTvCode}
+                    tvClaimStatus={tvClaimStatus}
+                    isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
+                    onRemoteTogglePlay={handleRemoteTogglePlay}
+                    onRemoteSeekDelta={handleRemoteSeekDelta}
+                    onSendTvRemoteCommand={handleSendTvRemoteCommand}
+                    onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
+                    activePoll={activePoll}
+                    roomQueue={roomQueue}
+                    onPlayQueueItem={handlePlayQueueItem}
+                    onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+                    onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
+                    onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
+                    onRestoreQueueItem={(item) => socketService.addToQueue(item)}
+                    onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
+                    onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
+                    pinnedMessage={pinnedMessage}
+                    onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
+                    onUnpinMessage={() => socketService.unpinChatMessage()}
+                    typingUsers={typingUsers}
+                    onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
+                    activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
+                    currentVideoTimeSec={
+                      videoState.mode !== 'idle' && !videoState.isLive
+                        ? livePlaybackSec || videoState.currentTime || 0
+                        : 0
+                    }
+                    onSeekToTimestamp={
+                      videoState.mode !== 'idle' && !videoState.isLive
+                        ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
+                        : undefined
+                    }
+                    onPlayCustomUrl={handlePlayCustomUrl}
+                    onOpenCloudBrowser={handleOpenCloudBrowser}
+                    onStartPollFromQueue={handleStartPollFromQueue}
+                    onVotePoll={handleVotePoll}
+                    onClosePoll={handleClosePoll}
+                    initialView={
+                      mobileTab === 'room'
+                        ? 'room'
+                        : unreadChatCount === 0 && roomQueue.length > 0
+                        ? 'queue'
+                        : 'chat'
+                    }
+                    hideInternalTabs={mobileTab === 'room'}
+                    openQueueTrigger={openQueueTrigger}
+                    isKeyboardOpen={isMobileKeyboardOpen}
+                    showMenusButton={isChromeHidden && isOnMobileSocialTab}
+                    onShowMenus={() => setIsChromeHidden(false)}
+                    onOpenFloatingChatOnVideo={
+                      isPlayerActive
+                        ? () => {
+                            setFloatingChatOpen(true);
+                            setMobileTab('movies');
+                            mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                          }
+                        : undefined
+                    }
+                    savedFriends={savedFriends}
+                    onlineUsers={onlineUsers}
+                    onOpenFriendsModal={() => setFriendsModalOpen(true)}
+                    onAddFriend={handleAddFriend}
+                    onSendDirectRoomInvite={handleSendDirectRoomInvite}
+                    inviteSentFeedback={inviteSentFeedback}
+                    onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
+                    onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
+                    onTransferHost={(newId) => socketService.transferHost(newId)}
+                    onUpdateProfile={handleUpdateProfile}
+                    onCreateNewRoom={handleCreateFreshRoom}
+                    onLeaveRoom={handleLeaveRoom}
+                    gameState={roomGameState}
+                    gameMoveError={gameMoveError}
+                    onStartBoardGame={(gt, solo, clockMin) =>
+                      socketService.startBoardGame(gt, solo, clockMin)
+                    }
+                    onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
+                    onStartBoardMatch={() => socketService.startBoardMatch()}
+                    onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
+                    onResignBoardGame={() => socketService.resignBoardGame()}
+                    onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
+                    onCloseBoardGame={() => socketService.closeBoardGame()}
+                    partyGameState={partyGameState}
+                    onStartPartyGame={(gt) => socketService.startPartyGame(gt)}
+                    onPartyGameAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
+                    onClosePartyGame={() => socketService.closePartyGame()}
+                    voiceChat={voiceChat}
+                  />
+                </React.Suspense>
               </div>
             )}
 
@@ -5606,10 +5460,13 @@ export function App() {
                   roomBoardGame={roomGameState}
                   roomPartyGame={partyGameState}
                   gameMoveError={gameMoveError}
+                  isHost={isHostUser}
+                  voiceChat={voiceChat}
                   onStartRoomBoardGame={(gt, solo, clockMin) =>
                     socketService.startBoardGame(gt, solo, clockMin)
                   }
                   onJoinBoardSeat={(side) => socketService.joinGameSeat(side)}
+                  onStartBoardMatch={() => socketService.startBoardMatch()}
                   onMoveBoardGame={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
                   onResignBoardGame={() => socketService.resignBoardGame()}
                   onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
@@ -5643,312 +5500,163 @@ export function App() {
           {/* Desktop Right Party Sidebar */}
           {isDesktopLayout && sidebarOpen && (
             <div className="flex w-[22rem] xl:w-[23.5rem] shrink-0 h-full">
-              <PartySidebar
-                roomId={roomId}
-                currentUser={currentUser}
-                hostId={hostId}
-                participants={participants}
-                messages={messages}
-                lang={lang}
-                effectiveView={effectiveView}
-                onToggleViewMode={toggleViewMode}
-                authUser={authUser}
-                authLoading={authLoading}
-                onSignIn={handleGoogleSignIn}
-                onSignOut={handleGoogleSignOut}
-                hostOnlyControl={hostOnlyControl}
-                onToggleHostLock={handleToggleHostLock}
-                roomName={roomName}
-                onRenameRoom={handleRenameRoom}
-                hasPin={roomHasPin}
-                currentHostPin={currentHostPin}
-                onSetRoomPin={handleSetRoomPin}
-                isCurrentRoomPermanent={isCurrentRoomPermanent}
-                onTogglePermanentRoom={handleTogglePermanentRoom}
-                onClaimTvCode={handleClaimTvCode}
-                tvClaimStatus={tvClaimStatus}
-                isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
-                onRemoteTogglePlay={handleRemoteTogglePlay}
-                onRemoteSeekDelta={handleRemoteSeekDelta}
-                onSendTvRemoteCommand={handleSendTvRemoteCommand}
-                onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
-                activePoll={activePoll}
-                roomQueue={roomQueue}
-                onPlayQueueItem={handlePlayQueueItem}
-                onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
-                onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
-                onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
-                onRestoreQueueItem={(item) => socketService.addToQueue(item)}
-                onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
-                onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
-                pinnedMessage={pinnedMessage}
-                onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
-                onUnpinMessage={() => socketService.unpinChatMessage()}
-                typingUsers={typingUsers}
-                onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
-                activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
-                currentVideoTimeSec={
-                  videoState.mode !== 'idle' && !videoState.isLive
-                    ? livePlaybackSec || videoState.currentTime || 0
-                    : 0
-                }
-                onSeekToTimestamp={
-                  videoState.mode !== 'idle' && !videoState.isLive
-                    ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
-                    : undefined
-                }
-                onPlayCustomUrl={handlePlayCustomUrl}
-                onOpenCloudBrowser={handleOpenCloudBrowser}
-                onStartPollFromQueue={handleStartPollFromQueue}
-                onVotePoll={handleVotePoll}
-                onClosePoll={handleClosePoll}
-                openQueueTrigger={openQueueTrigger}
-                savedFriends={savedFriends}
-                onlineUsers={onlineUsers}
-                onOpenFriendsModal={() => setFriendsModalOpen(true)}
-                onAddFriend={handleAddFriend}
-                onSendDirectRoomInvite={handleSendDirectRoomInvite}
-                inviteSentFeedback={inviteSentFeedback}
-                onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
-                onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
-                onTransferHost={(newId) => socketService.transferHost(newId)}
-                onUpdateProfile={handleUpdateProfile}
-                onCreateNewRoom={handleCreateFreshRoom}
-                onLeaveRoom={handleLeaveRoom}
-                gameState={roomGameState}
-                gameMoveError={gameMoveError}
-                onStartBoardGame={(gt, solo, clockMin) =>
-                  socketService.startBoardGame(gt, solo, clockMin)
-                }
-                onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
-                onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
-                onResignBoardGame={() => socketService.resignBoardGame()}
-                onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
-                onCloseBoardGame={() => socketService.closeBoardGame()}
-                partyGameState={partyGameState}
-                onStartPartyGame={(gt) => socketService.startPartyGame(gt)}
-                onPartyGameAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
-                onClosePartyGame={() => socketService.closePartyGame()}
-              />
+              <React.Suspense fallback={null}>
+                <PartySidebar
+                  roomId={roomId}
+                  currentUser={currentUser}
+                  hostId={hostId}
+                  participants={participants}
+                  messages={messages}
+                  lang={lang}
+                  effectiveView={effectiveView}
+                  onToggleViewMode={toggleViewMode}
+                  authUser={authUser}
+                  authLoading={authLoading}
+                  onSignIn={handleGoogleSignIn}
+                  onSignOut={handleGoogleSignOut}
+                  hostOnlyControl={hostOnlyControl}
+                  onToggleHostLock={handleToggleHostLock}
+                  roomName={roomName}
+                  onRenameRoom={handleRenameRoom}
+                  hasPin={roomHasPin}
+                  currentHostPin={currentHostPin}
+                  onSetRoomPin={handleSetRoomPin}
+                  isCurrentRoomPermanent={isCurrentRoomPermanent}
+                  onTogglePermanentRoom={handleTogglePermanentRoom}
+                  onClaimTvCode={handleClaimTvCode}
+                  tvClaimStatus={tvClaimStatus}
+                  isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
+                  onRemoteTogglePlay={handleRemoteTogglePlay}
+                  onRemoteSeekDelta={handleRemoteSeekDelta}
+                  onSendTvRemoteCommand={handleSendTvRemoteCommand}
+                  onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
+                  activePoll={activePoll}
+                  roomQueue={roomQueue}
+                  onPlayQueueItem={handlePlayQueueItem}
+                  onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+                  onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
+                  onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
+                  onRestoreQueueItem={(item) => socketService.addToQueue(item)}
+                  onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
+                  onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
+                  pinnedMessage={pinnedMessage}
+                  onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
+                  onUnpinMessage={() => socketService.unpinChatMessage()}
+                  typingUsers={typingUsers}
+                  onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
+                  activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
+                  currentVideoTimeSec={
+                    videoState.mode !== 'idle' && !videoState.isLive
+                      ? livePlaybackSec || videoState.currentTime || 0
+                      : 0
+                  }
+                  onSeekToTimestamp={
+                    videoState.mode !== 'idle' && !videoState.isLive
+                      ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
+                      : undefined
+                  }
+                  onPlayCustomUrl={handlePlayCustomUrl}
+                  onOpenCloudBrowser={handleOpenCloudBrowser}
+                  onStartPollFromQueue={handleStartPollFromQueue}
+                  onVotePoll={handleVotePoll}
+                  onClosePoll={handleClosePoll}
+                  openQueueTrigger={openQueueTrigger}
+                  savedFriends={savedFriends}
+                  onlineUsers={onlineUsers}
+                  onOpenFriendsModal={() => setFriendsModalOpen(true)}
+                  onAddFriend={handleAddFriend}
+                  onSendDirectRoomInvite={handleSendDirectRoomInvite}
+                  inviteSentFeedback={inviteSentFeedback}
+                  onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
+                  onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
+                  onTransferHost={(newId) => socketService.transferHost(newId)}
+                  onUpdateProfile={handleUpdateProfile}
+                  onCreateNewRoom={handleCreateFreshRoom}
+                  onLeaveRoom={handleLeaveRoom}
+                  gameState={roomGameState}
+                  gameMoveError={gameMoveError}
+                  onStartBoardGame={(gt, solo, clockMin) =>
+                    socketService.startBoardGame(gt, solo, clockMin)
+                  }
+                  onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
+                  onStartBoardMatch={() => socketService.startBoardMatch()}
+                  onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
+                  onResignBoardGame={() => socketService.resignBoardGame()}
+                  onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
+                  onCloseBoardGame={() => socketService.closeBoardGame()}
+                  partyGameState={partyGameState}
+                  onStartPartyGame={(gt) => socketService.startPartyGame(gt)}
+                  onPartyGameAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
+                  onClosePartyGame={() => socketService.closePartyGame()}
+                  voiceChat={voiceChat}
+                />
+              </React.Suspense>
             </div>
           )}
         </div>
 
-        {/* Floating Glass Bottom Navigation Bar (Animated Auto-Hide on Scroll + Click to Reveal) */}
+        {/* Floating 5-Tab Glass Bottom Navigation Bar */}
         {!isDesktopLayout && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-          <div
-            className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 z-30 ${
-              isChromeHidden
-                ? 'grid-rows-[0fr] opacity-0 pointer-events-none'
-                : 'grid-rows-[1fr] opacity-100'
-            }`}
-          >
-            <div className="overflow-hidden">
-              <div
-                className={`px-2.5 pt-1 pb-[max(0.35rem,env(safe-area-inset-bottom))] bg-gradient-to-t from-[#0B0B0E] via-[#0B0B0E]/92 to-transparent transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                  isChromeHidden ? 'translate-y-full' : 'translate-y-0'
-                }`}
-              >
-                <nav
-              className="bg-[#141418]/92 backdrop-blur-2xl border border-white/[0.11] rounded-2xl p-1 grid grid-cols-6 gap-0.5 shadow-[0_14px_38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.1)]"
-              aria-label={pickLang(lang, {
-                es: 'Navegación móvil NAIM CINE',
-                ca: 'Navegació mòbil NAIM CINE',
-                en: 'NAIM CINE mobile navigation',
-              })}
-            >
-              {(
-                [
-                  {
-                    id: 'home',
-                    label: pickLang(lang, {
-                      es: 'Explorar',
-                      ca: 'Explorar',
-                      en: 'Explore',
-                    }),
-                    icon: LayoutGrid,
-                    isActive:
-                      mobileTab !== 'chat' &&
-                      mobileTab !== 'room' &&
-                      !showWatchlistOnly &&
-                      catalogSection === 'home',
-                    onSelect: () => {
-                      setShowWatchlistOnly(false);
-                      setMobileTab('home');
-                      setCatalogSection('home');
-                      catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                    },
-                  },
-                  {
-                    id: 'movies',
-                    label: pickLang(lang, {
-                      es: 'Catálogo',
-                      ca: 'Catàleg',
-                      en: 'Browse',
-                    }),
-                    icon: Film,
-                    isActive:
-                      mobileTab !== 'chat' &&
-                      mobileTab !== 'room' &&
-                      !showWatchlistOnly &&
-                      (catalogSection === 'movies' ||
-                        catalogSection === 'vose' ||
-                        catalogSection === 'series' ||
-                        catalogSection === 'anime' ||
-                        catalogSection === 'castellano' ||
-                        catalogSection === 'catala'),
-                    onSelect: () => {
-                      setShowWatchlistOnly(false);
-                      setMobileTab('movies');
-                      if (
-                        catalogSection !== 'movies' &&
-                        catalogSection !== 'vose' &&
-                        catalogSection !== 'series' &&
-                        catalogSection !== 'anime' &&
-                        catalogSection !== 'castellano' &&
-                        catalogSection !== 'catala'
-                      ) {
-                        setCatalogSection('movies');
-                      }
-                    },
-                  },
-                  {
-                    id: 'live',
-                    label: pickLang(lang, {
-                      es: 'Directo',
-                      ca: 'Directe',
-                      en: 'Live',
-                    }),
-                    icon: Radio,
-                    isActive:
-                      mobileTab !== 'chat' &&
-                      mobileTab !== 'room' &&
-                      !showWatchlistOnly &&
-                      (catalogSection === 'tdt' ||
-                        catalogSection === 'sports' ||
-                        catalogSection === 'youtube'),
-                    onSelect: () => {
-                      setShowWatchlistOnly(false);
-                      if (
-                        catalogSection !== 'tdt' &&
-                        catalogSection !== 'sports' &&
-                        catalogSection !== 'youtube'
-                      ) {
-                        setMobileTab('tdt');
-                        setCatalogSection('tdt');
-                      } else {
-                        setMobileTab(catalogSection === 'sports' ? 'sports' : catalogSection === 'youtube' ? 'youtube' : 'tdt');
-                      }
-                    },
-                  },
-                  {
-                    id: 'games',
-                    label: pickLang(lang, {
-                      es: 'Juegos',
-                      ca: 'Jocs',
-                      en: 'Games',
-                    }),
-                    icon: Gamepad2,
-                    isActive:
-                      mobileTab !== 'chat' &&
-                      mobileTab !== 'room' &&
-                      !showWatchlistOnly &&
-                      catalogSection === 'games',
-                    onSelect: () => {
-                      setShowWatchlistOnly(false);
-                      setMobileTab('games');
-                      setCatalogSection('games');
-                    },
-                  },
-                  {
-                    id: 'mylist',
-                    label: pickLang(lang, {
-                      es: 'Mi Lista',
-                      ca: 'Llista',
-                      en: 'My List',
-                    }),
-                    icon: Bookmark,
-                    isActive:
-                      mobileTab !== 'chat' &&
-                      mobileTab !== 'room' &&
-                      (showWatchlistOnly || catalogSection === 'direct'),
-                    onSelect: () => {
-                      setShowWatchlistOnly(true);
-                      setMobileTab('movies');
-                      setCatalogSection('movies');
-                    },
-                  },
-                  {
-                    id: 'chat',
-                    label: pickLang(lang, { es: 'Sala', ca: 'Sala', en: 'Room' }),
-                    icon: MessageSquare,
-                    isActive: mobileTab === 'chat' || mobileTab === 'room',
-                    badge: unreadChatCount + roomQueue.length || undefined,
-                    onSelect: () => {
-                      if (unreadChatCount === 0 && roomQueue.length > 0) {
-                        setOpenQueueTrigger((n) => n + 1);
-                      }
-                      setMobileTab('chat');
-                      setUnreadChatCount(0);
-                    },
-                  },
-                ] as const
-              ).map((item) => {
-                const Icon = item.icon;
-                const active = item.isActive;
-                return (
-                  <button
-                    key={item.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      item.onSelect();
-                    }}
-                    className={`min-h-[44px] py-1.5 rounded-xl flex flex-col items-center justify-center gap-0.5 relative active:scale-95 transition-colors cursor-pointer ${
-                      active ? 'text-white' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    {active && (
-                      <motion.span
-                        layoutId="mobile-bottom-nav-pill"
-                        transition={{ type: 'spring', stiffness: 460, damping: 34 }}
-                        className="absolute inset-0 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] shadow-[0_6px_18px_rgba(145,70,255,0.42),inset_0_1px_0_rgba(255,255,255,0.26)]"
-                        aria-hidden="true"
-                      />
-                    )}
-                    <div className="relative z-10 flex items-center justify-center">
-                      <Icon
-                        className={`w-4 h-4 shrink-0 ${
-                          active ? 'text-white' : 'text-zinc-400'
-                        }`}
-                        strokeWidth={2.2}
-                      />
-                      {'badge' in item && item.badge ? (
-                        <span
-                          className={`absolute -top-1.5 -right-2.5 min-w-4 h-4 px-1 rounded-full text-[0.6rem] font-bold flex items-center justify-center tabular-nums shadow-sm ${
-                            active
-                              ? 'bg-[#0B0B0E] text-white'
-                              : 'bg-[#9146FF] text-white'
-                          }`}
-                        >
-                          {item.badge > 9 ? '9+' : item.badge}
-                        </span>
-                      ) : null}
-                    </div>
-                    <span
-                      className={`relative z-10 text-[0.65rem] leading-none tracking-tight whitespace-nowrap shrink-0 ${
-                        active ? 'font-bold text-white' : 'font-medium text-zinc-400'
-                      }`}
-                    >
-                      {item.label}
-                    </span>
-                  </button>
+          <MobileBottomNav
+            lang={lang}
+            mobileTab={mobileTab}
+            catalogSection={catalogSection}
+            showWatchlistOnly={showWatchlistOnly}
+            unreadChatCount={unreadChatCount}
+            roomQueueCount={roomQueue.length}
+            isChromeHidden={isChromeHidden}
+            onSelectHome={() => {
+              setShowWatchlistOnly(false);
+              setMobileTab('home');
+              setCatalogSection('home');
+              catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+            }}
+            onSelectMovies={() => {
+              setShowWatchlistOnly(false);
+              setMobileTab('movies');
+              if (
+                catalogSection !== 'movies' &&
+                catalogSection !== 'vose' &&
+                catalogSection !== 'series' &&
+                catalogSection !== 'anime' &&
+                catalogSection !== 'castellano' &&
+                catalogSection !== 'catala'
+              ) {
+                setCatalogSection('movies');
+              }
+            }}
+            onSelectLive={() => {
+              setShowWatchlistOnly(false);
+              if (
+                catalogSection !== 'tdt' &&
+                catalogSection !== 'sports' &&
+                catalogSection !== 'youtube'
+              ) {
+                setMobileTab('tdt');
+                setCatalogSection('tdt');
+              } else {
+                setMobileTab(
+                  catalogSection === 'sports'
+                    ? 'sports'
+                    : catalogSection === 'youtube'
+                    ? 'youtube'
+                    : 'tdt'
                 );
-              })}
-            </nav>
-              </div>
-            </div>
-          </div>
+              }
+            }}
+            onSelectGames={() => {
+              setShowWatchlistOnly(false);
+              setMobileTab('games');
+              setCatalogSection('games');
+            }}
+            onSelectChat={() => {
+              if (unreadChatCount === 0 && roomQueue.length > 0) {
+                setOpenQueueTrigger((n) => n + 1);
+              }
+              setMobileTab('chat');
+              setUnreadChatCount(0);
+            }}
+          />
         )}
 
         {/* Click-to-Reveal Floating Pill when Top/Bottom Chrome is Hidden (moved to PartySidebar corner when in mobile Sala) */}

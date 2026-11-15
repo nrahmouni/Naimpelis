@@ -294,7 +294,9 @@ export async function discoverExpandedCatalog(params: {
     );
 
   const hasMore = Boolean(data?.total_pages && page < Math.min(data.total_pages, 50));
-  discoverCache.set(cacheKey, { items, hasMore });
+  if (data !== null) {
+    discoverCache.set(cacheKey, { items, hasMore });
+  }
   return { items, hasMore, page };
 }
 
@@ -416,7 +418,9 @@ export async function getEditorialCollections(lang = 'es'): Promise<EditorialCol
   ];
   const collections = rawCollections.filter((c) => c.items.length > 0);
 
-  collectionsCache.set(tmdbLang, collections);
+  if (collections.length > 0) {
+    collectionsCache.set(tmdbLang, collections);
+  }
   return collections;
 }
 

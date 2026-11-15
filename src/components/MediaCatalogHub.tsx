@@ -77,6 +77,8 @@ import {
 } from '../utils/storage';
 import { MediaDetailsModal } from './MediaDetailsModal';
 import { LatestReleasesSection } from './LatestReleasesSection';
+import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
+import type { PartyOnlineAction } from './PartyGamesStage';
 import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.webp';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.webp';
 
@@ -659,12 +661,15 @@ interface MediaCatalogHubProps {
   roomBoardGame?: BoardGameState | null;
   roomPartyGame?: PartyGameState | null;
   gameMoveError?: string | null;
+  isHost?: boolean;
+  voiceChat?: GameVoiceChatState;
   onStartRoomBoardGame?: (
     gt: BoardGameType,
     soloLocal?: boolean,
     clockMinutes?: BoardClockMinutes
   ) => void;
   onJoinBoardSeat?: (side: 'w' | 'b' | 'spectate') => void;
+  onStartBoardMatch?: () => void;
   onMoveBoardGame?: (from: BoardCoord, to: BoardCoord, promo?: ChessPromotionPiece) => void;
   onResignBoardGame?: () => void;
   onResetBoardGame?: (opts?: {
@@ -675,8 +680,8 @@ interface MediaCatalogHubProps {
   onCloseBoardGame?: () => void;
   onStartRoomPartyGame?: (gt: PartyGameType) => void;
   onRoomPartyAction?: (
-    action: 'roll_dice' | 'move_piece' | 'play_card' | 'draw_card' | 'pass_turn' | 'rematch',
-    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor }
+    action: PartyOnlineAction,
+    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor; seatIndex?: number }
   ) => void;
   onCloseRoomPartyGame?: () => void;
 }
@@ -719,8 +724,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   roomBoardGame = null,
   roomPartyGame = null,
   gameMoveError = null,
+  isHost = false,
+  voiceChat,
   onStartRoomBoardGame,
   onJoinBoardSeat,
+  onStartBoardMatch,
   onMoveBoardGame,
   onResignBoardGame,
   onResetBoardGame,
@@ -8236,8 +8244,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             roomBoardGame={roomBoardGame}
             roomPartyGame={roomPartyGame}
             gameMoveError={gameMoveError}
+            isHost={isHost}
+            voiceChat={voiceChat}
             onStartRoomBoardGame={onStartRoomBoardGame}
             onJoinBoardSeat={onJoinBoardSeat}
+            onStartBoardMatch={onStartBoardMatch}
             onMoveBoardGame={onMoveBoardGame}
             onResignBoardGame={onResignBoardGame}
             onResetBoardGame={onResetBoardGame}
