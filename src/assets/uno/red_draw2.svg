@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300" width="200" height="300">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FB7185"/>
+      <stop offset="48%" stop-color="#E11D48"/>
+      <stop offset="100%" stop-color="#881337"/>
+    </linearGradient>
+    <radialGradient id="satinSheen" cx="30%" cy="22%" r="72%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.28)"/>
+      <stop offset="55%" stop-color="rgba(255,255,255,0.04)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0.26)"/>
+    </radialGradient>
+    <clipPath id="wildClip">
+      <ellipse cx="0" cy="0" rx="58" ry="88"/>
+    </clipPath>
+  </defs>
+  <rect x="2" y="2" width="196" height="296" rx="20" fill="#FFFFFF" stroke="rgba(0,0,0,0.18)" stroke-width="1.5"/>
+  <rect x="11" y="11" width="178" height="278" rx="14" fill="url(#bgGrad)"/>
+  <rect x="11" y="11" width="178" height="278" rx="14" fill="url(#satinSheen)"/>
+  <ellipse cx="100" cy="150" rx="64" ry="96" transform="rotate(24 100 150)" fill="rgba(255,255,255,0.97)" stroke="rgba(255,255,255,0.85)" stroke-width="5"/>
+  <g transform="translate(100, 150)">
+      <g transform="translate(-14, -8) rotate(-14)">
+        <rect x="-24" y="-34" width="48" height="68" rx="8" fill="#DC2626" stroke="#FFFFFF" stroke-width="3.5"/>
+        <rect x="-19" y="-29" width="38" height="58" rx="5" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+      </g>
+      <g transform="translate(14, 10) rotate(10)">
+        <rect x="-24" y="-34" width="48" height="68" rx="8" fill="rgba(0,0,0,0.22)" transform="translate(3,4)"/>
+        <rect x="-24" y="-34" width="48" height="68" rx="8" fill="#DC2626" stroke="#FFFFFF" stroke-width="3.5"/>
+        <rect x="-19" y="-29" width="38" height="58" rx="5" fill="none" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+      </g>
+    </g>
+  
+    <text x="31" y="37" text-anchor="middle" dominant-baseline="central" font-family="Outfit, Arial Black, sans-serif" font-weight="900" font-size="26" fill="#000000" opacity="0.35" transform="translate(1.5, 2)">+2</text>
+    <text x="31" y="37" text-anchor="middle" dominant-baseline="central" font-family="Outfit, Arial Black, sans-serif" font-weight="900" font-size="26" fill="#FFFFFF" stroke="#000000" stroke-width="1" paint-order="stroke">+2</text>
+    
+  
+  <g transform="rotate(180 100 150)">
+    <text x="169" y="263" text-anchor="middle" dominant-baseline="central" font-family="Outfit, Arial Black, sans-serif" font-weight="900" font-size="26" fill="#000000" opacity="0.35" transform="translate(1.5, 2)">+2</text>
+    <text x="169" y="263" text-anchor="middle" dominant-baseline="central" font-family="Outfit, Arial Black, sans-serif" font-weight="900" font-size="26" fill="#FFFFFF" stroke="#000000" stroke-width="1" paint-order="stroke">+2</text>
+    
+  </g>
+</svg>

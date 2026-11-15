@@ -126,11 +126,64 @@ export function buildFourSeats(
   return seats;
 }
 
+export function preserveSeatsForRematch(
+  prevPlayers: PartySeatPlayer[],
+  humans: Array<{ id: string; name: string; avatar?: string }>
+): PartySeatPlayer[] {
+  const humanMap = new Map(humans.filter((h) => h?.id).map((h) => [h.id, h]));
+  const alreadySeated = new Set<string>();
+  const seats: PartySeatPlayer[] = prevPlayers.map((pl, idx) => {
+    const color = pl.color || PARTY_COLORS[idx % PARTY_COLORS.length];
+    if (!pl.isBot && humanMap.has(pl.userId)) {
+      const h = humanMap.get(pl.userId)!;
+      alreadySeated.add(h.id);
+      return {
+        ...pl,
+        seatIndex: idx,
+        userId: h.id,
+        name: h.name || pl.name,
+        avatar: h.avatar || pl.avatar || '🎮',
+        color,
+        isBot: false,
+      };
+    }
+    const bot = BOT_PROFILES[idx % BOT_PROFILES.length];
+    return {
+      seatIndex: idx,
+      userId: `bot-seat-${idx}-${color}`,
+      name: bot.name,
+      avatar: bot.avatar,
+      color,
+      isBot: true,
+      score: pl.isBot ? pl.score : 0,
+    };
+  });
+
+  // Assign any newly arrived humans into remaining bot seats
+  for (const h of humans) {
+    if (!h?.id || alreadySeated.has(h.id)) continue;
+    const botIdx = seats.findIndex((s) => s.isBot);
+    if (botIdx === -1) break;
+    alreadySeated.add(h.id);
+    seats[botIdx] = {
+      ...seats[botIdx],
+      userId: h.id,
+      name: h.name || 'Jugador',
+      avatar: h.avatar || '🎮',
+      isBot: false,
+      score: 0,
+    };
+  }
+  return seats;
+}
+
 export function createInitialParchisState(
   humans: Array<{ id: string; name: string; avatar?: string }>,
-  opts?: { waitForHost?: boolean }
+  opts?: { waitForHost?: boolean; preservedSeats?: PartySeatPlayer[] }
 ): ParchisGameState {
-  const players = buildFourSeats(humans);
+  const players = opts?.preservedSeats
+    ? preserveSeatsForRematch(opts.preservedSeats, humans).map((p) => ({ ...p, score: 0 }))
+    : buildFourSeats(humans);
   const waitForHost = Boolean(opts?.waitForHost);
   const now = Date.now();
   const pieces: Record<PartyColor, ParchisPiece[]> = {
@@ -649,9 +702,11 @@ export function calculateUnoRoundScore(hands: Record<number, UnoCard[]>, winnerS
 
 export function createInitialUnoState(
   humans: Array<{ id: string; name: string; avatar?: string }>,
-  opts?: { waitForHost?: boolean; existingScores?: number[] }
+  opts?: { waitForHost?: boolean; existingScores?: number[]; preservedSeats?: PartySeatPlayer[] }
 ): UnoGameState {
-  const basePlayers = buildFourSeats(humans);
+  const basePlayers = opts?.preservedSeats
+    ? preserveSeatsForRematch(opts.preservedSeats, humans)
+    : buildFourSeats(humans);
   const players = basePlayers.map((pl, idx) => ({
     ...pl,
     score: opts?.existingScores?.[idx] ?? pl.score,

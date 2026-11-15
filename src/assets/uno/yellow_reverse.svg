@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 300" width="200" height="300">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FEF08A"/>
+      <stop offset="48%" stop-color="#FACC15"/>
+      <stop offset="100%" stop-color="#A16207"/>
+    </linearGradient>
+    <radialGradient id="satinSheen" cx="30%" cy="22%" r="72%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.28)"/>
+      <stop offset="55%" stop-color="rgba(255,255,255,0.04)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0.26)"/>
+    </radialGradient>
+    <clipPath id="wildClip">
+      <ellipse cx="0" cy="0" rx="58" ry="88"/>
+    </clipPath>
+  </defs>
+  <rect x="2" y="2" width="196" height="296" rx="20" fill="#FFFFFF" stroke="rgba(0,0,0,0.18)" stroke-width="1.5"/>
+  <rect x="11" y="11" width="178" height="278" rx="14" fill="url(#bgGrad)"/>
+  <rect x="11" y="11" width="178" height="278" rx="14" fill="url(#satinSheen)"/>
+  <ellipse cx="100" cy="150" rx="64" ry="96" transform="rotate(24 100 150)" fill="rgba(255,255,255,0.97)" stroke="rgba(255,255,255,0.85)" stroke-width="5"/>
+  <g transform="translate(100,150) rotate(-18)">
+      <g transform="translate(-44, -46) scale(3.7)" opacity="0.18">
+        <path d="M3 8 L14 8 L14 4 L21 10.5 L14 17 L14 13 L3 13 Z" fill="#000"/>
+        <path d="M21 17 L10 17 L10 21 L3 14.5 L10 8 L10 12 L21 12 Z" fill="#000"/>
+      </g>
+      <g transform="translate(-46, -49) scale(3.7)">
+        <path d="M3 7.5 L14 7.5 L14 3.5 L21.5 10 L14 16.5 L14 12.5 L3 12.5 Z" fill="#CA8A04" stroke="#FFFFFF" stroke-width="0.9" stroke-linejoin="round"/>
+        <path d="M21.5 17.5 L10.5 17.5 L10.5 21.5 L3 15 L10.5 8.5 L10.5 12.5 L21.5 12.5 Z" fill="#CA8A04" stroke="#FFFFFF" stroke-width="0.9" stroke-linejoin="round"/>
+      </g>
+    </g>
+  
+      <g transform="translate(19, 25) scale(0.95)">
+        <path d="M5 10 L17 10 L17 6 L24 12 L17 18 L17 14 L5 14 Z" fill="#FFFFFF" />
+        <path d="M21 16 L9 16 L9 12 L2 18 L9 24 L9 20 L21 20 Z" fill="#FFFFFF" opacity="0.92" />
+      </g>
+    
+  <g transform="rotate(180 100 150)">
+      <g transform="translate(157, 251) scale(0.95)">
+        <path d="M5 10 L17 10 L17 6 L24 12 L17 18 L17 14 L5 14 Z" fill="#FFFFFF" />
+        <path d="M21 16 L9 16 L9 12 L2 18 L9 24 L9 20 L21 20 Z" fill="#FFFFFF" opacity="0.92" />
+      </g>
+    </g>
+</svg>

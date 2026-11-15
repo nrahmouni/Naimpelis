@@ -2579,9 +2579,13 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
               room.partyGameState.gameType === 'uno'
                 ? createInitialUnoState(humans, {
                     waitForHost: false,
+                    preservedSeats: room.partyGameState.players,
                     existingScores: maxScore >= 500 ? [0, 0, 0, 0] : existingScores,
                   })
-                : createInitialParchisState(humans, { waitForHost: false });
+                : createInitialParchisState(humans, {
+                    waitForHost: false,
+                    preservedSeats: room.partyGameState.players,
+                  });
           } else if (action === 'start_match') {
             const isHostUser =
               room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId;
@@ -2816,6 +2820,23 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
       clients.delete(ws);
       scheduleBroadcastOnlineUsers();
       if (!meta?.roomId || !meta?.userId) return;
+
+      // Guard: if the same user still has another open socket in this room (reconnect/tab/auth refresh),
+      // NEVER vacate their participant record, voice slot, or active game seat!
+      let hasOtherOpenSocketInRoom = false;
+      clients.forEach((otherMeta, otherWs) => {
+        if (
+          otherWs !== ws &&
+          otherWs.readyState === WebSocket.OPEN &&
+          otherMeta.roomId === meta.roomId &&
+          otherMeta.userId === meta.userId
+        ) {
+          hasOtherOpenSocketInRoom = true;
+        }
+      });
+      if (hasOtherOpenSocketInRoom) {
+        return;
+      }
 
       removeVoicePeer(meta.roomId, meta.userId);
 

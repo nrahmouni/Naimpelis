@@ -80,6 +80,14 @@ import {
 } from './server/services/vestMirrorService.ts';
 import { buildSignedApkBuffer } from './server/services/apkBuilderService.ts';
 import { channelHealthMonitor } from './server/services/channelHealthMonitor.ts';
+import {
+  getCatalogRefreshStatus,
+  liveOnDemandFallbackSearch,
+  runRefreshCycle,
+  scoreTitleRelevance,
+  searchIndexedCatalog,
+  startCatalogRefreshScheduler,
+} from './server/services/catalogRefreshService.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -829,8 +837,36 @@ async function fetchTmdbMovieCatalog(opts: {
       (r) =>
         (normalizeNoSpaceForSearch(r?.title || '') === compactQ ||
           normalizeNoSpaceForSearch(r?.original_title || '') === compactQ) &&
-        Number(r?.vote_count || 0) >= 80
+        Number(r?.vote_count || 0) >= 40
     );
+
+    const otherLang = lang === 'es-ES' ? 'en-US' : 'es-ES';
+    const [otherLangRes, multiRes] = await Promise.all([
+      fetch(
+        `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=${otherLang}&query=${encodeURIComponent(
+          query
+        )}&page=1&include_adult=false`,
+        { signal: AbortSignal.timeout(3500) }
+      )
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+      fetch(
+        `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=en-US&query=${encodeURIComponent(
+          query
+        )}&page=1&include_adult=false`,
+        { signal: AbortSignal.timeout(3500) }
+      )
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null),
+    ]);
+
+    const extraRows: any[] = [
+      ...(Array.isArray(otherLangRes?.results) ? otherLangRes.results : []),
+      ...(Array.isArray(multiRes?.results)
+        ? multiRes.results.filter((x: any) => !x?.media_type || x.media_type === 'movie')
+        : []),
+    ];
+
     if (!hasStrongExactMatch) {
       const variants = buildSmartConcatQueryVariants(query);
       if (variants.length > 0) {
@@ -849,11 +885,19 @@ async function fetchTmdbMovieCatalog(opts: {
             }
           })
         );
-        const flatExtra = extraLists.flat();
-        if (flatExtra.length > 0) {
-          results = rankTmdbSearchResultsForQuery([...results, ...flatExtra], query, false);
-        }
+        extraRows.push(...extraLists.flat());
       }
+    }
+
+    if (extraRows.length > 0) {
+      const byId = new Map<number, any>();
+      for (const r of [...results, ...extraRows]) {
+        if (!r?.id) continue;
+        if (!byId.has(r.id)) byId.set(r.id, r);
+      }
+      results = rankTmdbSearchResultsForQuery(Array.from(byId.values()), query, false);
+    } else if (results.length > 0) {
+      results = rankTmdbSearchResultsForQuery(results, query, false);
     }
   }
 
@@ -945,7 +989,7 @@ app.get('/api/catalog/movies', async (req, res) => {
     const category = String(req.query.category || 'trending').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const mergedCacheKey = `merged-es-v6|${provider}|${category}|${page}|${query}`;
+    const mergedCacheKey = `merged-es-v7|${provider}|${category}|${page}|${query}`;
     const cachedMerged = movieCatalogCache.get(mergedCacheKey);
     if (cachedMerged && Date.now() - cachedMerged.ts < 5 * 60 * 1000) {
       return res.json({
@@ -994,8 +1038,14 @@ app.get('/api/catalog/movies', async (req, res) => {
     const seenNormTitles = new Set<string>();
     const combinedMovies: any[] = [];
 
-    // 1. Place Movidy Spanish catalog movies FIRST so every top Spanish movie has guaranteed Castellano / Latino / VOSE streams
-    for (const mv of movidyData.movies) {
+    // 1. Place relevant Movidy Spanish catalog movies (when searching, drop irrelevant fuzzy WP hits)
+    const filteredMovidyMovies = query
+      ? movidyData.movies.filter(
+          (mv) => scoreTitleRelevance(mv.title, mv.originalTitle, query) >= 70
+        )
+      : movidyData.movies;
+
+    for (const mv of filteredMovidyMovies) {
       const kFull = normalizeTitleForMatch(mv.title);
       const kOutside = normalizeTitleForMatch(String(mv.title || '').replace(/\s*\([^)]*\)/g, ''));
       const kInside = normalizeTitleForMatch(String(mv.title || '').match(/\(([^)]+)\)/)?.[1] || '');
@@ -1047,7 +1097,41 @@ app.get('/api/catalog/movies', async (req, res) => {
       combinedMovies.push(tm);
     }
 
-    // 3. Attach or append crawled mirror entries (321moviesfree, cuevana4br, flixlat, 123pelicula)
+    // 3. Merge multi-source indexed titles & live on-demand fallback search when querying
+    if (query) {
+      const indexedHits = searchIndexedCatalog(query, { mediaType: 'movie', limit: 16 });
+      const topExistingScore = combinedMovies.reduce(
+        (mx, m) => Math.max(mx, scoreTitleRelevance(m.title, m.originalTitle, query)),
+        0
+      );
+      const fallbackHits =
+        topExistingScore < 240
+          ? await liveOnDemandFallbackSearch(query, 'movie')
+          : [];
+
+      for (const extra of [...indexedHits, ...fallbackHits]) {
+        if (extra.tmdbId && combinedMovies.some((m) => Number(m.tmdbId) === Number(extra.tmdbId))) {
+          continue;
+        }
+        const kEx = normalizeTitleForMatch(extra.title);
+        const kExOrig = normalizeTitleForMatch(extra.originalTitle || '');
+        if ((kEx && seenNormTitles.has(kEx)) || (kExOrig && seenNormTitles.has(kExOrig))) {
+          continue;
+        }
+        if (kEx) seenNormTitles.add(kEx);
+        if (kExOrig) seenNormTitles.add(kExOrig);
+        combinedMovies.push(extra);
+      }
+
+      // Rank strictly by original/localized title relevance so exact matches always lead
+      combinedMovies.sort(
+        (a, b) =>
+          scoreTitleRelevance(b.title, b.originalTitle, query, { altTitle: b.altTitle }) -
+          scoreTitleRelevance(a.title, a.originalTitle, query, { altTitle: a.altTitle })
+      );
+    }
+
+    // 4. Attach or append crawled mirror entries (321moviesfree, cuevana4br, flixlat, 123pelicula)
     if (page === 1 || query) {
       const vestEntries = listVestCatalogEntries({ mediaType: 'movie', query });
       for (const ve of vestEntries) {
@@ -1122,11 +1206,51 @@ app.get('/api/catalog/bingetrix', async (req, res) => {
       query,
       provider,
     });
-    res.json({ success: true, movies: data.movies, hasMore: data.hasMore, page });
+
+    let movies = [...data.movies];
+
+    if (query) {
+      const indexedHits = searchIndexedCatalog(query, { mediaType: 'all', limit: 16 });
+      const topScore = movies.reduce(
+        (mx, m) => Math.max(mx, scoreTitleRelevance(m.title, m.originalTitle, query)),
+        0
+      );
+      const fallbackHits =
+        topScore < 240 ? await liveOnDemandFallbackSearch(query, 'all') : [];
+
+      const seenIds = new Set<string>(
+        movies.map((m) => `${m.mediaType || 'movie'}:${m.tmdbId || m.id}`)
+      );
+      for (const extra of [...indexedHits, ...fallbackHits]) {
+        const k = `${extra.mediaType}:${extra.tmdbId || extra.id}`;
+        if (seenIds.has(k)) continue;
+        seenIds.add(k);
+        movies.push(extra);
+      }
+
+      movies.sort(
+        (a, b) =>
+          scoreTitleRelevance(b.title, b.originalTitle, query, { altTitle: b.altTitle }) -
+          scoreTitleRelevance(a.title, a.originalTitle, query, { altTitle: a.altTitle })
+      );
+    }
+
+    res.json({ success: true, movies, hasMore: data.hasMore, page });
   } catch (err) {
     console.error('Bingetrix catalog error:', err);
     res.status(500).json({ success: false, movies: [], hasMore: false });
   }
+});
+
+app.get('/api/catalog/refresh-status', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ success: true, ...getCatalogRefreshStatus() });
+});
+
+app.post('/api/catalog/refresh', async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const summary = await runRefreshCycle();
+  res.json({ success: true, summary, status: getCatalogRefreshStatus() });
 });
 
 // ============================================================================
@@ -1606,7 +1730,13 @@ app.get('/api/catalog/series', async (req, res) => {
       }
     }
 
-    for (const ms of movidySeriesData.series) {
+    const filteredMovidySeries = query
+      ? movidySeriesData.series.filter(
+          (ms: any) => scoreTitleRelevance(ms.title, ms.originalTitle, query) >= 70
+        )
+      : movidySeriesData.series;
+
+    for (const ms of filteredMovidySeries) {
       if (ms?.tmdbId && !seenTmdbIds.has(ms.tmdbId)) {
         seenTmdbIds.add(ms.tmdbId);
         combinedSeries.push(ms);
@@ -1625,6 +1755,29 @@ app.get('/api/catalog/series', async (req, res) => {
         seenTmdbIds.add(ts.tmdbId);
         combinedSeries.push(ts);
       }
+    }
+
+    // Merge indexed & live on-demand TV series fallback matches when querying
+    if (query) {
+      const indexedTv = searchIndexedCatalog(query, { mediaType: 'tv', limit: 16 });
+      const topScore = combinedSeries.reduce(
+        (mx, s) => Math.max(mx, scoreTitleRelevance(s.title, s.originalTitle, query)),
+        0
+      );
+      const fallbackTv =
+        topScore < 240 ? await liveOnDemandFallbackSearch(query, 'tv') : [];
+
+      for (const extra of [...indexedTv, ...fallbackTv]) {
+        if (extra.tmdbId && seenTmdbIds.has(extra.tmdbId)) continue;
+        if (extra.tmdbId) seenTmdbIds.add(extra.tmdbId);
+        combinedSeries.push(extra);
+      }
+
+      combinedSeries.sort(
+        (a, b) =>
+          scoreTitleRelevance(b.title, b.originalTitle, query, { altTitle: b.altTitle }) -
+          scoreTitleRelevance(a.title, a.originalTitle, query, { altTitle: a.altTitle })
+      );
     }
 
     // Attach or append Vest mirror TV entries (321moviesfree, cuevana4br, flixlat, 123pelicula)
@@ -8183,7 +8336,13 @@ app.get('/api/catalog/castellano', async (req, res) => {
         : Promise.resolve({ movies: [], hasMore: false }),
     ]);
 
-    for (const mv of movidyData.movies.slice(0, 12)) {
+    const movidyCastellanoFiltered = query
+      ? movidyData.movies.filter(
+          (mv) => scoreTitleRelevance(mv.title, mv.originalTitle, query) >= 70
+        )
+      : movidyData.movies;
+
+    for (const mv of movidyCastellanoFiltered.slice(0, 12)) {
       pushUnique({
         ...mv,
         mediaType: 'movie',
@@ -8231,6 +8390,17 @@ app.get('/api/catalog/castellano', async (req, res) => {
     for (let i = 0; i < maxDisc; i++) {
       if (tvArr[i]) pushUnique(mapTmdbEntry(tvArr[i], 'tv'));
       if (movArr[i]) pushUnique(mapTmdbEntry(movArr[i], 'movie'));
+    }
+
+    if (query) {
+      const wantType = kind === 'series' ? 'tv' : kind === 'movies' ? 'movie' : 'all';
+      const fallbackEntries = await liveOnDemandFallbackSearch(query, wantType);
+      for (const fe of fallbackEntries) pushUnique(fe);
+      items.sort(
+        (a, b) =>
+          scoreTitleRelevance(b.title, b.originalTitle, query, { altTitle: b.altTitle }) -
+          scoreTitleRelevance(a.title, a.originalTitle, query, { altTitle: a.altTitle })
+      );
     }
 
     const hasMore =
@@ -10545,6 +10715,7 @@ async function startServer() {
       3 * 60 * 1000,
       8_000
     );
+    startCatalogRefreshScheduler(15 * 60 * 1000);
   }
 
   // Mount global API error handler prior to Vite / SPA fallback
@@ -10558,6 +10729,7 @@ async function startServer() {
       const vite = await createViteServer({
         server: {
           middlewareMode: true,
+          allowedHosts: true,
           hmr: hmrEnabled,
           ws: { server: httpServer },
         },

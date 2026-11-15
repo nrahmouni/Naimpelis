@@ -58,11 +58,13 @@ export interface BoardGameState {
     | 'timeout'
     | null;
   inCheck: BoardSide | null;
+  winningLine?: BoardCoord[] | null;
   lastMove: {
     from: BoardCoord;
     to: BoardCoord;
     notation: string;
     captured?: string | null;
+    promoted?: boolean;
   } | null;
   moveHistory: string[];
   castlingRights: {
@@ -768,6 +770,37 @@ export function getConnect4DropRow(board: (string | null)[][], col: number): num
   return -1;
 }
 
+export function findConnect4WinningLine(
+  board: (string | null)[][],
+  side: BoardSide
+): BoardCoord[] | null {
+  const dirs: Array<[number, number]> = [
+    [0, 1],
+    [1, 0],
+    [1, 1],
+    [1, -1],
+  ];
+  for (let r = 0; r < 6; r += 1) {
+    for (let c = 0; c < 7; c += 1) {
+      if (board[r]?.[c] !== side) continue;
+      for (const [dr, dc] of dirs) {
+        const line: BoardCoord[] = [{ r, c }];
+        let nr = r + dr;
+        let nc = c + dc;
+        while (nr >= 0 && nr < 6 && nc >= 0 && nc < 7 && board[nr]?.[nc] === side) {
+          line.push({ r: nr, c: nc });
+          nr += dr;
+          nc += dc;
+        }
+        if (line.length >= 4) {
+          return line;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function checkConnect4Win(board: (string | null)[][], r: number, c: number, side: BoardSide): boolean {
   const dirs = [
     [0, 1],
@@ -900,6 +933,7 @@ export function applyBoardMove(
     nextBoard[dropRow][to.c] = side;
     const notation = `Col ${to.c + 1}`;
     const won = checkConnect4Win(nextBoard, dropRow, to.c, side);
+    const winningLine = won ? findConnect4WinningLine(nextBoard, side) : null;
     const full = !won && nextBoard[0].every((cell) => cell !== null);
     const finishedNow = won || full;
     const nextPlayers = { ...state.players };
@@ -916,6 +950,7 @@ export function applyBoardMove(
         turn: opp,
         players: nextPlayers,
         winner,
+        winningLine,
         winReason: won ? 'connect4' : full ? 'draw_full' : null,
         clocksMs,
         turnStartedAt: now,
@@ -993,7 +1028,7 @@ export function applyBoardMove(
       board: nextBoard,
       turn: nextTurn,
       mustContinueFrom: continueSameTurn ? { r: to.r, c: to.c } : null,
-      lastMove: { from, to, notation, captured: capturedPiece },
+      lastMove: { from, to, notation, captured: capturedPiece, promoted },
       moveHistory: [...state.moveHistory.slice(-39), notation],
       clocksMs,
       turnStartedAt: now,
