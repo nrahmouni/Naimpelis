@@ -479,7 +479,10 @@ async function refreshGnulaAndSeriesKao(): Promise<SourceRefreshMetric[]> {
   const gStart = Date.now();
   let gCount = 0;
   try {
-    const gHtml = await fetchHtmlSafe('https://ww3.gnulahd.nu/', 'https://ww3.gnulahd.nu/');
+    const gHtml = await fetchHtmlSafe(
+      'https://ww3.gnulahd.nu/?gnm=1',
+      'https://ww3.gnulahd.nu/?gnm=1'
+    );
     if (gHtml) {
       const linkRe =
         /<a[^>]+href="(https?:\/\/ww3\.gnulahd\.nu\/(?:peliculas?|series?)\/[^"]+)"[^>]*>(?:[\s\S]{0,400}?)<(?:img[^>]+(?:data-src|src)="([^"]+)"[^>]*alt="([^"]+)"|h\d[^>]*>([^<]+)<\/h\d>)/gi;

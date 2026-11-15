@@ -637,11 +637,16 @@ interface MediaCatalogHubProps {
   onToggleCatalogFavorite: (item: CatalogMovie) => void;
   onToggleChannelFavorite: (entry: Omit<FavoriteChannelItem, 'addedAt'>) => void;
   onPlayFavoriteChannel: (channel: FavoriteChannelItem) => void;
-  onPlayMovie: (movie: CatalogMovie, preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN') => void;
+  onPlayMovie: (
+    movie: CatalogMovie,
+    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
+    opts?: number | { startAtSec?: number; forceSpanish?: boolean }
+  ) => void;
   onPlaySeriesEpisode: (
     series: TvSeriesDetails,
     episode: TvEpisodeItem,
-    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN'
+    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
+    opts?: number | { startAtSec?: number; forceSpanish?: boolean }
   ) => void;
   onPlayCatalaEpisode: (series: CatalaSeriesDetails, episode: CatalaEpisodeItem) => void;
   onReplayHistoryItem: (item: WatchHistoryItem, forceRestart?: boolean) => void;
@@ -902,6 +907,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   // Instant Series -> Season -> Episode Modal state
   const [selectedSeries, setSelectedSeries] = useState<TvSeriesDetails | null>(null);
+  const [seriesModalLang, setSeriesModalLang] = useState<'ES' | 'LAT' | 'VOSE' | 'EN'>('ES');
+  const [forceSpanishSeriesActive, setForceSpanishSeriesActive] = useState(false);
   const [loadingSeriesDetails, setLoadingSeriesDetails] = useState(false);
   const [probingSeriesLangs, setProbingSeriesLangs] = useState(false);
   const [brokenEpisodeImgs, setBrokenEpisodeImgs] = useState<Record<string, boolean>>({});
@@ -1599,13 +1606,21 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const openSeriesDetails = (
     tmdbId: number,
     seasonNum = 1,
-    seedShow?: Partial<CatalogMovie>
+    seedShow?: Partial<CatalogMovie>,
+    forceSpanishProbe = false
   ) => {
     const reqSeq = ++seriesFetchSeqRef.current;
     setLoadingSeriesDetails(true);
     setEpisodeSearchQuery('');
     setEpisodeSortDesc(false);
     setEpisodeRangeStart(0);
+    if (forceSpanishProbe) {
+      setSeriesModalLang('ES');
+      setForceSpanishSeriesActive(true);
+    } else if (!selectedSeries || selectedSeries.tmdbId !== tmdbId) {
+      setSeriesModalLang(seriesLangMode === 'EN' || seriesLangMode === 'VOSE' ? seriesLangMode : 'ES');
+      setForceSpanishSeriesActive(false);
+    }
 
     // Open the Series Modal IMMEDIATELY so the user never waits for a network roundtrip
     setSelectedSeries((prev) => {
@@ -1646,8 +1661,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       };
     });
 
-    const apiLang = seriesLangMode === 'EN' ? 'en' : 'es';
-    fetch(`/api/catalog/tv/${tmdbId}?season=${seasonNum}&lang=${apiLang}`)
+    const apiLang = forceSpanishProbe ? 'es' : lang === 'en' ? 'en' : 'es';
+    fetch(
+      `/api/catalog/tv/${tmdbId}?season=${seasonNum}&lang=${apiLang}${
+        forceSpanishProbe ? '&force=1&forceSpanish=1' : ''
+      }`
+    )
       .then((r) => r.json())
       .then((data) => {
         if (reqSeq !== seriesFetchSeqRef.current) return;
@@ -1676,16 +1695,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             episodeListScrollRef.current?.scrollTo({ top: 0 });
           }, 0);
 
-          // If languages already cached in response, apply them; otherwise probe asynchronously in background
+          // If languages already cached in response (and not forcing Spanish re-probe), apply them; otherwise probe asynchronously
           if (
+            !forceSpanishProbe &&
             Array.isArray(nextSeries.availableLanguages) &&
             nextSeries.availableLanguages.length > 0
           ) {
             setProbingSeriesLangs(false);
-            setSeriesLangMode((prev) =>
-              nextSeries.availableLanguages!.includes(prev)
-                ? prev
-                : nextSeries.availableLanguages![0]
+            const avail = nextSeries.availableLanguages;
+            setSeriesModalLang((prev) =>
+              avail.includes('ES') ? 'ES' : avail.includes(prev) ? prev : avail[0]
             );
           } else {
             setProbingSeriesLangs(true);
@@ -1693,7 +1712,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             fetch(
               `/api/catalog/tv/${tmdbId}/languages?season=${nextSeries.activeSeason}&episode=${firstEp}&title=${encodeURIComponent(
                 nextSeries.title || ''
-              )}&origTitle=${encodeURIComponent(nextSeries.originalTitle || '')}`
+              )}&origTitle=${encodeURIComponent(nextSeries.originalTitle || '')}${
+                forceSpanishProbe ? '&force=1&forceSpanish=1' : ''
+              }`
             )
               .then((r2) => r2.json())
               .then((langData) => {
@@ -1709,7 +1730,17 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       ? { ...curr, availableLanguages: avail }
                       : curr
                   );
-                  setSeriesLangMode((prev) => (avail.includes(prev) ? prev : avail[0]));
+                  setSeriesModalLang((prev) =>
+                    forceSpanishProbe
+                      ? avail.includes('ES')
+                        ? 'ES'
+                        : avail[0]
+                      : avail.includes('ES')
+                      ? 'ES'
+                      : avail.includes(prev)
+                      ? prev
+                      : avail[0]
+                  );
                 }
               })
               .catch(() => {})
@@ -2579,11 +2610,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         }
         isBookmarked={previewItem ? isBookmarked(previewItem) : false}
         onClose={() => setPreviewItem(null)}
-        onPlayMovie={(m, pLang) => onPlayMovie(m, pLang)}
-        onOpenSeriesEpisodes={(tmdbId) => {
+        onPlayMovie={(m, pLang, opts) => onPlayMovie(m, pLang, opts)}
+        onOpenSeriesEpisodes={(tmdbId, forceSpanish) => {
           const seed = previewItem || undefined;
           setPreviewItem(null);
-          openSeriesDetails(tmdbId, seed?.seasonNumber || 1, seed);
+          openSeriesDetails(tmdbId, seed?.seasonNumber || 1, seed, Boolean(forceSpanish));
         }}
         onToggleBookmark={(m) => onToggleCatalogFavorite(m)}
         onAddToQueue={onAddToQueue}
@@ -3034,10 +3065,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             type="button"
                             onClick={() => {
                               triggerHaptic('light');
-                              setSeriesLangMode(opt.code);
+                              setSeriesModalLang(opt.code);
                             }}
                             className={`min-h-[32px] px-2.5 sm:px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                              seriesLangMode === opt.code
+                              seriesModalLang === opt.code
                                 ? 'bg-white text-[#050508]'
                                 : 'text-zinc-400 hover:text-white'
                             }`}
@@ -3054,6 +3085,38 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           </span>
                         )}
                       </div>
+
+                      <button
+                        type="button"
+                        disabled={probingSeriesLangs}
+                        onClick={() => {
+                          triggerHaptic('medium');
+                          openSeriesDetails(
+                            selectedSeries.tmdbId,
+                            selectedSeries.activeSeason,
+                            selectedSeries,
+                            true
+                          );
+                        }}
+                        className={`min-h-[40px] px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors disabled:opacity-60 ${
+                          forceSpanishSeriesActive
+                            ? 'bg-[#9146FF]/25 border-[#BF94FF]/60 text-white'
+                            : 'bg-white/[0.06] hover:bg-white/[0.12] border-[#BF94FF]/35 text-[#EFEFF1]'
+                        }`}
+                      >
+                        <RefreshCw
+                          className={`w-3.5 h-3.5 shrink-0 text-[#BF94FF] ${
+                            probingSeriesLangs ? 'animate-spin' : ''
+                          }`}
+                        />
+                        <span>
+                          {pickLang(lang, {
+                            es: '🇪🇸 Forzar Castellano',
+                            ca: '🇪🇸 Forçar Castellà',
+                            en: '🇪🇸 Force Spanish (ES)',
+                          })}
+                        </span>
+                      </button>
                     </div>
 
                     <button
@@ -3128,7 +3191,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           onPlaySeriesEpisode(
                             selectedSeries,
                             allSeasonEpisodes[0],
-                            seriesLangMode
+                            forceSpanishSeriesActive ? 'ES' : seriesModalLang,
+                            forceSpanishSeriesActive ? { forceSpanish: true } : undefined
                           );
                           setSelectedSeries(null);
                         }}
@@ -3394,7 +3458,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                 onClick={() => {
                                   if (loadingItemId) return;
                                   triggerHaptic('success');
-                                  onPlaySeriesEpisode(selectedSeries, ep, seriesLangMode);
+                                  onPlaySeriesEpisode(
+                                    selectedSeries,
+                                    ep,
+                                    forceSpanishSeriesActive ? 'ES' : seriesModalLang,
+                                    forceSpanishSeriesActive ? { forceSpanish: true } : undefined
+                                  );
                                   setSelectedSeries(null);
                                 }}
                                 aria-label={`${pickLang(lang, { es: 'Reproducir', ca: 'Reproduir', en: 'Play' })} ${displayEpHeading}`}
@@ -3499,12 +3568,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                     title: `${selectedSeries.title} · ${ep.seasonNumber}x${String(
                                       ep.episodeNumber
                                     ).padStart(2, '0')}`,
-                                    subtitle: `${rawTitle || `Capítulo ${ep.episodeNumber}`} (${seriesLangMode})`,
+                                    subtitle: `${rawTitle || `Capítulo ${ep.episodeNumber}`} (${seriesModalLang})`,
                                     poster: ep.still || selectedSeries.poster,
                                     tmdbId: selectedSeries.tmdbId,
                                     season: ep.seasonNumber,
                                     episode: ep.episodeNumber,
-                                    preferLang: seriesLangMode,
+                                    preferLang: seriesModalLang,
                                   });
                                 }}
                                 title={t.addToQueue}

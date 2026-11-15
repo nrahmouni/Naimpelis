@@ -12,6 +12,7 @@ import {
   Globe,
   Volume2,
   VolumeX,
+  RefreshCw,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -33,8 +34,12 @@ interface MediaDetailsModalProps {
   defaultAudioLang?: MovieAudioLangPreference;
   isBookmarked: boolean;
   onClose: () => void;
-  onPlayMovie: (movie: CatalogMovie, preferLang: MovieAudioLangPreference) => void;
-  onOpenSeriesEpisodes: (tmdbId: number) => void;
+  onPlayMovie: (
+    movie: CatalogMovie,
+    preferLang: MovieAudioLangPreference,
+    opts?: { forceSpanish?: boolean }
+  ) => void;
+  onOpenSeriesEpisodes: (tmdbId: number, forceSpanish?: boolean) => void;
   onToggleBookmark: (movie: CatalogMovie) => void;
   onAddToQueue: (item: Omit<RoomQueueItem, 'id' | 'addedBy'>) => void;
   onSelectSimilar: (movie: CatalogMovie) => void;
@@ -109,6 +114,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const [playTrailer, setPlayTrailer] = useState(false);
   const [trailerMuted, setTrailerMuted] = useState(false);
   const [queuedFeedback, setQueuedFeedback] = useState(false);
+  const [forcingSpanish, setForcingSpanish] = useState(false);
+  const [forceSpanishStatus, setForceSpanishStatus] = useState<'idle' | 'found' | 'launched'>('idle');
   const [selectedAudioLang, setSelectedAudioLang] =
     useState<MovieAudioLangPreference>(defaultAudioLang);
   const trailerIframeRef = useRef<HTMLIFrameElement | null>(null);
@@ -157,6 +164,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     setLoading(true);
     setPlayTrailer(false);
     setQueuedFeedback(false);
+    setForcingSpanish(false);
+    setForceSpanishStatus('idle');
 
     const mediaType = item.mediaType === 'tv' ? 'tv' : 'movie';
     const idSegment = item.tmdbId || 0;
@@ -187,6 +196,60 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
       cancelled = true;
     };
   }, [item?.id, item?.tmdbId, item?.mediaType, item?.title, item?.movidyUrl, item?.vestUrl, lang]);
+
+  const handleForceSpanishSearch = useCallback(async () => {
+    if (!item || forcingSpanish) return;
+    triggerHaptic('medium');
+    const isSeriesMedia = (details?.mediaType || item.mediaType) === 'tv';
+    const resolvedId = item.tmdbId || details?.tmdbId;
+    if (isSeriesMedia && resolvedId) {
+      onClose();
+      onOpenSeriesEpisodes(resolvedId, true);
+      return;
+    }
+
+    setForcingSpanish(true);
+    setForceSpanishStatus('idle');
+    const idSegment = resolvedId || 0;
+    const movidyParam = item.movidyUrl ? `&movidyUrl=${encodeURIComponent(item.movidyUrl)}` : '';
+    const vestParam = item.vestUrl ? `&vestUrl=${encodeURIComponent(item.vestUrl)}` : '';
+    let latestDetails = details;
+    try {
+      const res = await fetch(
+        `/api/catalog/details/movie/${idSegment}?lang=${lang}&title=${encodeURIComponent(
+          item.title || ''
+        )}${movidyParam}${vestParam}&force=1&forceSpanish=1`
+      );
+      const data = await res.json().catch(() => null);
+      if (data?.success && data?.details) {
+        latestDetails = data.details as MediaRichDetails;
+        setDetails(latestDetails);
+      }
+    } catch {
+      // fall through to forced stream extraction
+    } finally {
+      setForcingSpanish(false);
+    }
+
+    const avail = latestDetails?.availableLanguages;
+    if (Array.isArray(avail) && avail.includes('ES')) {
+      setSelectedAudioLang('ES');
+      setForceSpanishStatus('found');
+    } else {
+      setForceSpanishStatus('launched');
+    }
+    const enrichedMovie: CatalogMovie = {
+      ...item,
+      tmdbId: item.tmdbId || latestDetails?.tmdbId,
+      originalTitle: item.originalTitle || latestDetails?.originalTitle,
+      year:
+        item.year && item.year !== 'HD'
+          ? item.year
+          : latestDetails?.year || item.year,
+    };
+    onClose();
+    onPlayMovie(enrichedMovie, 'ES', { forceSpanish: true });
+  }, [item, details, forcingSpanish, lang, onClose, onOpenSeriesEpisodes, onPlayMovie]);
 
   if (!item) return null;
 
@@ -558,70 +621,124 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
             {/* Action Buttons Row */}
             <div className="pt-2 flex flex-wrap items-center gap-2.5">
               {isSeries && (item.tmdbId || details?.tmdbId) ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('success');
-                    const id = (item.tmdbId || details?.tmdbId)!;
-                    onClose();
-                    onOpenSeriesEpisodes(id);
-                  }}
-                  className="min-h-[48px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-[0_10px_28px_rgba(145,70,255,0.38)]"
-                >
-                  <Play className="w-4 h-4 fill-current" />
-                  <span>
-                    {pickLang(lang, {
-                      es: 'Elegir Temporada y Episodio',
-                      ca: 'Triar Temporada i Episodi',
-                      en: 'Browse Episodes',
-                    })}
-                  </span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('success');
+                      const id = (item.tmdbId || details?.tmdbId)!;
+                      onClose();
+                      onOpenSeriesEpisodes(id);
+                    }}
+                    className="min-h-[48px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-[0_10px_28px_rgba(145,70,255,0.38)]"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Elegir Temporada y Episodio',
+                        ca: 'Triar Temporada i Episodi',
+                        en: 'Browse Episodes',
+                      })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={forcingSpanish}
+                    onClick={() => void handleForceSpanishSearch()}
+                    className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-[#BF94FF]/40 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
+                  >
+                    {forcingSpanish ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF]" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 text-[#BF94FF]" />
+                    )}
+                    <span>
+                      {pickLang(lang, {
+                        es: '🇪🇸 Forzar búsqueda en Castellano',
+                        ca: '🇪🇸 Forçar cerca en Castellà',
+                        en: '🇪🇸 Force Castilian Spanish search',
+                      })}
+                    </span>
+                  </button>
+                </>
               ) : (
-                <button
-                  type="button"
-                  disabled={(loading && !hasProbedLanguages) || (hasProbedLanguages && visibleAudioOptions.length === 0)}
-                  onClick={() => {
-                    triggerHaptic('success');
-                    const enrichedMovie: CatalogMovie = {
-                      ...item,
-                      tmdbId: item.tmdbId || details?.tmdbId,
-                      originalTitle: item.originalTitle || details?.originalTitle,
-                      year:
-                        item.year && item.year !== 'HD'
-                          ? item.year
-                          : details?.year || item.year,
-                    };
-                    onClose();
-                    onPlayMovie(enrichedMovie, selectedAudioLang);
-                  }}
-                  className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-[0_10px_28px_rgba(145,70,255,0.38)]"
-                >
-                  {loading && !hasProbedLanguages ? (
-                    <Loader2 className="w-4 h-4 animate-spin shrink-0" />
-                  ) : (
-                    <Play className="w-4 h-4 fill-current shrink-0" />
-                  )}
-                  <span>
-                    {loading && !hasProbedLanguages
-                      ? pickLang(lang, {
-                          es: 'Verificando idiomas...',
-                          ca: 'Verificant idiomes...',
-                          en: 'Checking languages...',
-                        })
-                      : visibleAudioOptions.length === 0 && hasProbedLanguages
-                      ? pickLang(lang, {
-                          es: 'No disponible ahora',
-                          ca: 'No disponible ara',
-                          en: 'Unavailable right now',
-                        })
-                      : pickLang(lang, {
-                          es: `Proyectar en ${selectedOptLabel} (${selectedAudioLang})`,
-                          ca: `Projectar en ${selectedOptLabel} (${selectedAudioLang})`,
-                          en: `Screen in ${selectedOptLabel}`,
-                        })}
-                  </span>
-                </button>
+                <>
+                  <button
+                    type="button"
+                    disabled={(loading && !hasProbedLanguages) || (hasProbedLanguages && visibleAudioOptions.length === 0)}
+                    onClick={() => {
+                      triggerHaptic('success');
+                      const enrichedMovie: CatalogMovie = {
+                        ...item,
+                        tmdbId: item.tmdbId || details?.tmdbId,
+                        originalTitle: item.originalTitle || details?.originalTitle,
+                        year:
+                          item.year && item.year !== 'HD'
+                            ? item.year
+                            : details?.year || item.year,
+                      };
+                      onClose();
+                      onPlayMovie(enrichedMovie, selectedAudioLang);
+                    }}
+                    className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-[0_10px_28px_rgba(145,70,255,0.38)]"
+                  >
+                    {loading && !hasProbedLanguages ? (
+                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                    ) : (
+                      <Play className="w-4 h-4 fill-current shrink-0" />
+                    )}
+                    <span>
+                      {loading && !hasProbedLanguages
+                        ? pickLang(lang, {
+                            es: 'Verificando idiomas...',
+                            ca: 'Verificant idiomes...',
+                            en: 'Checking languages...',
+                          })
+                        : visibleAudioOptions.length === 0 && hasProbedLanguages
+                        ? pickLang(lang, {
+                            es: 'No disponible ahora',
+                            ca: 'No disponible ara',
+                            en: 'Unavailable right now',
+                          })
+                        : pickLang(lang, {
+                            es: `Proyectar en ${selectedOptLabel} (${selectedAudioLang})`,
+                            ca: `Projectar en ${selectedOptLabel} (${selectedAudioLang})`,
+                            en: `Screen in ${selectedOptLabel}`,
+                          })}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={forcingSpanish}
+                    onClick={() => void handleForceSpanishSearch()}
+                    className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-[#BF94FF]/40 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
+                  >
+                    {forcingSpanish ? (
+                      <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF]" />
+                    ) : (
+                      <RefreshCw className="w-4 h-4 text-[#BF94FF]" />
+                    )}
+                    <span>
+                      {forcingSpanish
+                        ? pickLang(lang, {
+                            es: 'Buscando Castellano...',
+                            ca: 'Cercant Castellà...',
+                            en: 'Searching Castilian...',
+                          })
+                        : forceSpanishStatus === 'found'
+                        ? pickLang(lang, {
+                            es: '🇪🇸 Castellano detectado',
+                            ca: '🇪🇸 Castellà detectat',
+                            en: '🇪🇸 Castilian detected',
+                          })
+                        : pickLang(lang, {
+                            es: '🇪🇸 Forzar búsqueda en Castellano',
+                            ca: '🇪🇸 Forçar cerca en Castellà',
+                            en: '🇪🇸 Force Castilian Spanish search',
+                          })}
+                    </span>
+                  </button>
+                </>
               )}
 
               {!isSeries && (

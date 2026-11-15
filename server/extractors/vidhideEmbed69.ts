@@ -560,6 +560,7 @@ export async function resolveSeriesKaoVidurlTracks(opts: {
   imdbId?: string | null;
   directorHint?: string;
   runtimeMinHint?: number;
+  force?: boolean;
 }): Promise<TrackRecord[]> {
   try {
     const uniqueHints = Array.from(
@@ -577,9 +578,9 @@ export async function resolveSeriesKaoVidurlTracks(opts: {
     const cacheKey = `v2|${opts.mediaType}|${expectedYearNum || ''}|${opts.imdbId || ''}|${normalizeTitleForMatch(
       uniqueHints[0]
     )}`;
-    let matchedShowUrl = seriesKaoSlugCache.get(cacheKey) || null;
+    let matchedShowUrl = opts.force ? null : seriesKaoSlugCache.get(cacheKey) || null;
 
-    if (!seriesKaoSlugCache.has(cacheKey)) {
+    if (opts.force || !seriesKaoSlugCache.has(cacheKey)) {
       for (const hint of uniqueHints.slice(0, 2)) {
         try {
           const sHtml = await fetchTextWithCurlFallback(
@@ -614,6 +615,7 @@ export async function resolveSeriesKaoVidurlTracks(opts: {
               continue;
             }
             if (
+              opts.mediaType === 'movie' &&
               expectedYearNum &&
               cardYearNum &&
               cardYearNum !== expectedYearNum &&
@@ -686,17 +688,25 @@ export async function resolveSeriesKaoVidurlTracks(opts: {
         pHtml.match(/\/year\/((?:19|20)\d{2})\b/i)?.[1] ||
         pageMeta.year ||
         '';
-      if (expectedYearNum > 0 || opts.directorHint || opts.runtimeMinHint) {
-        const compat = isMetadataCompatibleForMedia({
-          targetTitleHints: uniqueHints,
-          candidateYear: fallbackBodyYear || undefined,
-          expectedYear: opts.yearHint,
-          candidateDirector: pageMeta.director || undefined,
-          expectedDirector: opts.directorHint,
-          candidateRuntimeMin: pageMeta.runtimeMin || undefined,
-          expectedRuntimeMin: opts.runtimeMinHint,
-        });
-        if (!compat.ok) {
+      if (opts.mediaType === 'movie') {
+        if (expectedYearNum > 0 || opts.directorHint || opts.runtimeMinHint) {
+          const compat = isMetadataCompatibleForMedia({
+            targetTitleHints: uniqueHints,
+            candidateYear: fallbackBodyYear || undefined,
+            expectedYear: opts.yearHint,
+            candidateDirector: pageMeta.director || undefined,
+            expectedDirector: opts.directorHint,
+            candidateRuntimeMin: pageMeta.runtimeMin || undefined,
+            expectedRuntimeMin: opts.runtimeMinHint,
+          });
+          if (!compat.ok) {
+            return [];
+          }
+        }
+      } else if (expectedYearNum > 0 && fallbackBodyYear && /^\d{4}$/.test(fallbackBodyYear)) {
+        // TV episode pages often omit series first_air_date or show episode air year (>= first_air_date)
+        const candYearNum = Number(fallbackBodyYear);
+        if (candYearNum < expectedYearNum - 1) {
           return [];
         }
       }
@@ -1199,156 +1209,50 @@ export function pickBestGnulaSearchResult(
     : null;
 }
 
-async function resolveGnulaSlug(opts: {
-  titleHints: string[];
-  mediaType: 'movie' | 'tv';
-  yearHint?: string;
-}): Promise<string | null> {
-  const uniqueHints = Array.from(
-    new Set(
-      opts.titleHints
-        .map((h) => String(h || '').replace(/\s*\([^)]*\)/g, '').trim())
-        .filter((h) => normalizeTitleForMatch(h).length >= 2)
-    )
-  ).slice(0, 5);
-  if (uniqueHints.length === 0) return null;
-
-  const cacheKey = `v2|${opts.mediaType}|${opts.yearHint || ''}|${uniqueHints
-    .map((h) => normalizeTitleForMatch(h))
-    .join('|')}`;
-  if (gnulaSlugCache.has(cacheKey)) {
-    return gnulaSlugCache.get(cacheKey) ?? null;
-  }
-
-  let fallbackAdjacentSlug: string | null = null;
-
-  for (const hint of uniqueHints) {
-    try {
-      const searchUrl = `${GNULA_ORIGIN}/wp-json/gnrd/v1/search?q=${encodeURIComponent(hint)}`;
-      const rawJsonText = await fetchTextWithCurlFallback(
-        searchUrl,
-        {
-          'User-Agent': CHROME_UA,
-          Accept: 'application/json',
-          Referer: `${GNULA_ORIGIN}/`,
-        },
-        4000
-      );
-      if (!rawJsonText) continue;
-      let json: any = null;
-      try {
-        json = JSON.parse(rawJsonText);
-      } catch {
-        continue;
-      }
-      const results: any[] = Array.isArray(json?.results) ? json.results : [];
-      if (results.length === 0) continue;
-
-      const picked = pickBestGnulaSearchResult(results, {
-        titleHints: uniqueHints,
-        mediaType: opts.mediaType,
-        yearHint: opts.yearHint,
-      });
-
-      if (picked?.url) {
-        const m = picked.url.match(/\/ver\/([^/?#]+)\/?/i);
-        if (m?.[1]) {
-          if (picked.exactYear) {
-            gnulaSlugCache.set(cacheKey, m[1]);
-            return m[1];
-          }
-          if (!fallbackAdjacentSlug) {
-            fallbackAdjacentSlug = m[1];
-          }
-        }
-      }
-    } catch {
-      // try next hint
+export function withGnmParam(rawUrl: string): string {
+  try {
+    const u = new URL(rawUrl, GNULA_ORIGIN);
+    if (u.hostname.includes('gnulahd')) {
+      u.searchParams.set('gnm', '1');
     }
+    return u.toString();
+  } catch {
+    return rawUrl.includes('gnm=1')
+      ? rawUrl
+      : `${rawUrl}${rawUrl.includes('?') ? '&' : '?'}gnm=1`;
   }
-
-  gnulaSlugCache.set(cacheKey, fallbackAdjacentSlug);
-  return fallbackAdjacentSlug;
 }
 
-export async function extractGnulaCastellanoTracks(opts: {
-  titleHints: string[];
-  mediaType: 'movie' | 'tv';
-  season?: number;
-  episode?: number;
-  yearHint?: string;
-  directorHint?: string;
-  runtimeMinHint?: number;
-}): Promise<TrackRecord[]> {
+export function parseGnulaPlayerPayload(pJson: any): TrackRecord[] {
   try {
-    const slug = await resolveGnulaSlug({
-      titleHints: opts.titleHints,
-      mediaType: opts.mediaType,
-      yearHint: opts.yearHint,
-    });
-    if (!slug) return [];
+    const rawField = pJson?.p ?? pJson?.d;
+    if (!rawField) return [];
 
-    const pageUrl =
-      opts.mediaType === 'tv'
-        ? `${GNULA_ORIGIN}/${slug}-${opts.season || 1}x${String(opts.episode || 1).padStart(2, '0')}/`
-        : `${GNULA_ORIGIN}/ver/${slug}/`;
+    const unpacked: any =
+      typeof rawField === 'string'
+        ? gnrdXorUnpack(rawField.trim())
+        : rawField;
+    const langsPayload: any[] = Array.isArray(unpacked)
+      ? unpacked
+      : Array.isArray(unpacked?.langs)
+      ? unpacked.langs
+      : [];
+    if (langsPayload.length === 0) return [];
 
-    const html = await fetchTextWithCurlFallback(
-      pageUrl,
-      {
-        'User-Agent': CHROME_UA,
-        Referer: `${GNULA_ORIGIN}/`,
-      },
-      4200
-    );
-    if (!html) return [];
-
-    // Verify Gnula page metadata against expected year, director, and runtime before accepting streams
-    if (opts.mediaType === 'movie') {
-      const pageMeta = parseGnulaPageMetadata(html);
-      const compat = isMetadataCompatibleForMedia({
-        candidateTitle: pageMeta.title || undefined,
-        targetTitleHints: opts.titleHints,
-        candidateYear: pageMeta.year || undefined,
-        expectedYear: opts.yearHint,
-        candidateDirector: pageMeta.director || undefined,
-        expectedDirector: opts.directorHint,
-        candidateRuntimeMin: pageMeta.runtimeMin || undefined,
-        expectedRuntimeMin: opts.runtimeMinHint,
-      });
-      if (!compat.ok) {
-        return [];
-      }
-    }
-
-    const pidMatch = html.match(/_gnrdPid\s*=\s*(\d+)/);
-    const tokMatch = html.match(/_gnrdTok\s*=\s*["']([^"']+)["']/);
-    if (!pidMatch?.[1] || !tokMatch?.[1]) return [];
-
-    const playerApiUrl = `${GNULA_ORIGIN}/wp-json/gnrd/v1/player?id=${
-      pidMatch[1]
-    }&t=${encodeURIComponent(tokMatch[1])}`;
-    const pText = await fetchTextWithCurlFallback(
-      playerApiUrl,
-      {
-        'User-Agent': CHROME_UA,
-        Accept: 'application/json',
-        Referer: pageUrl,
-      },
-      4000
-    );
-    if (!pText) return [];
-    const pJson = JSON.parse(pText);
-    if (!pJson?.d) return [];
-
-    const langsPayload: any[] = gnrdXorUnpack(pJson.d);
-    if (!Array.isArray(langsPayload)) return [];
-
-    const nativeTracks: TrackRecord[] = [];
+    const nativeTracks: Array<TrackRecord & { hostPriority: number }> = [];
     const embedBackupTracks: TrackRecord[] = [];
 
+    const getVidhideHostPriority = (hostLow: string): number => {
+      if (/vidaraa?\.[a-z]+/i.test(hostLow)) return 1;
+      if (/vidhide|smoothpre|earnvids/i.test(hostLow)) return 2;
+      if (/streamwish|hglink|hlswish|wishembed/i.test(hostLow)) return 3;
+      if (/filelions/i.test(hostLow)) return 4;
+      if (/voe\.[a-z]+/i.test(hostLow)) return 5;
+      return 6;
+    };
+
     langsPayload.forEach((grp, lIdx) => {
-      const rawLangName = String(grp?.name || '');
+      const rawLangName = String(grp?.label || grp?.name || '');
       const langCode: 'ES' | 'LAT' | 'VOSE' = /latino/i.test(rawLangName)
         ? 'LAT'
         : /castellano|espa[ñn]ol/i.test(rawLangName)
@@ -1376,6 +1280,7 @@ export async function extractGnulaCastellanoTracks(opts: {
             quality: '1080p',
             sourceUrl: rawSrc,
             resolverType: 'vidhide_hls',
+            hostPriority: getVidhideHostPriority(hostLow),
           });
         } else if (/voe\.[a-z]+/i.test(hostLow)) {
           nativeTracks.push({
@@ -1385,6 +1290,7 @@ export async function extractGnulaCastellanoTracks(opts: {
             quality: 'HD',
             sourceUrl: rawSrc,
             resolverType: 'embed_sniff',
+            hostPriority: getVidhideHostPriority(hostLow),
           });
         } else if (/ok\.ru|byse|vidsonic|dood|netu/i.test(hostLow)) {
           embedBackupTracks.push({
@@ -1399,7 +1305,210 @@ export async function extractGnulaCastellanoTracks(opts: {
       });
     });
 
-    return nativeTracks.length > 0 ? nativeTracks : embedBackupTracks;
+    if (nativeTracks.length > 0) {
+      nativeTracks.sort((a, b) => a.hostPriority - b.hostPriority);
+      return nativeTracks.map(({ hostPriority: _hp, ...track }) => track);
+    }
+    return embedBackupTracks;
+  } catch {
+    return [];
+  }
+}
+
+async function resolveGnulaSlug(opts: {
+  titleHints: string[];
+  mediaType: 'movie' | 'tv';
+  yearHint?: string;
+  force?: boolean;
+}): Promise<string | null> {
+  const uniqueHints = Array.from(
+    new Set(
+      opts.titleHints
+        .map((h) => String(h || '').replace(/\s*\([^)]*\)/g, '').trim())
+        .filter((h) => normalizeTitleForMatch(h).length >= 2)
+    )
+  ).slice(0, 5);
+  if (uniqueHints.length === 0) return null;
+
+  const cacheKey = `v2|${opts.mediaType}|${opts.yearHint || ''}|${uniqueHints
+    .map((h) => normalizeTitleForMatch(h))
+    .join('|')}`;
+  if (!opts.force && gnulaSlugCache.has(cacheKey)) {
+    return gnulaSlugCache.get(cacheKey) ?? null;
+  }
+
+  let fallbackAdjacentSlug: string | null = null;
+
+  for (const hint of uniqueHints) {
+    try {
+      const searchUrl = withGnmParam(
+        `${GNULA_ORIGIN}/wp-json/gnrd/v1/search?q=${encodeURIComponent(hint)}`
+      );
+      const rawJsonText = await fetchTextWithCurlFallback(
+        searchUrl,
+        {
+          'User-Agent': CHROME_UA,
+          Accept: 'application/json',
+          Referer: `${GNULA_ORIGIN}/?gnm=1`,
+        },
+        4000
+      );
+      if (!rawJsonText) continue;
+      let json: any = null;
+      try {
+        json = JSON.parse(rawJsonText);
+      } catch {
+        continue;
+      }
+      const results: any[] = Array.isArray(json?.results) ? json.results : [];
+      if (results.length === 0) continue;
+
+      const picked = pickBestGnulaSearchResult(results, {
+        titleHints: uniqueHints,
+        mediaType: opts.mediaType,
+        yearHint: opts.yearHint,
+      });
+
+      if (picked?.url) {
+        const m = picked.url.match(/\/(?:ver|series?|peliculas?)\/([^/?#]+)\/?/i);
+        if (m?.[1]) {
+          if (picked.exactYear) {
+            gnulaSlugCache.set(cacheKey, m[1]);
+            return m[1];
+          }
+          if (!fallbackAdjacentSlug) {
+            fallbackAdjacentSlug = m[1];
+          }
+        }
+      }
+    } catch {
+      // try next hint
+    }
+  }
+
+  gnulaSlugCache.set(cacheKey, fallbackAdjacentSlug);
+  return fallbackAdjacentSlug;
+}
+
+export async function extractGnulaCastellanoTracks(opts: {
+  titleHints: string[];
+  mediaType: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+  yearHint?: string;
+  directorHint?: string;
+  runtimeMinHint?: number;
+  force?: boolean;
+}): Promise<TrackRecord[]> {
+  try {
+    const slug = await resolveGnulaSlug({
+      titleHints: opts.titleHints,
+      mediaType: opts.mediaType,
+      yearHint: opts.yearHint,
+      force: opts.force,
+    });
+    if (!slug) return [];
+
+    const sNum = Math.max(1, opts.season || 1);
+    const eNum = Math.max(1, opts.episode || 1);
+    const epPadded = String(eNum).padStart(2, '0');
+
+    let pageUrl =
+      opts.mediaType === 'tv'
+        ? withGnmParam(`${GNULA_ORIGIN}/${slug}-${sNum}x${epPadded}/`)
+        : withGnmParam(`${GNULA_ORIGIN}/ver/${slug}/`);
+
+    let html = await fetchTextWithCurlFallback(
+      pageUrl,
+      {
+        'User-Agent': CHROME_UA,
+        Referer: `${GNULA_ORIGIN}/?gnm=1`,
+      },
+      4200
+    );
+
+    // Fallback for TV series whose episode slug isn't zero-padded or uses an alternate episode URL inside /ver/<slug>/
+    if (opts.mediaType === 'tv' && (!html || !/_gnrdPid\s*=/.test(html))) {
+      const showPageUrl = withGnmParam(`${GNULA_ORIGIN}/ver/${slug}/`);
+      const showHtml = await fetchTextWithCurlFallback(
+        showPageUrl,
+        {
+          'User-Agent': CHROME_UA,
+          Referer: `${GNULA_ORIGIN}/?gnm=1`,
+        },
+        4000
+      );
+      if (showHtml) {
+        const epHrefMatch = showHtml.match(
+          new RegExp(
+            `href=["']((?:https?:\\/\\/[^"']*gnulahd\\.[^"'\\/]+)?\\/[^"']*?-${sNum}x0?${eNum}\\/?(?:\\?[^"']*)?)["']`,
+            'i'
+          )
+        );
+        if (epHrefMatch?.[1]) {
+          const rawEpHref = epHrefMatch[1].startsWith('http')
+            ? epHrefMatch[1]
+            : `${GNULA_ORIGIN}${epHrefMatch[1]}`;
+          const nextPageUrl = withGnmParam(rawEpHref);
+          if (nextPageUrl !== pageUrl) {
+            const epHtml2 = await fetchTextWithCurlFallback(
+              nextPageUrl,
+              {
+                'User-Agent': CHROME_UA,
+                Referer: showPageUrl,
+              },
+              4000
+            );
+            if (epHtml2 && /_gnrdPid\s*=/.test(epHtml2)) {
+              pageUrl = nextPageUrl;
+              html = epHtml2;
+            }
+          }
+        }
+      }
+    }
+
+    if (!html) return [];
+
+    // Verify Gnula page metadata against expected year, director, and runtime before accepting streams
+    if (opts.mediaType === 'movie') {
+      const pageMeta = parseGnulaPageMetadata(html);
+      const compat = isMetadataCompatibleForMedia({
+        candidateTitle: pageMeta.title || undefined,
+        targetTitleHints: opts.titleHints,
+        candidateYear: pageMeta.year || undefined,
+        expectedYear: opts.yearHint,
+        candidateDirector: pageMeta.director || undefined,
+        expectedDirector: opts.directorHint,
+        candidateRuntimeMin: pageMeta.runtimeMin || undefined,
+        expectedRuntimeMin: opts.runtimeMinHint,
+      });
+      if (!compat.ok) {
+        return [];
+      }
+    }
+
+    const pidMatch = html.match(/_gnrdPid\s*=\s*(\d+)/);
+    const tokMatch = html.match(/_gnrdTok\s*=\s*["']([^"']+)["']/);
+    if (!pidMatch?.[1] || !tokMatch?.[1]) return [];
+
+    const playerApiUrl = withGnmParam(
+      `${GNULA_ORIGIN}/wp-json/gnrd/v1/player?id=${pidMatch[1]}&t=${encodeURIComponent(
+        tokMatch[1]
+      )}`
+    );
+    const pText = await fetchTextWithCurlFallback(
+      playerApiUrl,
+      {
+        'User-Agent': CHROME_UA,
+        Accept: 'application/json',
+        Referer: pageUrl,
+      },
+      4000
+    );
+    if (!pText) return [];
+    const pJson = JSON.parse(pText);
+    return parseGnulaPlayerPayload(pJson);
   } catch {
     return [];
   }
@@ -1415,6 +1524,7 @@ export async function extractEmbed69SpanishTracks(opts: {
   yearHint?: string;
   directorHint?: string;
   runtimeMinHint?: number;
+  force?: boolean;
 }): Promise<TrackRecord[]> {
   try {
     let imdbId = opts.imdbId || null;
@@ -1503,6 +1613,7 @@ export async function extractEmbed69SpanishTracks(opts: {
             yearHint,
             directorHint: directorHint || undefined,
             runtimeMinHint: runtimeMinHint || undefined,
+            force: opts.force,
           }).catch(() => [] as TrackRecord[])
         : Promise.resolve([] as TrackRecord[]),
       imdbId
@@ -1520,6 +1631,7 @@ export async function extractEmbed69SpanishTracks(opts: {
             imdbId,
             directorHint: directorHint || undefined,
             runtimeMinHint: runtimeMinHint || undefined,
+            force: opts.force,
           }).catch(() => [] as TrackRecord[])
         : Promise.resolve([] as TrackRecord[]),
       isLikelyAnime && hints.length > 0
@@ -1537,8 +1649,8 @@ export async function extractEmbed69SpanishTracks(opts: {
     const merged: TrackRecord[] = [];
 
     const nativeCandidates = [
-      ...directTracks,
       ...gnulaTracks.filter((t) => t.resolverType === 'vidhide_hls'),
+      ...directTracks,
       ...skTracks,
       ...animeTracks,
       ...gnulaTracks.filter((t) => t.resolverType !== 'vidhide_hls' && t.resolverType !== 'web_embed'),

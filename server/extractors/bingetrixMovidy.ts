@@ -861,14 +861,17 @@ export async function probeAvailableLanguages(opts: {
   yearHint?: string;
   directorHint?: string;
   runtimeMinHint?: number;
+  force?: boolean;
 }): Promise<('ES' | 'LAT' | 'VOSE' | 'EN')[]> {
   const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
   const season = opts.mediaType === 'tv' ? opts.season || 1 : 0;
   const episode = opts.mediaType === 'tv' ? opts.episode || 1 : 0;
   const cacheKey = `v3|${opts.mediaType}|${cleanId || opts.movidyUrl || opts.vestUrl || ''}|${opts.yearHint || ''}|${season}|${episode}`;
 
-  const cached = availableLangsCache.get(cacheKey);
-  if (cached) return cached;
+  if (!opts.force) {
+    const cached = availableLangsCache.get(cacheKey);
+    if (cached) return cached;
+  }
 
   const hints = Array.from(
     new Set((opts.titleHints || []).map((t) => String(t || '').trim()).filter(Boolean))
@@ -931,6 +934,7 @@ export async function probeAvailableLanguages(opts: {
           yearHint: opts.yearHint,
           directorHint: opts.directorHint,
           runtimeMinHint: opts.runtimeMinHint,
+          force: opts.force,
         })
       : Promise.resolve([] as TrackRecord[]);
 
@@ -981,7 +985,7 @@ export async function probeAvailableLanguages(opts: {
 
   const [mvTracks, esTracks, hasEn] = await Promise.all([
     withProbeTimeout(movidyPromise, 4500, [] as TrackRecord[]),
-    withProbeTimeout(embedPromise, 6500, [] as TrackRecord[]),
+    withProbeTimeout(embedPromise, opts.force ? 8500 : 6500, [] as TrackRecord[]),
     withProbeTimeout(checkAnyEnglishStream(), 4200, false),
   ]);
   const foundSet = new Set<'ES' | 'LAT' | 'VOSE' | 'EN'>();

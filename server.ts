@@ -1872,12 +1872,13 @@ app.get('/api/catalog/tv/:tmdbId', async (req, res) => {
 
     const requestedSeason = Math.max(1, parseInt(String(req.query.season || '1'), 10) || 1);
     const isEn = String(req.query.lang || 'es').toLowerCase() === 'en';
+    const force = String(req.query.force || req.query.forceSpanish || '') === '1';
     const langParam = isEn ? 'en-US' : 'es-ES';
     const cacheKey = `${cleanId}:${requestedSeason}:${langParam}`;
 
-    const cached = tvDetailsFastCache.get(cacheKey);
+    const cached = !force ? tvDetailsFastCache.get(cacheKey) : undefined;
     if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
-      const cachedLangs = tvLangProbeCache.get(`${cleanId}:${cached.details.activeSeason}:1`);
+      const cachedLangs = tvLangProbeCache.get(`v2|${cleanId}:${cached.details.activeSeason}:1`);
       return res.json({
         success: true,
         details: {
@@ -2121,7 +2122,9 @@ app.get('/api/catalog/tv/:tmdbId', async (req, res) => {
 
     tvDetailsFastCache.set(cacheKey, { details: detailsPayload, ts: Date.now() });
 
-    const cachedLangs = tvLangProbeCache.get(`${cleanId}:${effectiveSeason}:1`);
+    const cachedLangs = !force
+      ? tvLangProbeCache.get(`v2|${cleanId}:${effectiveSeason}:1`)
+      : undefined;
     res.json({
       success: true,
       details: {
@@ -2142,9 +2145,10 @@ app.get('/api/catalog/tv/:tmdbId/languages', async (req, res) => {
 
     const seasonNum = Math.max(1, parseInt(String(req.query.season || '1'), 10) || 1);
     const episodeNum = Math.max(1, parseInt(String(req.query.episode || '1'), 10) || 1);
+    const force = String(req.query.force || req.query.forceSpanish || '') === '1';
     const cacheKey = `v2|${cleanId}:${seasonNum}:${episodeNum}`;
 
-    const cached = tvLangProbeCache.get(cacheKey);
+    const cached = !force ? tvLangProbeCache.get(cacheKey) : undefined;
     if (cached && cached.availableLanguages.length > 0 && Date.now() - cached.ts < 15 * 60 * 1000) {
       return res.json({ success: true, availableLanguages: cached.availableLanguages });
     }
@@ -2189,6 +2193,7 @@ app.get('/api/catalog/tv/:tmdbId/languages', async (req, res) => {
       episode: episodeNum,
       titleHints: hints,
       yearHint: yearHint || undefined,
+      force,
     });
 
     const availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[] =
@@ -5780,13 +5785,14 @@ app.get('/api/extract/stream', async (req, res) => {
   const episodeParam = parseInt(String(req.query.episode || '0'), 10) || undefined;
   const episodeTitleHint = String(req.query.episodeTitle || '').trim();
   const isSandboxedFrame = String(req.query.sandboxed || '').trim() === '1';
+  const forceExtract = String(req.query.force || req.query.forceSpanish || '') === '1';
 
   if (!rawInput && !movidyUrlParam && !vestUrlParam && !titleHint && !tmdbIdParam) {
     return res.status(400).json({ success: false, error: 'Falta el enlace o título del contenido.' });
   }
 
   const cacheKey = `v2|${mediaTypeParam}|${tmdbIdParam}|${yearParam}|${seasonParam || ''}|${episodeParam || ''}|${resolverType}|${preferLang}|${isSandboxedFrame ? 'sb1' : 'sb0'}|${rawInput}|${movidyUrlParam}|${vestUrlParam}|${titleHint}`;
-  const cached = extractionCache.get(cacheKey);
+  const cached = !forceExtract ? extractionCache.get(cacheKey) : undefined;
   if (cached && cached.expiresAt > Date.now()) {
     return res.json(formatExtractResponseForClient(req, cached));
   }
@@ -6350,6 +6356,7 @@ app.get('/api/extract/stream', async (req, res) => {
               yearHint: effectiveYearForExtract,
               directorHint: tmdbDirector || undefined,
               runtimeMinHint: tmdbRuntimeMin || undefined,
+              force: forceExtract,
             })
           : Promise.resolve([]),
         resolvedTmdbId
@@ -7194,6 +7201,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
     let cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
     const titleHint = String(req.query.title || '').trim();
     const movidyUrlHint = String(req.query.movidyUrl || '').trim();
+    const force = String(req.query.force || req.query.forceSpanish || '') === '1';
 
     let movidyMeta: MovidyPageMetadata | null = null;
     if ((!cleanId || cleanId === '0') && movidyUrlHint) {
@@ -7218,6 +7226,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         titleHints: [movidyMeta.cleanTitle || titleHint].filter(Boolean),
         movidyUrl: movidyUrlHint,
         yearHint: movidyMeta.year || undefined,
+        force,
       });
       return res.json({
         success: true,
@@ -7246,7 +7255,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
 
     const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
     const cacheKey = `v5|${mediaType}|${cleanId}|${langParam}|${movidyUrlHint}`;
-    const cached = richDetailsCache.get(cacheKey);
+    const cached = !force ? richDetailsCache.get(cacheKey) : undefined;
     if (cached && Date.now() - cached.ts < 10 * 60 * 1000) {
       return res.json({ success: true, details: cached.details });
     }
@@ -7360,6 +7369,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         yearHint: tmdbYear || undefined,
         directorHint: director || undefined,
         runtimeMinHint: runtimeMin || undefined,
+        force,
       }),
       fetchTmdbTitleLogo(Number(cleanId), mediaType, req.query.lang === 'en' ? 'en' : 'es'),
     ]);

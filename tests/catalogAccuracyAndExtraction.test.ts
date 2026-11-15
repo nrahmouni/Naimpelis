@@ -10,7 +10,9 @@ import {
 } from '../server/extractors/httpHelpers.ts';
 import {
   parseGnulaPageMetadata,
+  parseGnulaPlayerPayload,
   pickBestGnulaSearchResult,
+  withGnmParam,
 } from '../server/extractors/vidhideEmbed69.ts';
 import {
   parseMovidyHtmlMetadata,
@@ -286,5 +288,70 @@ describe('Strict catalog & extractor title/year/director/runtime matching', () =
     expect(seriesSection).toContain('seriesCatalogStaleCache');
     expect(seriesSection).not.toMatch(/fetch\s*\(\s*endpoint\s*,/);
     expect(seriesSection).not.toMatch(/res\.status\(500\)/);
+  });
+
+  it('withGnmParam appends gnm=1 cleanly and parseGnulaPlayerPayload supports both new langs object and legacy array formats', () => {
+    expect(withGnmParam('https://ww3.gnulahd.nu/ver/nocturno/')).toBe(
+      'https://ww3.gnulahd.nu/ver/nocturno/?gnm=1'
+    );
+    expect(withGnmParam('https://ww3.gnulahd.nu/wp-json/gnrd/v1/search?q=from')).toBe(
+      'https://ww3.gnulahd.nu/wp-json/gnrd/v1/search?q=from&gnm=1'
+    );
+    expect(withGnmParam('https://ww3.gnulahd.nu/?gnm=1')).toBe('https://ww3.gnulahd.nu/?gnm=1');
+
+    const parsedNew = parseGnulaPlayerPayload({
+      p: {
+        t: 'nocturno',
+        langs: [
+          {
+            label: 'Castellano',
+            servers: [
+              { title: 'voe', src: 'https://voe.sx/e/def' },
+              { title: 'vidara', src: 'https://vidara.to/e/abc' },
+            ],
+          },
+          {
+            label: 'Subtitulado',
+            servers: [{ title: 'streamwish', src: 'https://streamwish.to/e/ghi' }],
+          },
+        ],
+        dl: [],
+      },
+    });
+    expect(parsedNew).toHaveLength(3);
+    expect(parsedNew[0]).toMatchObject({
+      lang: 'ES',
+      sourceUrl: 'https://vidara.to/e/abc',
+      resolverType: 'vidhide_hls',
+    });
+    expect(parsedNew[1]).toMatchObject({
+      lang: 'VOSE',
+      sourceUrl: 'https://streamwish.to/e/ghi',
+      resolverType: 'vidhide_hls',
+    });
+    expect(parsedNew[2]).toMatchObject({
+      lang: 'ES',
+      sourceUrl: 'https://voe.sx/e/def',
+      resolverType: 'embed_sniff',
+    });
+
+    const parsedLegacy = parseGnulaPlayerPayload({
+      d: [
+        {
+          name: 'Español',
+          servers: [{ title: 'vidhide', src: 'https://vidhide.com/v/xyz' }],
+        },
+      ],
+    });
+    expect(parsedLegacy).toEqual([
+      {
+        id: 'gnula-hls-ES-0-0',
+        label: 'Castellano · 1080p',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://vidhide.com/v/xyz',
+        resolverType: 'vidhide_hls',
+      },
+    ]);
   });
 });

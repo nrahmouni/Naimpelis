@@ -1926,12 +1926,18 @@ export function App() {
   const handlePlayMovie = async (
     movie: CatalogMovie,
     preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
-    startAtOverrideSec?: number
+    startOrOpts?: number | { startAtSec?: number; forceSpanish?: boolean }
   ) => {
     if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
+    const startAtOverrideSec =
+      typeof startOrOpts === 'number' ? startOrOpts : startOrOpts?.startAtSec;
+    const forceSpanish =
+      typeof startOrOpts === 'object' && startOrOpts !== null
+        ? Boolean(startOrOpts.forceSpanish)
+        : false;
     const langFullLabelMap: Record<'ES' | 'LAT' | 'VOSE' | 'EN', string> = {
       ES: 'Castellano (España)',
       LAT: 'Español Latino',
@@ -1960,7 +1966,9 @@ export function App() {
     setLoadingItemId(movie.id);
     setExtractionError(null);
     setExtractionLabel(
-      resumeAtSec > 5
+      forceSpanish
+        ? `${movie.title} · Forzando búsqueda en Castellano (ES)...`
+        : resumeAtSec > 5
         ? `${movie.title} · Reanudando en ${requestedLangName}...`
         : `${movie.title} · Preparando ${requestedLangName}...`
     );
@@ -1977,6 +1985,7 @@ export function App() {
         ...(movie.originalTitle ? { origTitle: movie.originalTitle } : {}),
         ...(movie.year && /^\d{4}$/.test(movie.year) ? { year: movie.year } : {}),
         ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
+        ...(forceSpanish ? { force: '1', forceSpanish: '1' } : {}),
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
       const data = await res.json();
@@ -2084,12 +2093,18 @@ export function App() {
     series: TvSeriesDetails,
     episode: TvEpisodeItem,
     preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
-    startAtOverrideSec?: number
+    startOrOpts?: number | { startAtSec?: number; forceSpanish?: boolean }
   ) => {
     if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
+    const startAtOverrideSec =
+      typeof startOrOpts === 'number' ? startOrOpts : startOrOpts?.startAtSec;
+    const forceSpanish =
+      typeof startOrOpts === 'object' && startOrOpts !== null
+        ? Boolean(startOrOpts.forceSpanish)
+        : false;
     const epLoadId = sanitizeItemKey(
       `tv-${series.tmdbId}-${episode.seasonNumber}-${episode.episodeNumber}`
     );
@@ -2108,10 +2123,15 @@ export function App() {
     setLoadingItemId(epLoadId);
     setExtractionError(null);
     setExtractionLabel(
-      `${series.title} (${episode.seasonNumber}x${String(episode.episodeNumber).padStart(
-        2,
-        '0'
-      )}) · ${resumeAtSec > 5 ? 'Reanudando...' : 'Preparando HD...'}`
+      forceSpanish
+        ? `${series.title} (${episode.seasonNumber}x${String(episode.episodeNumber).padStart(
+            2,
+            '0'
+          )}) · Forzando búsqueda en Castellano (ES)...`
+        : `${series.title} (${episode.seasonNumber}x${String(episode.episodeNumber).padStart(
+            2,
+            '0'
+          )}) · ${resumeAtSec > 5 ? 'Reanudando...' : 'Preparando HD...'}`
     );
 
     try {
@@ -2126,6 +2146,7 @@ export function App() {
         ...(series.year && /^\d{4}$/.test(series.year) ? { year: series.year } : {}),
         episodeTitle: episode.title || '',
         ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
+        ...(forceSpanish ? { force: '1', forceSpanish: '1' } : {}),
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
       const data = await res.json();
