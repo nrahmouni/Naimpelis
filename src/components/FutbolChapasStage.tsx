@@ -1138,12 +1138,24 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           ctx.stroke();
 
           if (!belowMin) {
-            // Subtle dotted forward sightline
-            const guideLen = 80 + drag.power * 155;
+            // Elastic slingshot tension band opposite to shot angle
+            const pullDist = drag.power * 68;
+            const bandColor = drag.power > 0.75 ? '#EF4444' : drag.power > 0.4 ? '#F59E0B' : '#10B981';
             ctx.save();
             ctx.rotate(drag.angle);
+            ctx.strokeStyle = bandColor;
+            ctx.lineWidth = 2.4;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(-CHAPAS_CAP_RADIUS * 0.75, -CHAPAS_CAP_RADIUS * 0.6);
+            ctx.lineTo(-CHAPAS_CAP_RADIUS - pullDist, 0);
+            ctx.lineTo(-CHAPAS_CAP_RADIUS * 0.75, CHAPAS_CAP_RADIUS * 0.6);
+            ctx.stroke();
+
+            // Subtle dotted forward predictive sightline
+            const guideLen = 90 + drag.power * 160;
             ctx.setLineDash([5, 6]);
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
             ctx.lineWidth = 1.8;
             ctx.beginPath();
             ctx.moveTo(CHAPAS_CAP_RADIUS + 8, 0);
@@ -1151,26 +1163,25 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Bold tactical launch arrow
-            const arrowLen = CHAPAS_CAP_RADIUS + 20 + drag.power * 64;
-            const arrowColor =
-              drag.power > 0.78
-                ? '#FDE047'
-                : drag.power > 0.45
-                ? '#A3E635'
-                : '#FFFFFF';
-            ctx.fillStyle = arrowColor;
-            ctx.shadowColor = 'rgba(0,0,0,0.5)';
-            ctx.shadowBlur = 4;
+            // Dynamic Tri-Color Gradient Tactical Launch Arrow (Green -> Amber -> Red)
+            const arrowLen = CHAPAS_CAP_RADIUS + 20 + drag.power * 68;
+            const arrowGrad = ctx.createLinearGradient(CHAPAS_CAP_RADIUS + 4, 0, arrowLen, 0);
+            arrowGrad.addColorStop(0, '#10B981');
+            arrowGrad.addColorStop(0.5, '#FACC15');
+            arrowGrad.addColorStop(1, '#EF4444');
+
+            ctx.fillStyle = arrowGrad;
+            ctx.shadowColor = 'rgba(0,0,0,0.6)';
+            ctx.shadowBlur = 5;
 
             ctx.beginPath();
-            ctx.moveTo(CHAPAS_CAP_RADIUS + 4, -5);
-            ctx.lineTo(arrowLen - 16, -5);
-            ctx.lineTo(arrowLen - 16, -12);
+            ctx.moveTo(CHAPAS_CAP_RADIUS + 4, -5.5);
+            ctx.lineTo(arrowLen - 17, -5.5);
+            ctx.lineTo(arrowLen - 17, -13);
             ctx.lineTo(arrowLen, 0);
-            ctx.lineTo(arrowLen - 16, 12);
-            ctx.lineTo(arrowLen - 16, 5);
-            ctx.lineTo(CHAPAS_CAP_RADIUS + 4, 5);
+            ctx.lineTo(arrowLen - 17, 13);
+            ctx.lineTo(arrowLen - 17, 5.5);
+            ctx.lineTo(CHAPAS_CAP_RADIUS + 4, 5.5);
             ctx.closePath();
             ctx.fill();
             ctx.restore();
@@ -1738,15 +1749,21 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           </div>
         )}
 
-        {/* Animated Goal Celebration Banner */}
+        {/* Animated Goal Celebration Banner with Kinetic 3D Typography */}
         {goalBanner && (
-          <div className="pointer-events-none absolute inset-x-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center justify-center animate-bounce">
-            <div className="px-6 py-2.5 rounded-2xl bg-black/85 border-2 border-amber-400 shadow-[0_12px_40px_rgba(250,204,21,0.45)] text-center">
-              <div className="text-2xl sm:text-3xl font-black tracking-wider text-amber-300">
-                ⚽ ¡GOL!
+          <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center p-4 overflow-hidden">
+            <div className="absolute inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center">
+              <div className="w-[360px] h-[360px] nc-ray-spin opacity-45 bg-[radial-gradient(ellipse_at_center,rgba(251,191,36,0.6)_0%,transparent_70%)]" />
+            </div>
+            <div className="relative z-10 flex flex-col items-center justify-center text-center space-y-2">
+              <div className="nc-goal-kinetic text-4xl sm:text-6xl font-black italic tracking-wider text-amber-300 drop-shadow-[0_10px_25px_rgba(245,158,11,0.9)]">
+                ⚽ ¡GOOOL!
               </div>
-              <div className="text-xs font-extrabold text-white">
-                {CHAPAS_TEAM_PRESETS.find((f) => f.id === goalBanner.flag)?.name || ''}
+              <div className="px-4 py-1.5 rounded-full bg-black/85 border border-amber-400/80 shadow-lg text-xs sm:text-sm font-extrabold text-white flex items-center gap-2">
+                <span>{CHAPAS_TEAM_PRESETS.find((f) => f.id === goalBanner.flag)?.name || ''}</span>
+                <span className="text-amber-300 font-mono font-bold">
+                  ({activeState.scores.A} - {activeState.scores.B})
+                </span>
               </div>
             </div>
           </div>

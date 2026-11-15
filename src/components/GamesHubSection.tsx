@@ -582,19 +582,35 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       );
     };
 
+    const GAME_SIGNATURES: Record<UnifiedGameId, { color: string; label: string }> = {
+      parchis: { color: '#F59E0B', label: 'Parchís' },
+      uno: { color: '#E11D48', label: 'UNO' },
+      pinturillo: { color: '#EC4899', label: 'Pinturillo' },
+      pool: { color: '#10B981', label: 'Billar' },
+      chapas: { color: '#84CC16', label: 'Fútbol Chapas' },
+      chess: { color: '#9146FF', label: 'Ajedrez' },
+      checkers: { color: '#F43F5E', label: 'Damas' },
+      connect4: { color: '#3B82F6', label: 'Conecta 4' },
+    };
+
     return (
       <div
         data-game-fullscreen="true"
-        className="fixed inset-0 z-[185] h-[100dvh] w-full max-w-[100vw] bg-[#0B0D14] nc-tabletop-slate overflow-hidden flex flex-col pt-safe pb-safe"
+        className="fixed inset-0 z-[185] h-[100dvh] w-full max-w-[100vw] bg-[#070B14] nc-tabletop-slate overflow-hidden flex flex-col pt-safe pb-safe"
       >
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-1.5 sm:p-3 max-w-5xl w-full mx-auto gap-1.5">
-          {/* Unified Ultra-Clean Single-Row Bar for ALL Games: ← Juegos | Title | Online/IA | Mute | Voz */}
-          <div className="flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0 min-w-0">
+          {/* Unified Ultra-Clean Glassmorphism Bar: ← Juegos | Title with Glow | Online/IA Pill | Mute | Voz */}
+          <div
+            className="flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-2xl nc-arcade-glass border border-white/[0.12] shrink-0 min-w-0"
+            style={{
+              boxShadow: `0 4px 20px rgba(0,0,0,0.5), inset 0 1px 0 rgba(255,255,255,0.1), 0 0 18px ${GAME_SIGNATURES[selectedGame].color}22`,
+            }}
+          >
             <button
               type="button"
               onClick={handleBackToGames}
               aria-label={pickLang(lang, { es: 'Volver a Juegos', ca: 'Tornar a Jocs', en: 'Back to Games' })}
-              className="h-8 px-2 sm:px-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
+              className="h-8 px-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/[0.12] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0 shadow-sm"
             >
               <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
               <span className="hidden sm:inline">
@@ -602,8 +618,15 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
               </span>
             </button>
 
-            <div className="flex items-center gap-1 min-w-0 flex-1">
-              <h2 className="text-xs sm:text-sm font-extrabold text-white truncate">
+            <div className="flex items-center gap-2 min-w-0 flex-1 px-1">
+              <span
+                className="w-2.5 h-2.5 rounded-full shrink-0 animate-pulse"
+                style={{
+                  backgroundColor: GAME_SIGNATURES[selectedGame].color,
+                  boxShadow: `0 0 10px ${GAME_SIGNATURES[selectedGame].color}`,
+                }}
+              />
+              <h2 className="text-xs sm:text-sm font-extrabold text-white truncate tracking-tight">
                 {titleMap[selectedGame]}
               </h2>
               {isPool && hubMode === 'online' && roomPoolGame && (
@@ -613,13 +636,16 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
               )}
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
-              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#090A10] border border-white/[0.08]">
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Animated Sliding Pill for Online vs IA */}
+              <div className="flex items-center p-0.5 rounded-xl bg-zinc-950/80 border border-white/[0.1] shadow-inner">
                 <button
                   type="button"
                   onClick={() => switchModeForActiveGame('online')}
-                  className={`h-6 px-1.5 sm:px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
-                    hubMode === 'online' ? 'bg-[#E11D48] text-white' : 'text-zinc-400 hover:text-white'
+                  className={`h-6.5 px-2 rounded-lg text-[10px] font-extrabold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all duration-200 ${
+                    hubMode === 'online'
+                      ? 'bg-gradient-to-r from-[#E11D48] to-[#BE123C] text-white shadow-md'
+                      : 'text-zinc-400 hover:text-white'
                   }`}
                 >
                   <Users className="w-3 h-3 shrink-0" />
@@ -630,8 +656,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 <button
                   type="button"
                   onClick={() => switchModeForActiveGame('offline')}
-                  className={`h-6 px-1.5 sm:px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
-                    hubMode === 'offline' ? 'bg-[#9146FF] text-white' : 'text-zinc-400 hover:text-white'
+                  className={`h-6.5 px-2 rounded-lg text-[10px] font-extrabold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all duration-200 ${
+                    hubMode === 'offline'
+                      ? 'bg-gradient-to-r from-[#9146FF] to-[#7E22CE] text-white shadow-md'
+                      : 'text-zinc-400 hover:text-white'
                   }`}
                 >
                   <Bot className="w-3 h-3 shrink-0" />

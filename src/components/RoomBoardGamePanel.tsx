@@ -80,33 +80,56 @@ function formatClockMs(ms: number): string {
 }
 
 /**
- * High-contrast Staunton SVG vector pieces.
- * White pieces: bright pearl-ivory gradient with warm dark mahogany contours.
- * Black pieces: deep obsidian gradient with bright brushed-silver highlights.
+ * High-contrast Staunton SVG vector pieces with Clásico (Ivory/Ebony) and Neón (Cyber-Glass) themes.
  */
-const StauntonChessPiece: React.FC<{ side: BoardSide; kind: string }> = ({ side, kind }) => {
+const StauntonChessPiece: React.FC<{
+  side: BoardSide;
+  kind: string;
+  theme?: 'classic' | 'neon';
+}> = ({ side, kind, theme = 'classic' }) => {
   const isWhite = side === 'w';
-  const uid = isWhite ? 'w' : 'b';
-  const fill = isWhite ? `url(#chess-ivory-${uid})` : `url(#chess-obsidian-${uid})`;
-  const stroke = isWhite ? '#292018' : '#E2E8F0';
-  const detail = isWhite ? '#5C4D3C' : '#94A3B8';
+  const uid = `${isWhite ? 'w' : 'b'}-${theme}`;
+
+  let fill = isWhite ? `url(#chess-ivory-${uid})` : `url(#chess-obsidian-${uid})`;
+  let stroke = isWhite ? '#292018' : '#E2E8F0';
+  let detail = isWhite ? '#5C4D3C' : '#94A3B8';
+  let dropShadow = 'drop-shadow-[0_4px_6px_rgba(0,0,0,0.72)]';
+
+  if (theme === 'neon') {
+    fill = isWhite ? `url(#chess-neon-cyan-${uid})` : `url(#chess-neon-magenta-${uid})`;
+    stroke = isWhite ? '#A5F3FC' : '#FBCFE8';
+    detail = isWhite ? '#0891B2' : '#C026D3';
+    dropShadow = isWhite
+      ? 'drop-shadow-[0_0_8px_rgba(6,182,212,0.85)]'
+      : 'drop-shadow-[0_0_8px_rgba(217,70,239,0.85)]';
+  }
 
   return (
     <svg
       viewBox="0 0 45 45"
-      className="w-[82%] h-[82%] select-none pointer-events-none drop-shadow-[0_3px_5px_rgba(0,0,0,0.72)]"
+      className={`w-[84%] h-[84%] select-none pointer-events-none transition-transform duration-150 ${dropShadow}`}
       aria-hidden="true"
     >
       <defs>
         <linearGradient id={`chess-ivory-${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#FFFDF7" />
-          <stop offset="55%" stopColor="#F3EAD3" />
-          <stop offset="100%" stopColor="#D7C7A3" />
+          <stop offset="0%" stopColor="#FFFFFF" />
+          <stop offset="45%" stopColor="#F5EFE0" />
+          <stop offset="100%" stopColor="#D9C9A5" />
         </linearGradient>
         <linearGradient id={`chess-obsidian-${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#353946" />
-          <stop offset="52%" stopColor="#161821" />
-          <stop offset="100%" stopColor="#07080D" />
+          <stop offset="0%" stopColor="#3F4657" />
+          <stop offset="50%" stopColor="#1E222D" />
+          <stop offset="100%" stopColor="#0A0C10" />
+        </linearGradient>
+        <linearGradient id={`chess-neon-cyan-${uid}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#A5F3FC" />
+          <stop offset="48%" stopColor="#06B6D4" />
+          <stop offset="100%" stopColor="#083344" />
+        </linearGradient>
+        <linearGradient id={`chess-neon-magenta-${uid}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor="#FBCFE8" />
+          <stop offset="48%" stopColor="#D946EF" />
+          <stop offset="100%" stopColor="#4A044E" />
         </linearGradient>
       </defs>
 
@@ -224,7 +247,7 @@ const StauntonChessPiece: React.FC<{ side: BoardSide; kind: string }> = ({ side,
 };
 
 /**
- * Ridged 3D Checkers Disc (Spanish Checkers) with optional golden King Crown Drop.
+ * Ridged 3D Checkers Disc with machined circular ridges, specular highlights, and golden King Crown.
  */
 const CheckersToken3D: React.FC<{
   isWhite: boolean;
@@ -232,34 +255,39 @@ const CheckersToken3D: React.FC<{
   animateCrownDrop?: boolean;
 }> = ({ isWhite, isKing, animateCrownDrop = false }) => (
   <div
-    className={`w-[80%] h-[80%] rounded-full relative flex items-center justify-center transition-transform duration-150 ${
+    className={`w-[82%] h-[82%] rounded-full relative flex items-center justify-center transition-transform duration-150 ${
       isWhite
-        ? 'bg-gradient-to-b from-[#FFFDF7] via-[#ECE4D0] to-[#C8B99B] border border-white shadow-[0_5px_9px_rgba(0,0,0,0.68),inset_0_2px_2px_rgba(255,255,255,0.9),inset_0_-3px_4px_rgba(0,0,0,0.22)] text-amber-600'
-        : 'bg-gradient-to-b from-[#FB7185] via-[#E11D48] to-[#881337] border border-rose-200/80 shadow-[0_5px_9px_rgba(0,0,0,0.75),inset_0_2px_2px_rgba(255,255,255,0.42),inset_0_-3px_4px_rgba(0,0,0,0.45)] text-amber-200'
+        ? 'bg-gradient-to-b from-[#FFFFFF] via-[#EFE6D4] to-[#C4B390] border border-white shadow-[0_5px_12px_rgba(0,0,0,0.7),inset_0_2px_3px_rgba(255,255,255,0.95),inset_0_-3px_5px_rgba(0,0,0,0.28)]'
+        : 'bg-gradient-to-b from-[#FB7185] via-[#E11D48] to-[#7F0E28] border border-rose-300/80 shadow-[0_5px_12px_rgba(0,0,0,0.8),inset_0_2px_3px_rgba(255,255,255,0.45),inset_0_-3px_5px_rgba(50,3,15,0.7)]'
     }`}
   >
     {/* Outer machined ridge */}
     <div
       className={`w-[78%] h-[78%] rounded-full border flex items-center justify-center ${
         isWhite
-          ? 'border-[#B6A583]/65 shadow-[inset_0_1px_2px_rgba(0,0,0,0.25)]'
-          : 'border-rose-950/60 shadow-[inset_0_1px_2px_rgba(0,0,0,0.45)]'
+          ? 'border-[#B2A07E]/75 shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)]'
+          : 'border-rose-950/70 shadow-[inset_0_1px_2px_rgba(0,0,0,0.55)]'
       }`}
     >
-      {/* Inner recessed ridge */}
+      {/* Inner recessed core */}
       <div
-        className={`w-[68%] h-[68%] rounded-full border flex items-center justify-center ${
+        className={`w-[66%] h-[66%] rounded-full border flex items-center justify-center ${
           isWhite
-            ? 'border-white/75 bg-gradient-to-t from-[#E6DAC0] to-[#FFFDF7]'
-            : 'border-rose-300/35 bg-gradient-to-t from-[#9F1239] to-[#F43F5E]'
+            ? 'border-white/80 bg-gradient-to-t from-[#E2D4B6] to-[#FFFFFF]'
+            : 'border-rose-300/40 bg-gradient-to-t from-[#9F1239] to-[#F43F5E]'
         }`}
       >
         {isKing && (
-          <Crown
-            className={`w-[78%] h-[78%] fill-amber-300 text-amber-500 drop-shadow-[0_2px_3px_rgba(0,0,0,0.55)] ${
-              animateCrownDrop ? 'nc-crown-drop' : ''
-            }`}
-          />
+          <div className="relative w-full h-full flex items-center justify-center">
+            <Crown
+              className={`w-[76%] h-[76%] fill-amber-300 text-amber-500 drop-shadow-[0_2px_6px_rgba(0,0,0,0.65)] ${
+                animateCrownDrop ? 'nc-crown-drop' : ''
+              }`}
+            />
+            <span className="absolute top-0.5 right-0.5 text-amber-200 nc-crown-sparkle text-[9px]">
+              ✨
+            </span>
+          </div>
         )}
       </div>
     </div>
@@ -299,7 +327,64 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
   const [hoverCol, setHoverCol] = useState<number | null>(null);
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const [showHistory, setShowHistory] = useState(false);
+  const [chessTheme, setChessTheme] = useState<'classic' | 'neon'>('classic');
   const prevMoveCountRef = useRef<number>(0);
+
+  // Chess captured piece tally & material differential
+  const chessMaterial = useMemo(() => {
+    if (!gameState || gameState.gameType !== 'chess') return null;
+    const initialCounts: Record<string, number> = { P: 8, N: 2, B: 2, R: 2, Q: 1 };
+    const values: Record<string, number> = { P: 1, N: 3, B: 3, R: 5, Q: 9 };
+    const currentCounts: { w: Record<string, number>; b: Record<string, number> } = {
+      w: { P: 0, N: 0, B: 0, R: 0, Q: 0, K: 0 },
+      b: { P: 0, N: 0, B: 0, R: 0, Q: 0, K: 0 },
+    };
+
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const p = gameState.board[r]?.[c];
+        if (p && (p[0] === 'w' || p[0] === 'b')) {
+          const s = p[0] as 'w' | 'b';
+          const k = p[1];
+          if (currentCounts[s][k] !== undefined) {
+            currentCounts[s][k]++;
+          }
+        }
+      }
+    }
+
+    const capturedFromBlack: { kind: string; count: number }[] = [];
+    const capturedFromWhite: { kind: string; count: number }[] = [];
+    let scoreDiff = 0; // positive = White is ahead
+
+    (['Q', 'R', 'B', 'N', 'P'] as const).forEach((kind) => {
+      const lostW = Math.max(0, (initialCounts[kind] || 0) - (currentCounts.w[kind] || 0));
+      const lostB = Math.max(0, (initialCounts[kind] || 0) - (currentCounts.b[kind] || 0));
+      if (lostB > 0) capturedFromBlack.push({ kind, count: lostB });
+      if (lostW > 0) capturedFromWhite.push({ kind, count: lostW });
+      scoreDiff += ((currentCounts.w[kind] || 0) - (currentCounts.b[kind] || 0)) * (values[kind] || 0);
+    });
+
+    return { capturedFromBlack, capturedFromWhite, scoreDiff };
+  }, [gameState]);
+
+  // Checkers captured piece count
+  const checkersCaptured = useMemo(() => {
+    if (!gameState || gameState.gameType !== 'checkers') return null;
+    let wCount = 0;
+    let bCount = 0;
+    for (let r = 0; r < 8; r++) {
+      for (let c = 0; c < 8; c++) {
+        const p = gameState.board[r]?.[c];
+        if (p === 'w' || p === 'W') wCount++;
+        if (p === 'b' || p === 'B') bCount++;
+      }
+    }
+    return {
+      whiteLost: Math.max(0, 12 - wCount),
+      blackLost: Math.max(0, 12 - bCount),
+    };
+  }, [gameState]);
 
   const voicePeerMap = useMemo(() => {
     const m = new Map<string, { isMuted: boolean }>();
@@ -701,6 +786,17 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
           </div>
 
           <div className="flex items-center gap-1 shrink-0">
+            {gameState.gameType === 'chess' && (
+              <button
+                type="button"
+                onClick={() => setChessTheme((t) => (t === 'classic' ? 'neon' : 'classic'))}
+                title={chessTheme === 'classic' ? 'Tema Neón' : 'Tema Clásico'}
+                className="h-8 px-2 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center gap-1 text-[11px] font-bold text-zinc-300 cursor-pointer"
+              >
+                <Sparkles className="w-3 h-3 text-[#BF94FF]" />
+                <span className="hidden sm:inline">{chessTheme === 'classic' ? 'Clásico' : 'Neón'}</span>
+              </button>
+            )}
             {gameState.gameType !== 'connect4' && (
               <button
                 type="button"
@@ -799,8 +895,31 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                         />
                       )}
                     </div>
-                    <div className="text-[10px] text-zinc-400 font-mono tabular-nums whitespace-nowrap">
-                      {sideLabel} · {seat.score} pts
+                    <div className="text-[10px] text-zinc-400 font-mono tabular-nums whitespace-nowrap flex items-center gap-1.5">
+                      <span>{sideLabel} · {seat.score} pts</span>
+                      {gameState.gameType === 'chess' && chessMaterial && (
+                        <>
+                          {side === 'w' && chessMaterial.scoreDiff > 0 && (
+                            <span className="px-1 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px]">
+                              +{chessMaterial.scoreDiff}
+                            </span>
+                          )}
+                          {side === 'b' && chessMaterial.scoreDiff < 0 && (
+                            <span className="px-1 rounded bg-emerald-500/25 text-emerald-300 font-bold text-[9px]">
+                              +{Math.abs(chessMaterial.scoreDiff)}
+                            </span>
+                          )}
+                        </>
+                      )}
+                      {gameState.gameType === 'checkers' && checkersCaptured && (
+                        <span className="text-[9px] text-zinc-300 opacity-80">
+                          {side === 'w' && checkersCaptured.blackLost > 0
+                            ? `+${checkersCaptured.blackLost} fichas`
+                            : side === 'b' && checkersCaptured.whiteLost > 0
+                            ? `+${checkersCaptured.whiteLost} fichas`
+                            : ''}
+                        </span>
+                      )}
                     </div>
                   </div>
                 ) : (
@@ -932,7 +1051,16 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
             }`}
           >
             {/* 3D Beveled Cobalt Blue Connect-4 Chassis */}
-            <div className="relative w-full h-full rounded-xl p-1.5 sm:p-2 bg-gradient-to-b from-[#2563EB] via-[#1D4ED8] to-[#172554] border border-blue-300/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.32),inset_0_-8px_16px_rgba(9,16,42,0.75),0_10px_28px_rgba(0,0,0,0.65)] overflow-hidden">
+            <div className="relative w-full h-full rounded-xl p-1.5 sm:p-2 bg-gradient-to-b from-[#1D4ED8] via-[#1E40AF] to-[#0F172A] border border-blue-400/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-8px_16px_rgba(7,14,35,0.85),0_12px_32px_rgba(0,0,0,0.7)] overflow-hidden">
+              {/* Corner screws */}
+              <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-slate-300 border border-slate-500 shadow-inner flex items-center justify-center opacity-75 pointer-events-none"><span className="w-1 h-[0.5px] bg-slate-700 rotate-45" /></span>
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-slate-300 border border-slate-500 shadow-inner flex items-center justify-center opacity-75 pointer-events-none"><span className="w-1 h-[0.5px] bg-slate-700 -rotate-45" /></span>
+              <span className="absolute bottom-1.5 left-1.5 w-2 h-2 rounded-full bg-slate-300 border border-slate-500 shadow-inner flex items-center justify-center opacity-75 pointer-events-none"><span className="w-1 h-[0.5px] bg-slate-700 -rotate-12" /></span>
+              <span className="absolute bottom-1.5 right-1.5 w-2 h-2 rounded-full bg-slate-300 border border-slate-500 shadow-inner flex items-center justify-center opacity-75 pointer-events-none"><span className="w-1 h-[0.5px] bg-slate-700 rotate-90" /></span>
+
+              {/* Diagonal glass reflection streak */}
+              <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.06] to-transparent z-15" />
+
               <div className="grid grid-cols-7 grid-rows-6 gap-1.5 w-full h-full relative z-10">
                 {Array.from({ length: 6 }).map((_, r) =>
                   Array.from({ length: 7 }).map((__, c) => {
@@ -954,7 +1082,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                         onMouseLeave={() => setHoverCol((curr) => (curr === c ? null : curr))}
                         onClick={() => handleSquareClick(r, c)}
                         aria-label={`Columna ${c + 1} Fila ${r + 1}`}
-                        className="relative w-full h-full rounded-full cursor-pointer flex items-center justify-center bg-[#060912] border border-blue-950/90 shadow-[inset_0_4px_8px_rgba(0,0,0,0.92),inset_0_-1px_2px_rgba(147,197,253,0.22)]"
+                        className="relative w-full h-full rounded-full cursor-pointer flex items-center justify-center bg-[#070B14] border border-blue-950/90 shadow-[inset_0_4px_8px_rgba(0,0,0,0.95),inset_0_-1px_2px_rgba(147,197,253,0.25)] transition-transform active:scale-95"
                       >
                         {cell ? (
                           <div
@@ -968,25 +1096,27 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                               isLastDrop ? 'nc-c4-drop' : ''
                             } ${
                               cell === 'w'
-                                ? 'bg-gradient-to-b from-[#FDE047] via-[#FACC15] to-[#CA8A04] border border-yellow-100 shadow-[0_3px_6px_rgba(0,0,0,0.6),inset_0_2px_3px_rgba(255,255,255,0.75),inset_0_-3px_5px_rgba(113,63,18,0.55)]'
-                                : 'bg-gradient-to-b from-[#FB7185] via-[#E11D48] to-[#881337] border border-rose-200/85 shadow-[0_3px_6px_rgba(0,0,0,0.65),inset_0_2px_3px_rgba(255,255,255,0.45),inset_0_-3px_5px_rgba(76,5,25,0.65)]'
-                            } ${isWinDisc ? 'ring-2 ring-white brightness-110' : ''}`}
+                                ? 'bg-gradient-to-b from-[#FEF08A] via-[#FACC15] to-[#B45309] border border-yellow-100 shadow-[0_3px_8px_rgba(0,0,0,0.65),inset_0_2px_3px_rgba(255,255,255,0.9),inset_0_-3px_5px_rgba(113,63,18,0.65)]'
+                                : 'bg-gradient-to-b from-[#FDA4AF] via-[#E11D48] to-[#881337] border border-rose-200/90 shadow-[0_3px_8px_rgba(0,0,0,0.7),inset_0_2px_3px_rgba(255,255,255,0.65),inset_0_-3px_5px_rgba(76,5,25,0.75)]'
+                            } ${isWinDisc ? 'ring-2 ring-white ring-offset-1 ring-offset-amber-400 brightness-110 shadow-[0_0_16px_rgba(250,204,21,0.9)] animate-pulse' : ''}`}
                           >
                             <div
-                              className={`w-[62%] h-[62%] rounded-full border ${
-                                cell === 'w' ? 'border-amber-200/60' : 'border-rose-200/40'
+                              className={`w-[60%] h-[60%] rounded-full border ${
+                                cell === 'w' ? 'border-amber-200/70 shadow-inner' : 'border-rose-200/50 shadow-inner'
                               }`}
                             />
                           </div>
                         ) : (
                           isPreviewTarget && (
                             <div
-                              className={`w-[82%] h-[82%] rounded-full border-2 border-dashed ${
+                              className={`w-[82%] h-[82%] rounded-full border-2 border-dashed flex items-center justify-center ${
                                 gameState.turn === 'w'
-                                  ? 'bg-amber-400/25 border-amber-300/75'
-                                  : 'bg-rose-400/25 border-rose-300/75'
+                                  ? 'bg-amber-400/30 border-amber-300/80 text-amber-200'
+                                  : 'bg-rose-400/30 border-rose-300/80 text-rose-200'
                               }`}
-                            />
+                            >
+                              <ChevronDown className="w-4 h-4 animate-bounce" />
+                            </div>
                           )
                         )}
                       </button>
@@ -1007,21 +1137,27 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                     x2={connect4WinningLine[3].c + 0.5}
                     y2={connect4WinningLine[3].r + 0.5}
                     stroke="#FFFFFF"
-                    strokeWidth="0.22"
+                    strokeWidth="0.24"
                     strokeLinecap="round"
-                    opacity="0.45"
+                    opacity="0.6"
                   />
                   <line
                     x1={connect4WinningLine[0].c + 0.5}
                     y1={connect4WinningLine[0].r + 0.5}
                     x2={connect4WinningLine[3].c + 0.5}
                     y2={connect4WinningLine[3].r + 0.5}
-                    stroke="#FDE047"
-                    strokeWidth="0.11"
+                    stroke="#FACC15"
+                    strokeWidth="0.12"
                     strokeLinecap="round"
                   />
                 </svg>
               )}
+            </div>
+
+            {/* Chassis pedestal feet */}
+            <div className="absolute -bottom-2.5 inset-x-8 flex justify-between pointer-events-none z-0">
+              <div className="w-10 h-3 rounded-b-lg bg-[#0F172A] border-b-2 border-x border-blue-400/35 shadow-[0_4px_8px_rgba(0,0,0,0.85)]" />
+              <div className="w-10 h-3 rounded-b-lg bg-[#0F172A] border-b-2 border-x border-blue-400/35 shadow-[0_4px_8px_rgba(0,0,0,0.85)]" />
             </div>
 
             {gameState.status === 'finished' && (
@@ -1052,7 +1188,11 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
               fullScreenMode ? 'w-[min(88vw,50dvh)] max-w-[430px] aspect-square' : 'w-full aspect-square'
             }`}
           >
-            <div className="grid grid-cols-8 grid-rows-8 w-full h-full rounded-xl overflow-hidden border border-white/15 shadow-inner">
+            <div className={`grid grid-cols-8 grid-rows-8 w-full h-full rounded-xl overflow-hidden shadow-inner ${
+              gameState.gameType === 'checkers'
+                ? 'border-2 border-[#180E0A] ring-1 ring-amber-900/30'
+                : 'border border-white/15'
+            }`}>
               {displayRows.map((r, dispR) =>
                 displayCols.map((c, dispC) => {
                   const isDark = (r + c) % 2 === 1;
@@ -1068,22 +1208,52 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                     gameState.inCheck &&
                     piece === `${gameState.inCheck}K`;
 
-                  // High-contrast tournament slate squares so ivory & obsidian pieces pop equally
-                  const squareBg = isKingInCheck
-                    ? 'bg-rose-700/85 nc-check-aura'
-                    : isSelected
-                    ? 'bg-[#9146FF]/65'
-                    : isLastTo
-                    ? isDark
-                      ? 'bg-[#4f3b7d]'
-                      : 'bg-[#7962aa]'
-                    : isLastFrom
-                    ? isDark
-                      ? 'bg-[#3c2f5c]'
-                      : 'bg-[#63528a]'
-                    : isDark
-                    ? 'bg-[#2a2f3d]'
-                    : 'bg-[#6c7488]';
+                  // Dedicated Board Themes:
+                  // 1) Damas: Dark Walnut (#231610) vs Cream Maple (#EDE4D0)
+                  // 2) Chess (Classic): Charcoal Slate (#262E3D) vs Polished Slate (#7C869E)
+                  // 3) Chess (Neon): Deep Void (#0A101D) vs Cyber Steel (#1B2742)
+                  let squareBg = '';
+                  if (gameState.gameType === 'checkers') {
+                    if (isSelected) {
+                      squareBg = 'bg-amber-600/75 shadow-[inset_0_0_10px_rgba(245,158,11,0.9)]';
+                    } else if (isLastTo) {
+                      squareBg = isDark ? 'bg-[#55301E]' : 'bg-[#D2B997]';
+                    } else if (isLastFrom) {
+                      squareBg = isDark ? 'bg-[#3D2114]' : 'bg-[#DFCDAF]';
+                    } else if (isDark) {
+                      squareBg = 'bg-[#231610] shadow-[inset_0_2px_4px_rgba(0,0,0,0.65)]';
+                    } else {
+                      squareBg = 'bg-[#ECE3CD]';
+                    }
+                  } else if (chessTheme === 'neon') {
+                    if (isKingInCheck) {
+                      squareBg = 'bg-rose-700/90 nc-check-aura';
+                    } else if (isSelected) {
+                      squareBg = 'bg-cyan-500/50 shadow-[inset_0_0_12px_rgba(6,182,212,0.8)]';
+                    } else if (isLastTo) {
+                      squareBg = isDark ? 'bg-[#163B54]' : 'bg-[#215777]';
+                    } else if (isLastFrom) {
+                      squareBg = isDark ? 'bg-[#102B3E]' : 'bg-[#1B435C]';
+                    } else if (isDark) {
+                      squareBg = 'bg-[#090F1C] border border-cyan-950/40';
+                    } else {
+                      squareBg = 'bg-[#16233B] border border-cyan-800/30';
+                    }
+                  } else {
+                    if (isKingInCheck) {
+                      squareBg = 'bg-rose-700/85 nc-check-aura';
+                    } else if (isSelected) {
+                      squareBg = 'bg-[#9146FF]/65';
+                    } else if (isLastTo) {
+                      squareBg = isDark ? 'bg-[#4f3b7d]' : 'bg-[#7962aa]';
+                    } else if (isLastFrom) {
+                      squareBg = isDark ? 'bg-[#3c2f5c]' : 'bg-[#63528a]';
+                    } else if (isDark) {
+                      squareBg = 'bg-[#28303E]';
+                    } else {
+                      squareBg = 'bg-[#7C879D]';
+                    }
+                  }
 
                   const showRank = c === displayCols[0];
                   const showFile = r === displayRows[7];
@@ -1133,7 +1303,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                     }
                     const side = (piece[0] as BoardSide) || 'w';
                     const kind = piece[1] || 'P';
-                    return <StauntonChessPiece side={side} kind={kind} />;
+                    return <StauntonChessPiece side={side} kind={kind} theme={chessTheme} />;
                   };
 
                   return (
@@ -1169,8 +1339,8 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                         <span
                           className={`pointer-events-none absolute z-10 ${
                             legalTarget.isCapture
-                              ? 'inset-1 rounded-full border-[3px] border-emerald-400/90 shadow-[0_0_10px_rgba(16,185,129,0.75)]'
-                              : 'w-[28%] h-[28%] rounded-full bg-emerald-400/90 shadow-[0_0_8px_rgba(16,185,129,0.75)]'
+                              ? 'inset-1.5 rounded-full border-[3px] border-rose-400/95 shadow-[0_0_14px_rgba(244,63,94,0.95)] animate-pulse'
+                              : 'w-[28%] h-[28%] rounded-full bg-emerald-400/95 shadow-[0_0_10px_rgba(16,185,129,0.85)] animate-pulse'
                           }`}
                         />
                       )}
@@ -1202,7 +1372,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                       }}
                       className="w-13 h-13 rounded-2xl bg-[#26262C] hover:bg-[#9146FF] border border-white/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
                     >
-                      <StauntonChessPiece side={gameState.turn} kind={p} />
+                      <StauntonChessPiece side={gameState.turn} kind={p} theme={chessTheme} />
                     </button>
                   ))}
                 </div>

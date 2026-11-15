@@ -249,6 +249,7 @@ const Interactive3DDice: React.FC<{
   }, [rollingKey]);
 
   const faceVal = value && value >= 1 && value <= 6 ? value : 5;
+  const isSix = faceVal === 6 && !tumbling;
 
   return (
     <button
@@ -260,16 +261,26 @@ const Interactive3DDice: React.FC<{
         onRoll();
       }}
       aria-label="Dado 3D · Tocar para tirar"
-      className={`nc-dice-scene w-14 h-14 p-1 rounded-2xl shrink-0 transition-all ${
+      className={`nc-dice-scene relative w-14 h-14 p-1 rounded-2xl shrink-0 transition-all ${
         canRoll
           ? 'cursor-pointer hover:scale-110 active:scale-95 ring-2 ring-amber-300/90 animate-pulse'
           : 'cursor-default opacity-90'
-      }`}
+      } ${isSix ? 'ring-2 ring-amber-400 shadow-[0_0_24px_rgba(251,191,36,0.85)]' : ''}`}
       style={{
-        boxShadow: canRoll ? `0 0 24px ${accentHex}99` : '0 4px 12px rgba(0,0,0,0.5)',
-        backgroundColor: canRoll ? `${accentHex}38` : `${accentHex}20`,
+        boxShadow: isSix
+          ? '0 0 28px rgba(251,191,36,0.85), 0 0 10px rgba(244,63,94,0.6)'
+          : canRoll
+          ? `0 0 24px ${accentHex}99`
+          : '0 4px 12px rgba(0,0,0,0.5)',
+        backgroundColor: isSix ? 'rgba(245,158,11,0.25)' : canRoll ? `${accentHex}38` : `${accentHex}20`,
       }}
     >
+      {isSix && (
+        <>
+          <span className="absolute -top-1.5 -right-1 text-xs animate-bounce pointer-events-none z-20">✨</span>
+          <span className="absolute -bottom-1 -left-1 text-xs animate-pulse pointer-events-none z-20">🔥</span>
+        </>
+      )}
       <div className={`nc-dice-cube ${tumbling ? 'nc-dice-tumbling' : ''}`}>
         <div
           className="absolute inset-0"
@@ -1154,9 +1165,10 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
                 </div>
               </div>
 
-              {/* Center Meta */}
-              <div className="absolute top-[42.105%] left-[42.105%] w-[15.79%] h-[15.79%] border border-amber-300/35 bg-gradient-to-br from-amber-500/30 via-[#9146FF]/25 to-emerald-500/25 flex items-center justify-center">
-                <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
+              {/* Center Meta with Radiant Rayburst and 3D Golden Trophy */}
+              <div className="absolute top-[42.105%] left-[42.105%] w-[15.79%] h-[15.79%] border border-amber-300/40 bg-gradient-to-br from-amber-500/35 via-[#9146FF]/30 to-emerald-500/30 flex items-center justify-center overflow-hidden shadow-[0_0_20px_rgba(245,158,11,0.45)]">
+                <div className="absolute inset-0 nc-ray-spin opacity-35 bg-[radial-gradient(ellipse_at_center,rgba(251,191,36,0.65)_0%,transparent_70%)] pointer-events-none" />
+                <Trophy className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300 drop-shadow-[0_0_10px_rgba(251,191,36,0.9)] relative z-10" />
               </div>
 
               {/* 68 Outer Ring Squares */}
@@ -1176,7 +1188,7 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
                   : isStartGreen
                   ? 'bg-emerald-500/45'
                   : isSafe
-                  ? 'bg-white/[0.15]'
+                  ? 'bg-amber-400/20 border-amber-300/40'
                   : 'bg-white/[0.03]';
 
                 return (
@@ -1190,7 +1202,7 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
                     }}
                     className={`absolute border-[0.5px] border-white/15 flex items-center justify-center text-[7px] text-white/55 font-mono ${bgCls}`}
                   >
-                    {isSafe ? '★' : ''}
+                    {isSafe ? <span className="text-amber-300 drop-shadow-[0_0_5px_rgba(251,191,36,0.95)] font-bold text-[8px]">★</span> : ''}
                   </div>
                 );
               })}
@@ -1547,33 +1559,38 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
               <span className="text-[10px] text-zinc-200 text-center px-1.5">Guardar</span>
             </button>
           ) : (
-            <button
-              key={`draw-${drawPileShakeKey}`}
-              type="button"
-              disabled={!isMyTurn || Boolean(uState.pendingWild4Challenge)}
-              onClick={() => {
-                triggerHaptic('light');
-                dispatchAction('draw_card');
-              }}
-              aria-label={pickLang(lang, { es: 'Robar 1 carta', ca: 'Robar 1 carta', en: 'Draw 1 card' })}
-              className={`relative w-[74px] h-[111px] sm:w-[86px] sm:h-[129px] rounded-xl shadow-[0_12px_28px_rgba(0,0,0,0.75)] transition-transform ${
-                drawPileShakeKey > 0 ? 'nc-uno-shake' : ''
-              } ${
-                isMyTurn && !uState.pendingWild4Challenge
-                  ? 'cursor-pointer hover:-translate-y-1.5 active:scale-95 ring-2 ring-[#9146FF]/75'
-                  : 'opacity-80 cursor-default'
-              }`}
-            >
-              <img
-                src={UNO_CARD_BACK_SRC}
-                alt="Mazo UNO"
-                className="w-full h-full object-contain rounded-xl pointer-events-none select-none"
-                draggable={false}
-              />
-              <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-zinc-950/90 border border-white/20 text-[9px] font-bold text-zinc-100 whitespace-nowrap shadow">
-                {pickLang(lang, { es: `Robar (${uState.deck.length})`, ca: `Robar (${uState.deck.length})`, en: `Draw (${uState.deck.length})` })}
-              </span>
-            </button>
+            <div className="relative w-[74px] h-[111px] sm:w-[86px] sm:h-[129px]">
+              {/* Stack depth edges */}
+              <div className="absolute inset-0 rounded-xl bg-zinc-800 border border-white/10 translate-y-1.5 translate-x-1 -rotate-2 shadow-sm pointer-events-none" />
+              <div className="absolute inset-0 rounded-xl bg-zinc-700 border border-white/10 translate-y-0.5 -translate-x-0.5 rotate-1 shadow-sm pointer-events-none" />
+              <button
+                key={`draw-${drawPileShakeKey}`}
+                type="button"
+                disabled={!isMyTurn || Boolean(uState.pendingWild4Challenge)}
+                onClick={() => {
+                  triggerHaptic('light');
+                  dispatchAction('draw_card');
+                }}
+                aria-label={pickLang(lang, { es: 'Robar 1 carta', ca: 'Robar 1 carta', en: 'Draw 1 card' })}
+                className={`relative w-full h-full rounded-xl shadow-[0_12px_28px_rgba(0,0,0,0.75)] transition-transform ${
+                  drawPileShakeKey > 0 ? 'nc-uno-shake' : ''
+                } ${
+                  isMyTurn && !uState.pendingWild4Challenge
+                    ? 'cursor-pointer hover:-translate-y-1.5 active:scale-95 ring-2 ring-[#9146FF]/75'
+                    : 'opacity-80 cursor-default'
+                }`}
+              >
+                <img
+                  src={UNO_CARD_BACK_SRC}
+                  alt="Mazo UNO"
+                  className="w-full h-full object-contain rounded-xl pointer-events-none select-none"
+                  draggable={false}
+                />
+                <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-zinc-950/90 border border-white/20 text-[9px] font-bold text-zinc-100 whitespace-nowrap shadow">
+                  {pickLang(lang, { es: `Robar (${uState.deck.length})`, ca: `Robar (${uState.deck.length})`, en: `Draw (${uState.deck.length})` })}
+                </span>
+              </button>
+            </div>
           )}
 
           {/* Stacked Discard Pile with Arc Flying Animation */}
@@ -1848,17 +1865,17 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
                     zIndex: playable ? 20 + idx : idx,
                   }}
                   aria-label={`${card.color} ${card.value}`}
-                  className={`relative w-[58px] h-[87px] sm:w-[68px] sm:h-[102px] rounded-lg shrink-0 transition-transform duration-150 origin-bottom ${
+                  className={`relative w-[58px] h-[87px] sm:w-[68px] sm:h-[102px] rounded-xl shrink-0 transition-transform duration-150 origin-bottom ${
                     playable
-                      ? 'cursor-pointer hover:-translate-y-4 hover:scale-110 hover:z-40 active:scale-95 drop-shadow-[0_8px_18px_rgba(255,255,255,0.28)]'
-                      : 'opacity-55 cursor-not-allowed brightness-75'
+                      ? 'cursor-pointer hover:-translate-y-5 hover:scale-115 hover:z-40 active:scale-95 drop-shadow-[0_10px_22px_rgba(255,255,255,0.36)]'
+                      : 'opacity-45 grayscale-[70%] cursor-not-allowed brightness-65'
                   }`}
                 >
                   <img
                     src={getUnoCardSvgSrc(card.color, card.value)}
                     alt={`${card.color} ${card.value}`}
-                    className={`w-full h-full object-contain rounded-lg pointer-events-none select-none ${
-                      playable ? 'ring-2 ring-white/90' : ''
+                    className={`w-full h-full object-contain rounded-xl pointer-events-none select-none ${
+                      playable ? 'ring-2 ring-white/95 shadow-md' : ''
                     }`}
                     draggable={false}
                   />

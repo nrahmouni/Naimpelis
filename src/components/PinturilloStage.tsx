@@ -551,19 +551,47 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
             R{activeState.round}/{activeState.totalRounds}
           </span>
 
-          <div className="text-xs sm:text-sm font-black tracking-[0.22em] text-white text-center truncate px-2">
-            {activeState.status === 'waiting'
-              ? pickLang(lang, { es: 'SALA DE ESPERA', ca: "SALA D'ESPERA", en: 'WAITING LOBBY' })
-              : activeState.status === 'choosing'
-              ? pickLang(lang, { es: 'ELIGIENDO…', ca: 'TRIANT…', en: 'PICKING…' })
-              : amDrawer && activeState.secretWord
-              ? `${activeState.secretWord.es.toUpperCase()} · ${activeState.secretWord.en}`
-              : activeState.maskedWord || '_ _ _'}
+          <div className="flex items-center justify-center gap-1.5 flex-wrap px-2 min-h-7">
+            {activeState.status === 'waiting' ? (
+              <span className="text-xs sm:text-sm font-black tracking-widest text-zinc-300">
+                {pickLang(lang, { es: 'SALA DE ESPERA', ca: "SALA D'ESPERA", en: 'WAITING LOBBY' })}
+              </span>
+            ) : activeState.status === 'choosing' ? (
+              <span className="text-xs sm:text-sm font-black tracking-widest text-amber-300 animate-pulse">
+                {pickLang(lang, { es: '🎨 ELIGIENDO PALABRA…', ca: '🎨 TRIANT PARAULA…', en: '🎨 PICKING WORD…' })}
+              </span>
+            ) : amDrawer && activeState.secretWord ? (
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-0.5 rounded-lg bg-amber-400/20 border border-amber-300/50 text-amber-200 font-black text-xs sm:text-sm tracking-wider shadow">
+                  {activeState.secretWord.es.toUpperCase()}
+                </span>
+                <span className="text-[11px] text-zinc-400 font-semibold hidden sm:inline">
+                  ({activeState.secretWord.en})
+                </span>
+              </div>
+            ) : activeState.maskedWord ? (
+              <div className="flex items-center gap-1.5">
+                {activeState.maskedWord.split(' ').map((char, cIdx) => (
+                  <span
+                    key={`tile-${cIdx}-${char}`}
+                    className={`w-6 h-7 rounded-md flex items-center justify-center text-xs font-black shadow-md select-none transition-all ${
+                      char === '_'
+                        ? 'bg-[#1F1713] border-b-2 border-amber-950/80 text-zinc-600 shadow-inner'
+                        : 'bg-gradient-to-b from-[#FFFDF8] via-[#F4EBD7] to-[#D5C6A0] border-b-2 border-[#8E7E5A] text-[#241711] nc-pop-spring'
+                    }`}
+                  >
+                    {char === '_' ? '•' : char}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <span className="text-xs text-zinc-400">_ _ _</span>
+            )}
           </div>
 
           <span
             className={`text-[11px] font-mono font-bold tabular-nums flex items-center gap-1 whitespace-nowrap ${
-              remainingSec <= 10 && activeState.status === 'drawing' ? 'text-rose-400' : 'text-zinc-200'
+              remainingSec <= 10 && activeState.status === 'drawing' ? 'text-rose-400 animate-pulse' : 'text-zinc-200'
             }`}
           >
             <Timer className="w-3.5 h-3.5" />
@@ -571,21 +599,24 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
           </span>
         </div>
 
-        <div className="h-1 w-full rounded-full bg-white/[0.08] overflow-hidden">
+        <div className="h-1.5 w-full rounded-full bg-white/[0.08] overflow-hidden">
           <div
             className={`h-full transition-[width] duration-200 ${
-              remainingSec <= 10 && activeState.status === 'drawing' ? 'bg-rose-500' : 'bg-amber-400'
+              remainingSec <= 10 && activeState.status === 'drawing'
+                ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.8)]'
+                : 'bg-gradient-to-r from-amber-400 to-emerald-400'
             }`}
             style={{ width: `${timerRatio}%` }}
           />
         </div>
       </div>
 
-      {/* Sketch Canvas Viewport */}
-      <div
-        ref={containerRef}
-        className="relative flex-1 min-h-0 rounded-2xl border border-white/[0.14] overflow-hidden bg-[#FAF9F6] shadow-inner select-none"
-      >
+      {/* Warm Artist Paper Easel Canvas Viewport */}
+      <div className="relative flex-1 min-h-0 rounded-2xl p-1.5 sm:p-2 bg-gradient-to-b from-[#2E241D] to-[#18120E] border-2 border-[#544131] shadow-[0_12px_32px_rgba(0,0,0,0.75),inset_0_1px_1px_rgba(255,255,255,0.18)] flex flex-col overflow-hidden">
+        <div
+          ref={containerRef}
+          className="relative flex-1 min-h-0 rounded-xl overflow-hidden bg-[#FAF6EE] shadow-[inset_0_2px_8px_rgba(0,0,0,0.18),inset_0_-2px_6px_rgba(0,0,0,0.09)] select-none"
+        >
         <canvas
           ref={canvasRef}
           onPointerDown={handlePointerDown}
@@ -754,11 +785,12 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
           />
         )}
       </div>
+    </div>
 
       {/* Bottom Controls: Drawer Toolbar OR Guesser Fast Input */}
       {amDrawer && activeState.status === 'drawing' ? (
         <div className="p-1.5 rounded-xl nc-tabletop-slate border border-white/[0.1] flex items-center justify-between gap-1.5 overflow-x-auto no-scrollbar shrink-0">
-          <div className="flex items-center gap-1 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0 px-1">
             {PINTURILLO_SWATCHES.map((hex) => {
               const active = !isEraser && brushColor === hex;
               return (
@@ -769,10 +801,13 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
                   onClick={() => {
                     setIsEraser(false);
                     setBrushColor(hex);
+                    playGameSfx('pinturillo_pop', muted);
                   }}
                   style={{ backgroundColor: hex }}
-                  className={`w-6 h-6 rounded-full border shrink-0 cursor-pointer transition-transform ${
-                    active ? 'border-white scale-115 ring-2 ring-[#9146FF]' : 'border-white/30'
+                  className={`w-6 h-6 rounded-full shrink-0 cursor-pointer transition-all ${
+                    active
+                      ? 'scale-120 ring-2 ring-white shadow-[0_0_12px_rgba(255,255,255,0.7),inset_0_2px_3px_rgba(255,255,255,0.85)] z-10'
+                      : 'border border-white/40 shadow-[0_2px_4px_rgba(0,0,0,0.5),inset_0_1px_2px_rgba(255,255,255,0.6)] hover:scale-110'
                   }`}
                 />
               );
