@@ -537,6 +537,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
               />
             ) : hubMode === 'offline' ? (
               <RoomBoardGamePanel
+                key={`${selectedGame}-offline`}
                 gameState={localBoardGame}
                 currentUser={currentUser}
                 lang={lang}
@@ -579,6 +580,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
               />
             ) : (
               <RoomBoardGamePanel
+                key={`${selectedGame}-online`}
                 gameState={activeBoardState}
                 currentUser={currentUser}
                 lang={lang}

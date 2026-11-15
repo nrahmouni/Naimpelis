@@ -395,6 +395,19 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
     return getLegalMovesForSquare(gameState, selected);
   }, [gameState, selected]);
 
+  const connect4WinningLine = useMemo(() => {
+    if (!gameState || gameState.gameType !== 'connect4' || gameState.status !== 'finished') {
+      return null;
+    }
+    if (gameState.winningLine && gameState.winningLine.length === 4) {
+      return gameState.winningLine;
+    }
+    if (gameState.winner === 'w' || gameState.winner === 'b') {
+      return findConnect4WinningLine(gameState.board, gameState.winner);
+    }
+    return null;
+  }, [gameState]);
+
   const isFlipped = manualFlip !== null ? manualFlip : mySide === 'b';
 
   const handleSquareClick = useCallback(
@@ -638,17 +651,6 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
     gameState.status === 'playing' && gameState.turnDeadlineAt
       ? Math.max(0, Math.ceil((gameState.turnDeadlineAt - nowTs) / 1000))
       : 15;
-
-  const connect4WinningLine = useMemo(() => {
-    if (gameState.gameType !== 'connect4' || gameState.status !== 'finished') return null;
-    if (gameState.winningLine && gameState.winningLine.length === 4) {
-      return gameState.winningLine;
-    }
-    if (gameState.winner === 'w' || gameState.winner === 'b') {
-      return findConnect4WinningLine(gameState.board, gameState.winner);
-    }
-    return null;
-  }, [gameState]);
 
   const moveSeqKey = gameState.moveHistory.length;
 

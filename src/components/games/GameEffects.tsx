@@ -132,38 +132,34 @@ export function playGameSfx(kind: GameSfxKind, muted = false): void {
   }
 }
 
+function readGameSoundMuted(): boolean {
+  try {
+    return typeof window !== 'undefined' && window.localStorage.getItem(MUTE_STORAGE_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
 export function useGameSoundMute(): [boolean, () => void] {
-  const [muted, setMuted] = useState<boolean>(() => {
-    try {
-      return typeof window !== 'undefined' && window.localStorage.getItem(MUTE_STORAGE_KEY) === '1';
-    } catch {
-      return false;
-    }
-  });
+  const [muted, setMuted] = useState<boolean>(() => readGameSoundMuted());
 
   useEffect(() => {
     const syncHandler = () => {
-      try {
-        setMuted(window.localStorage.getItem(MUTE_STORAGE_KEY) === '1');
-      } catch {
-        // ignore
-      }
+      setMuted(readGameSoundMuted());
     };
     window.addEventListener('naim-games-mute-change', syncHandler);
     return () => window.removeEventListener('naim-games-mute-change', syncHandler);
   }, []);
 
   const toggleMute = useCallback(() => {
-    setMuted((prev) => {
-      const next = !prev;
-      try {
-        window.localStorage.setItem(MUTE_STORAGE_KEY, next ? '1' : '0');
-        window.dispatchEvent(new CustomEvent('naim-games-mute-change'));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
+    const next = !readGameSoundMuted();
+    try {
+      window.localStorage.setItem(MUTE_STORAGE_KEY, next ? '1' : '0');
+      window.dispatchEvent(new CustomEvent('naim-games-mute-change'));
+    } catch {
+      // ignore
+    }
+    setMuted(next);
   }, []);
 
   return [muted, toggleMute];
