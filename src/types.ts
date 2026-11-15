@@ -28,6 +28,7 @@ import type {
   PoolSimRuntime,
 } from './shared/pool8Ball';
 import type {
+  ChapasBall,
   ChapasCap,
   ChapasFlagId,
   ChapasPlayerSeat,
@@ -42,6 +43,7 @@ export type {
   BoardGameState,
   BoardGameType,
   BoardSide,
+  ChapasBall,
   ChapasCap,
   ChapasFlagId,
   ChapasPlayerSeat,

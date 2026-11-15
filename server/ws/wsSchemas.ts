@@ -263,14 +263,24 @@ export const wsChapasToggleBotsSchema = z.object({
   botsEnabled: z.boolean(),
 });
 
-export const wsChapasShootSchema = z.object({
-  roomId: roomIdSchema,
-  shot: z.object({
+const chapasShotDetailsSchema = z.object({
+  capId: z.string().trim().min(2).max(12),
+  angle: z.number().min(-Math.PI * 4).max(Math.PI * 4),
+  power: z.number().min(0).max(1),
+});
+
+export const wsChapasShootSchema = z.union([
+  z.object({
+    roomId: roomIdSchema,
+    shot: chapasShotDetailsSchema,
+  }),
+  z.object({
+    roomId: roomIdSchema,
     capId: z.string().trim().min(2).max(12),
     angle: z.number().min(-Math.PI * 4).max(Math.PI * 4),
     power: z.number().min(0).max(1),
   }),
-});
+]);
 
 export const wsEnvelopeSchema = z.object({
   type: z.string().trim().min(1).max(48),

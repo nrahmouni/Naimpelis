@@ -3794,7 +3794,11 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           if (!room || !room.chapasState || !senderMeta?.userId) return;
 
           const turnNum = room.chapasState.turnNumber;
-          const res = shootChapasCap(room.chapasState, senderMeta.userId, valid.data.shot);
+          const shotInput =
+            'shot' in valid.data
+              ? valid.data.shot
+              : { capId: valid.data.capId, angle: valid.data.angle, power: valid.data.power };
+          const res = shootChapasCap(room.chapasState, senderMeta.userId, shotInput);
           if (!res.ok) return;
           room.chapasState = res.state;
           schedulePersistRoom(room.id);
@@ -3802,7 +3806,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             type: 'CHAPAS_SHOT_BROADCAST',
             payload: {
               shot: {
-                ...valid.data.shot,
+                ...shotInput,
                 shooterUserId: senderMeta.userId,
                 turnNumber: turnNum,
               },

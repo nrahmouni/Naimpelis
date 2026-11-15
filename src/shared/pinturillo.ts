@@ -566,7 +566,9 @@ export function buildPinturilloSeats(
   const seats: PinturilloPlayer[] = [];
   for (let i = 0; i < targetCount; i += 1) {
     const h = cleanHumans[i];
-    const prev = preserved?.find((p) => (h ? p.userId === h.id : p.seatIndex === i && p.isBot));
+    const prev = Array.isArray(preserved)
+      ? preserved.find((p) => (h ? p.userId === h.id : p.seatIndex === i && p.isBot))
+      : undefined;
     if (h) {
       seats.push({
         seatIndex: i,

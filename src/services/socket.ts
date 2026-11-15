@@ -897,9 +897,9 @@ class SocketService {
     });
   }
 
-  startChapasGame() {
+  startChapasGame(opts?: { botsEnabled?: boolean }) {
     if (!this.roomId) return;
-    this.send('CHAPAS_START', { roomId: this.roomId });
+    this.send('CHAPAS_START', { roomId: this.roomId, ...opts });
   }
 
   joinChapasSeat(seatIndex: 0 | 1 | 2 | 3 | 'spectate') {
