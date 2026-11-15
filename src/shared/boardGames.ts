@@ -1300,7 +1300,7 @@ export function resetBoardGame(
     awaitingHostStart: waitForHost,
     status: nextStatus,
     turnStartedAt: now,
-    turnDeadlineAt: nextStatus === 'playing' ? now + BOARD_TURN_DECISION_MS : undefined,
+    turnDeadlineAt: nextStatus === 'playing' ? now + BOARD_TURN_DECISION_MS : 0,
     updatedAt: now,
   };
 }

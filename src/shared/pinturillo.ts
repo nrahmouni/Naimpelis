@@ -601,14 +601,16 @@ export function buildPinturilloSeats(
 
 export function createInitialPinturilloState(
   humans: Array<{ id: string; name: string; avatar?: string; color?: string }>,
-  preserved?: PinturilloPlayer[],
+  preservedOrOpts?: PinturilloPlayer[] | { waitForHost?: boolean },
   opts?: { waitForHost?: boolean }
 ): PinturilloGameState {
+  const preserved = Array.isArray(preservedOrOpts) ? preservedOrOpts : undefined;
+  const resolvedOpts = Array.isArray(preservedOrOpts) ? opts : preservedOrOpts ?? opts;
   const players = buildPinturilloSeats(humans, preserved);
   const now = Date.now();
   const drawerSeat = 0;
   const wordChoices = pickRandomWordChoices();
-  const waitForHost = Boolean(opts?.waitForHost);
+  const waitForHost = Boolean(resolvedOpts?.waitForHost);
 
   return {
     id: `pinturillo-${now}`,

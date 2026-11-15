@@ -767,9 +767,11 @@ describe('Futbol Chapas Engine & Match Waiting Lobby Flows', () => {
     expect(
       wsChapasShootSchema.safeParse({
         roomId: 'sala_vip',
-        capId: 'A-6',
-        angle: 1.57,
-        power: 0.7,
+        shot: {
+          capId: 'A-6',
+          angle: 1.57,
+          power: 0.7,
+        },
       }).success
     ).toBe(true);
 
@@ -813,4 +815,43 @@ describe('Audit Checklist & Asset Integrity', () => {
     expect(imgFiles.some((f) => f.endsWith('.webp'))).toBe(true);
     expect(imgFiles.some((f) => /\.(jpe?g|png)$/i.test(f))).toBe(false);
   });
+
+  it('verifies AI Movie Request pipeline, SurpriseMe 2-mode UI, scalloped Futbol Chapas, and zero-scroll GamesHub cleanup', () => {
+    const aiServiceSrc = fs.readFileSync(
+      path.join(ROOT, 'server/services/aiMovieRequestService.ts'),
+      'utf8'
+    );
+    expect(aiServiceSrc).toContain('gemini-4-hydrogen');
+    expect(aiServiceSrc).toContain('aistudio-build');
+    expect(aiServiceSrc).toContain('verifyAndBuildCatalogMovie');
+
+    const serverSrc = fs.readFileSync(path.join(ROOT, 'server.ts'), 'utf8');
+    expect(serverSrc).toContain("app.post('/api/ai/request-movie'");
+    expect(serverSrc).toContain("app.get('/api/ai/request-movie/:jobId'");
+
+    const surpriseSrc = fs.readFileSync(
+      path.join(ROOT, 'src/components/SurpriseMeModal.tsx'),
+      'utf8'
+    );
+    expect(surpriseSrc).toContain('Pedir película');
+    expect(surpriseSrc).toContain('/api/ai/request-movie');
+
+    const chapasSrc = fs.readFileSync(
+      path.join(ROOT, 'src/components/FutbolChapasStage.tsx'),
+      'utf8'
+    );
+    expect(chapasSrc).toContain('traceBottleCapCrownPath');
+    expect(chapasSrc).toContain('CHAPAS_PITCH_BOTTOM + 14');
+
+    const catalogSrc = fs.readFileSync(
+      path.join(ROOT, 'src/components/MediaCatalogHub.tsx'),
+      'utf8'
+    );
+    expect(catalogSrc).toContain("activeSection !== 'home' && activeSection !== 'games'");
+    expect(catalogSrc).not.toContain('Zona de Juegos (Online y Offline)');
+
+    const appSrc = fs.readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
+    expect(appSrc).toContain('isDesktopLayout && !isGamesSectionActive');
+  });
 });
+

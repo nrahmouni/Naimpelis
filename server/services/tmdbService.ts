@@ -149,6 +149,30 @@ export async function fetchTmdbJson<T>(
 }
 
 /**
+ * Convenience wrapper that parses a full `https://api.themoviedb.org/3/...` URL
+ * and routes it through `fetchTmdbJson` (IPv4 keepAlive, retries, stale fallback).
+ */
+export async function fetchTmdbUrlJson<T>(
+  fullUrl: string,
+  cacheTtlMs = 5 * 60 * 1000
+): Promise<T | null> {
+  if (!fullUrl) return null;
+  try {
+    const parsed = new URL(fullUrl);
+    const endpointPath = parsed.pathname.replace(/^\/3/, '') || '/';
+    const params: Record<string, string> = {};
+    parsed.searchParams.forEach((value, key) => {
+      if (key !== 'api_key') {
+        params[key] = value;
+      }
+    });
+    return await fetchTmdbJson<T>(endpointPath, params, cacheTtlMs);
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Ensures non-Latin / mismatched foreign titles (e.g. Polish "Wśród nocnej ciszy" vs Spanish "Noche de Paz")
  * are resolved consistently to the requested es-ES localized title when TMDB returns a foreign original/fallback.
  */

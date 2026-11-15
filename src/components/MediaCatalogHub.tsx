@@ -32,6 +32,7 @@ import {
   Bookmark,
   SlidersHorizontal,
   Gamepad2,
+  Wand2,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -729,6 +730,7 @@ interface MediaCatalogHubProps {
   onChapasForfeit?: () => void;
   onChapasRematch?: () => void;
   onCloseRoomChapas?: () => void;
+  onSearchWithAi?: (query: string, mediaType?: 'all' | 'movie' | 'tv') => void;
 }
 
 export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
@@ -815,6 +817,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onChapasForfeit,
   onChapasRematch,
   onCloseRoomChapas,
+  onSearchWithAi,
 }) => {
   const t = UI_COPY[lang];
 
@@ -3817,10 +3820,50 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               )}
 
               {!loadingHomeSearch &&
+                onSearchWithAi &&
+                (homeMovieResults.length > 0 || homeSeriesResults.length > 0) && (
+                  <div className="p-3.5 rounded-2xl bg-emerald-500/[0.07] border border-emerald-400/25 flex flex-wrap items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-xs font-bold text-white">
+                        {pickLang(lang, {
+                          es: '¿No está la peli o serie que buscabas?',
+                          ca: 'No hi ha la pel·li o sèrie que buscaves?',
+                          en: "Didn't see the exact title?",
+                        })}
+                      </p>
+                      <p className="text-[11px] text-zinc-400 truncate">
+                        {pickLang(lang, {
+                          es: `Pídesela a la IA y la localizamos para verla al instante`,
+                          ca: `Demana-la a la IA i la localitzem per veure-la a l'instant`,
+                          en: `Ask AI to find it and prepare instant playback`,
+                        })}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        onSearchWithAi(debouncedHomeQuery, 'all');
+                      }}
+                      className="min-h-10 px-4 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                    >
+                      <Wand2 className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {pickLang(lang, {
+                          es: `Buscar «${debouncedHomeQuery}» con AI`,
+                          ca: `Cercar «${debouncedHomeQuery}» amb AI`,
+                          en: `Search "${debouncedHomeQuery}" with AI`,
+                        })}
+                      </span>
+                    </button>
+                  </div>
+                )}
+
+              {!loadingHomeSearch &&
                 homeMovieResults.length === 0 &&
                 homeSeriesResults.length === 0 &&
                 homeMatchingChannels.length === 0 && (
-                  <div className="py-12 text-center rounded-3xl bg-white/[0.02] border border-white/[0.07] px-4 space-y-2.5">
+                  <div className="py-12 text-center rounded-3xl bg-white/[0.02] border border-white/[0.07] px-4 space-y-3">
                     <p className="text-sm font-semibold text-white">
                       {pickLang(lang, {
                         es: `No encontramos resultados para «${debouncedHomeQuery}»`,
@@ -3828,18 +3871,39 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         en: `No results found for "${debouncedHomeQuery}"`,
                       })}
                     </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setYtQuery(debouncedHomeQuery);
-                        setDebouncedYtQuery(debouncedHomeQuery);
-                        onChangeSection('youtube');
-                      }}
-                      className="min-h-[44px] px-5 rounded-full bg-white text-[#050507] text-xs font-bold inline-flex items-center gap-2 cursor-pointer"
-                    >
-                      <Youtube className="w-4 h-4 text-[#050507]" />
-                      <span>{pickLang(lang, { es: 'Buscar en YouTube', ca: 'Cercar a YouTube', en: 'Search YouTube' })}</span>
-                    </button>
+                    <div className="flex flex-wrap items-center justify-center gap-2.5">
+                      {onSearchWithAi && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('medium');
+                            onSearchWithAi(debouncedHomeQuery, 'all');
+                          }}
+                          className="min-h-[44px] px-5 rounded-full bg-gradient-to-r from-emerald-500 to-emerald-400 hover:brightness-110 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-2 shadow-[0_8px_24px_rgba(16,185,129,0.28)] cursor-pointer transition-all"
+                        >
+                          <Wand2 className="w-4 h-4 shrink-0" />
+                          <span>
+                            {pickLang(lang, {
+                              es: `Buscar «${debouncedHomeQuery}» con AI`,
+                              ca: `Cercar «${debouncedHomeQuery}» amb AI`,
+                              en: `Search "${debouncedHomeQuery}" with AI`,
+                            })}
+                          </span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setYtQuery(debouncedHomeQuery);
+                          setDebouncedYtQuery(debouncedHomeQuery);
+                          onChangeSection('youtube');
+                        }}
+                        className="min-h-[44px] px-5 rounded-full bg-white text-[#050507] text-xs font-bold inline-flex items-center gap-2 cursor-pointer"
+                      >
+                        <Youtube className="w-4 h-4 text-[#050507]" />
+                        <span>{pickLang(lang, { es: 'Buscar en YouTube', ca: 'Cercar a YouTube', en: 'Search YouTube' })}</span>
+                      </button>
+                    </div>
                   </div>
                 )}
             </div>
@@ -4574,19 +4638,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* UNIFIED COMPACT SUB-VIEW BAR + ON-DEMAND SEARCH & FILTER DRAWER    */}
       {/* Replaces stacked navigation, language, platform & category rows    */}
       {/* ================================================================== */}
-      {activeSection !== 'home' && (
-        <div className={activeSection === 'games' ? 'shrink-0' : 'space-y-2.5'}>
-          <div
-            className={`flex items-center justify-between gap-2 border-b border-white/[0.07] ${
-              activeSection === 'games' ? 'pb-1' : 'pb-1.5'
-            }`}
-          >
+      {activeSection !== 'home' && activeSection !== 'games' && (
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between gap-2 border-b border-white/[0.07] pb-1.5">
             {/* Left: Compact back button (when deep in a hub) + single concise mode switch */}
             <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
               {(focusedHub !== 'all' ||
                 streamingProvider !== 'all' ||
-                activeSection === 'direct' ||
-                activeSection === 'games') && (
+                activeSection === 'direct') && (
                 <button
                   type="button"
                   onClick={goToHomeGrid}
@@ -4595,19 +4654,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
-              )}
-
-              {activeSection === 'games' && (
-                <span className="font-display font-bold text-sm text-white flex items-center gap-1.5 px-1.5">
-                  <Gamepad2 className="w-4 h-4 text-[#BF94FF]" />
-                  <span>
-                    {pickLang(lang, {
-                      es: 'Zona de Juegos (Online y Offline)',
-                      ca: 'Zona de Jocs (Online i Offline)',
-                      en: 'Games Hub (Online & Offline)',
-                    })}
-                  </span>
-                </span>
               )}
 
               {/* CATALOG MODE SWITCH: Películas | Series | Castellano */}
@@ -4847,7 +4893,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </div>
 
             {/* Right: Compact Search Toggle + Collapsible Filters Drawer Toggle */}
-            {activeSection !== 'direct' && activeSection !== 'games' && !showWatchlistOnly && (
+            {activeSection !== 'direct' && !showWatchlistOnly && (
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
@@ -4904,61 +4950,95 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           </div>
 
           {/* Expandable Slim Search Input (only shown when toggled or query non-empty) */}
-          {activeSection !== 'direct' && activeSection !== 'games' && !showWatchlistOnly && isSectionSearchVisible && (
-            <div className="relative">
-              <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-              <input
-                ref={sectionSearchInputRef}
-                type="text"
-                value={activeSectionQuery}
-                onChange={(e) => setActiveSectionQuery(e.target.value)}
-                placeholder={
-                  activeSection === 'movies' || activeSection === 'vose'
-                    ? streamingProvider !== 'all'
-                      ? pickLang(lang, {
-                          es: `Buscar película en ${activePlatformMeta.es}...`,
-                          ca: `Cerca pel·lícula a ${activePlatformMeta.ca}...`,
-                          en: `Search ${activePlatformMeta.en} movies...`,
-                        })
-                      : activeSection === 'vose'
-                      ? t.searchVoPlaceholder
-                      : t.searchMoviesPlaceholder
-                    : activeSection === 'series'
-                    ? streamingProvider !== 'all'
-                      ? pickLang(lang, {
-                          es: `Buscar serie en ${activePlatformMeta.es}...`,
-                          ca: `Cerca sèrie a ${activePlatformMeta.ca}...`,
-                          en: `Search ${activePlatformMeta.en} series...`,
-                        })
-                      : t.searchSeriesPlaceholder
-                    : activeSection === 'anime'
-                    ? pickLang(lang, { es: 'Buscar anime...', ca: 'Cercar anime...', en: 'Search anime...' })
-                    : activeSection === 'catala'
-                    ? pickLang(lang, { es: 'Buscar anime en catalán...', ca: 'Cercar anime en català...', en: 'Search Catalan anime...' })
-                    : activeSection === 'castellano'
-                    ? pickLang(lang, { es: 'Buscar en Castellano...', ca: 'Cercar en Castellà...', en: 'Search in Spanish...' })
-                    : activeSection === 'tdt'
-                    ? pickLang(lang, { es: 'Buscar canal o programa EPG...', ca: 'Cercar canal o programa EPG...', en: 'Search TV channel or EPG...' })
-                    : activeSection === 'sports'
-                    ? t.searchSportsPlaceholder
-                    : pickLang(lang, { es: 'Buscar en YouTube o pegar enlace...', ca: 'Cercar a YouTube o enganxar enllaç...', en: 'Search YouTube or paste link...' })
-                }
-                className="w-full h-9 pl-9 pr-9 rounded-full bg-white/[0.06] focus:bg-white/[0.09] border border-white/[0.12] focus:border-[#9146FF]/70 text-sm text-white placeholder:text-zinc-400 outline-none transition-all"
-              />
-              <button
-                type="button"
-                onClick={() => {
-                  if (activeSectionQuery) {
-                    setActiveSectionQuery('');
-                  } else {
-                    setShowSectionSearch(false);
+          {activeSection !== 'direct' && !showWatchlistOnly && isSectionSearchVisible && (
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 min-w-0">
+                <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <input
+                  ref={sectionSearchInputRef}
+                  type="text"
+                  value={activeSectionQuery}
+                  onChange={(e) => setActiveSectionQuery(e.target.value)}
+                  placeholder={
+                    activeSection === 'movies' || activeSection === 'vose'
+                      ? streamingProvider !== 'all'
+                        ? pickLang(lang, {
+                            es: `Buscar película en ${activePlatformMeta.es}...`,
+                            ca: `Cerca pel·lícula a ${activePlatformMeta.ca}...`,
+                            en: `Search ${activePlatformMeta.en} movies...`,
+                          })
+                        : activeSection === 'vose'
+                        ? t.searchVoPlaceholder
+                        : t.searchMoviesPlaceholder
+                      : activeSection === 'series'
+                      ? streamingProvider !== 'all'
+                        ? pickLang(lang, {
+                            es: `Buscar serie en ${activePlatformMeta.es}...`,
+                            ca: `Cerca sèrie a ${activePlatformMeta.ca}...`,
+                            en: `Search ${activePlatformMeta.en} series...`,
+                          })
+                        : t.searchSeriesPlaceholder
+                      : activeSection === 'anime'
+                      ? pickLang(lang, { es: 'Buscar anime...', ca: 'Cercar anime...', en: 'Search anime...' })
+                      : activeSection === 'catala'
+                      ? pickLang(lang, { es: 'Buscar anime en catalán...', ca: 'Cercar anime en català...', en: 'Search Catalan anime...' })
+                      : activeSection === 'castellano'
+                      ? pickLang(lang, { es: 'Buscar en Castellano...', ca: 'Cercar en Castellà...', en: 'Search in Spanish...' })
+                      : activeSection === 'tdt'
+                      ? pickLang(lang, { es: 'Buscar canal o programa EPG...', ca: 'Cercar canal o programa EPG...', en: 'Search TV channel or EPG...' })
+                      : activeSection === 'sports'
+                      ? t.searchSportsPlaceholder
+                      : pickLang(lang, { es: 'Buscar en YouTube o pegar enlace...', ca: 'Cercar a YouTube o enganxar enllaç...', en: 'Search YouTube or paste link...' })
                   }
-                }}
-                aria-label={pickLang(lang, { es: 'Cerrar o limpiar búsqueda', ca: 'Tancar o netejar cerca', en: 'Close or clear search' })}
-                className="w-7 h-7 rounded-full absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+                  className="w-full h-9 pl-9 pr-9 rounded-full bg-white/[0.06] focus:bg-white/[0.09] border border-white/[0.12] focus:border-[#9146FF]/70 text-sm text-white placeholder:text-zinc-400 outline-none transition-all"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (activeSectionQuery) {
+                      setActiveSectionQuery('');
+                    } else {
+                      setShowSectionSearch(false);
+                    }
+                  }}
+                  aria-label={pickLang(lang, { es: 'Cerrar o limpiar búsqueda', ca: 'Tancar o netejar cerca', en: 'Close or clear search' })}
+                  className="w-7 h-7 rounded-full absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              {onSearchWithAi &&
+                activeSectionQuery.trim().length >= 2 &&
+                (activeSection === 'movies' ||
+                  activeSection === 'vose' ||
+                  activeSection === 'series' ||
+                  activeSection === 'anime' ||
+                  activeSection === 'castellano' ||
+                  activeSection === 'catala') && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      const targetMediaType =
+                        activeSection === 'movies' || activeSection === 'vose'
+                          ? 'movie'
+                          : activeSection === 'series'
+                            ? 'tv'
+                            : 'all';
+                      onSearchWithAi(activeSectionQuery.trim(), targetMediaType);
+                    }}
+                    className="h-9 px-3.5 rounded-full bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-[0_4px_16px_rgba(16,185,129,0.28)]"
+                  >
+                    <Wand2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Buscar con AI',
+                        ca: 'Cercar amb AI',
+                        en: 'Search AI',
+                      })}
+                    </span>
+                  </button>
+                )}
             </div>
           )}
 
@@ -5797,24 +5877,45 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     })}
               </p>
               {!showWatchlistOnly && movieQuery.trim().length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('medium');
-                    setSeriesQuery(movieQuery.trim());
-                    onChangeSection('series');
-                  }}
-                  className="mt-2 min-h-[44px] px-5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-colors"
-                >
-                  <Tv className="w-4 h-4 text-[#E11D48]" />
-                  <span>
-                    {pickLang(lang, {
-                      es: `Buscar «${movieQuery.trim()}» en Series`,
-                      ca: `Cercar «${movieQuery.trim()}» a Sèries`,
-                      en: `Search "${movieQuery.trim()}" in Series`,
-                    })}
-                  </span>
-                </button>
+                <div className="pt-1 flex flex-wrap items-center justify-center gap-2.5">
+                  {onSearchWithAi && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        onSearchWithAi(movieQuery.trim(), 'movie');
+                      }}
+                      className="min-h-[44px] px-5 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:brightness-110 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-2 shadow-[0_8px_24px_rgba(16,185,129,0.28)] cursor-pointer transition-all"
+                    >
+                      <Wand2 className="w-4 h-4 shrink-0" />
+                      <span>
+                        {pickLang(lang, {
+                          es: `Buscar «${movieQuery.trim()}» con AI`,
+                          ca: `Cercar «${movieQuery.trim()}» amb AI`,
+                          en: `Search "${movieQuery.trim()}" with AI`,
+                        })}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      setSeriesQuery(movieQuery.trim());
+                      onChangeSection('series');
+                    }}
+                    className="min-h-[44px] px-5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Tv className="w-4 h-4 text-[#E11D48]" />
+                    <span>
+                      {pickLang(lang, {
+                        es: `Buscar «${movieQuery.trim()}» en Series`,
+                        ca: `Cercar «${movieQuery.trim()}» a Sèries`,
+                        en: `Search "${movieQuery.trim()}" in Series`,
+                      })}
+                    </span>
+                  </button>
+                </div>
               )}
             </div>
           ) : (
@@ -6203,24 +6304,45 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 })}
               </p>
               {seriesQuery.trim().length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('medium');
-                    setMovieQuery(seriesQuery.trim());
-                    onChangeSection('movies');
-                  }}
-                  className="mt-2 min-h-[44px] px-5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-colors"
-                >
-                  <Film className="w-4 h-4 text-[#E11D48]" />
-                  <span>
-                    {pickLang(lang, {
-                      es: `Buscar «${seriesQuery.trim()}» en Películas`,
-                      ca: `Cercar «${seriesQuery.trim()}» a Pel·lícules`,
-                      en: `Search "${seriesQuery.trim()}" in Movies`,
-                    })}
-                  </span>
-                </button>
+                <div className="pt-1 flex flex-wrap items-center justify-center gap-2.5">
+                  {onSearchWithAi && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        onSearchWithAi(seriesQuery.trim(), 'tv');
+                      }}
+                      className="min-h-[44px] px-5 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:brightness-110 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-2 shadow-[0_8px_24px_rgba(16,185,129,0.28)] cursor-pointer transition-all"
+                    >
+                      <Wand2 className="w-4 h-4 shrink-0" />
+                      <span>
+                        {pickLang(lang, {
+                          es: `Buscar «${seriesQuery.trim()}» con AI`,
+                          ca: `Cercar «${seriesQuery.trim()}» amb AI`,
+                          en: `Search "${seriesQuery.trim()}" with AI`,
+                        })}
+                      </span>
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      setMovieQuery(seriesQuery.trim());
+                      onChangeSection('movies');
+                    }}
+                    className="min-h-[44px] px-5 rounded-2xl bg-white text-[#050508] hover:bg-zinc-200 text-xs font-bold inline-flex items-center gap-2 cursor-pointer transition-colors"
+                  >
+                    <Film className="w-4 h-4 text-[#E11D48]" />
+                    <span>
+                      {pickLang(lang, {
+                        es: `Buscar «${seriesQuery.trim()}» en Películas`,
+                        ca: `Cercar «${seriesQuery.trim()}» a Pel·lícules`,
+                        en: `Search "${seriesQuery.trim()}" in Movies`,
+                      })}
+                    </span>
+                  </button>
+                </div>
               )}
             </div>
           ) : (
@@ -6674,29 +6796,53 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </button>
                 )}
                 {animeQuery.trim().length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      setAnimeMediaKind((k) => (k === 'series' ? 'movies' : 'series'));
-                      setAnimePage(1);
-                    }}
-                    className="min-h-[44px] px-5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/12 text-white text-xs font-bold inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-                  >
-                    <span>
-                      {animeMediaKind === 'series'
-                        ? pickLang(lang, {
-                            es: `Buscar «${animeQuery.trim()}» en Películas Anime`,
-                            ca: `Cercar «${animeQuery.trim()}» a Pel·lícules Anime`,
-                            en: 'Search in Anime Movies',
-                          })
-                        : pickLang(lang, {
-                            es: `Buscar «${animeQuery.trim()}» en Series Anime`,
-                            ca: `Cercar «${animeQuery.trim()}» a Sèries Anime`,
-                            en: 'Search in Anime Series',
+                  <>
+                    {onSearchWithAi && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('medium');
+                          onSearchWithAi(
+                            animeQuery.trim(),
+                            animeMediaKind === 'series' ? 'tv' : 'movie'
+                          );
+                        }}
+                        className="min-h-[44px] px-5 rounded-2xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:brightness-110 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all"
+                      >
+                        <Wand2 className="w-4 h-4 shrink-0" />
+                        <span>
+                          {pickLang(lang, {
+                            es: `Buscar «${animeQuery.trim()}» con AI`,
+                            ca: `Cercar «${animeQuery.trim()}» amb AI`,
+                            en: `Search "${animeQuery.trim()}" with AI`,
                           })}
-                    </span>
-                  </button>
+                        </span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        setAnimeMediaKind((k) => (k === 'series' ? 'movies' : 'series'));
+                        setAnimePage(1);
+                      }}
+                      className="min-h-[44px] px-5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/12 text-white text-xs font-bold inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+                    >
+                      <span>
+                        {animeMediaKind === 'series'
+                          ? pickLang(lang, {
+                              es: `Buscar «${animeQuery.trim()}» en Películas Anime`,
+                              ca: `Cercar «${animeQuery.trim()}» a Pel·lícules Anime`,
+                              en: 'Search in Anime Movies',
+                            })
+                          : pickLang(lang, {
+                              es: `Buscar «${animeQuery.trim()}» en Series Anime`,
+                              ca: `Cercar «${animeQuery.trim()}» a Sèries Anime`,
+                              en: 'Search in Anime Series',
+                            })}
+                      </span>
+                    </button>
+                  </>
                 )}
               </div>
             </div>
@@ -8407,21 +8553,42 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   en: 'No Spanish-dubbed titles match this filter.',
                 })}
               </p>
-              <button
-                type="button"
-                onClick={() => {
-                  setCastellanoQuery('');
-                  setCastellanoProvider('all');
-                  setCastellanoCategory('trending');
-                }}
-                className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
-              >
-                {pickLang(lang, {
-                  es: 'Restablecer filtros',
-                  ca: 'Restablir filtres',
-                  en: 'Reset filters',
-                })}
-              </button>
+              <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+                {onSearchWithAi && castellanoQuery.trim().length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      onSearchWithAi(castellanoQuery.trim(), 'all');
+                    }}
+                    className="min-h-[42px] px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <Wand2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        es: `Buscar «${castellanoQuery.trim()}» con AI`,
+                        ca: `Cercar «${castellanoQuery.trim()}» amb AI`,
+                        en: `Search "${castellanoQuery.trim()}" with AI`,
+                      })}
+                    </span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCastellanoQuery('');
+                    setCastellanoProvider('all');
+                    setCastellanoCategory('trending');
+                  }}
+                  className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
+                >
+                  {pickLang(lang, {
+                    es: 'Restablecer filtros',
+                    ca: 'Restablir filtres',
+                    en: 'Reset filters',
+                  })}
+                </button>
+              </div>
             </div>
           ) : (
             <>
@@ -8655,20 +8822,41 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       en: `No results found for “${debouncedCatalaQuery}”.`,
                     })}
                   </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCatalaQuery('');
-                      setCatalaCategory('all');
-                    }}
-                    className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
-                  >
-                    {pickLang(lang, {
-                      es: 'Ver todo el catálogo en catalán',
-                      ca: 'Veure tot el catàleg en català',
-                      en: 'View all Catalan catalog',
-                    })}
-                  </button>
+                  <div className="flex flex-wrap items-center justify-center gap-2.5 pt-1">
+                    {onSearchWithAi && debouncedCatalaQuery.trim().length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('medium');
+                          onSearchWithAi(debouncedCatalaQuery.trim(), 'all');
+                        }}
+                        className="min-h-[42px] px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <Wand2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          {pickLang(lang, {
+                            es: `Buscar «${debouncedCatalaQuery.trim()}» con AI`,
+                            ca: `Cercar «${debouncedCatalaQuery.trim()}» amb AI`,
+                            en: `Search "${debouncedCatalaQuery.trim()}" with AI`,
+                          })}
+                        </span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setCatalaQuery('');
+                        setCatalaCategory('all');
+                      }}
+                      className="min-h-[42px] px-4 rounded-xl bg-white text-[#050508] text-xs font-bold cursor-pointer"
+                    >
+                      {pickLang(lang, {
+                        es: 'Ver todo el catálogo en catalán',
+                        ca: 'Veure tot el catàleg en català',
+                        en: 'View all Catalan catalog',
+                      })}
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <VirtualizedPosterGrid

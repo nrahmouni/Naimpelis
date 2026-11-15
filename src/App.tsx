@@ -328,6 +328,12 @@ export function App() {
   const setShowCommandSearch = useAppStore((s) => s.setShowCommandSearch);
   const showSurpriseModal = useAppStore((s) => s.showSurpriseModal);
   const setShowSurpriseModal = useAppStore((s) => s.setShowSurpriseModal);
+  const [aiSearchLaunch, setAiSearchLaunch] = useState<{
+    query: string;
+    mediaType?: 'all' | 'movie' | 'tv';
+    mode?: 'surprise' | 'request';
+    seq: number;
+  } | null>(null);
   const typingUsers = useAppStore((s) => s.typingUsers);
   const setTypingUser = useAppStore((s) => s.setTypingUser);
   const swUpdate = useAppStore((s) => s.swUpdate);
@@ -4747,6 +4753,12 @@ export function App() {
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
+                  setAiSearchLaunch((prev) => ({
+                    query: '',
+                    mediaType: 'all',
+                    mode: 'surprise',
+                    seq: (prev?.seq || 0) + 1,
+                  }));
                   setShowSurpriseModal(true);
                 }}
                 title={pickLang(lang, {
@@ -4794,6 +4806,12 @@ export function App() {
                   type="button"
                   onClick={() => {
                     triggerHaptic('light');
+                    setAiSearchLaunch((prev) => ({
+                      query: '',
+                      mediaType: 'all',
+                      mode: 'surprise',
+                      seq: (prev?.seq || 0) + 1,
+                    }));
                     setShowSurpriseModal(true);
                   }}
                   title={pickLang(lang, {
@@ -5042,7 +5060,7 @@ export function App() {
             onScroll={isDesktopLayout ? handleCatalogOrWorkspaceScroll : undefined}
             onClick={isDesktopLayout ? handleWorkspaceBackgroundClick : undefined}
             className={`flex-1 min-h-0 min-w-0 flex flex-col ${
-              isDesktopLayout ? 'overflow-y-auto' : 'overflow-hidden'
+              isDesktopLayout && !isGamesSectionActive ? 'overflow-y-auto' : 'overflow-hidden'
             }`}
           >
             {/* SINGLE NATIVE CINEMA PLAYER INSTANCE (Stays Docked Inline at Top & Compresses on Scroll) */}
@@ -5359,15 +5377,15 @@ export function App() {
               onScroll={!isDesktopLayout && !isGamesSectionActive ? handleCatalogOrWorkspaceScroll : undefined}
               onClick={!isDesktopLayout && !isGamesSectionActive ? handleWorkspaceBackgroundClick : undefined}
               className={`flex-1 min-h-0 min-w-0 ${
-                isDesktopLayout
+                isGamesSectionActive
+                  ? 'overflow-hidden px-3 sm:px-6 py-2 flex flex-col'
+                  : isDesktopLayout
                   ? 'overflow-visible px-6 py-5'
-                  : isGamesSectionActive
-                  ? 'overflow-hidden px-3 py-1.5 flex flex-col'
                   : 'overflow-y-auto overflow-x-clip overscroll-contain px-3.5 py-3'
               } ${
                 !isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room')
                   ? 'hidden'
-                  : isGamesSectionActive && !isDesktopLayout
+                  : isGamesSectionActive
                   ? 'flex'
                   : 'block'
               }`}
@@ -5631,7 +5649,7 @@ export function App() {
                   onPoolForfeit={() => socketService.forfeitPoolGame()}
                   onPoolRematch={() => socketService.rematchPoolGame()}
                   onCloseRoomPool={() => socketService.closePoolGame()}
-                  onStartRoomChapas={(opts) => socketService.startChapasGame(opts)}
+                  onStartRoomChapas={() => socketService.startChapasGame()}
                   onChapasJoinSeat={(seat) => socketService.joinChapasSeat(seat)}
                   onChapasUpdateTeam={(team, flag) => socketService.updateChapasTeam(team, flag)}
                   onChapasToggleBots={(botsEnabled) => socketService.toggleChapasBots(botsEnabled)}
@@ -5640,6 +5658,16 @@ export function App() {
                   onChapasForfeit={() => socketService.forfeitChapasGame()}
                   onChapasRematch={() => socketService.rematchChapasGame()}
                   onCloseRoomChapas={() => socketService.closeChapasGame()}
+                  onSearchWithAi={(query, mediaType = 'all') => {
+                    setShowCommandSearch(false);
+                    setAiSearchLaunch((prev) => ({
+                      query,
+                      mediaType,
+                      mode: 'request',
+                      seq: (prev?.seq || 0) + 1,
+                    }));
+                    setShowSurpriseModal(true);
+                  }}
                 />
 
                 {/* Minimalist Footer (Hidden in Games Hub so grid fills viewport cleanly without gap or scroll) */}
@@ -5954,6 +5982,16 @@ export function App() {
               }
             }}
             onSelectChannel={(ch) => handlePlayTdtChannel(ch, 0)}
+            onSearchWithAi={(query, mediaType = 'all') => {
+              setShowCommandSearch(false);
+              setAiSearchLaunch((prev) => ({
+                query,
+                mediaType,
+                mode: 'request',
+                seq: (prev?.seq || 0) + 1,
+              }));
+              setShowSurpriseModal(true);
+            }}
           />
 
           <SurpriseMeModal
@@ -5963,6 +6001,7 @@ export function App() {
             movies={quickPool.movies}
             series={quickPool.series}
             isLoading={quickPoolLoading}
+            initialRequest={aiSearchLaunch}
             onRetryLoad={() => {
               void loadQuickPool();
             }}

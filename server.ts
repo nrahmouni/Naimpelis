@@ -62,7 +62,9 @@ import {
   verifyM3u8HasCleanVideoFrame,
 } from './server/extractors/sportsExtractor.ts';
 import {
+  fetchTmdbJson,
   fetchTmdbTitleLogo,
+  fetchTmdbUrlJson,
   resolveLocalizedTmdbTitle,
 } from './server/services/tmdbService.ts';
 import {
@@ -91,6 +93,10 @@ import {
   searchIndexedCatalog,
   startCatalogRefreshScheduler,
 } from './server/services/catalogRefreshService.ts';
+import {
+  getAiMovieRequestJob,
+  startAiMovieRequest,
+} from './server/services/aiMovieRequestService.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -657,12 +663,7 @@ async function fetchTmdbItemsByIds(
 ): Promise<any[]> {
   const results = await Promise.all(
     ids.map((id) =>
-      fetch(
-        `https://api.themoviedb.org/3/${mediaType}/${id}?api_key=${TMDB_API_KEY}&language=${lang}`,
-        { signal: AbortSignal.timeout(3500) }
-      )
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null)
+      fetchTmdbJson<any>(`/${mediaType}/${id}`, { language: lang }, 30 * 60 * 1000).catch(() => null)
     )
   );
   return results.filter((x) => x && x.id && (x.poster_path || x.backdrop_path));
@@ -829,8 +830,11 @@ async function fetchTmdbMovieCatalog(opts: {
     endpoint = `https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   }
 
-  let res = await fetch(endpoint, { signal: AbortSignal.timeout(5000) });
-  let json: any = res.ok ? await res.json() : { results: [], total_pages: 1 };
+  const json: any =
+    (await fetchTmdbUrlJson<any>(endpoint, 5 * 60 * 1000).catch(() => null)) || {
+      results: [],
+      total_pages: 1,
+    };
   let results: any[] = Array.isArray(json?.results) ? json.results : [];
   let totalPages = Number(json?.total_pages || 1);
 
@@ -845,22 +849,16 @@ async function fetchTmdbMovieCatalog(opts: {
 
     const otherLang = lang === 'es-ES' ? 'en-US' : 'es-ES';
     const [otherLangRes, multiRes] = await Promise.all([
-      fetch(
-        `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=${otherLang}&query=${encodeURIComponent(
-          query
-        )}&page=1&include_adult=false`,
-        { signal: AbortSignal.timeout(3500) }
-      )
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null),
-      fetch(
-        `https://api.themoviedb.org/3/search/multi?api_key=${TMDB_API_KEY}&language=en-US&query=${encodeURIComponent(
-          query
-        )}&page=1&include_adult=false`,
-        { signal: AbortSignal.timeout(3500) }
-      )
-        .then((r) => (r.ok ? r.json() : null))
-        .catch(() => null),
+      fetchTmdbJson<any>(
+        '/search/movie',
+        { language: otherLang, query, page: 1, include_adult: false },
+        5 * 60 * 1000
+      ).catch(() => null),
+      fetchTmdbJson<any>(
+        '/search/multi',
+        { language: 'en-US', query, page: 1, include_adult: false },
+        5 * 60 * 1000
+      ).catch(() => null),
     ]);
 
     const extraRows: any[] = [
@@ -875,17 +873,12 @@ async function fetchTmdbMovieCatalog(opts: {
       if (variants.length > 0) {
         const extraLists = await Promise.all(
           variants.map(async (vq) => {
-            try {
-              const er = await fetch(
-                `https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&language=${lang}&query=${encodeURIComponent(vq)}&page=1&include_adult=false`,
-                { signal: AbortSignal.timeout(3000) }
-              );
-              if (!er.ok) return [];
-              const ej: any = await er.json().catch(() => null);
-              return Array.isArray(ej?.results) ? ej.results : [];
-            } catch {
-              return [];
-            }
+            const ej = await fetchTmdbJson<any>(
+              '/search/movie',
+              { language: lang, query: vq, page: 1, include_adult: false },
+              5 * 60 * 1000
+            ).catch(() => null);
+            return Array.isArray(ej?.results) ? ej.results : [];
           })
         );
         extraRows.push(...extraLists.flat());
@@ -907,16 +900,23 @@ async function fetchTmdbMovieCatalog(opts: {
   // Fallback for Crunchyroll movie sub-genres if US watch_provider filter is sparse
   if (isAnime && provider === 'crunchyroll' && !query && results.length < 4) {
     const animeGenres = ANIME_MOVIE_GENRE_EXTRAS[category] || '16';
-    const fbRes = await fetch(
-      `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&with_genres=${animeGenres}&with_original_language=ja&sort_by=popularity.desc&vote_count.gte=30&primary_release_date.lte=${todayIso}&page=${page}&include_adult=false`,
-      { signal: AbortSignal.timeout(4500) }
+    const fbJson = await fetchTmdbJson<any>(
+      '/discover/movie',
+      {
+        language: lang,
+        with_genres: animeGenres,
+        with_original_language: 'ja',
+        sort_by: 'popularity.desc',
+        'vote_count.gte': 30,
+        'primary_release_date.lte': todayIso,
+        page,
+        include_adult: false,
+      },
+      5 * 60 * 1000
     ).catch(() => null);
-    if (fbRes?.ok) {
-      const fbJson: any = await fbRes.json();
-      if (Array.isArray(fbJson?.results) && fbJson.results.length > results.length) {
-        results = fbJson.results;
-        totalPages = Number(fbJson?.total_pages || 1);
-      }
+    if (Array.isArray(fbJson?.results) && fbJson.results.length > results.length) {
+      results = fbJson.results;
+      totalPages = Number(fbJson?.total_pages || 1);
     }
   }
 
@@ -1254,6 +1254,35 @@ app.post('/api/catalog/refresh', async (_req, res) => {
   res.json({ success: true, summary, status: getCatalogRefreshStatus() });
 });
 
+app.post('/api/ai/request-movie', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const query = String(req.body?.query || '').trim();
+  const mediaType =
+    req.body?.mediaType === 'movie' || req.body?.mediaType === 'tv'
+      ? req.body.mediaType
+      : 'all';
+  const lang = String(req.body?.lang || 'es').slice(0, 5);
+  if (query.length < 2) {
+    res.status(400).json({
+      success: false,
+      error: 'Escribe al menos 2 caracteres para buscar la película.',
+    });
+    return;
+  }
+  const job = startAiMovieRequest({ query, mediaType, lang });
+  res.status(202).json({ success: true, job });
+});
+
+app.get('/api/ai/request-movie/:jobId', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const job = getAiMovieRequestJob(String(req.params.jobId || ''));
+  if (!job) {
+    res.status(404).json({ success: false, error: 'Solicitud no encontrada o expirada.' });
+    return;
+  }
+  res.json({ success: true, job });
+});
+
 // ============================================================================
 // REST API: TV SERIES CATALOG + SEASONS & EPISODES EXPLORER
 // ============================================================================
@@ -1270,6 +1299,10 @@ const SERIES_GENRE_MAP: Record<string, number> = {
 const seriesCatalogCache = new LruTtlCache<string, { series: any[]; hasMore: boolean; ts: number }>(
   180,
   15 * 60 * 1000
+);
+const seriesCatalogStaleCache = new LruTtlCache<string, { series: any[]; hasMore: boolean; ts: number }>(
+  180,
+  24 * 60 * 60 * 1000
 );
 const movidyTvTmdbCache = new LruTtlCache<string, any | null>(350, 60 * 60 * 1000);
 
@@ -1307,14 +1340,11 @@ async function resolveMovidyShowToTmdbSeries(rawItem: {
 
     let bestMatch: any = null;
     for (const q of candidates) {
-      const tRes = await fetch(
-        `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=es-ES&query=${encodeURIComponent(
-          q
-        )}&page=1&include_adult=false`,
-        { signal: AbortSignal.timeout(3500) }
-      );
-      if (!tRes.ok) continue;
-      const tJson: any = await tRes.json();
+      const tJson = await fetchTmdbJson<any>(
+        '/search/tv',
+        { language: 'es-ES', query: q, page: 1, include_adult: false },
+        15 * 60 * 1000
+      ).catch(() => null);
       const results: any[] = Array.isArray(tJson?.results) ? tJson.results : [];
       if (results.length === 0) continue;
 
@@ -1614,30 +1644,31 @@ app.get('/api/catalog/series', async (req, res) => {
       if (!isSpanishCatalog || provCfg || isAnime) {
         return Promise.resolve({ series: [], hasMore: false });
       }
-      const p = scrapeMovidySeriesCatalog({ category, page, query });
-      if (!query) return p;
+      const p = scrapeMovidySeriesCatalog({ category, page, query }).catch(() => ({
+        series: [],
+        hasMore: false,
+      }));
       return Promise.race([
         p,
         new Promise<{ series: any[]; hasMore: boolean }>((resolve) =>
-          setTimeout(() => resolve({ series: [], hasMore: false }), 1600)
+          setTimeout(() => resolve({ series: [], hasMore: false }), query ? 1600 : 2200)
         ),
       ]);
     };
 
-    const [movidySeriesData, curatedAnimeRaw, originalsRes, tRes] = await Promise.all([
+    const [movidySeriesData, curatedAnimeRaw, oJson, json] = await Promise.all([
       scrapeMovidySeriesFast(),
-      curatedAnimeSeedPromise,
+      curatedAnimeSeedPromise.catch(() => []),
       originalsBoostEndpoint
-        ? fetch(originalsBoostEndpoint, { signal: AbortSignal.timeout(4500) }).catch(() => null)
+        ? fetchTmdbUrlJson<any>(originalsBoostEndpoint, 5 * 60 * 1000).catch(() => null)
         : Promise.resolve(null),
-      fetch(endpoint, { signal: AbortSignal.timeout(5000) }),
+      fetchTmdbUrlJson<any>(endpoint, 5 * 60 * 1000).catch(() => null),
     ]);
 
     const curatedLead = curatedAnimeRaw.map(mapTmdbSeriesItem);
 
     let originalsLead: any[] = [];
-    if (originalsRes?.ok) {
-      const oJson: any = await originalsRes.json().catch(() => null);
+    if (oJson) {
       const oResults: any[] = Array.isArray(oJson?.results) ? oJson.results : [];
       originalsLead = oResults
         .filter((s) => s && s.id && (s.poster_path || s.backdrop_path))
@@ -1648,8 +1679,7 @@ app.get('/api/catalog/series', async (req, res) => {
     let tmdbSeries: any[] = [];
     let totalPages = 1;
 
-    if (tRes.ok) {
-      const json: any = await tRes.json();
+    if (json) {
       let results: any[] = Array.isArray(json?.results) ? json.results : [];
       totalPages = Number(json?.total_pages || 1);
 
@@ -1666,19 +1696,12 @@ app.get('/api/catalog/series', async (req, res) => {
           if (variants.length > 0) {
             const extraLists = await Promise.all(
               variants.map(async (vq) => {
-                try {
-                  const er = await fetch(
-                    `https://api.themoviedb.org/3/search/tv?api_key=${TMDB_API_KEY}&language=${langParam}&query=${encodeURIComponent(
-                      vq
-                    )}&page=1&include_adult=false`,
-                    { signal: AbortSignal.timeout(2800) }
-                  );
-                  if (!er.ok) return [];
-                  const ej: any = await er.json().catch(() => null);
-                  return Array.isArray(ej?.results) ? ej.results : [];
-                } catch {
-                  return [];
-                }
+                const ej = await fetchTmdbJson<any>(
+                  '/search/tv',
+                  { language: langParam, query: vq, page: 1, include_adult: false },
+                  5 * 60 * 1000
+                ).catch(() => null);
+                return Array.isArray(ej?.results) ? ej.results : [];
               })
             );
             const flatExtra = extraLists.flat();
@@ -1765,7 +1788,7 @@ app.get('/api/catalog/series', async (req, res) => {
         0
       );
       const fallbackTv =
-        topScore < 240 ? await liveOnDemandFallbackSearch(query, 'tv') : [];
+        topScore < 240 ? await liveOnDemandFallbackSearch(query, 'tv').catch(() => []) : [];
 
       for (const extra of [...indexedTv, ...fallbackTv]) {
         if (extra.tmdbId && seenTmdbIds.has(extra.tmdbId)) continue;
@@ -1799,13 +1822,30 @@ app.get('/api/catalog/series', async (req, res) => {
       }
     }
 
+    if (combinedSeries.length === 0) {
+      const stale = seriesCatalogStaleCache.get(cacheKey);
+      if (stale && stale.series.length > 0) {
+        return res.json({ success: true, series: stale.series, hasMore: stale.hasMore, page });
+      }
+      const indexedFallback = searchIndexedCatalog(query || 'serie', { mediaType: 'tv', limit: 24 });
+      if (indexedFallback.length > 0) {
+        return res.json({ success: true, series: indexedFallback, hasMore: false, page });
+      }
+    }
+
     const hasMore =
       Boolean(movidySeriesData.hasMore) || (page < totalPages && tmdbSeries.length > 0);
-    seriesCatalogCache.set(cacheKey, { series: combinedSeries, hasMore, ts: Date.now() });
+    if (combinedSeries.length > 0) {
+      const entry = { series: combinedSeries, hasMore, ts: Date.now() };
+      seriesCatalogCache.set(cacheKey, entry);
+      seriesCatalogStaleCache.set(cacheKey, entry);
+    }
     res.json({ success: true, series: combinedSeries, hasMore, page });
   } catch (err) {
-    console.error('Series catalog error:', err);
-    res.status(500).json({ success: false, series: [], hasMore: false });
+    logger.warn({ err }, 'series_catalog_error_degraded');
+    const rawQuery = String(req.query.query || '').trim();
+    const vestFallback = listVestCatalogEntries({ mediaType: 'tv', query: rawQuery });
+    res.json({ success: true, series: vestFallback, hasMore: false, page: 1 });
   }
 });
 
@@ -1837,13 +1877,13 @@ app.get('/api/catalog/tv/:tmdbId', async (req, res) => {
       });
     }
 
-    const showRes = await fetch(
-      `https://api.themoviedb.org/3/tv/${cleanId}?api_key=${TMDB_API_KEY}&language=${langParam}`,
-      { signal: AbortSignal.timeout(4500) }
-    );
+    const showJson = await fetchTmdbJson<any>(
+      `/tv/${cleanId}`,
+      { language: langParam },
+      15 * 60 * 1000
+    ).catch(() => null);
 
-    if (!showRes.ok) return res.status(404).json({ success: false });
-    const showJson: any = await showRes.json();
+    if (!showJson) return res.status(404).json({ success: false });
 
     const baseSeasons = (Array.isArray(showJson?.seasons) ? showJson.seasons : [])
       .filter(
@@ -1917,24 +1957,26 @@ app.get('/api/catalog/tv/:tmdbId', async (req, res) => {
 
     const tmdbSeasonToFetch = isJjkSplit ? 1 : effectiveSeason;
 
-    const seasonRequests: Promise<Response>[] = [
-      fetch(
-        `https://api.themoviedb.org/3/tv/${cleanId}/season/${tmdbSeasonToFetch}?api_key=${TMDB_API_KEY}&language=${langParam}`,
-        { signal: AbortSignal.timeout(4500) }
-      ),
+    const seasonRequests: Promise<any>[] = [
+      fetchTmdbJson<any>(
+        `/tv/${cleanId}/season/${tmdbSeasonToFetch}`,
+        { language: langParam },
+        15 * 60 * 1000
+      ).catch(() => null),
     ];
     if (!isEn) {
       seasonRequests.push(
-        fetch(
-          `https://api.themoviedb.org/3/tv/${cleanId}/season/${tmdbSeasonToFetch}?api_key=${TMDB_API_KEY}&language=en-US`,
-          { signal: AbortSignal.timeout(4500) }
-        )
+        fetchTmdbJson<any>(
+          `/tv/${cleanId}/season/${tmdbSeasonToFetch}`,
+          { language: 'en-US' },
+          15 * 60 * 1000
+        ).catch(() => null)
       );
     }
 
-    const [seasonRes, seasonEnRes] = await Promise.all(seasonRequests);
-    const seasonJson: any = seasonRes?.ok ? await seasonRes.json() : { episodes: [] };
-    const seasonEnJson: any = seasonEnRes?.ok ? await seasonEnRes.json() : { episodes: [] };
+    const [seasonJsonRaw, seasonEnJsonRaw] = await Promise.all(seasonRequests);
+    const seasonJson: any = seasonJsonRaw || { episodes: [] };
+    const seasonEnJson: any = seasonEnJsonRaw || { episodes: [] };
 
     const enEpisodesByNum = new Map<number, any>();
     if (Array.isArray(seasonEnJson?.episodes)) {
@@ -7007,10 +7049,15 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
       return res.json({ success: true, details: cached.details });
     }
 
-    const url = `https://api.themoviedb.org/3/${mediaType}/${cleanId}?api_key=${TMDB_API_KEY}&language=${langParam}&append_to_response=videos,credits,recommendations,watch/providers,external_ids,translations`;
-    const r = await fetch(url, { signal: AbortSignal.timeout(5000) });
-    if (!r.ok) return res.status(404).json({ success: false });
-    const data: any = await r.json();
+    const data = await fetchTmdbJson<any>(
+      `/${mediaType}/${cleanId}`,
+      {
+        language: langParam,
+        append_to_response: 'videos,credits,recommendations,watch/providers,external_ids,translations',
+      },
+      15 * 60 * 1000
+    ).catch(() => null);
+    if (!data) return res.status(404).json({ success: false });
 
     const esWp = data?.['watch/providers']?.results?.ES;
     const rawProviderEntries: any[] = [
@@ -7090,14 +7137,12 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
       (async () => {
         let vids: any[] = Array.isArray(data?.videos?.results) ? data.videos.results : [];
         if (vids.length === 0 && langParam !== 'en-US') {
-          const enVideosRes = await fetch(
-            `https://api.themoviedb.org/3/${mediaType}/${cleanId}/videos?api_key=${TMDB_API_KEY}&language=en-US`,
-            { signal: AbortSignal.timeout(3500) }
+          const enJson = await fetchTmdbJson<any>(
+            `/${mediaType}/${cleanId}/videos`,
+            { language: 'en-US' },
+            15 * 60 * 1000
           ).catch(() => null);
-          if (enVideosRes?.ok) {
-            const enJson: any = await enVideosRes.json();
-            vids = Array.isArray(enJson?.results) ? enJson.results : [];
-          }
+          vids = Array.isArray(enJson?.results) ? enJson.results : [];
         }
         return vids;
       })(),

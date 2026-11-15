@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
-import { CornerDownLeft, Film, Loader2, Search, Sparkles, Trophy, Tv, X } from 'lucide-react';
+import { CornerDownLeft, Film, Loader2, Search, Sparkles, Trophy, Tv, Wand2, X } from 'lucide-react';
 import type { AppLanguage, CatalogMovie, SpanishTdtChannel } from '../types';
 import { pickLang } from '../utils/i18n';
 import { BottomSheet, StandardInput } from './ui/DesignSystem';
@@ -15,6 +15,7 @@ interface CommandSearchModalProps {
   tdtChannels: SpanishTdtChannel[];
   onSelectCatalogItem: (item: CatalogMovie) => void;
   onSelectChannel?: (ch: SpanishTdtChannel) => void;
+  onSearchWithAi?: (query: string, mediaType?: 'all' | 'movie' | 'tv') => void;
 }
 
 const RECENT_SEARCHES_KEY = 'naimcine_recent_searches_v1';
@@ -32,6 +33,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
   tdtChannels,
   onSelectCatalogItem,
   onSelectChannel,
+  onSearchWithAi,
 }) => {
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -328,22 +330,49 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
         )}
 
         {!loadingRemote && flatActions.length === 0 ? (
-          <div className="py-10 text-center space-y-2 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+          <div className="py-10 text-center space-y-3 rounded-2xl bg-white/[0.02] border border-white/[0.06] px-4">
             <Sparkles className="w-6 h-6 text-[#BF94FF] mx-auto" />
             <p className="text-sm font-semibold text-white">
               {pickLang(lang, {
-                es: 'Sin coincidencias rápidas',
-                ca: 'Sense coincidències ràpides',
-                en: 'No quick matches',
+                es: query.trim().length >= 2
+                  ? `No encontramos «${query.trim()}» en el catálogo`
+                  : 'Sin coincidencias rápidas',
+                ca: query.trim().length >= 2
+                  ? `No hem trobat «${query.trim()}» al catàleg`
+                  : 'Sense coincidències ràpides',
+                en: query.trim().length >= 2
+                  ? `We couldn't find "${query.trim()}" in the catalog`
+                  : 'No quick matches',
               })}
             </p>
             <p className="text-xs text-zinc-400">
               {pickLang(lang, {
-                es: 'Prueba con otro título o abre Películas / Series para explorar todo el catálogo.',
-                ca: 'Prova un altre títol o obre Pel·lícules / Sèries per explorar tot el catàleg.',
-                en: 'Try another title or browse Movies / Series to explore the full catalog.',
+                es: 'Pídesela a nuestra IA para que la localice y prepare su reproducción.',
+                ca: 'Demana-la a la nostra IA perquè la localitzi i en prepari la reproducció.',
+                en: 'Ask our AI to track it down and prepare playback automatically.',
               })}
             </p>
+            {onSearchWithAi && query.trim().length >= 2 && (
+              <button
+                type="button"
+                onClick={() => {
+                  const cleanQ = query.trim();
+                  recordQuery(cleanQ);
+                  onClose();
+                  onSearchWithAi(cleanQ, 'all');
+                }}
+                className="min-h-11 px-5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-400 hover:brightness-110 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-2 shadow-[0_8px_24px_rgba(16,185,129,0.3)] cursor-pointer transition-all"
+              >
+                <Wand2 className="w-4 h-4 shrink-0" />
+                <span>
+                  {pickLang(lang, {
+                    es: `Buscar «${query.trim()}» con AI`,
+                    ca: `Cercar «${query.trim()}» amb AI`,
+                    en: `Search "${query.trim()}" with AI`,
+                  })}
+                </span>
+              </button>
+            )}
           </div>
         ) : flatActions.length > 0 ? (
           <div className="space-y-4">
@@ -515,6 +544,47 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                   })}
                 </div>
               </section>
+            )}
+            {onSearchWithAi && query.trim().length >= 2 && !loadingRemote && (
+              <div className="pt-1">
+                <div className="p-3 rounded-xl bg-emerald-500/[0.07] border border-emerald-400/25 flex flex-wrap items-center justify-between gap-2.5">
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white">
+                      {pickLang(lang, {
+                        es: '¿No está la que buscas?',
+                        ca: 'No hi ha la que busques?',
+                        en: "Didn't find the exact title?",
+                      })}
+                    </div>
+                    <div className="text-[11px] text-zinc-400 truncate">
+                      {pickLang(lang, {
+                        es: `La IA puede buscar «${query.trim()}» en fuentes externas`,
+                        ca: `La IA pot cercar «${query.trim()}» a fonts externes`,
+                        en: `AI can search "${query.trim()}" across external sources`,
+                      })}
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const cleanQ = query.trim();
+                      recordQuery(cleanQ);
+                      onClose();
+                      onSearchWithAi(cleanQ, 'all');
+                    }}
+                    className="min-h-9 px-3.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-zinc-950 text-xs font-extrabold inline-flex items-center gap-1.5 shrink-0 cursor-pointer transition-colors"
+                  >
+                    <Wand2 className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Buscar con AI',
+                        ca: 'Cercar amb AI',
+                        en: 'Search with AI',
+                      })}
+                    </span>
+                  </button>
+                </div>
+              </div>
             )}
           </div>
         ) : null}

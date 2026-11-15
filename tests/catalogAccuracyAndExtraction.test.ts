@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   areTitlesStrictlyEqual,
@@ -15,6 +17,7 @@ import {
   verifyMovidyMetaMatch,
 } from '../server/extractors/bingetrixMovidy.ts';
 import { findVestSeedForMedia } from '../server/services/vestMirrorService.ts';
+import { fetchTmdbUrlJson } from '../server/services/tmdbService.ts';
 
 describe('Strict catalog & extractor title/year/director/runtime matching', () => {
   it('extracts title variants while ignoring bare release-year parentheses', () => {
@@ -266,5 +269,22 @@ describe('Strict catalog & extractor title/year/director/runtime matching', () =
         yearHint: '2018',
       })
     ).toBeNull();
+  });
+
+  it('fetchTmdbUrlJson rejects empty/invalid URLs safely without throwing and /api/catalog/series avoids uncaught AbortError fetches', async () => {
+    await expect(fetchTmdbUrlJson('')).resolves.toBeNull();
+    await expect(fetchTmdbUrlJson('not-a-valid-url')).resolves.toBeNull();
+
+    const serverSrc = fs.readFileSync(path.resolve(process.cwd(), 'server.ts'), 'utf8');
+    const seriesSectionStart = serverSrc.indexOf("app.get('/api/catalog/series'");
+    const seriesSectionEnd = serverSrc.indexOf("app.get('/api/catalog/tv/:tmdbId'");
+    expect(seriesSectionStart).toBeGreaterThan(-1);
+    expect(seriesSectionEnd).toBeGreaterThan(seriesSectionStart);
+
+    const seriesSection = serverSrc.slice(seriesSectionStart, seriesSectionEnd);
+    expect(seriesSection).toContain('fetchTmdbUrlJson');
+    expect(seriesSection).toContain('seriesCatalogStaleCache');
+    expect(seriesSection).not.toMatch(/fetch\s*\(\s*endpoint\s*,/);
+    expect(seriesSection).not.toMatch(/res\.status\(500\)/);
   });
 });

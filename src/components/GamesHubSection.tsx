@@ -588,108 +588,60 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         className="fixed inset-0 z-[185] h-[100dvh] w-full max-w-[100vw] bg-[#0B0D14] nc-tabletop-slate overflow-hidden flex flex-col pt-safe pb-safe"
       >
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-1.5 sm:p-3 max-w-5xl w-full mx-auto gap-1.5">
-          {isPool ? (
-            /* Ultra-compact single-row mobile header for Billar Bola 8 */
-            <div className="flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0 min-w-0">
-              <button
-                type="button"
-                onClick={handleBackToGames}
-                aria-label={pickLang(lang, { es: 'Volver a Juegos', ca: 'Tornar a Jocs', en: 'Back to Games' })}
-                className="h-8 px-2 sm:px-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
-              >
-                <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">
-                  {pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })}
+          {/* Unified Ultra-Clean Single-Row Bar for ALL Games: ← Juegos | Title | Online/IA | Mute | Voz */}
+          <div className="flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0 min-w-0">
+            <button
+              type="button"
+              onClick={handleBackToGames}
+              aria-label={pickLang(lang, { es: 'Volver a Juegos', ca: 'Tornar a Jocs', en: 'Back to Games' })}
+              className="h-8 px-2 sm:px-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
+            >
+              <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
+              <span className="hidden sm:inline">
+                {pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })}
+              </span>
+            </button>
+
+            <div className="flex items-center gap-1 min-w-0 flex-1">
+              <h2 className="text-xs sm:text-sm font-extrabold text-white truncate">
+                {titleMap[selectedGame]}
+              </h2>
+              {isPool && hubMode === 'online' && roomPoolGame && (
+                <span className="text-[10px] font-bold text-emerald-300 truncate hidden sm:inline">
+                  · {poolGroupShort}
                 </span>
-              </button>
-
-              <div className="flex items-center gap-1 min-w-0 flex-1">
-                <h2 className="text-xs sm:text-sm font-extrabold text-white truncate">
-                  {titleMap.pool}
-                </h2>
-                {hubMode === 'online' && roomPoolGame && (
-                  <span className="text-[10px] font-bold text-emerald-300 truncate hidden sm:inline">
-                    · {poolGroupShort}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-1 shrink-0">
-                <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#090A10] border border-white/[0.08]">
-                  <button
-                    type="button"
-                    onClick={() => switchModeForActiveGame('online')}
-                    className={`h-6 px-1.5 sm:px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
-                      hubMode === 'online' ? 'bg-[#E11D48] text-white' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <Users className="w-3 h-3 shrink-0" />
-                    <span className="hidden sm:inline">1v1</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => switchModeForActiveGame('offline')}
-                    className={`h-6 px-1.5 sm:px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
-                      hubMode === 'offline' ? 'bg-[#9146FF] text-white' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <Bot className="w-3 h-3 shrink-0" />
-                    <span className="hidden sm:inline">IA</span>
-                  </button>
-                </div>
-                <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
-                {renderVoiceCompact(true)}
-              </div>
+              )}
             </div>
-          ) : (
-            <>
-              {/* Header: ← Back to Games | Title | Sound Mute */}
-              <div className="flex items-center justify-between gap-2 shrink-0 px-0.5 min-w-0">
+
+            <div className="flex items-center gap-1 shrink-0">
+              <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#090A10] border border-white/[0.08]">
                 <button
                   type="button"
-                  onClick={handleBackToGames}
-                  className="min-h-8 sm:min-h-9 px-2.5 sm:px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] sm:text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
+                  onClick={() => switchModeForActiveGame('online')}
+                  className={`h-6 px-1.5 sm:px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                    hubMode === 'online' ? 'bg-[#E11D48] text-white' : 'text-zinc-400 hover:text-white'
+                  }`}
                 >
-                  <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
-                  <span>{pickLang(lang, { es: 'Volver a Juegos', ca: 'Tornar a Jocs', en: 'Back to Games' })}</span>
+                  <Users className="w-3 h-3 shrink-0" />
+                  <span className="hidden sm:inline">
+                    {isPool ? '1v1' : 'Online'}
+                  </span>
                 </button>
-
-                <h2 className="text-xs sm:text-base font-extrabold text-white truncate min-w-0 text-center">
-                  {titleMap[selectedGame]}
-                </h2>
-
-                <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
+                <button
+                  type="button"
+                  onClick={() => switchModeForActiveGame('offline')}
+                  className={`h-6 px-1.5 sm:px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                    hubMode === 'offline' ? 'bg-[#9146FF] text-white' : 'text-zinc-400 hover:text-white'
+                  }`}
+                >
+                  <Bot className="w-3 h-3 shrink-0" />
+                  <span className="hidden sm:inline">IA</span>
+                </button>
               </div>
-
-              {/* Clean Non-Clipping Control Bar Above the Board: Online vs AI | Voice Call */}
-              <div className="flex flex-wrap items-center justify-between gap-1.5 px-2 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0">
-                <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#090A10] border border-white/[0.08] shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => switchModeForActiveGame('online')}
-                    className={`h-7 px-2.5 rounded-md text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
-                      hubMode === 'online' ? 'bg-[#E11D48] text-white' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <Users className="w-3 h-3 shrink-0" />
-                    <span>Online</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => switchModeForActiveGame('offline')}
-                    className={`h-7 px-2.5 rounded-md text-[11px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
-                      hubMode === 'offline' ? 'bg-[#9146FF] text-white' : 'text-zinc-400 hover:text-white'
-                    }`}
-                  >
-                    <Bot className="w-3 h-3 shrink-0" />
-                    <span>vs IA</span>
-                  </button>
-                </div>
-
-                {renderVoiceCompact(false)}
-              </div>
-            </>
-          )}
+              <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
+              {renderVoiceCompact(true)}
+            </div>
+          </div>
 
           {voiceChat?.errorMessage && (
             <div
@@ -908,11 +860,11 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   }
 
   // ==========================================================================
-  // ULTRA-CLEAN ZERO-SCROLL 2-COLUMN GAME HUB (7 UNIFORM CARDS, ZERO SCROLL)
+  // ULTRA-CLEAN ZERO-SCROLL GAME HUB (8 UNIFORM CARDS, ZERO SCROLL)
   // ==========================================================================
   return (
-    <div className="w-full max-w-3xl mx-auto flex-1 min-h-0 flex flex-col px-0.5 py-0.5">
-      <div className="flex-1 min-h-0 grid grid-cols-2 grid-rows-4 lg:grid-rows-none lg:auto-rows-[112px] gap-1.5 sm:gap-2.5">
+    <div className="w-full max-w-5xl mx-auto flex-1 min-h-0 h-full flex flex-col overflow-hidden px-0.5 py-0.5">
+      <div className="flex-1 min-h-0 h-full grid grid-cols-2 md:grid-cols-4 grid-rows-4 md:grid-rows-2 gap-2 sm:gap-3 overflow-hidden">
         {/* 1. BILLAR BOLA 8 */}
         <button
           type="button"

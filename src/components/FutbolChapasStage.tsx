@@ -5,11 +5,11 @@ import {
   Play,
   RotateCcw,
   Shield,
+  Smile,
   Users,
 } from 'lucide-react';
 import type {
   AppLanguage,
-  ChapasBall,
   ChapasCap,
   ChapasFlagId,
   ChapasShotInput,
@@ -18,6 +18,7 @@ import type {
   Participant,
 } from '../types';
 import {
+  type ChapasBall,
   CHAPAS_ARENA_H,
   CHAPAS_ARENA_W,
   CHAPAS_BALL_RADIUS,
@@ -38,7 +39,6 @@ import {
   CHAPAS_TURN_TIMEOUT_MS,
   chooseChapasAiShot,
   createInitialChapasState,
-  forfeitChapasMatch,
   joinChapasSeat,
   shootChapasCap,
   startChapasMatch,
@@ -78,6 +78,7 @@ interface ActiveSimPlayback {
   frameCount: number;
   authoritativeState: FutbolChapasState;
   goalBannerShown: boolean;
+  ballTrail: Array<{ x: number; y: number }>;
 }
 
 interface AimDragState {
@@ -87,7 +88,18 @@ interface AimDragState {
   power: number;
 }
 
-// Deterministic crowd dots generated once for both left & right grandstands
+interface ImpactParticle {
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  r: number;
+  maxR?: number;
+  alpha: number;
+  color: string;
+  kind: 'spark' | 'ring';
+}
+
 interface CrowdSpectator {
   x: number;
   y: number;
@@ -107,10 +119,12 @@ const CROWD_PALETTE = [
   '#E5E7EB',
 ];
 
+const QUICK_EMOJIS = ['⚽', '🔥', '👏', '😂', '😱', '🏆'];
+
 function buildGrandstandCrowd(): CrowdSpectator[] {
   const specs: CrowdSpectator[] = [];
   const rows = 4;
-  const cols = 42;
+  const cols = 44;
   let seed = 1337;
   const rand = () => {
     seed = (seed * 1664525 + 1013904223) >>> 0;
@@ -120,12 +134,12 @@ function buildGrandstandCrowd(): CrowdSpectator[] {
   for (let side = 0; side < 2; side += 1) {
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
-        const baseX = side === 0 ? 12 + r * 8.5 : CHAPAS_ARENA_W - 12 - r * 8.5;
+        const baseX = side === 0 ? 11 + r * 8.4 : CHAPAS_ARENA_W - 11 - r * 8.4;
         const t = c / (cols - 1);
-        const yMin = 128 + r * 4;
-        const yMax = CHAPAS_ARENA_H - 128 - r * 4;
-        const y = yMin + t * (yMax - yMin) + (rand() - 0.5) * 3.5;
-        const x = baseX + (rand() - 0.5) * 2.5;
+        const yMin = 122 + r * 4;
+        const yMax = CHAPAS_ARENA_H - 122 - r * 4;
+        const y = yMin + t * (yMax - yMin) + (rand() - 0.5) * 3.2;
+        const x = baseX + (rand() - 0.5) * 2.4;
         specs.push({
           x,
           y,
@@ -140,6 +154,28 @@ function buildGrandstandCrowd(): CrowdSpectator[] {
 
 const GRANDSTAND_CROWD = buildGrandstandCrowd();
 
+/**
+ * Draws a classic 21-tooth crimped metallic bottle-cap ("chapa") outer crown path.
+ */
+function traceBottleCapCrownPath(
+  ctx: CanvasRenderingContext2D,
+  outerR: number,
+  innerR: number,
+  teeth = 21
+): void {
+  const steps = teeth * 2;
+  ctx.beginPath();
+  for (let i = 0; i <= steps; i += 1) {
+    const angle = (i * Math.PI) / teeth;
+    const rad = i % 2 === 0 ? outerR : innerR;
+    const px = Math.cos(angle) * rad;
+    const py = Math.sin(angle) * rad;
+    if (i === 0) ctx.moveTo(px, py);
+    else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
+
 function drawFlagEmblem(
   ctx: CanvasRenderingContext2D,
   flag: ChapasFlagId,
@@ -151,25 +187,23 @@ function drawFlagEmblem(
   ctx.clip();
 
   if (flag === 'ar') {
-    ctx.fillStyle = '#75AADB';
+    ctx.fillStyle = '#6FAEE3';
     ctx.fillRect(-r, -r, r * 2, r * 0.67);
     ctx.fillStyle = '#FFFFFF';
     ctx.fillRect(-r, -r * 0.33, r * 2, r * 0.66);
-    ctx.fillStyle = '#75AADB';
+    ctx.fillStyle = '#6FAEE3';
     ctx.fillRect(-r, r * 0.33, r * 2, r * 0.67);
-    // Sun of May
     ctx.fillStyle = '#F6B40E';
     ctx.beginPath();
-    ctx.arc(0, 0, r * 0.22, 0, Math.PI * 2);
+    ctx.arc(0, 0, r * 0.23, 0, Math.PI * 2);
     ctx.fill();
   } else if (flag === 'es') {
-    ctx.fillStyle = '#C60B1E';
+    ctx.fillStyle = '#C8102E';
     ctx.fillRect(-r, -r, r * 2, r * 0.52);
     ctx.fillStyle = '#FFC400';
     ctx.fillRect(-r, -r * 0.48, r * 2, r * 0.96);
-    ctx.fillStyle = '#C60B1E';
+    ctx.fillStyle = '#C8102E';
     ctx.fillRect(-r, r * 0.48, r * 2, r * 0.52);
-    // Simplified coat of arms emblem
     ctx.fillStyle = '#AD1519';
     ctx.fillRect(-r * 0.36, -r * 0.22, r * 0.28, r * 0.42);
     ctx.fillStyle = '#FACC15';
@@ -204,7 +238,6 @@ function drawFlagEmblem(
   } else if (flag === 'ma') {
     ctx.fillStyle = '#C1272D';
     ctx.fillRect(-r, -r, r * 2, r * 2);
-    // Green pentagram
     ctx.strokeStyle = '#006233';
     ctx.lineWidth = 2.1;
     ctx.beginPath();
@@ -237,7 +270,6 @@ function drawFlagEmblem(
     ctx.fillStyle = '#CE2B37';
     ctx.fillRect(r * 0.33, -r, r * 0.67, r * 2);
   } else {
-    // Germany
     ctx.fillStyle = '#111111';
     ctx.fillRect(-r, -r, r * 2, r * 0.67);
     ctx.fillStyle = '#DD0000';
@@ -282,6 +314,8 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   const [nowTs, setNowTs] = useState<number>(() => Date.now());
   const [isSimulatingUI, setIsSimulatingUI] = useState(false);
   const [goalBanner, setGoalBanner] = useState<{ team: ChapasTeamId; flag: ChapasFlagId } | null>(null);
+  const [emojiMenuOpen, setEmojiMenuOpen] = useState(false);
+  const [floatingReaction, setFloatingReaction] = useState<{ emoji: string; id: number } | null>(null);
   const [localMuted] = useGameSoundMute();
   const muted = mutedOverride !== undefined ? mutedOverride : localMuted;
 
@@ -289,6 +323,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const playbackRef = useRef<ActiveSimPlayback | null>(null);
   const aimDragRef = useRef<AimDragState | null>(null);
+  const particlesRef = useRef<ImpactParticle[]>([]);
   const transformRef = useRef<{ scale: number; offsetX: number; offsetY: number }>({
     scale: 1,
     offsetX: 0,
@@ -307,6 +342,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   useEffect(() => {
     if (!isOffline) return;
     playbackRef.current = null;
+    particlesRef.current = [];
     setIsSimulatingUI(false);
     setGoalBanner(null);
     setLocalState(
@@ -336,6 +372,10 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   useEffect(() => {
     if (isOffline) return;
     const unsub = socketService.subscribe((evt) => {
+      if (evt.type === 'REACTION' && evt.payload?.emoji) {
+        setFloatingReaction({ emoji: String(evt.payload.emoji), id: Date.now() });
+        window.setTimeout(() => setFloatingReaction(null), 1600);
+      }
       if (evt.type !== 'CHAPAS_SHOT_BROADCAST') return;
       const payload = evt.payload;
       const preShot = payload?.preShotState as FutbolChapasState | undefined;
@@ -359,6 +399,17 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         const spd = Math.max(CHAPAS_MIN_POWER, Math.min(1, shot.power)) * CHAPAS_MAX_SHOT_SPEED;
         shooterCap.vx = Math.cos(shot.angle) * spd;
         shooterCap.vy = Math.sin(shot.angle) * spd;
+        particlesRef.current.push({
+          x: shooterCap.x,
+          y: shooterCap.y,
+          vx: 0,
+          vy: 0,
+          r: CHAPAS_CAP_RADIUS * 0.85,
+          maxR: CHAPAS_CAP_RADIUS * 2.1,
+          alpha: 0.65,
+          color: '#FFFFFF',
+          kind: 'ring',
+        });
       }
 
       playGameSfx('board_move', mutedRef.current);
@@ -368,6 +419,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         frameCount: 0,
         authoritativeState: authState,
         goalBannerShown: false,
+        ballTrail: [],
       };
       setIsSimulatingUI(true);
     });
@@ -376,7 +428,9 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
 
   const mySeats = useMemo(() => {
     if (!activeState) return [];
-    return activeState.players.filter((p): p is NonNullable<typeof p> => Boolean(p && !p.isBot && p.userId === currentUser.id));
+    return activeState.players.filter((p): p is NonNullable<typeof p> =>
+      Boolean(p && !p.isBot && p.userId === currentUser.id)
+    );
   }, [activeState, currentUser.id]);
 
   const activeSeat = activeState ? activeState.players[activeState.activeSeatIndex] : null;
@@ -410,6 +464,17 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         const spd = Math.max(CHAPAS_MIN_POWER, Math.min(1, shot.power)) * CHAPAS_MAX_SHOT_SPEED;
         targetCap.vx = Math.cos(shot.angle) * spd;
         targetCap.vy = Math.sin(shot.angle) * spd;
+        particlesRef.current.push({
+          x: targetCap.x,
+          y: targetCap.y,
+          vx: 0,
+          vy: 0,
+          r: CHAPAS_CAP_RADIUS * 0.85,
+          maxR: CHAPAS_CAP_RADIUS * 2.1,
+          alpha: 0.65,
+          color: '#FFFFFF',
+          kind: 'ring',
+        });
       }
 
       playGameSfx('board_move', mutedRef.current);
@@ -419,6 +484,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         frameCount: 0,
         authoritativeState: simResult.state,
         goalBannerShown: false,
+        ballTrail: [],
       };
       setIsSimulatingUI(true);
     },
@@ -471,7 +537,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
 
     const pt = screenToArena(e.clientX, e.clientY);
     let hitCap: ChapasCap | null = null;
-    let bestDist = CHAPAS_CAP_RADIUS * 1.48;
+    let bestDist = CHAPAS_CAP_RADIUS * 1.52;
     for (const c of st.caps) {
       if (c.team !== st.activeTeam) continue;
       const d = Math.hypot(pt.x - c.x, pt.y - c.y);
@@ -500,7 +566,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
     if (!cap) return;
 
     const pt = screenToArena(e.clientX, e.clientY);
-    // Slingshot pull-back vector: drag away from cap -> arrow shoots in opposite direction
     const dx = cap.x - pt.x;
     const dy = cap.y - pt.y;
     const dist = Math.hypot(dx, dy);
@@ -529,10 +594,27 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   };
 
   // ============================================================================
-  // 60FPS CANVAS STADIUM RENDERER + REALTIME PHYSICS LOOP
+  // 60FPS CANVAS STADIUM RENDERER + REALTIME PHYSICS + PARTICLES LOOP
   // ============================================================================
   useEffect(() => {
     let rafId = 0;
+
+    const spawnBurst = (x: number, y: number, count: number, palette: string[]) => {
+      for (let i = 0; i < count; i += 1) {
+        const ang = Math.random() * Math.PI * 2;
+        const spd = 1.4 + Math.random() * 3.8;
+        particlesRef.current.push({
+          x,
+          y,
+          vx: Math.cos(ang) * spd,
+          vy: Math.sin(ang) * spd,
+          r: 1.8 + Math.random() * 2.4,
+          alpha: 0.95,
+          color: palette[i % palette.length],
+          kind: 'spark',
+        });
+      }
+    };
 
     const renderFrame = (ts: number) => {
       rafId = window.requestAnimationFrame(renderFrame);
@@ -552,14 +634,48 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         const step = stepChapasPhysicsFrame(pb.caps, pb.ball);
         pb.frameCount += 1;
 
-        if (step.capHitCount > 0) playGameSfx('board_move', mutedRef.current);
-        if (step.ballHitCount > 0) playGameSfx('board_drop', mutedRef.current);
-        if (step.postHitCount > 0) playGameSfx('parchis_hop', mutedRef.current);
+        const ballSpd = Math.hypot(pb.ball.vx, pb.ball.vy);
+        if (ballSpd > 2.2) {
+          pb.ballTrail.push({ x: pb.ball.x, y: pb.ball.y });
+          if (pb.ballTrail.length > 10) pb.ballTrail.shift();
+        } else if (pb.ballTrail.length > 0) {
+          pb.ballTrail.shift();
+        }
+
+        if (step.capHitCount > 0) {
+          playGameSfx('board_move', mutedRef.current);
+          spawnBurst(pb.ball.x, pb.ball.y, 4, ['#E2E8F0', '#FDE047']);
+        }
+        if (step.ballHitCount > 0) {
+          playGameSfx('board_drop', mutedRef.current);
+          particlesRef.current.push({
+            x: pb.ball.x,
+            y: pb.ball.y,
+            vx: 0,
+            vy: 0,
+            r: CHAPAS_BALL_RADIUS,
+            maxR: CHAPAS_BALL_RADIUS * 2.8,
+            alpha: 0.72,
+            color: '#FDE047',
+            kind: 'ring',
+          });
+          spawnBurst(pb.ball.x, pb.ball.y, 6, ['#FFFFFF', '#A3E635', '#FDE047']);
+        }
+        if (step.postHitCount > 0) {
+          playGameSfx('parchis_hop', mutedRef.current);
+          spawnBurst(pb.ball.x, pb.ball.y, 8, ['#FFFFFF', '#CBD5E1']);
+        }
 
         if (step.goalScoredBy && !pb.goalBannerShown) {
           pb.goalBannerShown = true;
           playGameSfx('parchis_goal', mutedRef.current);
           triggerHaptic('success');
+          spawnBurst(
+            CHAPAS_ARENA_W / 2,
+            step.goalScoredBy === 'B' ? CHAPAS_PITCH_TOP : CHAPAS_PITCH_BOTTOM,
+            26,
+            ['#FACC15', '#34D399', '#38BDF8', '#F43F5E', '#FFFFFF']
+          );
           setGoalBanner({
             team: step.goalScoredBy,
             flag: st.teamFlags[step.goalScoredBy],
@@ -568,7 +684,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         }
 
         if (pb.goalBannerShown) {
-          netRipple = Math.sin(ts * 0.025) * 4;
+          netRipple = Math.sin(ts * 0.025) * 4.5;
         }
 
         renderCaps = pb.caps;
@@ -582,6 +698,26 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           }
           setIsSimulatingUI(false);
         }
+      }
+
+      // Update particles
+      if (particlesRef.current.length > 0) {
+        const nextP: ImpactParticle[] = [];
+        for (const p of particlesRef.current) {
+          if (p.kind === 'ring') {
+            p.r += 2.2;
+            p.alpha -= 0.055;
+            if (p.alpha > 0.04 && (!p.maxR || p.r < p.maxR)) nextP.push(p);
+          } else {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vx *= 0.9;
+            p.vy *= 0.9;
+            p.alpha -= 0.045;
+            if (p.alpha > 0.04) nextP.push(p);
+          }
+        }
+        particlesRef.current = nextP;
       }
 
       // 2. Fit canvas to container DPR
@@ -604,69 +740,96 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       transformRef.current = { scale, offsetX, offsetY };
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      // Deep lush stadium outer surround
-      ctx.fillStyle = '#33591C';
+
+      // Seamless full-bleed stadium mowed grass canvas surround
+      const bgGrad = ctx.createLinearGradient(0, 0, 0, cssH);
+      bgGrad.addColorStop(0, '#365F1E');
+      bgGrad.addColorStop(0.5, '#3E6B22');
+      bgGrad.addColorStop(1, '#2D4F18');
+      ctx.fillStyle = bgGrad;
       ctx.fillRect(0, 0, cssW, cssH);
 
       ctx.save();
       ctx.translate(offsetX, offsetY);
       ctx.scale(scale, scale);
 
-      // Outer lawn turf gradient
+      // Subtle floodlight illumination over pitch center
       const apronGrad = ctx.createRadialGradient(
         CHAPAS_ARENA_W / 2,
         CHAPAS_ARENA_H / 2,
-        90,
+        75,
         CHAPAS_ARENA_W / 2,
         CHAPAS_ARENA_H / 2,
         460
       );
-      apronGrad.addColorStop(0, '#447425');
-      apronGrad.addColorStop(1, '#2B4C16');
+      apronGrad.addColorStop(0, 'rgba(132, 204, 22, 0.22)');
+      apronGrad.addColorStop(0.65, 'rgba(54, 95, 30, 0.08)');
+      apronGrad.addColorStop(1, 'rgba(15, 23, 42, 0.35)');
       ctx.fillStyle = apronGrad;
       ctx.fillRect(0, 0, CHAPAS_ARENA_W, CHAPAS_ARENA_H);
 
       // ================================================================
-      // LEFT & RIGHT 3D STADIUM GRANDSTANDS / BLEACHERS WITH SPECTATORS
+      // LEFT & RIGHT 3D STADIUM GRANDSTANDS / BLEACHERS + LED AD BOARDS
       // ================================================================
       const drawBleacherWing = (side: 'left' | 'right') => {
         ctx.save();
         const isL = side === 'left';
-        const outerX = isL ? 4 : CHAPAS_ARENA_W - 4;
-        const innerX = isL ? 48 : CHAPAS_ARENA_W - 48;
+        const outerX = isL ? 3 : CHAPAS_ARENA_W - 3;
+        const innerX = isL ? 47 : CHAPAS_ARENA_W - 47;
 
-        // Concrete & wood stadium wing trapezoid
-        const wingGrad = ctx.createLinearGradient(outerX, 0, innerX, 0);
-        wingGrad.addColorStop(0, '#1F2937');
-        wingGrad.addColorStop(0.5, '#374151');
-        wingGrad.addColorStop(1, '#111827');
-        ctx.fillStyle = wingGrad;
+        // Drop shadow under stand
+        ctx.fillStyle = 'rgba(0,0,0,0.38)';
         ctx.beginPath();
         ctx.moveTo(outerX, 108);
-        ctx.lineTo(innerX, 132);
-        ctx.lineTo(innerX, CHAPAS_ARENA_H - 132);
+        ctx.lineTo(innerX + (isL ? 4 : -4), 134);
+        ctx.lineTo(innerX + (isL ? 4 : -4), CHAPAS_ARENA_H - 134);
         ctx.lineTo(outerX, CHAPAS_ARENA_H - 108);
         ctx.closePath();
         ctx.fill();
 
-        // Stepped tier dividers
-        ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+        // Concrete & steel tiered stand trapezoid
+        const wingGrad = ctx.createLinearGradient(outerX, 0, innerX, 0);
+        wingGrad.addColorStop(0, '#1E293B');
+        wingGrad.addColorStop(0.45, '#334155');
+        wingGrad.addColorStop(1, '#0F172A');
+        ctx.fillStyle = wingGrad;
+        ctx.beginPath();
+        ctx.moveTo(outerX, 104);
+        ctx.lineTo(innerX, 126);
+        ctx.lineTo(innerX, CHAPAS_ARENA_H - 126);
+        ctx.lineTo(outerX, CHAPAS_ARENA_H - 104);
+        ctx.closePath();
+        ctx.fill();
+
+        // Stepped terrace lines
+        ctx.strokeStyle = 'rgba(255,255,255,0.14)';
         ctx.lineWidth = 1;
         for (let r = 1; r <= 3; r += 1) {
           const rx = outerX + (innerX - outerX) * (r / 4);
-          const pad = r * 5.5;
+          const pad = r * 5.2;
           ctx.beginPath();
-          ctx.moveTo(rx, 110 + pad);
-          ctx.lineTo(rx, CHAPAS_ARENA_H - 110 - pad);
+          ctx.moveTo(rx, 106 + pad);
+          ctx.lineTo(rx, CHAPAS_ARENA_H - 106 - pad);
           ctx.stroke();
         }
 
+        // LED Perimeter Ad Board along pitch-facing wall
+        const boardX = isL ? innerX - 4 : innerX;
+        ctx.fillStyle = '#090D16';
+        ctx.fillRect(boardX, 155, 4, CHAPAS_ARENA_H - 310);
+        ctx.fillStyle = isL ? '#9146FF' : '#10B981';
+        ctx.fillRect(boardX + 0.8, 220, 2.4, 96);
+        ctx.fillStyle = '#F59E0B';
+        ctx.fillRect(boardX + 0.8, 360, 2.4, 70);
+        ctx.fillStyle = isL ? '#38BDF8' : '#E11D48';
+        ctx.fillRect(boardX + 0.8, 470, 2.4, 96);
+
         // Front metallic balustrade rail
-        ctx.strokeStyle = '#94A3B8';
-        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = '#CBD5E1';
+        ctx.lineWidth = 2.4;
         ctx.beginPath();
-        ctx.moveTo(innerX, 132);
-        ctx.lineTo(innerX, CHAPAS_ARENA_H - 132);
+        ctx.moveTo(innerX, 126);
+        ctx.lineTo(innerX, CHAPAS_ARENA_H - 126);
         ctx.stroke();
         ctx.restore();
       };
@@ -677,10 +840,15 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       // Animated Crowd Spectators
       const crowdExcite = goalBanner || pb?.goalBannerShown ? 1 : 0;
       for (const sp of GRANDSTAND_CROWD) {
-        const bounce = crowdExcite ? Math.abs(Math.sin(ts * 0.015 + sp.phase)) * 3.5 : 0;
+        const wave = Math.sin(ts * 0.004 + sp.phase);
+        const bounce = crowdExcite
+          ? Math.abs(Math.sin(ts * 0.018 + sp.phase)) * 4.2
+          : wave > 0.92
+          ? 1.2
+          : 0;
         ctx.fillStyle = sp.color;
         ctx.beginPath();
-        ctx.arc(sp.x, sp.y - bounce, 2.7, 0, Math.PI * 2);
+        ctx.arc(sp.x, sp.y - bounce, 2.6, 0, Math.PI * 2);
         ctx.fill();
       }
 
@@ -695,17 +863,35 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       const stripeCount = 10;
       const stripeH = CHAPAS_PITCH_H / stripeCount;
       for (let i = 0; i < stripeCount; i += 1) {
-        ctx.fillStyle = i % 2 === 0 ? '#548C2E' : '#4B7F27';
-        ctx.fillRect(CHAPAS_PITCH_LEFT, CHAPAS_PITCH_TOP + i * stripeH, CHAPAS_PITCH_W, stripeH + 0.5);
+        ctx.fillStyle = i % 2 === 0 ? '#5B9633' : '#4F852A';
+        ctx.fillRect(
+          CHAPAS_PITCH_LEFT,
+          CHAPAS_PITCH_TOP + i * stripeH,
+          CHAPAS_PITCH_W,
+          stripeH + 0.5
+        );
       }
 
+      // Subtle stadium center light reflection
+      const turfGlow = ctx.createRadialGradient(
+        CHAPAS_ARENA_W / 2,
+        CHAPAS_ARENA_H / 2,
+        20,
+        CHAPAS_ARENA_W / 2,
+        CHAPAS_ARENA_H / 2,
+        270
+      );
+      turfGlow.addColorStop(0, 'rgba(255, 255, 255, 0.09)');
+      turfGlow.addColorStop(1, 'rgba(0, 0, 0, 0.08)');
+      ctx.fillStyle = turfGlow;
+      ctx.fillRect(CHAPAS_PITCH_LEFT, CHAPAS_PITCH_TOP, CHAPAS_PITCH_W, CHAPAS_PITCH_H);
+
       // Crisp White Pitch Markings
-      ctx.strokeStyle = 'rgba(255,255,255,0.88)';
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
       ctx.lineWidth = 2.6;
       const midX = CHAPAS_ARENA_W / 2;
       const midY = (CHAPAS_PITCH_TOP + CHAPAS_PITCH_BOTTOM) / 2;
 
-      // Pitch boundary
       ctx.strokeRect(
         CHAPAS_PITCH_LEFT + 1.5,
         CHAPAS_PITCH_TOP + 1.5,
@@ -713,22 +899,21 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         CHAPAS_PITCH_H - 3
       );
 
-      // Halfway line
+      // Halfway line & center circle
       ctx.beginPath();
       ctx.moveTo(CHAPAS_PITCH_LEFT, midY);
       ctx.lineTo(CHAPAS_PITCH_RIGHT, midY);
       ctx.stroke();
 
-      // Center circle & spot
       ctx.beginPath();
       ctx.arc(midX, midY, 64, 0, Math.PI * 2);
       ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.fillStyle = 'rgba(255,255,255,0.92)';
       ctx.beginPath();
       ctx.arc(midX, midY, 5.5, 0, Math.PI * 2);
       ctx.fill();
 
-      // Top Penalty Box, Goal Box & Penalty Arc
+      // Penalty & Goal Boxes
       const penW = 224;
       const penH = 98;
       const goalBoxW = 144;
@@ -743,7 +928,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       ctx.arc(midX, CHAPAS_PITCH_TOP + 68, 3.2, 0, Math.PI * 2);
       ctx.fill();
 
-      // Bottom Penalty Box, Goal Box & Penalty Arc
       ctx.strokeRect(midX - penW / 2, CHAPAS_PITCH_BOTTOM - penH, penW, penH);
       ctx.strokeRect(midX - goalBoxW / 2, CHAPAS_PITCH_BOTTOM - goalBoxH, goalBoxW, goalBoxH);
       ctx.beginPath();
@@ -769,14 +953,27 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       ctx.restore();
 
       // ================================================================
-      // METALLIC PERIMETER PITCH RAILS + CORNER FLAGS
+      // BRUSHED METALLIC PERIMETER PITCH RAILS + FLUTTERING CORNER FLAGS
       // ================================================================
       const railW = 7;
-      ctx.fillStyle = '#CBD5E1';
-      // Left & Right rails
-      ctx.fillRect(CHAPAS_PITCH_LEFT - railW, CHAPAS_PITCH_TOP - railW, railW, CHAPAS_PITCH_H + railW * 2);
-      ctx.fillRect(CHAPAS_PITCH_RIGHT, CHAPAS_PITCH_TOP - railW, railW, CHAPAS_PITCH_H + railW * 2);
-      // Top & Bottom rails (excluding goal mouths)
+      const railGrad = ctx.createLinearGradient(CHAPAS_PITCH_LEFT, 0, CHAPAS_PITCH_RIGHT, 0);
+      railGrad.addColorStop(0, '#94A3B8');
+      railGrad.addColorStop(0.5, '#E2E8F0');
+      railGrad.addColorStop(1, '#94A3B8');
+      ctx.fillStyle = railGrad;
+
+      ctx.fillRect(
+        CHAPAS_PITCH_LEFT - railW,
+        CHAPAS_PITCH_TOP - railW,
+        railW,
+        CHAPAS_PITCH_H + railW * 2
+      );
+      ctx.fillRect(
+        CHAPAS_PITCH_RIGHT,
+        CHAPAS_PITCH_TOP - railW,
+        railW,
+        CHAPAS_PITCH_H + railW * 2
+      );
       ctx.fillRect(
         CHAPAS_PITCH_LEFT,
         CHAPAS_PITCH_TOP - railW,
@@ -802,9 +999,8 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         railW
       );
 
-      // Subtle bevel edge along rails
-      ctx.strokeStyle = '#475569';
-      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = '#334155';
+      ctx.lineWidth = 1.1;
       ctx.strokeRect(
         CHAPAS_PITCH_LEFT - railW,
         CHAPAS_PITCH_TOP - railW,
@@ -812,11 +1008,12 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         CHAPAS_PITCH_H + railW * 2
       );
 
-      // Corner Flags (Red top/bottom left, Crimson/Blue right)
+      // Animated Corner Flags
+      const flagSway = Math.sin(ts * 0.008) * 1.4;
       const drawCornerFlag = (x: number, y: number, color: string, flipX: number, flipY: number) => {
         ctx.save();
         ctx.translate(x, y);
-        ctx.strokeStyle = '#E2E8F0';
+        ctx.strokeStyle = '#F8FAFC';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(0, 0);
@@ -825,7 +1022,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.moveTo(flipX * 8, flipY * 10);
-        ctx.lineTo(flipX * 19, flipY * 5);
+        ctx.lineTo(flipX * 19, flipY * 5 + flagSway);
         ctx.lineTo(flipX * 6, flipY * 2);
         ctx.closePath();
         ctx.fill();
@@ -848,8 +1045,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         const gx1 = CHAPAS_GOAL_RIGHT;
 
         ctx.save();
-        // Shaded inner net turf
-        ctx.fillStyle = 'rgba(15, 23, 42, 0.36)';
+        ctx.fillStyle = 'rgba(15, 23, 42, 0.38)';
         ctx.beginPath();
         ctx.moveTo(gx0, yMouth);
         ctx.lineTo(gx0 + 6, yBack);
@@ -858,8 +1054,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         ctx.closePath();
         ctx.fill();
 
-        // Crisp white net mesh grid
-        ctx.strokeStyle = 'rgba(255, 255, 255, 0.55)';
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.58)';
         ctx.lineWidth = 1;
         const cols = 12;
         for (let i = 0; i <= cols; i += 1) {
@@ -883,7 +1078,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           ctx.stroke();
         }
 
-        // Tubular Aluminum Frame & Crossbar
         ctx.strokeStyle = '#F8FAFC';
         ctx.lineWidth = 4.2;
         ctx.lineCap = 'round';
@@ -895,7 +1089,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         ctx.lineTo(gx1, yMouth);
         ctx.stroke();
 
-        // Front crossbar accent
         ctx.strokeStyle = '#CBD5E1';
         ctx.lineWidth = 2.4;
         ctx.beginPath();
@@ -903,7 +1096,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         ctx.lineTo(gx1, yMouth);
         ctx.stroke();
 
-        // Cylindrical Post Caps
         for (const px of [gx0, gx1]) {
           ctx.fillStyle = '#FFFFFF';
           ctx.beginPath();
@@ -920,7 +1112,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       drawGoalNet(false);
 
       // ================================================================
-      // AIMING RING & DIRECTIONAL ARROW (WHILE DRAGGING A CAP)
+      // AIMING RING, PREDICTIVE SIGHTLINE & DIRECTIONAL ARROW
       // ================================================================
       const drag = aimDragRef.current;
       if (drag && st.status === 'playing' && !pb) {
@@ -932,26 +1124,43 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           ctx.save();
           ctx.translate(draggedCap.x, draggedCap.y);
 
-          // Translucent power halo ring
           ctx.fillStyle = belowMin
             ? 'rgba(244, 63, 94, 0.24)'
-            : 'rgba(15, 23, 42, 0.42)';
+            : 'rgba(15, 23, 42, 0.44)';
           ctx.beginPath();
           ctx.arc(0, 0, ringR, 0, Math.PI * 2);
           ctx.fill();
 
           ctx.strokeStyle = belowMin
-            ? 'rgba(251, 113, 133, 0.85)'
-            : 'rgba(255, 255, 255, 0.45)';
+            ? 'rgba(251, 113, 133, 0.9)'
+            : 'rgba(255, 255, 255, 0.55)';
           ctx.lineWidth = 2;
           ctx.stroke();
 
           if (!belowMin) {
-            // Directional arrow pointing in launch direction
-            const arrowLen = CHAPAS_CAP_RADIUS + 20 + drag.power * 64;
+            // Subtle dotted forward sightline
+            const guideLen = 80 + drag.power * 155;
+            ctx.save();
             ctx.rotate(drag.angle);
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.94)';
-            ctx.shadowColor = 'rgba(0,0,0,0.45)';
+            ctx.setLineDash([5, 6]);
+            ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(CHAPAS_CAP_RADIUS + 8, 0);
+            ctx.lineTo(guideLen, 0);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Bold tactical launch arrow
+            const arrowLen = CHAPAS_CAP_RADIUS + 20 + drag.power * 64;
+            const arrowColor =
+              drag.power > 0.78
+                ? '#FDE047'
+                : drag.power > 0.45
+                ? '#A3E635'
+                : '#FFFFFF';
+            ctx.fillStyle = arrowColor;
+            ctx.shadowColor = 'rgba(0,0,0,0.5)';
             ctx.shadowBlur = 4;
 
             ctx.beginPath();
@@ -964,6 +1173,19 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
             ctx.lineTo(CHAPAS_CAP_RADIUS + 4, 5);
             ctx.closePath();
             ctx.fill();
+            ctx.restore();
+
+            // Clean power % tag opposite drag pull
+            const pct = Math.round(drag.power * 100);
+            ctx.fillStyle = 'rgba(9, 13, 22, 0.85)';
+            ctx.beginPath();
+            ctx.roundRect(-22, -ringR - 22, 44, 18, 9);
+            ctx.fill();
+            ctx.fillStyle = '#FFFFFF';
+            ctx.font = '800 10px Plus Jakarta Sans, system-ui, sans-serif';
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            ctx.fillText(`${pct}%`, 0, -ringR - 13);
           }
 
           ctx.restore();
@@ -971,7 +1193,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       }
 
       // ================================================================
-      // PLAYER CAPS (CHAPAS #1..#6) WITH METALLIC RIMS & NATIONAL FLAGS
+      // SCALLOPED 21-TOOTH BOTTLE CAPS (CHAPAS #1..#6) + NATIONAL FLAGS
       // ================================================================
       const activeTeamPulse = 0.65 + 0.35 * Math.sin(ts * 0.007);
       const seatIsHumanTurn = Boolean(
@@ -989,61 +1211,63 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         ctx.save();
         ctx.translate(cap.x, cap.y);
 
-        // Pulsing turn halo around active team's chapas
+        // Pulsing outer ring halo around active team's chapas
         if (isMovable) {
           const haloColor =
             cap.team === 'A'
-              ? `rgba(251, 146, 60, ${0.42 * activeTeamPulse})`
-              : `rgba(250, 204, 21, ${0.45 * activeTeamPulse})`;
+              ? `rgba(251, 146, 60, ${0.46 * activeTeamPulse})`
+              : `rgba(56, 189, 248, ${0.48 * activeTeamPulse})`;
           ctx.strokeStyle = haloColor;
           ctx.lineWidth = seatIsHumanTurn ? 6.5 : 4.5;
           ctx.beginPath();
-          ctx.arc(0, 0, r + 4.5, 0, Math.PI * 2);
+          ctx.arc(0, 0, r + 5.2, 0, Math.PI * 2);
           ctx.stroke();
         }
 
-        // Ground shadow
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.42)';
+        // Soft cast drop shadow on grass
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
         ctx.beginPath();
-        ctx.arc(2.5, 4, r + 0.5, 0, Math.PI * 2);
+        ctx.arc(2.5, 4.2, r + 1.5, 0, Math.PI * 2);
         ctx.fill();
 
-        // Brushed metallic silver bottle-cap outer rim
-        const rimGrad = ctx.createLinearGradient(-r, -r, r, r);
-        rimGrad.addColorStop(0, '#F8FAFC');
-        rimGrad.addColorStop(0.5, '#CBD5E1');
-        rimGrad.addColorStop(1, '#475569');
-        ctx.fillStyle = rimGrad;
-        ctx.beginPath();
-        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        // 21-tooth crimped metallic bottle-cap silhouette
+        const crownGrad = ctx.createLinearGradient(-r, -r, r, r);
+        crownGrad.addColorStop(0, '#FFFFFF');
+        crownGrad.addColorStop(0.45, '#CBD5E1');
+        crownGrad.addColorStop(1, '#475569');
+        ctx.fillStyle = crownGrad;
+        traceBottleCapCrownPath(ctx, r + 2.1, r - 0.8, 21);
         ctx.fill();
+        ctx.strokeStyle = 'rgba(15, 23, 42, 0.65)';
+        ctx.lineWidth = 0.9;
+        ctx.stroke();
 
-        // Dark inner bezel groove
+        // Brushed inner metallic bezel
         ctx.fillStyle = '#1E293B';
         ctx.beginPath();
-        ctx.arc(0, 0, r - 3.2, 0, Math.PI * 2);
+        ctx.arc(0, 0, r - 2.6, 0, Math.PI * 2);
         ctx.fill();
 
-        // National flag emblem disc
-        drawFlagEmblem(ctx, flag, r - 4.4);
+        // Enamel National Flag Emblem
+        drawFlagEmblem(ctx, flag, r - 4.1);
 
-        // Glossy glass sheen across top half
-        const sheen = ctx.createRadialGradient(-r * 0.3, -r * 0.38, 1, 0, 0, r);
-        sheen.addColorStop(0, 'rgba(255,255,255,0.45)');
-        sheen.addColorStop(0.45, 'rgba(255,255,255,0.08)');
-        sheen.addColorStop(1, 'rgba(0,0,0,0.22)');
+        // Curved glass dome reflection highlight
+        const sheen = ctx.createRadialGradient(-r * 0.32, -r * 0.38, 1, 0, 0, r);
+        sheen.addColorStop(0, 'rgba(255,255,255,0.48)');
+        sheen.addColorStop(0.42, 'rgba(255,255,255,0.08)');
+        sheen.addColorStop(1, 'rgba(0,0,0,0.24)');
         ctx.fillStyle = sheen;
         ctx.beginPath();
-        ctx.arc(0, 0, r - 4.4, 0, Math.PI * 2);
+        ctx.arc(0, 0, r - 4.1, 0, Math.PI * 2);
         ctx.fill();
 
-        // Cap number badge (#1..#6) at bottom center
+        // Crisp jersey number badge (#1..#6) at bottom center
         const badgeY = r * 0.78;
-        ctx.fillStyle = '#111827';
+        ctx.fillStyle = '#0F172A';
         ctx.beginPath();
         ctx.arc(0, badgeY, 8.2, 0, Math.PI * 2);
         ctx.fill();
-        ctx.strokeStyle = 'rgba(255,255,255,0.28)';
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
         ctx.lineWidth = 1;
         ctx.stroke();
 
@@ -1057,19 +1281,28 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       }
 
       // ================================================================
-      // CLASSIC SOCCER BALL
+      // BALL MOTION TRAIL + CLASSIC SOCCER BALL
       // ================================================================
+      if (pb && pb.ballTrail.length > 1) {
+        for (let i = 0; i < pb.ballTrail.length; i += 1) {
+          const pt = pb.ballTrail[i];
+          const frac = (i + 1) / pb.ballTrail.length;
+          ctx.fillStyle = `rgba(255, 255, 255, ${frac * 0.2})`;
+          ctx.beginPath();
+          ctx.arc(pt.x, pt.y, CHAPAS_BALL_RADIUS * (0.45 + frac * 0.4), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+
       ctx.save();
       ctx.translate(renderBall.x, renderBall.y);
       const br = CHAPAS_BALL_RADIUS;
 
-      // Shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.42)';
+      ctx.fillStyle = 'rgba(0,0,0,0.44)';
       ctx.beginPath();
-      ctx.arc(2, 3, br + 0.5, 0, Math.PI * 2);
+      ctx.arc(2.2, 3.2, br + 0.6, 0, Math.PI * 2);
       ctx.fill();
 
-      // White ball sphere
       const ballGrad = ctx.createRadialGradient(-br * 0.35, -br * 0.35, 1, 0, 0, br);
       ballGrad.addColorStop(0, '#FFFFFF');
       ballGrad.addColorStop(0.75, '#E2E8F0');
@@ -1079,7 +1312,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       ctx.arc(0, 0, br, 0, Math.PI * 2);
       ctx.fill();
 
-      // Rotating pentagon seam patches
       ctx.save();
       ctx.beginPath();
       ctx.arc(0, 0, br, 0, Math.PI * 2);
@@ -1087,7 +1319,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       ctx.rotate(renderBall.spinAngle);
 
       ctx.fillStyle = '#111827';
-      // Center pentagon
       ctx.beginPath();
       for (let i = 0; i < 5; i += 1) {
         const a = (i * 2 * Math.PI) / 5 - Math.PI / 2;
@@ -1099,7 +1330,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       ctx.closePath();
       ctx.fill();
 
-      // Outer edge pentagon segments
       for (let i = 0; i < 5; i += 1) {
         const a = (i * 2 * Math.PI) / 5 - Math.PI / 2;
         ctx.beginPath();
@@ -1116,28 +1346,62 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       ctx.restore();
 
       // ================================================================
-      // BOTTOM PITCH HUD TEXT ("Goles para ganar: 3" & "Pases: X/3")
+      // COLLISION SHOCKWAVES & IMPACT PARTICLES
       // ================================================================
+      for (const p of particlesRef.current) {
+        ctx.save();
+        ctx.globalAlpha = Math.max(0, Math.min(1, p.alpha));
+        if (p.kind === 'ring') {
+          ctx.strokeStyle = p.color;
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.stroke();
+        } else {
+          ctx.fillStyle = p.color;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        ctx.restore();
+      }
+
+      // ================================================================
+      // NON-OVERLAPPING BOTTOM APRON HUD PILLS (LEFT & RIGHT OF GOAL)
+      // Bottom goal spans x = 202..338, y = 716..752 -> keep labels strictly
+      // in left gap [62..194] and right gap [346..478]!
+      // ================================================================
+      const goalsLabel = `${pickLang(lang, { es: 'Goles', ca: 'Gols', en: 'Goals' })}: ${st.goalsToWin}`;
+      const passesLabel = `${pickLang(lang, { es: 'Pases', ca: 'Passades', en: 'Passes' })}: ${st.passesUsed}/${st.maxPasses}`;
+
       ctx.save();
-      ctx.font = '800 13.5px Plus Jakarta Sans, system-ui, sans-serif';
-      ctx.shadowColor = 'rgba(0,0,0,0.85)';
-      ctx.shadowBlur = 4;
-      ctx.fillStyle = '#FFFFFF';
+      ctx.font = '800 12px Plus Jakarta Sans, system-ui, sans-serif';
       ctx.textBaseline = 'middle';
 
-      ctx.textAlign = 'left';
-      ctx.fillText(
-        `${pickLang(lang, { es: 'Goles para ganar', ca: 'Gols per guanyar', en: 'Goals to win' })}: ${st.goalsToWin}`,
-        CHAPAS_PITCH_LEFT + 2,
-        CHAPAS_ARENA_H - 22
-      );
+      // Left apron pill (before goal x=202)
+      ctx.fillStyle = 'rgba(9, 13, 22, 0.72)';
+      ctx.beginPath();
+      ctx.roundRect(CHAPAS_PITCH_LEFT, CHAPAS_PITCH_BOTTOM + 14, 108, 26, 13);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = '#F8FAFC';
+      ctx.textAlign = 'center';
+      ctx.fillText(goalsLabel, CHAPAS_PITCH_LEFT + 54, CHAPAS_PITCH_BOTTOM + 27.5);
 
-      ctx.textAlign = 'right';
-      ctx.fillText(
-        `${pickLang(lang, { es: 'Pases', ca: 'Passades', en: 'Passes' })}: ${st.passesUsed}/${st.maxPasses}`,
-        CHAPAS_PITCH_RIGHT - 2,
-        CHAPAS_ARENA_H - 22
-      );
+      // Right apron pill (after goal x=338)
+      ctx.fillStyle = 'rgba(9, 13, 22, 0.72)';
+      ctx.beginPath();
+      ctx.roundRect(CHAPAS_PITCH_RIGHT - 108, CHAPAS_PITCH_BOTTOM + 14, 108, 26, 13);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.16)';
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = st.passesUsed > 0 ? '#A3E635' : '#F8FAFC';
+      ctx.textAlign = 'center';
+      ctx.fillText(passesLabel, CHAPAS_PITCH_RIGHT - 54, CHAPAS_PITCH_BOTTOM + 27.5);
+
       ctx.restore();
 
       ctx.restore(); // end canonical transform
@@ -1205,6 +1469,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   const handleRematch = () => {
     triggerHaptic('medium');
     playbackRef.current = null;
+    particlesRef.current = [];
     setIsSimulatingUI(false);
     setGoalBanner(null);
     if (isOffline) {
@@ -1223,6 +1488,16 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       );
     } else {
       onRematchOnline?.();
+    }
+  };
+
+  const sendQuickReaction = (emoji: string) => {
+    setEmojiMenuOpen(false);
+    triggerHaptic('light');
+    setFloatingReaction({ emoji, id: Date.now() });
+    window.setTimeout(() => setFloatingReaction(null), 1600);
+    if (!isOffline) {
+      socketService.sendReaction(currentUser, emoji);
     }
   };
 
@@ -1298,8 +1573,8 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           canJoinThisSeat ? 'cursor-pointer hover:bg-white/[0.08]' : 'cursor-default'
         }`}
       >
-        {/* Turn timer progress bar above active player */}
-        <div className="w-10 h-1.5 rounded-full bg-black/45 border border-white/15 overflow-hidden mb-0.5">
+        {/* 15s turn bar above active player */}
+        <div className="w-10 h-1.5 rounded-full bg-black/50 border border-white/15 overflow-hidden mb-0.5">
           {isActive && (
             <div
               className={`h-full transition-[width] duration-150 ${
@@ -1310,15 +1585,15 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           )}
         </div>
 
-        {/* Avatar circle */}
+        {/* Avatar Circle */}
         <div
           className={`relative w-8 h-8 sm:w-9 sm:h-9 rounded-full flex items-center justify-center text-sm sm:text-base border-2 transition-all ${
             isSpeaking
               ? 'border-emerald-400 ring-2 ring-emerald-400/60 bg-emerald-500/20'
               : isActive
-              ? 'border-amber-400 bg-amber-500/20 shadow-[0_0_12px_rgba(251,191,36,0.45)]'
+              ? 'border-sky-400 bg-sky-500/20 shadow-[0_0_12px_rgba(56,189,248,0.5)]'
               : seat
-              ? 'border-white/30 bg-white/[0.08]'
+              ? 'border-white/35 bg-white/[0.1]'
               : 'border-dashed border-white/25 bg-white/[0.03]'
           }`}
         >
@@ -1340,7 +1615,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           )}
         </div>
 
-        {/* Name + Online dot */}
+        {/* Name + green online status dot */}
         <div className="flex items-center gap-0.5 max-w-[64px] sm:max-w-[84px] mt-0.5">
           <span className="text-[10px] font-bold text-white truncate">
             {seat
@@ -1354,9 +1629,9 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           )}
         </div>
 
-        {/* "Tu turno" pill below active user */}
+        {/* Blue "Tu turno" pill under active human user */}
         {isActive && isMe && (
-          <span className="mt-0.5 px-1.5 py-px rounded-md bg-emerald-500 text-zinc-950 text-[8px] font-black leading-tight whitespace-nowrap">
+          <span className="mt-0.5 px-1.5 py-px rounded-md bg-sky-500 text-white text-[8px] font-black leading-tight whitespace-nowrap shadow">
             {pickLang(lang, { es: 'Tu turno', ca: 'El teu torn', en: 'Your turn' })}
           </span>
         )}
@@ -1373,40 +1648,37 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       : null;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col gap-1.5 overflow-hidden select-none">
-      {/* Top 4-Seat Stadium HUD + Scoreboard */}
-      <div className="px-2 py-1 rounded-xl bg-gradient-to-b from-[#1A2F12] to-[#111E0C] border border-emerald-400/20 flex items-center justify-between gap-1 shrink-0">
-        {/* Team A (Slots 0 & 1) */}
+    <div className="flex-1 min-h-0 flex flex-col gap-1 overflow-hidden select-none">
+      {/* Integrated Translucent Stadium HUD + 4 Player Avatars + Score */}
+      <div className="px-2 py-1 rounded-xl bg-gradient-to-b from-[#2E551A] via-[#244414] to-[#1A330E] border border-emerald-400/25 flex items-center justify-between gap-1 shrink-0 shadow-md">
         <div className="flex items-center gap-1 min-w-0">
           {renderSeatSlot(0)}
           {renderSeatSlot(1)}
         </div>
 
-        {/* Center Score & Team Flags */}
         <div className="flex flex-col items-center justify-center px-1.5 shrink-0">
           <div className="flex items-center gap-1.5">
             <span
-              className="w-3 h-3 rounded-full border border-white/60 shrink-0"
+              className="w-3 h-3 rounded-full border border-white/70 shrink-0"
               style={{ backgroundColor: flagA.primary }}
               title={flagA.name}
             />
-            <span className="text-base sm:text-xl font-black font-mono tabular-nums text-white tracking-tight">
+            <span className="text-base sm:text-xl font-black font-mono tabular-nums text-white tracking-tight drop-shadow">
               {activeState.scores.A} - {activeState.scores.B}
             </span>
             <span
-              className="w-3 h-3 rounded-full border border-white/60 shrink-0"
+              className="w-3 h-3 rounded-full border border-white/70 shrink-0"
               style={{ backgroundColor: flagB.primary }}
               title={flagB.name}
             />
           </div>
-          <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-200/85 truncate max-w-[125px] sm:max-w-[200px]">
+          <span className="text-[9px] sm:text-[10px] font-semibold text-emerald-100/85 truncate max-w-[125px] sm:max-w-[200px]">
             {isSimulatingUI
               ? pickLang(lang, { es: 'Jugada en curso…', ca: 'Jugada en curs…', en: 'Shot in play…' })
               : activeState.statusMessage}
           </span>
         </div>
 
-        {/* Team B (Slots 2 & 3) */}
         <div className="flex items-center gap-1 min-w-0">
           {renderSeatSlot(2)}
           {renderSeatSlot(3)}
@@ -1416,7 +1688,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       {/* Main High-DPI Stadium Canvas */}
       <div
         ref={containerRef}
-        className="relative flex-1 min-h-0 rounded-2xl bg-[#274615] border border-white/[0.12] overflow-hidden shadow-inner"
+        className="relative flex-1 min-h-0 rounded-2xl bg-[#2E5218] border border-white/[0.14] overflow-hidden shadow-inner"
       >
         <canvas
           ref={canvasRef}
@@ -1430,7 +1702,43 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           }`}
         />
 
-        {/* Animated Goal Flash Banner */}
+        {/* Quick Emoji Reaction Dock on Right Edge */}
+        <div className="absolute right-2 top-1/2 -translate-y-1/2 z-10 flex flex-col items-end gap-1.5">
+          {emojiMenuOpen && (
+            <div className="p-1.5 rounded-2xl bg-black/80 backdrop-blur-md border border-white/15 flex flex-col gap-1 shadow-xl">
+              {QUICK_EMOJIS.map((em) => (
+                <button
+                  key={em}
+                  type="button"
+                  onClick={() => sendQuickReaction(em)}
+                  className="w-8 h-8 rounded-xl hover:bg-white/15 flex items-center justify-center text-base cursor-pointer active:scale-90 transition-transform"
+                >
+                  {em}
+                </button>
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => setEmojiMenuOpen((o) => !o)}
+            aria-label={pickLang(lang, { es: 'Reacciones', ca: 'Reaccions', en: 'Reactions' })}
+            className="w-9 h-9 rounded-full bg-amber-400/90 hover:bg-amber-300 text-zinc-950 shadow-lg border border-white/50 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+          >
+            <Smile className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Floating Reaction Toast */}
+        {floatingReaction && (
+          <div
+            key={floatingReaction.id}
+            className="pointer-events-none absolute right-14 top-1/2 -translate-y-1/2 z-20 text-4xl animate-bounce drop-shadow-2xl"
+          >
+            {floatingReaction.emoji}
+          </div>
+        )}
+
+        {/* Animated Goal Celebration Banner */}
         {goalBanner && (
           <div className="pointer-events-none absolute inset-x-4 top-1/2 -translate-y-1/2 z-20 flex flex-col items-center justify-center animate-bounce">
             <div className="px-6 py-2.5 rounded-2xl bg-black/85 border-2 border-amber-400 shadow-[0_12px_40px_rgba(250,204,21,0.45)] text-center">
@@ -1448,7 +1756,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         {activeState.status === 'waiting' && (
           <div className="absolute inset-x-2.5 bottom-2.5 z-20 rounded-2xl bg-[#0D1310]/92 backdrop-blur-md border border-emerald-400/30 p-2.5 flex flex-wrap items-center justify-between gap-2 shadow-2xl">
             <div className="flex items-center gap-1.5 flex-wrap">
-              {/* Team A Flag Switcher */}
               <button
                 type="button"
                 disabled={!canConfigureLobby}
@@ -1462,7 +1769,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
                 <span>Eq.1: {flagA.short}</span>
               </button>
 
-              {/* Team B Flag Switcher */}
               <button
                 type="button"
                 disabled={!canConfigureLobby}
@@ -1476,7 +1782,6 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
                 <span>Eq.2: {flagB.short}</span>
               </button>
 
-              {/* Toggle Bots ON / OFF */}
               {canConfigureLobby && (
                 <button
                   type="button"
@@ -1547,7 +1852,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         )}
       </div>
 
-      {/* Compact Footer Controls */}
+      {/* Compact Footer Hint & Reset/Forfeit */}
       <div className="px-2.5 py-1 rounded-xl bg-white/[0.04] border border-white/[0.09] flex items-center justify-between gap-2 shrink-0 text-[11px] text-zinc-300">
         <div className="flex items-center gap-1.5 min-w-0">
           <Shield className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
@@ -1565,7 +1870,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
                     en: `${activeSeat?.name || 'Opponent'}'s turn`,
                   })
               : pickLang(lang, {
-                  es: 'Hasta 3 pases seguidos tocando balón · Primero a 3 goles',
+                  es: 'Hasta 3 pases seguidos · Primero a 3 goles',
                   ca: 'Fins a 3 passades seguides · Primer a 3 gols',
                   en: 'Up to 3 passes per possession · First to 3 goals',
                 })}
