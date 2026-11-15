@@ -27,8 +27,10 @@ export interface SocketPayload {
   emoji?: string;
   isSystem?: boolean;
   name?: string;
+  creatorId?: string;
   hostId?: string;
   hostName?: string;
+  reason?: string;
   hostOnlyControl?: boolean;
   hasPin?: boolean;
   activePoll?: RoomPollState | null;

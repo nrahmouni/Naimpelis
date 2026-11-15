@@ -4531,10 +4531,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   );
                   handleScrub(Math.round(ratio * duration));
                 }}
-                className={`h-6 flex items-center px-1 mb-0.5 ${
+                className={`relative h-7 flex items-center px-1 mb-0.5 ${
                   showControls ? 'pointer-events-auto' : 'pointer-events-none'
                 }`}
               >
+                <div className="relative w-full h-1.5 rounded-full bg-white/25 overflow-hidden pointer-events-none shadow-inner">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-[#9146FF] to-[#BF94FF] transition-[width] duration-100"
+                    style={{
+                      width: `${Math.min(100, Math.max(0, (Math.min(currentTime, duration) / Math.max(1, duration)) * 100))}%`,
+                    }}
+                  />
+                </div>
                 <input
                   type="range"
                   min={0}
@@ -4547,23 +4555,23 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     ca: 'Línia de temps',
                     en: 'Timeline',
                   })}
-                  className="w-full cinema-range"
+                  className="absolute inset-x-1 inset-y-0 w-[calc(100%-0.5rem)] h-full cinema-range cinema-range-overlay z-10"
                 />
               </div>
             )}
 
             <div
               onClick={(e) => e.stopPropagation()}
-              className={`flex items-center justify-between gap-1.5 ${
+              className={`flex items-center justify-between gap-1 sm:gap-1.5 ${
                 showControls ? 'pointer-events-auto' : 'pointer-events-none'
               }`}
             >
               {/* Left Cluster: Play/Pause + Mute/Volume + Timecode */}
-              <div className="flex items-center gap-0.5 sm:gap-1 min-w-0">
+              <div className="flex items-center gap-0.5 sm:gap-1 min-w-0 shrink-0">
                 <button
                   type="button"
                   onClick={handleTogglePlay}
-                  className="min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer shrink-0"
+                  className="min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer shrink-0"
                   aria-label={
                     localPlaying
                       ? pickLang(lang, { es: 'Pausar', ca: 'Pausar', en: 'Pause' })
@@ -4581,7 +4589,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   <button
                     type="button"
                     onClick={handleToggleMute}
-                    className="min-h-[42px] min-w-[40px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
+                    className="min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
                     aria-label={pickLang(lang, {
                       es: 'Silenciar',
                       ca: 'Silenciar',
@@ -4616,7 +4624,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     <span>{t.liveNow}</span>
                   </div>
                 ) : (
-                  <div className="text-[11px] sm:text-xs font-mono tabular-nums text-zinc-200 pl-0.5 whitespace-nowrap truncate">
+                  <div className="text-[11px] sm:text-xs font-mono tabular-nums text-zinc-200 pl-0.5 whitespace-nowrap shrink-0">
                     {formatTimecode(currentTime)}
                     <span className="text-zinc-500 mx-0.5">/</span>
                     {formatTimecode(duration)}
@@ -4700,7 +4708,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       }}
                       aria-label={t.qualityLabel}
                       aria-expanded={activeHudMenu === 'quality'}
-                      className={`min-h-[40px] px-2.5 rounded-2xl text-[11px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap ${
+                      className={`min-h-[38px] sm:min-h-[40px] px-2 sm:px-2.5 rounded-2xl text-[11px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap ${
                         activeHudMenu === 'quality'
                           ? 'bg-[#9146FF] text-white'
                           : 'bg-white/10 hover:bg-white/18 text-zinc-100'
@@ -4708,11 +4716,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     >
                       <Settings2 className="w-3.5 h-3.5 shrink-0" />
                       <span>
-                        {selectedQuality === -1
-                          ? autoActiveHeight
-                            ? `${t.qualityAuto} · ${autoActiveHeight}p`
-                            : t.qualityAuto
-                          : `${qualityLevels.find((q) => q.index === selectedQuality)?.height || ''}p`}
+                        {selectedQuality === -1 ? (
+                          autoActiveHeight ? (
+                            <>
+                              <span className="hidden sm:inline">{t.qualityAuto} · </span>
+                              {autoActiveHeight}p
+                            </>
+                          ) : (
+                            t.qualityAuto
+                          )
+                        ) : (
+                          `${qualityLevels.find((q) => q.index === selectedQuality)?.height || ''}p`
+                        )}
                       </span>
                     </button>
 
@@ -4773,7 +4788,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 <button
                   type="button"
                   onClick={handleToggleLandscapeRotation}
-                  className={`min-h-[42px] min-w-[42px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+                  className={`min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[42px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
                     (isFullscreen || isHorizontalFullscreen) && forceLandscapeRotation
                       ? 'bg-[#9146FF]/25 text-[#BF94FF] border border-[#9146FF]/50'
                       : 'hover:bg-white/12 text-white'
@@ -4795,7 +4810,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 <button
                   type="button"
                   onClick={handleToggleFullscreen}
-                  className="min-h-[42px] min-w-[42px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
+                  className="min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[42px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
                   title={pickLang(lang, {
                     es: 'Pantalla completa horizontal',
                     ca: 'Pantalla completa horitzontal',

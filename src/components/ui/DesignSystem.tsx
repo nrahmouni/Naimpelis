@@ -9,10 +9,7 @@ import {
   Volume2,
   VolumeX,
   Maximize2,
-  Sparkles,
   Unlink,
-  Tv,
-  Hand,
   Subtitles,
 } from 'lucide-react';
 import type { AppLanguage } from '../../types';
@@ -400,7 +397,7 @@ export const EmptyStateCard: React.FC<EmptyStateCardProps> = ({
 };
 
 // ============================================================================
-// 5. HAPTIC TOUCH SMART TV REMOTE (Eyes-Free Trackpad + Volume Slider)
+// 5. SIMPLE COMPACT SMART TV REMOTE (Zero Trackpad, Fits Single Screen)
 // ============================================================================
 
 export interface HapticTvRemoteProps {
@@ -435,10 +432,6 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
   const [volume, setVolume] = useState<number>(85);
   const [isMuted, setIsMuted] = useState<boolean>(false);
   const [touchFeedback, setTouchFeedback] = useState<string | null>(null);
-  const [showAdvancedTvTools, setShowAdvancedTvTools] = useState(false);
-
-  const touchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
-  const lastTapRef = useRef<number>(0);
 
   const triggerHaptic = (label: string, ms = 18) => {
     try {
@@ -454,74 +447,6 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
     }, 900);
   };
 
-  const handleTrackpadPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    touchStartRef.current = {
-      x: e.clientX,
-      y: e.clientY,
-      time: Date.now(),
-    };
-  };
-
-  const handleTrackpadPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    const start = touchStartRef.current;
-    touchStartRef.current = null;
-    if (!start) return;
-
-    const dx = e.clientX - start.x;
-    const dy = e.clientY - start.y;
-    const absX = Math.abs(dx);
-    const absY = Math.abs(dy);
-
-    if (absX > 36 && absX > absY) {
-      if (dx < 0) {
-        onCommand('seek_delta', -15);
-        triggerHaptic(pickLang(lang, { es: '⏪ -15 seg en TV', ca: '⏪ -15 s a la TV', en: '⏪ -15s on TV' }), 22);
-      } else {
-        onCommand('seek_delta', 15);
-        triggerHaptic(pickLang(lang, { es: '⏩ +15 seg en TV', ca: '⏩ +15 s a la TV', en: '⏩ +15s on TV' }), 22);
-      }
-      return;
-    }
-
-    if (absY > 36 && absY > absX) {
-      if (dy < 0) {
-        const nextVol = Math.min(100, volume + 10);
-        setVolume(nextVol);
-        onCommand('volume_delta', 0.1);
-        triggerHaptic(pickLang(lang, { es: `🔊 Volumen ${nextVol}%`, ca: `🔊 Volum ${nextVol}%`, en: `🔊 Volume ${nextVol}%` }), 16);
-      } else {
-        const nextVol = Math.max(0, volume - 10);
-        setVolume(nextVol);
-        onCommand('volume_delta', -0.1);
-        triggerHaptic(pickLang(lang, { es: `🔉 Volumen ${nextVol}%`, ca: `🔉 Volum ${nextVol}%`, en: `🔉 Volume ${nextVol}%` }), 16);
-      }
-      return;
-    }
-
-    const rect = e.currentTarget.getBoundingClientRect();
-    const relX = (e.clientX - rect.left) / rect.width;
-    const now = Date.now();
-
-    if (now - lastTapRef.current < 280) {
-      lastTapRef.current = 0;
-      onCommand('toggle_fullscreen');
-      triggerHaptic(pickLang(lang, { es: '⛶ Pantalla Completa TV', ca: '⛶ Pantalla Completa TV', en: '⛶ TV Fullscreen' }), 30);
-      return;
-    }
-    lastTapRef.current = now;
-
-    if (relX < 0.28) {
-      onCommand('seek_delta', -15);
-      triggerHaptic('⏪ -15s', 18);
-    } else if (relX > 0.72) {
-      onCommand('seek_delta', 15);
-      triggerHaptic('⏩ +15s', 18);
-    } else {
-      onCommand('toggle_play');
-      triggerHaptic(pickLang(lang, { es: '⏯ Play / Pausa TV', ca: '⏯ Reproduir / Pausa TV', en: '⏯ TV Play / Pause' }), 24);
-    }
-  };
-
   const handleVolumeSlider = (e: React.ChangeEvent<HTMLInputElement>) => {
     const next = Number(e.target.value);
     const delta = (next - volume) / 100;
@@ -533,103 +458,62 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
   };
 
   return (
-    <div className="space-y-4 select-none">
-      {/* Status Row */}
-      <div className="flex items-center justify-between px-4 py-2.5 rounded-2xl bg-emerald-500/10 border border-emerald-500/25">
-        <div className="flex items-center gap-2.5">
+    <div className="space-y-2.5 select-none">
+      {/* Compact Connected Status + Live Feedback */}
+      <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-emerald-500/10 border border-emerald-500/25">
+        <div className="flex items-center gap-2 min-w-0">
           <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_#34d399]" />
-          <span className="text-xs font-bold text-emerald-300 tabular-nums">
-            {pickLang(lang, {
-              es: `TV Conectada · #${pairedTvCode}`,
-              ca: `TV Connectada · #${pairedTvCode}`,
-              en: `TV Connected · #${pairedTvCode}`,
-            })}
+          <span className="text-xs font-bold text-emerald-300 tabular-nums truncate">
+            {touchFeedback ||
+              pickLang(lang, {
+                es: `TV Conectada · #${pairedTvCode}`,
+                ca: `TV Connectada · #${pairedTvCode}`,
+                en: `TV Connected · #${pairedTvCode}`,
+              })}
           </span>
         </div>
         <button
           type="button"
           onClick={onDisconnect}
-          className="min-h-[36px] px-2.5 rounded-xl text-[11px] font-semibold text-zinc-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors flex items-center gap-1 cursor-pointer"
+          className="min-h-[32px] px-2 rounded-lg text-[11px] font-semibold text-zinc-400 hover:text-rose-300 hover:bg-rose-500/10 transition-colors flex items-center gap-1 shrink-0 cursor-pointer"
         >
           <Unlink className="w-3.5 h-3.5" />
           {pickLang(lang, { es: 'Desconectar', ca: 'Desconnectar', en: 'Disconnect' })}
         </button>
       </div>
 
-      {/* Central Haptic Touchpad */}
-      <div
-        onPointerDown={handleTrackpadPointerDown}
-        onPointerUp={handleTrackpadPointerUp}
-        className="relative h-44 sm:h-48 rounded-3xl bg-[radial-gradient(ellipse_at_50%_0%,rgba(145,70,255,0.18),rgba(255,255,255,0.02)_70%)] border border-white/[0.12] shadow-[inset_0_1px_1px_rgba(255,255,255,0.18),0_16px_40px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center overflow-hidden touch-none cursor-pointer active:scale-[0.99] transition-transform"
-      >
-        <div className="absolute inset-y-6 left-1/4 w-px bg-white/[0.06] pointer-events-none" />
-        <div className="absolute inset-y-6 right-1/4 w-px bg-white/[0.06] pointer-events-none" />
-
-        <div className="w-full px-6 flex items-center justify-between text-zinc-500 pointer-events-none">
-          <div className="flex flex-col items-center gap-1">
-            <RotateCcw className="w-5 h-5 text-zinc-400" />
-            <span className="text-[10px] font-mono uppercase tracking-wider">-15s</span>
-          </div>
-
-          <div className="flex flex-col items-center gap-1.5">
-            <div className="w-12 h-12 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/35 flex items-center justify-center text-zinc-200 shadow-[0_0_24px_rgba(145,70,255,0.2)]">
-              <Hand className="w-5 h-5 text-[#BF94FF]" />
-            </div>
-            <span className="font-display text-xs font-bold text-zinc-100 tracking-tight">
-              {pickLang(lang, { es: 'Trackpad Táctil', ca: 'Trackpad Tàctil', en: 'Touch Trackpad' })}
-            </span>
-            <span className="text-[10px] text-zinc-400 text-center max-w-[11rem]">
-              {pickLang(lang, {
-                es: 'Toca para Pausa · Desliza para avanzar o volumen',
-                ca: 'Toca per Pausa · Llisca per avançar o volum',
-                en: 'Tap to Pause · Swipe to seek or adjust volume',
-              })}
-            </span>
-          </div>
-
-          <div className="flex flex-col items-center gap-1">
-            <RotateCw className="w-5 h-5 text-zinc-400" />
-            <span className="text-[10px] font-mono uppercase tracking-wider">+15s</span>
-          </div>
-        </div>
-
-        <AnimatePresence>
-          {touchFeedback && (
-            <motion.div
-              initial={{ opacity: 0, y: 10, scale: 0.94 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 6, scale: 0.95 }}
-              transition={{ duration: 0.16 }}
-              className="absolute inset-x-8 bottom-3 py-1.5 px-3 rounded-full bg-[#9146FF] text-white text-xs font-bold text-center shadow-lg"
-            >
-              {touchFeedback}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Hero Play / Pause + Quick Seek Row */}
-      <div className="grid grid-cols-3 gap-2.5">
+      {/* Primary Playback Row */}
+      <div className="grid grid-cols-3 gap-2">
         <SecondaryButton
           onClick={() => {
             onCommand('seek_delta', -15);
             triggerHaptic('⏪ -15s');
           }}
-          className="min-h-[54px]"
+          className="min-h-[50px]"
         >
-          <RotateCcw className="w-5 h-5" />
+          <RotateCcw className="w-4 h-4" />
           <span>-15s</span>
         </SecondaryButton>
 
         <PrimaryButton
           onClick={() => {
             onCommand('toggle_play');
-            triggerHaptic(pickLang(lang, { es: '⏯ Play / Pausa', ca: '⏯ Reproduir / Pausa', en: '⏯ Play / Pause' }));
+            triggerHaptic(
+              pickLang(lang, {
+                es: '⏯ Play / Pausa',
+                ca: '⏯ Reproduir / Pausa',
+                en: '⏯ Play / Pause',
+              })
+            );
           }}
-          className="min-h-[54px] text-sm"
+          className="min-h-[50px] text-xs sm:text-sm"
         >
-          {isPlaying ? <Pause className="w-5 h-5 fill-current" /> : <Play className="w-5 h-5 fill-current" />}
-          <span>{pickLang(lang, { es: 'Play / Pausa', ca: 'Reproduir / Pausa', en: 'Play / Pause' })}</span>
+          {isPlaying ? (
+            <Pause className="w-4 h-4 fill-current" />
+          ) : (
+            <Play className="w-4 h-4 fill-current" />
+          )}
+          <span>{pickLang(lang, { es: 'Play / Pausa', ca: 'Play / Pausa', en: 'Play / Pause' })}</span>
         </PrimaryButton>
 
         <SecondaryButton
@@ -637,15 +521,15 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
             onCommand('seek_delta', 15);
             triggerHaptic('⏩ +15s');
           }}
-          className="min-h-[54px]"
+          className="min-h-[50px]"
         >
-          <RotateCw className="w-5 h-5" />
+          <RotateCw className="w-4 h-4" />
           <span>+15s</span>
         </SecondaryButton>
       </div>
 
-      {/* Fluid Volume Slider + Mute */}
-      <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center gap-3">
+      {/* Compact Volume Bar + Mute */}
+      <div className="px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] flex items-center gap-2.5">
         <IconButton
           onClick={() => {
             setIsMuted((prev) => !prev);
@@ -658,18 +542,21 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
           }}
           active={isMuted}
           aria-label={pickLang(lang, { es: 'Silenciar TV', ca: 'Silenciar TV', en: 'Mute TV' })}
+          className="!min-h-9 !min-w-9"
         >
           {isMuted || volume === 0 ? (
-            <VolumeX className="w-5 h-5 text-rose-400" />
+            <VolumeX className="w-4 h-4 text-rose-400" />
           ) : (
-            <Volume2 className="w-5 h-5 text-zinc-200" />
+            <Volume2 className="w-4 h-4 text-zinc-200" />
           )}
         </IconButton>
 
-        <div className="flex-1 flex flex-col gap-1.5">
+        <div className="flex-1 flex flex-col gap-1">
           <div className="flex items-center justify-between text-[11px] font-semibold text-zinc-300">
-            <span>{pickLang(lang, { es: 'Volumen TV', ca: 'Volum TV', en: 'TV Volume' })}</span>
-            <span className="font-mono text-zinc-400 tabular-nums">{isMuted ? 'MUTE' : `${volume}%`}</span>
+            <span>{pickLang(lang, { es: 'Volumen', ca: 'Volum', en: 'Volume' })}</span>
+            <span className="font-mono text-zinc-400 tabular-nums">
+              {isMuted ? 'MUTE' : `${volume}%`}
+            </span>
           </div>
           <input
             type="range"
@@ -677,88 +564,69 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
             max={100}
             value={isMuted ? 0 : volume}
             onChange={handleVolumeSlider}
-            aria-label={pickLang(lang, { es: 'Control de volumen TV', ca: 'Control de volum TV', en: 'TV volume slider' })}
-            className="cinema-range w-full h-2 rounded-full accent-[#9146FF] bg-white/15 cursor-pointer"
+            aria-label={pickLang(lang, {
+              es: 'Control de volumen TV',
+              ca: 'Control de volum TV',
+              en: 'TV volume slider',
+            })}
+            className="cinema-range w-full h-2 cursor-pointer"
           />
         </div>
       </div>
 
-      {/* Progressive Disclosure: Secondary TV Actions */}
-      <div className="flex items-center gap-2">
+      {/* Single-Row Essential TV Actions (No scrolling or nested drawers) */}
+      <div className="grid grid-cols-4 gap-1.5">
         <SecondaryButton
           onClick={() => {
             onCommand('toggle_fullscreen');
-            triggerHaptic(pickLang(lang, { es: '⛶ Pantalla Completa TV', ca: '⛶ Pantalla Completa TV', en: '⛶ TV Fullscreen' }));
+            triggerHaptic(
+              pickLang(lang, {
+                es: '⛶ Pantalla Completa',
+                ca: '⛶ Pantalla Completa',
+                en: '⛶ Fullscreen',
+              })
+            );
           }}
-          fullWidth
+          className="!min-h-[42px] !px-1.5 text-[11px]"
         >
-          <Maximize2 className="w-4 h-4 text-[#BF94FF]" />
-          <span>{pickLang(lang, { es: 'Pantalla Completa TV', ca: 'Pantalla Completa TV', en: 'TV Fullscreen' })}</span>
+          <Maximize2 className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+          <span className="truncate">{pickLang(lang, { es: 'Pantalla', ca: 'Pantalla', en: 'Full' })}</span>
         </SecondaryButton>
 
         <SecondaryButton
-          onClick={() => setShowAdvancedTvTools((prev) => !prev)}
-          active={showAdvancedTvTools}
-          aria-label={pickLang(lang, { es: 'Ajustes de imagen TV', ca: 'Ajustos d’imatge TV', en: 'TV picture settings' })}
+          onClick={() => {
+            onCommand('cycle_subtitles');
+            triggerHaptic(
+              pickLang(lang, { es: '💬 Subtítulos', ca: '💬 Subtítols', en: '💬 Subtitles' })
+            );
+          }}
+          className="!min-h-[42px] !px-1.5 text-[11px]"
         >
-          <Tv className="w-4 h-4" />
-          <span>{pickLang(lang, { es: 'Ajustes TV', ca: 'Ajustos TV', en: 'TV Settings' })}</span>
+          <Subtitles className="w-3.5 h-3.5 text-zinc-300 shrink-0" />
+          <span className="truncate">{pickLang(lang, { es: 'Subs', ca: 'Subs', en: 'Subs' })}</span>
+        </SecondaryButton>
+
+        <SecondaryButton
+          onClick={() => {
+            onCommand('cycle_audio');
+            triggerHaptic(pickLang(lang, { es: '🔊 Audio TV', ca: '🔊 Àudio TV', en: '🔊 TV Audio' }));
+          }}
+          className="!min-h-[42px] !px-1.5 text-[11px]"
+        >
+          <Volume2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span className="truncate">Audio</span>
+        </SecondaryButton>
+
+        <SecondaryButton
+          onClick={() => {
+            onCommand('cycle_aspect');
+            triggerHaptic(pickLang(lang, { es: '📐 Formato', ca: '📐 Format', en: '📐 Aspect' }));
+          }}
+          className="!min-h-[42px] !px-1.5 text-[11px]"
+        >
+          <span className="truncate">{pickLang(lang, { es: 'Zoom', ca: 'Zoom', en: 'Fill' })}</span>
         </SecondaryButton>
       </div>
-
-      <AnimatePresence>
-        {showAdvancedTvTools && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-            transition={{ duration: 0.18 }}
-            className="overflow-hidden"
-          >
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-              <SecondaryButton
-                onClick={() => {
-                  onCommand('cycle_subtitles');
-                  triggerHaptic(pickLang(lang, { es: '💬 Subtítulos TV', ca: '💬 Subtítols TV', en: '💬 TV Subtitles' }));
-                }}
-                className="text-[11px] px-2"
-              >
-                <Subtitles className="w-3.5 h-3.5 text-zinc-300" />
-                <span>{pickLang(lang, { es: 'Subtítulos', ca: 'Subtítols', en: 'Subtitles' })}</span>
-              </SecondaryButton>
-              <SecondaryButton
-                onClick={() => {
-                  onCommand('cycle_audio');
-                  triggerHaptic(pickLang(lang, { es: '🔊 Audio TV', ca: '🔊 Àudio TV', en: '🔊 TV Audio' }));
-                }}
-                className="text-[11px] px-2"
-              >
-                <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-                <span>{pickLang(lang, { es: 'Audio TV', ca: 'Àudio TV', en: 'TV Audio' })}</span>
-              </SecondaryButton>
-              <SecondaryButton
-                onClick={() => {
-                  onCommand('cycle_aspect');
-                  triggerHaptic(pickLang(lang, { es: '📐 Formato', ca: '📐 Format', en: '📐 Aspect' }));
-                }}
-                className="text-[11px] px-2"
-              >
-                <span>{pickLang(lang, { es: 'Rellenar', ca: 'Omplir', en: 'Fill' })}</span>
-              </SecondaryButton>
-              <SecondaryButton
-                onClick={() => {
-                  onCommand('toggle_ambilight');
-                  triggerHaptic('✨ Ambilight TV');
-                }}
-                className="text-[11px] px-2"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-                <span>Ambilight</span>
-              </SecondaryButton>
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 };

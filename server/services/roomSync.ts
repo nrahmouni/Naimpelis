@@ -62,24 +62,45 @@ export function pruneJoinCooldownCache(now = Date.now()): void {
 }
 
 /**
- * Checks whether a participant holds moderation/playback privileges.
+ * Checks whether a participant holds moderation/playback privileges (creator/host or co-host).
  */
 export function canUserControlRoom(params: {
   hostOnlyControl: boolean;
   hostId: string;
+  creatorId?: string;
   userId?: string;
   participants: RoomParticipant[];
 }): boolean {
   if (!params.hostOnlyControl) return true;
   if (!params.userId) return false;
-  if (params.userId === params.hostId) return true;
+  if (params.creatorId && params.userId === params.creatorId) return true;
+  if (params.hostId && params.userId === params.hostId) return true;
   const member = params.participants.find((p) => p.id === params.userId);
   return member?.role === 'host' || member?.role === 'mod';
 }
 
 /**
+ * Checks whether a participant is authorized to change channels, movies, or room media.
+ * Strictly restricted to the room creator (host) and assigned co-hosts (mod).
+ */
+export function canUserChangeRoomMedia(params: {
+  hostId: string;
+  creatorId?: string;
+  userId?: string;
+  participants: RoomParticipant[];
+}): boolean {
+  return canUserControlRoom({
+    hostOnlyControl: true,
+    hostId: params.hostId,
+    creatorId: params.creatorId,
+    userId: params.userId,
+    participants: params.participants,
+  });
+}
+
+/**
  * Picks the next host automatically when the active host leaves/disconnects.
- * Prefers moderators first, then longest-tenured non-TV human participant.
+ * Kept for backwards compatibility in unit tests; live rooms preserve creatorId as exclusive host.
  */
 export function selectNextHostOnLeave(
   participants: RoomParticipant[],
@@ -126,14 +147,16 @@ export function toggleQueueItemVote<T extends QueueEntryWithVotes>(
 }
 
 /**
- * Updates a participant's role cleanly (host-only action).
+ * Updates a participant's co-host/viewer role cleanly (creator/host-only action).
+ * Never transfers exclusive 'host' ownership to another participant.
  */
 export function assignParticipantRole(
   participants: RoomParticipant[],
   targetUserId: string,
   role: RoomRole
 ): RoomParticipant[] {
+  const safeRole: RoomRole = role === 'mod' ? 'mod' : 'viewer';
   return participants.map((p) =>
-    p.id === targetUserId ? { ...p, role, isHost: role === 'host' ? true : p.isHost } : p
+    p.id === targetUserId && !p.isHost ? { ...p, role: safeRole, isHost: false } : p
   );
 }

@@ -79,6 +79,8 @@ export interface RoomStatePayload {
   id: string;
   name: string;
   hostId: string;
+  creatorId?: string;
+  coHostIds?: string[];
   participants: RoomParticipant[];
   videoState: AuthoritativeVideoState;
   messages: RoomChatMessage[];

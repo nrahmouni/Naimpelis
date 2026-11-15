@@ -53,6 +53,17 @@ export class LruTtlCache<K, V> {
     this.cache.clear();
   }
 
+  *entries(): IterableIterator<[K, V]> {
+    const now = Date.now();
+    for (const [k, entry] of this.cache.entries()) {
+      if (now > entry.expiresAt) {
+        this.cache.delete(k);
+        continue;
+      }
+      yield [k, entry.value];
+    }
+  }
+
   get size(): number {
     return this.cache.size;
   }

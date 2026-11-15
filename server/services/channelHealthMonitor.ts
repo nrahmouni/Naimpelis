@@ -1,4 +1,5 @@
 import { logger } from '../utils/logger.ts';
+import { streamingFetch } from '../utils/tlsFetch.ts';
 
 export type ChannelHealthStatus = 'up' | 'degraded' | 'down' | 'unknown';
 
@@ -8,6 +9,8 @@ export interface TrackHealthInfo {
   failCount?: number;
   checkedAt?: number;
   statusCode?: number;
+  qoeRebuffers?: number;
+  qoeFailures?: number;
 }
 
 export interface ChannelHealthSummary {
@@ -112,7 +115,7 @@ export async function probeChannelTrack(
 
   const timeoutMs = options?.timeoutMs ?? PROBE_TIMEOUT_MS;
   const fetchFn: FetchLike =
-    options?.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
+    options?.fetchImpl ?? ((input, init) => streamingFetch(String(input), { ...init, timeoutMs }));
 
   const isHlsManifest =
     track.resolverType === 'tdt_hls' ||
@@ -232,23 +235,57 @@ export class ChannelHealthMonitor {
     this.lastSweepDurationMs = 0;
   }
 
+  recordPlaybackFeedback(
+    sourceUrl: string,
+    feedback: { startupMs?: number; rebufferCount?: number; failed?: boolean }
+  ): void {
+    const key = normalizeTrackUrl(sourceUrl);
+    if (!key) return;
+    const prev = this.trackHealth.get(key);
+    const prevRebuffers = prev?.qoeRebuffers || 0;
+    const prevQoeFails = prev?.qoeFailures || 0;
+    const qoeFailures = feedback.failed ? prevQoeFails + 1 : Math.max(0, prevQoeFails - 1);
+    const qoeRebuffers = prevRebuffers + (feedback.rebufferCount || 0);
+    const nextStatus: ChannelHealthStatus =
+      feedback.failed && qoeFailures >= 2
+        ? 'down'
+        : feedback.failed || (feedback.startupMs && feedback.startupMs > DEGRADED_LATENCY_MS) || (feedback.rebufferCount || 0) >= 2
+          ? 'degraded'
+          : prev?.status || 'up';
+
+    this.trackHealth.set(key, {
+      status: nextStatus,
+      latencyMs: feedback.startupMs ?? prev?.latencyMs,
+      failCount: feedback.failed ? (prev?.failCount || 0) + 1 : 0,
+      checkedAt: Date.now(),
+      statusCode: prev?.statusCode,
+      qoeRebuffers,
+      qoeFailures,
+    });
+  }
+
   prioritizeTracks<T extends HealthProbeTrack>(tracks: T[]): T[] {
     if (!Array.isArray(tracks) || tracks.length === 0) return [];
     const indexed = tracks.map((track, originalIndex) => {
       const health = this.getTrackHealth(track.sourceUrl) ?? track.health;
+      const penaltyMs =
+        (health?.qoeFailures || 0) * 1500 + (health?.qoeRebuffers || 0) * 250;
+      const effectiveLatency =
+        (health?.latencyMs ?? (health?.status === 'unknown' ? 1200 : 800)) + penaltyMs;
       return {
         track: health ? { ...track, health } : { ...track },
         originalIndex,
         status: health?.status ?? ('unknown' as ChannelHealthStatus),
         latencyMs: health?.latencyMs ?? Number.MAX_SAFE_INTEGER,
+        effectiveLatency,
       };
     });
 
     indexed.sort((a, b) => {
       const rankDiff = STATUS_RANK[a.status] - STATUS_RANK[b.status];
       if (rankDiff !== 0) return rankDiff;
-      if (a.status !== 'unknown' && a.latencyMs !== b.latencyMs) {
-        return a.latencyMs - b.latencyMs;
+      if (a.status !== 'unknown' && a.effectiveLatency !== b.effectiveLatency) {
+        return a.effectiveLatency - b.effectiveLatency;
       }
       return a.originalIndex - b.originalIndex;
     });

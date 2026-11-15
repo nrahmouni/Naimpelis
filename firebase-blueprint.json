@@ -120,9 +120,9 @@
         "preferLang": {
           "type": "string",
           "description": "Preferred audio/stream language.",
-          "enum": ["ES", "EN"],
+          "enum": ["ES", "EN", "LAT", "VOSE"],
           "minLength": 2,
-          "maxLength": 2
+          "maxLength": 4
         },
         "bingetrixUrl": {
           "type": "string",
@@ -231,9 +231,9 @@
         "preferLang": {
           "type": "string",
           "description": "Optional preferred language.",
-          "enum": ["ES", "EN"],
+          "enum": ["ES", "EN", "LAT", "VOSE"],
           "minLength": 2,
-          "maxLength": 2
+          "maxLength": 4
         },
         "channelUrl": {
           "type": "string",

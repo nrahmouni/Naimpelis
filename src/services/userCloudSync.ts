@@ -331,10 +331,16 @@ export async function updateCloudUserProfile(
 // ============================================================================
 // WATCH HISTORY & EXACT TIMESTAMP SYNC (/watchHistory/{historyId})
 // ============================================================================
+function normalizePreferLang(raw: unknown): 'ES' | 'LAT' | 'VOSE' | 'EN' {
+  const up = String(raw || '').toUpperCase().trim();
+  if (up === 'EN' || up === 'LAT' || up === 'VOSE' || up === 'ES') return up;
+  return 'ES';
+}
+
 function buildWatchHistoryFields(uid: string, item: WatchHistoryItem) {
   const itemId = canonicalizeHistoryItemId(item);
   const mediaType = item.mediaType === 'tv' ? 'tv' : 'movie';
-  const preferLang = item.preferLang === 'EN' ? 'EN' : 'ES';
+  const preferLang = normalizePreferLang(item.preferLang);
   const safePoster = clampString(item.poster, 600, '/icon.svg');
   const safeBackdrop = clampString(
     item.backdrop || item.poster,
@@ -413,9 +419,22 @@ export async function upsertCloudWatchHistory(
     }
 
     let existsOnServer = false;
+    let serverUpdatedMs = 0;
     try {
       const existingSnap = await getDoc(docRef);
       existsOnServer = existingSnap.exists();
+      if (existsOnServer) {
+        const d = existingSnap.data();
+        serverUpdatedMs = toMillis(d?.updatedAt || d?.createdAt);
+        const clientUpdatedMs = typeof item.watchedAt === 'number' ? item.watchedAt : 0;
+        const serverResume = typeof d?.resumeTimeSec === 'number' ? d.resumeTimeSec : 0;
+        const clientResume = typeof base.resumeTimeSec === 'number' ? base.resumeTimeSec : 0;
+        // Timestamp-based conflict resolution: never overwrite fresher multi-device progress with older snapshot
+        if (serverUpdatedMs > clientUpdatedMs + 5000 && serverResume > clientResume) {
+          knownHistoryDocIds.add(docId);
+          return;
+        }
+      }
     } catch (error) {
       if (isTransientFirestoreError(error)) return;
       handleFirestoreError(error, OperationType.GET, path);
@@ -864,8 +883,9 @@ function sanitizePersistedQueue(items: RoomQueueItem[]): Record<string, unknown>
     if (youtubeId) entry.youtubeId = youtubeId;
     const url = optionalClampedString(q.url, 600);
     if (url) entry.url = url;
-    if (q.preferLang === 'ES' || q.preferLang === 'EN') {
-      entry.preferLang = q.preferLang;
+    const normalizedLang = normalizePreferLang(q.preferLang);
+    if (q.preferLang) {
+      entry.preferLang = normalizedLang;
     }
     return entry;
   });
@@ -1196,7 +1216,7 @@ export function subscribeUserCloudCollections(
           season: typeof d.season === 'number' ? d.season : undefined,
           episode: typeof d.episode === 'number' ? d.episode : undefined,
           episodeTitle: d.episodeTitle ? String(d.episodeTitle) : undefined,
-          preferLang: d.preferLang === 'EN' ? 'EN' : 'ES',
+          preferLang: normalizePreferLang(d.preferLang),
           bingetrixUrl: d.bingetrixUrl ? String(d.bingetrixUrl) : undefined,
           movidyUrl: d.movidyUrl ? String(d.movidyUrl) : undefined,
           resumeTimeSec:
@@ -1436,7 +1456,7 @@ export function subscribeUserCloudCollections(
             episode: typeof q.episode === 'number' ? q.episode : undefined,
             youtubeId: q.youtubeId ? String(q.youtubeId) : undefined,
             url: q.url ? String(q.url) : undefined,
-            preferLang: q.preferLang === 'EN' ? 'EN' : 'ES',
+            preferLang: normalizePreferLang(q.preferLang),
             addedBy: String(q.addedBy || 'Anfitrión'),
           }));
 

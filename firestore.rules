@@ -102,7 +102,7 @@ service cloud.firestore {
         (!('season' in data) || (data.season is number && data.season >= 1 && data.season <= 200)) &&
         (!('episode' in data) || (data.episode is number && data.episode >= 1 && data.episode <= 5000)) &&
         (!('episodeTitle' in data) || (data.episodeTitle is string && data.episodeTitle.size() <= 200)) &&
-        data.preferLang is string && data.preferLang.size() == 2 && (data.preferLang == 'ES' || data.preferLang == 'EN') &&
+        data.preferLang is string && data.preferLang.size() >= 2 && data.preferLang.size() <= 4 && (data.preferLang == 'ES' || data.preferLang == 'EN' || data.preferLang == 'LAT' || data.preferLang == 'VOSE') &&
         (!('bingetrixUrl' in data) || (data.bingetrixUrl is string && data.bingetrixUrl.size() <= 600)) &&
         (!('movidyUrl' in data) || (data.movidyUrl is string && data.movidyUrl.size() <= 600)) &&
         data.resumeTimeSec is number && data.resumeTimeSec >= 0 && data.resumeTimeSec <= 86400 &&
@@ -152,7 +152,7 @@ service cloud.firestore {
         (!('backdrop' in data) || (data.backdrop is string && data.backdrop.size() <= 600)) &&
         (!('year' in data) || (data.year is string && data.year.size() <= 16)) &&
         (!('rating' in data) || (data.rating is string && data.rating.size() <= 16)) &&
-        (!('preferLang' in data) || (data.preferLang is string && data.preferLang.size() == 2 && (data.preferLang == 'ES' || data.preferLang == 'EN'))) &&
+        (!('preferLang' in data) || (data.preferLang is string && data.preferLang.size() >= 2 && data.preferLang.size() <= 4 && (data.preferLang == 'ES' || data.preferLang == 'EN' || data.preferLang == 'LAT' || data.preferLang == 'VOSE'))) &&
         (!('channelUrl' in data) || (data.channelUrl is string && data.channelUrl.size() <= 600)) &&
         (!('channelLabel' in data) || (data.channelLabel is string && data.channelLabel.size() <= 120)) &&
         (!('competition' in data) || (data.competition is string && data.competition.size() <= 120)) &&

@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import zlib from 'zlib';
 import { ENV, ROOT_DIR } from '../config/env.ts';
+import { LruTtlCache } from '../utils/lruCache.ts';
 
 export type ApkFlavor = 'mobile' | 'tv';
 
@@ -15,8 +16,8 @@ interface CertMaterial {
 }
 
 let cachedCertMaterial: CertMaterial | null = null;
-const generatedApkCache = new Map<string, { buffer: Buffer; createdAt: number }>();
 const APK_CACHE_TTL_MS = 30 * 60 * 1000;
+const generatedApkCache = new LruTtlCache<string, Buffer>(16, APK_CACHE_TTL_MS);
 
 function ensureSigningCert(): CertMaterial {
   if (cachedCertMaterial) return cachedCertMaterial;
@@ -61,6 +62,16 @@ function ensureSigningCert(): CertMaterial {
     keyPemPath,
   };
   return cachedCertMaterial;
+}
+
+export function getApkSigningCertSha256(): string {
+  try {
+    const cert = ensureSigningCert();
+    const hex = crypto.createHash('sha256').update(cert.certDer).digest('hex').toUpperCase();
+    return hex.match(/.{2}/g)?.join(':') || ENV.androidCertSha256;
+  } catch {
+    return ENV.androidCertSha256;
+  }
 }
 
 // ============================================================================
@@ -1299,8 +1310,8 @@ export function buildSignedApkBuffer(flavor: ApkFlavor, origin: string): Buffer 
   const cacheKey = `${flavor}|${launchUrl}`;
 
   const cached = generatedApkCache.get(cacheKey);
-  if (cached && Date.now() - cached.createdAt < APK_CACHE_TTL_MS) {
-    return cached.buffer;
+  if (cached) {
+    return cached;
   }
 
   const cert = ensureSigningCert();
@@ -1327,10 +1338,6 @@ export function buildSignedApkBuffer(flavor: ApkFlavor, origin: string): Buffer 
   ];
 
   const apkBuffer = assembleSignedApk(allFiles, cert);
-  generatedApkCache.set(cacheKey, { buffer: apkBuffer, createdAt: Date.now() });
-  if (generatedApkCache.size > 16) {
-    const oldest = generatedApkCache.keys().next().value;
-    if (oldest) generatedApkCache.delete(oldest);
-  }
+  generatedApkCache.set(cacheKey, apkBuffer);
   return apkBuffer;
 }

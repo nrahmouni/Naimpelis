@@ -50,6 +50,7 @@ import {
   RestoredRoomBlueprint,
   RoomPollState,
   RoomQueueItem,
+  RoomRole,
   SavedFriend,
   SecondaryStreamState,
   SpanishTdtChannel,
@@ -414,7 +415,8 @@ export function App() {
 
   // Authoritative Room State
   const [hostId, setHostId] = useState<string>('');
-  const [hostOnlyControl, setHostOnlyControl] = useState<boolean>(false);
+  const [creatorId, setCreatorId] = useState<string>('');
+  const [hostOnlyControl, setHostOnlyControl] = useState<boolean>(true);
   const [activePoll, setActivePoll] = useState<RoomPollState | null>(null);
   const [roomGameState, setRoomGameState] = useState<BoardGameState | null>(null);
   const [gameMoveError, setGameMoveError] = useState<string | null>(null);
@@ -581,29 +583,44 @@ export function App() {
 
   const t = UI_COPY[lang];
 
+  const selfParticipant = participants.find((p) => p.id === profile.id);
+  const effectiveHostId = creatorId || hostId;
+  const isHostUser = Boolean(effectiveHostId) && effectiveHostId === profile.id;
+  const selfRole: RoomRole = isHostUser
+    ? 'host'
+    : selfParticipant?.role === 'mod'
+    ? 'mod'
+    : 'viewer';
+
   const currentUser: Participant = {
     id: profile.id,
     name: isTvMode ? `${profile.name} (TV)` : profile.name,
     avatar: isTvMode ? '📺' : profile.avatar || '🎬',
     color: profile.color || '#9146FF',
-    isHost: hostId === profile.id,
-    joinedAt: Date.now(),
+    isHost: isHostUser,
+    role: selfRole,
+    joinedAt: selfParticipant?.joinedAt || Date.now(),
   };
 
-  const canControlRoom = !hostOnlyControl || currentUser.isHost;
+  // Only the room creator (Host) or an assigned Co-anfitrión ('mod') can change channels/movies/streams
+  const canChangeMedia = isHostUser || selfRole === 'mod';
+  // Play/pause/seek follows hostOnlyControl toggle (still allowing Host + Co-anfitrión when locked)
+  const canControlRoom = !hostOnlyControl || canChangeMedia;
 
   const showHostLockNotice = useCallback(
-    (hostDisplayName?: string) => {
+    (hostDisplayName?: string, reason?: string) => {
       if (lockToastTimerRef.current) clearTimeout(lockToastTimerRef.current);
-      const msg = pickLang(lang, {
-        es: `Modo Cineasta activo · Solo ${hostDisplayName || 'el anfitrión'} controla el reproductor`,
-        ca: `Mode Cineasta actiu · Només ${hostDisplayName || 'l’amfitrió'} controla el reproductor`,
-        en: `Director Mode active · Only ${hostDisplayName || 'the host'} controls playback`,
-      });
+      const msg =
+        reason ||
+        pickLang(lang, {
+          es: `Solo ${hostDisplayName || 'el anfitrión'} o un Co-anfitrión puede cambiar canales o películas`,
+          ca: `Només ${hostDisplayName || 'l’amfitrió'} o un Co-amfitrió pot canviar canals o pel·lícules`,
+          en: `Only ${hostDisplayName || 'the host'} or a Co-host can change channels or movies`,
+        });
       setLockNoticeToast(msg);
       lockToastTimerRef.current = setTimeout(() => {
         setLockNoticeToast(null);
-      }, 3200);
+      }, 3400);
     },
     [lang]
   );
@@ -1347,7 +1364,10 @@ export function App() {
         const nextRoomTitle = payload.name || `Sala ${roomId.toUpperCase()}`;
         setRoomName(nextRoomTitle);
         setHostId(payload.hostId || '');
-        setHostOnlyControl(Boolean(payload.hostOnlyControl));
+        setCreatorId(payload.creatorId || payload.hostId || '');
+        setHostOnlyControl(
+          payload.hostOnlyControl !== undefined ? Boolean(payload.hostOnlyControl) : true
+        );
         setRoomHasPin(Boolean(payload.hasPin));
         setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
         setActivePoll(payload.activePoll || null);
@@ -1491,6 +1511,7 @@ export function App() {
         }, 2800);
       } else if (type === 'HOST_TRANSFERRED') {
         setHostId(payload.hostId || '');
+        if (payload.creatorId) setCreatorId(payload.creatorId);
         setParticipants(payload.participants || []);
         if (payload.message) {
           setMessages((prev) => [...prev.slice(-149), payload.message!]);
@@ -1504,7 +1525,7 @@ export function App() {
         if (payload?.videoState) {
           setVideoState(payload.videoState);
         }
-        showHostLockNotice(payload?.hostName);
+        showHostLockNotice(payload?.hostName, payload?.reason);
       } else if (type === 'POLL_UPDATED') {
         setActivePoll(payload.poll || null);
         if (payload.message) {
@@ -1633,7 +1654,7 @@ export function App() {
     if (videoState.mode === 'cloud') {
       socketService.stopCloudBrowser();
     }
-    if (participants.length <= 1 && canControlRoom) {
+    if (participants.length <= 1 && canChangeMedia) {
       const idleNext: VideoState = {
         ...INITIAL_VIDEO_STATE,
         lastUpdated: Date.now(),
@@ -1648,7 +1669,7 @@ export function App() {
   };
 
   const handleStopRoomPlaybackForEveryone = () => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       const hostName = participants.find((p) => p.id === hostId)?.name;
       showHostLockNotice(hostName);
       return;
@@ -1712,7 +1733,9 @@ export function App() {
     setActivePoll(null);
     setRoomGameState(null);
     setGameMoveError(null);
-    setHostOnlyControl(false);
+    setHostId('');
+    setCreatorId('');
+    setHostOnlyControl(true);
     setRoomHasPin(false);
     setVideoState(INITIAL_VIDEO_STATE);
     setCloudFrame(null);
@@ -1749,7 +1772,9 @@ export function App() {
     setActivePoll(null);
     setRoomGameState(null);
     setGameMoveError(null);
-    setHostOnlyControl(false);
+    setHostId('');
+    setCreatorId('');
+    setHostOnlyControl(true);
     setRoomHasPin(false);
     setRoomId('');
     setVideoState(INITIAL_VIDEO_STATE);
@@ -1779,7 +1804,9 @@ export function App() {
         setActivePoll(null);
         setRoomGameState(null);
         setGameMoveError(null);
-        setHostOnlyControl(false);
+        setHostId('');
+        setCreatorId('');
+        setHostOnlyControl(true);
         setRoomHasPin(false);
         setRoomId('');
         setVideoState(INITIAL_VIDEO_STATE);
@@ -1793,7 +1820,8 @@ export function App() {
 
   const handleSyncPlayerAction = useCallback(
     (action: 'play' | 'pause' | 'seek' | 'change_url', patch: Partial<VideoState>) => {
-      if (!canControlRoom) {
+      const allowed = action === 'change_url' ? canChangeMedia : canControlRoom;
+      if (!allowed) {
         const hostName = participants.find((p) => p.id === hostId)?.name;
         showHostLockNotice(hostName);
         return;
@@ -1809,7 +1837,7 @@ export function App() {
         return updated;
       });
     },
-    [canControlRoom, participants, hostId, showHostLockNotice, profile.name]
+    [canChangeMedia, canControlRoom, participants, hostId, showHostLockNotice, profile.name]
   );
 
   // ============================================================================
@@ -1820,7 +1848,7 @@ export function App() {
     preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
     startAtOverrideSec?: number
   ) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -1976,7 +2004,7 @@ export function App() {
     preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
     startAtOverrideSec?: number
   ) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -2142,7 +2170,7 @@ export function App() {
     item: WatchHistoryItem,
     forceRestart = false
   ) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -2307,6 +2335,10 @@ export function App() {
   };
 
   const handleNextEpisode = async () => {
+    if (!canChangeMedia) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     const meta = videoState.seriesMeta;
     if (!meta) return;
 
@@ -2421,7 +2453,7 @@ export function App() {
     activeExtraction?: { reqSeq: number; signal: AbortSignal },
     allowSameMatchMirrorFallback = channelIndex === 0 && failedIndices.size === 0
   ) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -2565,7 +2597,7 @@ export function App() {
     activeExtraction?: { reqSeq: number; signal: AbortSignal },
     allowSameChannelBackup = signalIndex === 0
   ) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -2714,7 +2746,7 @@ export function App() {
   };
 
   const handlePlayFavoriteChannel = async (favCh: FavoriteChannelItem) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -2822,7 +2854,7 @@ export function App() {
   };
 
   const handlePlayYouTubeVideo = (item: YouTubeSearchItem) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -2862,7 +2894,7 @@ export function App() {
     series: CatalaSeriesDetails,
     episode: CatalaEpisodeItem
   ) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -3032,6 +3064,10 @@ export function App() {
   };
 
   const handleSelectTrack = async (trackIndex: number, resumeTimeSec: number) => {
+    if (!canChangeMedia) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     const targetTrack = videoState.tracks[trackIndex];
     if (!targetTrack) return;
 
@@ -3203,7 +3239,7 @@ export function App() {
   };
 
   const handlePlayCustomUrl = async (rawUrl: string) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -3296,7 +3332,7 @@ export function App() {
   };
 
   const handlePlayQueueItem = (qItem: RoomQueueItem) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -3366,8 +3402,12 @@ export function App() {
       ? 'tdt_hls'
       : 'sports_channel';
 
-    // If no primary stream is active yet, open directly on the main screen
-    if (videoState.mode === 'idle' && canControlRoom) {
+    // If no primary stream is active yet, only Host / Co-anfitrión can start room playback
+    if (videoState.mode === 'idle') {
+      if (!canChangeMedia) {
+        showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+        return;
+      }
       await handlePlaySportsMatch(
         {
           id: `mv-init-${Date.now()}`,
@@ -3429,6 +3469,10 @@ export function App() {
 
   const handleSwapSecondaryStream = () => {
     if (!secondaryStream) return;
+    if (!canChangeMedia) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     triggerHaptic('medium');
 
     const prevMain = videoState;
@@ -3464,9 +3508,7 @@ export function App() {
     }
 
     setVideoState(promotedMain);
-    if (canControlRoom) {
-      socketService.syncVideoState('change_url', promotedMain, profile.name);
-    }
+    socketService.syncVideoState('change_url', promotedMain, profile.name);
   };
 
   const handleToggleSecondaryLayout = () => {
@@ -3493,7 +3535,7 @@ export function App() {
 
   const handleStartPollFromQueue = () => {
     if (roomQueue.length < 2) return;
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -3796,7 +3838,7 @@ export function App() {
   };
 
   const handleOpenCloudBrowser = (url: string) => {
-    if (!canControlRoom) {
+    if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
@@ -3806,6 +3848,10 @@ export function App() {
   };
 
   const handlePromoteCloudStreamToNative = (proxiedStreamUrl: string) => {
+    if (!canChangeMedia) {
+      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+      return;
+    }
     triggerHaptic('success');
     socketService.stopCloudBrowser();
     const isMp4 = proxiedStreamUrl.includes('/api/ts-proxy');
@@ -3848,7 +3894,9 @@ export function App() {
     setCinemaModePersist(false);
     setSecondaryStream(null);
     setActivePoll(null);
-    setHostOnlyControl(false);
+    setHostId('');
+    setCreatorId('');
+    setHostOnlyControl(true);
     setRoomHasPin(false);
     setVideoState(INITIAL_VIDEO_STATE);
     setCloudFrame(null);
@@ -5053,7 +5101,10 @@ export function App() {
                   onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
                   onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
                   onOpenInCloudBrowser={(targetUrl) => {
-                    if (!canControlRoom) return;
+                    if (!canChangeMedia) {
+                      showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
+                      return;
+                    }
                     socketService.startCloudBrowser(targetUrl, profile.name);
                   }}
                   floatingChatOpen={floatingChatOpen}

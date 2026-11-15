@@ -4,9 +4,10 @@
  * between server WebSocket validation and client optimistic rendering.
  */
 
-export type BoardGameType = 'checkers' | 'chess';
+export type BoardGameType = 'checkers' | 'chess' | 'connect4';
 export type BoardSide = 'w' | 'b';
 export type ChessPromotionPiece = 'Q' | 'R' | 'B' | 'N';
+export type BoardClockMinutes = 0 | 3 | 5 | 10;
 
 export interface BoardCoord {
   r: number;
@@ -41,7 +42,7 @@ export interface BoardGameState {
     b: BoardPlayerSeat | null;
   };
   winner: BoardSide | 'draw' | null;
-  winReason?: 'checkmate' | 'stalemate' | 'no_pieces' | 'no_moves' | 'resign' | null;
+  winReason?: 'checkmate' | 'stalemate' | 'no_pieces' | 'no_moves' | 'resign' | 'connect4' | 'draw_full' | 'timeout' | null;
   inCheck: BoardSide | null;
   lastMove: {
     from: BoardCoord;
@@ -59,6 +60,17 @@ export interface BoardGameState {
   enPassant: BoardCoord | null;
   mustContinueFrom: BoardCoord | null;
   soloLocal: boolean;
+  clockMinutes?: BoardClockMinutes;
+  clocksMs?: { w: number; b: number };
+  turnStartedAt?: number;
+  matchHistory?: Array<{
+    id: string;
+    gameType: BoardGameType;
+    winnerName: string;
+    winnerSide: BoardSide | 'draw';
+    reason?: string | null;
+    endedAt: number;
+  }>;
   updatedAt: number;
 }
 
@@ -117,11 +129,17 @@ export function createInitialChessBoard(): (string | null)[][] {
   ];
 }
 
+export function createInitialConnect4Board(): (string | null)[][] {
+  return Array.from({ length: 6 }, () => Array<string | null>(7).fill(null));
+}
+
 export function createInitialBoardGameState(
   gameType: BoardGameType,
   starter?: BoardParticipantInput,
   soloLocal = false,
-  existingScores?: { w?: number; b?: number }
+  existingScores?: { w?: number; b?: number },
+  clockMinutes: BoardClockMinutes = 0,
+  existingMatchHistory: BoardGameState['matchHistory'] = []
 ): BoardGameState {
   const starterSeat: BoardPlayerSeat | null = starter
     ? {
@@ -133,12 +151,18 @@ export function createInitialBoardGameState(
       }
     : null;
 
+  const initialClockMs = clockMinutes > 0 ? clockMinutes * 60 * 1000 : 0;
+
   return {
     id: `game-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     gameType,
     status: soloLocal ? 'playing' : 'waiting',
     board:
-      gameType === 'chess' ? createInitialChessBoard() : createInitialCheckersBoard(),
+      gameType === 'chess'
+        ? createInitialChessBoard()
+        : gameType === 'connect4'
+          ? createInitialConnect4Board()
+          : createInitialCheckersBoard(),
     turn: 'w',
     players: {
       w: starterSeat,
@@ -153,6 +177,14 @@ export function createInitialBoardGameState(
     enPassant: null,
     mustContinueFrom: null,
     soloLocal,
+    ...(clockMinutes > 0
+      ? {
+          clockMinutes,
+          clocksMs: { w: initialClockMs, b: initialClockMs },
+          turnStartedAt: Date.now(),
+        }
+      : {}),
+    matchHistory: existingMatchHistory.slice(-15),
     updatedAt: Date.now(),
   };
 }
@@ -600,6 +632,79 @@ export function joinGameSeat(
   };
 }
 
+export function getConnect4DropRow(board: (string | null)[][], col: number): number {
+  if (col < 0 || col >= 7) return -1;
+  for (let r = 5; r >= 0; r -= 1) {
+    if (!board[r]?.[col]) return r;
+  }
+  return -1;
+}
+
+function checkConnect4Win(board: (string | null)[][], r: number, c: number, side: BoardSide): boolean {
+  const dirs = [
+    [0, 1],
+    [1, 0],
+    [1, 1],
+    [1, -1],
+  ];
+  for (const [dr, dc] of dirs) {
+    let count = 1;
+    for (const sign of [-1, 1]) {
+      let nr = r + dr * sign;
+      let nc = c + dc * sign;
+      while (nr >= 0 && nr < 6 && nc >= 0 && nc < 7 && board[nr][nc] === side) {
+        count += 1;
+        nr += dr * sign;
+        nc += dc * sign;
+      }
+    }
+    if (count >= 4) return true;
+  }
+  return false;
+}
+
+function withClockTick(state: BoardGameState, now: number): {
+  clocksMs?: { w: number; b: number };
+  timedOutSide?: BoardSide;
+} {
+  if (!state.clockMinutes || !state.clocksMs || !state.turnStartedAt || state.status !== 'playing') {
+    return { clocksMs: state.clocksMs };
+  }
+  const elapsed = Math.max(0, now - state.turnStartedAt);
+  const nextClocks = {
+    w: state.clocksMs.w,
+    b: state.clocksMs.b,
+  };
+  nextClocks[state.turn] = Math.max(0, nextClocks[state.turn] - elapsed);
+  return {
+    clocksMs: nextClocks,
+    timedOutSide: nextClocks[state.turn] <= 0 ? state.turn : undefined,
+  };
+}
+
+function appendHistoryEntry(
+  state: BoardGameState,
+  winner: BoardSide | 'draw',
+  reason: BoardGameState['winReason'],
+  players: BoardGameState['players']
+) {
+  const winnerName =
+    winner === 'draw'
+      ? 'Empate'
+      : players[winner]?.name || (winner === 'w' ? 'Jugador 1' : 'Jugador 2');
+  return [
+    ...(state.matchHistory || []).slice(-14),
+    {
+      id: `mh-${Date.now()}-${Math.random().toString(36).slice(2, 5)}`,
+      gameType: state.gameType,
+      winnerName,
+      winnerSide: winner,
+      reason: reason || null,
+      endedAt: Date.now(),
+    },
+  ];
+}
+
 export function applyBoardMove(
   state: BoardGameState,
   actorUserId: string,
@@ -623,14 +728,81 @@ export function applyBoardMove(
     }
   }
 
+  const now = Date.now();
+  const { clocksMs, timedOutSide } = withClockTick(state, now);
+  if (timedOutSide) {
+    const winSide: BoardSide = timedOutSide === 'w' ? 'b' : 'w';
+    const nextPlayers = { ...state.players };
+    if (nextPlayers[winSide]) {
+      nextPlayers[winSide] = { ...nextPlayers[winSide]!, score: nextPlayers[winSide]!.score + 1 };
+    }
+    return {
+      ok: true,
+      state: {
+        ...state,
+        status: 'finished',
+        clocksMs,
+        turnStartedAt: now,
+        players: nextPlayers,
+        winner: winSide,
+        winReason: 'timeout',
+        matchHistory: appendHistoryEntry(state, winSide, 'timeout', nextPlayers),
+        updatedAt: now,
+      },
+      notation: 'Tiempo agotado',
+      finishedNow: true,
+    };
+  }
+
+  const side = state.turn;
+  const opp: BoardSide = side === 'w' ? 'b' : 'w';
+
+  if (state.gameType === 'connect4') {
+    const dropRow = getConnect4DropRow(state.board, to.c);
+    if (dropRow < 0) {
+      return { ok: false, error: 'Columna completa.' };
+    }
+    const nextBoard = cloneBoard(state.board);
+    nextBoard[dropRow][to.c] = side;
+    const notation = `Col ${to.c + 1}`;
+    const won = checkConnect4Win(nextBoard, dropRow, to.c, side);
+    const full = !won && nextBoard[0].every((cell) => cell !== null);
+    const finishedNow = won || full;
+    const nextPlayers = { ...state.players };
+    const winner: BoardSide | 'draw' | null = won ? side : full ? 'draw' : null;
+    if (won && nextPlayers[side]) {
+      nextPlayers[side] = { ...nextPlayers[side]!, score: nextPlayers[side]!.score + 1 };
+    }
+    return {
+      ok: true,
+      state: {
+        ...state,
+        status: finishedNow ? 'finished' : 'playing',
+        board: nextBoard,
+        turn: opp,
+        players: nextPlayers,
+        winner,
+        winReason: won ? 'connect4' : full ? 'draw_full' : null,
+        clocksMs,
+        turnStartedAt: now,
+        lastMove: { from: { r: dropRow, c: to.c }, to: { r: dropRow, c: to.c }, notation },
+        moveHistory: [...state.moveHistory.slice(-39), notation],
+        matchHistory: finishedNow && winner
+          ? appendHistoryEntry(state, winner, won ? 'connect4' : 'draw_full', nextPlayers)
+          : state.matchHistory,
+        updatedAt: now,
+      },
+      notation,
+      finishedNow,
+    };
+  }
+
   const legalMoves = getLegalMovesForSquare(state, from);
   const matched = legalMoves.find((m) => m.r === to.r && m.c === to.c);
   if (!matched) {
     return { ok: false, error: 'Movimiento no válido.' };
   }
 
-  const side = state.turn;
-  const opp: BoardSide = side === 'w' ? 'b' : 'w';
   const piece = state.board[from.r][from.c]!;
 
   if (state.gameType === 'checkers') {
@@ -682,7 +854,9 @@ export function applyBoardMove(
       mustContinueFrom: continueSameTurn ? { r: to.r, c: to.c } : null,
       lastMove: { from, to, notation, captured: capturedPiece },
       moveHistory: [...state.moveHistory.slice(-39), notation],
-      updatedAt: Date.now(),
+      clocksMs,
+      turnStartedAt: now,
+      updatedAt: now,
     };
 
     if (oppPieces === 0) {
@@ -698,6 +872,7 @@ export function applyBoardMove(
           players: nextPlayers,
           winner: side,
           winReason: 'no_pieces',
+          matchHistory: appendHistoryEntry(state, side, 'no_pieces', nextPlayers),
         },
         notation,
         finishedNow: true,
@@ -717,6 +892,7 @@ export function applyBoardMove(
           players: nextPlayers,
           winner: side,
           winReason: 'no_moves',
+          matchHistory: appendHistoryEntry(state, side, 'no_moves', nextPlayers),
         },
         notation,
         finishedNow: true,
@@ -768,7 +944,9 @@ export function applyBoardMove(
     inCheck: oppInCheck ? opp : null,
     lastMove: { from, to, notation: '', captured: capturedPiece },
     moveHistory: state.moveHistory,
-    updatedAt: Date.now(),
+    clocksMs,
+    turnStartedAt: now,
+    updatedAt: now,
   };
 
   const oppLegal = getAllLegalMovesForSide(baseChessNext, opp);
@@ -807,6 +985,9 @@ export function applyBoardMove(
       players: nextPlayers,
       lastMove: { from, to, notation, captured: capturedPiece },
       moveHistory: [...state.moveHistory.slice(-39), notation],
+      matchHistory: finishedNow && winner
+        ? appendHistoryEntry(state, winner, winReason, nextPlayers)
+        : state.matchHistory,
     },
     notation,
     finishedNow,
@@ -839,16 +1020,25 @@ export function resignBoardGame(
     players: nextPlayers,
     winner,
     winReason: 'resign',
+    matchHistory: appendHistoryEntry(state, winner, 'resign', nextPlayers),
     updatedAt: Date.now(),
   };
 }
 
 export function resetBoardGame(
   state: BoardGameState,
-  opts?: { gameType?: BoardGameType; swapColors?: boolean }
+  opts?: { gameType?: BoardGameType; swapColors?: boolean; clockMinutes?: BoardClockMinutes }
 ): BoardGameState {
   const nextType = opts?.gameType || state.gameType;
-  const fresh = createInitialBoardGameState(nextType, undefined, state.soloLocal);
+  const clockMinutes = opts?.clockMinutes ?? state.clockMinutes ?? 0;
+  const fresh = createInitialBoardGameState(
+    nextType,
+    undefined,
+    state.soloLocal,
+    undefined,
+    clockMinutes,
+    state.matchHistory || []
+  );
   const wSeat = opts?.swapColors ? state.players.b : state.players.w;
   const bSeat = opts?.swapColors ? state.players.w : state.players.b;
 

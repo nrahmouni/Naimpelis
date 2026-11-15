@@ -259,7 +259,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
       )}
 
       {activeTab === 'remote' && (
-        <div className="space-y-3">
+        <div className="space-y-2.5">
           <HapticTvRemote
             pairedTvCode={
               pairedCodeLabel ||
@@ -279,6 +279,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               setActiveTab('pair');
             }}
             fullWidth
+            className="!min-h-[38px] !py-1.5 text-xs"
           >
             {pickLang(lang, {
               es: 'Vincular otro televisor con código',

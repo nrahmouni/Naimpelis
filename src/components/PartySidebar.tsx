@@ -246,6 +246,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 }) => {
   const t = UI_COPY[lang];
   const isHost = currentUser.isHost || currentUser.id === hostId;
+  const selfMember = participants.find((p) => p.id === currentUser.id);
+  const isCoHost = !isHost && (currentUser.role === 'mod' || selfMember?.role === 'mod');
+  const canManageMedia = isHost || isCoHost;
   const [activeTab, setActiveTab] = useState<'chat' | 'queue' | 'games' | 'room'>(initialView);
   const [inputText, setInputText] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
@@ -542,7 +545,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     })}
                   </span>
                 </div>
-                {isHost && (
+                {canManageMedia && (
                   <button
                     type="button"
                     onClick={() => onClosePoll(activePoll.id)}
@@ -908,28 +911,43 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     })}
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              {roomQueue.length >= 2 && (
-                <SecondaryButton onClick={onStartPollFromQueue}>
-                  <BarChart2 className="w-4 h-4 text-[#BF94FF]" />
+            {canManageMedia && (
+              <div className="flex items-center gap-2">
+                {roomQueue.length >= 2 && (
+                  <SecondaryButton onClick={onStartPollFromQueue}>
+                    <BarChart2 className="w-4 h-4 text-[#BF94FF]" />
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Votar Cola',
+                        ca: 'Votar Cua',
+                        en: 'Vote Queue',
+                      })}
+                    </span>
+                  </SecondaryButton>
+                )}
+
+                <SecondaryButton onClick={() => setShowUrlLoaderSheet(true)}>
+                  <Link2 className="w-4 h-4 text-sky-400" />
                   <span>
-                    {pickLang(lang, {
-                      es: 'Votar Cola',
-                      ca: 'Votar Cua',
-                      en: 'Vote Queue',
-                    })}
+                    {pickLang(lang, { es: 'Enlace', ca: 'Enllaç', en: 'Link' })}
                   </span>
                 </SecondaryButton>
-              )}
-
-              <SecondaryButton onClick={() => setShowUrlLoaderSheet(true)}>
-                <Link2 className="w-4 h-4 text-sky-400" />
-                <span>
-                  {pickLang(lang, { es: 'Enlace', ca: 'Enllaç', en: 'Link' })}
-                </span>
-              </SecondaryButton>
-            </div>
+              </div>
+            )}
           </div>
+
+          {!canManageMedia && (
+            <div className="px-3 py-2 rounded-2xl bg-amber-500/10 border border-amber-500/25 text-amber-200 text-xs flex items-center gap-2">
+              <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Solo el Anfitrión o un Co-anfitrión puede cambiar de película o canal. Puedes votar los títulos en cola.',
+                  ca: 'Només l’Amfitrió o un Co-amfitrió pot canviar de pel·lícula o canal. Pots votar els títols a la cua.',
+                  en: 'Only the Host or a Co-host can change movies or channels. You can vote on queued items.',
+                })}
+              </span>
+            </div>
+          )}
 
           {roomQueue.length === 0 ? (
             <EmptyStateCard
@@ -939,17 +957,29 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 ca: 'La cua és buida',
                 en: 'Queue is empty',
               })}
-              description={pickLang(lang, {
-                es: 'Añade películas, episodios o vídeos desde el catálogo con el botón + Cola, o abre un enlace directo.',
-                ca: 'Afegeix pel·lícules, episodis o vídeos des del catàleg amb el botó + Cua, o obre un enllaç directe.',
-                en: 'Add movies, episodes, or videos from the catalog with + Queue, or open a direct link.',
-              })}
-              actionLabel={pickLang(lang, {
-                es: 'Pegar enlace o abrir web',
-                ca: 'Enganxar enllaç o obrir web',
-                en: 'Paste link or open web',
-              })}
-              onAction={() => setShowUrlLoaderSheet(true)}
+              description={
+                canManageMedia
+                  ? pickLang(lang, {
+                      es: 'Añade películas, episodios o vídeos desde el catálogo con el botón + Cola, o abre un enlace directo.',
+                      ca: 'Afegeix pel·lícules, episodis o vídeos des del catàleg amb el botó + Cua, o obre un enllaç directe.',
+                      en: 'Add movies, episodes, or videos from the catalog with + Queue, or open a direct link.',
+                    })
+                  : pickLang(lang, {
+                      es: 'Puedes sugerir películas o vídeos a la cola con el botón + Cola para que el Anfitrión los ponga.',
+                      ca: 'Pots suggerir pel·lícules o vídeos a la cua amb el botó + Cua perquè l’Amfitrió els posi.',
+                      en: 'Suggest movies or videos to the queue with + Queue for the Host to play.',
+                    })
+              }
+              actionLabel={
+                canManageMedia
+                  ? pickLang(lang, {
+                      es: 'Pegar enlace o abrir web',
+                      ca: 'Enganxar enllaç o obrir web',
+                      en: 'Paste link or open web',
+                    })
+                  : undefined
+              }
+              onAction={canManageMedia ? () => setShowUrlLoaderSheet(true) : undefined}
             />
           ) : (
             <div className="space-y-2.5">
@@ -988,91 +1018,93 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     </div>
                   </div>
 
-                  {(!hostOnlyControl || isHost) && (
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {onVoteQueueItem && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            onVoteQueueItem(item.id);
-                          }}
-                          title={pickLang(lang, {
-                            es: 'Votar este título en la cola',
-                            ca: 'Votar aquest títol a la cua',
-                            en: 'Vote for this title in queue',
-                          })}
-                          aria-label={pickLang(lang, {
-                            es: 'Votar este título en la cola',
-                            ca: 'Votar aquest títol a la cua',
-                            en: 'Vote for this title in queue',
-                          })}
-                          className={`min-h-9 px-2.5 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
-                            item.voterIds?.includes(currentUser.id)
-                              ? 'bg-[#9146FF]/25 border border-[#9146FF]/55 text-[#BF94FF]'
-                              : 'bg-[#26262C] hover:bg-white/[0.12] text-[#EFEFF1]'
-                          }`}
-                        >
-                          <ThumbsUp className="w-3 h-3" />
-                          <span>{item.voterIds?.length || 0}</span>
-                        </button>
-                      )}
-                      {idx > 0 && onPromoteQueueItem && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            onPromoteQueueItem(item.id);
-                          }}
-                          title={pickLang(lang, {
-                            es: 'Poner siguiente en reproducirse',
-                            ca: 'Posar següent a reproduir-se',
-                            en: 'Move to play next',
-                          })}
-                          aria-label={pickLang(lang, {
-                            es: 'Poner siguiente en reproducirse',
-                            ca: 'Posar següent a reproduir-se',
-                            en: 'Move to play next',
-                          })}
-                          className="min-h-9 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[10px] font-bold text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
-                        >
-                          <span>↑ #1</span>
-                        </button>
-                      )}
-                      <IconButton
-                        onClick={() => onPlayQueueItem(item)}
-                        variant="crimson"
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {onVoteQueueItem && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          onVoteQueueItem(item.id);
+                        }}
                         title={pickLang(lang, {
-                          es: 'Reproducir ahora',
-                          ca: 'Reproduir ara',
-                          en: 'Play now',
+                          es: 'Votar este título en la cola',
+                          ca: 'Votar aquest títol a la cua',
+                          en: 'Vote for this title in queue',
                         })}
                         aria-label={pickLang(lang, {
-                          es: 'Reproducir ahora',
-                          ca: 'Reproduir ara',
-                          en: 'Play now',
+                          es: 'Votar este título en la cola',
+                          ca: 'Votar aquest títol a la cua',
+                          en: 'Vote for this title in queue',
                         })}
+                        className={`min-h-9 px-2.5 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
+                          item.voterIds?.includes(currentUser.id)
+                            ? 'bg-[#9146FF]/25 border border-[#9146FF]/55 text-[#BF94FF]'
+                            : 'bg-[#26262C] hover:bg-white/[0.12] text-[#EFEFF1]'
+                        }`}
                       >
-                        <Play className="w-4 h-4 fill-current" />
-                      </IconButton>
-                      <IconButton
-                        onClick={() => onRemoveFromQueue(item.id)}
-                        variant="ghost"
-                        title={pickLang(lang, {
-                          es: 'Quitar de la cola',
-                          ca: 'Treure de la cua',
-                          en: 'Remove from queue',
-                        })}
-                        aria-label={pickLang(lang, {
-                          es: 'Quitar de la cola',
-                          ca: 'Treure de la cua',
-                          en: 'Remove from queue',
-                        })}
-                      >
-                        <Trash2 className="w-4 h-4 text-zinc-400 hover:text-rose-400" />
-                      </IconButton>
-                    </div>
-                  )}
+                        <ThumbsUp className="w-3 h-3" />
+                        <span>{item.voterIds?.length || 0}</span>
+                      </button>
+                    )}
+                    {canManageMedia && (
+                      <>
+                        {idx > 0 && onPromoteQueueItem && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              onPromoteQueueItem(item.id);
+                            }}
+                            title={pickLang(lang, {
+                              es: 'Poner siguiente en reproducirse',
+                              ca: 'Posar següent a reproduir-se',
+                              en: 'Move to play next',
+                            })}
+                            aria-label={pickLang(lang, {
+                              es: 'Poner siguiente en reproducirse',
+                              ca: 'Posar següent a reproduir-se',
+                              en: 'Move to play next',
+                            })}
+                            className="min-h-9 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[10px] font-bold text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                          >
+                            <span>↑ #1</span>
+                          </button>
+                        )}
+                        <IconButton
+                          onClick={() => onPlayQueueItem(item)}
+                          variant="crimson"
+                          title={pickLang(lang, {
+                            es: 'Reproducir ahora',
+                            ca: 'Reproduir ara',
+                            en: 'Play now',
+                          })}
+                          aria-label={pickLang(lang, {
+                            es: 'Reproducir ahora',
+                            ca: 'Reproduir ara',
+                            en: 'Play now',
+                          })}
+                        >
+                          <Play className="w-4 h-4 fill-current" />
+                        </IconButton>
+                        <IconButton
+                          onClick={() => onRemoveFromQueue(item.id)}
+                          variant="ghost"
+                          title={pickLang(lang, {
+                            es: 'Quitar de la cola',
+                            ca: 'Treure de la cua',
+                            en: 'Remove from queue',
+                          })}
+                          aria-label={pickLang(lang, {
+                            es: 'Quitar de la cola',
+                            ca: 'Treure de la cua',
+                            en: 'Remove from queue',
+                          })}
+                        >
+                          <Trash2 className="w-4 h-4 text-zinc-400 hover:text-rose-400" />
+                        </IconButton>
+                      </>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1364,38 +1396,52 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                           <Crown className="w-3.5 h-3.5 shrink-0" />
                           <span>{t.hostLabel}</span>
                         </span>
-                      ) : isHost ? (
-                        <div className="flex items-center gap-1">
-                          {onSetParticipantRole && !isTvDevice && (
-                            <button
-                              type="button"
-                              onClick={() =>
-                                onSetParticipantRole(p.id, p.role === 'mod' ? 'viewer' : 'mod')
-                              }
-                              className={`min-h-9 px-2.5 rounded-xl border text-[11px] font-semibold cursor-pointer ${
-                                p.role === 'mod'
-                                  ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-300'
-                                  : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.08] text-zinc-300'
-                              }`}
-                              title={pickLang(lang, {
-                                es: 'Alternar rol de Moderador',
-                                ca: 'Alternar rol de Moderador',
-                                en: 'Toggle Moderator role',
-                              })}
-                            >
-                              <Shield className="w-3 h-3 inline mr-1" />
-                              {p.role === 'mod' ? 'Mod' : 'Viewer'}
-                            </button>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => onTransferHost(p.id)}
-                            className="min-h-9 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-xs font-semibold text-zinc-300 cursor-pointer"
-                            title={t.makeHost}
-                          >
-                            {t.makeHost}
-                          </button>
-                        </div>
+                      ) : isHost && !isTvDevice && onSetParticipantRole ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            onSetParticipantRole(p.id, p.role === 'mod' ? 'viewer' : 'mod');
+                          }}
+                          className={`min-h-9 px-3 rounded-xl border text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                            p.role === 'mod'
+                              ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/45 text-emerald-300'
+                              : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.1] text-zinc-200'
+                          }`}
+                          title={
+                            p.role === 'mod'
+                              ? pickLang(lang, {
+                                  es: 'Quitar permiso de Co-anfitrión',
+                                  ca: 'Treure permís de Co-amfitrió',
+                                  en: 'Remove Co-host permission',
+                                })
+                              : pickLang(lang, {
+                                  es: 'Asignar como Co-anfitrión para que pueda cambiar de canal o película',
+                                  ca: 'Assignar com a Co-amfitrió perquè pugui canviar de canal o pel·lícula',
+                                  en: 'Assign as Co-host to allow changing channels and movies',
+                                })
+                          }
+                        >
+                          <Shield className="w-3.5 h-3.5 shrink-0" />
+                          <span>
+                            {p.role === 'mod'
+                              ? pickLang(lang, {
+                                  es: `✓ ${t.modLabel}`,
+                                  ca: `✓ ${t.modLabel}`,
+                                  en: `✓ ${t.modLabel}`,
+                                })
+                              : pickLang(lang, {
+                                  es: `+ ${t.modLabel}`,
+                                  ca: `+ ${t.modLabel}`,
+                                  en: `+ ${t.modLabel}`,
+                                })}
+                          </span>
+                        </button>
+                      ) : p.role === 'mod' ? (
+                        <span className="px-3 py-1 rounded-full bg-emerald-500/15 border border-emerald-400/35 text-emerald-300 text-xs font-bold flex items-center gap-1.5 leading-tight">
+                          <Shield className="w-3.5 h-3.5 shrink-0" />
+                          <span>{t.modLabel}</span>
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -1688,7 +1734,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         )}
 
         {hasConnectedSmartTv ? (
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             <HapticTvRemote
               pairedTvCode={
                 pairedCodeLabel ||
@@ -1707,6 +1753,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 setPairedCodeLabel(null);
               }}
               fullWidth
+              className="!min-h-[38px] !py-1.5 text-xs"
             >
               {pickLang(lang, {
                 es: 'Vincular otro televisor con código',
@@ -1935,18 +1982,25 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               )}
               <span>
                 {pickLang(lang, {
-                  es: 'Modo Anfitrión (Solo Host controla el vídeo)',
-                  ca: 'Mode Amfitrió (Només el Host controla el vídeo)',
-                  en: 'Host Mode (Only host controls playback)',
+                  es: 'Control de Reproducción (Solo Anfitrión / Co-anfitrión)',
+                  ca: 'Control de Reproducció (Només Amfitrió / Co-amfitrió)',
+                  en: 'Playback Control (Host / Co-host Only)',
                 })}
               </span>
             </span>
             <span className="text-xs font-mono uppercase">
               {hostOnlyControl
                 ? pickLang(lang, { es: 'ACTIVO', ca: 'ACTIU', en: 'ON' })
-                : pickLang(lang, { es: 'LIBRE', ca: 'LLIURE', en: 'OPEN' })}
+                : pickLang(lang, { es: 'PAUSA LIBRE', ca: 'PAUSA LLIURE', en: 'PLAY/PAUSE OPEN' })}
             </span>
           </SecondaryButton>
+          <p className="text-[11px] text-zinc-400 px-1 leading-relaxed">
+            {pickLang(lang, {
+              es: 'Solo el creador de la sala es Anfitrión y puede cambiar canales o películas. Asigna Co-anfitriones en la lista de participantes para compartir ese control.',
+              ca: 'Només el creador de la sala és Amfitrió i pot canviar canals o pel·lícules. Assigna Co-amfitrions a la llista de participants per compartir aquest control.',
+              en: 'Only the room creator is Host and can change channels or movies. Assign Co-hosts in the participants list to share media control.',
+            })}
+          </p>
 
           <SecondaryButton
             onClick={onTogglePermanentRoom}

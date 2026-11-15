@@ -5,7 +5,10 @@ import { ENV, ROOT_DIR } from '../config/env.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { logger } from '../utils/logger.ts';
 import { serviceMesh } from '../gateway/serviceMesh.ts';
-import { buildSignedApkBuffer } from '../services/apkBuilderService.ts';
+import {
+  buildSignedApkBuffer,
+  getApkSigningCertSha256,
+} from '../services/apkBuilderService.ts';
 import { channelHealthMonitor } from '../services/channelHealthMonitor.ts';
 
 export interface QoeSample {
@@ -17,11 +20,30 @@ export interface QoeSample {
   rebufferMs: number;
   resolution?: string;
   stallFailoverUsed?: boolean;
+  sourceUrl?: string;
+  requestId?: string;
+  failed?: boolean;
 }
 
 const qoeRingBuffer: QoeSample[] = [];
 const MAX_QOE_SAMPLES = 250;
 const appReleaseCache = new LruTtlCache<string, Record<string, unknown>>(10, 60_000);
+const refreshCooldownByIp = new LruTtlCache<string, number>(500, 45_000);
+const qoeRateByIp = new LruTtlCache<string, { count: number; resetAt: number }>(1000, 60_000);
+
+function getClientIp(req: express.Request): string {
+  const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return fwd || req.ip || 'unknown';
+}
+
+function hasValidInternalMetricsToken(req: express.Request): boolean {
+  const expected = process.env.INTERNAL_METRICS_TOKEN || '';
+  if (!expected) return true;
+  const provided = String(
+    req.headers['x-internal-token'] || req.query.token || ''
+  ).trim();
+  return provided === expected;
+}
 
 export interface HealthRouteDeps {
   getStats: () => {
@@ -31,6 +53,10 @@ export interface HealthRouteDeps {
   };
   getPublicOrigin: (req: express.Request) => string;
   refreshChannelHealth?: (force?: boolean) => Promise<void>;
+}
+
+export function getQoeRingBufferSnapshot(): QoeSample[] {
+  return [...qoeRingBuffer];
 }
 
 export function registerOperationalRoutes(
@@ -68,12 +94,28 @@ export function registerOperationalRoutes(
     });
   });
 
-  app.post('/api/channels/health/refresh', async (_req, res) => {
+  app.post('/api/channels/health/refresh', async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
+    if (process.env.INTERNAL_METRICS_TOKEN && !hasValidInternalMetricsToken(req)) {
+      return res.status(401).json({ ok: false, error: 'Unauthorized metrics refresh' });
+    }
+    const clientIp = getClientIp(req);
+    const lastTrigger = refreshCooldownByIp.get(clientIp);
+    const now = Date.now();
+    if (lastTrigger && now - lastTrigger < 45_000) {
+      const retryAfterSec = Math.ceil((45_000 - (now - lastTrigger)) / 1000);
+      res.setHeader('Retry-After', String(retryAfterSec));
+      return res.status(429).json({
+        ok: false,
+        error: 'Channel health probe cooldown active',
+        retryAfterSec,
+      });
+    }
+    refreshCooldownByIp.set(clientIp, now);
     if (deps.refreshChannelHealth) {
       await deps.refreshChannelHealth(true);
     }
-    res.json({
+    return res.json({
       ok: true,
       summary: channelHealthMonitor.getSummary(),
       ts: Date.now(),
@@ -97,16 +139,20 @@ export function registerOperationalRoutes(
   });
 
   // Dynamic Digital Asset Links covering mobile, tv, and legacy Android packages
+  // Includes both configured env SHA-256 and active server APK signing certificate SHA-256
   app.get('/.well-known/assetlinks.json', (_req, res) => {
     const packages = Array.from(
       new Set([ENV.androidMobilePkg, ENV.androidTvPkg, ENV.legacyAndroidPkg])
+    );
+    const fingerprints = Array.from(
+      new Set([getApkSigningCertSha256(), ENV.androidCertSha256].filter(Boolean))
     );
     const statements = packages.map((packageName) => ({
       relation: ['delegate_permission/common.handle_all_urls'],
       target: {
         namespace: 'android_app',
         package_name: packageName,
-        sha256_cert_fingerprints: [ENV.androidCertSha256],
+        sha256_cert_fingerprints: fingerprints,
       },
     }));
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -188,6 +234,19 @@ export function registerOperationalRoutes(
 
   // Playback Quality-of-Experience (QoE) Telemetry Ingestion (F8.7)
   app.post('/api/metrics/qoe', (req, res) => {
+    const clientIp = getClientIp(req);
+    const now = Date.now();
+    const bucket = qoeRateByIp.get(clientIp);
+    if (bucket && now < bucket.resetAt && bucket.count >= 40) {
+      return res.status(429).json({ success: false, error: 'QoE rate limit exceeded' });
+    }
+    qoeRateByIp.set(
+      clientIp,
+      bucket && now < bucket.resetAt
+        ? { count: bucket.count + 1, resetAt: bucket.resetAt }
+        : { count: 1, resetAt: now + 60_000 }
+    );
+
     const body = req.body as Partial<QoeSample> | undefined;
     if (!body || typeof body.startupMs !== 'number') {
       return res.status(400).json({ success: false, error: 'Invalid QoE payload' });
@@ -207,16 +266,30 @@ export function registerOperationalRoutes(
       rebufferMs: Math.max(0, Math.min(600_000, Number(body.rebufferMs) || 0)),
       resolution: typeof body.resolution === 'string' ? body.resolution.slice(0, 24) : undefined,
       stallFailoverUsed: Boolean(body.stallFailoverUsed),
+      sourceUrl: typeof body.sourceUrl === 'string' ? body.sourceUrl.slice(0, 600) : undefined,
+      requestId: typeof body.requestId === 'string' ? body.requestId.slice(0, 64) : undefined,
+      failed: Boolean(body.failed),
     };
+
+    if (sample.sourceUrl) {
+      channelHealthMonitor.recordPlaybackFeedback(sample.sourceUrl, {
+        startupMs: sample.startupMs,
+        rebufferCount: sample.rebufferCount,
+        failed: sample.failed || sample.stallFailoverUsed,
+      });
+    }
 
     qoeRingBuffer.push(sample);
     if (qoeRingBuffer.length > MAX_QOE_SAMPLES) {
       qoeRingBuffer.shift();
     }
-    return res.json({ success: true });
+    return res.json({ success: true, requestId: sample.requestId });
   });
 
-  app.get('/api/metrics/qoe/summary', (_req, res) => {
+  app.get('/api/metrics/qoe/summary', (req, res) => {
+    if (process.env.INTERNAL_METRICS_TOKEN && !hasValidInternalMetricsToken(req)) {
+      return res.status(401).json({ ok: false, error: 'Unauthorized metrics read' });
+    }
     if (qoeRingBuffer.length === 0) {
       return res.json({ count: 0, p50StartupMs: 0, p95StartupMs: 0, avgRebuffers: 0 });
     }
