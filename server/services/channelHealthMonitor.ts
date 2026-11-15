@@ -123,9 +123,17 @@ export async function probeChannelTrack(
     /\.m3u8(\?|$)/i.test(cleanUrl);
 
   const isDvbHeadend = cleanUrl.includes('90.163.85.113:8093');
+  const isCnStream =
+    cleanUrl.includes('38.75.136.137') ||
+    cleanUrl.includes('63.141.230.178') ||
+    cleanUrl.includes('120.76.248.139') ||
+    cleanUrl.includes('153.0.171.163') ||
+    cleanUrl.includes('223.112.114.228') ||
+    cleanUrl.includes('gmxw.7766.org') ||
+    cleanUrl.includes('epg.pw/stream/');
   const referer = resolveUpstreamReferer(cleanUrl, track.referer);
   const headers: Record<string, string> = {
-    'User-Agent': isDvbHeadend ? TDT_DVB_UA : DEFAULT_CHROME_UA,
+    'User-Agent': isDvbHeadend ? TDT_DVB_UA : isCnStream ? 'okhttp/4.12.0' : DEFAULT_CHROME_UA,
     Accept: '*/*',
   };
   if (referer) {
@@ -157,7 +165,7 @@ export async function probeChannelTrack(
         };
       }
       const bodyText = await res.text();
-      const validManifest = bodyText.includes('#EXTM3U');
+      const validManifest = bodyText.includes('#EXTM3U') && !/nosignal/i.test(bodyText);
       if (!validManifest) {
         return {
           status: 'down',

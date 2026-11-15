@@ -920,6 +920,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                             }`}
                                           >
                                             <Play className="w-3 h-3 fill-current" />
+                                            {ch.lang === 'ZH' && (
+                                              <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/35 text-[9px] font-black tracking-tight shrink-0">
+                                                中文
+                                              </span>
+                                            )}
                                             <span>{ch.label}</span>
                                             {statusColor && (
                                               <span className="inline-flex items-center gap-1 text-[10px] font-mono opacity-80">

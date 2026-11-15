@@ -9,14 +9,20 @@ import {
   type TrackRecord,
   areTitlesStrictlyEqual,
   buildHlsProxyUrl,
+  buildTsProxyUrl,
   curlGetBuffer,
+  curlGetBufferWithStatus,
   curlGetText,
   isMetadataCompatibleForMedia,
   normalizeTitleForMatch,
   parseDurationTextToMinutes,
   probeHlsSegmentHealth,
+  rewriteVidsrcBuzzM3u8,
+  unwrapRelaySegmentUrl,
 } from './httpHelpers.ts';
+export { rewriteVidsrcBuzzM3u8 };
 import { extractEmbed69SpanishTracks, unpackVidhideToHls } from './vidhideEmbed69.ts';
+import { registerVodManifest } from '../routes/proxies.ts';
 
 const wasmModuleCache = new LruTtlCache<string, Promise<WebAssembly.Module>>(16, 60 * 60 * 1000);
 const movidyPageMetaCache = new LruTtlCache<string, MovidyPageMetadata>(350, 15 * 60 * 1000);
@@ -1015,4 +1021,233 @@ export async function probeAvailableLanguages(opts: {
   }
 
   return ordered;
+}
+
+function parseQConfigFromHtml(html: string): any | null {
+  const idx = html.search(/var\s+Q\s*=\s*\{/);
+  if (idx === -1) return null;
+  const start = html.indexOf('{', idx);
+  if (start === -1) return null;
+  let depth = 0;
+  let inStr: string | null = null;
+  let escaped = false;
+  for (let i = start; i < html.length && i - start < 100_000; i++) {
+    const ch = html[i];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (inStr) {
+      if (ch === '\\') escaped = true;
+      else if (ch === inStr) inStr = null;
+      continue;
+    }
+    if (ch === '"' || ch === "'") {
+      inStr = ch;
+    } else if (ch === '{') {
+      depth++;
+    } else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        try {
+          return JSON.parse(html.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export async function extractVidsrcBuzzHlsTracks(opts: {
+  tmdbId?: string | number;
+  imdbId?: string | null;
+  mediaType?: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+}): Promise<TrackRecord[]> {
+  const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
+  const cleanImdb = String(opts.imdbId || '').trim();
+  const idList = Array.from(new Set([cleanId, cleanImdb].filter(Boolean)));
+  if (idList.length === 0) return [];
+
+  const mType = opts.mediaType === 'tv' ? 'tv' : 'movie';
+  const season = Math.max(1, Number(opts.season || 1));
+  const episode = Math.max(1, Number(opts.episode || 1));
+  const embedBases = ['https://vidsrc.buzz', 'https://videm.buzz'];
+  const tracks: TrackRecord[] = [];
+  const seenStreams = new Set<string>();
+
+  for (const baseOrigin of embedBases) {
+    if (tracks.length >= 2) break;
+    for (const mediaId of idList) {
+      if (tracks.length >= 2) break;
+      const embedUrl =
+        mType === 'tv'
+          ? `${baseOrigin}/embed/tv/${encodeURIComponent(mediaId)}/${season}/${episode}`
+          : `${baseOrigin}/embed/movie/${encodeURIComponent(mediaId)}`;
+
+      try {
+        const embedReferer = baseOrigin.includes('videm.buzz')
+          ? 'https://vidsrc.buzz/'
+          : `${baseOrigin}/`;
+        const page = await curlGetText(
+          embedUrl,
+          { 'User-Agent': CHROME_UA, Referer: embedReferer },
+          7,
+          true
+        );
+        const html = page.text || '';
+        if (!html || /not\s*found|unavailable/i.test(html.slice(0, 600))) continue;
+
+        const qObj = parseQConfigFromHtml(html);
+        if (!qObj || !qObj.t) continue;
+
+        const rawServers = qObj?.ssr?.servers;
+        const servers: { name?: string; ref?: string }[] = Array.isArray(rawServers)
+          ? rawServers
+          : rawServers && typeof rawServers === 'object'
+          ? Object.values(rawServers)
+          : qObj?.ssr?.ref
+          ? [qObj.ssr]
+          : [];
+        if (servers.length === 0) continue;
+
+        const baseHrefMatch = html.match(/<base[^>]+href\s*=\s*["']([^"']+)["']/i);
+        const resolvedBase = baseHrefMatch?.[1]
+          ? new URL(baseHrefMatch[1], `${baseOrigin}/`).href
+          : /\/pl\/api\.php/i.test(html)
+          ? `${baseOrigin}/pl/`
+          : `${baseOrigin}/`;
+
+        for (const srv of servers.slice(0, 3)) {
+          if (!srv?.ref) continue;
+          const apiUrl = new URL(
+            `api.php?a=play&ref=${encodeURIComponent(String(srv.ref))}&t=${encodeURIComponent(
+              String(qObj.t)
+            )}`,
+            resolvedBase
+          ).href;
+          const apiResp = await curlGetText(
+            apiUrl,
+            {
+              'User-Agent': CHROME_UA,
+              Referer: embedUrl,
+              Accept: 'application/json, text/plain, */*',
+            },
+            7,
+            true
+          ).catch(() => ({ text: '' }));
+          if (!apiResp.text) continue;
+
+          let playJson: any = null;
+          try {
+            playJson = JSON.parse(apiResp.text);
+          } catch {
+            continue;
+          }
+          const rawManifestPath = String(playJson?.url || '').trim();
+          if (!rawManifestPath) continue;
+
+          let manifestUrl = new URL(rawManifestPath, `${baseOrigin}/`).href;
+          const mResp = await curlGetText(
+            manifestUrl,
+            { 'User-Agent': CHROME_UA, Referer: embedUrl },
+            7,
+            true
+          ).catch(() => ({ text: '', effectiveUrl: manifestUrl }));
+          let manifestText = mResp.text || '';
+          manifestUrl = mResp.effectiveUrl || manifestUrl;
+          if (!manifestText.includes('#EXTM3U')) continue;
+
+          // If master playlist, pick the highest-bitrate variant so we unwrap relay segments cleanly
+          if (manifestText.includes('#EXT-X-STREAM-INF')) {
+            const variantLines = manifestText.split(/\r?\n/);
+            let bestVar = '';
+            let bestBw = -1;
+            let pendingBw = 0;
+            let expectUri = false;
+            for (const raw of variantLines) {
+              const t = raw.trim();
+              if (!t) continue;
+              if (t.startsWith('#EXT-X-STREAM-INF')) {
+                pendingBw = parseInt(t.match(/BANDWIDTH=(\d+)/i)?.[1] || '0', 10) || 0;
+                expectUri = true;
+                continue;
+              }
+              if (t.startsWith('#')) continue;
+              if (expectUri) {
+                expectUri = false;
+                if (!bestVar || pendingBw >= bestBw) {
+                  bestBw = pendingBw;
+                  bestVar = new URL(t, manifestUrl).href;
+                }
+              }
+            }
+            if (bestVar) {
+              const varResp = await curlGetText(
+                bestVar,
+                { 'User-Agent': CHROME_UA, Referer: embedUrl },
+                5,
+                true
+              ).catch(() => ({ text: '', effectiveUrl: bestVar }));
+              if (varResp.text && varResp.text.includes('#EXTM3U')) {
+                manifestText = varResp.text;
+                manifestUrl = varResp.effectiveUrl || bestVar;
+              }
+            }
+          }
+
+          const { rewritten, firstSegment } = rewriteVidsrcBuzzM3u8(
+            manifestText,
+            manifestUrl,
+            `${baseOrigin}/`
+          );
+
+          if (firstSegment) {
+            if (seenStreams.has(firstSegment.url)) continue;
+            const probe = await curlGetBufferWithStatus(
+              firstSegment.url,
+              {
+                'User-Agent': CHROME_UA,
+                Referer: firstSegment.referer,
+                Range: 'bytes=0-65535',
+              },
+              4
+            ).catch(() => ({ buf: Buffer.alloc(0), status: 0 }));
+            const headStr = probe.buf.subarray(0, 64).toString('utf8').trimStart().toLowerCase();
+            if (
+              probe.status < 200 ||
+              probe.status >= 400 ||
+              probe.buf.length < 512 ||
+              headStr.startsWith('<!doctype') ||
+              headStr.startsWith('<html')
+            ) {
+              continue;
+            }
+            seenStreams.add(firstSegment.url);
+          }
+
+          const vodManifestPath = registerVodManifest(rewritten);
+          const serverLabel = String(srv.name || `Cloud ${tracks.length + 1}`).trim();
+          tracks.push({
+            id: `vidbuzz-${mType}-${mediaId}-${tracks.length + 1}`,
+            label: `English HD · ${serverLabel}`,
+            lang: 'EN',
+            quality: '1080p HLS',
+            sourceUrl: embedUrl,
+            referer: `${baseOrigin}/`,
+            resolverType: 'bingetrix_en',
+            resolvedStreamUrl: vodManifestPath,
+          });
+          if (tracks.length >= 2) break;
+        }
+      } catch {
+        // try next source
+      }
+    }
+  }
+
+  return tracks;
 }

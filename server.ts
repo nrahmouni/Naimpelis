@@ -31,6 +31,8 @@ import {
   buildHlsProxyUrl,
   buildTsProxyUrl,
   curlGetText,
+  getPreferredUpstreamUa,
+  isChineseIptvStream,
   isDvbHeadendStream,
   markHostNeedsCurlFallback,
   matchesYouTubeFallbackTitle,
@@ -49,12 +51,18 @@ import {
   extract2EmbedEnglishTracks,
   extractBingetrixEnglishTracks,
   extractMovidyPageTracks,
+  extractVidsrcBuzzHlsTracks,
   fetchMovidyPageMetadata,
   findMovidyUrlByTitle,
   probeAvailableLanguages,
   verifyMovidyMetaMatch,
   type MovidyPageMetadata,
 } from './server/extractors/bingetrixMovidy.ts';
+import {
+  CHINESE_FOOTBALL_CHANNELS,
+  getChineseFootballMatchTracks,
+  getChineseFootballMultiplexCard,
+} from './server/extractors/chineseSports.ts';
 import {
   extractLiveSportsHlsDirect,
   fetchSportsHtmlHop,
@@ -2529,6 +2537,7 @@ function getPermanent247SportsMatches() {
         },
       ],
     },
+    getChineseFootballMultiplexCard(),
   ];
 }
 
@@ -2761,6 +2770,7 @@ interface SpanishTdtChannelDef {
     | 'movistar'
     | 'dazn'
     | 'uk_sports'
+    | 'china_football'
     | 'beinsports'
     | 'espn'
     | 'dsports'
@@ -4034,6 +4044,10 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
       },
     ],
   },
+  // ==========================================================================
+  // FÚTBOL CHINA NATIVO (中文 · 欧冠 CHAMPIONS / 西甲 LALIGA / 英超 PREMIER LEAGUE)
+  // ==========================================================================
+  ...CHINESE_FOOTBALL_CHANNELS,
   // ==========================================================================
   // ESPN EN VIVO (ESPN, ESPN 2, ESPN 3, ESPN 4, ESPN 5, ESPN 6, ESPN 7, PREMIUM)
   // ==========================================================================
@@ -5726,11 +5740,11 @@ function formatExtractResponseForClient(
   const publicOrigin = getPublicOrigin(req);
   const absProxyUrl = (u?: string): string | undefined => {
     if (!u) return u;
-    if (u.startsWith('/api/hls-proxy/')) {
+    if (u.startsWith('/api/hls-proxy/') || u.startsWith('/api/vod-manifest/')) {
       const full = `${publicOrigin}${u}`;
-      return full.includes('abs=1') ? full : `${full}&abs=1`;
+      return full.includes('abs=1') ? full : `${full}${full.includes('?') ? '&' : '?'}abs=1`;
     }
-    if (u.startsWith('/api/ts-proxy/')) {
+    if (u.startsWith('/api/ts-proxy/') || u.startsWith('/api/embed-proxy')) {
       return `${publicOrigin}${u}`;
     }
     return u;
@@ -5782,8 +5796,9 @@ app.get('/api/extract/stream', async (req, res) => {
 
       const cleanCheckUrl = rawInput.replace(/[?&]profile=(hd|fast)\b/gi, '');
       const knownReferer = resolveKnownUpstreamReferer(cleanCheckUrl);
+      const isCnStream = isChineseIptvStream(cleanCheckUrl);
       const checkHeaders: Record<string, string> = {
-        'User-Agent': isDvbHeadendStream(cleanCheckUrl) ? TDT_DVB_UA : CHROME_UA,
+        'User-Agent': getPreferredUpstreamUa(cleanCheckUrl),
         Accept: '*/*',
       };
       if (knownReferer) {
@@ -5802,11 +5817,23 @@ app.get('/api/extract/stream', async (req, res) => {
         });
         if (chk.ok) {
           const txt = await chk.text();
-          isAlive = txt.includes('#EXTM3U');
+          isAlive = txt.includes('#EXTM3U') && !/nosignal/i.test(txt);
         }
       } catch {
-        const fb = await curlGetText(cleanCheckUrl, checkHeaders, 5);
-        isAlive = Boolean(fb.text && fb.text.includes('#EXTM3U'));
+        // fallback to curl below
+      }
+      if (!isAlive) {
+        const fb = await curlGetText(cleanCheckUrl, checkHeaders, isCnStream ? 6 : 5, isCnStream).catch(() => ({
+          text: '',
+        }));
+        isAlive = Boolean(fb.text && fb.text.includes('#EXTM3U') && !/nosignal/i.test(fb.text));
+      }
+      if (!isAlive && isCnStream) {
+        await new Promise((r) => setTimeout(r, 250));
+        const fb2 = await curlGetText(cleanCheckUrl, checkHeaders, 6, true).catch(() => ({
+          text: '',
+        }));
+        isAlive = Boolean(fb2.text && fb2.text.includes('#EXTM3U') && !/nosignal/i.test(fb2.text));
       }
 
       if (!isAlive) {
@@ -5828,15 +5855,16 @@ app.get('/api/extract/stream', async (req, res) => {
         ? cleanCheckUrl
         : buildHlsProxyUrl(cleanCheckUrl, originRef, isDvbHeadendStream(cleanCheckUrl));
 
+      const resolvedChLang = isCnStream ? 'ZH' : 'ES';
       const result: ExtractedStreamResult = {
         success: true,
         mode: 'hls',
         streamUrl: finalStreamUrl,
         rawStreamUrl: cleanCheckUrl,
         referer: originRef,
-        title: titleHint || 'TV España en Directo',
-        requestedLang: 'ES',
-        resolvedLang: 'ES',
+        title: titleHint || (isCnStream ? 'Fútbol China en Directo (中文)' : 'TV España en Directo'),
+        requestedLang: resolvedChLang,
+        resolvedLang: resolvedChLang,
         expiresAt: Date.now() + 4 * 60 * 1000,
       };
       extractionCache.set(cacheKey, result);
@@ -5933,13 +5961,19 @@ app.get('/api/extract/stream', async (req, res) => {
       }
     }
 
-    // CASE 1C: Verified Web Embed Player track switch (`web_embed`)
+    // CASE 1C: Verified Web Embed Player track switch (`web_embed`) -> route HTML embeds via /api/embed-proxy to strip popups/sandbox checks
     if (resolverType === 'web_embed' && rawInput) {
       const fullEmbedUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
+      const isHtmlProxyTarget =
+        /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc|www\.2embed\.cc)/i.test(fullEmbedUrl) ||
+        isSandboxedFrame;
+      const safeEmbedUrl = isHtmlProxyTarget
+        ? `/api/embed-proxy?url=${encodeURIComponent(fullEmbedUrl)}`
+        : fullEmbedUrl;
       const result: ExtractedStreamResult = {
         success: true,
         mode: 'embed',
-        streamUrl: fullEmbedUrl,
+        streamUrl: safeEmbedUrl,
         rawStreamUrl: fullEmbedUrl,
         requestedLang: preferLang,
         resolvedLang: preferLang,
@@ -5965,6 +5999,17 @@ app.get('/api/extract/stream', async (req, res) => {
     }
 
     // CASE 3: Direct .m3u8 or .mp4 URL
+    if (/^\/api\/vod-manifest\//i.test(rawInput)) {
+      const result: ExtractedStreamResult = {
+        success: true,
+        mode: 'hls',
+        streamUrl: rawInput,
+        rawStreamUrl: rawInput,
+        expiresAt: Date.now() + 15 * 60 * 1000,
+      };
+      extractionCache.set(cacheKey, result);
+      return res.json(formatExtractResponseForClient(req, result));
+    }
     if (/\.m3u8(\?|$)/i.test(rawInput)) {
       const originRef = new URL(rawInput).origin + '/';
       const result: ExtractedStreamResult = {
@@ -6271,7 +6316,14 @@ app.get('/api/extract/stream', async (req, res) => {
           })
         );
 
-      const [movidyTracks, esTracks, bingetrixEnTracks, twoEmbedEnTracks, vestExtracted] = await Promise.all([
+      const [
+        movidyTracks,
+        esTracks,
+        bingetrixEnTracks,
+        twoEmbedEnTracks,
+        vidBuzzHlsTracks,
+        vestExtracted,
+      ] = await Promise.all([
         effectiveMediaType === 'movie' && effectiveMovidyUrl
           ? extractMovidyPageTracks(effectiveMovidyUrl, {
               expectedYear: effectiveYearForExtract,
@@ -6312,6 +6364,15 @@ app.get('/api/extract/stream', async (req, res) => {
               episode: effectiveEpisode,
             })
           : Promise.resolve([]),
+        resolvedTmdbId || tmdbImdbId
+          ? extractVidsrcBuzzHlsTracks({
+              tmdbId: resolvedTmdbId || undefined,
+              imdbId: tmdbImdbId,
+              mediaType: effectiveMediaType,
+              season: effectiveSeason,
+              episode: effectiveEpisode,
+            }).catch(() => [])
+          : Promise.resolve([]),
         shouldQueryVest
           ? extractVestStreamsAndSubtitles({
               vestUrl: effectiveVestUrl || undefined,
@@ -6328,7 +6389,11 @@ app.get('/api/extract/stream', async (req, res) => {
           : Promise.resolve(null),
       ]);
 
-      const enTracks: TrackRecord[] = [...twoEmbedEnTracks, ...bingetrixEnTracks];
+      const enTracks: TrackRecord[] = [
+        ...twoEmbedEnTracks,
+        ...bingetrixEnTracks,
+        ...vidBuzzHlsTracks,
+      ];
       const vestTracks: TrackRecord[] = vestExtracted?.tracks || [];
       const vestSubtitles = vestExtracted?.subtitles || [];
       const vestDetailMeta = vestExtracted?.detail || extractedVestDetail;
@@ -6484,8 +6549,12 @@ app.get('/api/extract/stream', async (req, res) => {
               );
         if (webIdx !== -1) {
           const webCand = orderedTracks[webIdx];
-          orderedTracks[webIdx] = { ...webCand, resolvedStreamUrl: webCand.sourceUrl };
-          primaryStreamUrl = webCand.sourceUrl;
+          const proxiedWeb =
+            isSandboxedFrame || /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc)/i.test(webCand.sourceUrl)
+              ? `/api/embed-proxy?url=${encodeURIComponent(webCand.sourceUrl)}`
+              : webCand.sourceUrl;
+          orderedTracks[webIdx] = { ...webCand, resolvedStreamUrl: proxiedWeb };
+          primaryStreamUrl = proxiedWeb;
           primaryMode = 'embed';
           resolvedTrack = orderedTracks[webIdx];
         }
@@ -6729,70 +6798,95 @@ app.get('/api/extract/stream', async (req, res) => {
           effectiveMediaType === 'tv'
             ? [
                 {
-                  id: `embed-vidsrcsh-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 1 · VidSrc HD',
-                  url: `https://vidsrc.sh/embed/tv/${idStr}/${s}/${e}`,
+                  id: `embed-vidsrcbuzz-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 1 · Cloud Limpio',
+                  url: `https://vidsrc.buzz/embed/tv/${idStr}/${s}/${e}`,
+                  proxyHtml: true,
                   sandboxSafe: true,
                 },
                 {
-                  id: `embed-vidlink-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 2 · Multi-Audio',
-                  url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=9146FF`,
-                  sandboxSafe: true,
-                },
-                {
-                  id: `embed-autoembed-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 3 · AutoEmbed HD',
-                  url: `https://autoembed.me/tv/tmdb/${idStr}-${s}-${e}`,
+                  id: `embed-vidembuzz-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 2 · VidEm Limpio',
+                  url: `https://videm.buzz/embed/tv/${idStr}/${s}/${e}`,
+                  proxyHtml: true,
                   sandboxSafe: true,
                 },
                 {
                   id: `embed-2embed-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 4 · 2Embed',
+                  label: 'Servidor Web 3 · 2Embed Limpio',
                   url: `https://www.2embed.cc/embedtv/${idStr}&s=${s}&e=${e}`,
+                  proxyHtml: true,
                   sandboxSafe: true,
                 },
                 {
+                  id: `embed-vidlink-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 4 · Multi-Audio',
+                  url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=9146FF`,
+                  proxyHtml: false,
+                  sandboxSafe: false,
+                },
+                {
+                  id: `embed-vidsrcsh-${idStr}-${s}-${e}`,
+                  label: 'Servidor Web 5 · VidSrc',
+                  url: `https://vidsrc.sh/embed/tv/${idStr}/${s}/${e}`,
+                  proxyHtml: false,
+                  sandboxSafe: false,
+                },
+                {
                   id: `embed-vidfast-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 5 · VidFast HD',
+                  label: 'Servidor Web 6 · VidFast',
                   url: `https://vidfast.vc/tv/${idStr}/${s}/${e}?autoPlay=true&theme=9146FF`,
+                  proxyHtml: false,
                   sandboxSafe: false,
                 },
               ]
             : [
                 {
-                  id: `embed-vidsrcsh-${idStr}`,
-                  label: 'Servidor Web 1 · VidSrc HD',
-                  url: `https://vidsrc.sh/embed/movie/${idStr}`,
+                  id: `embed-vidsrcbuzz-${idStr}`,
+                  label: 'Servidor Web 1 · Cloud Limpio',
+                  url: `https://vidsrc.buzz/embed/movie/${idStr}`,
+                  proxyHtml: true,
                   sandboxSafe: true,
                 },
                 {
-                  id: `embed-vidlink-${idStr}`,
-                  label: 'Servidor Web 2 · Multi-Audio',
-                  url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=9146FF`,
-                  sandboxSafe: true,
-                },
-                {
-                  id: `embed-autoembed-${idStr}`,
-                  label: 'Servidor Web 3 · AutoEmbed HD',
-                  url: `https://autoembed.me/movie/tmdb/${idStr}`,
+                  id: `embed-vidembuzz-${idStr}`,
+                  label: 'Servidor Web 2 · VidEm Limpio',
+                  url: `https://videm.buzz/embed/movie/${idStr}`,
+                  proxyHtml: true,
                   sandboxSafe: true,
                 },
                 {
                   id: `embed-2embed-${idStr}`,
-                  label: 'Servidor Web 4 · 2Embed',
+                  label: 'Servidor Web 3 · 2Embed Limpio',
                   url: `https://www.2embed.cc/embed/${idStr}`,
+                  proxyHtml: true,
                   sandboxSafe: true,
                 },
                 {
+                  id: `embed-vidlink-${idStr}`,
+                  label: 'Servidor Web 4 · Multi-Audio',
+                  url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=9146FF`,
+                  proxyHtml: false,
+                  sandboxSafe: false,
+                },
+                {
+                  id: `embed-vidsrcsh-${idStr}`,
+                  label: 'Servidor Web 5 · VidSrc',
+                  url: `https://vidsrc.sh/embed/movie/${idStr}`,
+                  proxyHtml: false,
+                  sandboxSafe: false,
+                },
+                {
                   id: `embed-vidfast-${idStr}`,
-                  label: 'Servidor Web 5 · VidFast HD',
+                  label: 'Servidor Web 6 · VidFast',
                   url: `https://vidfast.vc/movie/${idStr}?autoPlay=true&theme=9146FF`,
+                  proxyHtml: false,
                   sandboxSafe: false,
                 },
               ];
 
-        // Put sandbox-friendly embeds first inside sandboxed iframes, keeping up to 4 verified servers
+        // Inside sandboxed preview frames, exclude hosts that self-block with "This content can't be embedded in a sandboxed frame"
+        // or send X-Frame-Options: SAMEORIGIN, and proxy HTML-sanitizable players through /api/embed-proxy to strip popups & ad overlays.
         const orderedEntries = (isSandboxedFrame
           ? baseEntries.filter((entry) => entry.sandboxSafe)
           : baseEntries
@@ -6805,7 +6899,9 @@ app.get('/api/extract/stream', async (req, res) => {
           quality: '1080p',
           sourceUrl: entry.url,
           resolverType: 'web_embed' as const,
-          resolvedStreamUrl: entry.url,
+          resolvedStreamUrl: entry.proxyHtml
+            ? `/api/embed-proxy?url=${encodeURIComponent(entry.url)}`
+            : entry.url,
         }));
       };
 
@@ -7888,8 +7984,13 @@ function buildFootballMatchChannels(params: {
     });
   }
 
-  // Never pad unrelated 24/7 channels onto matches — clicking a match must ONLY play THAT match!
-  return channels.slice(0, 8);
+  // 3. Verified native Chinese (中文/粤语) live broadcasts for major European leagues
+  // (UEFA Champions League, LaLiga EA Sports, Premier League, Europa League, top 5 leagues)
+  for (const zhTrack of getChineseFootballMatchTracks(league.slug, matchId)) {
+    pushTrack(zhTrack);
+  }
+
+  return channels.slice(0, 10);
 }
 
 let cachedFootballBoard: { dateKey: string; matches: any[]; ts: number } | null = null;
@@ -10203,6 +10304,7 @@ const IPTV_GROUP_TITLES: Record<string, string> = {
   movistar: 'Fútbol · Movistar+',
   dazn: 'Fútbol · DAZN',
   uk_sports: 'Deportes UK · Sky & Eurosport (EN)',
+  china_football: 'Fútbol · China (中文 欧冠/西甲/英超)',
   beinsports: 'Fútbol · beIN SPORTS',
   espn: 'Fútbol · ESPN 1-7',
   dsports: 'Fútbol · DSports',

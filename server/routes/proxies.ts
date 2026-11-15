@@ -13,12 +13,18 @@ import {
   buildTsProxyUrl,
   CHROME_UA,
   curlGetBuffer,
+  curlGetBufferWithStatus,
   curlGetText,
+  curlPostJsonText,
+  getPreferredUpstreamUa,
   isDvbHeadendStream,
   markHostNeedsCurlFallback,
   resolveKnownUpstreamReferer,
+  rewriteVidsrcBuzzM3u8,
+  sanitizeEmbedHtml,
   shouldBypassNodeFetch,
   TDT_DVB_UA,
+  unwrapRelaySegmentUrl,
 } from '../extractors/httpHelpers.ts';
 import { curlPlainGetText } from '../services/vestMirrorService.ts';
 
@@ -29,6 +35,13 @@ const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg')
     : 'ffmpeg';
 
 const vodHlsManifestCache = new LruTtlCache<string, string>(400, 10 * 60 * 1000);
+const registeredVodManifestCache = new LruTtlCache<string, string>(500, 18 * 60 * 1000);
+
+export function registerVodManifest(m3u8Content: string): string {
+  const id = crypto.createHash('sha1').update(m3u8Content).digest('hex').slice(0, 18);
+  registeredVodManifestCache.set(id, m3u8Content);
+  return `/api/vod-manifest/${id}.m3u8`;
+}
 const dvbAacSegmentCache = new LruTtlCache<string, { promise: Promise<Buffer>; ts: number }>(
   80,
   80_000
@@ -85,7 +98,7 @@ function getOrCreateRequestId(req: express.Request): string {
 
 function applyProxyCorsHeaders(res: express.Response, reqId: string): void {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, HEAD, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', '*');
   res.setHeader(
     'Access-Control-Expose-Headers',
@@ -126,7 +139,7 @@ export function remuxDvbTsToAac(
 
   const jobPromise = (async (): Promise<Buffer> => {
     const segHeaders: Record<string, string> = {
-      'User-Agent': isDvbHeadendStream(segmentUrl) ? TDT_DVB_UA : CHROME_UA,
+      'User-Agent': getPreferredUpstreamUa(segmentUrl),
       Accept: '*/*',
     };
     if (referer) {
@@ -509,6 +522,9 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
   app.options(
     [
       '/api/dvb-live/:sessionKey/:filename',
+      '/api/vod-manifest/:filename',
+      '/api/embed-proxy',
+      '/api/embed-fetch',
       '/api/hls-proxy',
       '/api/hls-proxy/:filename',
       '/api/ts-proxy',
@@ -526,6 +542,256 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
     (req, res) => {
       applyProxyCorsHeaders(res, getOrCreateRequestId(req));
       res.status(204).end();
+    }
+  );
+
+  const handleVodManifest = (req: express.Request, res: express.Response) => {
+    const reqId = getOrCreateRequestId(req);
+    const id = String(req.params.filename || '')
+      .replace(/\.m3u8$/i, '')
+      .replace(/[^a-zA-Z0-9_-]/g, '');
+    const rawManifest = id ? registeredVodManifestCache.get(id) : undefined;
+    if (!rawManifest) {
+      return res.status(404).send('VOD manifest expired');
+    }
+    const useAbs = req.query.abs === '1';
+    const originPrefix = useAbs ? getPublicOrigin(req) : '';
+    const out = originPrefix
+      ? rawManifest
+          .replace(/(^|\n)(\/api\/(?:ts-proxy|hls-proxy|vod-manifest)\/[^\n]+)/g, `$1${originPrefix}$2`)
+      : rawManifest;
+    applyProxyCorsHeaders(res, reqId);
+    res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Content-Length', String(Buffer.byteLength(out)));
+    if (req.method === 'HEAD') return res.status(200).end();
+    return res.send(out);
+  };
+
+  app.get('/api/vod-manifest/:filename', handleVodManifest);
+  app.head('/api/vod-manifest/:filename', handleVodManifest);
+
+  app.get('/api/embed-proxy', async (req, res) => {
+    const reqId = getOrCreateRequestId(req);
+    const targetUrl = String(req.query.url || '').trim();
+    const explicitReferer = String(req.query.referer || '').trim();
+    if (!targetUrl) return res.status(400).send('Missing url');
+    try {
+      await assertSafeProxyUrl(targetUrl);
+    } catch {
+      return res.status(403).send('Forbidden target host');
+    }
+
+    try {
+      const parsedTarget = new URL(targetUrl);
+      const defaultReferer = /(\.|^)videm\.buzz$/i.test(parsedTarget.hostname)
+        ? 'https://vidsrc.buzz/'
+        : parsedTarget.origin + '/';
+      const headers: Record<string, string> = {
+        'User-Agent': CHROME_UA,
+        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8',
+        Referer: explicitReferer || defaultReferer,
+      };
+      let html = '';
+      let effectiveUrl = targetUrl;
+      try {
+        const upstream = await streamingFetch(targetUrl, { headers, timeoutMs: 5500 });
+        if (upstream.ok) {
+          effectiveUrl = upstream.url || targetUrl;
+          html = await upstream.text();
+        }
+      } catch {
+        // fallback to curl
+      }
+      if (!html) {
+        const fb = await curlGetText(targetUrl, headers, 6, true).catch(() => ({
+          text: '',
+          effectiveUrl: targetUrl,
+        }));
+        html = fb.text || '';
+        effectiveUrl = fb.effectiveUrl || targetUrl;
+      }
+      if (!html || !/<html|<body|<iframe|<video|var\s+Q/i.test(html)) {
+        return res.status(502).send('Upstream embed unavailable');
+      }
+
+      const cleanHtml = sanitizeEmbedHtml(html, effectiveUrl);
+      res.setHeader('X-Naim-Request-Id', reqId);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.removeHeader('X-Frame-Options');
+      return res.status(200).send(cleanHtml);
+    } catch {
+      return res.status(502).send('Embed proxy failed');
+    }
+  });
+
+  app.all(
+    '/api/embed-fetch',
+    express.text({ type: ['text/*', 'application/x-www-form-urlencoded'], limit: '256kb' }),
+    async (req, res) => {
+      const reqId = getOrCreateRequestId(req);
+      if (req.method === 'OPTIONS') {
+        applyProxyCorsHeaders(res, reqId);
+        return res.status(204).end();
+      }
+
+      const targetUrl = String(req.query.url || '').trim();
+      const explicitReferer = String(req.query.referer || '').trim();
+      if (!targetUrl) return res.status(400).send('Missing url');
+      try {
+        await assertSafeProxyUrl(targetUrl);
+      } catch {
+        return res.status(403).send('Forbidden target host');
+      }
+
+      try {
+        const parsedTarget = new URL(targetUrl);
+        const refererHeader =
+          explicitReferer ||
+          (/(\.|^)videm\.buzz$/i.test(parsedTarget.hostname)
+            ? 'https://vidsrc.buzz/'
+            : parsedTarget.origin + '/');
+        let originHeader = parsedTarget.origin;
+        try {
+          originHeader = new URL(refererHeader).origin;
+        } catch {
+          // keep parsedTarget.origin
+        }
+
+        if (req.method === 'POST') {
+          const rawBody =
+            typeof req.body === 'string'
+              ? req.body
+              : req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0
+                ? JSON.stringify(req.body)
+                : '';
+          const postHeaders: Record<string, string> = {
+            'User-Agent': CHROME_UA,
+            Accept: 'application/json, text/plain, */*',
+            Referer: refererHeader,
+            Origin: originHeader,
+            'Content-Type': String(req.headers['content-type'] || 'application/json'),
+          };
+          let status = 200;
+          let respText = '';
+          let respCt = 'application/json; charset=utf-8';
+          try {
+            const up = await streamingFetch(targetUrl, {
+              method: 'POST',
+              headers: postHeaders,
+              body: rawBody,
+              timeoutMs: 6500,
+            });
+            status = up.status;
+            respCt = up.headers.get('content-type') || respCt;
+            respText = await up.text();
+          } catch {
+            let parsedPayload: unknown = rawBody;
+            try {
+              parsedPayload = rawBody ? JSON.parse(rawBody) : {};
+            } catch {
+              // keep raw string if not JSON
+            }
+            respText = await curlPostJsonText(targetUrl, parsedPayload, postHeaders, 6).catch(
+              () => ''
+            );
+          }
+          applyProxyCorsHeaders(res, reqId);
+          res.setHeader('Content-Type', respCt);
+          res.setHeader('Cache-Control', 'no-store');
+          return res.status(status >= 200 && status < 500 ? status : 502).send(respText);
+        }
+
+        const getHeaders: Record<string, string> = {
+          'User-Agent': CHROME_UA,
+          Accept: '*/*',
+          Referer: refererHeader,
+        };
+
+        let bodyBuf: Buffer = Buffer.alloc(0);
+        let upstreamStatus = 0;
+        let effectiveUrl = targetUrl;
+        let upstreamCt = '';
+
+        try {
+          const up = await streamingFetch(targetUrl, {
+            method: req.method === 'HEAD' ? 'HEAD' : 'GET',
+            headers: getHeaders,
+            timeoutMs: 6500,
+          });
+          upstreamStatus = up.status;
+          effectiveUrl = up.url || targetUrl;
+          upstreamCt = up.headers.get('content-type') || '';
+          if (up.ok && req.method !== 'HEAD') {
+            bodyBuf = Buffer.from(await up.arrayBuffer());
+          }
+        } catch {
+          // fallback to curl below
+        }
+
+        if (req.method === 'HEAD' && upstreamStatus >= 200 && upstreamStatus < 400) {
+          applyProxyCorsHeaders(res, reqId);
+          if (upstreamCt) res.setHeader('Content-Type', upstreamCt);
+          return res.status(upstreamStatus).end();
+        }
+
+        if (!bodyBuf.length && req.method !== 'HEAD') {
+          const fb = await curlGetBufferWithStatus(targetUrl, getHeaders, 7).catch(() => ({
+            buf: Buffer.alloc(0),
+            status: 502,
+          }));
+          if (fb.buf.length > 0 && fb.status >= 200 && fb.status < 400) {
+            bodyBuf = fb.buf;
+            upstreamStatus = fb.status;
+          } else {
+            const txtFb = await curlGetText(targetUrl, getHeaders, 7, true).catch(() => ({
+              text: '',
+              effectiveUrl: targetUrl,
+            }));
+            if (txtFb.text) {
+              bodyBuf = Buffer.from(txtFb.text, 'utf8');
+              effectiveUrl = txtFb.effectiveUrl || targetUrl;
+              upstreamStatus = 200;
+            }
+          }
+        }
+
+        if (!bodyBuf.length) {
+          applyProxyCorsHeaders(res, reqId);
+          return res.status(upstreamStatus >= 400 ? upstreamStatus : 502).send('Upstream error');
+        }
+
+        const headSnippet = bodyBuf.subarray(0, 512).toString('utf8');
+        if (headSnippet.includes('#EXTM3U')) {
+          const manifestText = bodyBuf.toString('utf8');
+          const { rewritten } = rewriteVidsrcBuzzM3u8(
+            manifestText,
+            effectiveUrl,
+            originHeader + '/'
+          );
+          applyProxyCorsHeaders(res, reqId);
+          res.setHeader('Content-Type', 'application/vnd.apple.mpegurl');
+          res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+          return res.status(200).send(rewritten);
+        }
+
+        applyProxyCorsHeaders(res, reqId);
+        const trimmedHead = headSnippet.trimStart();
+        const inferredCt =
+          upstreamCt ||
+          (trimmedHead.startsWith('{') || trimmedHead.startsWith('[')
+            ? 'application/json; charset=utf-8'
+            : trimmedHead.startsWith('WEBVTT')
+              ? 'text/vtt; charset=utf-8'
+              : 'text/plain; charset=utf-8');
+        res.setHeader('Content-Type', inferredCt);
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).send(bodyBuf);
+      } catch {
+        return res.status(502).send('Embed fetch relay failed');
+      }
     }
   );
 
@@ -593,7 +859,7 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
 
     try {
       const headers: Record<string, string> = {
-        'User-Agent': isDvbHeadendStream(targetUrl) ? TDT_DVB_UA : CHROME_UA,
+        'User-Agent': getPreferredUpstreamUa(targetUrl),
         Accept: '*/*',
       };
       if (referer) {
@@ -635,16 +901,20 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
           }
           baseUrl = upstream.url || targetUrl;
           manifestText = await upstream.text();
-          if (!manifestText.includes('#EXTM3U')) {
-            throw new Error('Not M3U8');
+          if (!manifestText.includes('#EXTM3U') || /nosignal/i.test(manifestText)) {
+            throw new Error('Not M3U8 or offline placeholder');
           }
         } catch {
           clearTimeout(hdrTimer);
           markHostNeedsCurlFallback(targetUrl);
           let fallback = await curlGetText(targetUrl, headers, 7);
-          if (!fallback.text || !fallback.text.includes('#EXTM3U')) {
+          if (
+            !fallback.text ||
+            !fallback.text.includes('#EXTM3U') ||
+            /nosignal/i.test(fallback.text)
+          ) {
             const plainTxt = await curlPlainGetText(targetUrl, 7).catch(() => '');
-            if (plainTxt && plainTxt.includes('#EXTM3U')) {
+            if (plainTxt && plainTxt.includes('#EXTM3U') && !/nosignal/i.test(plainTxt)) {
               fallback = { text: plainTxt, effectiveUrl: targetUrl };
             } else {
               return res.status(502).send('Upstream HLS error');
@@ -653,6 +923,9 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
           baseUrl = fallback.effectiveUrl || targetUrl;
           manifestText = fallback.text;
         }
+      }
+      if (/nosignal/i.test(manifestText)) {
+        return res.status(502).send('Upstream signal offline');
       }
 
       const effectiveReferer = referer || new URL(baseUrl).origin + '/';
@@ -672,10 +945,11 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
             return line.replace(/URI="([^"]+)"/g, (_match, uriVal) => {
               try {
                 const absUri = new URL(uriVal, baseUrl).href;
-                if (trimmed.startsWith('#EXT-X-MEDIA') || absUri.includes('.m3u8')) {
-                  return `URI="${buildHlsProxyUrl(absUri, effectiveReferer, forceAac, originPrefix)}"`;
+                const unwrapped = unwrapRelaySegmentUrl(absUri, effectiveReferer);
+                if (trimmed.startsWith('#EXT-X-MEDIA') || unwrapped.url.includes('.m3u8')) {
+                  return `URI="${buildHlsProxyUrl(unwrapped.url, unwrapped.referer, forceAac, originPrefix)}"`;
                 }
-                return `URI="${buildTsProxyUrl(absUri, effectiveReferer, forceAac, originPrefix)}"`;
+                return `URI="${buildTsProxyUrl(unwrapped.url, unwrapped.referer, forceAac, originPrefix)}"`;
               } catch {
                 return _match;
               }
@@ -686,19 +960,20 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
 
         try {
           const absUrl = new URL(trimmed, baseUrl).href;
+          const unwrapped = unwrapRelaySegmentUrl(absUrl, effectiveReferer);
           const isPlaylist =
             nextLineIsVariantPlaylist ||
-            /\.m3u8(\?|$)/i.test(absUrl) ||
-            absUrl.includes('stream_tv=');
+            (/\.m3u8(\?|$)/i.test(unwrapped.url) && !/relay\.videm\.buzz\/seg/i.test(absUrl)) ||
+            unwrapped.url.includes('stream_tv=');
           nextLineIsVariantPlaylist = false;
 
           if (!isPlaylist && forceAac) {
-            discoveredTsUrls.push(absUrl);
+            discoveredTsUrls.push(unwrapped.url);
           }
 
           return isPlaylist
-            ? buildHlsProxyUrl(absUrl, effectiveReferer, forceAac, originPrefix)
-            : buildTsProxyUrl(absUrl, effectiveReferer, forceAac, originPrefix);
+            ? buildHlsProxyUrl(unwrapped.url, unwrapped.referer, forceAac, originPrefix)
+            : buildTsProxyUrl(unwrapped.url, unwrapped.referer, forceAac, originPrefix);
         } catch {
           nextLineIsVariantPlaylist = false;
           return line;
@@ -826,7 +1101,10 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
 
     if (req.method === 'HEAD') {
       try {
-        const headers: Record<string, string> = { 'User-Agent': CHROME_UA, Accept: '*/*' };
+        const headers: Record<string, string> = {
+          'User-Agent': getPreferredUpstreamUa(targetUrl),
+          Accept: '*/*',
+        };
         if (referer) headers['Referer'] = referer;
         const upstream = await streamingFetch(targetUrl, {
           method: 'HEAD',
@@ -866,7 +1144,7 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
     }
 
     const headers: Record<string, string> = {
-      'User-Agent': CHROME_UA,
+      'User-Agent': getPreferredUpstreamUa(targetUrl),
       Accept: '*/*',
     };
     if (referer) {

@@ -7,6 +7,7 @@ import {
   type TrackRecord,
   areTitlesStrictlyEqual,
   buildHlsProxyUrl,
+  curlGetBufferWithStatus,
   curlGetText,
   curlPostJsonText,
   fetchTextWithCurlFallback,
@@ -918,15 +919,46 @@ export async function extractAnimeAv1Tracks(opts: {
           if (chk.ok) {
             const m3uTxt = await chk.text();
             if (m3uTxt.includes('#EXTM3U')) {
-              found.push({
-                id: `anime-zilla-${matchedSlug}-${resolvedEpNum}-${langCode.toLowerCase()}`,
-                label: `${langLabel} · Anime HD`,
-                lang: langCode,
-                quality: '1080p HLS',
-                sourceUrl: rawM3u8,
-                resolverType: 'direct_hls',
-                resolvedStreamUrl: buildHlsProxyUrl(rawM3u8, playRef),
-              });
+              const mapMatch = m3uTxt.match(/#EXT-X-MAP:URI="([^"]+)"/i);
+              const firstSegLine = m3uTxt
+                .split(/\r?\n/)
+                .find((l) => l.trim() && !l.trim().startsWith('#'));
+              const probeTargetRaw = mapMatch?.[1] || firstSegLine?.trim() || '';
+              let segmentHealthy = false;
+              if (probeTargetRaw) {
+                try {
+                  const absProbeUrl = new URL(probeTargetRaw, rawM3u8).href;
+                  const segProbe = await curlGetBufferWithStatus(
+                    absProbeUrl,
+                    { 'User-Agent': CHROME_UA, Referer: playRef, Range: 'bytes=0-16383' },
+                    3
+                  ).catch(() => ({ buf: Buffer.alloc(0), status: 0 }));
+                  const headStr = segProbe.buf
+                    .subarray(0, 48)
+                    .toString('utf8')
+                    .trimStart()
+                    .toLowerCase();
+                  segmentHealthy =
+                    segProbe.status >= 200 &&
+                    segProbe.status < 400 &&
+                    segProbe.buf.length >= 256 &&
+                    !headStr.startsWith('<!doctype') &&
+                    !headStr.startsWith('<html');
+                } catch {
+                  segmentHealthy = false;
+                }
+              }
+              if (segmentHealthy) {
+                found.push({
+                  id: `anime-zilla-${matchedSlug}-${resolvedEpNum}-${langCode.toLowerCase()}`,
+                  label: `${langLabel} · Anime HD`,
+                  lang: langCode,
+                  quality: '1080p HLS',
+                  sourceUrl: rawM3u8,
+                  resolverType: 'direct_hls',
+                  resolvedStreamUrl: buildHlsProxyUrl(rawM3u8, playRef),
+                });
+              }
             }
           }
         } catch {

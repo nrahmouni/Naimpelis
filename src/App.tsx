@@ -3217,6 +3217,7 @@ export function App() {
         resolverType: targetTrack.resolverType,
         preferLang: String(targetTrack.lang || 'ES').toUpperCase(),
         title: videoState.title,
+        ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });
       const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
       const data = await res.json().catch(() => null);

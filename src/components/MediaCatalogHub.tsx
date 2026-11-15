@@ -155,6 +155,7 @@ type FocusedHubMode =
   | 'movistar'
   | 'dazn'
   | 'uk_sports'
+  | 'china_football'
   | 'beinsports'
   | 'espn'
   | 'dsports'
@@ -177,6 +178,7 @@ const TDT_NATIONAL_CATEGORIES: {
 
 const ALL_LIVE_CATEGORIES: { id: 'all' | 'tdt_all' | TdtCategory; es: string; ca: string; en: string }[] = [
   { id: 'all', es: 'Todos en Vivo', ca: 'Tots en Directe', en: 'All Live TV' },
+  { id: 'china_football', es: 'Fútbol China (中文)', ca: 'Futbol Xina (中文)', en: 'China Football (中文)' },
   { id: 'uk_sports', es: 'UK Sports (EN)', ca: 'UK Sports (EN)', en: 'UK Sports (EN)' },
   { id: 'beinsports', es: 'beIN SPORTS', ca: 'beIN SPORTS', en: 'beIN SPORTS' },
   { id: 'espn', es: 'ESPN (1–7)', ca: 'ESPN (1–7)', en: 'ESPN (1–7)' },
@@ -928,7 +930,15 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     'all' | 'soccer' | 'motor' | 'basketball' | 'tennis'
   >('soccer');
   const [footballLiveBrand, setFootballLiveBrand] = useState<
-    'all' | 'uk_sports' | 'beinsports' | 'espn' | 'dsports' | 'tnt_space' | 'movistar' | 'dazn'
+    | 'all'
+    | 'china_football'
+    | 'uk_sports'
+    | 'beinsports'
+    | 'espn'
+    | 'dsports'
+    | 'tnt_space'
+    | 'movistar'
+    | 'dazn'
   >('all');
   const [show247Strip, setShow247Strip] = useState(true);
   const [sportsSearch, setSportsSearch] = useState('');
@@ -1999,7 +2009,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   };
 
   const enterLiveSportsBrandHub = (
-    brand: 'uk_sports' | 'beinsports' | 'espn' | 'dsports' | 'tnt_space'
+    brand: 'china_football' | 'uk_sports' | 'beinsports' | 'espn' | 'dsports' | 'tnt_space'
   ) => {
     triggerHaptic('light');
     setFocusedHub(brand);
@@ -2036,6 +2046,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   const footballSectionLiveChannels = React.useMemo(() => {
     const allowedCats = new Set([
+      'china_football',
       'uk_sports',
       'beinsports',
       'espn',
@@ -2063,7 +2074,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           norm(ch.network).includes(q);
         // Only filter the channel strip by sportsSearch if user typed a channel name; otherwise keep strip visible
         if (
-          /sky|uk|premier|eurosport|mutv|talksport|fifa|bein|arab|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
+          /cctv|china|chino|zh|guangdong|fengyun|xinshijue|tianjin|sky|uk|premier|eurosport|mutv|talksport|fifa|bein|arab|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
             q
           )
         ) {
@@ -2080,6 +2091,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         ch.category === 'movistar' ||
         ch.category === 'dazn' ||
         ch.category === 'uk_sports' ||
+        ch.category === 'china_football' ||
         ch.category === 'beinsports' ||
         ch.category === 'espn' ||
         ch.category === 'dsports' ||
@@ -2100,6 +2112,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       const isSportsChannel =
         ch.category === 'dazn' ||
         ch.category === 'uk_sports' ||
+        ch.category === 'china_football' ||
         ch.category === 'beinsports' ||
         ch.category === 'espn' ||
         ch.category === 'dsports' ||
@@ -4236,6 +4249,17 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       onClick: enterDaznLiveHub,
                     },
                     {
+                      id: 'china_football',
+                      label: pickLang(lang, {
+                        es: 'Fútbol China (中文)',
+                        ca: 'Futbol Xina (中文)',
+                        en: 'China Football (中文)',
+                      }),
+                      mark: '中文·球',
+                      markClass: 'text-red-400 tracking-tight text-sm sm:text-base font-black',
+                      onClick: () => enterLiveSportsBrandHub('china_football'),
+                    },
+                    {
                       id: 'uk_sports',
                       label: 'UK Sports (EN)',
                       mark: 'SKY UK',
@@ -4847,6 +4871,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   <span className="font-display font-bold text-sm text-white truncate px-1">
                     {activeSection === 'tdt' && tdtCategory === 'dazn'
                       ? 'DAZN Live'
+                      : activeSection === 'tdt' && tdtCategory === 'china_football'
+                      ? 'Fútbol China (中文 · 欧冠/西甲/英超)'
                       : activeSection === 'tdt' && tdtCategory === 'uk_sports'
                       ? 'UK Sports'
                       : activeSection === 'tdt'
@@ -7606,6 +7632,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           id: 'all',
                           label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }),
                         },
+                        {
+                          id: 'china_football',
+                          label: pickLang(lang, {
+                            es: 'China (中文 · 欧冠/西甲/英超)',
+                            ca: 'Xina (中文 · 欧冠/西甲/英超)',
+                            en: 'China (中文 · UCL/LaLiga/EPL)',
+                          }),
+                        },
                         { id: 'uk_sports', label: 'UK Sports (EN)' },
                         { id: 'beinsports', label: 'beIN SPORTS' },
                         { id: 'espn', label: 'ESPN (1–7)' },
@@ -7694,6 +7728,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               {ch.channels?.[0]?.lang === 'AR' && (
                                 <span className="px-1 py-0.5 rounded bg-violet-500/25 text-[8px] font-black uppercase text-violet-200 shrink-0">
                                   AR
+                                </span>
+                              )}
+                              {ch.channels?.[0]?.lang === 'ZH' && (
+                                <span className="px-1 py-0.5 rounded bg-red-500/25 text-[8px] font-black uppercase text-red-200 shrink-0">
+                                  中文
                                 </span>
                               )}
                             </div>

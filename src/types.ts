@@ -588,6 +588,7 @@ export type TdtCategory =
   | 'movistar'
   | 'dazn'
   | 'uk_sports'
+  | 'china_football'
   | 'beinsports'
   | 'espn'
   | 'dsports'

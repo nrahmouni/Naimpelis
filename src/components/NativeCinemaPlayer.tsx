@@ -3551,15 +3551,24 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             return activeTrackUrl;
           })();
 
+          const safeIframeSrc =
+            !videoState.url.startsWith('/api/embed-proxy') &&
+            /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc)/i.test(videoState.url)
+              ? `/api/embed-proxy?url=${encodeURIComponent(videoState.url)}`
+              : videoState.url;
+
           return (
             <div className="relative w-full h-full bg-black">
               <iframe
-                key={videoState.url}
-                src={videoState.url}
+                key={safeIframeSrc}
+                src={safeIframeSrc}
                 title={videoState.title || 'Reproductor Web HD'}
-                allow="autoplay; fullscreen; encrypted-media; picture-in-picture; clipboard-write; web-share"
+                {...(safeIframeSrc.startsWith('/api/embed-proxy')
+                  ? {}
+                  : { sandbox: 'allow-scripts allow-same-origin allow-forms allow-presentation' })}
+                allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
                 allowFullScreen
-                referrerPolicy="no-referrer-when-downgrade"
+                referrerPolicy="no-referrer"
                 className="w-full h-full border-0 bg-black"
               />
 
@@ -3615,9 +3624,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       <ExternalLink className="w-3 h-3" />
                       <span>
                         {pickLang(lang, {
-                          es: 'Sin sandbox',
-                          ca: 'Sense sandbox',
-                          en: 'Open vidfast',
+                          es: 'Abrir fuera',
+                          ca: 'Obrir fora',
+                          en: 'Open external',
                         })}
                       </span>
                     </a>
