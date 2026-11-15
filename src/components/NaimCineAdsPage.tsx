@@ -288,7 +288,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                   <NaimBrandLogo size={46} />
                   <div>
                     <div className="font-display font-black text-xl text-white tracking-tight leading-none">
-                      NAIM CINE
+                      Riffan<span className="text-[#A78BFA]">TV</span>
                     </div>
                     <div className="text-[11px] font-medium text-zinc-300 mt-1">
                       Cine · Series · Deportes · TV en Vivo
@@ -534,7 +534,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                   <NaimBrandLogo size={40} />
                   <div>
                     <div className="font-display font-black text-base text-white leading-none">
-                      NAIM CINE
+                      Riffan<span className="text-[#A78BFA]">TV</span>
                     </div>
                     <div className="text-[10px] text-zinc-300 mt-0.5">
                       Cine · Series · Deportes Live
@@ -639,7 +639,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                   <NaimBrandLogo size={48} />
                   <div>
                     <div className="font-display font-extrabold text-xl tracking-tight text-white leading-none">
-                      NAIM CINE
+                      Riffan<span className="text-[#A78BFA]">TV</span>
                     </div>
                     <div className="text-xs text-zinc-400 mt-1">
                       Private Cinema · Live Sports · Social Watch Party
@@ -1135,7 +1135,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                 <div className="flex items-center gap-3">
                   <NaimBrandLogo size={42} />
                   <span className="font-display font-extrabold text-2xl text-white tracking-tight">
-                    NAIM CINE
+                    Riffan<span className="text-[#A78BFA]">TV</span>
                   </span>
                 </div>
                 <p className="text-xs sm:text-sm text-zinc-400">
@@ -1188,7 +1188,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                   <NaimBrandLogo size={46} />
                   <div>
                     <div className="font-display font-extrabold text-xl text-white tracking-tight">
-                      NAIM CINE
+                      Riffan<span className="text-[#A78BFA]">TV</span>
                     </div>
                     <div className="text-xs text-zinc-400">
                       El Cine, las Series y el Deporte en Vivo · Todo en Uno

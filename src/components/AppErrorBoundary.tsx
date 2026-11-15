@@ -41,8 +41,8 @@ export class AppErrorBoundary extends React.Component<
     const lang = getBoundaryLang();
 
     return (
-      <div className="min-h-full w-full bg-[#0E0E10] text-[#EFEFF1] flex items-center justify-center p-6">
-        <div className="max-w-md w-full rounded-3xl bg-[#18181B] border border-white/12 p-6 text-center space-y-4">
+      <div className="min-h-full w-full bg-[#07080C] text-[#F4F5F8] flex items-center justify-center p-6">
+        <div className="max-w-md w-full rounded-3xl bg-[#11131B] border border-white/12 p-6 text-center space-y-4">
           <h2 className="font-display font-bold text-lg text-white">
             {isQuota
               ? pickLang(lang, {
@@ -56,7 +56,7 @@ export class AppErrorBoundary extends React.Component<
                   en: 'A temporary interruption occurred',
                 })}
           </h2>
-          <p className="text-xs sm:text-sm text-[#ADADB8] leading-relaxed">
+          <p className="text-xs sm:text-sm text-[#A9AEBE] leading-relaxed">
             {isQuota
               ? pickLang(lang, {
                   es: 'La cuota gratuita diaria de lectura/escritura en la nube se restablecerá mañana. Tus salas en vivo y reproducción siguen operativas.',
@@ -72,14 +72,14 @@ export class AppErrorBoundary extends React.Component<
           <button
             type="button"
             onClick={() => window.location.reload()}
-            className="min-h-[44px] px-5 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] text-xs sm:text-sm font-semibold text-white inline-flex items-center gap-2 cursor-pointer"
+            className="min-h-[44px] px-5 rounded-2xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-xs sm:text-sm font-semibold text-white inline-flex items-center gap-2 cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />
             <span>
               {pickLang(lang, {
-                es: 'Recargar NAIM CINE',
-                ca: 'Recarregar NAIM CINE',
-                en: 'Reload NAIM CINE',
+                es: 'Recargar RiffanTV',
+                ca: 'Recarregar RiffanTV',
+                en: 'Reload RiffanTV',
               })}
             </span>
           </button>

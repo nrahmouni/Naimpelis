@@ -1,3 +1,4 @@
+import crypto from 'crypto';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import {
@@ -1251,3 +1252,185 @@ export async function extractVidsrcBuzzHlsTracks(opts: {
 
   return tracks;
 }
+
+const vidRockKey = Buffer.from(
+  '7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f',
+  'hex'
+);
+
+export function decryptVidRockToken(token: string): string | null {
+  try {
+    const raw = Buffer.from(token, 'base64url');
+    if (raw.length <= 28) return null;
+    const iv = raw.subarray(0, 12);
+    const tag = raw.subarray(raw.length - 16);
+    const ciphertext = raw.subarray(12, raw.length - 16);
+    const decipher = crypto.createDecipheriv('aes-256-gcm', vidRockKey, iv);
+    decipher.setAuthTag(tag);
+    return Buffer.concat([decipher.update(ciphertext), decipher.final()]).toString('utf8');
+  } catch {
+    return null;
+  }
+}
+
+const vidsrcBuzzEmptyCache = new LruTtlCache<string, boolean>(300, 15 * 60 * 1000);
+
+export async function probeVidsrcBuzzHasContent(opts: {
+  tmdbId?: string | number;
+  imdbId?: string | null;
+  mediaType?: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+}): Promise<boolean> {
+  const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
+  const cleanImdb = String(opts.imdbId || '').trim();
+  const id = cleanId || cleanImdb;
+  if (!id) return false;
+  const mType = opts.mediaType === 'tv' ? 'tv' : 'movie';
+  const s = Math.max(1, Number(opts.season || 1));
+  const e = Math.max(1, Number(opts.episode || 1));
+  const key = `${mType}:${id}:${s}:${e}`;
+  if (vidsrcBuzzEmptyCache.has(key)) {
+    return vidsrcBuzzEmptyCache.get(key) === true;
+  }
+  try {
+    const testUrl =
+      mType === 'tv'
+        ? `https://vidsrc.buzz/embed/tv/${encodeURIComponent(id)}/${s}/${e}`
+        : `https://vidsrc.buzz/embed/movie/${encodeURIComponent(id)}`;
+    const page = await curlGetText(testUrl, { 'User-Agent': CHROME_UA, Referer: 'https://vidsrc.buzz/' }, 4, true);
+    const html = page.text || '';
+    if (!html || /No content available/i.test(html) || /"ssr"\s*:\s*null/i.test(html)) {
+      vidsrcBuzzEmptyCache.set(key, false);
+      return false;
+    }
+    vidsrcBuzzEmptyCache.set(key, true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function extractVidRockHlsTracks(opts: {
+  tmdbId?: string | number;
+  mediaType?: 'movie' | 'tv';
+  season?: number;
+  episode?: number;
+}): Promise<TrackRecord[]> {
+  const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
+  if (!cleanId) return [];
+
+  const mType = opts.mediaType === 'tv' ? 'tv' : 'movie';
+  const s = Math.max(1, Number(opts.season || 1));
+  const e = Math.max(1, Number(opts.episode || 1));
+
+  const apiUrl =
+    mType === 'tv'
+      ? `https://vidrock.net/api/tv/${cleanId}/${s}/${e}`
+      : `https://vidrock.net/api/movie/${cleanId}`;
+
+  try {
+    const resp = await streamingFetch(apiUrl, {
+      headers: {
+        'User-Agent': CHROME_UA,
+        Referer: 'https://vidrock.net/',
+        Accept: 'application/json, text/plain, */*',
+      },
+      timeoutMs: 4500,
+    }).catch(() => null);
+
+    let rawJson: any = null;
+    if (resp && resp.ok) {
+      rawJson = await resp.json().catch(() => null);
+    }
+    if (!rawJson) {
+      const fb = await curlGetText(apiUrl, { 'User-Agent': CHROME_UA, Referer: 'https://vidrock.net/' }, 5, true).catch(
+        () => ({ text: '' })
+      );
+      if (fb.text) {
+        try {
+          rawJson = JSON.parse(fb.text);
+        } catch {
+          rawJson = null;
+        }
+      }
+    }
+
+    const rawEntries: { name: string; url: string; rawLang?: string }[] = [];
+    if (Array.isArray(rawJson)) {
+      for (const entry of rawJson) {
+        const name = String(entry?.name || 'Server').trim();
+        const rawToken = String(entry?.url || '').trim();
+        if (rawToken) rawEntries.push({ name, url: rawToken, rawLang: entry?.language });
+      }
+    } else if (rawJson && typeof rawJson === 'object') {
+      for (const [srvName, val] of Object.entries(rawJson)) {
+        if (val && typeof val === 'object') {
+          const rawToken = String((val as any)?.url || '').trim();
+          if (rawToken) {
+            rawEntries.push({
+              name: srvName,
+              url: rawToken,
+              rawLang: (val as any)?.language,
+            });
+          }
+        }
+      }
+    }
+
+    if (rawEntries.length === 0) return [];
+
+    const candidates = rawEntries
+      .map((entry) => {
+        const decrypted = entry.url.startsWith('http')
+          ? entry.url
+          : decryptVidRockToken(entry.url);
+        if (!decrypted || !decrypted.startsWith('http')) return null;
+        let lang: 'ES' | 'LAT' | 'VOSE' | 'EN' = 'EN';
+        const rl = String(entry.rawLang || '').toLowerCase();
+        if (rl.includes('spanish') || rl.includes('español')) {
+          lang = rl.includes('latino') ? 'LAT' : 'ES';
+        } else if (rl.includes('japanese') || rl.includes('japón') || rl.includes('anime')) {
+          lang = 'VOSE';
+        }
+        return { name: entry.name, url: decrypted, lang };
+      })
+      .filter((c): c is { name: string; url: string; lang: 'ES' | 'LAT' | 'VOSE' | 'EN' } => Boolean(c));
+
+    if (candidates.length === 0) return [];
+
+    const verified = await Promise.all(
+      candidates.slice(0, 5).map(async (item, idx): Promise<TrackRecord | null> => {
+        const isHealthy = await probeHlsSegmentHealth(item.url, 'https://vidrock.net/');
+        if (!isHealthy) return null;
+
+        const proxyUrl = buildHlsProxyUrl(item.url, 'https://vidrock.net/');
+        const trackId = `vidrock-${mType}-${cleanId}-${s}-${e}-${idx + 1}`;
+        const langLabel =
+          item.lang === 'VOSE'
+            ? 'VOSE Sub'
+            : item.lang === 'ES'
+            ? 'Castellano'
+            : item.lang === 'LAT'
+            ? 'Latino'
+            : 'English';
+        return {
+          id: trackId,
+          label: `${langLabel} 1080p · ${item.name}`,
+          lang: item.lang,
+          quality: '1080p HLS',
+          sourceUrl: item.url,
+          referer: 'https://vidrock.net/',
+          resolverType: 'direct_hls',
+          resolvedStreamUrl: proxyUrl,
+        };
+      })
+    );
+
+    return verified.filter((t): t is TrackRecord => Boolean(t));
+  } catch (err) {
+    console.warn('extractVidRockHlsTracks error:', err);
+    return [];
+  }
+}
+

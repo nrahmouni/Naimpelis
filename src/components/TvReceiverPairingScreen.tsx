@@ -364,10 +364,10 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
       {/* Top TV Header */}
       <header className="relative z-10 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <NaimBrandLogo size={46} className="shadow-[0_0_26px_rgba(145,70,255,0.4)]" />
+          <NaimBrandLogo size={46} className="shadow-[0_0_26px_rgba(139,92,246,0.38)]" />
           <div>
-            <div className="font-display font-bold text-lg sm:text-2xl tracking-[0.14em] text-white">
-              NAIM <span className="text-[#A970FF]">CINE</span>{' '}
+            <div className="font-display font-bold text-lg sm:text-2xl tracking-[-0.015em] text-[#F4F5F8]">
+              Riffan<span className="text-[#A78BFA] font-extrabold">TV</span>{' '}
               <span className="text-zinc-300 font-semibold text-sm sm:text-base tracking-normal ml-1">
                 Smart TV
               </span>
@@ -446,9 +446,9 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
           </h1>
           <p className="text-sm sm:text-lg text-zinc-400 leading-relaxed">
             {pickLang(lang, {
-              es: 'En tu móvil entra a tu sala de NAIM CINE, toca el botón TV y escribe este código:',
-              ca: 'Al teu mòbil entra a la teva sala de NAIM CINE, toca el botó TV i escriu aquest codi:',
-              en: 'On your phone, open your NAIM CINE room, tap the TV button, and enter this code:',
+              es: 'En tu móvil entra a tu sala de RiffanTV, toca el botón TV y escribe este código:',
+              ca: 'Al teu mòbil entra a la teva sala de RiffanTV, toca el botó TV i escriu aquest codi:',
+              en: 'On your phone, open your RiffanTV room, tap the TV button, and enter this code:',
             })}
           </p>
         </div>
@@ -652,9 +652,9 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
             </strong>
             <span className="break-all">
               {pickLang(lang, {
-                es: `Entra en ${liveHostLabel || 'NAIM CINE'} desde tu teléfono.`,
-                ca: `Entra a ${liveHostLabel || 'NAIM CINE'} des del teu telèfon.`,
-                en: `Open ${liveHostLabel || 'NAIM CINE'} on your smartphone.`,
+                es: `Entra en ${liveHostLabel || 'RiffanTV'} desde tu teléfono.`,
+                ca: `Entra a ${liveHostLabel || 'RiffanTV'} des del teu telèfon.`,
+                en: `Open ${liveHostLabel || 'RiffanTV'} on your smartphone.`,
               })}
             </span>
           </div>

@@ -1,7 +1,7 @@
 import React, { useEffect, useId, useRef, useState } from 'react';
 import { Volume2 } from 'lucide-react';
-import { playNaimcineIntroSound, triggerHaptic } from '../utils/haptics';
-import { NaimBrandLogo } from './NaimBrandLogo';
+import { playRiffanIntroSound, triggerHaptic } from '../utils/haptics';
+import { RiffanBrandLogo } from './NaimBrandLogo';
 import { pickLang } from '../utils/i18n';
 import type { AppLanguage } from '../types';
 
@@ -12,28 +12,24 @@ interface NaimcineIntroProps {
   lang?: AppLanguage;
 }
 
-interface CinemaMote {
+interface OpticalMote {
   x: number;
   y: number;
   z: number;
   vx: number;
   vy: number;
   size: number;
-  hue: 'crimson' | 'gold' | 'platinum';
+  hue: 'violet' | 'indigo' | 'platinum';
   phase: number;
 }
 
-const INTRO_DURATION_MS = 3750;
+const INTRO_DURATION_MS = 2350;
 
 /**
- * Hyper-Realistic IMAX / Dolby Cinema Theatrical Studio Intro.
- * Features:
- * - Real-time 60fps HTML5 Optical Canvas: volumetric projector god-rays, Panavision
- *   anamorphic lens flare, spectral ruby/gold/platinum prism light ribbons, expanding
- *   acoustic shockwave ring, and 3D depth-of-field floating dust bokeh particles.
- * - Real 35mm Celluloid Film Grain procedural texture overlay.
- * - 3D perspective CNC Titanium & Dichroic Ruby NaimBrandLogo monolith reveal.
- * - Extruded brushed-platinum & crimson-chrome cinema wordmark with live specular sweep.
+ * RiffanTV (RTV) "Optic Sweep" Studio Intro (2.35s, 60fps Canvas + GPU CSS):
+ * - Act 1 (0.0s–0.45s): Three architectural light shafts (R · T · V) ignite across Obsidian space.
+ * - Act 2 (0.45s–0.95s): Prismatic violet/indigo horizon streak, acoustic ring & 3D RTV monolith lockup.
+ * - Act 3 (0.95s–2.35s): Specular 14° glass glint sweep across the RTV monolith & RiffanTV wordmark reveal.
  */
 export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
   onComplete,
@@ -46,13 +42,12 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
   onCompleteRef.current = onComplete;
 
   const rawId = useId();
-  const grainFilterId = `nc-film-grain-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const grainFilterId = `rtv-film-grain-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
   const [soundActive, setSoundActive] = useState<boolean>(false);
 
-  // Trigger audio + finish timer
   useEffect(() => {
     if (withSound) {
-      const ok = playNaimcineIntroSound();
+      const ok = playRiffanIntroSound();
       setSoundActive(ok);
       triggerHaptic('success');
     }
@@ -64,7 +59,6 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
     return () => clearTimeout(timer);
   }, [withSound]);
 
-  // Real-time 60fps Cinema Optics Canvas Engine
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -90,16 +84,15 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
     resize();
     window.addEventListener('resize', resize);
 
-    // Initialize 72 3D cinema dust motes floating in projector beam
-    const moteCount = prefersReduced ? 18 : 72;
-    const motes: CinemaMote[] = Array.from({ length: moteCount }, (_, i) => ({
-      x: (Math.random() - 0.5) * 1.6,
-      y: (Math.random() - 0.5) * 1.4,
-      z: 0.18 + Math.random() * 1.6,
-      vx: (Math.random() - 0.5) * 0.00028,
-      vy: -0.00018 - Math.random() * 0.00034,
-      size: 0.9 + Math.random() * 2.6,
-      hue: i % 5 === 0 ? 'crimson' : i % 4 === 0 ? 'gold' : 'platinum',
+    const moteCount = prefersReduced ? 12 : 56;
+    const motes: OpticalMote[] = Array.from({ length: moteCount }, (_, i) => ({
+      x: (Math.random() - 0.5) * 1.5,
+      y: (Math.random() - 0.5) * 1.3,
+      z: 0.25 + Math.random() * 1.5,
+      vx: (Math.random() - 0.5) * 0.00026,
+      vy: -0.00018 - Math.random() * 0.00032,
+      size: 0.8 + Math.random() * 2.2,
+      hue: i % 5 === 0 ? 'indigo' : i % 3 === 0 ? 'violet' : 'platinum',
       phase: Math.random() * Math.PI * 2,
     }));
 
@@ -108,190 +101,123 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
 
     const renderFrame = (now: number) => {
       const elapsed = now - startTime;
-      const p = Math.min(1, elapsed / INTRO_DURATION_MS); // 0 -> 1
+      const p = Math.min(1, elapsed / INTRO_DURATION_MS);
 
       const cx = width * 0.5;
       const cy = height * 0.455;
       const minDim = Math.min(width, height);
 
-      // 1. Deep Optical Theater Canvas (#020205)
+      // 1. Cinema Obsidian Optical Void (#05060A)
       ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = '#020205';
+      ctx.fillStyle = '#05060A';
       ctx.fillRect(0, 0, width, height);
 
-      // Phase envelopes
-      const ignition = Math.min(1, elapsed / 450);
+      const ignition = Math.min(1, elapsed / 320);
+      const converge = elapsed < 140 ? 0 : Math.min(1, (elapsed - 140) / 420);
       const impact = elapsed < 440 ? 0 : Math.min(1, (elapsed - 440) / 260);
-      const warpOut = p < 0.77 ? 0 : Math.pow((p - 0.77) / 0.23, 2.1);
-      const masterFade = p > 0.91 ? Math.max(0, 1 - (p - 0.91) / 0.09) : 1;
+      const warpOut = p < 0.8 ? 0 : Math.pow((p - 0.8) / 0.2, 2.0);
+      const masterFade = p > 0.88 ? Math.max(0, 1 - (p - 0.88) / 0.12) : 1;
 
       ctx.globalCompositeOperation = 'lighter';
 
-      // 2. Overhead Volumetric Broadcast Cone (God-Rays)
-      const beamAlpha = (0.06 + 0.11 * ignition) * masterFade * (1 - warpOut * 0.4);
-      if (beamAlpha > 0.005) {
-        const projGrad = ctx.createRadialGradient(
-          cx,
-          -height * 0.18,
-          10,
-          cx,
-          cy,
-          Math.max(width, height) * 0.95
-        );
-        projGrad.addColorStop(0, `rgba(244, 240, 255, ${beamAlpha * 1.45})`);
-        projGrad.addColorStop(0.28, `rgba(145, 70, 255, ${beamAlpha * 0.9})`);
-        projGrad.addColorStop(0.62, `rgba(24, 24, 27, ${beamAlpha * 0.4})`);
-        projGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = projGrad;
-        ctx.beginPath();
-        ctx.moveTo(cx - width * 0.06, -20);
-        ctx.lineTo(cx + width * 0.06, -20);
-        ctx.lineTo(cx + width * 0.68, height + 20);
-        ctx.lineTo(cx - width * 0.68, height + 20);
-        ctx.closePath();
-        ctx.fill();
-
-        // Subtle Shimmering Broadcast Ray Shafts
-        const rayCount = 5;
-        for (let r = 0; r < rayCount; r++) {
-          const offset = (r - (rayCount - 1) / 2) * 0.14;
-          const sway = Math.sin(elapsed * 0.0012 + r * 1.4) * 0.022;
-          const angle = offset + sway;
-          const rayGrad = ctx.createLinearGradient(cx, -20, cx + Math.sin(angle) * height, height * 0.85);
-          rayGrad.addColorStop(0, `rgba(255, 255, 255, ${beamAlpha * 0.42})`);
-          rayGrad.addColorStop(0.45, `rgba(145, 70, 255, ${beamAlpha * 0.25})`);
-          rayGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-
-          ctx.save();
-          ctx.translate(cx, -20);
-          ctx.rotate(angle);
-          ctx.fillStyle = rayGrad;
-          ctx.fillRect(-width * 0.028, 0, width * 0.056, height * 1.15);
-          ctx.restore();
-        }
-      }
-
-      // 3. Netflix-Inspired Vertical Prismatic Spectrum Curtain ("Tudum" Light Filaments)
-      if (impact > 0) {
-        const prismScale = 1 + warpOut * 3.4;
-        const prismAlpha = impact * (1 - warpOut * 0.42) * masterFade;
-
-        // Ambient Center Electric Violet Broadcast Halo
-        const haloR = minDim * (0.36 + 0.1 * Math.sin(elapsed * 0.0022)) * prismScale;
-        const halo = ctx.createRadialGradient(cx, cy, 0, cx, cy, haloR);
-        halo.addColorStop(0, `rgba(235, 224, 255, ${0.24 * prismAlpha})`);
-        halo.addColorStop(0.3, `rgba(145, 70, 255, ${0.38 * prismAlpha})`);
-        halo.addColorStop(0.68, `rgba(92, 22, 197, ${0.14 * prismAlpha})`);
-        halo.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = halo;
+      // 2. Central Optical Prism Spotlight
+      const spotAlpha = (0.08 + 0.16 * ignition) * masterFade * (1 - warpOut * 0.35);
+      if (spotAlpha > 0.005) {
+        const spot = ctx.createRadialGradient(cx, cy - minDim * 0.06, 0, cx, cy, minDim * 0.65);
+        spot.addColorStop(0, `rgba(192, 132, 252, ${spotAlpha * 1.15})`);
+        spot.addColorStop(0.32, `rgba(139, 92, 246, ${spotAlpha * 0.78})`);
+        spot.addColorStop(0.68, `rgba(99, 102, 241, ${spotAlpha * 0.28})`);
+        spot.addColorStop(1, 'rgba(0, 0, 0, 0)');
+        ctx.fillStyle = spot;
         ctx.fillRect(0, 0, width, height);
-
-        // Multi-Filament Vertical Prismatic Spectrum Bars
-        const ribbons = [
-          { xOff: -0.28, w: 1.6, h: 0.62, color: '119, 44, 232', a: 0.34 },
-          { xOff: -0.22, w: 2.8, h: 0.78, color: '145, 70, 255', a: 0.48 },
-          { xOff: -0.17, w: 1.5, h: 0.58, color: '191, 148, 255', a: 0.32 },
-          { xOff: -0.125, w: 3.6, h: 0.88, color: '145, 70, 255', a: 0.56 },
-          { xOff: -0.085, w: 1.8, h: 0.68, color: '56, 189, 248', a: 0.28 },
-          { xOff: -0.045, w: 4.2, h: 0.94, color: '169, 112, 255', a: 0.62 },
-          { xOff: 0.0, w: 5.4, h: 1.0, color: '145, 70, 255', a: 0.68 },
-          { xOff: 0.045, w: 4.0, h: 0.92, color: '169, 112, 255', a: 0.58 },
-          { xOff: 0.088, w: 1.8, h: 0.66, color: '0, 245, 147', a: 0.24 },
-          { xOff: 0.13, w: 3.6, h: 0.86, color: '145, 70, 255', a: 0.54 },
-          { xOff: 0.175, w: 1.6, h: 0.6, color: '226, 232, 240', a: 0.3 },
-          { xOff: 0.225, w: 2.8, h: 0.76, color: '145, 70, 255', a: 0.46 },
-          { xOff: 0.285, w: 1.6, h: 0.62, color: '119, 44, 232', a: 0.34 },
-        ];
-
-        ribbons.forEach((rb, idx) => {
-          const drift = Math.sin(elapsed * 0.002 + idx * 0.9) * 5;
-          const rx = cx + rb.xOff * minDim * prismScale + drift;
-          const rh = height * rb.h * (0.38 + 0.62 * impact) * (1 + warpOut * 1.35);
-          const rw = rb.w * (1 + warpOut * 8.5);
-          const lGrad = ctx.createLinearGradient(rx, cy - rh * 0.5, rx, cy + rh * 0.5);
-          lGrad.addColorStop(0, `rgba(${rb.color}, 0)`);
-          lGrad.addColorStop(0.5, `rgba(${rb.color}, ${rb.a * prismAlpha})`);
-          lGrad.addColorStop(1, `rgba(${rb.color}, 0)`);
-          ctx.fillStyle = lGrad;
-          ctx.fillRect(rx - rw * 0.5, cy - rh * 0.5, rw, rh);
-        });
       }
 
-      // 4. Acoustic Sub-Bass Shockwave Ring at +0.46s
-      if (elapsed > 450 && elapsed < 1950) {
-        const sw = (elapsed - 450) / 1500;
+      // 3. Three Architectural Light Shafts (R · T · V Convergence) with 14° optical tilt
+      const spread = (1 - Math.pow(converge, 0.72)) * minDim * 0.28 + warpOut * minDim * 0.36;
+      const shafts = [
+        { offset: -spread, w: 3.4, h: 0.76, color: '244, 245, 248', alpha: 0.42 },
+        { offset: 0, w: 5.2, h: 0.92, color: '139, 92, 246', alpha: 0.68 },
+        { offset: spread, w: 3.4, h: 0.76, color: '99, 102, 241', alpha: 0.46 },
+      ];
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(0.244); // ~14° signature RiffanTV optical cut angle
+      shafts.forEach((s, idx) => {
+        const sway = Math.sin(elapsed * 0.0028 + idx * 1.2) * 3;
+        const sx = s.offset + sway;
+        const sh = height * s.h * (0.35 + 0.65 * ignition);
+        const sw = s.w * (1 + warpOut * 4.5);
+        const sGrad = ctx.createLinearGradient(sx, -sh * 0.5, sx, sh * 0.5);
+        sGrad.addColorStop(0, `rgba(${s.color}, 0)`);
+        sGrad.addColorStop(0.5, `rgba(${s.color}, ${s.alpha * ignition * (1 - impact * 0.35) * masterFade})`);
+        sGrad.addColorStop(1, `rgba(${s.color}, 0)`);
+        ctx.fillStyle = sGrad;
+        ctx.fillRect(sx - sw * 0.5, -sh * 0.5, sw, sh);
+      });
+      ctx.restore();
+
+      // 4. Dual Acoustic Shockwave Pulse Rings (+0.52s)
+      if (elapsed > 500 && elapsed < 1850) {
+        const sw = (elapsed - 500) / 1350;
         const easeSw = 1 - Math.pow(1 - sw, 3);
-        const ringR = minDim * (0.08 + easeSw * 0.68);
-        const ringAlpha = (1 - sw) * 0.36 * masterFade;
-        ctx.strokeStyle = `rgba(191, 148, 255, ${ringAlpha})`;
-        ctx.lineWidth = Math.max(1, (1 - sw) * 3.2);
+        const ringR = minDim * (0.09 + easeSw * 0.64);
+        const ringAlpha = (1 - sw) * 0.42 * masterFade;
+        ctx.strokeStyle = `rgba(167, 139, 250, ${ringAlpha})`;
+        ctx.lineWidth = Math.max(1, (1 - sw) * 3.0);
         ctx.beginPath();
         ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
         ctx.stroke();
       }
 
-      // 5. Horizontal Anamorphic Broadcast Flare
+      // 5. Horizontal Anamorphic Broadcast Streak
       const flarePeak =
-        elapsed < 560
-          ? elapsed / 560
-          : Math.max(0.24, 1 - (elapsed - 560) / 1600) + warpOut * 0.65;
+        elapsed < 540
+          ? elapsed / 540
+          : Math.max(0.22, 1 - (elapsed - 540) / 1200) + warpOut * 0.5;
       const flareAlpha = Math.min(1, flarePeak) * masterFade;
       if (flareAlpha > 0.01) {
-        const streakW = Math.min(width * 0.92, 960) * (0.35 + 0.65 * ignition) * (1 + warpOut * 0.5);
+        const streakW = Math.min(width * 0.9, 920) * (0.35 + 0.65 * ignition);
         const streakGrad = ctx.createLinearGradient(cx - streakW * 0.5, cy, cx + streakW * 0.5, cy);
-        streakGrad.addColorStop(0, 'rgba(148, 163, 184, 0)');
-        streakGrad.addColorStop(0.22, `rgba(186, 230, 253, ${0.16 * flareAlpha})`);
-        streakGrad.addColorStop(0.45, `rgba(191, 148, 255, ${0.52 * flareAlpha})`);
-        streakGrad.addColorStop(0.5, `rgba(255, 255, 255, ${0.84 * flareAlpha})`);
-        streakGrad.addColorStop(0.55, `rgba(191, 148, 255, ${0.52 * flareAlpha})`);
-        streakGrad.addColorStop(0.78, `rgba(186, 230, 253, ${0.16 * flareAlpha})`);
-        streakGrad.addColorStop(1, 'rgba(148, 163, 184, 0)');
+        streakGrad.addColorStop(0, 'rgba(99, 102, 241, 0)');
+        streakGrad.addColorStop(0.25, `rgba(139, 92, 246, ${0.22 * flareAlpha})`);
+        streakGrad.addColorStop(0.46, `rgba(192, 132, 252, ${0.58 * flareAlpha})`);
+        streakGrad.addColorStop(0.5, `rgba(255, 255, 255, ${0.88 * flareAlpha})`);
+        streakGrad.addColorStop(0.54, `rgba(192, 132, 252, ${0.58 * flareAlpha})`);
+        streakGrad.addColorStop(0.75, `rgba(99, 102, 241, ${0.22 * flareAlpha})`);
+        streakGrad.addColorStop(1, 'rgba(99, 102, 241, 0)');
 
         ctx.fillStyle = streakGrad;
-        ctx.fillRect(cx - streakW * 0.5, cy - 1.3, streakW, 2.6);
-
-        const softGrad = ctx.createLinearGradient(cx - streakW * 0.38, cy, cx + streakW * 0.38, cy);
-        softGrad.addColorStop(0, 'rgba(145, 70, 255, 0)');
-        softGrad.addColorStop(0.5, `rgba(145, 70, 255, ${0.24 * flareAlpha})`);
-        softGrad.addColorStop(1, 'rgba(145, 70, 255, 0)');
-        ctx.fillStyle = softGrad;
-        ctx.fillRect(cx - streakW * 0.38, cy - 14, streakW * 0.76, 28);
+        ctx.fillRect(cx - streakW * 0.5, cy - 1.2, streakW, 2.4);
       }
 
-      // 6. 3D Depth-of-Field Floating Cinema Dust Motes & Bokeh
+      // 6. 3D Optical Dust & Ambient Bokeh
       motes.forEach((m) => {
         m.x += m.vx;
         m.y += m.vy;
         if (warpOut > 0) {
-          m.z = Math.max(0.06, m.z - warpOut * 0.045);
+          m.z = Math.max(0.08, m.z - warpOut * 0.04);
         }
         if (m.y < -0.75) m.y = 0.75;
 
         const scale = 1 / m.z;
         const sx = cx + m.x * minDim * scale;
         const sy = cy + m.y * minDim * scale;
-        if (sx < -40 || sx > width + 40 || sy < -40 || sy > height + 40) return;
+        if (sx < -30 || sx > width + 30 || sy < -30 || sy > height + 30) return;
 
-        // Illuminate motes strongest near projector cone center
-        const distFromCenter = Math.hypot((sx - cx) / (width * 0.5), (sy - cy) / (height * 0.5));
-        const coneFalloff = Math.max(0.12, 1 - distFromCenter * 0.85);
-        const twinkle = 0.6 + 0.4 * Math.sin(elapsed * 0.004 + m.phase);
-        const radius = Math.min(16, m.size * scale);
-        const isBokeh = radius > 3.6;
-
-        const baseAlpha =
-          ignition *
-          coneFalloff *
-          twinkle *
-          (isBokeh ? 0.16 : 0.55) *
-          masterFade;
+        const dist = Math.hypot((sx - cx) / (width * 0.5), (sy - cy) / (height * 0.5));
+        const falloff = Math.max(0.14, 1 - dist * 0.85);
+        const twinkle = 0.6 + 0.4 * Math.sin(elapsed * 0.0045 + m.phase);
+        const radius = Math.min(13, m.size * scale);
+        const isBokeh = radius > 3.2;
+        const baseAlpha = ignition * falloff * twinkle * (isBokeh ? 0.16 : 0.52) * masterFade;
 
         const rgb =
-          m.hue === 'crimson'
-            ? '191, 148, 255'
-            : m.hue === 'gold'
-            ? '145, 70, 255'
-            : '241, 245, 249';
+          m.hue === 'violet'
+            ? '167, 139, 250'
+            : m.hue === 'indigo'
+            ? '99, 102, 241'
+            : '244, 245, 248';
 
         if (isBokeh) {
           const bGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
@@ -310,7 +236,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
         }
       });
 
-      // 7. Deep Theater Vignette Around Edges
+      // 7. Theater Optical Vignette
       ctx.globalCompositeOperation = 'source-over';
       const vig = ctx.createRadialGradient(
         cx,
@@ -321,11 +247,11 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
         Math.max(width, height) * 0.78
       );
       vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
-      vig.addColorStop(1, 'rgba(2, 2, 5, 0.82)');
+      vig.addColorStop(1, 'rgba(5, 6, 10, 0.84)');
       ctx.fillStyle = vig;
       ctx.fillRect(0, 0, width, height);
 
-      if (!prefersReduced && elapsed < INTRO_DURATION_MS + 120) {
+      if (!prefersReduced && elapsed < INTRO_DURATION_MS + 100) {
         rafId = requestAnimationFrame(renderFrame);
       }
     };
@@ -339,7 +265,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
   }, []);
 
   const handleManualSoundTrigger = () => {
-    const ok = playNaimcineIntroSound();
+    const ok = playRiffanIntroSound();
     setSoundActive(ok);
     triggerHaptic('medium');
   };
@@ -347,21 +273,21 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
   return (
     <div
       onClick={handleManualSoundTrigger}
-      className="fixed inset-0 z-[100] bg-[#020205] flex flex-col items-center justify-center overflow-hidden select-none animate-naim-intro-fade"
+      className="fixed inset-0 z-[100] bg-[#05060A] flex flex-col items-center justify-center overflow-hidden select-none animate-rtv-intro-fade"
       role="dialog"
-      aria-label="NAIM CINE Studio Intro"
+      aria-label="RiffanTV Studio Intro"
     >
-      {/* Real-Time 60fps Cinema Projector, Prism Caustics, Anamorphic Flare & Dust Canvas */}
+      {/* Real-Time 60fps Optical Beams & Anamorphic Prism Canvas */}
       <canvas
         ref={canvasRef}
         aria-hidden="true"
         className="absolute inset-0 w-full h-full pointer-events-none"
       />
 
-      {/* Genuine 35mm Celluloid Film Grain Physical Texture Layer */}
+      {/* 35mm Film Grain Physical Texture Layer */}
       <svg
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 w-full h-full opacity-[0.055] mix-blend-overlay animate-film-grain"
+        className="pointer-events-none absolute inset-0 w-full h-full opacity-[0.045] mix-blend-overlay"
       >
         <filter id={grainFilterId}>
           <feTurbulence
@@ -374,55 +300,56 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
         <rect width="100%" height="100%" filter={`url(#${grainFilterId})`} />
       </svg>
 
-      {/* 2.39:1 CinemaScope Theatrical Matte Bars */}
+      {/* 2.39:1 CinemaScope Matte Framing Bars */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute top-0 inset-x-0 h-[7vh] sm:h-[9vh] bg-black/95 border-b border-white/[0.06] z-10 animate-cinemascope-top"
+        className="pointer-events-none absolute top-0 inset-x-0 h-[6.5vh] sm:h-[8.5vh] bg-black/95 border-b border-white/[0.06] z-10 animate-rtv-scope-top"
       />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-0 inset-x-0 h-[7vh] sm:h-[9vh] bg-black/95 border-t border-white/[0.06] z-10 animate-cinemascope-bottom"
+        className="pointer-events-none absolute bottom-0 inset-x-0 h-[6.5vh] sm:h-[8.5vh] bg-black/95 border-t border-white/[0.06] z-10 animate-rtv-scope-bottom"
       />
 
-      {/* 3D Perspective Hardware Monolith & Extruded Metallic Wordmark */}
+      {/* 3D Architectural RTV Monolith & Wordmark Lockup */}
       <div
         className="relative z-20 flex flex-col items-center px-6"
         style={{ perspective: '1200px' }}
       >
-        {/* 3D Electric Violet Broadcast Emblem */}
-        <div className="relative animate-naim-monolith-3d">
-          {/* Sub-Surface Volumetric Violet Backlight */}
+        <div className="relative animate-rtv-monolith">
           <div
             aria-hidden="true"
-            className="absolute -inset-7 rounded-[46px] bg-radial from-[#9146FF]/55 via-[#9146FF]/16 to-transparent blur-2xl pointer-events-none"
+            className="absolute -inset-7 rounded-[44px] bg-radial from-[#8B5CF6]/50 via-[#6366F1]/18 to-transparent blur-2xl pointer-events-none"
           />
 
-          <div className="relative rounded-[36px] shadow-[0_30px_90px_rgba(0,0,0,0.95),0_0_85px_rgba(145,70,255,0.45)] overflow-hidden">
-            <NaimBrandLogo size={168} animated />
+          <div className="relative rounded-[36px] shadow-[0_30px_90px_rgba(0,0,0,0.95),0_0_80px_rgba(139,92,246,0.42)] overflow-hidden">
+            <RiffanBrandLogo size={160} animated />
 
-            {/* Specular Glass Glint Sweeping Across Monolith */}
+            {/* Specular 14° Glass Glint Sweep */}
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-white/25 to-transparent -translate-x-full animate-monolith-glint"
+              className="pointer-events-none absolute inset-y-0 -left-1/3 w-2/3 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-rtv-glint"
             />
           </div>
         </div>
 
-        {/* Extruded Wordmark */}
-        <div className="mt-7 sm:mt-8 text-center animate-naim-wordmark-3d">
-          <div className="font-display font-extrabold text-3xl sm:text-5xl md:text-6xl tracking-[0.24em] pl-[0.24em] leading-none flex items-center justify-center gap-3 sm:gap-4">
-            <span className="text-white">NAIM</span>
-            <span className="text-[#A970FF]">CINE</span>
+        <div className="mt-7 sm:mt-8 text-center animate-rtv-wordmark">
+          <div className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl tracking-[0.14em] pl-[0.14em] leading-none flex items-baseline justify-center">
+            <span className="text-[#F4F5F8]">Riffan</span>
+            <span className="text-[#A78BFA] ml-1.5">TV</span>
           </div>
 
-          {/* Hairline Optical Divider */}
           <div
             aria-hidden="true"
-            className="mx-auto mt-3.5 h-[1px] w-44 sm:w-64 bg-gradient-to-r from-transparent via-[#9146FF]/60 to-transparent"
+            className="mx-auto mt-3.5 h-[1px] w-44 sm:w-64 bg-gradient-to-r from-transparent via-[#8B5CF6]/75 to-transparent animate-rtv-divider"
           />
 
-          <p className="mt-3 text-[10px] sm:text-xs uppercase tracking-[0.28em] text-zinc-300/90 font-medium">
-            {subtitle || 'Live Broadcast · 1080p HDR · Real-Time Sync'}
+          <p className="mt-3 text-[11px] sm:text-xs uppercase tracking-[0.26em] text-zinc-300/90 font-medium">
+            {subtitle ||
+              pickLang(lang, {
+                es: 'RTV Broadcast · Cine · Directos · Sala Sincronizada',
+                ca: 'RTV Broadcast · Cinema · Directes · Sala Sincronitzada',
+                en: 'RTV Broadcast · Cinema · Live TV · Real-Time Sync',
+              })}
           </p>
         </div>
       </div>
@@ -436,14 +363,14 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
               e.stopPropagation();
               handleManualSoundTrigger();
             }}
-            className="min-h-[38px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-[11px] font-medium text-zinc-300 flex items-center gap-1.5 transition-colors cursor-pointer"
+            className="min-h-[38px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-[11px] font-medium text-zinc-300 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
-            <Volume2 className="w-3.5 h-3.5 text-[#9146FF]" />
+            <Volume2 className="w-3.5 h-3.5 text-[#A78BFA]" />
             <span>
               {pickLang(lang, {
-                es: 'Sonido Cinema',
-                ca: 'So Cinema',
-                en: 'Cinema Sound',
+                es: 'Sonido RTV',
+                ca: 'So RTV',
+                en: 'RTV Sound',
               })}
             </span>
           </button>
@@ -457,7 +384,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
             e.stopPropagation();
             onComplete();
           }}
-          className="min-h-[38px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/12 text-xs font-medium text-zinc-200 transition-colors cursor-pointer"
+          className="min-h-[38px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/12 text-xs font-medium text-zinc-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
         >
           {pickLang(lang, {
             es: 'Saltar intro',
@@ -469,3 +396,5 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
     </div>
   );
 };
+
+export const RiffanIntro = NaimcineIntro;

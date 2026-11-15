@@ -368,7 +368,7 @@ function buildWatchHistoryFields(uid: string, item: WatchHistoryItem) {
     uid,
     itemId,
     mediaType,
-    title: clampString(item.title, 200, 'NAIM CINE'),
+    title: clampString(item.title, 200, 'RiffanTV'),
     subtitle: clampString(item.subtitle, 240, 'HD'),
     poster: safePoster,
     backdrop: safeBackdrop,

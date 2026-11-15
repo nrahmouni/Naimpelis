@@ -1,65 +1,119 @@
 import React from 'react';
 
-interface NaimBrandLogoProps {
+export interface RiffanBrandLogoProps {
   size?: number;
   className?: string;
-  /** Dramatic theatrical timing used inside the full-screen NaimcineIntro */
+  /** Dramatic presentation flag used inside RiffanTV Intro */
   animated?: boolean;
-  /** Render the dark Broadcast Obsidian frame behind the emblem */
+  /** Render the Cinema Obsidian squircle chassis behind the Kinetic Blade R emblem */
   withFrame?: boolean;
-  /** Enable subtle sheen in headers/cards */
+  /** Render the subtle broadcast crimson live beacon on the emblem */
   live?: boolean;
+  /** Display mode: 'mark' (emblem only), 'wordmark' (text lockup), 'full' (emblem + RiffanTV), 'monochrome' */
+  variant?: 'mark' | 'wordmark' | 'full' | 'monochrome';
 }
 
 /**
- * Official NAIM CINE Brand Logo — Twitch-Style Broadcast Edition:
- * - Deep Broadcast Obsidian squircle (#0E0E10)
- * - Electric Violet (#9146FF) beveled broadcast chassis frame
- * - Crisp white play-monolith & signal pillars for instant legibility across Web, Android APK & Google TV
+ * Official RiffanTV (RTV) Kinetic Blade R Brand Emblem:
+ * - Daring & elegant 8° forward kinetic lean
+ * - Continuous brushed-platinum upper P-arch with negative ▶ Play counter
+ * - Detached electric violet → indigo → cyan diagonal kicker blade
+ * - Real high-fidelity multi-resolution PNG suite (/pwa-512x512.png, /pwa-192x192.png, /logo-mark.png, /logo-monochrome.png)
+ * - Zero layout shift, retina crisp on mobile, desktop and 4K TV screens
  */
-export const NaimBrandLogo: React.FC<NaimBrandLogoProps> = ({
+export const RiffanBrandLogo: React.FC<RiffanBrandLogoProps> = ({
   size = 40,
   className = '',
+  animated = false,
   withFrame = true,
+  live = false,
+  variant = 'mark',
 }) => {
-  const remSize = `${(size / 16).toFixed(3)}rem`;
+  const isMonochrome = variant === 'monochrome';
+
+  // Pick optimal PNG variant based on frame, theme and target render size
+  let imgSrc = '/logo-mark.png';
+  let srcSet: string | undefined;
+
+  if (isMonochrome) {
+    imgSrc = '/logo-monochrome.png';
+  } else if (withFrame) {
+    if (size > 96) {
+      imgSrc = '/pwa-512x512.png';
+      srcSet = '/pwa-192x192.png 192w, /pwa-512x512.png 512w';
+    } else {
+      imgSrc = '/pwa-192x192.png';
+      srcSet = '/pwa-192x192.png 192w, /pwa-512x512.png 512w';
+    }
+  } else {
+    imgSrc = '/logo-mark.png';
+  }
+
+  const markImg = (
+    <div
+      className={`relative inline-flex items-center justify-center shrink-0 select-none ${
+        animated ? 'transition-transform duration-500 will-change-transform hover:scale-105' : ''
+      } ${variant === 'mark' || variant === 'monochrome' ? className : ''}`}
+      style={{ width: size, height: size }}
+      aria-label="RiffanTV RTV Logo"
+    >
+      <img
+        src={imgSrc}
+        srcSet={srcSet}
+        sizes={`${size}px`}
+        alt="RiffanTV (RTV)"
+        width={size}
+        height={size}
+        draggable={false}
+        loading="eager"
+        decoding="async"
+        className={`w-full h-full object-contain pointer-events-none select-none ${
+          withFrame ? 'rounded-[23%] drop-shadow-[0_8px_20px_rgba(0,0,0,0.6)]' : 'drop-shadow-[0_4px_14px_rgba(139,92,246,0.35)]'
+        }`}
+      />
+
+      {live && (
+        <span
+          className="absolute -top-0.5 -right-0.5 flex h-3 w-3 items-center justify-center pointer-events-none"
+          title="En directo"
+        >
+          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-rose-500 opacity-75" />
+          <span className="relative inline-flex rounded-full h-2 w-2 bg-rose-600 ring-2 ring-[#07080C]" />
+        </span>
+      )}
+    </div>
+  );
+
+  if (variant === 'mark' || variant === 'monochrome') {
+    return markImg;
+  }
+
+  const fontSizeRem = `${Math.max(0.875, (size * 0.48) / 16).toFixed(3)}rem`;
+
+  const wordmark = (
+    <span
+      className="font-display font-bold tracking-[-0.02em] leading-none inline-flex items-baseline select-none whitespace-nowrap"
+      style={{ fontSize: fontSizeRem }}
+    >
+      <span className="text-[#F4F5F8]">Riffan</span>
+      <span className="text-[#A78BFA] ml-0.5 font-extrabold">TV</span>
+    </span>
+  );
+
+  if (variant === 'wordmark') {
+    return (
+      <span className={`inline-flex items-center shrink-0 ${className}`}>
+        {wordmark}
+      </span>
+    );
+  }
 
   return (
-    <svg
-      width={remSize}
-      height={remSize}
-      viewBox="0 0 100 100"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-      className={`shrink-0 select-none ${className}`}
-      aria-label="NAIM CINE Logo"
-    >
-      {withFrame && (
-        <rect
-          x="2"
-          y="2"
-          width="96"
-          height="96"
-          rx="22"
-          fill="#0E0E10"
-          stroke="#27272F"
-          strokeWidth="2.5"
-        />
-      )}
-      {/* Electric Violet Broadcast Bubble / Screen Silhouette */}
-      <path
-        d="M 22 18 H 82 V 63 L 68 77 H 52 L 40 87 V 77 H 22 V 32 L 22 18 Z"
-        fill="#9146FF"
-      />
-      {/* Crisp Dark Inner Monitor Window */}
-      <path
-        d="M 31 27 H 73 V 58 L 63 68 H 47 L 39 75 V 68 H 31 V 27 Z"
-        fill="#0E0E10"
-      />
-      {/* Twin Broadcast Bars + Play Arrow */}
-      <rect x="41" y="37" width="5.5" height="17" rx="2.75" fill="#FFFFFF" />
-      <rect x="52" y="37" width="5.5" height="17" rx="2.75" fill="#FFFFFF" />
-      <path d="M 62.5 38.5 L 70 45.5 L 62.5 52.5 Z" fill="#FFFFFF" />
-    </svg>
+    <span className={`inline-flex items-center gap-2.5 shrink-0 ${className}`}>
+      {markImg}
+      {wordmark}
+    </span>
   );
 };
+
+export const NaimBrandLogo = RiffanBrandLogo;

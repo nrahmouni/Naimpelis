@@ -201,7 +201,7 @@ export function sanitizeEmbedHtml(rawHtml: string, baseHref: string): string {
   html = html.replace(/<meta[^>]+http-equiv=["']?Content-Security-Policy["']?[^>]*>/gi, '');
 
   const isEmbedHostHostname = (host: string): boolean =>
-    /(^|\.)(vidfast\.[a-z.]+|vidlink\.pro|vidsrc\.(buzz|sh|to|me|cc|xyz|in|pm)|videm\.buzz|2embed\.cc|streamsrcs\.2embed\.cc)$/i.test(
+    /(^|\.)(vidfast\.[a-z.]+|vidlink\.pro|vidsrc\.(buzz|sh|to|me|cc|xyz|in|pm)|videm\.buzz|vidrock\.[a-z.]+|vidnest\.[a-z.]+|moviesapi\.[a-z.]+|vsembed\.[a-z.]+|2embed\.cc|streamsrcs\.2embed\.cc)$/i.test(
       host
     );
 
@@ -301,7 +301,7 @@ export function sanitizeEmbedHtml(rawHtml: string, baseHref: string): string {
   var __PAGE=${JSON.stringify(baseHref)};
   var __BASE_ORIGIN='';
   try{__BASE_ORIGIN=new URL(__BASE).origin;}catch(e){}
-  var __EMBED_HOST_RE=/(^|\\.)(vidfast\\.[a-z.]+|vidlink\\.pro|vidsrc\\.(buzz|sh|to|me|cc|xyz|in|pm)|videm\\.buzz|2embed\\.cc|goodstream\\.cc|relay\\.videm\\.buzz)$/i;
+  var __EMBED_HOST_RE=/(^|\\.)(vidfast\\.[a-z.]+|vidlink\\.pro|vidsrc\\.(buzz|sh|to|me|cc|xyz|in|pm)|videm\\.buzz|vidrock\\.[a-z.]+|vidnest\\.[a-z.]+|moviesapi\\.[a-z.]+|vsembed\\.[a-z.]+|2embed\\.cc|goodstream\\.cc|relay\\.videm\\.buzz)$/i;
   function __toRelay(raw){
     try{
       if(raw===undefined||raw===null)return raw;

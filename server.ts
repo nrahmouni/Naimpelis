@@ -51,10 +51,12 @@ import {
   extract2EmbedEnglishTracks,
   extractBingetrixEnglishTracks,
   extractMovidyPageTracks,
+  extractVidRockHlsTracks,
   extractVidsrcBuzzHlsTracks,
   fetchMovidyPageMetadata,
   findMovidyUrlByTitle,
   probeAvailableLanguages,
+  probeVidsrcBuzzHasContent,
   verifyMovidyMetaMatch,
   type MovidyPageMetadata,
 } from './server/extractors/bingetrixMovidy.ts';
@@ -6045,11 +6047,13 @@ app.get('/api/extract/stream', async (req, res) => {
     const bingetrixTvMatch = rawInput.match(/bingetrix\.[a-z]+\/watch\/tv\/(\d+)\/(\d+)\/(\d+)/i);
     const bingetrixMovieMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch|movie)\/(\d+)/i);
     const externalEmbedTvMatch =
-      rawInput.match(/(?:vidfast|vidlink|vidsrc)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)\/(\d+)/i) ||
-      rawInput.match(/2embed\.[a-z]+\/(?:embedtv|tv)\/(tt\d+|\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i);
+      rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)[/-](\d+)/i) ||
+      rawInput.match(/2embed\.[a-z]+\/(?:embedtv|tv)\/(tt\d+|\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i) ||
+      rawInput.match(/[?&]tmdb=(\d+).*?[?&]season=(\d+).*?[?&]episode=(\d+)/i);
     const externalEmbedMovieMatch =
       !externalEmbedTvMatch
-        ? rawInput.match(/(?:vidfast|vidlink|vidsrc|2embed)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:movie\/)?(tt\d+|\d+)/i)
+        ? rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed|2embed)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:movie\/)?(tt\d+|\d+)/i) ||
+          rawInput.match(/[?&]tmdb=(\d+)/i)
         : null;
     const isMovidyLink =
       rawInput.includes('movidy.pw/ver/') || movidyUrlParam.includes('movidy.pw/ver/');
@@ -6319,6 +6323,7 @@ app.get('/api/extract/stream', async (req, res) => {
       const [
         movidyTracks,
         esTracks,
+        vidRockTracks,
         bingetrixEnTracks,
         twoEmbedEnTracks,
         vidBuzzHlsTracks,
@@ -6346,6 +6351,14 @@ app.get('/api/extract/stream', async (req, res) => {
               directorHint: tmdbDirector || undefined,
               runtimeMinHint: tmdbRuntimeMin || undefined,
             })
+          : Promise.resolve([]),
+        resolvedTmdbId
+          ? extractVidRockHlsTracks({
+              tmdbId: resolvedTmdbId,
+              mediaType: effectiveMediaType,
+              season: effectiveSeason,
+              episode: effectiveEpisode,
+            }).catch(() => [])
           : Promise.resolve([]),
         resolvedTmdbId
           ? extractBingetrixEnglishTracks({
@@ -6390,6 +6403,7 @@ app.get('/api/extract/stream', async (req, res) => {
       ]);
 
       const enTracks: TrackRecord[] = [
+        ...vidRockTracks,
         ...twoEmbedEnTracks,
         ...bingetrixEnTracks,
         ...vidBuzzHlsTracks,
@@ -6438,7 +6452,14 @@ app.get('/api/extract/stream', async (req, res) => {
 
       const resolverPriority = (rt: string): number => {
         if (isVestLink && rt === 'vest_hls') return 0;
-        if (rt === 'vest_hls' || rt === 'vidhide_hls' || rt === 'movidy_embed' || rt === 'bingetrix_en') {
+        if (
+          rt === 'vest_hls' ||
+          rt === 'direct_hls' ||
+          rt === 'direct_mp4' ||
+          rt === 'vidhide_hls' ||
+          rt === 'movidy_embed' ||
+          rt === 'bingetrix_en'
+        ) {
           return 1;
         }
         if (rt === 'embed_sniff') return 2;
@@ -6489,6 +6510,7 @@ app.get('/api/extract/stream', async (req, res) => {
         }
         if (candidate.resolvedStreamUrl) {
           primaryStreamUrl = candidate.resolvedStreamUrl;
+          primaryMode = candidate.resolverType === 'direct_mp4' ? 'direct' : 'hls';
           resolvedTrack = candidate;
           break;
         }
@@ -6789,12 +6811,21 @@ app.get('/api/extract/stream', async (req, res) => {
         return null;
       };
 
-      const buildWebEmbedTracks = (): TrackRecord[] => {
+      const buildWebEmbedTracks = async (): Promise<TrackRecord[]> => {
         if (!resolvedTmdbId) return [];
         const idStr = String(resolvedTmdbId);
         const s = Math.max(1, effectiveSeason || 1);
         const e = Math.max(1, effectiveEpisode || 1);
         const isExplicitVidfastInput = /(^|\/|https?:\/\/)(?:www\.)?vidfast\.[a-z.]+/i.test(rawInput);
+
+        // Fast probe: check if vidsrc.buzz / videm.buzz actually has content for this title
+        const hasBuzzContent = await probeVidsrcBuzzHasContent({
+          tmdbId: idStr,
+          mediaType: effectiveMediaType,
+          season: s,
+          episode: e,
+        });
+
         const vidfastEntry =
           effectiveMediaType === 'tv'
             ? {
@@ -6816,86 +6847,148 @@ app.get('/api/extract/stream', async (req, res) => {
                 sandboxSafe: true,
               };
 
-        const otherEntries =
+        const vidrockEntry =
           effectiveMediaType === 'tv'
-            ? [
-                {
-                  id: `embed-vidsrcbuzz-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 1 · Cloud Limpio',
-                  url: `https://vidsrc.buzz/embed/tv/${idStr}/${s}/${e}`,
-                  proxyHtml: true,
-                  sandboxSafe: true,
-                },
-                {
-                  id: `embed-vidembuzz-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 2 · VidEm Limpio',
-                  url: `https://videm.buzz/embed/tv/${idStr}/${s}/${e}`,
-                  proxyHtml: true,
-                  sandboxSafe: true,
-                },
-                {
-                  id: `embed-2embed-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 3 · 2Embed Limpio',
-                  url: `https://www.2embed.cc/embedtv/${idStr}&s=${s}&e=${e}`,
-                  proxyHtml: true,
-                  sandboxSafe: true,
-                },
-                {
-                  id: `embed-vidlink-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 4 · Multi-Audio',
-                  url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=9146FF`,
-                  proxyHtml: false,
-                  sandboxSafe: false,
-                },
-                {
-                  id: `embed-vidsrcsh-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 5 · VidSrc',
-                  url: `https://vidsrc.sh/embed/tv/${idStr}/${s}/${e}`,
-                  proxyHtml: false,
-                  sandboxSafe: false,
-                },
-              ]
-            : [
-                {
-                  id: `embed-vidsrcbuzz-${idStr}`,
-                  label: 'Servidor Web 1 · Cloud Limpio',
-                  url: `https://vidsrc.buzz/embed/movie/${idStr}`,
-                  proxyHtml: true,
-                  sandboxSafe: true,
-                },
-                {
-                  id: `embed-vidembuzz-${idStr}`,
-                  label: 'Servidor Web 2 · VidEm Limpio',
-                  url: `https://videm.buzz/embed/movie/${idStr}`,
-                  proxyHtml: true,
-                  sandboxSafe: true,
-                },
-                {
-                  id: `embed-2embed-${idStr}`,
-                  label: 'Servidor Web 3 · 2Embed Limpio',
-                  url: `https://www.2embed.cc/embed/${idStr}`,
-                  proxyHtml: true,
-                  sandboxSafe: true,
-                },
-                {
-                  id: `embed-vidlink-${idStr}`,
-                  label: 'Servidor Web 4 · Multi-Audio',
-                  url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=9146FF`,
-                  proxyHtml: false,
-                  sandboxSafe: false,
-                },
-                {
-                  id: `embed-vidsrcsh-${idStr}`,
-                  label: 'Servidor Web 5 · VidSrc',
-                  url: `https://vidsrc.sh/embed/movie/${idStr}`,
-                  proxyHtml: false,
-                  sandboxSafe: false,
-                },
-              ];
+            ? {
+                id: `embed-vidrock-${idStr}-${s}-${e}`,
+                label: 'Servidor Web · VidRock HD',
+                url: `https://vidrock.net/embed/tv/${idStr}/${s}/${e}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              }
+            : {
+                id: `embed-vidrock-${idStr}`,
+                label: 'Servidor Web · VidRock HD',
+                url: `https://vidrock.net/embed/movie/${idStr}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              };
 
-        const baseEntries = isExplicitVidfastInput
-          ? [vidfastEntry, ...otherEntries]
-          : [...otherEntries.slice(0, 3), vidfastEntry, ...otherEntries.slice(3)];
+        const vidnestEntry =
+          effectiveMediaType === 'tv'
+            ? {
+                id: `embed-vidnest-${idStr}-${s}-${e}`,
+                label: 'Servidor Web · VidNest HD',
+                url: `https://vidnest.fun/tv/${idStr}/${s}/${e}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              }
+            : {
+                id: `embed-vidnest-${idStr}`,
+                label: 'Servidor Web · VidNest HD',
+                url: `https://vidnest.fun/movie/${idStr}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              };
+
+        const vidsrcBuzzEntry =
+          effectiveMediaType === 'tv'
+            ? {
+                id: `embed-vidsrcbuzz-${idStr}-${s}-${e}`,
+                label: 'Servidor Web 1 · Cloud Limpio',
+                url: `https://vidsrc.buzz/embed/tv/${idStr}/${s}/${e}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              }
+            : {
+                id: `embed-vidsrcbuzz-${idStr}`,
+                label: 'Servidor Web 1 · Cloud Limpio',
+                url: `https://vidsrc.buzz/embed/movie/${idStr}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              };
+
+        const videmBuzzEntry =
+          effectiveMediaType === 'tv'
+            ? {
+                id: `embed-vidembuzz-${idStr}-${s}-${e}`,
+                label: 'Servidor Web 2 · VidEm Limpio',
+                url: `https://videm.buzz/embed/tv/${idStr}/${s}/${e}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              }
+            : {
+                id: `embed-vidembuzz-${idStr}`,
+                label: 'Servidor Web 2 · VidEm Limpio',
+                url: `https://videm.buzz/embed/movie/${idStr}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              };
+
+        const twoEmbedEntry =
+          effectiveMediaType === 'tv'
+            ? {
+                id: `embed-2embed-${idStr}-${s}-${e}`,
+                label: 'Servidor Web 3 · 2Embed Limpio',
+                url: `https://www.2embed.cc/embedtv/${idStr}&s=${s}&e=${e}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              }
+            : {
+                id: `embed-2embed-${idStr}`,
+                label: 'Servidor Web 3 · 2Embed Limpio',
+                url: `https://www.2embed.cc/embed/${idStr}`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              };
+
+        const vidlinkEntry =
+          effectiveMediaType === 'tv'
+            ? {
+                id: `embed-vidlink-${idStr}-${s}-${e}`,
+                label: 'Servidor Web 4 · Multi-Audio',
+                url: `https://vidlink.pro/tv/${idStr}/${s}/${e}?autoplay=true&primaryColor=9146FF`,
+                proxyHtml: false,
+                sandboxSafe: false,
+              }
+            : {
+                id: `embed-vidlink-${idStr}`,
+                label: 'Servidor Web 4 · Multi-Audio',
+                url: `https://vidlink.pro/movie/${idStr}?autoplay=true&primaryColor=9146FF`,
+                proxyHtml: false,
+                sandboxSafe: false,
+              };
+
+        const vidsrcShEntry =
+          effectiveMediaType === 'tv'
+            ? {
+                id: `embed-vidsrcsh-${idStr}-${s}-${e}`,
+                label: 'Servidor Web 5 · VidSrc',
+                url: `https://vidsrc.sh/embed/tv/${idStr}/${s}-${e}`,
+                proxyHtml: false,
+                sandboxSafe: false,
+              }
+            : {
+                id: `embed-vidsrcsh-${idStr}`,
+                label: 'Servidor Web 5 · VidSrc',
+                url: `https://vidsrc.sh/embed/movie/${idStr}`,
+                proxyHtml: false,
+                sandboxSafe: false,
+              };
+
+        // When vidsrc.buzz lacks content, avoid serving dead placeholder screens
+        let baseEntries: any[];
+        if (isExplicitVidfastInput) {
+          baseEntries = [vidfastEntry, vidrockEntry, vidnestEntry, twoEmbedEntry, vidlinkEntry];
+        } else if (hasBuzzContent) {
+          baseEntries = [
+            vidsrcBuzzEntry,
+            videmBuzzEntry,
+            vidfastEntry,
+            vidrockEntry,
+            twoEmbedEntry,
+            vidlinkEntry,
+          ];
+        } else {
+          baseEntries = [
+            vidfastEntry,
+            vidrockEntry,
+            vidnestEntry,
+            twoEmbedEntry,
+            vidlinkEntry,
+            vidsrcShEntry,
+          ];
+        }
 
         // Inside sandboxed preview frames, exclude hosts that self-block and proxy HTML-sanitizable players (including VidFast) through /api/embed-proxy
         const orderedEntries = (isSandboxedFrame
@@ -6919,7 +7012,7 @@ app.get('/api/extract/stream', async (req, res) => {
       const [ytFallback, embedFallbackTracks] = await Promise.all([
         // Only run YouTube search when TMDB web embeds aren't available (TMDB-keyed players guarantee exact movie match)
         resolvedTmdbId ? Promise.resolve(null) : searchYouTubeFullFallback(),
-        Promise.resolve(buildWebEmbedTracks()),
+        buildWebEmbedTracks(),
       ]);
 
       const combinedFallbackTracks: TrackRecord[] =

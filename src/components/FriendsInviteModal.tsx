@@ -197,7 +197,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
-          title: activeMediaTitle ? `${activeMediaTitle} — NAIM CINE` : `${roomName} — NAIM CINE`,
+          title: activeMediaTitle ? `${activeMediaTitle} — RiffanTV` : `${roomName} — RiffanTV`,
           text: localizedInviteText,
           url: inviteUrl,
         });

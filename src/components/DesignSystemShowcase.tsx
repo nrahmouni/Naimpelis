@@ -56,7 +56,7 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
             <NaimBrandLogo size={36} />
             <div>
               <h1 className="text-xl sm:text-2xl font-display font-bold tracking-tight">
-                NAIM CINE · Design System v2.4
+                RiffanTV (RTV) · Design System v3.0
               </h1>
               <p className="text-xs text-[var(--nc-text-secondary)]">
                 Tokens @theme · 3 Temas AA/AAA · Escala Móvil/TV · Componentes y Estados

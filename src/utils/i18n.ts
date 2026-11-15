@@ -100,7 +100,7 @@ export interface UiCopyShape {
 
 export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
   es: {
-    appTagline: 'NAIM CINE · Cine, Series, TV en directo, Fútbol y YouTube sincronizado',
+    appTagline: 'RiffanTV · Cine, Series, TV en directo, Fútbol y YouTube sincronizado',
     heroHeadline: 'Tu sala privada para ver cine, series, TV y deporte juntos.',
     heroDescription:
       'Catálogo completo en Español, Catalán y VO 1080p, más canales de TV España en directo, fútbol en tiempo real y salas sincronizadas sin interrupciones.',
@@ -150,7 +150,7 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     copyLink: 'Copiar enlace',
     copied: 'Copiado',
     extractingTitle: 'Preparando proyección HD...',
-    extractingSub: 'Conectando pistas de audio y sincronizando tu sala NAIM CINE',
+    extractingSub: 'Conectando pistas de audio y sincronizando tu sala RiffanTV',
     standbyTitle: 'Sala lista para proyectar',
     standbySub: 'Elige una película, serie, canal en directo, partido o YouTube abajo.',
     directTitle: 'Enlace directo y navegador web integrado',
@@ -180,7 +180,7 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     trailerPreviewUnmute: 'Sonido del avance',
   },
   ca: {
-    appTagline: 'NAIM CINE · Cinema, Sèries, TV en directe, Futbol i YouTube sincronitzat',
+    appTagline: 'RiffanTV · Cinema, Sèries, TV en directe, Futbol i YouTube sincronitzat',
     heroHeadline: 'La teva sala privada per veure cinema, sèries, TV i esport junts.',
     heroDescription:
       'Catàleg complet en Català, Castellà i VO 1080p, més canals de TV en directe, futbol en temps real i sales sincronitzades sense anuncis.',
@@ -230,7 +230,7 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     copyLink: 'Copiar enllaç',
     copied: 'Copiat',
     extractingTitle: 'Preparant projecció HD...',
-    extractingSub: 'Connectant pistes d’àudio i sincronitzant la teva sala NAIM CINE',
+    extractingSub: 'Connectant pistes d’àudio i sincronitzant la teva sala RiffanTV',
     standbyTitle: 'Sala preparada per projectar',
     standbySub: 'Tria una pel·lícula, sèrie, canal en directe, partit o YouTube a sota.',
     directTitle: 'Enllaç directe i navegador web integrat',
@@ -260,7 +260,7 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     trailerPreviewUnmute: 'So de l’avançament',
   },
   en: {
-    appTagline: 'NAIM CINE · Synchronized Movies, Series, Live TV, Sports & YouTube',
+    appTagline: 'RiffanTV · Synchronized Movies, Series, Live TV, Sports & YouTube',
     heroHeadline: 'Your private theater for movies, series, and live sports together.',
     heroDescription:
       'Full catalog in English 1080p, Spanish and Catalan, plus live TV channels, real-time football matchboard, and synced rooms.',
@@ -310,8 +310,8 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     copyLink: 'Copy invite link',
     copied: 'Link copied',
     extractingTitle: 'Preparing clean HD screening...',
-    extractingSub: 'Extracting clean HD stream and syncing your NAIM CINE room',
-    standbyTitle: 'NAIM CINE ready to screen',
+    extractingSub: 'Extracting clean HD stream and syncing your RiffanTV room',
+    standbyTitle: 'RiffanTV ready to screen',
     standbySub: 'Pick any movie, TV series episode, live match, or YouTube video below.',
     directTitle: 'Direct Stream Link & Integrated Web Browser',
     directSub:

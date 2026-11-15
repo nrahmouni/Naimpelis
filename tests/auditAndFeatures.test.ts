@@ -1,6 +1,8 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import crypto from 'node:crypto';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { decryptVidRockToken } from '../server/extractors/bingetrixMovidy';
 import { useAppStore } from '../src/store/useAppStore';
 import {
   applyBoardMove,
@@ -227,4 +229,92 @@ describe('Audit & Feature Verification Suite', () => {
       unwrapEmbedUrl('/api/embed-proxy?url=https%3A%2F%2Fvidfast.vc%2Ftv%2F62104%2F1%2F1')
     ).toBe('https://vidfast.vc/tv/62104/1/1');
   });
+
+  it('uses the RiffanTV (RTV) brand identity, pure-path icon, and synchronized PWA manifest', () => {
+    const iconSvg = readFileSync(join(process.cwd(), 'public/icon.svg'), 'utf8');
+    expect(iconSvg).toContain('<svg');
+    expect(iconSvg).not.toContain('<text');
+    expect(iconSvg).toContain('#8B5CF6');
+
+    const indexHtml = readFileSync(join(process.cwd(), 'index.html'), 'utf8');
+    expect(indexHtml).toContain('RiffanTV');
+    expect(indexHtml).toContain('#07080C');
+
+    const viteConfig = readFileSync(join(process.cwd(), 'vite.config.ts'), 'utf8');
+    expect(viteConfig).toContain("short_name: 'RiffanTV'");
+    expect(viteConfig).toContain("cacheId: 'riffantv-studio-v1'");
+
+    const logoSrc = readFileSync(join(process.cwd(), 'src/components/NaimBrandLogo.tsx'), 'utf8');
+    expect(logoSrc).toContain('export const RiffanBrandLogo');
+    expect(logoSrc).toContain('export const NaimBrandLogo = RiffanBrandLogo');
+
+    const introSrc = readFileSync(join(process.cwd(), 'src/components/NaimcineIntro.tsx'), 'utf8');
+    expect(introSrc).toContain('RiffanTV Studio Intro');
+    expect(introSrc).toContain('playRiffanIntroSound');
+
+    // Multi-variant PNG logo suite presence
+    const requiredPngs = [
+      'public/pwa-512x512.png',
+      'public/pwa-192x192.png',
+      'public/pwa-maskable-512x512.png',
+      'public/apple-touch-icon.png',
+      'public/logo-mark.png',
+      'public/logo-mark-light.png',
+      'public/logo-monochrome.png',
+      'public/favicon-32x32.png',
+      'public/favicon-16x16.png',
+    ];
+    for (const relPath of requiredPngs) {
+      expect(existsSync(join(process.cwd(), relPath))).toBe(true);
+    }
+  });
+
+  it('correctly decrypts VidRock AES-256-GCM tokens to direct HLS master playlists', () => {
+    const rawMasterUrl = 'https://plasticprophecy.live/file2/master.m3u8?t=12345';
+    const key = Buffer.from(
+      '7f3e9c2a8b5d1f4e6a9c3b7d2e5f8a1c4b6d9e2f5a8c1b4d7e9f2a5c8b1d4e7f',
+      'hex'
+    );
+    const iv = crypto.randomBytes(12);
+    const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+    const ciphertext = Buffer.concat([
+      cipher.update(Buffer.from(rawMasterUrl, 'utf8')),
+      cipher.final(),
+    ]);
+    const authTag = cipher.getAuthTag();
+    const token = Buffer.concat([iv, ciphertext, authTag]).toString('base64url');
+
+    const decrypted = decryptVidRockToken(token);
+    expect(decrypted).toBe(rawMasterUrl);
+  });
+
+  it('accurately parses external embed TV URLs like Dragon Ball Z 12971/1/2 and hyphen formats', () => {
+    const tvEmbedRe =
+      /(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)[/-](\d+)/i;
+
+    const match1 = 'https://vidsrc.buzz/embed/tv/12971/1/2'.match(tvEmbedRe);
+    expect(match1).not.toBeNull();
+    expect(match1?.[1]).toBe('12971');
+    expect(match1?.[2]).toBe('1');
+    expect(match1?.[3]).toBe('2');
+
+    const match2 = 'https://vidsrc.sh/embed/tv/12971/1-2'.match(tvEmbedRe);
+    expect(match2).not.toBeNull();
+    expect(match2?.[1]).toBe('12971');
+    expect(match2?.[2]).toBe('1');
+    expect(match2?.[3]).toBe('2');
+
+    const match3 = 'https://vidrock.net/embed/tv/62104/1/1'.match(tvEmbedRe);
+    expect(match3).not.toBeNull();
+    expect(match3?.[1]).toBe('62104');
+    expect(match3?.[2]).toBe('1');
+    expect(match3?.[3]).toBe('1');
+  });
+
+  it('extracts direct mp4 video source from MP4Upload player HTML', () => {
+    const sampleHtml = `<div id="player"></div><script>player.src({ type: "video/mp4", src: "https://a4.mp4upload.com:183/d/abc123xyz/video.mp4" });</script>`;
+    const srcMatch = sampleHtml.match(/src:\s*["'](https?:\/\/[^"']+\.mp4(?:\?[^"']*)?)["']/i);
+    expect(srcMatch?.[1]).toBe('https://a4.mp4upload.com:183/d/abc123xyz/video.mp4');
+  });
 });
+

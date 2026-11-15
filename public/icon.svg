@@ -1,8 +1,45 @@
-<svg width="512" height="512" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <rect x="2" y="2" width="96" height="96" rx="22" fill="#0E0E10" stroke="#27272F" stroke-width="2.5" />
-  <path d="M 22 18 H 82 V 63 L 68 77 H 52 L 40 87 V 77 H 22 V 32 L 22 18 Z" fill="#9146FF" />
-  <path d="M 31 27 H 73 V 58 L 63 68 H 47 L 39 75 V 68 H 31 V 27 Z" fill="#0E0E10" />
-  <rect x="41" y="37" width="5.5" height="17" rx="2.75" fill="#FFFFFF" />
-  <rect x="52" y="37" width="5.5" height="17" rx="2.75" fill="#FFFFFF" />
-  <path d="M 62.5 38.5 L 70 45.5 L 62.5 52.5 Z" fill="#FFFFFF" />
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="rtv-bg-base" x1="60" y1="30" x2="452" y2="482" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#141726" />
+      <stop offset="55%" stop-color="#07080C" />
+      <stop offset="100%" stop-color="#020306" />
+    </linearGradient>
+    <radialGradient id="rtv-glow-violet" cx="50%" cy="38%" r="56%">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.32" />
+      <stop offset="52%" stop-color="#6366F1" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#07080C" stop-opacity="0" />
+    </radialGradient>
+    <radialGradient id="rtv-glow-cyan" cx="64%" cy="72%" r="42%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.16" />
+      <stop offset="100%" stop-color="#07080C" stop-opacity="0" />
+    </radialGradient>
+    <linearGradient id="rtv-platinum-arch" x1="130" y1="120" x2="410" y2="380" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="45%" stop-color="#F1F5F9" />
+      <stop offset="100%" stop-color="#CBD5E1" />
+    </linearGradient>
+    <linearGradient id="rtv-blade-accent" x1="220" y1="288" x2="352" y2="384" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="52%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#38BDF8" />
+    </linearGradient>
+  </defs>
+
+  <!-- Cinema Obsidian Squircle Frame -->
+  <rect x="12" y="12" width="488" height="488" rx="112" fill="url(#rtv-bg-base)" stroke="rgba(255,255,255,0.14)" stroke-width="8" />
+  <rect x="12" y="12" width="488" height="488" rx="112" fill="url(#rtv-glow-violet)" />
+  <rect x="12" y="12" width="488" height="488" rx="112" fill="url(#rtv-glow-cyan)" />
+
+  <!-- Top Rim Specular Glint -->
+  <path d="M 120 16 H 392" stroke="rgba(255,255,255,0.24)" stroke-width="4.5" stroke-linecap="round" />
+
+  <!-- Kinetic Blade R Emblem (8° Forward Slant, Center at 256,256) -->
+  <g transform="matrix(1 0 -0.1405 1 36 0)">
+    <!-- 1. Detached Electric Violet → Cyan Diagonal Kicker Blade -->
+    <path d="M 230 290 H 296 L 354 382 H 288 Z" fill="url(#rtv-blade-accent)" />
+
+    <!-- 2. Continuous Brushed Platinum Upper Arch with Crisp Negative ▶ Play Counter -->
+    <path fill-rule="evenodd" clip-rule="evenodd" d="M 148 120 H 304 C 362 120 384 152 384 204 C 384 256 358 280 296 280 H 218 L 210 382 H 148 Z M 216 166 V 234 L 286 200 Z" fill="url(#rtv-platinum-arch)" />
+  </g>
 </svg>

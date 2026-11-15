@@ -260,17 +260,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             }}
             className="flex items-center gap-3 min-w-0 cursor-pointer text-left group py-1 whitespace-nowrap shrink-0"
             title={pickLang(lang, {
-              es: 'Ver Intro NAIMCINE',
-              ca: 'Veure Intro NAIMCINE',
-              en: 'Play NAIMCINE Intro',
+              es: 'Ver Intro RiffanTV',
+              ca: 'Veure Intro RiffanTV',
+              en: 'Play RiffanTV Intro',
             })}
           >
             <NaimBrandLogo
               size={isDesktop ? 42 : 34}
-              className="shrink-0 shadow-[0_0_26px_rgba(145,70,255,0.4)] group-hover:scale-105 transition-transform"
+              className="shrink-0 shadow-[0_0_26px_rgba(139,92,246,0.38)] group-hover:scale-105 transition-transform"
             />
-            <span className="font-display font-bold text-base sm:text-lg tracking-[0.14em] text-white">
-              NAIM <span className="text-[#A970FF]">CINE</span>
+            <span className="font-display font-bold text-base sm:text-lg tracking-[-0.015em] text-[#F4F5F8]">
+              Riffan<span className="text-[#A78BFA] font-extrabold">TV</span>
             </span>
           </button>
 
@@ -384,9 +384,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     <img
                       src={twitchBroadcastHeroImg}
                       alt={pickLang(lang, {
-                        es: 'Sala privada NAIMCINE',
-                        ca: 'Sala privada NAIMCINE',
-                        en: 'NAIMCINE private theater',
+                        es: 'Sala privada RiffanTV',
+                        ca: 'Sala privada RiffanTV',
+                        en: 'RiffanTV private theater',
                       })}
                       referrerPolicy="no-referrer"
                       onError={() => setHeroImgFailed(true)}
@@ -806,9 +806,9 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         <footer className="w-full max-w-[1440px] mx-auto px-6 py-4 flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-500">
           <span>
             {pickLang(lang, {
-              es: 'NAIM CINE · Arquitectura sincronizada multiplataforma',
-              ca: 'NAIM CINE · Arquitectura sincronitzada multiplataforma',
-              en: 'NAIM CINE · Cross-platform synchronized architecture',
+              es: 'RiffanTV (RTV) · Arquitectura sincronizada multiplataforma',
+              ca: 'RiffanTV (RTV) · Arquitectura sincronitzada multiplataforma',
+              en: 'RiffanTV (RTV) · Cross-platform synchronized architecture',
             })}
           </span>
           {onOpenAdsPage && (

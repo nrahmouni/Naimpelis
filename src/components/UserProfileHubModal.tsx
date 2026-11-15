@@ -219,8 +219,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={pickLang(lang, {
-          es: 'Mi Perfil NAIM CINE',
-          ca: 'El meu Perfil NAIM CINE',
+          es: 'Mi Perfil RiffanTV',
+          ca: 'El meu Perfil RiffanTV',
           en: 'My Profile',
         })}
         tabIndex={-1}

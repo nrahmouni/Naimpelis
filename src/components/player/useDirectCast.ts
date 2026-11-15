@@ -198,7 +198,7 @@ export function useDirectCast(params: {
 
       if (window.chrome.cast.media.GenericMediaMetadata) {
         const metadata = new window.chrome.cast.media.GenericMediaMetadata();
-        metadata.title = videoState.title || 'NAIM CINE';
+        metadata.title = videoState.title || 'RiffanTV';
         metadata.subtitle =
           videoState.subtitle || (videoState.isLive ? 'TV en Directo HD' : 'Proyección Directa 1080p');
         if (videoState.poster && /^https?:\/\//i.test(videoState.poster) && window.chrome.cast.Image) {

@@ -40,9 +40,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
           compact ? 'px-2.5 sm:px-3' : 'px-3.5'
         } rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-xs font-semibold text-white flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer`}
         title={pickLang(lang, {
-          es: 'Descargar App NAIM CINE',
-          ca: 'Descarregar App NAIM CINE',
-          en: 'Download NAIM CINE App',
+          es: 'Descargar App RiffanTV',
+          ca: 'Descarregar App RiffanTV',
+          en: 'Download RiffanTV App',
         })}
       >
         <Download className="w-3.5 h-3.5 text-[#BF94FF]" />
@@ -129,9 +129,9 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
       <div
         role="region"
         aria-label={pickLang(lang, {
-          es: 'Descargar aplicación NAIM CINE',
-          ca: 'Descarregar aplicació NAIM CINE',
-          en: 'Download NAIM CINE App',
+          es: 'Descargar aplicación RiffanTV',
+          ca: 'Descarregar aplicació RiffanTV',
+          en: 'Download RiffanTV App',
         })}
         className={`rounded-3xl nc-specular-surface backdrop-blur-xl border border-white/[0.1] p-4 ${
           isDesktop ? 'lg:p-5 lg:flex-row lg:items-center' : ''
@@ -166,9 +166,9 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
 
             <h2 className="font-display font-bold text-sm text-white">
               {pickLang(lang, {
-                es: 'Instala NAIM CINE · Misma experiencia en Web, Android y Google TV',
-                ca: 'Instal·la NAIM CINE · Mateixa experiència a Web, Android i Google TV',
-                en: 'Install NAIM CINE · Unified Web, Android Mobile & Google TV Apps',
+                es: 'Instala RiffanTV · Misma experiencia en Web, Android y Google TV',
+                ca: 'Instal·la RiffanTV · Mateixa experiència a Web, Android i Google TV',
+                en: 'Install RiffanTV · Unified Web, Android Mobile & Google TV Apps',
               })}
             </h2>
 
@@ -310,9 +310,9 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
         role="dialog"
         aria-modal="true"
         aria-label={pickLang(lang, {
-          es: 'Descargar NAIM CINE',
-          ca: 'Descarregar NAIM CINE',
-          en: 'Download NAIM CINE',
+          es: 'Descargar RiffanTV',
+          ca: 'Descarregar RiffanTV',
+          en: 'Download RiffanTV',
         })}
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
@@ -328,9 +328,9 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
             <div>
               <h3 className="font-display font-bold text-base text-white">
                 {pickLang(lang, {
-                  es: 'Descargar NAIM CINE',
-                  ca: 'Descarregar NAIM CINE',
-                  en: 'Download NAIM CINE',
+                  es: 'Descargar RiffanTV',
+                  ca: 'Descarregar RiffanTV',
+                  en: 'Download RiffanTV',
                 })}
               </h3>
               <p className="text-xs text-zinc-400">
@@ -476,7 +476,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                   <>
                     <strong>En PC / Mac o Chrome sin APK:</strong> toca el icono de instalar en la barra de{' '}
                     <strong className="text-white">
-                      {typeof window !== 'undefined' ? window.location.host : 'NAIM CINE'}
+                      {typeof window !== 'undefined' ? window.location.host : 'RiffanTV'}
                     </strong>{' '}
                     o el menú <strong>⋮ → Instalar aplicación</strong>.
                   </>
@@ -484,7 +484,7 @@ const PWAInstallGuideModal: React.FC<PWAInstallGuideModalProps> = ({
                   <>
                     <strong>En PC / Mac o Chrome sense APK:</strong> toca la icona d&apos;instal·lar a la barra de{' '}
                     <strong className="text-white">
-                      {typeof window !== 'undefined' ? window.location.host : 'NAIM CINE'}
+                      {typeof window !== 'undefined' ? window.location.host : 'RiffanTV'}
                     </strong>{' '}
                     o el menú <strong>⋮ → Instal·lar aplicació</strong>.
                   </>

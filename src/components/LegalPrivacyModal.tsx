@@ -99,9 +99,9 @@ export const LegalPrivacyModal: React.FC<LegalPrivacyModalProps> = ({
           </h4>
           <p>
             {pickLang(lang, {
-              es: 'NAIM CINE almacena únicamente tu nombre de perfil, avatar, favoritos, progreso de visualización, código de amigo y configuraciones de sala en Firebase Firestore para mantener sincronizados tus dispositivos (móvil, web y Smart TV). No vendemos ni compartimos tus datos con anunciantes.',
-              ca: 'NAIM CINE emmagatzema únicament el teu nom de perfil, avatar, favorits, progrés de visualització, codi d’amic i configuracions de sala a Firebase Firestore per mantenir sincronitzats els teus dispositius (mòbil, web i Smart TV). No venem ni compartim les teves dades amb anunciants.',
-              en: 'NAIM CINE stores only your profile name, avatar, favorites, watch progress, friend code, and room settings in Firebase Firestore to sync your devices (mobile, web, and Smart TV). We never sell or share your data with advertisers.',
+              es: 'RiffanTV almacena únicamente tu nombre de perfil, avatar, favoritos, progreso de visualización, código de amigo y configuraciones de sala en Firebase Firestore para mantener sincronizados tus dispositivos (móvil, web y Smart TV). No vendemos ni compartimos tus datos con anunciantes.',
+              ca: 'RiffanTV emmagatzema únicament el teu nom de perfil, avatar, favorits, progrés de visualització, codi d’amic i configuracions de sala a Firebase Firestore per mantenir sincronitzats els teus dispositius (mòbil, web i Smart TV). No venem ni compartim les teves dades amb anunciants.',
+              en: 'RiffanTV stores only your profile name, avatar, favorites, watch progress, friend code, and room settings in Firebase Firestore to sync your devices (mobile, web, and Smart TV). We never sell or share your data with advertisers.',
             })}
           </p>
         </section>

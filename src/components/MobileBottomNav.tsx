@@ -105,9 +105,9 @@ export const MobileBottomNav: React.FC<MobileBottomNavProps> = ({
           <nav
             className="bg-[#141418]/92 backdrop-blur-2xl border border-white/[0.11] rounded-2xl p-1 grid grid-cols-5 gap-0.5 shadow-[0_14px_38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.1)]"
             aria-label={pickLang(lang, {
-              es: 'Navegación móvil NAIM CINE',
-              ca: 'Navegació mòbil NAIM CINE',
-              en: 'NAIM CINE mobile navigation',
+              es: 'Navegación móvil RiffanTV',
+              ca: 'Navegació mòbil RiffanTV',
+              en: 'RiffanTV mobile navigation',
             })}
           >
             {navItems.map((item) => {

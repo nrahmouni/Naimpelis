@@ -200,7 +200,7 @@ const INITIAL_VIDEO_STATE: VideoState = {
   mode: 'idle',
   url: '',
   rawSourceUrl: '',
-  title: 'NAIM CINE · Elige película, serie, partido o YouTube',
+  title: 'RiffanTV · Elige película, serie, partido o YouTube',
   subtitle: 'Proyección sincronizada en alta definición sin anuncios',
   currentTime: 0,
   isPlaying: false,
@@ -357,7 +357,7 @@ export function App() {
   const [roomName, setRoomName] = useState<string>(
     effectiveInitialRoom
       ? isGoogleTvApp && !initialUrlRoom
-        ? 'NAIM CINE · Google TV'
+        ? 'RiffanTV · Google TV'
         : `Sala ${effectiveInitialRoom.toUpperCase()}`
       : ''
   );
@@ -1277,7 +1277,7 @@ export function App() {
           pushNotification({
             category: 'invite',
             title: `${notice.fromUserName || 'Nuevo amigo'} te añadió a sus amigos`,
-            body: 'Ya podéis invitaros con 1 toque a cualquier sala de NAIM CINE.',
+            body: 'Ya podéis invitaros con 1 toque a cualquier sala de RiffanTV.',
           });
         }
       } else if (type === 'ROOM_INVITE_SENT_ACK') {
@@ -2070,7 +2070,7 @@ export function App() {
       playCinemaSound('play');
     } catch (err: unknown) {
       if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;
-      setExtractionError('Error de red al conectar con el motor NAIM CINE.');
+      setExtractionError('Error de red al conectar con el motor RiffanTV.');
     } finally {
       if (reqSeq === extractionReqSeqRef.current) {
         isExtractingRef.current = false;
@@ -4704,9 +4704,9 @@ export function App() {
                 catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               title={pickLang(lang, {
-                es: 'NAIM CINE · Inicio',
-                ca: 'NAIM CINE · Inici',
-                en: 'NAIM CINE · Home',
+                es: 'RiffanTV · Inicio',
+                ca: 'RiffanTV · Inici',
+                en: 'RiffanTV · Home',
               })}
               className="shrink-0 cursor-pointer rounded-xl overflow-hidden hover:scale-105 active:scale-95 transition-transform shadow-[0_0_18px_rgba(145,70,255,0.28)]"
             >
@@ -5720,19 +5720,19 @@ export function App() {
                 {/* Minimalist Footer (Hidden in Games Hub so grid fills viewport cleanly without gap or scroll) */}
                 {!isGamesSectionActive && (
                   <footer className="mt-14 pt-5 pb-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-3 text-[11px] text-zinc-500">
-                    <span>NAIM CINE · Web · Android APK · Google TV</span>
+                    <span>RiffanTV (RTV) · Web · Android APK · Google TV</span>
                     <button
                       type="button"
                       onClick={() => {
                         triggerHaptic('light');
                         setIsAdsPageOpen(true);
                         if (typeof window !== 'undefined') {
-                          window.history.pushState({}, '', '/naimcine-ads');
+                          window.history.pushState({}, '', '/ads');
                         }
                       }}
                       className="text-[11px] font-mono tracking-wider text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer py-1 px-2.5 rounded-full hover:bg-white/[0.05]"
                     >
-                      naimcine ads
+                      RTV Studio
                     </button>
                   </footer>
                 )}

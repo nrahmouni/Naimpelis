@@ -1313,9 +1313,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
     try {
       navigator.mediaSession.metadata = new MediaMetadata({
-        title: videoState.title || 'NAIM CINE',
-        artist: videoState.subtitle || 'NAIM CINE Sala Sincronizada',
-        album: 'NAIM CINE',
+        title: videoState.title || 'RiffanTV',
+        artist: videoState.subtitle || 'RiffanTV Sala Sincronizada',
+        album: 'RiffanTV',
         artwork: videoState.poster
           ? [{ src: videoState.poster, sizes: '512x512', type: 'image/jpeg' }]
           : [{ src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' }],

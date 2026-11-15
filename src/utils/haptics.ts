@@ -146,125 +146,130 @@ export function playNaimcineIntroSound(): boolean {
     hallWet.connect(masterGain);
 
     // -------------------------------------------------------------------------
-    // ACT 1: Optical Anamorphic Ignition Whoosh (Filtered Noise)
+    // ACT 1: Crisp 14° Optical Sweep Ignition (Filtered Air Transient, 0 -> 0.42s)
     // -------------------------------------------------------------------------
-    const noiseLen = Math.floor(ctx.sampleRate * 0.75);
+    const noiseLen = Math.floor(ctx.sampleRate * 0.48);
     const noiseBuf = ctx.createBuffer(1, noiseLen, ctx.sampleRate);
     const noiseData = noiseBuf.getChannelData(0);
     for (let i = 0; i < noiseLen; i++) {
-      noiseData[i] = (Math.random() * 2 - 1) * 0.65;
+      noiseData[i] = (Math.random() * 2 - 1) * 0.55;
     }
     const noiseSrc = ctx.createBufferSource();
     noiseSrc.buffer = noiseBuf;
 
     const whooshFilter = ctx.createBiquadFilter();
     whooshFilter.type = 'bandpass';
-    whooshFilter.Q.setValueAtTime(2.6, now);
-    whooshFilter.frequency.setValueAtTime(190, now);
-    whooshFilter.frequency.exponentialRampToValueAtTime(2600, now + 0.36);
-    whooshFilter.frequency.exponentialRampToValueAtTime(480, now + 0.72);
+    whooshFilter.Q.setValueAtTime(3.2, now);
+    whooshFilter.frequency.setValueAtTime(240, now);
+    whooshFilter.frequency.exponentialRampToValueAtTime(3200, now + 0.24);
+    whooshFilter.frequency.exponentialRampToValueAtTime(620, now + 0.46);
 
     const whooshGain = ctx.createGain();
     whooshGain.gain.setValueAtTime(0.0001, now);
-    whooshGain.gain.linearRampToValueAtTime(0.11, now + 0.24);
-    whooshGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.72);
+    whooshGain.gain.linearRampToValueAtTime(0.095, now + 0.14);
+    whooshGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.46);
 
     noiseSrc.connect(whooshFilter);
     whooshFilter.connect(whooshGain);
     whooshGain.connect(masterGain);
     whooshGain.connect(hallDelayL);
     noiseSrc.start(now);
-    noiseSrc.stop(now + 0.74);
+    noiseSrc.stop(now + 0.47);
 
     // -------------------------------------------------------------------------
-    // ACT 2: Hit 1 ("TA" at +0.20s) + Hit 2 ("DUMMMM" IMAX Sub Impact at +0.46s)
+    // ACT 2: 3-Pulse "Rif - fan - TV" Rhythmic Studio Cadence (+0.16s, +0.34s, +0.54s)
     // -------------------------------------------------------------------------
     const shaper = ctx.createWaveShaper();
-    shaper.curve = makeWarmSaturationCurve(14);
+    shaper.curve = makeWarmSaturationCurve(12);
 
-    // Strike 1: Tight Theatrical Timpani ("TA")
-    const taOsc = ctx.createOscillator();
-    const taGain = ctx.createGain();
-    taOsc.type = 'triangle';
-    taOsc.frequency.setValueAtTime(138, now + 0.2);
-    taOsc.frequency.exponentialRampToValueAtTime(49, now + 0.41);
-    taGain.gain.setValueAtTime(0.0001, now + 0.195);
-    taGain.gain.linearRampToValueAtTime(0.32, now + 0.212);
-    taGain.gain.exponentialRampToValueAtTime(0.001, now + 0.44);
-    taOsc.connect(shaper);
-    shaper.connect(taGain);
-    taGain.connect(masterGain);
-    taOsc.start(now + 0.195);
-    taOsc.stop(now + 0.45);
+    // Pulse 1 ("Rif" +0.16s) & Pulse 2 ("fan" +0.34s): Tight percussive low-mid plucks
+    [
+      { at: 0.16, fStart: 146.83, fEnd: 73.42, gain: 0.26, dur: 0.16 },
+      { at: 0.34, fStart: 164.81, fEnd: 82.41, gain: 0.29, dur: 0.18 },
+    ].forEach((p) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(p.fStart, now + p.at);
+      osc.frequency.exponentialRampToValueAtTime(p.fEnd, now + p.at + p.dur);
+      g.gain.setValueAtTime(0.0001, now + p.at - 0.005);
+      g.gain.linearRampToValueAtTime(p.gain, now + p.at + 0.014);
+      g.gain.exponentialRampToValueAtTime(0.001, now + p.at + p.dur);
+      osc.connect(shaper);
+      shaper.connect(g);
+      g.connect(masterGain);
+      osc.start(now + p.at - 0.005);
+      osc.stop(now + p.at + p.dur + 0.02);
+    });
 
-    // Strike 2: Deep Sub-Bass Drop ("DUMMMM" 73.4Hz -> 36.7Hz D1)
-    const dumSub = ctx.createOscillator();
-    const dumGain = ctx.createGain();
-    dumSub.type = 'sine';
-    dumSub.frequency.setValueAtTime(92, now + 0.46);
-    dumSub.frequency.exponentialRampToValueAtTime(36.71, now + 0.72);
-    dumGain.gain.setValueAtTime(0.0001, now + 0.455);
-    dumGain.gain.linearRampToValueAtTime(0.42, now + 0.485);
-    dumGain.gain.exponentialRampToValueAtTime(0.0008, now + 2.85);
-    dumSub.connect(dumGain);
-    dumGain.connect(masterGain);
-    dumSub.start(now + 0.455);
-    dumSub.stop(now + 2.9);
+    // Pulse 3 ("TV" +0.54s): Authoritative Sub-Bass Drop (110Hz -> 41.2Hz E1)
+    const subOsc = ctx.createOscillator();
+    const subGain = ctx.createGain();
+    subOsc.type = 'sine';
+    subOsc.frequency.setValueAtTime(110, now + 0.54);
+    subOsc.frequency.exponentialRampToValueAtTime(41.2, now + 0.78);
+    subGain.gain.setValueAtTime(0.0001, now + 0.535);
+    subGain.gain.linearRampToValueAtTime(0.42, now + 0.56);
+    subGain.gain.exponentialRampToValueAtTime(0.0008, now + 2.15);
+    subOsc.connect(subGain);
+    subGain.connect(masterGain);
+    subOsc.start(now + 0.535);
+    subOsc.stop(now + 2.2);
 
     // -------------------------------------------------------------------------
-    // ACT 3: Dolby-Style Lush Orchestral Fifths & Prism Bloom (+0.46s - 3.30s)
+    // ACT 3: Wide Studio Fifth/Ninth Harmonic Bloom (+0.54s -> +2.25s)
     // -------------------------------------------------------------------------
     const chordPadFilter = ctx.createBiquadFilter();
     chordPadFilter.type = 'lowpass';
-    chordPadFilter.frequency.setValueAtTime(340, now + 0.46);
-    chordPadFilter.frequency.exponentialRampToValueAtTime(3900, now + 1.15);
-    chordPadFilter.frequency.exponentialRampToValueAtTime(1250, now + 3.15);
+    chordPadFilter.frequency.setValueAtTime(420, now + 0.54);
+    chordPadFilter.frequency.exponentialRampToValueAtTime(4400, now + 0.98);
+    chordPadFilter.frequency.exponentialRampToValueAtTime(1400, now + 2.2);
     chordPadFilter.connect(masterGain);
     chordPadFilter.connect(hallDelayL);
 
-    // D2, A2, D3, F#3, A3, E4 (Cinematic Dadd9 wide theatrical voicing)
+    // E2, B2, E3, G#3, B3, F#4 (Eadd9 crisp studio signature)
     const voices = [
-      { freq: 73.42, detune: -5, peak: 0.14, type: 'sawtooth' as OscillatorType },
-      { freq: 110.0, detune: 5, peak: 0.11, type: 'sawtooth' as OscillatorType },
-      { freq: 146.83, detune: -7, peak: 0.09, type: 'triangle' as OscillatorType },
-      { freq: 185.0, detune: 6, peak: 0.075, type: 'sawtooth' as OscillatorType },
-      { freq: 220.0, detune: -4, peak: 0.065, type: 'triangle' as OscillatorType },
-      { freq: 329.63, detune: 8, peak: 0.045, type: 'sine' as OscillatorType },
+      { freq: 82.41, detune: -4, peak: 0.13, type: 'sawtooth' as OscillatorType },
+      { freq: 123.47, detune: 5, peak: 0.105, type: 'sawtooth' as OscillatorType },
+      { freq: 164.81, detune: -6, peak: 0.085, type: 'triangle' as OscillatorType },
+      { freq: 207.65, detune: 5, peak: 0.07, type: 'sawtooth' as OscillatorType },
+      { freq: 246.94, detune: -3, peak: 0.06, type: 'triangle' as OscillatorType },
+      { freq: 369.99, detune: 6, peak: 0.045, type: 'sine' as OscillatorType },
     ];
 
     voices.forEach((v) => {
       const osc = ctx.createOscillator();
       const g = ctx.createGain();
       osc.type = v.type;
-      osc.frequency.setValueAtTime(v.freq * 0.992, now + 0.46);
-      osc.frequency.exponentialRampToValueAtTime(v.freq, now + 0.68);
-      osc.detune.setValueAtTime(v.detune, now + 0.46);
+      osc.frequency.setValueAtTime(v.freq * 0.994, now + 0.54);
+      osc.frequency.exponentialRampToValueAtTime(v.freq, now + 0.72);
+      osc.detune.setValueAtTime(v.detune, now + 0.54);
 
-      g.gain.setValueAtTime(0.0001, now + 0.46);
-      g.gain.linearRampToValueAtTime(v.peak, now + 0.66);
-      g.gain.exponentialRampToValueAtTime(0.0006, now + 3.15);
+      g.gain.setValueAtTime(0.0001, now + 0.54);
+      g.gain.linearRampToValueAtTime(v.peak, now + 0.68);
+      g.gain.exponentialRampToValueAtTime(0.0006, now + 2.2);
 
       osc.connect(g);
       g.connect(chordPadFilter);
-      osc.start(now + 0.46);
-      osc.stop(now + 3.2);
+      osc.start(now + 0.54);
+      osc.stop(now + 2.25);
     });
 
-    // Crystalline Ruby-Prism High Shimmer Overtones (D5 + A5)
-    [587.33, 880.0].forEach((hiFreq, idx) => {
+    // Optical Prism High Bell Shimmer (E5 -> B5)
+    [659.25, 987.77].forEach((hiFreq, idx) => {
       const bell = ctx.createOscillator();
       const bellGain = ctx.createGain();
       bell.type = 'sine';
-      const startAt = now + 0.72 + idx * 0.12;
+      const startAt = now + 0.64 + idx * 0.11;
       bell.frequency.setValueAtTime(hiFreq, startAt);
       bellGain.gain.setValueAtTime(0.0001, startAt);
-      bellGain.gain.linearRampToValueAtTime(0.028 / (idx + 1), startAt + 0.12);
-      bellGain.gain.exponentialRampToValueAtTime(0.0004, startAt + 2.1);
+      bellGain.gain.linearRampToValueAtTime(0.03 / (idx + 1), startAt + 0.09);
+      bellGain.gain.exponentialRampToValueAtTime(0.0004, startAt + 1.45);
       bell.connect(bellGain);
       bellGain.connect(hallDelayL);
       bellGain.connect(masterGain);
       bell.start(startAt);
-      bell.stop(startAt + 2.15);
+      bell.stop(startAt + 1.5);
     });
 
     return ctx.state === 'running';
@@ -272,3 +277,5 @@ export function playNaimcineIntroSound(): boolean {
     return false;
   }
 }
+
+export const playRiffanIntroSound = playNaimcineIntroSound;

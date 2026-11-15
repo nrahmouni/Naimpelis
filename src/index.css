@@ -2,20 +2,20 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 /* ==========================================================================
-   NAIM CINE — DESIGN SYSTEM TOKENS (@theme + Semantic Variables)
-   Twitch-Style Broadcast Dark & Electric Violet Palette · AA WCAG Audited
+   RIFFANTV (RTV) — DESIGN SYSTEM TOKENS (@theme + Semantic Variables)
+   Cinema Obsidian & Riffan Electric Violet Palette · AA/AAA WCAG Audited
    ========================================================================== */
 @theme {
-  --color-bg-canvas: #0e0e10;
-  --color-bg-elevated: #18181b;
-  --color-bg-surface: #1f1f23;
-  --color-bg-subtle: #26262c;
-  --color-text-primary: #efeff1;
-  --color-text-secondary: #adadb8;
-  --color-text-muted: #848494;
-  --color-accent: #9146ff;
-  --color-accent-hover: #772ce8;
-  --color-live: #eb0400;
+  --color-bg-canvas: #07080c;
+  --color-bg-elevated: #11131b;
+  --color-bg-surface: #181b26;
+  --color-bg-subtle: #222635;
+  --color-text-primary: #f4f5f8;
+  --color-text-secondary: #a9aebe;
+  --color-text-muted: #7c8296;
+  --color-accent: #8b5cf6;
+  --color-accent-hover: #7c3aed;
+  --color-live: #ff2e54;
   --color-border-subtle: rgba(255, 255, 255, 0.08);
   --color-border-strong: rgba(255, 255, 255, 0.16);
 
@@ -34,15 +34,15 @@
     --font-display: 'Outfit', 'Plus Jakarta Sans', sans-serif;
     --font-mono: 'JetBrains Mono', monospace;
 
-    --nc-bg-canvas: #0e0e10;
-    --nc-bg-elevated: #18181b;
-    --nc-bg-surface: #1f1f23;
-    --nc-bg-subtle: #26262c;
-    --nc-text-primary: #efeff1;
-    --nc-text-secondary: #adadb8;
-    --nc-accent: #9146ff;
+    --nc-bg-canvas: #07080c;
+    --nc-bg-elevated: #11131b;
+    --nc-bg-surface: #181b26;
+    --nc-bg-subtle: #222635;
+    --nc-text-primary: #f4f5f8;
+    --nc-text-secondary: #a9aebe;
+    --nc-accent: #8b5cf6;
     --nc-border: rgba(255, 255, 255, 0.08);
-    --ambient-poster-glow: rgba(145, 70, 255, 0.28);
+    --ambient-poster-glow: rgba(139, 92, 246, 0.28);
     --nc-blur: 24px;
     --nc-density-pad: 1rem;
   }
@@ -50,53 +50,53 @@
   /* OLED Pure Black Theme */
   :root[data-theme="oled"] {
     --nc-bg-canvas: #000000;
-    --nc-bg-elevated: #0b0b0e;
-    --nc-bg-surface: #141418;
-    --nc-bg-subtle: #1d1d24;
-    --nc-text-primary: #efeff1;
-    --nc-text-secondary: #adadb8;
+    --nc-bg-elevated: #090a10;
+    --nc-bg-surface: #11131b;
+    --nc-bg-subtle: #1b1e2b;
+    --nc-text-primary: #f4f5f8;
+    --nc-text-secondary: #a9aebe;
     --nc-border: rgba(255, 255, 255, 0.08);
   }
 
   /* Soft Dark Theme */
   :root[data-theme="soft-dark"] {
-    --nc-bg-canvas: #121216;
-    --nc-bg-elevated: #1a1a20;
-    --nc-bg-surface: #23232b;
-    --nc-bg-subtle: #2d2d37;
+    --nc-bg-canvas: #10121a;
+    --nc-bg-elevated: #171a25;
+    --nc-bg-surface: #202433;
+    --nc-bg-subtle: #2a2f42;
     --nc-text-primary: #f6f7fb;
-    --nc-text-secondary: #b4b4c0;
+    --nc-text-secondary: #b3b8c9;
     --nc-border: rgba(255, 255, 255, 0.11);
   }
 
-  /* Dark Theme (Standard Twitch Broadcast) */
+  /* Dark Theme (Cinema Obsidian) */
   :root[data-theme="dark"] {
-    --nc-bg-canvas: #0e0e10;
-    --nc-bg-elevated: #18181b;
-    --nc-bg-surface: #1f1f23;
-    --nc-bg-subtle: #26262c;
-    --nc-text-primary: #efeff1;
-    --nc-text-secondary: #adadb8;
+    --nc-bg-canvas: #07080c;
+    --nc-bg-elevated: #11131b;
+    --nc-bg-surface: #181b26;
+    --nc-bg-subtle: #222635;
+    --nc-text-primary: #f4f5f8;
+    --nc-text-secondary: #a9aebe;
     --nc-border: rgba(255, 255, 255, 0.08);
   }
 
-  /* Light Theme */
+  /* Light Theme (Editorial Light) */
   :root[data-theme="light"] {
-    --nc-bg-canvas: #f4f6fa;
+    --nc-bg-canvas: #f6f5f1;
     --nc-bg-elevated: #ffffff;
-    --nc-bg-surface: #e8ecf4;
-    --nc-bg-subtle: #d9dfec;
-    --nc-text-primary: #111318;
-    --nc-text-secondary: #565e70;
-    --nc-border: rgba(0, 0, 0, 0.12);
+    --nc-bg-surface: #eceae2;
+    --nc-bg-subtle: #dfdcd1;
+    --nc-text-primary: #101218;
+    --nc-text-secondary: #4e5466;
+    --nc-border: rgba(16, 18, 24, 0.12);
   }
 
   /* High Contrast Accessibility Theme (AA/AAA >= 7:1 text contrast) */
   :root[data-theme="high-contrast"] {
     --nc-bg-canvas: #000000;
-    --nc-bg-elevated: #09090b;
-    --nc-bg-surface: #121216;
-    --nc-bg-subtle: #1c1c24;
+    --nc-bg-elevated: #08090e;
+    --nc-bg-surface: #11131b;
+    --nc-bg-subtle: #1c1f2c;
     --nc-text-primary: #ffffff;
     --nc-text-secondary: #d4d8e4;
     --nc-border: rgba(255, 255, 255, 0.28);
@@ -702,6 +702,127 @@
     animation: ncGoalShake 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
   }
 
+  /* RiffanTV (RTV) Optic Sweep Studio Intro Keyframes (GPU Compositor Only) */
+  @keyframes rtvIntroFade {
+    0% { opacity: 0; }
+    10% { opacity: 1; }
+    86% { opacity: 1; }
+    100% { opacity: 0; }
+  }
+  .animate-rtv-intro-fade {
+    animation: rtvIntroFade 2.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    will-change: opacity;
+  }
+
+  @keyframes rtvScopeTop {
+    0% { transform: translate3d(0, -100%, 0); }
+    18% { transform: translate3d(0, 0, 0); }
+    84% { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(0, -100%, 0); }
+  }
+  .animate-rtv-scope-top {
+    animation: rtvScopeTop 2.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: transform;
+  }
+
+  @keyframes rtvScopeBottom {
+    0% { transform: translate3d(0, 100%, 0); }
+    18% { transform: translate3d(0, 0, 0); }
+    84% { transform: translate3d(0, 0, 0); }
+    100% { transform: translate3d(0, 100%, 0); }
+  }
+  .animate-rtv-scope-bottom {
+    animation: rtvScopeBottom 2.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: transform;
+  }
+
+  @keyframes rtvMonolithReveal {
+    0% {
+      opacity: 0;
+      transform: translate3d(0, 18px, 0) scale(0.76) rotateX(16deg);
+      filter: blur(8px);
+    }
+    24% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1.03) rotateX(0deg);
+      filter: blur(0px);
+    }
+    34%, 82% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1) rotateX(0deg);
+      filter: blur(0px);
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(0, -6px, 0) scale(1.08);
+      filter: blur(3px);
+    }
+  }
+  .animate-rtv-monolith {
+    animation: rtvMonolithReveal 2.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: transform, opacity, filter;
+  }
+
+  @keyframes rtvGlintSweep {
+    0%, 26% {
+      transform: translate3d(-135%, 0, 0) skewX(-18deg);
+      opacity: 0;
+    }
+    36% {
+      opacity: 0.9;
+    }
+    62% {
+      transform: translate3d(145%, 0, 0) skewX(-18deg);
+      opacity: 0;
+    }
+    100% {
+      transform: translate3d(145%, 0, 0) skewX(-18deg);
+      opacity: 0;
+    }
+  }
+  .animate-rtv-glint {
+    animation: rtvGlintSweep 2.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+    will-change: transform, opacity;
+  }
+
+  @keyframes rtvWordmarkReveal {
+    0%, 24% {
+      opacity: 0;
+      transform: translate3d(0, 14px, 0) scale(0.95);
+    }
+    44%, 82% {
+      opacity: 1;
+      transform: translate3d(0, 0, 0) scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: translate3d(0, -4px, 0) scale(1.03);
+    }
+  }
+  .animate-rtv-wordmark {
+    animation: rtvWordmarkReveal 2.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: transform, opacity;
+  }
+
+  @keyframes rtvDividerExpand {
+    0%, 30% {
+      opacity: 0;
+      transform: scaleX(0.15);
+    }
+    52%, 82% {
+      opacity: 1;
+      transform: scaleX(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scaleX(0.5);
+    }
+  }
+  .animate-rtv-divider {
+    animation: rtvDividerExpand 2.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    will-change: transform, opacity;
+  }
+
   /* Prefers-reduced-motion Accessibility */
   @media (prefers-reduced-motion: reduce) {
     .nc-confetti-bit,
@@ -717,7 +838,14 @@
     .nc-chess-glide,
     .nc-check-aura,
     .nc-ray-spin,
-    .nc-goal-kinetic {
+    .nc-goal-kinetic,
+    .animate-rtv-intro-fade,
+    .animate-rtv-scope-top,
+    .animate-rtv-scope-bottom,
+    .animate-rtv-monolith,
+    .animate-rtv-glint,
+    .animate-rtv-wordmark,
+    .animate-rtv-divider {
       animation: none !important;
       transition: none !important;
     }
@@ -884,6 +1012,7 @@ html.tv-dpad-active [role="button"]:focus {
    ========================================================================== */
 :root[data-theme="light"] .bg-\[\#050508\],
 :root[data-theme="light"] .bg-\[\#06070B\],
+:root[data-theme="light"] .bg-\[\#07080C\],
 :root[data-theme="light"] .bg-\[\#0B0B0E\],
 :root[data-theme="light"] .bg-\[\#0B0B10\],
 :root[data-theme="light"] .bg-\[\#0B0B10\]\/90,
@@ -894,11 +1023,12 @@ html.tv-dpad-active [role="button"]:focus {
 :root[data-theme="light"] .bg-\[\#0E0F16\],
 :root[data-theme="light"] .bg-\[\#090A10\],
 :root[data-theme="light"] .bg-\[\#0C0E16\] {
-  background-color: #f4f6fa;
+  background-color: #f6f5f1;
 }
 
 :root[data-theme="light"] .bg-\[\#0F1119\],
 :root[data-theme="light"] .bg-\[\#111115\],
+:root[data-theme="light"] .bg-\[\#11131B\],
 :root[data-theme="light"] .bg-\[\#121218\],
 :root[data-theme="light"] .bg-\[\#121218\]\/95,
 :root[data-theme="light"] .bg-\[\#141418\],
@@ -907,6 +1037,7 @@ html.tv-dpad-active [role="button"]:focus {
 :root[data-theme="light"] .bg-\[\#161925\],
 :root[data-theme="light"] .bg-\[\#18181B\],
 :root[data-theme="light"] .bg-\[\#18181B\]\/90,
+:root[data-theme="light"] .bg-\[\#181B26\],
 :root[data-theme="light"] .bg-\[\#191922\],
 :root[data-theme="light"] .bg-\[\#1C1C24\] {
   background-color: #ffffff;

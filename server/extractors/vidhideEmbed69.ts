@@ -7,6 +7,7 @@ import {
   type TrackRecord,
   areTitlesStrictlyEqual,
   buildHlsProxyUrl,
+  buildTsProxyUrl,
   curlGetBufferWithStatus,
   curlGetText,
   curlPostJsonText,
@@ -141,6 +142,76 @@ export async function unpackVidhideToHls(
     return null;
   } catch (err) {
     console.warn('unpackVidhideToHls error:', err);
+    return null;
+  }
+}
+
+export async function unpackMp4UploadToDirect(
+  embedUrl: string
+): Promise<{ rawMp4: string; proxyUrl: string } | null> {
+  try {
+    const cleanUrl = String(embedUrl || '').trim();
+    if (!cleanUrl || !cleanUrl.includes('mp4upload.com/')) return null;
+
+    let html = '';
+    try {
+      const res = await streamingFetch(cleanUrl, {
+        headers: {
+          'User-Agent': CHROME_UA,
+          Referer: 'https://animeav1.com/',
+        },
+        timeoutMs: 4500,
+      });
+      if (res.ok) {
+        html = await res.text();
+      }
+    } catch {
+      // fallback to curl
+    }
+
+    if (!html) {
+      const fb = await curlGetText(
+        cleanUrl,
+        { 'User-Agent': CHROME_UA, Referer: 'https://animeav1.com/' },
+        5,
+        true
+      ).catch(() => ({ text: '' }));
+      html = fb.text || '';
+    }
+    if (!html) return null;
+
+    const srcMatch = html.match(/src:\s*["'](https?:\/\/[^"']+\.mp4(?:\?[^"']*)?)["']/i);
+    if (!srcMatch?.[1]) return null;
+    const rawMp4 = srcMatch[1];
+
+    // Probe initial bytes with MP4Upload Referer to confirm 200/206 video bytes
+    const probe = await curlGetBufferWithStatus(
+      rawMp4,
+      {
+        'User-Agent': CHROME_UA,
+        Referer: 'https://www.mp4upload.com/',
+        Range: 'bytes=0-4095',
+      },
+      4
+    ).catch(() => ({ buf: Buffer.alloc(0), status: 0 }));
+
+    const headStr = probe.buf.subarray(0, 64).toString('utf8').trimStart().toLowerCase();
+    if (
+      probe.status < 200 ||
+      probe.status >= 400 ||
+      probe.buf.length < 512 ||
+      headStr.startsWith('<!doctype') ||
+      headStr.startsWith('<html')
+    ) {
+      return null;
+    }
+
+    return {
+      rawMp4,
+      proxyUrl: buildTsProxyUrl(rawMp4, 'https://www.mp4upload.com/'),
+    };
+  } catch (err) {
+    console.warn('unpackMp4UploadToDirect error:', err);
     return null;
   }
 }
@@ -963,6 +1034,27 @@ export async function extractAnimeAv1Tracks(opts: {
           }
         } catch {
           // fallback below
+        }
+      }
+
+      if (found.length === 0) {
+        const mp4UploadMatch = blockStr.match(
+          /https?:\/\/(?:www\.)?mp4upload\.com\/embed-[a-zA-Z0-9]+\.html/i
+        );
+        if (mp4UploadMatch?.[0]) {
+          const unpacked = await unpackMp4UploadToDirect(mp4UploadMatch[0]);
+          if (unpacked) {
+            found.push({
+              id: `anime-mp4u-${matchedSlug}-${resolvedEpNum}-${langCode.toLowerCase()}`,
+              label: `${langLabel} · MP4 Directo 1080p`,
+              lang: langCode,
+              quality: '1080p Direct',
+              sourceUrl: unpacked.rawMp4,
+              referer: 'https://www.mp4upload.com/',
+              resolverType: 'direct_mp4',
+              resolvedStreamUrl: unpacked.proxyUrl,
+            });
+          }
         }
       }
 
