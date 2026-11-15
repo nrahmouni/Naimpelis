@@ -751,8 +751,12 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
           const clockMs = getSideClockMs(side);
           const isLowClock = clockMs !== null && clockMs < 30_000;
           const voiceInfo = seat && !seat.isBot ? voicePeerMap.get(seat.userId) : undefined;
+          const voiceLevel = seat && !seat.isBot ? voiceChat?.audioLevels?.[seat.userId] ?? 0 : 0;
           const isSpeaking = Boolean(
-            seat && !seat.isBot && voiceChat?.speakingUserIds.includes(seat.userId)
+            seat &&
+              !seat.isBot &&
+              !voiceInfo?.isMuted &&
+              (voiceLevel > 0.06 || voiceChat?.speakingUserIds.includes(seat.userId))
           );
           const canPickSeat = !seat && !gameState.soloLocal && gameState.status === 'waiting';
 
@@ -791,6 +795,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                           inVoice={Boolean(voiceInfo)}
                           isSpeaking={isSpeaking}
                           isMuted={Boolean(voiceInfo?.isMuted)}
+                          audioLevel={voiceLevel}
                         />
                       )}
                     </div>

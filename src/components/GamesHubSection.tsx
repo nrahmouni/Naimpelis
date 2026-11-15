@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
+  AlertCircle,
   ArrowLeft,
   Bot,
   Crown,
@@ -17,7 +18,11 @@ import type {
   BoardGameState,
   BoardGameType,
   BoardSide,
+  ChapasFlagId,
+  ChapasShotInput,
+  ChapasTeamId,
   ChessPromotionPiece,
+  FutbolChapasState,
   Participant,
   PinturilloGameState,
   PinturilloStroke,
@@ -26,6 +31,7 @@ import type {
   PoolPocketId,
   PoolShotInput,
 } from '../types';
+import type { RoomMatchResponsesState } from '../shared/protocol';
 import {
   BOARD_TURN_DECISION_MS,
   applyBoardMove,
@@ -36,7 +42,6 @@ import {
   startBoardMatch,
 } from '../shared/boardGames';
 import {
-  PARTY_COLORS,
   type PartyColor,
   type PartyGameState,
   type PartyGameType,
@@ -47,7 +52,9 @@ import { RoomBoardGamePanel } from './RoomBoardGamePanel';
 import { PartyGamesStage, type PartyOnlineAction } from './PartyGamesStage';
 import { PinturilloStage } from './PinturilloStage';
 import { Pool8BallStage } from './Pool8BallStage';
+import { FutbolChapasStage } from './FutbolChapasStage';
 import { GameMuteButton, useGameSoundMute } from './games/GameEffects';
+import { VoiceWaveBars } from './games/GameVoiceBar';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -56,6 +63,7 @@ type UnifiedGameId =
   | 'uno'
   | 'pinturillo'
   | 'pool'
+  | 'chapas'
   | 'chess'
   | 'checkers'
   | 'connect4';
@@ -68,9 +76,13 @@ interface GamesHubSectionProps {
   roomPartyGame: PartyGameState | null;
   roomPinturilloGame?: PinturilloGameState | null;
   roomPoolGame?: Pool8BallState | null;
+  roomChapasGame?: FutbolChapasState | null;
+  matchResponses?: RoomMatchResponsesState | null;
   gameMoveError?: string | null;
   isHost?: boolean;
   voiceChat?: GameVoiceChatState;
+  requestedGameOpen?: { gameType: UnifiedGameId; seq: number } | null;
+  onSelectedGameChange?: (game: UnifiedGameId | null) => void;
   onStartRoomBoardGame?: (gt: BoardGameType, soloLocal?: boolean, clockMinutes?: BoardClockMinutes) => void;
   onJoinBoardSeat?: (side: 'w' | 'b' | 'spectate') => void;
   onStartBoardMatch?: () => void;
@@ -85,6 +97,7 @@ interface GamesHubSectionProps {
   ) => void;
   onCloseRoomPartyGame?: () => void;
   onStartRoomPinturillo?: () => void;
+  onStartPinturilloMatch?: () => void;
   onPinturilloPickWord?: (wordId: string) => void;
   onPinturilloStroke?: (stroke: PinturilloStroke) => void;
   onPinturilloUndo?: () => void;
@@ -93,6 +106,7 @@ interface GamesHubSectionProps {
   onPinturilloRematch?: () => void;
   onCloseRoomPinturillo?: () => void;
   onStartRoomPool?: (difficulty?: PoolDifficulty) => void;
+  onStartPoolMatch?: () => void;
   onPoolJoinSeat?: (seatIndex: 0 | 1 | 'spectate') => void;
   onPoolCallPocket?: (pocketId: PoolPocketId) => void;
   onPoolPlaceCue?: (x: number, y: number) => void;
@@ -101,6 +115,15 @@ interface GamesHubSectionProps {
   onPoolForfeit?: () => void;
   onPoolRematch?: () => void;
   onCloseRoomPool?: () => void;
+  onStartRoomChapas?: (opts?: { botsEnabled?: boolean }) => void;
+  onChapasJoinSeat?: (seatIndex: 0 | 1 | 2 | 3 | 'spectate') => void;
+  onChapasUpdateTeam?: (team: ChapasTeamId, flag: ChapasFlagId) => void;
+  onChapasToggleBots?: (botsEnabled: boolean) => void;
+  onChapasStartMatch?: () => void;
+  onChapasShoot?: (shot: ChapasShotInput) => void;
+  onChapasForfeit?: () => void;
+  onChapasRematch?: () => void;
+  onCloseRoomChapas?: () => void;
 }
 
 const PARTY_COLOR_HEX: Record<PartyColor, { hex: string; short: string }> = {
@@ -126,9 +149,13 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   roomPartyGame,
   roomPinturilloGame = null,
   roomPoolGame = null,
+  roomChapasGame = null,
+  matchResponses = null,
   gameMoveError = null,
   isHost = false,
   voiceChat,
+  requestedGameOpen = null,
+  onSelectedGameChange,
   onStartRoomBoardGame,
   onJoinBoardSeat,
   onStartBoardMatch,
@@ -140,6 +167,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   onRoomPartyAction,
   onCloseRoomPartyGame,
   onStartRoomPinturillo,
+  onStartPinturilloMatch,
   onPinturilloPickWord,
   onPinturilloStroke,
   onPinturilloUndo,
@@ -148,6 +176,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   onPinturilloRematch,
   onCloseRoomPinturillo,
   onStartRoomPool,
+  onStartPoolMatch,
   onPoolJoinSeat,
   onPoolCallPocket,
   onPoolPlaceCue,
@@ -156,6 +185,15 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   onPoolForfeit,
   onPoolRematch,
   onCloseRoomPool,
+  onStartRoomChapas,
+  onChapasJoinSeat,
+  onChapasUpdateTeam,
+  onChapasToggleBots,
+  onChapasStartMatch,
+  onChapasShoot,
+  onChapasForfeit,
+  onChapasRematch,
+  onCloseRoomChapas,
 }) => {
   const [selectedGame, setSelectedGame] = useState<UnifiedGameId | null>(null);
   const [hubMode, setHubMode] = useState<'offline' | 'online'>('online');
@@ -163,39 +201,57 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   const [localMoveErr, setLocalMoveErr] = useState<string | null>(null);
   const [muted, toggleMute] = useGameSoundMute();
 
-  // Track room-pushed games so when another room user launches a game, it opens cleanly unless dismissed
-  const prevRoomGameKeyRef = React.useRef<string | null>(null);
   useEffect(() => {
-    const incomingKey = roomPoolGame
-      ? `pool:${roomPoolGame.updatedAt}`
-      : roomPinturilloGame
-      ? `pinturillo:${roomPinturilloGame.updatedAt}`
-      : roomPartyGame
-      ? `party:${roomPartyGame.gameType}:${roomPartyGame.updatedAt}`
-      : roomBoardGame
-      ? `board:${roomBoardGame.gameType}:${roomBoardGame.updatedAt}`
-      : null;
+    onSelectedGameChange?.(selectedGame);
+  }, [selectedGame, onSelectedGameChange]);
 
-    if (!incomingKey) {
-      prevRoomGameKeyRef.current = null;
-      return;
-    }
+  useEffect(() => {
+    return () => {
+      onSelectedGameChange?.(null);
+    };
+  }, [onSelectedGameChange]);
 
-    const incomingType: UnifiedGameId = roomPoolGame
+  const lastHandledRequestSeqRef = React.useRef<number>(0);
+  useEffect(() => {
+    if (!requestedGameOpen || requestedGameOpen.seq === lastHandledRequestSeqRef.current) return;
+    lastHandledRequestSeqRef.current = requestedGameOpen.seq;
+    setHubMode('online');
+    setLocalMoveErr(null);
+    setSelectedGame(requestedGameOpen.gameType);
+  }, [requestedGameOpen]);
+
+  // Exit non-host guest cleanly if the currently viewed online game closes or switches to another game
+  const prevRoomGameKeyRef = React.useRef<UnifiedGameId | null>(null);
+  useEffect(() => {
+    const incomingType: UnifiedGameId | null = roomChapasGame
+      ? 'chapas'
+      : roomPoolGame
       ? 'pool'
       : roomPinturilloGame
       ? 'pinturillo'
       : roomPartyGame
       ? roomPartyGame.gameType
-      : roomBoardGame!.gameType;
+      : roomBoardGame
+      ? roomBoardGame.gameType
+      : null;
 
-    // Auto-open on first transition from null -> active game
-    if (!prevRoomGameKeyRef.current) {
-      setHubMode('online');
-      setSelectedGame(incomingType);
+    const prevType = prevRoomGameKeyRef.current;
+    if (!isHost && hubMode === 'online' && selectedGame) {
+      if ((prevType && !incomingType) || (incomingType && incomingType !== selectedGame)) {
+        setSelectedGame(null);
+      }
     }
     prevRoomGameKeyRef.current = incomingType;
-  }, [roomPoolGame, roomPinturilloGame, roomPartyGame, roomBoardGame]);
+  }, [
+    roomChapasGame,
+    roomPoolGame,
+    roomPinturilloGame,
+    roomPartyGame,
+    roomBoardGame,
+    isHost,
+    hubMode,
+    selectedGame,
+  ]);
 
   const makeOfflineBoardState = (gt: BoardGameType, humanSide: BoardSide = 'w'): BoardGameState => {
     const created = createInitialBoardGameState(
@@ -280,7 +336,11 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       return;
     }
 
-    if (gt === 'pinturillo') {
+    if (gt === 'chapas') {
+      if (!roomChapasGame) {
+        onStartRoomChapas?.();
+      }
+    } else if (gt === 'pinturillo') {
       if (!roomPinturilloGame) {
         onStartRoomPinturillo?.();
       }
@@ -305,6 +365,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       if (hubMode === 'offline') {
         setLocalBoardGame(null);
         setLocalMoveErr(null);
+      } else if (selectedGame === 'chapas') {
+        if (isHost && roomChapasGame) {
+          onCloseRoomChapas?.();
+        }
       } else if (selectedGame === 'pinturillo') {
         if (isHost && roomPinturilloGame) {
           onCloseRoomPinturillo?.();
@@ -336,7 +400,11 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       }
     } else {
       setLocalBoardGame(null);
-      if (selectedGame === 'pinturillo') {
+      if (selectedGame === 'chapas') {
+        if (!roomChapasGame) {
+          onStartRoomChapas?.();
+        }
+      } else if (selectedGame === 'pinturillo') {
         if (!roomPinturilloGame) {
           onStartRoomPinturillo?.();
         }
@@ -372,8 +440,9 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
     const isParty = isPartyGame(selectedGame);
     const isPinturillo = selectedGame === 'pinturillo';
     const isPool = selectedGame === 'pool';
+    const isChapas = selectedGame === 'chapas';
     const activeBoardState =
-      !isParty && !isPinturillo && !isPool
+      !isParty && !isPinturillo && !isPool && !isChapas
         ? hubMode === 'offline'
           ? localBoardGame
           : roomBoardGame?.gameType === selectedGame
@@ -381,22 +450,12 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
           : null
         : null;
 
-    const activePartyState = isParty
-      ? hubMode === 'offline'
-        ? null
-        : roomPartyGame?.gameType === selectedGame
-        ? roomPartyGame
-        : null
-      : null;
-
-    const showPartyWaitingColors =
-      isParty && hubMode === 'online' && activePartyState?.status === 'waiting';
-
     const titleMap: Record<UnifiedGameId, string> = {
       parchis: pickLang(lang, { es: '🎲 Parchís', ca: '🎲 Parxís', en: '🎲 Parchís' }),
       uno: '🃏 UNO',
       pinturillo: '🎨 Pinturillo',
       pool: pickLang(lang, { es: '🎱 Billar Bola 8', ca: '🎱 Billar Bola 8', en: '🎱 8-Ball Pool' }),
+      chapas: pickLang(lang, { es: '⚽ Fútbol Chapas', ca: '⚽ Futbol Xapes', en: '⚽ Soccer Caps' }),
       chess: pickLang(lang, { es: '♟️ Ajedrez', ca: '♟️ Escacs', en: '♟️ Chess' }),
       checkers: pickLang(lang, { es: '🔴 Damas', ca: '🔴 Dames', en: '🔴 Checkers' }),
       connect4: pickLang(lang, { es: '🟡 Conecta 4', ca: '🟡 Connecta 4', en: '🟡 Connect 4' }),
@@ -417,25 +476,60 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         ? pickLang(lang, { es: 'Rayadas', ca: 'Ratllades', en: 'Stripes' })
         : pickLang(lang, { es: 'Abierta', ca: 'Oberta', en: 'Open' });
 
-    const renderVoiceCompact = () =>
-      hubMode === 'online' && voiceChat ? (
+    const renderVoiceCompact = (ultraCompact = false) => {
+      if (!voiceChat) return null;
+      const isLocalSpeaking =
+        voiceChat.isJoined &&
+        !voiceChat.isMuted &&
+        (voiceChat.localAudioLevel > 0.06 || voiceChat.speakingUserIds.length > 0);
+      const voicePeerCount = voiceChat.voicePeers.length;
+
+      return (
         <div className="flex items-center gap-1 shrink-0">
           {voiceChat.isJoined ? (
             <>
               <button
                 type="button"
+                aria-pressed={voiceChat.isMuted}
                 onClick={() => {
                   triggerHaptic('light');
                   voiceChat.toggleMute();
                 }}
-                className={`h-7 px-2 rounded-lg text-[10px] font-bold flex items-center gap-1 whitespace-nowrap border cursor-pointer ${
+                className={`${
+                  ultraCompact ? 'h-7 px-2 text-[10px]' : 'h-7 px-2.5 text-[11px]'
+                } rounded-lg font-bold flex items-center gap-1.5 whitespace-nowrap border cursor-pointer transition-all shrink-0 ${
                   voiceChat.isMuted
-                    ? 'bg-rose-500/20 border-rose-400/50 text-rose-200'
-                    : 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                    ? 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-400/55 text-rose-200'
+                    : isLocalSpeaking
+                    ? 'bg-emerald-500/30 hover:bg-emerald-500/40 border-emerald-300 text-emerald-100 ring-2 ring-emerald-400/75 shadow-[0_0_14px_rgba(16,185,129,0.5)]'
+                    : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/50 text-emerald-200'
                 }`}
               >
-                {voiceChat.isMuted ? <MicOff className="w-3.5 h-3.5" /> : <Mic className="w-3.5 h-3.5" />}
-                <span className="hidden sm:inline">{voiceChat.isMuted ? 'Mute' : 'Voz'}</span>
+                {voiceChat.isMuted ? (
+                  <>
+                    <MicOff className="w-3.5 h-3.5 shrink-0" />
+                    <span>
+                      {ultraCompact
+                        ? 'Mute'
+                        : pickLang(lang, { es: 'Silenciado', ca: 'Silenciat', en: 'Muted' })}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Mic className="w-3.5 h-3.5 shrink-0" />
+                    <VoiceWaveBars active={isLocalSpeaking} level={voiceChat.localAudioLevel} size="sm" />
+                    <span className={ultraCompact ? 'hidden sm:inline' : 'inline'}>
+                      {voiceChat.localAudioLevel > 0.08
+                        ? pickLang(lang, { es: 'Hablando', ca: 'Parlant', en: 'Speaking' })
+                        : pickLang(lang, { es: 'Voz', ca: 'Veu', en: 'Voice' })}
+                    </span>
+                    {voicePeerCount > 1 && (
+                      <span className="px-1 rounded bg-black/30 text-[9px] font-mono tabular-nums text-emerald-100">
+                        {voicePeerCount}
+                      </span>
+                    )}
+                  </>
+                )}
               </button>
               <button
                 type="button"
@@ -443,10 +537,19 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                   triggerHaptic('medium');
                   voiceChat.leaveVoice();
                 }}
-                aria-label="Colgar voz"
-                className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-rose-500/25 border border-white/[0.1] flex items-center justify-center text-zinc-300 hover:text-rose-200 cursor-pointer"
+                aria-label={pickLang(lang, {
+                  es: 'Colgar voz',
+                  ca: 'Penjar veu',
+                  en: 'Leave voice',
+                })}
+                title={pickLang(lang, {
+                  es: 'Colgar voz',
+                  ca: 'Penjar veu',
+                  en: 'Leave voice',
+                })}
+                className="w-7 h-7 rounded-lg bg-white/[0.07] hover:bg-rose-500/25 border border-white/[0.12] flex items-center justify-center text-zinc-200 hover:text-rose-200 cursor-pointer shrink-0 transition-colors"
               >
-                <PhoneOff className="w-3 h-3" />
+                <PhoneOff className="w-3.5 h-3.5" />
               </button>
             </>
           ) : (
@@ -457,18 +560,27 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 triggerHaptic('medium');
                 void voiceChat.joinVoice();
               }}
-              className="h-7 px-2 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-[10px] font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer"
+              className={`${
+                ultraCompact ? 'h-7 px-2 text-[10px]' : 'h-7 px-2.5 text-[11px]'
+              } rounded-lg bg-[#9146FF] hover:bg-[#772CE8] disabled:opacity-65 font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0`}
             >
               {voiceChat.status === 'requesting' ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
+                <Loader2 className="w-3 h-3 animate-spin shrink-0" />
               ) : (
-                <PhoneCall className="w-3 h-3" />
+                <PhoneCall className="w-3 h-3 shrink-0" />
               )}
-              <span>Voz</span>
+              <span>
+                {voiceChat.status === 'requesting'
+                  ? '...'
+                  : ultraCompact
+                  ? 'Voz'
+                  : pickLang(lang, { es: 'Abrir voz', ca: 'Obrir veu', en: 'Voice' })}
+              </span>
             </button>
           )}
         </div>
-      ) : null;
+      );
+    };
 
     return (
       <div
@@ -478,11 +590,12 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-1.5 sm:p-3 max-w-5xl w-full mx-auto gap-1.5">
           {isPool ? (
             /* Ultra-compact single-row mobile header for Billar Bola 8 */
-            <div className="flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0">
+            <div className="flex items-center justify-between gap-1.5 px-1.5 py-1 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0 min-w-0">
               <button
                 type="button"
                 onClick={handleBackToGames}
-                className="h-8 px-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
+                aria-label={pickLang(lang, { es: 'Volver a Juegos', ca: 'Tornar a Jocs', en: 'Back to Games' })}
+                className="h-8 px-2 sm:px-2.5 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-bold text-white flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
               >
                 <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
                 <span className="hidden sm:inline">
@@ -490,12 +603,12 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 </span>
               </button>
 
-              <div className="flex items-center gap-1.5 min-w-0">
+              <div className="flex items-center gap-1 min-w-0 flex-1">
                 <h2 className="text-xs sm:text-sm font-extrabold text-white truncate">
                   {titleMap.pool}
                 </h2>
                 {hubMode === 'online' && roomPoolGame && (
-                  <span className="text-[10px] font-bold text-emerald-300 truncate hidden xs:inline sm:inline">
+                  <span className="text-[10px] font-bold text-emerald-300 truncate hidden sm:inline">
                     · {poolGroupShort}
                   </span>
                 )}
@@ -506,51 +619,50 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                   <button
                     type="button"
                     onClick={() => switchModeForActiveGame('online')}
-                    className={`h-6 px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                    className={`h-6 px-1.5 sm:px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
                       hubMode === 'online' ? 'bg-[#E11D48] text-white' : 'text-zinc-400 hover:text-white'
                     }`}
                   >
                     <Users className="w-3 h-3 shrink-0" />
-                    <span className="hidden xs:inline sm:inline">1v1</span>
+                    <span className="hidden sm:inline">1v1</span>
                   </button>
                   <button
                     type="button"
                     onClick={() => switchModeForActiveGame('offline')}
-                    className={`h-6 px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
+                    className={`h-6 px-1.5 sm:px-2 rounded-md text-[10px] font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer transition-colors ${
                       hubMode === 'offline' ? 'bg-[#9146FF] text-white' : 'text-zinc-400 hover:text-white'
                     }`}
                   >
                     <Bot className="w-3 h-3 shrink-0" />
-                    <span className="hidden xs:inline sm:inline">IA</span>
+                    <span className="hidden sm:inline">IA</span>
                   </button>
                 </div>
                 <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
-                {renderVoiceCompact()}
+                {renderVoiceCompact(true)}
               </div>
             </div>
           ) : (
             <>
               {/* Header: ← Back to Games | Title | Sound Mute */}
-              <div className="flex items-center justify-between gap-2 shrink-0 px-0.5">
+              <div className="flex items-center justify-between gap-2 shrink-0 px-0.5 min-w-0">
                 <button
                   type="button"
                   onClick={handleBackToGames}
-                  className="min-h-9 px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
+                  className="min-h-8 sm:min-h-9 px-2.5 sm:px-3 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] sm:text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
                 >
                   <ArrowLeft className="w-3.5 h-3.5 shrink-0" />
                   <span>{pickLang(lang, { es: 'Volver a Juegos', ca: 'Tornar a Jocs', en: 'Back to Games' })}</span>
                 </button>
 
-                <h2 className="text-sm sm:text-base font-extrabold text-white truncate">
+                <h2 className="text-xs sm:text-base font-extrabold text-white truncate min-w-0 text-center">
                   {titleMap[selectedGame]}
                 </h2>
 
                 <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
               </div>
 
-              {/* Single Compact Control Bar Above the Board: Online vs AI | Seat/Color Picker | Voice Mic */}
-              <div className="flex items-center justify-between gap-2 px-2 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0 overflow-x-auto no-scrollbar">
-                {/* 1. Online vs AI Toggle */}
+              {/* Clean Non-Clipping Control Bar Above the Board: Online vs AI | Voice Call */}
+              <div className="flex flex-wrap items-center justify-between gap-1.5 px-2 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.09] shrink-0">
                 <div className="flex items-center gap-0.5 p-0.5 rounded-lg bg-[#090A10] border border-white/[0.08] shrink-0">
                   <button
                     type="button"
@@ -574,55 +686,94 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                   </button>
                 </div>
 
-                {/* 2. Party Color Picker (Only shown while waiting before match starts) */}
-                {showPartyWaitingColors && (
-                  <div className="flex items-center gap-1 shrink-0">
-                    {PARTY_COLORS.map((col, idx) => {
-                      const seat = activePartyState?.players[idx];
-                      const isMine = seat && !seat.isBot && seat.userId === currentUser.id;
-                      const canClaim =
-                        hubMode === 'online' &&
-                        activePartyState?.status === 'waiting' &&
-                        Boolean(seat?.isBot);
-                      return (
-                        <button
-                          key={col}
-                          type="button"
-                          disabled={!canClaim}
-                          onClick={() => {
-                            if (!canClaim) return;
-                            triggerHaptic('light');
-                            onRoomPartyAction?.('join_seat', { seatIndex: idx });
-                          }}
-                          aria-label={col}
-                          className={`h-7 px-2 rounded-lg text-[10px] font-extrabold flex items-center gap-1 border whitespace-nowrap ${
-                            isMine
-                              ? 'border-white bg-white/15 text-white'
-                              : canClaim
-                              ? 'border-white/20 bg-white/[0.05] hover:bg-white/[0.12] text-zinc-200 cursor-pointer'
-                              : 'border-white/10 bg-white/[0.03] text-zinc-400 opacity-75 cursor-default'
-                          }`}
-                        >
-                          <span
-                            className="w-2.5 h-2.5 rounded-full shrink-0"
-                            style={{ backgroundColor: PARTY_COLOR_HEX[col].hex }}
-                          />
-                          <span>{PARTY_COLOR_HEX[col].short}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* 3. Voice Call Mic Button */}
-                {renderVoiceCompact()}
+                {renderVoiceCompact(false)}
               </div>
             </>
           )}
 
+          {voiceChat?.errorMessage && (
+            <div
+              role="alert"
+              className="rounded-xl border border-amber-400/45 bg-amber-500/12 px-2.5 py-1.5 flex items-center justify-between gap-2 text-[11px] text-amber-100 shrink-0"
+            >
+              <div className="flex items-center gap-1.5 min-w-0">
+                <AlertCircle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                <span className="leading-snug truncate sm:whitespace-normal">{voiceChat.errorMessage}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  void voiceChat.joinVoice();
+                }}
+                className="px-2.5 py-1 rounded-lg bg-amber-400/25 hover:bg-amber-400/35 border border-amber-300/45 text-[10px] font-bold text-amber-50 whitespace-nowrap shrink-0 cursor-pointer"
+              >
+                {pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry' })}
+              </button>
+            </div>
+          )}
+
+          {/* Live Invitee Responses Banner while match waits in Lobby */}
+          {hubMode === 'online' &&
+            matchResponses &&
+            matchResponses.gameType === selectedGame &&
+            matchResponses.responses.length > 0 &&
+            ((selectedGame === 'chapas' && roomChapasGame?.status === 'waiting') ||
+              (selectedGame === 'pool' && roomPoolGame?.status === 'waiting') ||
+              (selectedGame === 'pinturillo' && roomPinturilloGame?.status === 'waiting') ||
+              (isParty && roomPartyGame?.gameType === selectedGame && roomPartyGame.status === 'waiting') ||
+              (isBoardGameId(selectedGame) && roomBoardGame?.gameType === selectedGame && roomBoardGame.status === 'waiting')) && (
+              <div className="rounded-xl border border-purple-400/35 bg-purple-500/12 px-2.5 py-1.5 flex items-center justify-between gap-2 text-[11px] shrink-0 overflow-x-auto no-scrollbar">
+                <span className="font-bold text-purple-200 whitespace-nowrap shrink-0">
+                  {pickLang(lang, { es: 'Invitaciones:', ca: 'Invitacions:', en: 'Invites:' })}
+                </span>
+                <div className="flex items-center gap-1.5 min-w-0">
+                  {matchResponses.responses.map((r) => (
+                    <span
+                      key={r.userId}
+                      className={`px-2 py-0.5 rounded-lg border text-[10px] font-bold whitespace-nowrap ${
+                        r.status === 'accepted'
+                          ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                          : r.status === 'declined'
+                          ? 'bg-rose-500/20 border-rose-400/40 text-rose-200'
+                          : 'bg-amber-500/15 border-amber-400/40 text-amber-200'
+                      }`}
+                    >
+                      {r.userName}:{' '}
+                      {r.status === 'accepted'
+                        ? pickLang(lang, { es: 'Aceptó', ca: 'Acceptat', en: 'Joined' })
+                        : r.status === 'declined'
+                        ? pickLang(lang, { es: 'No ahora', ca: 'Ara no', en: 'Declined' })
+                        : pickLang(lang, { es: 'Esperando…', ca: 'Esperant…', en: 'Waiting…' })}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
           {/* Single Game Stage */}
           <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            {isPool ? (
+            {isChapas ? (
+              <FutbolChapasStage
+                key={`chapas-${hubMode}`}
+                lang={lang}
+                currentUser={currentUser}
+                participants={participants}
+                chapasState={hubMode === 'offline' ? null : roomChapasGame}
+                isOffline={hubMode === 'offline'}
+                isHost={isHost}
+                voiceChat={voiceChat}
+                mutedOverride={muted}
+                onStartOnline={() => onStartRoomChapas?.()}
+                onJoinSeatOnline={onChapasJoinSeat}
+                onUpdateTeamOnline={onChapasUpdateTeam}
+                onToggleBotsOnline={onChapasToggleBots}
+                onStartMatchOnline={onChapasStartMatch}
+                onShootOnline={onChapasShoot}
+                onForfeitOnline={onChapasForfeit}
+                onRematchOnline={onChapasRematch}
+              />
+            ) : isPool ? (
               <Pool8BallStage
                 key={`pool-${hubMode}`}
                 lang={lang}
@@ -630,9 +781,11 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 participants={participants}
                 poolState={hubMode === 'offline' ? null : roomPoolGame}
                 isOffline={hubMode === 'offline'}
+                isHost={isHost}
                 voiceChat={voiceChat}
                 mutedOverride={muted}
                 onStartOnline={onStartRoomPool}
+                onStartMatchOnline={onStartPoolMatch}
                 onJoinSeatOnline={onPoolJoinSeat}
                 onPlaceCueOnline={onPoolPlaceCue}
                 onCallPocketOnline={onPoolCallPocket}
@@ -649,9 +802,11 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 participants={participants}
                 pinturilloState={hubMode === 'offline' ? null : roomPinturilloGame}
                 isOffline={hubMode === 'offline'}
+                isHost={isHost}
                 voiceChat={voiceChat}
                 mutedOverride={muted}
                 onStartOnline={onStartRoomPinturillo}
+                onStartMatchOnline={onStartPinturilloMatch}
                 onPickWordOnline={onPinturilloPickWord}
                 onSendStrokeOnline={onPinturilloStroke}
                 onUndoOnline={onPinturilloUndo}
@@ -965,6 +1120,39 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </h3>
             <p className="text-[10px] sm:text-[11px] text-zinc-400 truncate">
               {pickLang(lang, { es: '1v1 · Gravedad 7×6', ca: '1v1 · Gravetat 7×6', en: '1v1 · 7×6 Gravity' })}
+            </p>
+          </div>
+        </button>
+
+        {/* 8. FÚTBOL CHAPAS */}
+        <button
+          type="button"
+          onClick={() => openGameCard('chapas')}
+          className="group relative rounded-2xl p-2 sm:p-3 nc-tabletop-slate border border-emerald-400/25 hover:border-lime-400/65 text-left flex flex-col justify-between gap-1 sm:gap-1.5 min-h-0 cursor-pointer active:scale-[0.98] transition-all overflow-hidden"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="w-9 h-7 sm:w-11 sm:h-8 rounded-xl bg-gradient-to-br from-[#3F7B21] via-[#2B5915] to-[#17330A] border border-lime-300/35 flex items-center justify-center shadow-md shrink-0 relative overflow-hidden">
+              <svg viewBox="0 0 40 28" className="w-8 h-6" aria-hidden="true">
+                <line x1="20" y1="2" x2="20" y2="26" stroke="rgba(255,255,255,0.45)" strokeWidth="1.2" />
+                <circle cx="20" cy="14" r="6" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1.2" />
+                <circle cx="13" cy="14" r="5" fill="#E2E8F0" stroke="#1E293B" strokeWidth="1" />
+                <circle cx="13" cy="14" r="3.4" fill="#75AADB" />
+                <circle cx="27" cy="14" r="5" fill="#E2E8F0" stroke="#1E293B" strokeWidth="1" />
+                <circle cx="27" cy="14" r="3.4" fill="#FFC400" />
+              </svg>
+            </div>
+            <span className="text-[10px] font-mono text-lime-300">2v2</span>
+          </div>
+          <div className="min-w-0">
+            <h3 className="font-display font-extrabold text-xs sm:text-sm text-white tracking-tight truncate">
+              {pickLang(lang, { es: 'Fútbol Chapas', ca: 'Futbol Xapes', en: 'Soccer Caps' })}
+            </h3>
+            <p className="text-[10px] sm:text-[11px] text-zinc-400 whitespace-nowrap truncate">
+              {pickLang(lang, {
+                es: 'Estadio · 1v1 / 2v2 y IA',
+                ca: 'Estadi · 1v1 / 2v2 i IA',
+                en: 'Stadium · 1v1 / 2v2 & AI',
+              })}
             </p>
           </div>
         </button>

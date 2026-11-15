@@ -27,6 +27,14 @@ import type {
   PoolShotInput,
   PoolSimRuntime,
 } from './shared/pool8Ball';
+import type {
+  ChapasCap,
+  ChapasFlagId,
+  ChapasPlayerSeat,
+  ChapasShotInput,
+  ChapasTeamId,
+  FutbolChapasState,
+} from './shared/futbolChapas';
 
 export type {
   BoardClockMinutes,
@@ -34,7 +42,13 @@ export type {
   BoardGameState,
   BoardGameType,
   BoardSide,
+  ChapasCap,
+  ChapasFlagId,
+  ChapasPlayerSeat,
+  ChapasShotInput,
+  ChapasTeamId,
   ChessPromotionPiece,
+  FutbolChapasState,
   LegalBoardMove,
   ParchisGameState,
   PartyColor,
@@ -785,6 +799,8 @@ export interface RoomData {
   partyGameState?: import('./shared/partyGames').PartyGameState | null;
   pinturilloState?: PinturilloGameState | null;
   poolGameState?: Pool8BallState | null;
+  chapasState?: FutbolChapasState | null;
+  matchResponses?: import('./shared/protocol').RoomMatchResponsesState | null;
   videoState: VideoState;
   queue?: RoomQueueItem[];
   cloudState?: CloudBrowserState;

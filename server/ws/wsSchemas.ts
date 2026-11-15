@@ -236,6 +236,42 @@ export const wsPoolSyncChecksumSchema = z.object({
   checksum: z.number().int().min(0),
 });
 
+export const wsGameInviteRespondSchema = z.object({
+  roomId: roomIdSchema,
+  gameType: z.enum(['pool', 'chapas', 'parchis', 'uno', 'pinturillo', 'chess', 'checkers', 'connect4']),
+  inviteId: z.string().max(128).optional(),
+  response: z.enum(['accepted', 'declined']),
+});
+
+export const wsChapasRoomSchema = z.object({
+  roomId: roomIdSchema,
+});
+
+export const wsChapasJoinSeatSchema = z.object({
+  roomId: roomIdSchema,
+  seatIndex: z.union([z.literal(0), z.literal(1), z.literal(2), z.literal(3), z.literal('spectate')]),
+});
+
+export const wsChapasUpdateTeamSchema = z.object({
+  roomId: roomIdSchema,
+  team: z.enum(['A', 'B']),
+  flag: z.enum(['ar', 'es', 'br', 'fr', 'ma', 'pt', 'it', 'de']),
+});
+
+export const wsChapasToggleBotsSchema = z.object({
+  roomId: roomIdSchema,
+  botsEnabled: z.boolean(),
+});
+
+export const wsChapasShootSchema = z.object({
+  roomId: roomIdSchema,
+  shot: z.object({
+    capId: z.string().trim().min(2).max(12),
+    angle: z.number().min(-Math.PI * 4).max(Math.PI * 4),
+    power: z.number().min(0).max(1),
+  }),
+});
+
 export const wsEnvelopeSchema = z.object({
   type: z.string().trim().min(1).max(48),
   payload: z.record(z.string(), z.any()).optional().default({}),
@@ -253,6 +289,7 @@ const WS_EVENT_LIMITS: Record<string, { max: number; windowMs: number }> = {
   POLL_START: { max: 3, windowMs: 25_000 },
   GAME_MOVE: { max: 30, windowMs: 5_000 },
   PARTY_GAME_ACTION: { max: 30, windowMs: 5_000 },
+  GAME_INVITE_RESPOND: { max: 20, windowMs: 5_000 },
   TYPING_STATE: { max: 20, windowMs: 5_000 },
   VOICE_JOIN: { max: 12, windowMs: 10_000 },
   VOICE_LEAVE: { max: 12, windowMs: 10_000 },
@@ -264,6 +301,7 @@ const WS_EVENT_LIMITS: Record<string, { max: number; windowMs: number }> = {
   POOL_PLACE_CUE: { max: 30, windowMs: 5_000 },
   POOL_CALL_POCKET: { max: 20, windowMs: 5_000 },
   POOL_SYNC_CHECKSUM: { max: 20, windowMs: 5_000 },
+  CHAPAS_SHOOT: { max: 15, windowMs: 5_000 },
   __GLOBAL__: { max: 240, windowMs: 10_000 },
 };
 

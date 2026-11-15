@@ -237,6 +237,42 @@ function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
       ],
     },
     {
+      tag: 'uses-permission',
+      attrs: [
+        {
+          ns: ANDROID_NS,
+          name: 'name',
+          resourceId: 0x01010003,
+          type: 'string',
+          value: 'android.permission.RECORD_AUDIO',
+        },
+      ],
+    },
+    {
+      tag: 'uses-permission',
+      attrs: [
+        {
+          ns: ANDROID_NS,
+          name: 'name',
+          resourceId: 0x01010003,
+          type: 'string',
+          value: 'android.permission.MODIFY_AUDIO_SETTINGS',
+        },
+      ],
+    },
+    {
+      tag: 'uses-permission',
+      attrs: [
+        {
+          ns: ANDROID_NS,
+          name: 'name',
+          resourceId: 0x01010003,
+          type: 'string',
+          value: 'android.permission.BLUETOOTH',
+        },
+      ],
+    },
+    {
       tag: 'uses-feature',
       attrs: [
         {
@@ -245,6 +281,19 @@ function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
           resourceId: 0x01010003,
           type: 'string',
           value: 'android.hardware.touchscreen',
+        },
+        { ns: ANDROID_NS, name: 'required', resourceId: 0x0101028e, type: 'bool', value: false },
+      ],
+    },
+    {
+      tag: 'uses-feature',
+      attrs: [
+        {
+          ns: ANDROID_NS,
+          name: 'name',
+          resourceId: 0x01010003,
+          type: 'string',
+          value: 'android.hardware.microphone',
         },
         { ns: ANDROID_NS, name: 'required', resourceId: 0x0101028e, type: 'bool', value: false },
       ],
@@ -617,19 +666,25 @@ interface MethodRefSpec {
 function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   const MAIN_CLS = 'Lcom/naimcine/app/MainActivity;';
   const SUPER_CLS = 'Landroid/app/Activity;';
+  const CHROME_CLS = 'Lcom/naimcine/app/NaimWebChromeClient;';
+  const CHROME_SUPER_CLS = 'Landroid/webkit/WebChromeClient;';
+  const PERM_REQ_CLS = 'Landroid/webkit/PermissionRequest;';
+  const STR_ARR_CLS = '[Ljava/lang/String;';
 
   const methodSpecs: MethodRefSpec[] = [
     { cls: SUPER_CLS, name: '<init>', ret: 'V', params: [] },
     { cls: SUPER_CLS, name: 'onCreate', ret: 'V', params: ['Landroid/os/Bundle;'] },
     { cls: SUPER_CLS, name: 'getWindow', ret: 'Landroid/view/Window;', params: [] },
     { cls: SUPER_CLS, name: 'setContentView', ret: 'V', params: ['Landroid/view/View;'] },
+    { cls: SUPER_CLS, name: 'checkSelfPermission', ret: 'I', params: ['Ljava/lang/String;'] },
+    { cls: SUPER_CLS, name: 'requestPermissions', ret: 'V', params: [STR_ARR_CLS, 'I'] },
     { cls: 'Landroid/view/Window;', name: 'setStatusBarColor', ret: 'V', params: ['I'] },
     { cls: 'Landroid/view/Window;', name: 'setNavigationBarColor', ret: 'V', params: ['I'] },
     { cls: 'Landroid/webkit/WebView;', name: '<init>', ret: 'V', params: ['Landroid/content/Context;'] },
     { cls: 'Landroid/webkit/WebView;', name: 'setBackgroundColor', ret: 'V', params: ['I'] },
     { cls: 'Landroid/webkit/WebView;', name: 'getSettings', ret: 'Landroid/webkit/WebSettings;', params: [] },
     { cls: 'Landroid/webkit/WebView;', name: 'setWebViewClient', ret: 'V', params: ['Landroid/webkit/WebViewClient;'] },
-    { cls: 'Landroid/webkit/WebView;', name: 'setWebChromeClient', ret: 'V', params: ['Landroid/webkit/WebChromeClient;'] },
+    { cls: 'Landroid/webkit/WebView;', name: 'setWebChromeClient', ret: 'V', params: [CHROME_SUPER_CLS] },
     { cls: 'Landroid/webkit/WebView;', name: 'loadUrl', ret: 'V', params: ['Ljava/lang/String;'] },
     { cls: 'Landroid/webkit/WebSettings;', name: 'setJavaScriptEnabled', ret: 'V', params: ['Z'] },
     { cls: 'Landroid/webkit/WebSettings;', name: 'setDomStorageEnabled', ret: 'V', params: ['Z'] },
@@ -639,13 +694,17 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     { cls: 'Landroid/webkit/WebSettings;', name: 'setMediaPlaybackRequiresUserGesture', ret: 'V', params: ['Z'] },
     { cls: 'Landroid/webkit/WebSettings;', name: 'setMixedContentMode', ret: 'V', params: ['I'] },
     { cls: 'Landroid/webkit/WebViewClient;', name: '<init>', ret: 'V', params: [] },
-    { cls: 'Landroid/webkit/WebChromeClient;', name: '<init>', ret: 'V', params: [] },
+    { cls: CHROME_SUPER_CLS, name: '<init>', ret: 'V', params: [] },
+    { cls: PERM_REQ_CLS, name: 'getResources', ret: STR_ARR_CLS, params: [] },
+    { cls: PERM_REQ_CLS, name: 'grant', ret: 'V', params: [STR_ARR_CLS] },
+    { cls: CHROME_CLS, name: '<init>', ret: 'V', params: [] },
+    { cls: CHROME_CLS, name: 'onPermissionRequest', ret: 'V', params: [PERM_REQ_CLS] },
     { cls: MAIN_CLS, name: '<init>', ret: 'V', params: [] },
     { cls: MAIN_CLS, name: 'onCreate', ret: 'V', params: ['Landroid/os/Bundle;'] },
   ];
 
-  const typeSet = new Set<string>([MAIN_CLS, SUPER_CLS]);
-  const stringSet = new Set<string>([launchUrl]);
+  const typeSet = new Set<string>([MAIN_CLS, SUPER_CLS, CHROME_CLS, CHROME_SUPER_CLS, STR_ARR_CLS]);
+  const stringSet = new Set<string>([launchUrl, 'android.permission.RECORD_AUDIO']);
 
   const protoShorty = (ret: string, params: string[]) => {
     const ch = (t: string) => (t.length === 1 ? t : 'L');
@@ -776,18 +835,59 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   emitU16(onCreateInsns, typeIdx.get('Landroid/webkit/WebViewClient;')!);
   invoke35c(onCreateInsns, 0x70, mId('Landroid/webkit/WebViewClient;', '<init>', 'V'), [2]);
   invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebView;', 'setWebViewClient', 'V', ['Landroid/webkit/WebViewClient;']), [0, 2]);
-  // webView.setWebChromeClient(new WebChromeClient())
+  // webView.setWebChromeClient(new NaimWebChromeClient())
   emitU16(onCreateInsns, 0x0222); // new-instance v2
-  emitU16(onCreateInsns, typeIdx.get('Landroid/webkit/WebChromeClient;')!);
-  invoke35c(onCreateInsns, 0x70, mId('Landroid/webkit/WebChromeClient;', '<init>', 'V'), [2]);
-  invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebView;', 'setWebChromeClient', 'V', ['Landroid/webkit/WebChromeClient;']), [0, 2]);
+  emitU16(onCreateInsns, typeIdx.get(CHROME_CLS)!);
+  invoke35c(onCreateInsns, 0x70, mId(CHROME_CLS, '<init>', 'V'), [2]);
+  invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebView;', 'setWebChromeClient', 'V', [CHROME_SUPER_CLS]), [0, 2]);
   // webView.loadUrl(launchUrl)
   emitU16(onCreateInsns, 0x021a); // const-string v2, idx
   emitU16(onCreateInsns, strIdx.get(launchUrl)!);
   invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebView;', 'loadUrl', 'V', ['Ljava/lang/String;']), [0, 2]);
   // this.setContentView(webView)
   invoke35c(onCreateInsns, 0x6e, mId(SUPER_CLS, 'setContentView', 'V', ['Landroid/view/View;']), [4, 0]);
+  // Request RECORD_AUDIO runtime permission on Android 6+ (API 24+ minSdk)
+  emitU16(onCreateInsns, 0x011a); // const-string v1, "android.permission.RECORD_AUDIO"
+  emitU16(onCreateInsns, strIdx.get('android.permission.RECORD_AUDIO')!);
+  invoke35c(onCreateInsns, 0x6e, mId(SUPER_CLS, 'checkSelfPermission', 'I', ['Ljava/lang/String;']), [4, 1]);
+  emitU16(onCreateInsns, 0x000a); // move-result v0
+  const ifGrantedIdx = onCreateInsns.length;
+  emitU16(onCreateInsns, 0x0038); // if-eqz v0, +offset
+  emitU16(onCreateInsns, 0);
+  emitU16(onCreateInsns, 0x1012); // const/4 v0, 1
+  emitU16(onCreateInsns, 0x0212); // const/4 v2, 0
+  emitU16(onCreateInsns, 0x0323); // new-array v3, v0, [Ljava/lang/String;
+  emitU16(onCreateInsns, typeIdx.get(STR_ARR_CLS)!);
+  emitU16(onCreateInsns, 0x014d); // aput-object v1, v3, v2
+  emitU16(onCreateInsns, 0x0203);
+  emitU16(onCreateInsns, 0x0013); // const/16 v0, 101
+  emitU16(onCreateInsns, 101);
+  invoke35c(onCreateInsns, 0x6e, mId(SUPER_CLS, 'requestPermissions', 'V', [STR_ARR_CLS, 'I']), [4, 3, 0]);
+  const grantedTargetIdx = onCreateInsns.length;
+  onCreateInsns[ifGrantedIdx + 1] = (grantedTargetIdx - ifGrantedIdx) & 0xffff;
   emitU16(onCreateInsns, 0x000e); // return-void
+
+  // Method 3: NaimWebChromeClient.<init>()V
+  const chromeInitInsns: number[] = [];
+  invoke35c(chromeInitInsns, 0x70, mId(CHROME_SUPER_CLS, '<init>', 'V'), [0]);
+  emitU16(chromeInitInsns, 0x000e); // return-void
+
+  // Method 4: NaimWebChromeClient.onPermissionRequest(PermissionRequest)V
+  // registers_size = 3 (v0 local, v1=this, v2=request), ins_size = 2, outs_size = 2
+  const chromePermInsns: number[] = [];
+  const ifNullReqIdx = chromePermInsns.length;
+  emitU16(chromePermInsns, 0x0238); // if-eqz v2, +offset
+  emitU16(chromePermInsns, 0);
+  invoke35c(chromePermInsns, 0x6e, mId(PERM_REQ_CLS, 'getResources', STR_ARR_CLS), [2]);
+  emitU16(chromePermInsns, 0x000c); // move-result-object v0
+  const ifNullResIdx = chromePermInsns.length;
+  emitU16(chromePermInsns, 0x0038); // if-eqz v0, +offset
+  emitU16(chromePermInsns, 0);
+  invoke35c(chromePermInsns, 0x6e, mId(PERM_REQ_CLS, 'grant', 'V', [STR_ARR_CLS]), [2, 0]);
+  const permRetIdx = chromePermInsns.length;
+  chromePermInsns[ifNullReqIdx + 1] = (permRetIdx - ifNullReqIdx) & 0xffff;
+  chromePermInsns[ifNullResIdx + 1] = (permRetIdx - ifNullResIdx) & 0xffff;
+  emitU16(chromePermInsns, 0x000e); // return-void
 
   const makeCodeItem = (regs: number, ins: number, outs: number, insns: number[]): Buffer => {
     const b = Buffer.alloc(16 + insns.length * 2);
@@ -802,7 +902,9 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   };
 
   const initCodeItem = makeCodeItem(1, 1, 1, initInsns);
-  const onCreateCodeItem = makeCodeItem(6, 2, 2, onCreateInsns);
+  const onCreateCodeItem = makeCodeItem(6, 2, 3, onCreateInsns);
+  const chromeInitCodeItem = makeCodeItem(1, 1, 1, chromeInitInsns);
+  const chromePermCodeItem = makeCodeItem(3, 2, 2, chromePermInsns);
 
   // Compute exact section layout
   const HEADER_SIZE = 0x70; // 112 bytes
@@ -815,7 +917,7 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   const methodIdsOff = protoIdsOff + protoIdsSize;
   const methodIdsSize = methods.length * 8;
   const classDefsOff = methodIdsOff + methodIdsSize;
-  const classDefsSize = 32; // 1 class_def_item
+  const classDefsSize = 64; // 2 class_def_items
 
   let cursor = classDefsOff + classDefsSize; // start of data section (already 4-byte aligned!)
 
@@ -850,6 +952,8 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   // 2. code_items (must be 4-byte aligned)
   const initCodeOff = pushDataAligned4(initCodeItem);
   const onCreateCodeOff = pushDataAligned4(onCreateCodeItem);
+  const chromeInitCodeOff = pushDataAligned4(chromeInitCodeItem);
+  const chromePermCodeOff = pushDataAligned4(chromePermCodeItem);
 
   // 3. string_data_items (byte aligned)
   const stringDataOffsets: number[] = [];
@@ -859,38 +963,40 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     stringDataOffsets.push(pushDataRaw(item));
   }
 
-  // 4. class_data_item (0 static fields, 0 instance fields, 2 direct methods, 0 virtual methods)
+  // 4. class_data_items
   const mInitIdx = mId(MAIN_CLS, '<init>', 'V');
   const mOnCreateIdx = mId(MAIN_CLS, 'onCreate', 'V', ['Landroid/os/Bundle;']);
-  const classDataBuf = Buffer.concat([
-    writeUleb128(0), // static_fields_size
-    writeUleb128(0), // instance_fields_size
-    writeUleb128(2), // direct_methods_size
-    writeUleb128(0), // virtual_methods_size
-    // direct method 0: <init>
-    writeUleb128(mInitIdx),
-    writeUleb128(0x10001), // ACC_PUBLIC | ACC_CONSTRUCTOR
-    writeUleb128(initCodeOff),
-    // direct method 1: onCreate (still direct or virtual? Wait: overridden protected method onCreate is VIRTUAL method in Dalvik!)
-  ]);
-  void classDataBuf;
+  const mChromeInitIdx = mId(CHROME_CLS, '<init>', 'V');
+  const mChromePermIdx = mId(CHROME_CLS, 'onPermissionRequest', 'V', [PERM_REQ_CLS]);
 
-  // CRITICAL DEX RULE: Overridden non-private methods (onCreate) MUST go in virtual_methods, NOT direct_methods!
-  const classDataFixed = Buffer.concat([
+  // CRITICAL DEX RULE: Overridden non-private methods go in virtual_methods, constructors go in direct_methods!
+  const mainClassDataFixed = Buffer.concat([
     writeUleb128(0), // static_fields_size
     writeUleb128(0), // instance_fields_size
     writeUleb128(1), // direct_methods_size (<init>)
     writeUleb128(1), // virtual_methods_size (onCreate)
-    // direct_method[0]: <init>
     writeUleb128(mInitIdx),
     writeUleb128(0x10001), // ACC_PUBLIC | ACC_CONSTRUCTOR
     writeUleb128(initCodeOff),
-    // virtual_method[0]: onCreate
     writeUleb128(mOnCreateIdx),
     writeUleb128(0x0004), // ACC_PROTECTED
     writeUleb128(onCreateCodeOff),
   ]);
-  const classDataOff = pushDataRaw(classDataFixed);
+  const mainClassDataOff = pushDataRaw(mainClassDataFixed);
+
+  const chromeClassDataFixed = Buffer.concat([
+    writeUleb128(0), // static_fields_size
+    writeUleb128(0), // instance_fields_size
+    writeUleb128(1), // direct_methods_size (<init>)
+    writeUleb128(1), // virtual_methods_size (onPermissionRequest)
+    writeUleb128(mChromeInitIdx),
+    writeUleb128(0x10001), // ACC_PUBLIC | ACC_CONSTRUCTOR
+    writeUleb128(chromeInitCodeOff),
+    writeUleb128(mChromePermIdx),
+    writeUleb128(0x0001), // ACC_PUBLIC
+    writeUleb128(chromePermCodeOff),
+  ]);
+  const chromeClassDataOff = pushDataRaw(chromeClassDataFixed);
 
   // Pad to 4 bytes before map_list
   const preMapRem = cursor % 4;
@@ -907,10 +1013,10 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     { type: 0x0002, size: types.length, off: typeIdsOff },
     { type: 0x0003, size: protos.length, off: protoIdsOff },
     { type: 0x0005, size: methods.length, off: methodIdsOff },
-    { type: 0x0006, size: 1, off: classDefsOff },
+    { type: 0x0006, size: 2, off: classDefsOff },
     { type: 0x1001, size: Array.from(protoParamListOff.values()).filter((v) => v > 0).length, off: Array.from(protoParamListOff.values()).find((v) => v > 0) || 0 },
-    { type: 0x2000, size: 1, off: classDataOff },
-    { type: 0x2001, size: 2, off: initCodeOff },
+    { type: 0x2000, size: 2, off: mainClassDataOff },
+    { type: 0x2001, size: 4, off: initCodeOff },
     { type: 0x2002, size: strings.length, off: stringDataOffsets[0] },
     { type: 0x1000, size: 1, off: mapOff },
   ]
@@ -953,7 +1059,7 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   dex.writeUInt32LE(0, 84); // field_ids_off
   dex.writeUInt32LE(methods.length, 88);
   dex.writeUInt32LE(methodIdsOff, 92);
-  dex.writeUInt32LE(1, 96); // class_defs_size
+  dex.writeUInt32LE(2, 96); // class_defs_size
   dex.writeUInt32LE(classDefsOff, 100);
   dex.writeUInt32LE(dataSize, 104);
   dex.writeUInt32LE(dataOff, 108);
@@ -976,15 +1082,26 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
     dex.writeUInt16LE(protoIdx.get(`${m.ret}(${m.params.join(',')})`)!, o + 2);
     dex.writeUInt32LE(strIdx.get(m.name)!, o + 4);
   });
-  // class_defs
+  // class_defs[0]: MainActivity
   dex.writeUInt32LE(typeIdx.get(MAIN_CLS)!, classDefsOff); // class_idx
   dex.writeUInt32LE(0x0001, classDefsOff + 4); // ACC_PUBLIC
   dex.writeUInt32LE(typeIdx.get(SUPER_CLS)!, classDefsOff + 8); // superclass_idx
   dex.writeUInt32LE(0, classDefsOff + 12); // interfaces_off
   dex.writeUInt32LE(0xffffffff, classDefsOff + 16); // NO_INDEX source_file_idx
   dex.writeUInt32LE(0, classDefsOff + 20); // annotations_off
-  dex.writeUInt32LE(classDataOff, classDefsOff + 24);
+  dex.writeUInt32LE(mainClassDataOff, classDefsOff + 24);
   dex.writeUInt32LE(0, classDefsOff + 28); // static_values_off
+
+  // class_defs[1]: NaimWebChromeClient
+  const cDef1 = classDefsOff + 32;
+  dex.writeUInt32LE(typeIdx.get(CHROME_CLS)!, cDef1); // class_idx
+  dex.writeUInt32LE(0x0001, cDef1 + 4); // ACC_PUBLIC
+  dex.writeUInt32LE(typeIdx.get(CHROME_SUPER_CLS)!, cDef1 + 8); // superclass_idx
+  dex.writeUInt32LE(0, cDef1 + 12); // interfaces_off
+  dex.writeUInt32LE(0xffffffff, cDef1 + 16); // NO_INDEX source_file_idx
+  dex.writeUInt32LE(0, cDef1 + 20); // annotations_off
+  dex.writeUInt32LE(chromeClassDataOff, cDef1 + 24);
+  dex.writeUInt32LE(0, cDef1 + 28); // static_values_off
 
   Buffer.concat(dataChunks).copy(dex, dataOff);
 

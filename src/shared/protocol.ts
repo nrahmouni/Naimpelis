@@ -31,6 +31,14 @@ import type {
   PoolPocketId,
   PoolShotInput,
 } from './pool8Ball';
+import type {
+  ChapasCap,
+  ChapasFlagId,
+  ChapasPlayerSeat,
+  ChapasShotInput,
+  ChapasTeamId,
+  FutbolChapasState,
+} from './futbolChapas';
 
 export type {
   BoardClockMinutes,
@@ -38,7 +46,13 @@ export type {
   BoardGameState,
   BoardGameType,
   BoardSide,
+  ChapasCap,
+  ChapasFlagId,
+  ChapasPlayerSeat,
+  ChapasShotInput,
+  ChapasTeamId,
   ChessPromotionPiece,
+  FutbolChapasState,
   ParchisGameState,
   PartyColor,
   PartyGameState,
@@ -133,6 +147,46 @@ export interface VoiceSignalPayload {
   };
 }
 
+export type RoomGameInviteType =
+  | 'pool'
+  | 'chapas'
+  | 'parchis'
+  | 'uno'
+  | 'pinturillo'
+  | 'chess'
+  | 'checkers'
+  | 'connect4';
+
+export interface RoomGameInvite {
+  id: string;
+  roomId: string;
+  gameType: RoomGameInviteType;
+  inviterId: string;
+  inviterName: string;
+  inviterAvatar: string;
+  roomName: string;
+  createdAt: number;
+}
+
+export type RoomMatchInviteResponseStatus = 'pending' | 'accepted' | 'declined';
+
+export interface RoomMatchInviteResponseEntry {
+  userId: string;
+  userName: string;
+  avatar: string;
+  status: RoomMatchInviteResponseStatus;
+  updatedAt: number;
+}
+
+export interface RoomMatchResponsesState {
+  inviteId: string;
+  gameType: RoomGameInviteType;
+  hostId: string;
+  hostName: string;
+  createdAt: number;
+  responses: RoomMatchInviteResponseEntry[];
+}
+
 export interface RoomStatePayload {
   id: string;
   name: string;
@@ -150,6 +204,8 @@ export interface RoomStatePayload {
   partyGameState?: PartyGameState | null;
   pinturilloState?: PinturilloGameState | null;
   poolGameState?: Pool8BallState | null;
+  chapasState?: FutbolChapasState | null;
+  matchResponses?: RoomMatchResponsesState | null;
   createdAt: number;
   serverTime?: number;
 }
@@ -374,6 +430,10 @@ export type ClientWsMessage =
       payload: { roomId: string };
     }
   | {
+      type: 'PINTURILLO_START_MATCH';
+      payload: { roomId: string };
+    }
+  | {
       type: 'PINTURILLO_PICK_WORD';
       payload: { roomId: string; wordId: string };
     }
@@ -406,6 +466,10 @@ export type ClientWsMessage =
       payload: { roomId: string; difficulty?: PoolDifficulty };
     }
   | {
+      type: 'POOL_START_MATCH';
+      payload: { roomId: string };
+    }
+  | {
       type: 'POOL_JOIN_SEAT';
       payload: { roomId: string; seatIndex: 0 | 1 | 'spectate' };
     }
@@ -436,6 +500,51 @@ export type ClientWsMessage =
   | {
       type: 'POOL_CLOSE';
       payload: { roomId: string };
+    }
+  | {
+      type: 'CHAPAS_START';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'CHAPAS_JOIN_SEAT';
+      payload: { roomId: string; seatIndex: 0 | 1 | 2 | 3 | 'spectate' };
+    }
+  | {
+      type: 'CHAPAS_UPDATE_TEAM';
+      payload: { roomId: string; team: ChapasTeamId; flag: ChapasFlagId };
+    }
+  | {
+      type: 'CHAPAS_TOGGLE_BOTS';
+      payload: { roomId: string; botsEnabled: boolean };
+    }
+  | {
+      type: 'CHAPAS_START_MATCH';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'CHAPAS_SHOOT';
+      payload: { roomId: string; shot: ChapasShotInput };
+    }
+  | {
+      type: 'CHAPAS_FORFEIT';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'CHAPAS_REMATCH';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'CHAPAS_CLOSE';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'GAME_INVITE_RESPOND';
+      payload: {
+        roomId: string;
+        gameType: RoomGameInviteType;
+        inviteId?: string;
+        response: 'accepted' | 'declined';
+      };
     };
 
 export type ServerWsMessage =
@@ -544,6 +653,35 @@ export type ServerWsMessage =
         preShotBalls: PoolBallState[];
         authoritativeState: Pool8BallState;
         checksum: number;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'GAME_MATCH_INVITE';
+      payload: RoomGameInvite;
+    }
+  | {
+      type: 'GAME_INVITE_STATUS_UPDATED';
+      payload: {
+        matchResponses: RoomMatchResponsesState | null;
+      };
+    }
+  | {
+      type: 'CHAPAS_STATE_UPDATED';
+      payload: {
+        chapasState: FutbolChapasState | null;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'CHAPAS_SHOT_BROADCAST';
+      payload: {
+        shot: ChapasShotInput & {
+          shooterUserId: string;
+          turnNumber: number;
+        };
+        preShotState: FutbolChapasState;
+        authoritativeState: FutbolChapasState;
         message?: RoomChatMessage | null;
       };
     };

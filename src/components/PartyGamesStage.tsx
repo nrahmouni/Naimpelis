@@ -825,7 +825,11 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
             const cs = COLOR_STYLES[pl.color];
             const isMe = !pl.isBot && pl.userId === currentUser.id;
             const voiceInfo = !pl.isBot ? voicePeerMap.get(pl.userId) : undefined;
-            const isSpeaking = !pl.isBot && Boolean(voiceChat?.speakingUserIds.includes(pl.userId));
+            const voiceLevel = !pl.isBot ? voiceChat?.audioLevels?.[pl.userId] ?? 0 : 0;
+            const isSpeaking =
+              !pl.isBot &&
+              !voiceInfo?.isMuted &&
+              (voiceLevel > 0.06 || Boolean(voiceChat?.speakingUserIds.includes(pl.userId)));
             const clickable = pl.isBot;
 
             return (
@@ -857,6 +861,7 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
                       inVoice={Boolean(voiceInfo)}
                       isSpeaking={isSpeaking}
                       isMuted={Boolean(voiceInfo?.isMuted)}
+                      audioLevel={voiceLevel}
                     />
                   ) : (
                     <Bot className="w-3.5 h-3.5 text-zinc-400" />
@@ -1026,7 +1031,11 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
             const cs = COLOR_STYLES[pl.color];
             const finishedCount = pState.pieces[pl.color].filter((p) => p.progress === 71).length;
             const voiceInfo = !pl.isBot ? voicePeerMap.get(pl.userId) : undefined;
-            const isSpeaking = !pl.isBot && Boolean(voiceChat?.speakingUserIds.includes(pl.userId));
+            const voiceLevel = !pl.isBot ? voiceChat?.audioLevels?.[pl.userId] ?? 0 : 0;
+            const isSpeaking =
+              !pl.isBot &&
+              !voiceInfo?.isMuted &&
+              (voiceLevel > 0.06 || Boolean(voiceChat?.speakingUserIds.includes(pl.userId)));
             return (
               <div
                 key={pl.seatIndex}
@@ -1046,6 +1055,7 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
                       inVoice={Boolean(voiceInfo)}
                       isSpeaking={isSpeaking}
                       isMuted={Boolean(voiceInfo?.isMuted)}
+                      audioLevel={voiceLevel}
                     />
                   ) : (
                     <Bot className="w-3 h-3 opacity-70 shrink-0 ml-auto" />
@@ -1460,7 +1470,11 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
           const isTurn = uState.status === 'playing' && uState.turnSeat === pl.seatIndex;
           const cardCount = (uState.hands[pl.seatIndex] || []).length;
           const voiceInfo = !pl.isBot ? voicePeerMap.get(pl.userId) : undefined;
-          const isSpeaking = !pl.isBot && Boolean(voiceChat?.speakingUserIds.includes(pl.userId));
+          const voiceLevel = !pl.isBot ? voiceChat?.audioLevels?.[pl.userId] ?? 0 : 0;
+          const isSpeaking =
+            !pl.isBot &&
+            !voiceInfo?.isMuted &&
+            (voiceLevel > 0.06 || Boolean(voiceChat?.speakingUserIds.includes(pl.userId)));
           return (
             <div
               key={pl.seatIndex}
@@ -1479,6 +1493,7 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
                     inVoice={Boolean(voiceInfo)}
                     isSpeaking={isSpeaking}
                     isMuted={Boolean(voiceInfo?.isMuted)}
+                    audioLevel={voiceLevel}
                   />
                 ) : (
                   <Bot className="w-3 h-3 opacity-75 shrink-0" />

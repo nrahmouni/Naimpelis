@@ -1264,7 +1264,12 @@ export function resignBoardGame(
 
 export function resetBoardGame(
   state: BoardGameState,
-  opts?: { gameType?: BoardGameType; swapColors?: boolean; clockMinutes?: BoardClockMinutes }
+  opts?: {
+    gameType?: BoardGameType;
+    swapColors?: boolean;
+    clockMinutes?: BoardClockMinutes;
+    waitForHost?: boolean;
+  }
 ): BoardGameState {
   const nextType = opts?.gameType || state.gameType;
   const clockMinutes = opts?.clockMinutes ?? state.clockMinutes ?? 0;
@@ -1284,14 +1289,15 @@ export function resetBoardGame(
     b: bSeat ? { ...bSeat } : null,
   };
   const bothSeated = Boolean(nextPlayers.w && nextPlayers.b);
+  const waitForHost = Boolean(opts?.waitForHost) && !state.soloLocal;
 
   const now = Date.now();
-  const nextStatus = bothSeated || state.soloLocal ? 'playing' : 'waiting';
+  const nextStatus = waitForHost ? 'waiting' : bothSeated || state.soloLocal ? 'playing' : 'waiting';
 
   return {
     ...fresh,
     players: nextPlayers,
-    awaitingHostStart: false,
+    awaitingHostStart: waitForHost,
     status: nextStatus,
     turnStartedAt: now,
     turnDeadlineAt: nextStatus === 'playing' ? now + BOARD_TURN_DECISION_MS : undefined,

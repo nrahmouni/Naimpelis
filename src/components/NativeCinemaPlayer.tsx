@@ -34,6 +34,10 @@ import {
   AudioLines,
   Settings2,
   ExternalLink,
+  Mic,
+  MicOff,
+  PhoneCall,
+  PhoneOff,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -64,6 +68,7 @@ import {
 import { useDirectCast } from './player/useDirectCast';
 import { CloudBrowserOverlay } from './player/CloudBrowserOverlay';
 import { PlayerProSettingsModal } from './player/PlayerProSettingsModal';
+import { VoiceWaveBars } from './games/GameVoiceBar';
 
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   videoState,
@@ -111,6 +116,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onToggleFloatingChat,
   compactVideoForMobileKeyboard = false,
   onOpenInCloudBrowser,
+  voiceChat,
 }) => {
   const { subtitleStyle, setSubtitleStyle, syncOffsetMs, setSyncOffsetMs } = useAppStore();
   const t = UI_COPY[lang];
@@ -2648,7 +2654,82 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </button>
               )}
 
-              {/* 2. Floating Chat Toggle (Fullscreen only — windowed uses below-video strip) */}
+              {/* 2. Live Voice Call Toggle (Fullscreen movie/sports HUD) */}
+              {!isTvMode && (isFullscreen || isHorizontalFullscreen) && voiceChat && (
+                <div className="flex items-center gap-1.5">
+                  {voiceChat.isJoined ? (
+                    <>
+                      <button
+                        type="button"
+                        aria-pressed={voiceChat.isMuted}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerHaptic('light');
+                          voiceChat.toggleMute();
+                        }}
+                        title={
+                          voiceChat.isMuted
+                            ? pickLang(lang, { es: 'Activar micrófono', ca: 'Activar micròfon', en: 'Unmute mic' })
+                            : pickLang(lang, { es: 'Silenciar micrófono', ca: 'Silenciar micròfon', en: 'Mute mic' })
+                        }
+                        className={`min-h-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                          voiceChat.isMuted
+                            ? 'bg-rose-500/25 border-rose-400/60 text-rose-100'
+                            : voiceChat.localAudioLevel > 0.06 || voiceChat.speakingUserIds.length > 0
+                            ? 'bg-emerald-500/30 border-emerald-300 text-emerald-100 shadow-[0_8px_20px_rgba(16,185,129,0.3)]'
+                            : 'bg-emerald-500/20 border-emerald-400/50 text-emerald-100'
+                        }`}
+                      >
+                        {voiceChat.isMuted ? (
+                          <MicOff className="w-4 h-4 shrink-0" />
+                        ) : (
+                          <>
+                            <Mic className="w-4 h-4 shrink-0" />
+                            <VoiceWaveBars
+                              active={!voiceChat.isMuted && (voiceChat.localAudioLevel > 0.06 || voiceChat.speakingUserIds.length > 0)}
+                              level={voiceChat.localAudioLevel}
+                              size="sm"
+                            />
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          triggerHaptic('medium');
+                          voiceChat.leaveVoice();
+                        }}
+                        title={pickLang(lang, { es: 'Colgar llamada', ca: 'Penjar trucada', en: 'Leave voice call' })}
+                        aria-label={pickLang(lang, { es: 'Colgar llamada', ca: 'Penjar trucada', en: 'Leave voice call' })}
+                        className="min-h-[44px] min-w-[44px] rounded-2xl bg-[#141418]/80 hover:bg-rose-500/30 border border-white/15 hover:border-rose-400/60 text-zinc-100 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                      >
+                        <PhoneOff className="w-4 h-4 shrink-0" />
+                      </button>
+                    </>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={voiceChat.status === 'requesting'}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        triggerHaptic('medium');
+                        void voiceChat.joinVoice();
+                      }}
+                      title={pickLang(lang, { es: 'Abrir llamada de voz', ca: 'Obrir trucada de veu', en: 'Open voice call' })}
+                      aria-label={pickLang(lang, { es: 'Abrir llamada de voz', ca: 'Obrir trucada de veu', en: 'Open voice call' })}
+                      className="min-h-[44px] min-w-[44px] px-3 rounded-2xl bg-[#9146FF]/85 hover:bg-[#772CE8] border border-white/20 text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
+                    >
+                      <PhoneCall className="w-4 h-4 shrink-0" />
+                      <span className="hidden sm:inline">
+                        {pickLang(lang, { es: 'Voz', ca: 'Veu', en: 'Voice' })}
+                      </span>
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* 2b. Floating Chat Toggle (Fullscreen only — windowed uses below-video strip) */}
               {!isTvMode && (isFullscreen || isHorizontalFullscreen) && onToggleFloatingChat && (
                 <button
                   type="button"
@@ -4354,6 +4435,94 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </span>
               </button>
 
+              {voiceChat && (
+                voiceChat.isJoined ? (
+                  <div className="flex items-center gap-1 shrink-0">
+                    <button
+                      type="button"
+                      aria-pressed={voiceChat.isMuted}
+                      onClick={() => {
+                        triggerHaptic('light');
+                        voiceChat.toggleMute();
+                      }}
+                      className={`min-h-[38px] px-3 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+                        voiceChat.isMuted
+                          ? 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-400/50 text-rose-200'
+                          : voiceChat.localAudioLevel > 0.06 || voiceChat.speakingUserIds.length > 0
+                          ? 'bg-emerald-500/25 hover:bg-emerald-500/35 border-emerald-300 text-emerald-100 shadow-[0_0_12px_rgba(16,185,129,0.28)]'
+                          : 'bg-emerald-500/18 hover:bg-emerald-500/28 border-emerald-400/45 text-emerald-200'
+                      }`}
+                    >
+                      {voiceChat.isMuted ? (
+                        <>
+                          <MicOff className="w-3.5 h-3.5 shrink-0" />
+                          <span>
+                            {pickLang(lang, { es: 'Silenciado', ca: 'Silenciat', en: 'Muted' })}
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-3.5 h-3.5 shrink-0" />
+                          <VoiceWaveBars
+                            active={!voiceChat.isMuted && (voiceChat.localAudioLevel > 0.06 || voiceChat.speakingUserIds.length > 0)}
+                            level={voiceChat.localAudioLevel}
+                            size="sm"
+                          />
+                          <span>
+                            {voiceChat.localAudioLevel > 0.08
+                              ? pickLang(lang, { es: 'Hablando', ca: 'Parlant', en: 'Speaking' })
+                              : pickLang(lang, { es: 'Voz', ca: 'Veu', en: 'Voice' })}
+                          </span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        voiceChat.leaveVoice();
+                      }}
+                      title={pickLang(lang, { es: 'Colgar llamada', ca: 'Penjar trucada', en: 'Leave voice call' })}
+                      aria-label={pickLang(lang, { es: 'Colgar llamada', ca: 'Penjar trucada', en: 'Leave voice call' })}
+                      className="min-h-[38px] px-2.5 rounded-2xl bg-[#26262C] hover:bg-rose-500/25 border border-white/[0.09] hover:border-rose-400/50 text-xs font-bold text-zinc-200 hover:text-rose-200 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                    >
+                      <PhoneOff className="w-3.5 h-3.5 shrink-0" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={voiceChat.status === 'requesting'}
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      void voiceChat.joinVoice();
+                    }}
+                    className="min-h-[38px] px-3.5 rounded-2xl bg-[#9146FF]/18 hover:bg-[#9146FF]/30 border border-[#9146FF]/45 text-xs font-bold text-[#DFCCFF] flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+                    title={pickLang(lang, {
+                      es: 'Abrir llamada de voz mientras ves la película',
+                      ca: 'Obrir trucada de veu mentre veus la pel·lícula',
+                      en: 'Open live voice call while watching',
+                    })}
+                  >
+                    {voiceChat.status === 'requesting' ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                    ) : (
+                      <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+                    )}
+                    <span>
+                      {voiceChat.status === 'requesting'
+                        ? pickLang(lang, { es: 'Conectando...', ca: 'Connectant...', en: 'Connecting...' })
+                        : pickLang(lang, { es: 'Llamada', ca: 'Trucada', en: 'Voice' })}
+                    </span>
+                    {voiceChat.voicePeers.length > 0 && (
+                      <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/25 text-emerald-200 text-[10px] font-mono tabular-nums">
+                        {voiceChat.voicePeers.length}
+                      </span>
+                    )}
+                  </button>
+                )
+              )}
+
               {onToggleFloatingChat && (
                 <button
                   type="button"
@@ -4386,6 +4555,50 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             </div>
           </div>
         )}
+
+      {/* Voice Chat Unlock / Mic Error Strip while watching movies */}
+      {!isTvMode &&
+        !isMinimized &&
+        !isCompressed &&
+        voiceChat &&
+        (voiceChat.audioPlaybackBlocked && voiceChat.isJoined ? (
+          <div className="bg-[#161224] border-t border-[#9146FF]/35 px-3 sm:px-4 py-2 flex items-center justify-between gap-2 text-xs text-[#DFCCFF]">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <Volume2 className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+              <span className="truncate">
+                {pickLang(lang, {
+                  es: 'Toca para escuchar la llamada de voz en este dispositivo.',
+                  ca: 'Toca per escoltar la trucada de veu en aquest dispositiu.',
+                  en: 'Tap to enable incoming voice call audio on this device.',
+                })}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                voiceChat.resumeRemoteAudio();
+              }}
+              className="px-3 py-1 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-[11px] font-bold text-white whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              {pickLang(lang, { es: 'Activar audio', ca: 'Activar àudio', en: 'Enable Audio' })}
+            </button>
+          </div>
+        ) : voiceChat.errorMessage ? (
+          <div className="bg-amber-500/10 border-t border-amber-400/35 px-3 sm:px-4 py-2 flex items-center justify-between gap-2 text-xs text-amber-200">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <span className="truncate">{voiceChat.errorMessage}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => void voiceChat.joinVoice()}
+              className="px-3 py-1 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 border border-amber-300/40 text-[11px] font-bold text-amber-100 whitespace-nowrap shrink-0 cursor-pointer"
+            >
+              {pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry' })}
+            </button>
+          </div>
+        ) : null)}
 
       {/* ==================================================================== */}
       {/* AJUSTES DE REPRODUCCIÓN (UNIFIED BOTTOM SHEET — NO DUPLICATE CAST)   */}

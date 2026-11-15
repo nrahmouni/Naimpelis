@@ -45,9 +45,13 @@ import {
   CatalaSeriesDetails,
   CatalogMovie,
   ChannelLiveEpg,
+  ChapasFlagId,
+  ChapasShotInput,
+  ChapasTeamId,
   ChessPromotionPiece,
   EpgProgramItem,
   FavoriteChannelItem,
+  FutbolChapasState,
   LiveScoreMatch,
   Participant,
   PartyColor,
@@ -69,6 +73,7 @@ import {
   WatchHistoryItem,
   YouTubeSearchItem,
 } from '../types';
+import type { RoomMatchResponsesState } from '../shared/protocol';
 import { UI_COPY, pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { useFocusTrap } from '../utils/useFocusTrap';
@@ -668,9 +673,13 @@ interface MediaCatalogHubProps {
   roomPartyGame?: PartyGameState | null;
   roomPinturilloGame?: PinturilloGameState | null;
   roomPoolGame?: Pool8BallState | null;
+  roomChapasGame?: FutbolChapasState | null;
+  matchResponses?: RoomMatchResponsesState | null;
   gameMoveError?: string | null;
   isHost?: boolean;
   voiceChat?: GameVoiceChatState;
+  requestedGameOpen?: { gameType: 'pool' | 'chapas' | 'parchis' | 'uno' | 'pinturillo' | 'chess' | 'checkers' | 'connect4'; seq: number } | null;
+  onSelectedGameChange?: (game: 'pool' | 'chapas' | 'parchis' | 'uno' | 'pinturillo' | 'chess' | 'checkers' | 'connect4' | null) => void;
   onStartRoomBoardGame?: (
     gt: BoardGameType,
     soloLocal?: boolean,
@@ -693,6 +702,7 @@ interface MediaCatalogHubProps {
   ) => void;
   onCloseRoomPartyGame?: () => void;
   onStartRoomPinturillo?: () => void;
+  onStartPinturilloMatch?: () => void;
   onPinturilloPickWord?: (wordId: string) => void;
   onPinturilloStroke?: (stroke: PinturilloStroke) => void;
   onPinturilloUndo?: () => void;
@@ -701,6 +711,7 @@ interface MediaCatalogHubProps {
   onPinturilloRematch?: () => void;
   onCloseRoomPinturillo?: () => void;
   onStartRoomPool?: (difficulty?: PoolDifficulty) => void;
+  onStartPoolMatch?: () => void;
   onPoolJoinSeat?: (seatIndex: 0 | 1 | 'spectate') => void;
   onPoolCallPocket?: (pocketId: PoolPocketId) => void;
   onPoolPlaceCue?: (x: number, y: number) => void;
@@ -709,6 +720,15 @@ interface MediaCatalogHubProps {
   onPoolForfeit?: () => void;
   onPoolRematch?: () => void;
   onCloseRoomPool?: () => void;
+  onStartRoomChapas?: (opts?: { botsEnabled?: boolean }) => void;
+  onChapasJoinSeat?: (seatIndex: 0 | 1 | 2 | 3 | 'spectate') => void;
+  onChapasUpdateTeam?: (team: ChapasTeamId, flag: ChapasFlagId) => void;
+  onChapasToggleBots?: (botsEnabled: boolean) => void;
+  onChapasStartMatch?: () => void;
+  onChapasShoot?: (shot: ChapasShotInput) => void;
+  onChapasForfeit?: () => void;
+  onChapasRematch?: () => void;
+  onCloseRoomChapas?: () => void;
 }
 
 export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
@@ -750,9 +770,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   roomPartyGame = null,
   roomPinturilloGame = null,
   roomPoolGame = null,
+  roomChapasGame = null,
+  matchResponses = null,
   gameMoveError = null,
   isHost = false,
   voiceChat,
+  requestedGameOpen = null,
+  onSelectedGameChange,
   onStartRoomBoardGame,
   onJoinBoardSeat,
   onStartBoardMatch,
@@ -764,6 +788,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onRoomPartyAction,
   onCloseRoomPartyGame,
   onStartRoomPinturillo,
+  onStartPinturilloMatch,
   onPinturilloPickWord,
   onPinturilloStroke,
   onPinturilloUndo,
@@ -772,6 +797,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onPinturilloRematch,
   onCloseRoomPinturillo,
   onStartRoomPool,
+  onStartPoolMatch,
   onPoolJoinSeat,
   onPoolCallPocket,
   onPoolPlaceCue,
@@ -780,6 +806,15 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onPoolForfeit,
   onPoolRematch,
   onCloseRoomPool,
+  onStartRoomChapas,
+  onChapasJoinSeat,
+  onChapasUpdateTeam,
+  onChapasToggleBots,
+  onChapasStartMatch,
+  onChapasShoot,
+  onChapasForfeit,
+  onChapasRematch,
+  onCloseRoomChapas,
 }) => {
   const t = UI_COPY[lang];
 
@@ -8300,9 +8335,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             roomPartyGame={roomPartyGame}
             roomPinturilloGame={roomPinturilloGame}
             roomPoolGame={roomPoolGame}
+            roomChapasGame={roomChapasGame}
+            matchResponses={matchResponses}
             gameMoveError={gameMoveError}
             isHost={isHost}
             voiceChat={voiceChat}
+            requestedGameOpen={requestedGameOpen}
+            onSelectedGameChange={onSelectedGameChange}
             onStartRoomBoardGame={onStartRoomBoardGame}
             onJoinBoardSeat={onJoinBoardSeat}
             onStartBoardMatch={onStartBoardMatch}
@@ -8314,6 +8353,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             onRoomPartyAction={onRoomPartyAction}
             onCloseRoomPartyGame={onCloseRoomPartyGame}
             onStartRoomPinturillo={onStartRoomPinturillo}
+            onStartPinturilloMatch={onStartPinturilloMatch}
             onPinturilloPickWord={onPinturilloPickWord}
             onPinturilloStroke={onPinturilloStroke}
             onPinturilloUndo={onPinturilloUndo}
@@ -8322,6 +8362,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             onPinturilloRematch={onPinturilloRematch}
             onCloseRoomPinturillo={onCloseRoomPinturillo}
             onStartRoomPool={onStartRoomPool}
+            onStartPoolMatch={onStartPoolMatch}
             onPoolJoinSeat={onPoolJoinSeat}
             onPoolCallPocket={onPoolCallPocket}
             onPoolPlaceCue={onPoolPlaceCue}
@@ -8330,6 +8371,15 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             onPoolForfeit={onPoolForfeit}
             onPoolRematch={onPoolRematch}
             onCloseRoomPool={onCloseRoomPool}
+            onStartRoomChapas={onStartRoomChapas}
+            onChapasJoinSeat={onChapasJoinSeat}
+            onChapasUpdateTeam={onChapasUpdateTeam}
+            onChapasToggleBots={onChapasToggleBots}
+            onChapasStartMatch={onChapasStartMatch}
+            onChapasShoot={onChapasShoot}
+            onChapasForfeit={onChapasForfeit}
+            onChapasRematch={onChapasRematch}
+            onCloseRoomChapas={onCloseRoomChapas}
           />
         </React.Suspense>
       )}

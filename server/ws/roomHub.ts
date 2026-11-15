@@ -24,6 +24,7 @@ import {
 import { verifyFirebaseIdToken } from '../services/firebaseAuthVerify.ts';
 import {
   wsEnvelopeSchema,
+  wsGameInviteRespondSchema,
   wsGameMoveSchema,
   wsJoinRoomSchema,
   wsPartyGameActionSchema,
@@ -41,6 +42,11 @@ import {
   wsPoolStartSchema,
   wsPoolSyncChecksumSchema,
   wsPoolTakeShotSchema,
+  wsChapasJoinSeatSchema,
+  wsChapasRoomSchema,
+  wsChapasShootSchema,
+  wsChapasToggleBotsSchema,
+  wsChapasUpdateTeamSchema,
   wsQueueReorderSchema,
   WsRateLimiter,
   wsRegisterPresenceSchema,
@@ -96,10 +102,12 @@ import {
   clearPinturilloCanvas,
   createInitialPinturilloState,
   endPinturilloRound,
+  joinPinturilloPlayer,
   pickBotPinturilloGuess,
   redactPinturilloForUser,
   revealPinturilloHintIfDue,
   selectPinturilloWord,
+  startPinturilloMatch,
   submitPinturilloGuess,
   undoPinturilloStroke,
   type PinturilloGameState,
@@ -116,9 +124,64 @@ import {
   isValidCueBallPlacement,
   joinPoolSeat,
   placePoolCueBall,
+  startPoolMatch,
   type Pool8BallState,
 } from '../../src/shared/pool8Ball.ts';
-import type { VoicePeerState } from '../../src/shared/protocol.ts';
+import {
+  chooseChapasAiShot,
+  createInitialChapasState,
+  forfeitChapasMatch,
+  joinChapasSeat,
+  shootChapasCap,
+  startChapasMatch,
+  toggleChapasBots,
+  updateChapasTeamFlag,
+  type FutbolChapasState,
+} from '../../src/shared/futbolChapas.ts';
+import type {
+  RoomGameInvite,
+  RoomGameInviteType,
+  RoomMatchResponsesState,
+  VoicePeerState,
+} from '../../src/shared/protocol.ts';
+
+export function buildHostGameInvitePayload(params: {
+  room: {
+    id: string;
+    name: string;
+    hostId: string;
+    creatorId: string;
+    participants: Array<{ id: string; name: string; avatar: string }>;
+  };
+  senderUserId?: string;
+  senderName?: string;
+  senderAvatar?: string;
+  gameType: RoomGameInviteType;
+  soloLocal?: boolean;
+}): RoomGameInvite | null {
+  const { room, senderUserId, senderName, senderAvatar, gameType, soloLocal } = params;
+  if (soloLocal || !senderUserId) return null;
+  const isHostStarter = room.hostId === senderUserId || room.creatorId === senderUserId;
+  if (!isHostStarter) return null;
+
+  const hasCompanion = room.participants.some(
+    (p) => p.id !== senderUserId && !p.name.includes('(TV)') && p.avatar !== '📺'
+  );
+  if (!hasCompanion) return null;
+
+  const actor = room.participants.find((p) => p.id === senderUserId);
+  const now = Date.now();
+  return {
+    id: `g-inv-${gameType}-${now}-${Math.random().toString(36).slice(2, 7)}`,
+    roomId: room.id,
+    gameType,
+    inviterId: senderUserId,
+    inviterName: actor?.name || senderName || 'Anfitrión',
+    inviterAvatar: actor?.avatar || senderAvatar || '🎮',
+    roomName: room.name || `Sala ${room.id.toUpperCase()}`,
+    createdAt: now,
+  };
+}
 
 export interface CloudRoomSession extends CloudSessionLite {
   closed: boolean;
@@ -203,6 +266,8 @@ export interface RoomRecord {
   partyGameState?: PartyGameState | null;
   pinturilloState?: PinturilloGameState | null;
   poolGameState?: Pool8BallState | null;
+  chapasState?: FutbolChapasState | null;
+  matchResponses?: RoomMatchResponsesState | null;
   createdAt: number;
 }
 
@@ -243,6 +308,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   const pinturilloTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const poolTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const poolDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const chapasTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const roomVoicePeers = new Map<string, Map<string, VoicePeerState>>();
 
   const tvPairingSessions = new LruTtlCache<string, TvPairingSession>(400, 15 * 60 * 1000);
@@ -383,6 +449,8 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
       activePoll: null,
       gameState: null,
       partyGameState: null,
+      chapasState: null,
+      matchResponses: null,
       pinnedMessage: null,
       videoState: {
         mode: 'idle',
@@ -498,7 +566,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   function schedulePinturilloLifecycle(room: RoomRecord) {
     stopPinturilloTimer(room.id);
     const ps = room.pinturilloState;
-    if (!ps || ps.status === 'finished') return;
+    if (!ps || ps.status === 'finished' || ps.status === 'waiting') return;
 
     const drawer = ps.players[ps.drawerSeat];
     const now = Date.now();
@@ -642,6 +710,60 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
     poolTurnTimers.set(room.id, timer);
   }
 
+  function stopChapasTimer(roomId: string) {
+    const t = chapasTurnTimers.get(roomId);
+    if (t) {
+      clearTimeout(t);
+      chapasTurnTimers.delete(roomId);
+    }
+  }
+
+  function scheduleChapasTurnTimer(room: RoomRecord) {
+    stopChapasTimer(room.id);
+    const cs = room.chapasState;
+    if (!cs || cs.status !== 'playing') return;
+    const activeSeat = cs.players[cs.activeSeatIndex];
+    const isBot = Boolean(activeSeat?.isBot);
+    const delayMs = isBot
+      ? 950
+      : cs.turnDeadlineAt
+        ? Math.max(250, cs.turnDeadlineAt - Date.now())
+        : 15_000;
+    const expectedTurn = cs.turnNumber;
+
+    const timer = setTimeout(() => {
+      chapasTurnTimers.delete(room.id);
+      const latestRoom = rooms.get(room.id);
+      const curr = latestRoom?.chapasState;
+      if (!latestRoom || !curr || curr.status !== 'playing' || curr.turnNumber !== expectedTurn) {
+        return;
+      }
+      if (latestRoom.participants.length === 0) return;
+      const seat = curr.players[curr.activeSeatIndex];
+      const shot = chooseChapasAiShot(curr);
+      if (!shot) return;
+      const res = shootChapasCap(curr, seat?.userId || `bot-chapas-${curr.activeSeatIndex}`, shot);
+      if (!res.ok) return;
+      latestRoom.chapasState = res.state;
+      schedulePersistRoom(latestRoom.id);
+      broadcastToRoom(latestRoom.id, {
+        type: 'CHAPAS_SHOT_BROADCAST',
+        payload: {
+          shot: {
+            ...shot,
+            shooterUserId: seat?.userId || `bot-chapas-${curr.activeSeatIndex}`,
+            turnNumber: curr.turnNumber,
+          },
+          preShotState: res.preShotState,
+          authoritativeState: res.state,
+        },
+      });
+      scheduleChapasTurnTimer(latestRoom);
+    }, delayMs);
+    timer.unref?.();
+    chapasTurnTimers.set(room.id, timer);
+  }
+
   function broadcastToRoom(roomId: string, message: unknown, excludeWs?: WebSocket) {
     const serialized = JSON.stringify(message);
     clients.forEach((meta, clientWs) => {
@@ -649,6 +771,78 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         clientWs.send(serialized);
       }
     });
+  }
+
+  function clearMatchResponses(room: RoomRecord, onlyGameType?: RoomGameInviteType) {
+    if (!room.matchResponses) return;
+    if (onlyGameType && room.matchResponses.gameType !== onlyGameType) return;
+    room.matchResponses = null;
+    broadcastToRoom(room.id, {
+      type: 'GAME_INVITE_STATUS_UPDATED',
+      payload: { matchResponses: null },
+    });
+  }
+
+  function hasPendingMatchResponses(room: RoomRecord, gameType: RoomGameInviteType): boolean {
+    if (!room.matchResponses || room.matchResponses.gameType !== gameType) return false;
+    return room.matchResponses.responses.some((r) => r.status === 'pending');
+  }
+
+  function getRoomCompanions(room: RoomRecord, excludeUserId?: string) {
+    return room.participants.filter(
+      (p) => p.id !== excludeUserId && !p.name.includes('(TV)') && p.avatar !== '📺'
+    );
+  }
+
+  function maybeBroadcastHostGameInvite(
+    room: RoomRecord,
+    senderWs: WebSocket,
+    senderMeta: ClientMeta | undefined,
+    gameType: RoomGameInviteType,
+    soloLocal = false
+  ) {
+    const invite = buildHostGameInvitePayload({
+      room,
+      senderUserId: senderMeta?.userId,
+      senderName: senderMeta?.userName,
+      senderAvatar: senderMeta?.userAvatar,
+      gameType,
+      soloLocal,
+    });
+    if (!invite) {
+      clearMatchResponses(room);
+      return;
+    }
+
+    const now = Date.now();
+    const companions = getRoomCompanions(room, senderMeta?.userId);
+    room.matchResponses = {
+      inviteId: invite.id,
+      gameType,
+      hostId: invite.inviterId,
+      hostName: invite.inviterName,
+      createdAt: now,
+      responses: companions.map((p) => ({
+        userId: p.id,
+        userName: p.name,
+        avatar: p.avatar || '🍿',
+        status: 'pending',
+        updatedAt: now,
+      })),
+    };
+    broadcastToRoom(room.id, {
+      type: 'GAME_INVITE_STATUS_UPDATED',
+      payload: { matchResponses: room.matchResponses },
+    });
+
+    broadcastToRoom(
+      room.id,
+      {
+        type: 'GAME_MATCH_INVITE',
+        payload: invite,
+      },
+      senderWs
+    );
   }
 
   function claimTvPairingCodeCore(params: {
@@ -2532,6 +2726,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
               message: sysMsg,
             },
           });
+          maybeBroadcastHostGameInvite(room, ws, senderMeta, gameType, soloLocal);
           scheduleBoardTurnTimer(room);
           return;
         }
@@ -2560,6 +2755,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           }
 
           room.gameState = startBoardMatch(room.gameState);
+          clearMatchResponses(room, room.gameState.gameType);
           schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
             type: 'GAME_STATE_UPDATED',
@@ -2725,12 +2921,22 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const room = rooms.get(targetRoomId);
           if (!room || !room.gameState) return;
 
+          const prevType = room.gameState.gameType;
           const nextType: BoardGameType | undefined =
             payload?.gameType === 'chess' ||
             payload?.gameType === 'checkers' ||
             payload?.gameType === 'connect4'
               ? payload.gameType
               : undefined;
+          const switchedGame = Boolean(nextType && nextType !== prevType);
+          const isHostUser = Boolean(
+            senderMeta?.userId &&
+              (room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId)
+          );
+          const companions = getRoomCompanions(room, senderMeta?.userId);
+          const waitForHost =
+            switchedGame && isHostUser && !room.gameState.soloLocal && companions.length > 0;
+
           const clockRaw = Number(payload?.clockMinutes ?? room.gameState.clockMinutes ?? 0);
           const clockMinutes: BoardClockMinutes =
             clockRaw === 3 || clockRaw === 5 || clockRaw === 10 ? clockRaw : 0;
@@ -2739,13 +2945,31 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             gameType: nextType,
             swapColors: Boolean(payload?.swapColors),
             clockMinutes,
+            waitForHost,
           });
           schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
             type: 'GAME_STATE_UPDATED',
             payload: { gameState: room.gameState },
           });
-          scheduleBoardTurnTimer(room);
+          if (switchedGame && isHostUser) {
+            maybeBroadcastHostGameInvite(
+              room,
+              ws,
+              senderMeta,
+              room.gameState.gameType,
+              room.gameState.soloLocal
+            );
+          }
+          if (room.gameState.status === 'playing') {
+            scheduleBoardTurnTimer(room);
+          } else {
+            const existingTimer = boardTurnTimers.get(room.id);
+            if (existingTimer) {
+              clearTimeout(existingTimer);
+              boardTurnTimers.delete(room.id);
+            }
+          }
           return;
         }
 
@@ -2756,12 +2980,14 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             .toLowerCase();
           const room = rooms.get(targetRoomId);
           if (!room || !room.gameState) return;
+          const closedType = room.gameState.gameType;
           const existingTimer = boardTurnTimers.get(room.id);
           if (existingTimer) {
             clearTimeout(existingTimer);
             boardTurnTimers.delete(room.id);
           }
           room.gameState = null;
+          clearMatchResponses(room, closedType);
           schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
             type: 'GAME_STATE_UPDATED',
@@ -2807,6 +3033,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             type: 'PARTY_GAME_STATE_UPDATED',
             payload: { partyGameState: room.partyGameState, message: sysMsg },
           });
+          maybeBroadcastHostGameInvite(room, ws, clients.get(ws), gameType);
           return;
         }
 
@@ -2850,6 +3077,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
               return;
             }
             room.partyGameState = startPartyMatch(room.partyGameState);
+            clearMatchResponses(room, room.partyGameState.gameType);
           } else if (action === 'join_seat') {
             const res = claimPartyBotSeat(
               room.partyGameState,
@@ -2945,12 +3173,14 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             .toLowerCase();
           const room = rooms.get(targetRoomId);
           if (!room || !room.partyGameState) return;
+          const closedType = room.partyGameState.gameType;
           const timer = partyBotTimers.get(room.id);
           if (timer) {
             clearTimeout(timer);
             partyBotTimers.delete(room.id);
           }
           room.partyGameState = null;
+          clearMatchResponses(room, closedType);
           schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
             type: 'PARTY_GAME_STATE_UPDATED',
@@ -2965,27 +3195,66 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           if (!valid.success) return;
           const roomId = valid.data.roomId.toLowerCase();
           const room = rooms.get(roomId);
+          const senderMeta = clients.get(ws);
           if (!room) return;
 
-          const humans = room.participants
-            .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
-            .slice(0, 6)
-            .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+          const isHostStarter = Boolean(
+            senderMeta?.userId &&
+              (room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId)
+          );
+          const hasCompanions = getRoomCompanions(room, senderMeta?.userId).length > 0;
+          const waitForHost = isHostStarter && hasCompanions;
 
-          room.pinturilloState = createInitialPinturilloState(humans);
+          const humans = waitForHost && senderMeta?.userId
+            ? [
+                {
+                  id: senderMeta.userId,
+                  name: senderMeta.userName || 'Anfitrión',
+                  avatar: senderMeta.userAvatar || '🎨',
+                  color: senderMeta.userColor || '#9146FF',
+                },
+              ]
+            : room.participants
+                .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
+                .slice(0, 6)
+                .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+
+          stopPinturilloTimer(room.id);
+          room.pinturilloState = createInitialPinturilloState(humans, undefined, {
+            waitForHost,
+          });
           const sysMsg: RoomChatMessageRecord = {
             id: `pinturillo-start-${Date.now()}`,
             senderId: 'system',
             senderName: 'NAIM CINE',
             senderAvatar: '🎨',
             senderColor: '#F59E0B',
-            text: `Mesa de Pinturillo abierta · ¡Dibuja y adivina la palabra!`,
+            text: waitForHost
+              ? `Mesa de Pinturillo abierta · Esperando respuesta de invitados.`
+              : `Mesa de Pinturillo abierta · ¡Dibuja y adivina la palabra!`,
             timestamp: Date.now(),
             isSystem: true,
           };
           room.messages.push(sysMsg);
           if (room.messages.length > 150) room.messages = room.messages.slice(-150);
           broadcastPinturilloState(room, sysMsg);
+          maybeBroadcastHostGameInvite(room, ws, senderMeta, 'pinturillo');
+          schedulePinturilloLifecycle(room);
+          return;
+        }
+
+        if (type === 'PINTURILLO_START_MATCH') {
+          const valid = wsPinturilloRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pinturilloState || !senderMeta?.userId) return;
+          const isHostUser =
+            room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId;
+          if (!isHostUser) return;
+          room.pinturilloState = startPinturilloMatch(room.pinturilloState);
+          clearMatchResponses(room, 'pinturillo');
+          broadcastPinturilloState(room);
           schedulePinturilloLifecycle(room);
           return;
         }
@@ -3093,6 +3362,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           if (!room) return;
           stopPinturilloTimer(room.id);
           room.pinturilloState = null;
+          clearMatchResponses(room, 'pinturillo');
           broadcastPinturilloState(room);
           return;
         }
@@ -3103,17 +3373,57 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           if (!valid.success) return;
           const roomId = valid.data.roomId.toLowerCase();
           const room = rooms.get(roomId);
+          const senderMeta = clients.get(ws);
           if (!room) return;
 
-          const humans = room.participants
-            .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
-            .slice(0, 2)
-            .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+          const isHostStarter = Boolean(
+            senderMeta?.userId &&
+              (room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId)
+          );
+          const hasCompanions = getRoomCompanions(room, senderMeta?.userId).length > 0;
+          const waitForHost = isHostStarter && hasCompanions;
+
+          const humans = waitForHost && senderMeta?.userId
+            ? [
+                {
+                  id: senderMeta.userId,
+                  name: senderMeta.userName || 'Anfitrión',
+                  avatar: senderMeta.userAvatar || '🎱',
+                  color: senderMeta.userColor || '#9146FF',
+                },
+              ]
+            : room.participants
+                .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
+                .slice(0, 2)
+                .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
 
           stopPoolTurnTimer(room.id);
           room.poolGameState = createInitialPoolState(humans, {
             difficulty: valid.data.difficulty || 'medium',
+            waitForHost,
           });
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'POOL_STATE_UPDATED',
+            payload: { poolGameState: room.poolGameState },
+          });
+          maybeBroadcastHostGameInvite(room, ws, senderMeta, 'pool');
+          schedulePoolTurnTimer(room);
+          return;
+        }
+
+        if (type === 'POOL_START_MATCH') {
+          const valid = wsPoolRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.poolGameState || !senderMeta?.userId) return;
+          const isHostUser =
+            room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId;
+          if (!isHostUser) return;
+
+          room.poolGameState = startPoolMatch(room.poolGameState);
+          clearMatchResponses(room, 'pool');
           schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
             type: 'POOL_STATE_UPDATED',
@@ -3138,10 +3448,15 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
               avatar: senderMeta.userAvatar || '🎱',
               color: senderMeta.userColor || '#9146FF',
             },
-            valid.data.seatIndex
+            valid.data.seatIndex,
+            Date.now(),
+            { keepWaiting: hasPendingMatchResponses(room, 'pool') }
           );
           if (!res.ok) return;
           room.poolGameState = res.state;
+          if (room.poolGameState.status === 'playing') {
+            clearMatchResponses(room, 'pool');
+          }
           schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
             type: 'POOL_STATE_UPDATED',
@@ -3335,11 +3650,355 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           if (!room) return;
           stopPoolTurnTimer(room.id);
           room.poolGameState = null;
+          clearMatchResponses(room, 'pool');
           schedulePersistRoom(room.id);
           broadcastToRoom(room.id, {
             type: 'POOL_STATE_UPDATED',
             payload: { poolGameState: null },
           });
+          return;
+        }
+
+        // Fútbol Chapas (1v1 / 2v2 Table Soccer + AI Bots)
+        if (type === 'CHAPAS_START') {
+          const valid = wsChapasRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const roomId = valid.data.roomId.toLowerCase();
+          const room = rooms.get(roomId);
+          const senderMeta = clients.get(ws);
+          if (!room) return;
+
+          const starter = senderMeta?.userId
+            ? [
+                {
+                  id: senderMeta.userId,
+                  name: senderMeta.userName || 'Anfitrión',
+                  avatar: senderMeta.userAvatar || '⚽',
+                  color: senderMeta.userColor || '#38BDF8',
+                },
+              ]
+            : room.participants
+                .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
+                .slice(0, 4)
+                .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+
+          stopChapasTimer(room.id);
+          room.chapasState = createInitialChapasState(starter, { waitForHost: true });
+          const sysMsg: RoomChatMessageRecord = {
+            id: `chapas-start-${Date.now()}`,
+            senderId: 'system',
+            senderName: 'NAIM CINE',
+            senderAvatar: '⚽',
+            senderColor: '#22C55E',
+            text: `Mesa de Fútbol Chapas abierta · Elige equipo y pulsa Play.`,
+            timestamp: Date.now(),
+            isSystem: true,
+          };
+          room.messages.push(sysMsg);
+          if (room.messages.length > 150) room.messages = room.messages.slice(-150);
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'CHAPAS_STATE_UPDATED',
+            payload: { chapasState: room.chapasState, message: sysMsg },
+          });
+          maybeBroadcastHostGameInvite(room, ws, senderMeta, 'chapas');
+          return;
+        }
+
+        if (type === 'CHAPAS_JOIN_SEAT') {
+          const valid = wsChapasJoinSeatSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.chapasState || !senderMeta?.userId) return;
+
+          const res = joinChapasSeat(
+            room.chapasState,
+            {
+              id: senderMeta.userId,
+              name: senderMeta.userName || 'Jugador',
+              avatar: senderMeta.userAvatar || '⚽',
+              color: senderMeta.userColor || '#38BDF8',
+            },
+            valid.data.seatIndex
+          );
+          if (!res.ok) return;
+          room.chapasState = res.state;
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'CHAPAS_STATE_UPDATED',
+            payload: { chapasState: room.chapasState },
+          });
+          return;
+        }
+
+        if (type === 'CHAPAS_UPDATE_TEAM') {
+          const valid = wsChapasUpdateTeamSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room || !room.chapasState) return;
+          room.chapasState = updateChapasTeamFlag(room.chapasState, valid.data.team, valid.data.flag);
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'CHAPAS_STATE_UPDATED',
+            payload: { chapasState: room.chapasState },
+          });
+          return;
+        }
+
+        if (type === 'CHAPAS_TOGGLE_BOTS') {
+          const valid = wsChapasToggleBotsSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room || !room.chapasState) return;
+          room.chapasState = toggleChapasBots(room.chapasState, valid.data.botsEnabled);
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'CHAPAS_STATE_UPDATED',
+            payload: { chapasState: room.chapasState },
+          });
+          return;
+        }
+
+        if (type === 'CHAPAS_START_MATCH') {
+          const valid = wsChapasRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.chapasState || !senderMeta?.userId) return;
+          const isHostUser =
+            room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId;
+          if (!isHostUser) return;
+
+          const res = startChapasMatch(room.chapasState);
+          if (!res.ok) {
+            ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+            return;
+          }
+          room.chapasState = res.state;
+          clearMatchResponses(room, 'chapas');
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'CHAPAS_STATE_UPDATED',
+            payload: { chapasState: room.chapasState },
+          });
+          scheduleChapasTurnTimer(room);
+          return;
+        }
+
+        if (type === 'CHAPAS_SHOOT') {
+          const valid = wsChapasShootSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.chapasState || !senderMeta?.userId) return;
+
+          const turnNum = room.chapasState.turnNumber;
+          const res = shootChapasCap(room.chapasState, senderMeta.userId, valid.data.shot);
+          if (!res.ok) return;
+          room.chapasState = res.state;
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'CHAPAS_SHOT_BROADCAST',
+            payload: {
+              shot: {
+                ...valid.data.shot,
+                shooterUserId: senderMeta.userId,
+                turnNumber: turnNum,
+              },
+              preShotState: res.preShotState,
+              authoritativeState: res.state,
+            },
+          });
+          scheduleChapasTurnTimer(room);
+          return;
+        }
+
+        if (type === 'CHAPAS_FORFEIT') {
+          const valid = wsChapasRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.chapasState || !senderMeta?.userId) return;
+          const forfeited = forfeitChapasMatch(room.chapasState, senderMeta.userId);
+          if (!forfeited) return;
+          stopChapasTimer(room.id);
+          room.chapasState = forfeited;
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'CHAPAS_STATE_UPDATED',
+            payload: { chapasState: room.chapasState },
+          });
+          return;
+        }
+
+        if (type === 'CHAPAS_REMATCH') {
+          const valid = wsChapasRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room) return;
+          const prev = room.chapasState;
+          const humans = prev
+            ? prev.players
+                .filter((p): p is NonNullable<typeof p> => Boolean(p && !p.isBot))
+                .map((p) => ({ id: p.userId, name: p.name, avatar: p.avatar, color: p.color }))
+            : room.participants
+                .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
+                .slice(0, 4)
+                .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+          stopChapasTimer(room.id);
+          room.chapasState = createInitialChapasState(humans, {
+            waitForHost: false,
+            botsEnabled: prev?.botsEnabled ?? true,
+            teamFlags: prev?.teamFlags,
+          });
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'CHAPAS_STATE_UPDATED',
+            payload: { chapasState: room.chapasState },
+          });
+          scheduleChapasTurnTimer(room);
+          return;
+        }
+
+        if (type === 'CHAPAS_CLOSE') {
+          const valid = wsChapasRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room) return;
+          stopChapasTimer(room.id);
+          room.chapasState = null;
+          clearMatchResponses(room, 'chapas');
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'CHAPAS_STATE_UPDATED',
+            payload: { chapasState: null },
+          });
+          return;
+        }
+
+        // Unified Invite Response (Accepted / Declined) & Auto-Ready Handling Across All 8 Games
+        if (type === 'GAME_INVITE_RESPOND') {
+          const valid = wsGameInviteRespondSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !senderMeta?.userId || !room.matchResponses) return;
+          if (room.matchResponses.gameType !== valid.data.gameType) return;
+          if (valid.data.inviteId && room.matchResponses.inviteId !== valid.data.inviteId) return;
+
+          const now = Date.now();
+          let updated = false;
+          const nextResponses = room.matchResponses.responses.map((entry) => {
+            if (entry.userId !== senderMeta.userId) return entry;
+            updated = true;
+            return { ...entry, status: valid.data.response, updatedAt: now };
+          });
+          if (!updated) {
+            nextResponses.push({
+              userId: senderMeta.userId,
+              userName: senderMeta.userName || 'Invitado',
+              avatar: senderMeta.userAvatar || '🍿',
+              status: valid.data.response,
+              updatedAt: now,
+            });
+          }
+
+          room.matchResponses = {
+            ...room.matchResponses,
+            responses: nextResponses,
+          };
+
+          if (valid.data.response === 'accepted') {
+            if (valid.data.gameType === 'pool' && room.poolGameState?.status === 'waiting') {
+              const joined = joinPoolSeat(
+                room.poolGameState,
+                {
+                  id: senderMeta.userId,
+                  name: senderMeta.userName || 'Jugador',
+                  avatar: senderMeta.userAvatar || '🎱',
+                  color: senderMeta.userColor || '#9146FF',
+                },
+                1,
+                now,
+                { keepWaiting: true }
+              );
+              if (joined.ok) {
+                room.poolGameState = joined.state;
+                broadcastToRoom(room.id, {
+                  type: 'POOL_STATE_UPDATED',
+                  payload: { poolGameState: room.poolGameState },
+                });
+              }
+            } else if (
+              valid.data.gameType === 'pinturillo' &&
+              room.pinturilloState?.status === 'waiting'
+            ) {
+              room.pinturilloState = joinPinturilloPlayer(room.pinturilloState, {
+                id: senderMeta.userId,
+                name: senderMeta.userName || 'Jugador',
+                avatar: senderMeta.userAvatar || '🎨',
+                color: senderMeta.userColor || '#9146FF',
+              });
+              broadcastPinturilloState(room);
+            } else if (
+              valid.data.gameType === 'chapas' &&
+              room.chapasState?.status === 'waiting'
+            ) {
+              const joined = joinChapasSeat(room.chapasState, {
+                id: senderMeta.userId,
+                name: senderMeta.userName || 'Jugador',
+                avatar: senderMeta.userAvatar || '⚽',
+                color: senderMeta.userColor || '#38BDF8',
+              });
+              if (joined.ok) {
+                room.chapasState = joined.state;
+                broadcastToRoom(room.id, {
+                  type: 'CHAPAS_STATE_UPDATED',
+                  payload: { chapasState: room.chapasState },
+                });
+              }
+            }
+          }
+
+          broadcastToRoom(room.id, {
+            type: 'GAME_INVITE_STATUS_UPDATED',
+            payload: { matchResponses: room.matchResponses },
+          });
+
+          const pendingCount = room.matchResponses.responses.filter(
+            (r) => r.status === 'pending'
+          ).length;
+          const acceptedCount = room.matchResponses.responses.filter(
+            (r) => r.status === 'accepted'
+          ).length;
+
+          if (pendingCount === 0 && acceptedCount > 0) {
+            if (
+              valid.data.gameType === 'pool' &&
+              room.poolGameState?.status === 'waiting' &&
+              room.poolGameState.players[0] &&
+              room.poolGameState.players[1]
+            ) {
+              room.poolGameState = startPoolMatch(room.poolGameState, now);
+              clearMatchResponses(room, 'pool');
+              schedulePersistRoom(room.id);
+              broadcastToRoom(room.id, {
+                type: 'POOL_STATE_UPDATED',
+                payload: { poolGameState: room.poolGameState },
+              });
+              schedulePoolTurnTimer(room);
+            } else if (
+              valid.data.gameType === 'pinturillo' &&
+              room.pinturilloState?.status === 'waiting'
+            ) {
+              room.pinturilloState = startPinturilloMatch(room.pinturilloState);
+              clearMatchResponses(room, 'pinturillo');
+              schedulePersistRoom(room.id);
+              broadcastPinturilloState(room);
+              schedulePinturilloLifecycle(room);
+            }
+          }
           return;
         }
 
@@ -3557,10 +4216,36 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         }
       }
 
+      let chapasSeatChanged = false;
+      if (room.chapasState && room.chapasState.status === 'waiting' && meta.userId) {
+        const idx = room.chapasState.players.findIndex((p) => p && !p.isBot && p.userId === meta.userId);
+        if (idx !== -1) {
+          const nextPlayers = [...room.chapasState.players] as FutbolChapasState['players'];
+          nextPlayers[idx] = null;
+          room.chapasState = { ...room.chapasState, players: nextPlayers, updatedAt: Date.now() };
+          chapasSeatChanged = true;
+        }
+      }
+
+      let matchResponseChanged = false;
+      if (room.matchResponses && meta.userId) {
+        const idx = room.matchResponses.responses.findIndex(
+          (r) => r.userId === meta.userId && r.status === 'pending'
+        );
+        if (idx !== -1) {
+          const nextResp = room.matchResponses.responses.map((r, i) =>
+            i === idx ? { ...r, status: 'declined' as const, updatedAt: Date.now() } : r
+          );
+          room.matchResponses = { ...room.matchResponses, responses: nextResp };
+          matchResponseChanged = true;
+        }
+      }
+
       schedulePersistRoom(meta.roomId);
       if (room.participants.length === 0) {
         stopPinturilloTimer(meta.roomId);
         stopPoolTurnTimer(meta.roomId);
+        stopChapasTimer(meta.roomId);
         await stopCloudSession(meta.roomId);
         return;
       }
@@ -3609,6 +4294,18 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         broadcastToRoom(meta.roomId, {
           type: 'POOL_STATE_UPDATED',
           payload: { poolGameState: room.poolGameState },
+        });
+      }
+      if (chapasSeatChanged && room.chapasState) {
+        broadcastToRoom(meta.roomId, {
+          type: 'CHAPAS_STATE_UPDATED',
+          payload: { chapasState: room.chapasState },
+        });
+      }
+      if (matchResponseChanged) {
+        broadcastToRoom(meta.roomId, {
+          type: 'GAME_INVITE_STATUS_UPDATED',
+          payload: { matchResponses: room.matchResponses ?? null },
         });
       }
     });

@@ -93,7 +93,16 @@ describe('Signed Android APK Builder Service', () => {
     expect(dex.subarray(0, 8).toString('ascii')).toBe('dex\n035\0');
     const sha1 = crypto.createHash('sha1').update(dex.subarray(32)).digest();
     expect(dex.subarray(12, 32).equals(sha1)).toBe(true);
-    expect(dex.toString('utf8')).toContain('https://naimcine.example.app/?platform=android&web=1');
+    const dexText = dex.toString('utf8');
+    expect(dexText).toContain('https://naimcine.example.app/?platform=android&web=1');
+    expect(dexText).toContain('NaimWebChromeClient');
+    expect(dexText).toContain('onPermissionRequest');
+    expect(dexText).toContain('requestPermissions');
+    expect(dexText).toContain('android.permission.RECORD_AUDIO');
+
+    const manifestTxt = entries.get('AndroidManifest.xml')!.data.toString('utf16le');
+    expect(manifestTxt).toContain('android.permission.RECORD_AUDIO');
+    expect(manifestTxt).toContain('android.permission.MODIFY_AUDIO_SETTINGS');
   });
 
   it('builds a valid signed Google TV APK targeting /tv with Leanback launcher', () => {

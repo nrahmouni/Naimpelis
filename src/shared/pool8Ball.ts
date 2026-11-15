@@ -160,6 +160,7 @@ export interface Pool8BallState {
   id: string;
   gameType: 'pool';
   status: 'waiting' | 'playing' | 'finished';
+  awaitingHostStart?: boolean;
   phase: PoolTurnPhase;
   players: [PoolPlayerSeat | null, PoolPlayerSeat | null];
   turnSeat: 0 | 1;
@@ -545,15 +546,19 @@ function findEarliestHit(balls: PoolBallState[], maxDt: number): ToiHit | null {
   for (let i = 0; i < balls.length; i += 1) {
     const b = balls[i];
     if (b.pocketed) continue;
+    const moving = b.vx !== 0 || b.vy !== 0;
     for (const p of POOL_POCKETS) {
-      const t = solveCircleCircleToi(b.x - p.x, b.y - p.y, b.vx, b.vy, p.captureR, maxDt);
-      if (t !== null && (!best || t < best.t)) {
-        best = { t, kind: 'pocket', idxA: i, pocket: p };
-      }
-      // Also check static containment at t=0
-      const d2 = (b.x - p.x) * (b.x - p.x) + (b.y - p.y) * (b.y - p.y);
-      if (d2 <= p.captureR * p.captureR) {
+      // Static containment at t=0
+      const dx = b.x - p.x;
+      const dy = b.y - p.y;
+      if (dx * dx + dy * dy <= p.captureR * p.captureR) {
         return { t: 0, kind: 'pocket', idxA: i, pocket: p };
+      }
+      if (moving) {
+        const t = solveCircleCircleToi(dx, dy, b.vx, b.vy, p.captureR, maxDt);
+        if (t !== null && (!best || t < best.t)) {
+          best = { t, kind: 'pocket', idxA: i, pocket: p };
+        }
       }
     }
   }
@@ -562,9 +567,11 @@ function findEarliestHit(balls: PoolBallState[], maxDt: number): ToiHit | null {
   for (let i = 0; i < balls.length; i += 1) {
     const a = balls[i];
     if (a.pocketed) continue;
+    const aMoving = a.vx !== 0 || a.vy !== 0;
     for (let j = i + 1; j < balls.length; j += 1) {
       const b = balls[j];
       if (b.pocketed) continue;
+      if (!aMoving && b.vx === 0 && b.vy === 0) continue;
       const t = solveCircleCircleToi(
         a.x - b.x,
         a.y - b.y,
@@ -950,6 +957,7 @@ export function createInitialPoolState(
     seed?: number;
     difficulty?: PoolDifficulty;
     offlineVsAi?: boolean;
+    waitForHost?: boolean;
     now?: number;
   }
 ): Pool8BallState {
@@ -957,6 +965,7 @@ export function createInitialPoolState(
   const seed = opts?.seed ?? ((now ^ 0x5f3759df) >>> 0);
   const difficulty: PoolDifficulty = opts?.difficulty || 'medium';
   const balls = createStandardRackBalls(seed);
+  const waitForHost = Boolean(opts?.waitForHost);
 
   const p0Src = humans[0] || {
     id: 'local-p1',
@@ -992,7 +1001,7 @@ export function createInitialPoolState(
       group: null,
       connected: true,
     };
-  } else if (humans[1]) {
+  } else if (!waitForHost && humans[1]) {
     p1 = {
       seatIndex: 1,
       userId: humans[1].id,
@@ -1005,7 +1014,7 @@ export function createInitialPoolState(
     };
   }
 
-  const isPlaying = Boolean(p0 && p1);
+  const isPlaying = !waitForHost && Boolean(p0 && p1);
   const status: Pool8BallState['status'] = isPlaying ? 'playing' : 'waiting';
   const phase: PoolTurnPhase = 'AIMING';
 
@@ -1013,6 +1022,7 @@ export function createInitialPoolState(
     id: `pool-${seed}`,
     gameType: 'pool',
     status,
+    awaitingHostStart: waitForHost,
     phase,
     players: [p0, p1],
     turnSeat: 0,
@@ -1027,6 +1037,8 @@ export function createInitialPoolState(
     lastFoul: null,
     statusMessage: isPlaying
       ? `Saque inicial · Turno de ${p0.name}`
+      : waitForHost
+      ? 'Esperando respuesta de los invitados en sala…'
       : 'Esperando al 2º jugador en la mesa…',
     turnDeadlineAt: isPlaying ? now + POOL_TURN_TIMEOUT_MS : 0,
     seed,
@@ -1038,11 +1050,55 @@ export function createInitialPoolState(
   return base;
 }
 
+export function startPoolMatch(
+  state: Pool8BallState,
+  now = Date.now()
+): Pool8BallState {
+  if (state.status === 'playing') return state;
+  const p0 = state.players[0] || {
+    seatIndex: 0 as const,
+    userId: 'bot-pool-0',
+    name: 'Bot Billar',
+    avatar: '🤖',
+    color: '#9146FF',
+    isBot: true,
+    group: null,
+    connected: true,
+  };
+  const p1 = state.players[1] || {
+    seatIndex: 1 as const,
+    userId: 'bot-pool-ai',
+    name:
+      state.difficulty === 'hard'
+        ? 'Bot Maestro'
+        : state.difficulty === 'easy'
+        ? 'Bot Novato'
+        : 'Bot Billar',
+    avatar: '🤖',
+    color: '#10B981',
+    isBot: true,
+    group: null,
+    connected: true,
+  };
+  const next: Pool8BallState = {
+    ...state,
+    status: 'playing',
+    awaitingHostStart: false,
+    players: [p0, p1],
+    statusMessage: `Saque inicial · Turno de ${p0.name}`,
+    turnDeadlineAt: now + POOL_TURN_TIMEOUT_MS,
+    updatedAt: now,
+  };
+  next.checksum = computePoolChecksum(next);
+  return next;
+}
+
 export function joinPoolSeat(
   state: Pool8BallState,
   user: { id: string; name: string; avatar: string; color: string },
   seatIndex: 0 | 1 | 'spectate',
-  now = Date.now()
+  now = Date.now(),
+  opts?: { keepWaiting?: boolean }
 ): { ok: true; state: Pool8BallState } | { ok: false; error: string } {
   if (state.status === 'finished') {
     return { ok: false, error: 'La partida ya terminó' };
@@ -1081,16 +1137,20 @@ export function joinPoolSeat(
   }
 
   const ready = Boolean(nextPlayers[0] && nextPlayers[1]);
-  const nextStatus: Pool8BallState['status'] =
-    state.status === 'playing' ? 'playing' : ready ? 'playing' : 'waiting';
+  const keepWaiting = Boolean(opts?.keepWaiting);
+  const shouldPlayNow = state.status === 'playing' || (ready && !keepWaiting);
+  const nextStatus: Pool8BallState['status'] = shouldPlayNow ? 'playing' : 'waiting';
 
   const next: Pool8BallState = {
     ...state,
     status: nextStatus,
+    awaitingHostStart: nextStatus === 'playing' ? false : state.awaitingHostStart,
     players: nextPlayers,
     statusMessage:
       nextStatus === 'playing' && state.status === 'waiting'
         ? `Mesa completa · Saque inicial de ${nextPlayers[0]!.name}`
+        : ready && keepWaiting
+        ? `${nextPlayers[1]?.name || 'Jugador 2'} se unió a la mesa`
         : state.statusMessage,
     turnDeadlineAt:
       nextStatus === 'playing' && state.status === 'waiting'

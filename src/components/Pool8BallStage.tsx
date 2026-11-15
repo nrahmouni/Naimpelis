@@ -3,6 +3,7 @@ import {
   Bot,
   Crosshair,
   Flag,
+  Play,
   RotateCcw,
   Target,
   Timer,
@@ -48,6 +49,7 @@ import {
 } from '../shared/pool8Ball';
 import { socketService } from '../services/socket';
 import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
+import { VoiceSpeakerIndicator } from './games/GameVoiceBar';
 import { VictoryCelebrationOverlay, playGameSfx, useGameSoundMute } from './games/GameEffects';
 import {
   playPoolClack,
@@ -65,9 +67,11 @@ export interface PoolStageProps {
   participants: Participant[];
   poolState: Pool8BallState | null;
   isOffline?: boolean;
+  isHost?: boolean;
   voiceChat?: GameVoiceChatState;
   mutedOverride?: boolean;
   onStartOnline?: (difficulty?: PoolDifficulty) => void;
+  onStartMatchOnline?: () => void;
   onJoinSeatOnline?: (seatIndex: 0 | 1 | 'spectate') => void;
   onPlaceCueOnline?: (x: number, y: number) => void;
   onCallPocketOnline?: (pocketId: PoolPocketId) => void;
@@ -83,7 +87,34 @@ interface SinkAnim {
   startY: number;
   pocketX: number;
   pocketY: number;
+  rollAngle: number;
+  rollPhase: number;
   startedAt: number;
+}
+
+interface PocketFlashAnim {
+  x: number;
+  y: number;
+  r: number;
+  startedAt: number;
+}
+
+interface PendingStrikeShot {
+  runtime: PoolSimRuntime;
+  prevBalls: PoolBallState[];
+  meta: {
+    shot: PoolShotInput;
+    baseState: Pool8BallState;
+    authoritativeState?: Pool8BallState;
+    expectedChecksum?: number;
+  };
+  startedAt: number;
+  durationMs: number;
+  startPullDist: number;
+  angle: number;
+  power: number;
+  cueX: number;
+  cueY: number;
 }
 
 interface ShotAnimPayload {
@@ -151,6 +182,69 @@ function createFeltNoisePattern(): HTMLCanvasElement | null {
   return off;
 }
 
+function createBallShadeSprite(): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const size = 96;
+  const half = size * 0.5;
+  const off = document.createElement('canvas');
+  off.width = size;
+  off.height = size;
+  const ctx = off.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.beginPath();
+  ctx.arc(half, half, half, 0, Math.PI * 2);
+  ctx.clip();
+
+  // 3D spherical lighting gradient
+  const shadeGrad = ctx.createRadialGradient(
+    half - half * 0.32,
+    half - half * 0.35,
+    half * 0.08,
+    half,
+    half,
+    half * 1.05
+  );
+  shadeGrad.addColorStop(0, 'rgba(255,255,255,0.26)');
+  shadeGrad.addColorStop(0.55, 'rgba(0,0,0,0)');
+  shadeGrad.addColorStop(1, 'rgba(0,0,0,0.48)');
+  ctx.fillStyle = shadeGrad;
+  ctx.fillRect(0, 0, size, size);
+
+  // Glossy specular highlight
+  ctx.fillStyle = 'rgba(255,255,255,0.68)';
+  ctx.beginPath();
+  ctx.ellipse(
+    half - half * 0.34,
+    half - half * 0.34,
+    half * 0.28,
+    half * 0.16,
+    -Math.PI / 4,
+    0,
+    Math.PI * 2
+  );
+  ctx.fill();
+  return off;
+}
+
+function createBallShadowSprite(): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null;
+  const size = 64;
+  const half = size * 0.5;
+  const off = document.createElement('canvas');
+  off.width = size;
+  off.height = size;
+  const ctx = off.getContext('2d');
+  if (!ctx) return null;
+  const grad = ctx.createRadialGradient(half, half, half * 0.35, half, half, half);
+  grad.addColorStop(0, 'rgba(0,0,0,0.48)');
+  grad.addColorStop(0.7, 'rgba(0,0,0,0.28)');
+  grad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+  return off;
+}
+
 function normalizeAngleDelta(from: number, to: number): number {
   let d = to - from;
   while (d > Math.PI) d -= Math.PI * 2;
@@ -163,8 +257,11 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
   currentUser,
   poolState,
   isOffline = false,
+  isHost = false,
+  voiceChat,
   mutedOverride,
   onStartOnline,
+  onStartMatchOnline,
   onJoinSeatOnline,
   onPlaceCueOnline,
   onCallPocketOnline,
@@ -190,8 +287,17 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
   const [localMuted] = useGameSoundMute();
   const muted = mutedOverride !== undefined ? mutedOverride : localMuted;
 
+  const voicePeerMap = useMemo(() => {
+    const m = new Map<string, { isMuted: boolean }>();
+    if (voiceChat) {
+      for (const peer of voiceChat.voicePeers) {
+        m.set(peer.userId, { isMuted: peer.isMuted });
+      }
+    }
+    return m;
+  }, [voiceChat]);
+
   // Aim / Power / Spin / Cue placement local UI controls
-  const [aimAngle, setAimAngle] = useState<number>(0);
   const [pullPower, setPullPower] = useState<number>(0);
   const [isPullingPower, setIsPullingPower] = useState<boolean>(false);
   const [spinX, setSpinX] = useState<number>(0);
@@ -209,6 +315,9 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const spinPadRef = useRef<HTMLDivElement | null>(null);
   const powerSliderRef = useRef<HTMLDivElement | null>(null);
+  const powerFillRef = useRef<HTMLDivElement | null>(null);
+  const powerHandleRef = useRef<HTMLDivElement | null>(null);
+  const powerPctRef = useRef<HTMLSpanElement | null>(null);
 
   // Refs used inside 60fps rAF loop
   const simRuntimeRef = useRef<PoolSimRuntime | null>(null);
@@ -221,15 +330,25 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
   } | null>(null);
   const simAccumulatorRef = useRef<number>(0);
   const sinkAnimsRef = useRef<SinkAnim[]>([]);
-  const cueLungeRef = useRef<{ active: boolean; startedAt: number; angle: number; power: number }>({
+  const pocketFlashesRef = useRef<PocketFlashAnim[]>([]);
+  const pendingStrikeRef = useRef<PendingStrikeShot | null>(null);
+  const cueFollowThroughRef = useRef<{
+    active: boolean;
+    startedAt: number;
+    angle: number;
+    cueX: number;
+    cueY: number;
+  }>({
     active: false,
     startedAt: 0,
     angle: 0,
-    power: 0,
+    cueX: 0,
+    cueY: 0,
   });
 
   const targetAimAngleRef = useRef<number>(0);
   const currentAimAngleRef = useRef<number>(0);
+  const isDraggingAimRef = useRef<boolean>(false);
   const pullPowerRef = useRef<number>(0);
   const spinRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const isPortraitRef = useRef<boolean>(false);
@@ -243,24 +362,53 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
   }>({ cssW: 600, cssH: 320, scale: 0.5, offsetX: 0, offsetY: 0, portrait: false });
 
   const feltPatternRef = useRef<CanvasPattern | null>(null);
+  const tableCacheRef = useRef<{ key: string; canvas: HTMLCanvasElement } | null>(null);
+  const ballShadeSpriteRef = useRef<HTMLCanvasElement | null>(null);
+  const ballShadowSpriteRef = useRef<HTMLCanvasElement | null>(null);
+
   const rawActiveState = isOffline ? localState : poolState;
   const activeState =
     isSimulatingUI && simMetaRef.current ? simMetaRef.current.baseState : rawActiveState;
   const activeStateRef = useRef<Pool8BallState | null>(activeState);
   const mutedRef = useRef<boolean>(muted);
   const cueGhostRef = useRef<{ x: number; y: number; valid: boolean } | null>(cueGhostPos);
+  const localCalledPocketRef = useRef<PoolPocketId | null>(localCalledPocket);
+  const aiThinkingRef = useRef<boolean>(aiThinking);
+  const onSyncChecksumOnlineRef = useRef(onSyncChecksumOnline);
 
   activeStateRef.current = activeState;
   mutedRef.current = muted;
-  pullPowerRef.current = pullPower;
   spinRef.current = { x: spinX, y: spinY };
   cueGhostRef.current = cueGhostPos;
+  localCalledPocketRef.current = localCalledPocket;
+  aiThinkingRef.current = aiThinking;
+  onSyncChecksumOnlineRef.current = onSyncChecksumOnline;
 
-  // Countdown tick for online shot clock
+  // Keep DOM power bar synchronized on non-drag resets
   useEffect(() => {
+    pullPowerRef.current = pullPower;
+    if (powerFillRef.current) {
+      powerFillRef.current.style.width = `${pullPower * 100}%`;
+      powerFillRef.current.style.background =
+        pullPower < POOL_MIN_SHOT_POWER
+          ? 'rgba(244,63,94,0.45)'
+          : 'linear-gradient(90deg, #10B981 0%, #FACC15 65%, #E11D48 100%)';
+    }
+    if (powerHandleRef.current) {
+      powerHandleRef.current.style.left = `${Math.max(4, Math.min(96, pullPower * 100))}%`;
+    }
+    if (powerPctRef.current) {
+      powerPctRef.current.textContent = `${Math.round(pullPower * 100)}%`;
+    }
+  }, [pullPower]);
+
+  // Countdown tick only for active online shot clock (zero idle re-renders offline)
+  const isOnlinePlaying = !isOffline && activeState?.status === 'playing';
+  useEffect(() => {
+    if (!isOnlinePlaying) return;
     const iv = window.setInterval(() => setNowTs(Date.now()), 500);
     return () => window.clearInterval(iv);
-  }, []);
+  }, [isOnlinePlaying]);
 
   // Reset local called pocket when turn changes
   useEffect(() => {
@@ -296,20 +444,31 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       );
 
       sinkAnimsRef.current = [];
+      pocketFlashesRef.current = [];
       simAccumulatorRef.current = 0;
       const runtime = createPoolSimRuntime(startBalls, payload.shot);
-      simRuntimeRef.current = runtime;
-      prevSimBallsRef.current = startBalls.map((b) => ({ ...b }));
-      simMetaRef.current = {
-        shot: payload.shot,
-        baseState: preShotState
-          ? { ...preShotState, balls: startBalls }
-          : { ...payload.authoritativeState, balls: startBalls },
-        authoritativeState: payload.authoritativeState,
-        expectedChecksum: payload.checksum,
+      const startPullDist = 18 + Math.max(0.1, payload.shot.power) * 86;
+      targetAimAngleRef.current = payload.shot.angle;
+      currentAimAngleRef.current = payload.shot.angle;
+      pendingStrikeRef.current = {
+        runtime,
+        prevBalls: startBalls.map((b) => ({ ...b })),
+        meta: {
+          shot: payload.shot,
+          baseState: preShotState
+            ? { ...preShotState, balls: startBalls }
+            : { ...payload.authoritativeState, balls: startBalls },
+          authoritativeState: payload.authoritativeState,
+          expectedChecksum: payload.checksum,
+        },
+        startedAt: performance.now(),
+        durationMs: 80,
+        startPullDist,
+        angle: payload.shot.angle,
+        power: payload.shot.power,
+        cueX: payload.shot.cueStartX,
+        cueY: payload.shot.cueStartY,
       };
-
-      playPoolCueStrike(payload.shot.power, mutedRef.current);
       setIsSimulatingUI(true);
     });
     return unsub;
@@ -363,7 +522,6 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       const nextA = activeState.isBreakShot ? 0 : Math.atan2(best.y - cue.y, best.x - cue.x);
       targetAimAngleRef.current = nextA;
       currentAimAngleRef.current = nextA;
-      setAimAngle(nextA);
     }
   }, [activeState?.turnNumber, activeState?.id, isMyTurn]);
 
@@ -378,7 +536,6 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       }
 
       unlockPoolAudio();
-      vibrateShot(shot.power);
 
       const finalCall = shot.calledPocketId ?? state.calledPocketId ?? localCalledPocket ?? null;
       const cue = state.balls.find((b) => b.id === 0);
@@ -389,14 +546,6 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
         cueY: shot.cueY ?? cueGhostRef.current?.y ?? cue?.y,
       };
 
-      // Quick cue strike lunge animation + sound
-      cueLungeRef.current = {
-        active: true,
-        startedAt: performance.now(),
-        angle: shot.angle,
-        power: shot.power,
-      };
-
       if (!isOffline) {
         setPullPower(0);
         setIsPullingPower(false);
@@ -404,7 +553,7 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
         return;
       }
 
-      // Offline simulation setup (runs real-time 60fps in rAF loop)
+      // Offline simulation setup: cue strike lunge (~80ms) followed by real-time 120Hz physics
       let startState = state;
       if (
         typeof shotWithCall.cueX === 'number' &&
@@ -425,16 +574,30 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       }
 
       sinkAnimsRef.current = [];
+      pocketFlashesRef.current = [];
       simAccumulatorRef.current = 0;
       const runtime = createPoolSimRuntime(startState.balls, shotWithCall);
-      simRuntimeRef.current = runtime;
-      prevSimBallsRef.current = startState.balls.map((b) => ({ ...b }));
-      simMetaRef.current = {
-        shot: shotWithCall,
-        baseState: startState,
+      const startCue = startState.balls.find((b) => b.id === 0);
+      const startPullDist = 18 + Math.max(pullPowerRef.current, shotWithCall.power) * 86;
+
+      targetAimAngleRef.current = shotWithCall.angle;
+      currentAimAngleRef.current = shotWithCall.angle;
+      pendingStrikeRef.current = {
+        runtime,
+        prevBalls: startState.balls.map((b) => ({ ...b })),
+        meta: {
+          shot: shotWithCall,
+          baseState: startState,
+        },
+        startedAt: performance.now(),
+        durationMs: 78,
+        startPullDist,
+        angle: shotWithCall.angle,
+        power: shotWithCall.power,
+        cueX: shotWithCall.cueX ?? startCue?.x ?? POOL_HEAD_STRING_X,
+        cueY: shotWithCall.cueY ?? startCue?.y ?? POOL_FOOT_SPOT_Y,
       };
 
-      playPoolCueStrike(shotWithCall.power, mutedRef.current);
       setPullPower(0);
       setIsPullingPower(false);
       setIsSimulatingUI(true);
@@ -442,7 +605,7 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
     [isOffline, isSimulatingUI, localCalledPocket, onTakeShotOnline]
   );
 
-  // Offline AI Bot turn scheduler: 0.8–1.4s thinking + animated aim sweep -> fire
+  // Offline AI Bot turn scheduler: 0.75–1.15s thinking + animated aim sweep -> fire
   useEffect(() => {
     if (!isOffline || isSimulatingUI) return;
     if (localState.status !== 'playing' || localState.phase === 'GAME_OVER') return;
@@ -450,7 +613,7 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
     if (!seat?.isBot) return;
 
     setAiThinking(true);
-    const thinkMs = difficulty === 'hard' ? 1250 : difficulty === 'medium' ? 1050 : 850;
+    const thinkMs = difficulty === 'hard' ? 1050 : difficulty === 'medium' ? 880 : 720;
     let aimTimer = 0;
     let shootTimer = 0;
 
@@ -468,7 +631,6 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       }
 
       targetAimAngleRef.current = planned.angle;
-      setAimAngle(planned.angle);
       setSpinX(planned.spinX);
       setSpinY(planned.spinY);
       setPullPower(planned.power * 0.72);
@@ -476,7 +638,7 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       shootTimer = window.setTimeout(() => {
         setAiThinking(false);
         fireShot(planned);
-      }, 480);
+      }, 460);
     }, thinkMs);
 
     return () => {
@@ -514,10 +676,9 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
     if (!tr.portrait) {
       return { x: wx - RAIL_PAD, y: wy - RAIL_PAD };
     }
-    // Portrait rotation: screen X = table H - y, screen Y = x
-    // Specifically: screen_wx = RAIL_PAD + (POOL_TABLE_H - tableY), screen_wy = RAIL_PAD + tableX
-    const tableX = wy - RAIL_PAD;
-    const tableY = POOL_TABLE_H - (wx - RAIL_PAD);
+    // Portrait rotation (-90deg): screen X = RAIL_PAD + tableY, screen Y = RAIL_PAD + (POOL_TABLE_W - tableX)
+    const tableX = POOL_TABLE_W - (wy - RAIL_PAD);
+    const tableY = wx - RAIL_PAD;
     return { x: tableX, y: tableY };
   }, []);
 
@@ -528,6 +689,66 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
   useEffect(() => {
     let rafId = 0;
     let lastTime = performance.now();
+
+    if (!ballShadeSpriteRef.current) {
+      ballShadeSpriteRef.current = createBallShadeSprite();
+    }
+    if (!ballShadowSpriteRef.current) {
+      ballShadowSpriteRef.current = createBallShadowSprite();
+    }
+
+    const drawCueStick = (
+      ctx: CanvasRenderingContext2D,
+      cx: number,
+      cy: number,
+      angle: number,
+      pullDist: number,
+      alpha = 1
+    ) => {
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx, cy);
+      ctx.rotate(angle + Math.PI);
+
+      const cueLen = 280;
+
+      // Fast offset drop shadow (zero shadowBlur!)
+      ctx.fillStyle = 'rgba(0,0,0,0.34)';
+      ctx.beginPath();
+      ctx.moveTo(pullDist, -0.2);
+      ctx.lineTo(pullDist + cueLen, -3.2);
+      ctx.lineTo(pullDist + cueLen, 7.6);
+      ctx.lineTo(pullDist, 4.2);
+      ctx.closePath();
+      ctx.fill();
+
+      // Blue chalked tip
+      ctx.fillStyle = '#38BDF8';
+      ctx.fillRect(pullDist, -2.1, 4, 4.2);
+
+      // White ferrule
+      ctx.fillStyle = '#F8FAFC';
+      ctx.fillRect(pullDist + 4, -2.3, 8, 4.6);
+
+      // Tapered Maple Shaft -> Rosewood Butt
+      const shaftGrad = ctx.createLinearGradient(pullDist + 12, 0, pullDist + cueLen, 0);
+      shaftGrad.addColorStop(0, '#F3DEC0');
+      shaftGrad.addColorStop(0.58, '#E0B984');
+      shaftGrad.addColorStop(0.59, '#2B1810');
+      shaftGrad.addColorStop(0.88, '#5C2218');
+      shaftGrad.addColorStop(1, '#111827');
+
+      ctx.fillStyle = shaftGrad;
+      ctx.beginPath();
+      ctx.moveTo(pullDist + 12, -2.4);
+      ctx.lineTo(pullDist + cueLen, -5.2);
+      ctx.lineTo(pullDist + cueLen, 5.2);
+      ctx.lineTo(pullDist + 12, 2.4);
+      ctx.closePath();
+      ctx.fill();
+
+      ctx.restore();
+    };
 
     const drawBall = (
       ctx: CanvasRenderingContext2D,
@@ -540,43 +761,44 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       const meta = BALL_COLORS[ball.id] || BALL_COLORS[1];
 
       ctx.save();
-      ctx.globalAlpha = alphaOverride;
+      if (alphaOverride < 1) ctx.globalAlpha = alphaOverride;
       ctx.translate(ball.x, ball.y);
 
-      // Soft table drop shadow
-      ctx.fillStyle = 'rgba(0,0,0,0.42)';
-      ctx.beginPath();
-      ctx.arc(2.4, 3.2, r * 1.02, 0, Math.PI * 2);
-      ctx.fill();
-
-      // Base sphere fill
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(0, 0, r, 0, Math.PI * 2);
-      ctx.clip();
+      // Fast pre-baked soft table drop shadow
+      const shadowSprite = ballShadowSpriteRef.current;
+      if (shadowSprite) {
+        ctx.drawImage(shadowSprite, -r * 1.15 + 2.2, -r * 1.15 + 3.0, r * 2.3, r * 2.3);
+      } else {
+        ctx.fillStyle = 'rgba(0,0,0,0.42)';
+        ctx.beginPath();
+        ctx.arc(2.4, 3.2, r * 1.02, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       if (meta.stripe) {
+        // Striped ball needs clip for the rolling band
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.clip();
+
         ctx.fillStyle = '#F7F4EC';
         ctx.fillRect(-r, -r, r * 2, r * 2);
-        // Rolling colored stripe band
+
         ctx.save();
         ctx.rotate(ball.rollAngle);
         const shift = Math.sin(ball.rollPhase) * r * 0.25;
         ctx.fillStyle = meta.main;
         ctx.fillRect(-r * 1.1, -r * 0.56 + shift * 0.35, r * 2.2, r * 1.12);
         ctx.restore();
+        ctx.restore();
       } else {
+        // Solid / cue / 8 ball: fast single circle fill (zero clip overhead)
         ctx.fillStyle = meta.main;
-        ctx.fillRect(-r, -r, r * 2, r * 2);
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fill();
       }
-
-      // 3D spherical shading gradient
-      const shadeGrad = ctx.createRadialGradient(-r * 0.32, -r * 0.35, r * 0.1, 0, 0, r * 1.05);
-      shadeGrad.addColorStop(0, 'rgba(255,255,255,0.22)');
-      shadeGrad.addColorStop(0.55, 'rgba(0,0,0,0.0)');
-      shadeGrad.addColorStop(1, 'rgba(0,0,0,0.48)');
-      ctx.fillStyle = shadeGrad;
-      ctx.fillRect(-r, -r, r * 2, r * 2);
 
       // White number disc (shifted smoothly on roll for tactile depth, upright text)
       if (ball.id > 0) {
@@ -587,11 +809,10 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
         ctx.arc(rollOx, rollOy, r * 0.48, 0, Math.PI * 2);
         ctx.fill();
 
-        // Keep number upright regardless of portrait/landscape canvas transform
         if (isPortraitRef.current) {
           ctx.save();
           ctx.translate(rollOx, rollOy);
-          ctx.rotate(-Math.PI / 2);
+          ctx.rotate(Math.PI / 2);
           ctx.fillStyle = '#111827';
           ctx.font = `800 ${Math.max(7, Math.round(r * 0.62))}px Plus Jakarta Sans, sans-serif`;
           ctx.textAlign = 'center';
@@ -617,13 +838,11 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
         }
       }
 
-      // Glossy specular highlight
-      ctx.fillStyle = 'rgba(255,255,255,0.68)';
-      ctx.beginPath();
-      ctx.ellipse(-r * 0.34, -r * 0.34, r * 0.28, r * 0.16, -Math.PI / 4, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.restore(); // end clip
+      // Pre-baked 3D spherical shading + glossy specular highlight (zero gradient alloc!)
+      const shadeSprite = ballShadeSpriteRef.current;
+      if (shadeSprite) {
+        ctx.drawImage(shadeSprite, -r, -r, r * 2, r * 2);
+      }
 
       // Subtle outer rim crispness
       ctx.strokeStyle = ball.id === 8 ? 'rgba(255,255,255,0.16)' : 'rgba(0,0,0,0.28)';
@@ -635,17 +854,237 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       ctx.restore();
     };
 
+    const buildStaticTableCache = (
+      cssW: number,
+      cssH: number,
+      dpr: number,
+      scale: number,
+      offsetX: number,
+      offsetY: number,
+      portrait: boolean
+    ): HTMLCanvasElement => {
+      const off = document.createElement('canvas');
+      off.width = Math.floor(cssW * dpr);
+      off.height = Math.floor(cssH * dpr);
+      const octx = off.getContext('2d');
+      if (!octx) return off;
+
+      octx.save();
+      octx.scale(dpr, dpr);
+      octx.translate(offsetX, offsetY);
+      octx.scale(scale, scale);
+
+      if (portrait) {
+        octx.translate(0, POOL_TABLE_W + RAIL_PAD * 2);
+        octx.rotate(-Math.PI / 2);
+      }
+
+      octx.translate(RAIL_PAD, RAIL_PAD);
+
+      // Outer Beveled Mahogany / Slate Tournament Frame
+      const outerX = -RAIL_PAD;
+      const outerY = -RAIL_PAD;
+      const outerW = POOL_TABLE_W + RAIL_PAD * 2;
+      const outerH = POOL_TABLE_H + RAIL_PAD * 2;
+
+      octx.save();
+      octx.shadowColor = 'rgba(0,0,0,0.65)';
+      octx.shadowBlur = 22;
+      octx.shadowOffsetY = 8;
+      const woodGrad = octx.createLinearGradient(outerX, outerY, outerX, outerY + outerH);
+      woodGrad.addColorStop(0, '#4E2A1B');
+      woodGrad.addColorStop(0.5, '#331A10');
+      woodGrad.addColorStop(1, '#221009');
+      octx.fillStyle = woodGrad;
+      octx.beginPath();
+      octx.roundRect(outerX, outerY, outerW, outerH, 26);
+      octx.fill();
+      octx.restore();
+
+      // Brushed brass/chrome rail trim & bevel highlight
+      octx.strokeStyle = 'rgba(255,255,255,0.14)';
+      octx.lineWidth = 2;
+      octx.beginPath();
+      octx.roundRect(outerX + 3, outerY + 3, outerW - 6, outerH - 6, 23);
+      octx.stroke();
+
+      // Brushed gunmetal corner pocket castings
+      octx.fillStyle = '#3F4451';
+      const cornerSize = 36;
+      [
+        [outerX, outerY],
+        [outerX + outerW - cornerSize, outerY],
+        [outerX, outerY + outerH - cornerSize],
+        [outerX + outerW - cornerSize, outerY + outerH - cornerSize],
+      ].forEach(([cx, cy]) => {
+        octx.beginPath();
+        octx.roundRect(cx, cy, cornerSize, cornerSize, 10);
+        octx.fill();
+      });
+
+      // Inner Emerald-Slate Cushion Bezel Shadow
+      octx.fillStyle = '#07271E';
+      octx.beginPath();
+      octx.roundRect(-14, -14, POOL_TABLE_W + 28, POOL_TABLE_H + 28, 12);
+      octx.fill();
+
+      // Tournament Felt Surface + Procedural Baize Texture
+      octx.save();
+      octx.beginPath();
+      octx.rect(0, 0, POOL_TABLE_W, POOL_TABLE_H);
+      octx.clip();
+
+      if (!feltPatternRef.current) {
+        const patCanvas = createFeltNoisePattern();
+        if (patCanvas) {
+          feltPatternRef.current = octx.createPattern(patCanvas, 'repeat');
+        }
+      }
+      octx.fillStyle = feltPatternRef.current || '#0B4635';
+      octx.fillRect(0, 0, POOL_TABLE_W, POOL_TABLE_H);
+
+      // Overhead tournament table lighting vignette
+      const feltLight = octx.createRadialGradient(
+        POOL_TABLE_W * 0.5,
+        POOL_TABLE_H * 0.5,
+        40,
+        POOL_TABLE_W * 0.5,
+        POOL_TABLE_H * 0.5,
+        POOL_TABLE_W * 0.65
+      );
+      feltLight.addColorStop(0, 'rgba(34, 197, 94, 0.14)');
+      feltLight.addColorStop(0.6, 'rgba(6, 78, 59, 0.05)');
+      feltLight.addColorStop(1, 'rgba(2, 18, 14, 0.45)');
+      octx.fillStyle = feltLight;
+      octx.fillRect(0, 0, POOL_TABLE_W, POOL_TABLE_H);
+
+      // Inner cushion drop shadow around felt perimeter
+      octx.strokeStyle = 'rgba(0,0,0,0.48)';
+      octx.lineWidth = 10;
+      octx.strokeRect(0, 0, POOL_TABLE_W, POOL_TABLE_H);
+
+      // Head String (kitchen line) & Foot Spot
+      octx.strokeStyle = 'rgba(255,255,255,0.16)';
+      octx.lineWidth = 1.5;
+      octx.setLineDash([6, 6]);
+      octx.beginPath();
+      octx.moveTo(POOL_HEAD_STRING_X, 0);
+      octx.lineTo(POOL_HEAD_STRING_X, POOL_TABLE_H);
+      octx.stroke();
+      octx.setLineDash([]);
+
+      octx.fillStyle = 'rgba(255,255,255,0.28)';
+      octx.beginPath();
+      octx.arc(750, POOL_FOOT_SPOT_Y, 4, 0, Math.PI * 2);
+      octx.fill();
+      octx.beginPath();
+      octx.arc(POOL_HEAD_STRING_X, POOL_FOOT_SPOT_Y, 3, 0, Math.PI * 2);
+      octx.fill();
+      octx.restore();
+
+      // Cushion Rails (slanted green rail lips between pockets)
+      octx.fillStyle = '#0D5742';
+      octx.strokeStyle = 'rgba(255,255,255,0.12)';
+      octx.lineWidth = 1;
+      const drawRail = (pts: Array<[number, number]>) => {
+        octx.beginPath();
+        octx.moveTo(pts[0][0], pts[0][1]);
+        for (let i = 1; i < pts.length; i += 1) octx.lineTo(pts[i][0], pts[i][1]);
+        octx.closePath();
+        octx.fill();
+        octx.stroke();
+      };
+      drawRail([[20, -14], [478, -14], [472, 0], [30, 0]]);
+      drawRail([[522, -14], [980, -14], [970, 0], [528, 0]]);
+      drawRail([[20, POOL_TABLE_H + 14], [478, POOL_TABLE_H + 14], [472, POOL_TABLE_H], [30, POOL_TABLE_H]]);
+      drawRail([[522, POOL_TABLE_H + 14], [980, POOL_TABLE_H + 14], [970, POOL_TABLE_H], [528, POOL_TABLE_H]]);
+      drawRail([[-14, 20], [0, 30], [0, 470], [-14, 480]]);
+      drawRail([[POOL_TABLE_W + 14, 20], [POOL_TABLE_W, 30], [POOL_TABLE_W, 470], [POOL_TABLE_W + 14, 480]]);
+
+      // Rail Diamond Sights (3 per half rail)
+      octx.fillStyle = '#E5D3B3';
+      const diamondX = [125, 250, 375, 625, 750, 875];
+      const diamondY = [125, 250, 375];
+      const drawDiamond = (x: number, y: number) => {
+        octx.beginPath();
+        octx.moveTo(x, y - 3.5);
+        octx.lineTo(x + 3.5, y);
+        octx.lineTo(x, y + 3.5);
+        octx.lineTo(x - 3.5, y);
+        octx.closePath();
+        octx.fill();
+      };
+      for (const dx of diamondX) {
+        drawDiamond(dx, -25);
+        drawDiamond(dx, POOL_TABLE_H + 25);
+      }
+      for (const dy of diamondY) {
+        drawDiamond(-25, dy);
+        drawDiamond(POOL_TABLE_W + 25, dy);
+      }
+
+      // Recessed Pocket Cups
+      for (const p of POOL_POCKETS) {
+        octx.fillStyle = '#1E1510';
+        octx.beginPath();
+        octx.arc(p.x, p.y, p.captureR + 5, 0, Math.PI * 2);
+        octx.fill();
+
+        const pGrad = octx.createRadialGradient(p.x, p.y, 2, p.x, p.y, p.captureR);
+        pGrad.addColorStop(0, '#020305');
+        pGrad.addColorStop(0.75, '#090B10');
+        pGrad.addColorStop(1, '#1A1C22');
+        octx.fillStyle = pGrad;
+        octx.beginPath();
+        octx.arc(p.x, p.y, p.captureR, 0, Math.PI * 2);
+        octx.fill();
+      }
+
+      octx.restore();
+      return off;
+    };
+
     const tick = (now: number) => {
       const dt = Math.min(POOL_MAX_FRAME_DT, Math.max(0, (now - lastTime) / 1000));
       lastTime = now;
 
-      // 1) Smooth aim interpolation
-      const angleDiff = normalizeAngleDelta(currentAimAngleRef.current, targetAimAngleRef.current);
-      if (Math.abs(angleDiff) > 0.0004) {
-        currentAimAngleRef.current += angleDiff * Math.min(1, dt * 18);
+      // 1) Smooth aim interpolation for turn transitions & AI sweep (zero lag during manual finger drag)
+      if (!isDraggingAimRef.current) {
+        const angleDiff = normalizeAngleDelta(currentAimAngleRef.current, targetAimAngleRef.current);
+        if (Math.abs(angleDiff) > 0.0004) {
+          currentAimAngleRef.current += angleDiff * Math.min(1, dt * 18);
+        } else {
+          currentAimAngleRef.current = targetAimAngleRef.current;
+        }
       }
 
-      // 2) Fixed-timestep (1/120s) physics accumulator & interpolation
+      // 2) Cue-strike lunge phase -> promotes smoothly into 120Hz physics simulation at tip contact
+      let strikeCuePullDist: number | null = null;
+      const pending = pendingStrikeRef.current;
+      if (pending) {
+        const elapsed = now - pending.startedAt;
+        if (elapsed >= pending.durationMs) {
+          pendingStrikeRef.current = null;
+          simRuntimeRef.current = pending.runtime;
+          prevSimBallsRef.current = pending.prevBalls;
+          simMetaRef.current = pending.meta;
+          cueFollowThroughRef.current = {
+            active: true,
+            startedAt: now,
+            angle: pending.angle,
+            cueX: pending.cueX,
+            cueY: pending.cueY,
+          };
+          playPoolCueStrike(pending.power, mutedRef.current);
+          vibrateShot(pending.power);
+        } else {
+          const p = Math.max(0, Math.min(1, elapsed / pending.durationMs));
+          const easeIn = p * p * p; // accelerates crisply into the cue ball
+          strikeCuePullDist = pending.startPullDist + (POOL_BALL_R - pending.startPullDist) * easeIn;
+        }
+      }
+
+      // 3) Fixed-timestep (1/120s) physics accumulator & sub-frame interpolation
       let renderBalls: PoolBallState[] | null = null;
       const runtime = simRuntimeRef.current;
 
@@ -654,7 +1093,7 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
         let subSteps = 0;
         let finishedThisFrame = false;
 
-        while (simAccumulatorRef.current >= POOL_FIXED_DT && subSteps < 8) {
+        while (simAccumulatorRef.current >= POOL_FIXED_DT && subSteps < 10) {
           prevSimBallsRef.current = runtime.balls.map((b) => ({ ...b }));
           const events = stepPoolPhysicsSubstep(runtime, POOL_FIXED_DT);
           simAccumulatorRef.current -= POOL_FIXED_DT;
@@ -668,12 +1107,21 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
             } else if (ev.type === 'pocket_drop') {
               playPoolPocketDrop(mutedRef.current);
               const b = runtime.balls.find((item) => item.id === ev.ballA);
+              const pocket = POOL_POCKETS.find((pk) => pk.id === ev.pocketId);
               sinkAnimsRef.current.push({
                 ballId: ev.ballA,
                 startX: b ? b.x : ev.x,
                 startY: b ? b.y : ev.y,
                 pocketX: ev.x,
                 pocketY: ev.y,
+                rollAngle: b ? b.rollAngle : 0,
+                rollPhase: b ? b.rollPhase : 0,
+                startedAt: now,
+              });
+              pocketFlashesRef.current.push({
+                x: ev.x,
+                y: ev.y,
+                r: pocket ? pocket.captureR : 24,
                 startedAt: now,
               });
             }
@@ -683,6 +1131,10 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
             finishedThisFrame = true;
             break;
           }
+        }
+
+        if (subSteps >= 10 && simAccumulatorRef.current > POOL_FIXED_DT * 2) {
+          simAccumulatorRef.current = POOL_FIXED_DT;
         }
 
         if (finishedThisFrame) {
@@ -709,7 +1161,6 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
               }
               setLocalState(resolved.nextState);
             } else if (meta.authoritativeState) {
-              // Deterministic validation & checksum verification
               const localResolved = resolvePoolShotOutcome(
                 meta.baseState,
                 runtime,
@@ -721,16 +1172,10 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
               if (meta.authoritativeState.lastFoul) {
                 playPoolFoul(mutedRef.current);
               }
-              if (meta.expectedChecksum !== undefined && localSum !== meta.expectedChecksum) {
-                // Resync immediately with authoritative server state on any divergence
-                onSyncChecksumOnline?.(meta.authoritativeState.turnNumber, localSum);
-              } else {
-                onSyncChecksumOnline?.(meta.authoritativeState.turnNumber, localSum);
-              }
+              onSyncChecksumOnlineRef.current?.(meta.authoritativeState.turnNumber, localSum);
             }
           }
         } else if (prevSimBallsRef.current) {
-          // Interpolate between previous 120Hz step and current 120Hz step
           const alpha = Math.max(0, Math.min(1, simAccumulatorRef.current / POOL_FIXED_DT));
           renderBalls = runtime.balls.map((curr, idx) => {
             const prev = prevSimBallsRef.current![idx];
@@ -747,196 +1192,66 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
         }
       }
 
-      // 3) Render Tournament Table Canvas
+      // 4) Render Tournament Table Canvas (offscreen static blit + lightweight dynamic overlay)
       const canvas = canvasRef.current;
       const container = containerRef.current;
       if (canvas && container) {
         const rect = container.getBoundingClientRect();
         const cssW = Math.max(220, Math.floor(rect.width));
         const cssH = Math.max(180, Math.floor(rect.height));
-        const dpr = Math.min(2.5, window.devicePixelRatio || 1);
+        const dpr = Math.min(2, window.devicePixelRatio || 1);
 
         if (canvas.width !== Math.floor(cssW * dpr) || canvas.height !== Math.floor(cssH * dpr)) {
           canvas.width = Math.floor(cssW * dpr);
           canvas.height = Math.floor(cssH * dpr);
         }
 
+        const portrait = cssH > cssW * 1.05;
+        isPortraitRef.current = portrait;
+        const canonicalTotalW = (portrait ? POOL_TABLE_H : POOL_TABLE_W) + RAIL_PAD * 2;
+        const canonicalTotalH = (portrait ? POOL_TABLE_W : POOL_TABLE_H) + RAIL_PAD * 2;
+        const scale = Math.min(cssW / canonicalTotalW, cssH / canonicalTotalH);
+        const offsetX = (cssW - canonicalTotalW * scale) * 0.5;
+        const offsetY = (cssH - canonicalTotalH * scale) * 0.5;
+
+        transformRef.current = { cssW, cssH, scale, offsetX, offsetY, portrait };
+
+        const cacheKey = `${cssW}x${cssH}@${dpr}:${portrait ? 1 : 0}`;
+        if (!tableCacheRef.current || tableCacheRef.current.key !== cacheKey) {
+          tableCacheRef.current = {
+            key: cacheKey,
+            canvas: buildStaticTableCache(cssW, cssH, dpr, scale, offsetX, offsetY, portrait),
+          };
+        }
+
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.save();
+          ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+          // Blit pre-rendered static table in ~0.2ms!
+          ctx.drawImage(tableCacheRef.current.canvas, 0, 0);
+
           ctx.scale(dpr, dpr);
-          ctx.clearRect(0, 0, cssW, cssH);
-
-          // Auto-orient table cleanly to fit any portrait or landscape viewport without scrolling
-          const portrait = cssH > cssW * 1.05;
-          isPortraitRef.current = portrait;
-          const canonicalTotalW = (portrait ? POOL_TABLE_H : POOL_TABLE_W) + RAIL_PAD * 2;
-          const canonicalTotalH = (portrait ? POOL_TABLE_W : POOL_TABLE_H) + RAIL_PAD * 2;
-          const scale = Math.min(cssW / canonicalTotalW, cssH / canonicalTotalH);
-          const offsetX = (cssW - canonicalTotalW * scale) * 0.5;
-          const offsetY = (cssH - canonicalTotalH * scale) * 0.5;
-
-          transformRef.current = { cssW, cssH, scale, offsetX, offsetY, portrait };
-
           ctx.translate(offsetX, offsetY);
           ctx.scale(scale, scale);
 
           if (portrait) {
-            ctx.translate(POOL_TABLE_H + RAIL_PAD * 2, 0);
-            ctx.rotate(Math.PI / 2);
+            ctx.translate(0, POOL_TABLE_W + RAIL_PAD * 2);
+            ctx.rotate(-Math.PI / 2);
           }
 
           ctx.translate(RAIL_PAD, RAIL_PAD);
 
-          // Outer Beveled Mahogany / Slate Tournament Frame
-          const outerX = -RAIL_PAD;
-          const outerY = -RAIL_PAD;
-          const outerW = POOL_TABLE_W + RAIL_PAD * 2;
-          const outerH = POOL_TABLE_H + RAIL_PAD * 2;
-
-          ctx.save();
-          ctx.shadowColor = 'rgba(0,0,0,0.65)';
-          ctx.shadowBlur = 24;
-          ctx.shadowOffsetY = 8;
-          const woodGrad = ctx.createLinearGradient(outerX, outerY, outerX, outerY + outerH);
-          woodGrad.addColorStop(0, '#4E2A1B');
-          woodGrad.addColorStop(0.5, '#331A10');
-          woodGrad.addColorStop(1, '#221009');
-          ctx.fillStyle = woodGrad;
-          ctx.beginPath();
-          ctx.roundRect(outerX, outerY, outerW, outerH, 26);
-          ctx.fill();
-          ctx.restore();
-
-          // Brushed brass/chrome rail trim & bevel highlight
-          ctx.strokeStyle = 'rgba(255,255,255,0.14)';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.roundRect(outerX + 3, outerY + 3, outerW - 6, outerH - 6, 23);
-          ctx.stroke();
-
-          // Brushed gunmetal corner pocket castings
-          ctx.fillStyle = '#3F4451';
-          const cornerSize = 36;
-          [
-            [outerX, outerY],
-            [outerX + outerW - cornerSize, outerY],
-            [outerX, outerY + outerH - cornerSize],
-            [outerX + outerW - cornerSize, outerY + outerH - cornerSize],
-          ].forEach(([cx, cy]) => {
-            ctx.beginPath();
-            ctx.roundRect(cx, cy, cornerSize, cornerSize, 10);
-            ctx.fill();
-          });
-
-          // Inner Emerald-Slate Cushion Bezel Shadow
-          ctx.fillStyle = '#07271E';
-          ctx.beginPath();
-          ctx.roundRect(-14, -14, POOL_TABLE_W + 28, POOL_TABLE_H + 28, 12);
-          ctx.fill();
-
-          // Tournament Felt Surface + Procedural Baize Texture
-          ctx.save();
-          ctx.beginPath();
-          ctx.rect(0, 0, POOL_TABLE_W, POOL_TABLE_H);
-          ctx.clip();
-
-          if (!feltPatternRef.current) {
-            const patCanvas = createFeltNoisePattern();
-            if (patCanvas) {
-              feltPatternRef.current = ctx.createPattern(patCanvas, 'repeat');
-            }
-          }
-          ctx.fillStyle = feltPatternRef.current || '#0B4635';
-          ctx.fillRect(0, 0, POOL_TABLE_W, POOL_TABLE_H);
-
-          // Overhead tournament table lighting vignette
-          const feltLight = ctx.createRadialGradient(
-            POOL_TABLE_W * 0.5,
-            POOL_TABLE_H * 0.5,
-            40,
-            POOL_TABLE_W * 0.5,
-            POOL_TABLE_H * 0.5,
-            POOL_TABLE_W * 0.65
-          );
-          feltLight.addColorStop(0, 'rgba(34, 197, 94, 0.14)');
-          feltLight.addColorStop(0.6, 'rgba(6, 78, 59, 0.05)');
-          feltLight.addColorStop(1, 'rgba(2, 18, 14, 0.45)');
-          ctx.fillStyle = feltLight;
-          ctx.fillRect(0, 0, POOL_TABLE_W, POOL_TABLE_H);
-
-          // Inner cushion drop shadow around felt perimeter
-          ctx.strokeStyle = 'rgba(0,0,0,0.48)';
-          ctx.lineWidth = 10;
-          ctx.strokeRect(0, 0, POOL_TABLE_W, POOL_TABLE_H);
-
-          // Head String (kitchen line) & Foot Spot
-          ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([6, 6]);
-          ctx.beginPath();
-          ctx.moveTo(POOL_HEAD_STRING_X, 0);
-          ctx.lineTo(POOL_HEAD_STRING_X, POOL_TABLE_H);
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          ctx.fillStyle = 'rgba(255,255,255,0.28)';
-          ctx.beginPath();
-          ctx.arc(750, POOL_FOOT_SPOT_Y, 4, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.arc(POOL_HEAD_STRING_X, POOL_FOOT_SPOT_Y, 3, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.restore();
-
-          // Cushion Rails (slanted green rail lips between pockets)
-          ctx.fillStyle = '#0D5742';
-          ctx.strokeStyle = 'rgba(255,255,255,0.12)';
-          ctx.lineWidth = 1;
-          const drawRail = (pts: Array<[number, number]>) => {
-            ctx.beginPath();
-            ctx.moveTo(pts[0][0], pts[0][1]);
-            for (let i = 1; i < pts.length; i += 1) ctx.lineTo(pts[i][0], pts[i][1]);
-            ctx.closePath();
-            ctx.fill();
-            ctx.stroke();
-          };
-          drawRail([[20, -14], [478, -14], [472, 0], [30, 0]]);
-          drawRail([[522, -14], [980, -14], [970, 0], [528, 0]]);
-          drawRail([[20, POOL_TABLE_H + 14], [478, POOL_TABLE_H + 14], [472, POOL_TABLE_H], [30, POOL_TABLE_H]]);
-          drawRail([[522, POOL_TABLE_H + 14], [980, POOL_TABLE_H + 14], [970, POOL_TABLE_H], [528, POOL_TABLE_H]]);
-          drawRail([[-14, 20], [0, 30], [0, 470], [-14, 480]]);
-          drawRail([[POOL_TABLE_W + 14, 20], [POOL_TABLE_W, 30], [POOL_TABLE_W, 470], [POOL_TABLE_W + 14, 480]]);
-
-          // Rail Diamond Sights (3 per half rail)
-          ctx.fillStyle = '#E5D3B3';
-          const diamondX = [125, 250, 375, 625, 750, 875];
-          const diamondY = [125, 250, 375];
-          const drawDiamond = (x: number, y: number) => {
-            ctx.beginPath();
-            ctx.moveTo(x, y - 3.5);
-            ctx.lineTo(x + 3.5, y);
-            ctx.lineTo(x, y + 3.5);
-            ctx.lineTo(x - 3.5, y);
-            ctx.closePath();
-            ctx.fill();
-          };
-          for (const dx of diamondX) {
-            drawDiamond(dx, -25);
-            drawDiamond(dx, POOL_TABLE_H + 25);
-          }
-          for (const dy of diamondY) {
-            drawDiamond(-25, dy);
-            drawDiamond(POOL_TABLE_W + 25, dy);
-          }
-
-          // Pockets (Recessed Cup + Shadows + Highlight for 8-ball call!)
+          // Dynamic 8-ball pocket call indicators & pocket sink flash rings
           const state = activeStateRef.current;
           const activeTurnSeat = state ? state.players[state.turnSeat] : null;
           const activeUserIsMe = Boolean(
             state &&
               state.status === 'playing' &&
               !simRuntimeRef.current &&
+              !pendingStrikeRef.current &&
               (isOffline ? state.turnSeat === 0 : activeTurnSeat?.userId === currentUser.id)
           );
           const showPocketCallTargets = Boolean(
@@ -945,48 +1260,51 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
               activeTurnSeat &&
               isOnEightBall(state.balls, activeTurnSeat.group)
           );
-          const calledPocket = state?.calledPocketId || localCalledPocket;
+          const calledPocket = state?.calledPocketId || localCalledPocketRef.current;
 
-          for (const p of POOL_POCKETS) {
-            // Outer rim leather shadow
-            ctx.fillStyle = '#1E1510';
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.captureR + 5, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Deep dark pocket hole
-            const pGrad = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, p.captureR);
-            pGrad.addColorStop(0, '#020305');
-            pGrad.addColorStop(0.75, '#090B10');
-            pGrad.addColorStop(1, '#1A1C22');
-            ctx.fillStyle = pGrad;
-            ctx.beginPath();
-            ctx.arc(p.x, p.y, p.captureR, 0, Math.PI * 2);
-            ctx.fill();
-
-            if (calledPocket === p.id) {
-              ctx.strokeStyle = '#FACC15';
-              ctx.lineWidth = 3;
-              ctx.beginPath();
-              ctx.arc(p.x, p.y, p.captureR + 3, 0, Math.PI * 2);
-              ctx.stroke();
-            } else if (showPocketCallTargets) {
-              const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
-              ctx.strokeStyle = `rgba(250, 204, 21, ${0.35 + pulse * 0.45})`;
-              ctx.lineWidth = 2;
-              ctx.setLineDash([4, 4]);
-              ctx.beginPath();
-              ctx.arc(p.x, p.y, p.captureR + 3, 0, Math.PI * 2);
-              ctx.stroke();
-              ctx.setLineDash([]);
+          if (calledPocket || showPocketCallTargets) {
+            for (const p of POOL_POCKETS) {
+              if (calledPocket === p.id) {
+                ctx.strokeStyle = '#FACC15';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.captureR + 3, 0, Math.PI * 2);
+                ctx.stroke();
+              } else if (showPocketCallTargets) {
+                const pulse = 0.5 + 0.5 * Math.sin(now * 0.006);
+                ctx.strokeStyle = `rgba(250, 204, 21, ${0.35 + pulse * 0.45})`;
+                ctx.lineWidth = 2;
+                ctx.setLineDash([4, 4]);
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.captureR + 3, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.setLineDash([]);
+              }
             }
           }
 
-          // Active Sink Animations (balls shrinking & fading into pockets)
+          if (pocketFlashesRef.current.length > 0) {
+            const nextFlashes: PocketFlashAnim[] = [];
+            for (const pf of pocketFlashesRef.current) {
+              const prog = (now - pf.startedAt) / 280;
+              if (prog < 1) {
+                nextFlashes.push(pf);
+                const ease = 1 - Math.pow(1 - prog, 2);
+                ctx.strokeStyle = `rgba(16, 185, 129, ${(1 - ease) * 0.85})`;
+                ctx.lineWidth = 2.8 * (1 - ease * 0.5);
+                ctx.beginPath();
+                ctx.arc(pf.x, pf.y, pf.r + ease * 10, 0, Math.PI * 2);
+                ctx.stroke();
+              }
+            }
+            pocketFlashesRef.current = nextFlashes;
+          }
+
+          // Active Sink Animations (balls rolling & shrinking smoothly into pocket cup)
           if (sinkAnimsRef.current.length > 0) {
             const nextAnims: SinkAnim[] = [];
             for (const sa of sinkAnimsRef.current) {
-              const prog = Math.min(1, (now - sa.startedAt) / 280);
+              const prog = Math.min(1, (now - sa.startedAt) / 240);
               if (prog < 1) {
                 nextAnims.push(sa);
                 const ease = 1 - Math.pow(1 - prog, 2);
@@ -1000,22 +1318,26 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
                   vy: 0,
                   pocketed: false,
                   pocketId: null,
-                  rollPhase: ease * 4,
-                  rollAngle: 0,
+                  rollPhase: sa.rollPhase + ease * 3.5,
+                  rollAngle: sa.rollAngle,
                 };
-                drawBall(ctx, sinkBall, scale, POOL_BALL_R * (1 - ease * 0.58), 1 - ease * 0.9);
+                drawBall(ctx, sinkBall, scale, POOL_BALL_R * (1 - ease * 0.56), 1 - ease * 0.92);
               }
             }
             sinkAnimsRef.current = nextAnims;
           }
 
           // Draw Active Balls
-          const ballsToDraw = renderBalls || state?.balls || [];
+          const ballsToDraw =
+            renderBalls ||
+            (pendingStrikeRef.current ? pendingStrikeRef.current.prevBalls : null) ||
+            state?.balls ||
+            [];
           const ghost = cueGhostRef.current;
 
           for (const b of ballsToDraw) {
             if (b.pocketed) continue;
-            if (b.id === 0 && ghost) continue; // Draw ghost instead while dragging cue
+            if (b.id === 0 && ghost) continue;
             drawBall(ctx, b, scale);
           }
 
@@ -1048,7 +1370,13 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
 
           // Ball-in-Hand Hint Ring when idle in BALL_IN_HAND
           const cueBall = ballsToDraw.find((b) => b.id === 0);
-          if (state?.phase === 'BALL_IN_HAND' && activeUserIsMe && cueBall && !ghost) {
+          if (
+            state?.phase === 'BALL_IN_HAND' &&
+            activeUserIsMe &&
+            cueBall &&
+            !ghost &&
+            !pendingStrikeRef.current
+          ) {
             const pulse = 0.5 + 0.5 * Math.sin(now * 0.007);
             ctx.strokeStyle = `rgba(16, 185, 129, ${0.45 + pulse * 0.5})`;
             ctx.lineWidth = 2.5;
@@ -1059,21 +1387,21 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
             ctx.setLineDash([]);
           }
 
-          // Aiming Guides, Ghost Ball, Predicted Post-Impact Paths & Cue Stick
+          // Aiming Guides + Cue Stick (active aiming, strike lunge, and smooth follow-through fade)
           const showAiming =
             state &&
             state.status === 'playing' &&
             !simRuntimeRef.current &&
+            !pendingStrikeRef.current &&
             cueBall &&
             !cueBall.pocketed &&
             !ghost &&
-            (activeUserIsMe || (isOffline && state.players[state.turnSeat]?.isBot && aiThinking));
+            (activeUserIsMe || (isOffline && state.players[state.turnSeat]?.isBot && aiThinkingRef.current));
 
           if (showAiming && cueBall) {
             const angle = currentAimAngleRef.current;
             const pred = computeAimPrediction(ballsToDraw, angle, spinRef.current.y);
 
-            // Dotted line from cue ball to first contact point
             ctx.save();
             ctx.strokeStyle = 'rgba(255,255,255,0.68)';
             ctx.lineWidth = 1.6;
@@ -1084,7 +1412,6 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
             ctx.stroke();
             ctx.setLineDash([]);
 
-            // Ghost ball at first contact
             const hitBall =
               pred.hitBallId !== null ? ballsToDraw.find((b) => b.id === pred.hitBallId) : null;
             const targetLegal = (() => {
@@ -1106,7 +1433,6 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
             ctx.stroke();
 
             if (pred.hitType === 'ball') {
-              // Target ball predicted path
               ctx.strokeStyle = targetLegal
                 ? 'rgba(250, 204, 21, 0.85)'
                 : 'rgba(244, 63, 94, 0.85)';
@@ -1116,7 +1442,6 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
               ctx.lineTo(pred.targetEndX, pred.targetEndY);
               ctx.stroke();
 
-              // Cue ball post-impact deflection path
               ctx.strokeStyle = 'rgba(56, 189, 248, 0.72)';
               ctx.lineWidth = 1.5;
               ctx.setLineDash([4, 4]);
@@ -1128,55 +1453,28 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
             }
             ctx.restore();
 
-            // Cue Stick with Pull-Back Power & Strike Lunge Animation
-            let pullDist = 18 + pullPowerRef.current * 92;
-            let stickAngle = angle;
-            if (cueLungeRef.current.active) {
-              const elapsed = now - cueLungeRef.current.startedAt;
-              if (elapsed < 90) {
-                const p = elapsed / 90;
-                pullDist = 18 + (1 - p) * cueLungeRef.current.power * 75;
-                stickAngle = cueLungeRef.current.angle;
-              } else {
-                cueLungeRef.current.active = false;
-              }
+            const pullDist = 18 + pullPowerRef.current * 92;
+            drawCueStick(ctx, cueBall.x, cueBall.y, angle, pullDist, 1);
+          } else if (strikeCuePullDist !== null && pendingStrikeRef.current) {
+            drawCueStick(
+              ctx,
+              pendingStrikeRef.current.cueX,
+              pendingStrikeRef.current.cueY,
+              pendingStrikeRef.current.angle,
+              strikeCuePullDist,
+              1
+            );
+          } else if (cueFollowThroughRef.current.active) {
+            const ft = cueFollowThroughRef.current;
+            const elapsed = now - ft.startedAt;
+            if (elapsed >= 140) {
+              cueFollowThroughRef.current.active = false;
+            } else {
+              const p = elapsed / 140;
+              const easeOut = 1 - Math.pow(1 - p, 2);
+              const followDist = POOL_BALL_R - easeOut * 14;
+              drawCueStick(ctx, ft.cueX, ft.cueY, ft.angle, followDist, 1 - easeOut);
             }
-
-            ctx.save();
-            ctx.translate(cueBall.x, cueBall.y);
-            ctx.rotate(stickAngle + Math.PI); // Extends behind cue ball
-
-            const cueLen = 280;
-            ctx.shadowColor = 'rgba(0,0,0,0.55)';
-            ctx.shadowBlur = 8;
-            ctx.shadowOffsetY = 3;
-
-            // Blue chalked tip
-            ctx.fillStyle = '#38BDF8';
-            ctx.fillRect(pullDist, -2.1, 4, 4.2);
-
-            // White ferrule
-            ctx.fillStyle = '#F8FAFC';
-            ctx.fillRect(pullDist + 4, -2.3, 8, 4.6);
-
-            // Tapered Maple Shaft -> Rosewood Butt
-            const shaftGrad = ctx.createLinearGradient(pullDist + 12, 0, pullDist + cueLen, 0);
-            shaftGrad.addColorStop(0, '#F3DEC0');
-            shaftGrad.addColorStop(0.58, '#E0B984');
-            shaftGrad.addColorStop(0.59, '#2B1810');
-            shaftGrad.addColorStop(0.88, '#5C2218');
-            shaftGrad.addColorStop(1, '#111827');
-
-            ctx.fillStyle = shaftGrad;
-            ctx.beginPath();
-            ctx.moveTo(pullDist + 12, -2.4);
-            ctx.lineTo(pullDist + cueLen, -5.2);
-            ctx.lineTo(pullDist + cueLen, 5.2);
-            ctx.lineTo(pullDist + 12, 2.4);
-            ctx.closePath();
-            ctx.fill();
-
-            ctx.restore();
           }
 
           ctx.restore(); // end DPR & translate
@@ -1188,7 +1486,7 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
 
     rafId = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(rafId);
-  }, [isOffline, currentUser.id, localCalledPocket, aiThinking, onSyncChecksumOnline]);
+  }, [isOffline, currentUser.id]);
 
   // ============================================================================
   // TABLE POINTER HANDLERS (Aiming / Ball-in-Hand Drag / 8-Ball Pocket Call)
@@ -1245,12 +1543,13 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       }
     }
 
-    // 3) Aim anywhere on the table
+    // 3) Aim anywhere on the table (1:1 zero-lag tracking)
     tableDragModeRef.current = 'aim';
+    isDraggingAimRef.current = true;
     e.currentTarget.setPointerCapture(e.pointerId);
     const nextAngle = Math.atan2(pt.y - cue.y, pt.x - cue.x);
     targetAimAngleRef.current = nextAngle;
-    setAimAngle(nextAngle);
+    currentAimAngleRef.current = nextAngle;
   };
 
   const handleTablePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -1271,13 +1570,14 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       if (!cue) return;
       const nextAngle = Math.atan2(pt.y - cue.y, pt.x - cue.x);
       targetAimAngleRef.current = nextAngle;
-      setAimAngle(nextAngle);
+      currentAimAngleRef.current = nextAngle;
     }
   };
 
   const handleTablePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const mode = tableDragModeRef.current;
     tableDragModeRef.current = 'none';
+    isDraggingAimRef.current = false;
     if (e.currentTarget.hasPointerCapture(e.pointerId)) {
       e.currentTarget.releasePointerCapture(e.pointerId);
     }
@@ -1303,15 +1603,38 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
   };
 
   // ============================================================================
-  // PULL-BACK POWER SLIDER HANDLERS
+  // PULL-BACK POWER SLIDER HANDLERS (DOM-driven during drag for zero React lag)
   // ============================================================================
+
+  const syncPowerBarDom = (value: number) => {
+    pullPowerRef.current = value;
+    if (powerFillRef.current) {
+      powerFillRef.current.style.width = `${value * 100}%`;
+      powerFillRef.current.style.background =
+        value < POOL_MIN_SHOT_POWER
+          ? 'rgba(244,63,94,0.45)'
+          : 'linear-gradient(90deg, #10B981 0%, #FACC15 65%, #E11D48 100%)';
+    }
+    if (powerHandleRef.current) {
+      powerHandleRef.current.style.left = `${Math.max(4, Math.min(96, value * 100))}%`;
+    }
+    if (powerPctRef.current) {
+      powerPctRef.current.textContent = `${Math.round(value * 100)}%`;
+    }
+  };
 
   const updatePowerFromPointer = (clientX: number) => {
     const el = powerSliderRef.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const raw = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
-    setPullPower(raw);
+    const prev = pullPowerRef.current;
+    syncPowerBarDom(raw);
+
+    // Only notify React if crossing the cancel/shoot threshold for prompt text
+    if ((prev < POOL_MIN_SHOT_POWER) !== (raw < POOL_MIN_SHOT_POWER)) {
+      setPullPower(raw);
+    }
   };
 
   const handlePowerPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -1347,9 +1670,11 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
     setIsPullingPower(false);
     const power = pullPowerRef.current;
     if (power < POOL_MIN_SHOT_POWER) {
+      syncPowerBarDom(0);
       setPullPower(0);
       return;
     }
+    syncPowerBarDom(0);
     fireShot({
       angle: currentAimAngleRef.current,
       power,
@@ -1391,6 +1716,12 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
     simRuntimeRef.current = null;
     prevSimBallsRef.current = null;
     simMetaRef.current = null;
+    pendingStrikeRef.current = null;
+    cueFollowThroughRef.current.active = false;
+    sinkAnimsRef.current = [];
+    pocketFlashesRef.current = [];
+    syncPowerBarDom(0);
+    setPullPower(0);
     setIsSimulatingUI(false);
     setLocalState(
       createInitialPoolState(
@@ -1411,8 +1742,13 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
     simRuntimeRef.current = null;
     prevSimBallsRef.current = null;
     simMetaRef.current = null;
-    setIsSimulatingUI(false);
+    pendingStrikeRef.current = null;
+    cueFollowThroughRef.current.active = false;
     sinkAnimsRef.current = [];
+    pocketFlashesRef.current = [];
+    syncPowerBarDom(0);
+    setPullPower(0);
+    setIsSimulatingUI(false);
     if (isOffline) {
       startOfflineWithDifficulty(difficulty);
     } else {
@@ -1482,6 +1818,16 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
 
   const p0 = activeState.players[0];
   const p1 = activeState.players[1];
+  const p0Voice = p0 && !p0.isBot ? voicePeerMap.get(p0.userId) : undefined;
+  const p1Voice = p1 && !p1.isBot ? voicePeerMap.get(p1.userId) : undefined;
+  const p0Level = p0 && !p0.isBot ? voiceChat?.audioLevels?.[p0.userId] ?? 0 : 0;
+  const p1Level = p1 && !p1.isBot ? voiceChat?.audioLevels?.[p1.userId] ?? 0 : 0;
+  const p0Speaking = Boolean(
+    p0 && !p0.isBot && !p0Voice?.isMuted && (p0Level > 0.06 || voiceChat?.speakingUserIds.includes(p0.userId))
+  );
+  const p1Speaking = Boolean(
+    p1 && !p1.isBot && !p1Voice?.isMuted && (p1Level > 0.06 || voiceChat?.speakingUserIds.includes(p1.userId))
+  );
   const turnSecsLeft =
     !isOffline && activeState.status === 'playing' && activeState.turnDeadlineAt > 0
       ? Math.max(0, Math.ceil((activeState.turnDeadlineAt - nowTs) / 1000))
@@ -1501,16 +1847,26 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
       <div className="px-2 py-1.5 rounded-xl bg-white/[0.04] border border-white/[0.09] flex items-center justify-between gap-1.5 shrink-0">
         {/* Player 0 */}
         <div
-          className={`flex items-center gap-1.5 min-w-0 px-2 py-1 rounded-lg border transition-colors ${
-            activeState.status === 'playing' && activeState.turnSeat === 0
+          className={`flex items-center gap-1.5 min-w-0 px-2 py-1 rounded-lg border transition-all ${
+            p0Speaking
+              ? 'ring-2 ring-emerald-400 bg-emerald-500/20 border-emerald-400/75 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+              : activeState.status === 'playing' && activeState.turnSeat === 0
               ? 'bg-emerald-500/15 border-emerald-400/55'
               : 'bg-black/25 border-white/[0.06]'
           }`}
         >
           <span className="text-sm shrink-0" aria-hidden="true">{p0?.avatar || '🎱'}</span>
           <div className="min-w-0">
-            <div className="flex items-center gap-1 text-[11px] font-bold text-white truncate max-w-[92px] sm:max-w-[130px]">
+            <div className="flex items-center gap-1 text-[11px] font-bold text-white truncate max-w-[92px] sm:max-w-[140px]">
               <span className="truncate">{p0?.name || 'Jugador 1'}</span>
+              {p0 && !p0.isBot && (
+                <VoiceSpeakerIndicator
+                  inVoice={Boolean(p0Voice)}
+                  isSpeaking={p0Speaking}
+                  isMuted={Boolean(p0Voice?.isMuted)}
+                  audioLevel={p0Level}
+                />
+              )}
             </div>
             <div className="flex items-center gap-1 text-[10px] text-zinc-300">
               <span>{groupLabel(p0?.group ?? null, activeState.balls)}</span>
@@ -1565,8 +1921,10 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
 
         {/* Player 1 */}
         <div
-          className={`flex items-center gap-1.5 min-w-0 px-2 py-1 rounded-lg border transition-colors ${
-            activeState.status === 'playing' && activeState.turnSeat === 1
+          className={`flex items-center gap-1.5 min-w-0 px-2 py-1 rounded-lg border transition-all ${
+            p1Speaking
+              ? 'ring-2 ring-emerald-400 bg-emerald-500/20 border-emerald-400/75 shadow-[0_0_12px_rgba(16,185,129,0.4)]'
+              : activeState.status === 'playing' && activeState.turnSeat === 1
               ? 'bg-emerald-500/15 border-emerald-400/55'
               : 'bg-black/25 border-white/[0.06]'
           }`}
@@ -1574,7 +1932,15 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
           {p1 ? (
             <>
               <div className="min-w-0 text-right">
-                <div className="flex items-center justify-end gap-1 text-[11px] font-bold text-white truncate max-w-[92px] sm:max-w-[130px]">
+                <div className="flex items-center justify-end gap-1 text-[11px] font-bold text-white truncate max-w-[92px] sm:max-w-[140px]">
+                  {!p1.isBot && (
+                    <VoiceSpeakerIndicator
+                      inVoice={Boolean(p1Voice)}
+                      isSpeaking={p1Speaking}
+                      isMuted={Boolean(p1Voice?.isMuted)}
+                      audioLevel={p1Level}
+                    />
+                  )}
                   {p1.isBot && <Bot className="w-3 h-3 text-emerald-400 shrink-0" />}
                   <span className="truncate">{p1.name}</span>
                   {p1.connected === false && (
@@ -1617,23 +1983,35 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
 
         {/* Contextual Helper Banner (Ball-in-Hand / Call 8-Ball / Waiting) */}
         {activeState.status === 'waiting' && (
-          <div className="absolute inset-x-3 bottom-3 z-20 rounded-xl bg-black/80 border border-white/15 px-3 py-2 flex items-center justify-between gap-2">
+          <div className="absolute inset-x-3 bottom-3 z-20 rounded-xl bg-black/85 backdrop-blur-md border border-white/15 px-3 py-2 flex flex-wrap items-center justify-between gap-2">
             <span className="text-xs text-zinc-200">
               {pickLang(lang, {
-                es: 'Esperando a un rival de la sala en el Asiento 2…',
-                ca: 'Esperant un rival de la sala…',
-                en: 'Waiting for opponent in Seat 2…',
+                es: 'Esperando respuestas o rival en la mesa…',
+                ca: 'Esperant respostes o rival a la taula…',
+                en: 'Waiting for responses or opponent…',
               })}
             </span>
-            {mySeatIndex === null && (
-              <button
-                type="button"
-                onClick={() => onJoinSeatOnline?.(1)}
-                className="min-h-8 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-bold text-white whitespace-nowrap cursor-pointer"
-              >
-                {pickLang(lang, { es: 'Jugar aquí', ca: 'Jugar aquí', en: 'Join Seat 2' })}
-              </button>
-            )}
+            <div className="flex items-center gap-1.5 ml-auto">
+              {mySeatIndex === null && (
+                <button
+                  type="button"
+                  onClick={() => onJoinSeatOnline?.(1)}
+                  className="min-h-8 px-3 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-bold text-white whitespace-nowrap cursor-pointer"
+                >
+                  {pickLang(lang, { es: 'Jugar aquí', ca: 'Jugar aquí', en: 'Join Seat 2' })}
+                </button>
+              )}
+              {isHost && onStartMatchOnline && (
+                <button
+                  type="button"
+                  onClick={() => onStartMatchOnline()}
+                  className="min-h-8 px-3.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-xs font-black text-zinc-950 flex items-center gap-1 whitespace-nowrap cursor-pointer"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>{pickLang(lang, { es: 'Play · Empezar', ca: 'Play · Començar', en: 'Play · Start' })}</span>
+                </button>
+              )}
+            </div>
           </div>
         )}
 
@@ -1753,7 +2131,7 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
                 ? pickLang(lang, { es: 'Suelta para cancelar', ca: 'Deixa anar per cancel·lar', en: 'Release to cancel' })
                 : pickLang(lang, { es: 'Desliza y suelta para tirar', ca: 'Llisca i deixa anar', en: 'Slide & release to shoot' })}
             </span>
-            <span className="font-mono tabular-nums text-amber-300">
+            <span ref={powerPctRef} className="font-mono tabular-nums text-amber-300">
               {Math.round(pullPower * 100)}%
             </span>
           </div>
@@ -1765,6 +2143,7 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
             onPointerUp={handlePowerPointerUp}
             onPointerCancel={() => {
               setIsPullingPower(false);
+              syncPowerBarDom(0);
               setPullPower(0);
             }}
             role="slider"
@@ -1783,9 +2162,10 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
               className="absolute inset-y-0 w-px bg-white/25 z-10 pointer-events-none"
               style={{ left: `${POOL_MIN_SHOT_POWER * 100}%` }}
             />
-            {/* Power fill bar */}
+            {/* Power fill bar (direct DOM updates during drag for zero CSS transition lag) */}
             <div
-              className="h-full transition-[width] duration-75"
+              ref={powerFillRef}
+              className="h-full"
               style={{
                 width: `${pullPower * 100}%`,
                 background:
@@ -1796,6 +2176,7 @@ export const Pool8BallStage: React.FC<PoolStageProps> = ({
             />
             {/* Mini Cue Handle Visual */}
             <div
+              ref={powerHandleRef}
               className="pointer-events-none absolute top-1 bottom-1 w-3 rounded-md bg-white shadow-md border border-zinc-300 -translate-x-1/2"
               style={{ left: `${Math.max(4, Math.min(96, pullPower * 100))}%` }}
             />

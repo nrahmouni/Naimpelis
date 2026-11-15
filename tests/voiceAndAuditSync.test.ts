@@ -32,16 +32,39 @@ import {
   createInitialBoardGameState,
   getAllLegalMovesForSide,
   getLegalMovesForSquare,
+  resetBoardGame,
   startBoardMatch,
   type BoardGameState,
 } from '../src/shared/boardGames';
 import {
+  CHAPAS_ARENA_W,
+  CHAPAS_BALL_RADIUS,
+  CHAPAS_CAP_RADIUS,
+  CHAPAS_PITCH_BOTTOM,
+  CHAPAS_PITCH_TOP,
+  createInitialChapasState,
+  joinChapasSeat,
+  shootChapasCap,
+  startChapasMatch,
+  toggleChapasBots,
+} from '../src/shared/futbolChapas';
+import { createInitialPoolState, startPoolMatch } from '../src/shared/pool8Ball';
+import {
+  createInitialPinturilloState,
+  joinPinturilloPlayer,
+  startPinturilloMatch,
+} from '../src/shared/pinturillo';
+import {
+  wsChapasShootSchema,
+  wsChapasToggleBotsSchema,
+  wsGameInviteRespondSchema,
   wsPartyGameActionSchema,
   wsVoiceRoomSchema,
   wsVoiceSignalSchema,
   wsVoiceStateSchema,
 } from '../server/ws/wsSchemas';
 import { shouldSkipStaleCloudWrite } from '../src/services/userCloudSync';
+import { buildHostGameInvitePayload } from '../server/ws/roomHub';
 
 const ROOT = process.cwd();
 
@@ -535,6 +558,228 @@ describe('Multiplayer Lobbies, 15s Timer & WebRTC Voice Chat', () => {
         action: 'start_match',
       }).success
     ).toBe(true);
+  });
+
+  it('enables microphone permissions in metadata/headers and wires VoiceWaveBars across all 7 games', () => {
+    const metadata = JSON.parse(fs.readFileSync(path.join(ROOT, 'metadata.json'), 'utf8'));
+    expect(metadata.requestFramePermissions).toContain('microphone');
+
+    const errHandlerSrc = fs.readFileSync(
+      path.join(ROOT, 'server/middleware/errorHandler.ts'),
+      'utf8'
+    );
+    expect(errHandlerSrc).toContain('microphone=*');
+
+    const hubSrc = fs.readFileSync(path.join(ROOT, 'src/components/GamesHubSection.tsx'), 'utf8');
+    expect(hubSrc).toContain('VoiceWaveBars');
+    expect(hubSrc).not.toContain('showPartyWaitingColors');
+
+    const poolSrc = fs.readFileSync(path.join(ROOT, 'src/components/Pool8BallStage.tsx'), 'utf8');
+    expect(poolSrc).toContain('VoiceSpeakerIndicator');
+    expect(poolSrc).toContain('audioLevel={p0Level}');
+
+    const voiceHookSrc = fs.readFileSync(path.join(ROOT, 'src/hooks/useGameVoiceChat.ts'), 'utf8');
+    expect(voiceHookSrc).toContain('openrelay.metered.ca');
+    expect(voiceHookSrc).toContain('primeAudioPoolOnGesture');
+    expect(voiceHookSrc).toContain('audioPlaybackBlocked');
+    expect(voiceHookSrc).toContain('resumeRemoteAudio');
+    expect(voiceHookSrc).not.toContain("el.style.display = 'none'");
+
+    const playerSrc = fs.readFileSync(
+      path.join(ROOT, 'src/components/NativeCinemaPlayer.tsx'),
+      'utf8'
+    );
+    expect(playerSrc).toContain('voiceChat');
+    expect(playerSrc).toContain('VoiceWaveBars');
+  });
+
+  it('builds centered host game invite payloads only when host starts with human companions', () => {
+    const baseRoom = {
+      id: 'sala-test',
+      name: 'Sala VIP',
+      hostId: 'u_host',
+      creatorId: 'u_host',
+      participants: [
+        { id: 'u_host', name: 'Anfitrión', avatar: '👑' },
+        { id: 'u_guest', name: 'Invitado', avatar: '🍿' },
+      ],
+    };
+
+    // Non-host should NOT trigger room-wide centered invite
+    expect(
+      buildHostGameInvitePayload({
+        room: baseRoom,
+        senderUserId: 'u_guest',
+        gameType: 'pool',
+      })
+    ).toBeNull();
+
+    // Solo/local match should NOT invite guests
+    expect(
+      buildHostGameInvitePayload({
+        room: baseRoom,
+        senderUserId: 'u_host',
+        gameType: 'chess',
+        soloLocal: true,
+      })
+    ).toBeNull();
+
+    // Room with only host + Smart TV should NOT emit centered invite
+    expect(
+      buildHostGameInvitePayload({
+        room: {
+          ...baseRoom,
+          participants: [
+            { id: 'u_host', name: 'Anfitrión', avatar: '👑' },
+            { id: 'tv_1', name: 'Salon (TV)', avatar: '📺' },
+          ],
+        },
+        senderUserId: 'u_host',
+        gameType: 'parchis',
+      })
+    ).toBeNull();
+
+    // Host starting any of the 8 games with human companion emits invite
+    const allGames = ['pool', 'chapas', 'parchis', 'uno', 'pinturillo', 'chess', 'checkers', 'connect4'] as const;
+    for (const gt of allGames) {
+      const invite = buildHostGameInvitePayload({
+        room: baseRoom,
+        senderUserId: 'u_host',
+        gameType: gt,
+      });
+      expect(invite).not.toBeNull();
+      expect(invite?.gameType).toBe(gt);
+      expect(invite?.inviterId).toBe('u_host');
+      expect(invite?.roomName).toBe('Sala VIP');
+    }
+  });
+});
+
+describe('Futbol Chapas Engine & Match Waiting Lobby Flows', () => {
+  it('sets up 12 caps + ball, toggles bots cleanly, enforces 3-pass possession and first-to-3 goals', () => {
+    const waiting = createInitialChapasState([{ id: 'u1', name: 'Naim' }], { waitForHost: true });
+    expect(waiting.status).toBe('waiting');
+    expect(waiting.caps.length).toBe(12);
+    expect(waiting.players[0]?.userId).toBe('u1');
+    expect(waiting.players[2]?.isBot).toBe(true);
+
+    // Turning bots OFF removes AI seats
+    const noBots = toggleChapasBots(waiting, false);
+    expect(noBots.botsEnabled).toBe(false);
+    expect(noBots.players[2]).toBeNull();
+
+    // Joining Team B with second human allows starting without bots
+    const joined = joinChapasSeat(noBots, { id: 'u2', name: 'Carlos' }, 2);
+    expect(joined.ok).toBe(true);
+    if (!joined.ok) return;
+
+    const started = startChapasMatch(joined.state);
+    expect(started.ok).toBe(true);
+    if (!started.ok) return;
+    expect(started.state.status).toBe('playing');
+    expect(started.state.activeTeam).toBe('A');
+
+    // Aim A-6 directly down into center ball -> ballTouched keeps Team A possession & increments passesUsed
+    const capA6 = started.state.caps.find((c) => c.id === 'A-6')!;
+    const touchAngle = Math.atan2(started.state.ball.y - capA6.y, started.state.ball.x - capA6.x);
+    const pass1 = shootChapasCap(started.state, 'u1', { capId: 'A-6', angle: touchAngle, power: 0.45 });
+    expect(pass1.ok).toBe(true);
+    if (!pass1.ok) return;
+    expect(pass1.state.lastShot?.ballTouched).toBe(true);
+    expect(pass1.state.activeTeam).toBe('A');
+    expect(pass1.state.passesUsed).toBe(1);
+
+    // Miss the ball completely -> turn transfers immediately to Team B
+    const miss = shootChapasCap(pass1.state, 'u1', { capId: 'A-1', angle: Math.PI, power: 0.25 });
+    expect(miss.ok).toBe(true);
+    if (!miss.ok) return;
+    expect(miss.state.activeTeam).toBe('B');
+    expect(miss.state.passesUsed).toBe(0);
+
+    // Position ball near bottom goal and cap A-6 behind it -> scoring increments Team A score and resets kickoff
+    const goalSetup = {
+      ...miss.state,
+      activeTeam: 'A' as const,
+      activeSeatIndex: 0 as const,
+      scores: { A: 2, B: 0 },
+      caps: miss.state.caps.map((c) =>
+        c.id === 'A-6' ? { ...c, x: CHAPAS_ARENA_W / 2, y: CHAPAS_PITCH_BOTTOM - 58 } : c
+      ),
+      ball: {
+        x: CHAPAS_ARENA_W / 2,
+        y: CHAPAS_PITCH_BOTTOM - CHAPAS_BALL_RADIUS - 12,
+        vx: 0,
+        vy: 0,
+        spinAngle: 0,
+      },
+    };
+    const winningGoal = shootChapasCap(goalSetup, 'u1', {
+      capId: 'A-6',
+      angle: Math.PI / 2,
+      power: 0.85,
+    });
+    expect(winningGoal.ok).toBe(true);
+    if (!winningGoal.ok) return;
+    expect(winningGoal.state.scores.A).toBe(3);
+    expect(winningGoal.state.status).toBe('finished');
+    expect(winningGoal.state.winnerTeam).toBe('A');
+  });
+
+  it('keeps Pool, Pinturillo, and switched Board games waiting until players respond or host starts', () => {
+    const poolWait = createInitialPoolState([{ id: 'u1', name: 'Host' }], { waitForHost: true });
+    expect(poolWait.status).toBe('waiting');
+    expect(poolWait.awaitingHostStart).toBe(true);
+    expect(poolWait.turnDeadlineAt).toBe(0);
+    const poolLive = startPoolMatch(poolWait);
+    expect(poolLive.status).toBe('playing');
+    expect(poolLive.turnDeadlineAt).toBeGreaterThan(0);
+
+    const pintWait = createInitialPinturilloState([{ id: 'u1', name: 'Host' }], { waitForHost: true });
+    expect(pintWait.status).toBe('waiting');
+    expect(pintWait.phaseDeadlineAt).toBe(0);
+    const pintJoined = joinPinturilloPlayer(pintWait, { id: 'u2', name: 'Ana' });
+    expect(pintJoined.players.some((p) => p.userId === 'u2')).toBe(true);
+    const pintLive = startPinturilloMatch(pintJoined);
+    expect(pintLive.status).toBe('choosing');
+    expect(pintLive.phaseDeadlineAt).toBeGreaterThan(0);
+
+    const chess = startBoardMatch(createInitialBoardGameState('chess', { id: 'u1', name: 'Host' }));
+    const switchedToCheckers = resetBoardGame(chess, { gameType: 'checkers', waitForHost: true });
+    expect(switchedToCheckers.gameType).toBe('checkers');
+    expect(switchedToCheckers.status).toBe('waiting');
+    expect(switchedToCheckers.turnDeadlineAt).toBe(0);
+  });
+
+  it('validates game invite response and Chapas WS schemas, and keeps chat sidebar free of games menu', () => {
+    expect(
+      wsGameInviteRespondSchema.safeParse({
+        roomId: 'sala_vip',
+        gameType: 'chapas',
+        response: 'accepted',
+      }).success
+    ).toBe(true);
+    expect(
+      wsChapasToggleBotsSchema.safeParse({
+        roomId: 'sala_vip',
+        botsEnabled: false,
+      }).success
+    ).toBe(true);
+    expect(
+      wsChapasShootSchema.safeParse({
+        roomId: 'sala_vip',
+        capId: 'A-6',
+        angle: 1.57,
+        power: 0.7,
+      }).success
+    ).toBe(true);
+
+    const sidebarSrc = fs.readFileSync(path.join(ROOT, 'src/components/PartySidebar.tsx'), 'utf8');
+    expect(sidebarSrc).not.toContain('Juegos Online en Sala');
+    expect(sidebarSrc).not.toContain('PartyGamesStage');
+
+    const hubSrc = fs.readFileSync(path.join(ROOT, 'src/components/GamesHubSection.tsx'), 'utf8');
+    expect(hubSrc).toContain('FutbolChapasStage');
+    expect(hubSrc).toContain('matchResponses');
   });
 });
 

@@ -8,6 +8,7 @@ import type {
   TvRemoteCommandType,
   VideoState,
 } from '../../types';
+import type { GameVoiceChatState } from '../../hooks/useGameVoiceChat';
 
 export interface YouTubePlayerInstance {
   unMute?: () => void;
@@ -201,4 +202,5 @@ export interface NativeCinemaPlayerProps {
   onToggleFloatingChat?: () => void;
   compactVideoForMobileKeyboard?: boolean;
   onOpenInCloudBrowser?: (url: string) => void;
+  voiceChat?: GameVoiceChatState;
 }

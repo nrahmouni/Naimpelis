@@ -37,6 +37,7 @@ import {
   FavoriteChannelItem,
   FloatingReaction,
   FootballMatchDetails,
+  FutbolChapasState,
   IncomingFriendAddedNotice,
   IncomingRoomInvite,
   LanguageNoticePopup,
@@ -63,6 +64,7 @@ import {
   WatchHistoryItem,
   YouTubeSearchItem,
 } from './types';
+import type { RoomGameInvite, RoomGameInviteType, RoomMatchResponsesState } from './shared/protocol';
 import { UI_COPY, pickLang } from './utils/i18n';
 import {
   addRecentRoom,
@@ -180,6 +182,7 @@ import { useCloudSyncSubscriptions } from './hooks/useCloudSyncSubscriptions';
 import { useTvRemoteBridge } from './hooks/useTvRemoteBridge';
 import { useGameVoiceChat } from './hooks/useGameVoiceChat';
 import { isGoogleTvEnvironment } from './utils/tvSpatialNav';
+import { GameMatchInviteModal } from './components/games/GameMatchInviteModal';
 
 const NativeCinemaPlayer = React.lazy(() =>
   import('./components/NativeCinemaPlayer').then((m) => ({ default: m.NativeCinemaPlayer }))
@@ -423,6 +426,8 @@ export function App() {
   const [partyGameState, setPartyGameState] = useState<PartyGameState | null>(null);
   const [pinturilloState, setPinturilloState] = useState<PinturilloGameState | null>(null);
   const [poolGameState, setPoolGameState] = useState<Pool8BallState | null>(null);
+  const [chapasGameState, setChapasGameState] = useState<FutbolChapasState | null>(null);
+  const [matchResponses, setMatchResponses] = useState<RoomMatchResponsesState | null>(null);
   const [gameMoveError, setGameMoveError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -541,6 +546,15 @@ export function App() {
   const manualLobbyStayRef = useRef<boolean>(false);
   const hadActivePlaybackRef = useRef<boolean>(false);
 
+  const [incomingGameInvite, setIncomingGameInvite] = useState<RoomGameInvite | null>(null);
+  const [forcedOpenGame, setForcedOpenGame] = useState<{
+    gameType: RoomGameInviteType;
+    seq: number;
+  } | null>(null);
+  const activeHubGameRef = useRef<RoomGameInviteType | null>(null);
+  const catalogSectionRef = useRef<CatalogSection>(catalogSection);
+  catalogSectionRef.current = catalogSection;
+
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
   const activeHistoryIdRef = useRef<string | null>(null);
   const lastCloudProgressSyncRef = useRef<number>(0);
@@ -623,6 +637,31 @@ export function App() {
     lang,
     enabled: inRoom && Boolean(roomId),
   });
+
+  useEffect(() => {
+    setIncomingGameInvite(null);
+  }, [roomId, inRoom]);
+
+  const handleAcceptGameInvite = useCallback(
+    (invite: RoomGameInvite) => {
+      socketService.respondToGameInvite(invite.gameType, 'accepted', invite.id);
+      setIncomingGameInvite(null);
+      setCinemaModePersist(false);
+      setFloatingChatOpen(false);
+      setShowWatchlistOnly(false);
+      setIsChromeHidden(false);
+      if (videoStateRef.current.mode !== 'idle') {
+        setIsPlayerMinimized(true);
+      }
+      setCatalogSection('games');
+      setMobileTab('games');
+      setForcedOpenGame({
+        gameType: invite.gameType,
+        seq: Date.now(),
+      });
+    },
+    [setCinemaModePersist]
+  );
 
   const showHostLockNotice = useCallback(
     (hostDisplayName?: string, reason?: string) => {
@@ -1317,6 +1356,8 @@ export function App() {
         setPartyGameState(payload.partyGameState || null);
         setPinturilloState(payload.pinturilloState || null);
         setPoolGameState(payload.poolGameState || null);
+        setChapasGameState(payload.chapasState || null);
+        setMatchResponses(payload.matchResponses || null);
         setGameMoveError(null);
         setParticipants(payload.participants || []);
         setMessages(payload.messages || []);
@@ -1524,8 +1565,17 @@ export function App() {
           );
         }
       } else if (type === 'GAME_STATE_UPDATED') {
-        setRoomGameState(payload.gameState || null);
+        const nextBoard = payload.gameState || null;
+        setRoomGameState(nextBoard);
         setGameMoveError(null);
+        if (!nextBoard) {
+          setIncomingGameInvite((prev) =>
+            prev &&
+            (prev.gameType === 'chess' || prev.gameType === 'checkers' || prev.gameType === 'connect4')
+              ? null
+              : prev
+          );
+        }
         if (payload.message) {
           setMessages((prev) => [...prev.slice(-149), payload.message!]);
           if (mobileTabRef.current !== 'chat') {
@@ -1542,7 +1592,13 @@ export function App() {
       } else if (type === 'PINNED_MESSAGE_UPDATED') {
         setPinnedMessage(payload.pinnedMessage || null);
       } else if (type === 'PARTY_GAME_STATE_UPDATED') {
-        setPartyGameState(payload.partyGameState || null);
+        const nextParty = payload.partyGameState || null;
+        setPartyGameState(nextParty);
+        if (!nextParty) {
+          setIncomingGameInvite((prev) =>
+            prev && (prev.gameType === 'parchis' || prev.gameType === 'uno') ? null : prev
+          );
+        }
         if (payload.message) {
           setMessages((prev) => [...prev.slice(-149), payload.message!]);
           if (mobileTabRef.current !== 'chat') {
@@ -1550,7 +1606,13 @@ export function App() {
           }
         }
       } else if (type === 'PINTURILLO_STATE_UPDATED') {
-        setPinturilloState(payload.pinturilloState || null);
+        const nextPint = payload.pinturilloState || null;
+        setPinturilloState(nextPint);
+        if (!nextPint) {
+          setIncomingGameInvite((prev) =>
+            prev && prev.gameType === 'pinturillo' ? null : prev
+          );
+        }
         if (payload.message) {
           setMessages((prev) => [...prev.slice(-149), payload.message!]);
           if (mobileTabRef.current !== 'chat') {
@@ -1558,7 +1620,11 @@ export function App() {
           }
         }
       } else if (type === 'POOL_STATE_UPDATED') {
-        setPoolGameState(payload.poolGameState || null);
+        const nextPool = payload.poolGameState || null;
+        setPoolGameState(nextPool);
+        if (!nextPool) {
+          setIncomingGameInvite((prev) => (prev && prev.gameType === 'pool' ? null : prev));
+        }
         if (payload.message) {
           setMessages((prev) => [...prev.slice(-149), payload.message!]);
           if (mobileTabRef.current !== 'chat') {
@@ -1566,7 +1632,34 @@ export function App() {
           }
         }
       } else if (type === 'POOL_SHOT_BROADCAST') {
-        setPoolGameState(payload.authoritativeState || null);
+        setPoolGameState((payload.authoritativeState as Pool8BallState | null) || null);
+      } else if (type === 'CHAPAS_STATE_UPDATED') {
+        const nextChapas = (payload.chapasState as FutbolChapasState | null) || null;
+        setChapasGameState(nextChapas);
+        if (!nextChapas) {
+          setIncomingGameInvite((prev) => (prev && prev.gameType === 'chapas' ? null : prev));
+        }
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message!]);
+          if (mobileTabRef.current !== 'chat') {
+            setUnreadChatCount((c) => c + 1);
+          }
+        }
+      } else if (type === 'CHAPAS_SHOT_BROADCAST') {
+        setChapasGameState((payload.authoritativeState as FutbolChapasState | null) || null);
+      } else if (type === 'GAME_INVITE_STATUS_UPDATED') {
+        setMatchResponses(payload.matchResponses || null);
+      } else if (type === 'GAME_MATCH_INVITE') {
+        if (isTvMode) return;
+        const invite = payload as unknown as RoomGameInvite;
+        if (!invite || !invite.gameType || invite.inviterId === profile.id) return;
+        const alreadyViewingThisGame =
+          catalogSectionRef.current === 'games' &&
+          mobileTabRef.current !== 'chat' &&
+          mobileTabRef.current !== 'room' &&
+          activeHubGameRef.current === invite.gameType;
+        if (alreadyViewingThisGame) return;
+        setIncomingGameInvite(invite);
       }
     });
 
@@ -5079,6 +5172,7 @@ export function App() {
                     }}
                     floatingChatOpen={floatingChatOpen}
                     onToggleFloatingChat={() => setFloatingChatOpen((v) => !v)}
+                    voiceChat={voiceChat}
                     compactVideoForMobileKeyboard={
                       !isDesktopLayout && isMobileKeyboardOpen && mobileTab === 'chat'
                     }
@@ -5253,21 +5347,6 @@ export function App() {
                     onUpdateProfile={handleUpdateProfile}
                     onCreateNewRoom={handleCreateFreshRoom}
                     onLeaveRoom={handleLeaveRoom}
-                    gameState={roomGameState}
-                    gameMoveError={gameMoveError}
-                    onStartBoardGame={(gt, solo, clockMin) =>
-                      socketService.startBoardGame(gt, solo, clockMin)
-                    }
-                    onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
-                    onStartBoardMatch={() => socketService.startBoardMatch()}
-                    onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
-                    onResignBoardGame={() => socketService.resignBoardGame()}
-                    onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
-                    onCloseBoardGame={() => socketService.closeBoardGame()}
-                    partyGameState={partyGameState}
-                    onStartPartyGame={(gt) => socketService.startPartyGame(gt)}
-                    onPartyGameAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
-                    onClosePartyGame={() => socketService.closePartyGame()}
                     voiceChat={voiceChat}
                   />
                 </React.Suspense>
@@ -5510,9 +5589,15 @@ export function App() {
                   roomPartyGame={partyGameState}
                   roomPinturilloGame={pinturilloState}
                   roomPoolGame={poolGameState}
+                  roomChapasGame={chapasGameState}
+                  matchResponses={matchResponses}
                   gameMoveError={gameMoveError}
                   isHost={isHostUser}
                   voiceChat={voiceChat}
+                  requestedGameOpen={forcedOpenGame}
+                  onSelectedGameChange={(game) => {
+                    activeHubGameRef.current = game;
+                  }}
                   onStartRoomBoardGame={(gt, solo, clockMin) =>
                     socketService.startBoardGame(gt, solo, clockMin)
                   }
@@ -5526,6 +5611,7 @@ export function App() {
                   onRoomPartyAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
                   onCloseRoomPartyGame={() => socketService.closePartyGame()}
                   onStartRoomPinturillo={() => socketService.startPinturillo()}
+                  onStartPinturilloMatch={() => socketService.startPinturilloMatch()}
                   onPinturilloPickWord={(wordId) => socketService.pickPinturilloWord(wordId)}
                   onPinturilloStroke={(stroke) => socketService.sendPinturilloStroke(stroke)}
                   onPinturilloUndo={() => socketService.undoPinturilloStroke()}
@@ -5534,6 +5620,7 @@ export function App() {
                   onPinturilloRematch={() => socketService.rematchPinturillo()}
                   onCloseRoomPinturillo={() => socketService.closePinturillo()}
                   onStartRoomPool={(difficulty) => socketService.startPoolGame(difficulty)}
+                  onStartPoolMatch={() => socketService.startPoolMatch()}
                   onPoolJoinSeat={(seat) => socketService.joinPoolSeat(seat)}
                   onPoolCallPocket={(pocketId) => socketService.callPoolPocket(pocketId)}
                   onPoolPlaceCue={(x, y) => socketService.placePoolCueBall(x, y)}
@@ -5544,6 +5631,15 @@ export function App() {
                   onPoolForfeit={() => socketService.forfeitPoolGame()}
                   onPoolRematch={() => socketService.rematchPoolGame()}
                   onCloseRoomPool={() => socketService.closePoolGame()}
+                  onStartRoomChapas={(opts) => socketService.startChapasGame(opts)}
+                  onChapasJoinSeat={(seat) => socketService.joinChapasSeat(seat)}
+                  onChapasUpdateTeam={(team, flag) => socketService.updateChapasTeam(team, flag)}
+                  onChapasToggleBots={(botsEnabled) => socketService.toggleChapasBots(botsEnabled)}
+                  onChapasStartMatch={() => socketService.startChapasMatch()}
+                  onChapasShoot={(shot) => socketService.shootChapasCap(shot)}
+                  onChapasForfeit={() => socketService.forfeitChapasGame()}
+                  onChapasRematch={() => socketService.rematchChapasGame()}
+                  onCloseRoomChapas={() => socketService.closeChapasGame()}
                 />
 
                 {/* Minimalist Footer (Hidden in Games Hub so grid fills viewport cleanly without gap or scroll) */}
@@ -5645,21 +5741,6 @@ export function App() {
                   onUpdateProfile={handleUpdateProfile}
                   onCreateNewRoom={handleCreateFreshRoom}
                   onLeaveRoom={handleLeaveRoom}
-                  gameState={roomGameState}
-                  gameMoveError={gameMoveError}
-                  onStartBoardGame={(gt, solo, clockMin) =>
-                    socketService.startBoardGame(gt, solo, clockMin)
-                  }
-                  onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
-                  onStartBoardMatch={() => socketService.startBoardMatch()}
-                  onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
-                  onResignBoardGame={() => socketService.resignBoardGame()}
-                  onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
-                  onCloseBoardGame={() => socketService.closeBoardGame()}
-                  partyGameState={partyGameState}
-                  onStartPartyGame={(gt) => socketService.startPartyGame(gt)}
-                  onPartyGameAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
-                  onClosePartyGame={() => socketService.closePartyGame()}
                   voiceChat={voiceChat}
                 />
               </React.Suspense>
@@ -5916,6 +5997,22 @@ export function App() {
             lang={lang}
           />
         </React.Suspense>
+
+        <GameMatchInviteModal
+          invite={incomingGameInvite}
+          lang={lang}
+          onAccept={handleAcceptGameInvite}
+          onDismiss={() => {
+            if (incomingGameInvite) {
+              socketService.respondToGameInvite(
+                incomingGameInvite.gameType,
+                'declined',
+                incomingGameInvite.id
+              );
+            }
+            setIncomingGameInvite(null);
+          }}
+        />
       </div>
     </div>
     </MotionConfig>

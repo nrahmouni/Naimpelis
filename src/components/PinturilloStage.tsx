@@ -5,11 +5,13 @@ import {
   Eraser,
   Flame,
   Pencil,
+  Play,
   RotateCcw,
   Send,
   Trash2,
   Timer,
   Undo2,
+  Users,
 } from 'lucide-react';
 import type { AppLanguage, Participant, PinturilloGameState, PinturilloStroke } from '../types';
 import {
@@ -43,9 +45,11 @@ interface PinturilloStageProps {
   participants: Participant[];
   pinturilloState: PinturilloGameState | null;
   isOffline?: boolean;
+  isHost?: boolean;
   voiceChat?: GameVoiceChatState;
   mutedOverride?: boolean;
   onStartOnline?: () => void;
+  onStartMatchOnline?: () => void;
   onPickWordOnline?: (wordId: string) => void;
   onSendStrokeOnline?: (stroke: PinturilloStroke) => void;
   onUndoOnline?: () => void;
@@ -97,8 +101,10 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
   currentUser,
   pinturilloState,
   isOffline = false,
+  isHost = false,
   voiceChat,
   mutedOverride,
+  onStartMatchOnline,
   onPickWordOnline,
   onSendStrokeOnline,
   onUndoOnline,
@@ -178,7 +184,7 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
 
   // Countdown tick
   useEffect(() => {
-    if (!activeState || activeState.status === 'finished') return;
+    if (!activeState || activeState.status === 'finished' || activeState.status === 'waiting') return;
     setNowTs(Date.now());
     const id = window.setInterval(() => setNowTs(Date.now()), 250);
     return () => window.clearInterval(id);
@@ -489,13 +495,17 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
         {activeState.players.map((pl) => {
           const isDraw = activeState.drawerSeat === pl.seatIndex && activeState.status !== 'finished';
           const voiceInfo = !pl.isBot ? voicePeerMap.get(pl.userId) : undefined;
-          const isSpeaking = !pl.isBot && Boolean(voiceChat?.speakingUserIds.includes(pl.userId));
+          const voiceLevel = !pl.isBot ? voiceChat?.audioLevels?.[pl.userId] ?? 0 : 0;
+          const isSpeaking =
+            !pl.isBot &&
+            !voiceInfo?.isMuted &&
+            (voiceLevel > 0.06 || Boolean(voiceChat?.speakingUserIds.includes(pl.userId)));
           return (
             <div
               key={pl.seatIndex}
               className={`px-2 py-1 rounded-xl border min-w-0 flex flex-col justify-between transition-all ${
                 isSpeaking
-                  ? 'border-emerald-400 bg-emerald-500/15'
+                  ? 'border-emerald-400 bg-emerald-500/15 ring-1 ring-emerald-400/60'
                   : pl.hasGuessedThisRound
                   ? 'border-emerald-400/55 bg-emerald-500/15'
                   : isDraw
@@ -516,6 +526,7 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
                     inVoice
                     isSpeaking={isSpeaking}
                     isMuted={voiceInfo.isMuted}
+                    audioLevel={voiceLevel}
                   />
                 ) : null}
               </div>
@@ -541,7 +552,9 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
           </span>
 
           <div className="text-xs sm:text-sm font-black tracking-[0.22em] text-white text-center truncate px-2">
-            {activeState.status === 'choosing'
+            {activeState.status === 'waiting'
+              ? pickLang(lang, { es: 'SALA DE ESPERA', ca: "SALA D'ESPERA", en: 'WAITING LOBBY' })
+              : activeState.status === 'choosing'
               ? pickLang(lang, { es: 'ELIGIENDO…', ca: 'TRIANT…', en: 'PICKING…' })
               : amDrawer && activeState.secretWord
               ? `${activeState.secretWord.es.toUpperCase()} · ${activeState.secretWord.en}`
@@ -554,7 +567,7 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
             }`}
           >
             <Timer className="w-3.5 h-3.5" />
-            {remainingSec}s
+            {activeState.status === 'waiting' ? '--' : `${remainingSec}s`}
           </span>
         </div>
 
@@ -602,6 +615,63 @@ export const PinturilloStage: React.FC<PinturilloStageProps> = ({
                 {g.kind === 'system' ? g.text : `${g.userName}: ${g.text}`}
               </div>
             ))}
+          </div>
+        )}
+
+        {/* Waiting Lobby Overlay */}
+        {activeState.status === 'waiting' && (
+          <div className="absolute inset-0 z-20 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-4 gap-3 text-center">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-pink-500/25 to-purple-500/25 border border-pink-400/40 flex items-center justify-center text-2xl">
+              🎨
+            </div>
+            <div className="space-y-1 max-w-xs">
+              <div className="text-sm sm:text-base font-extrabold text-white">
+                {pickLang(lang, {
+                  es: 'Esperando a los jugadores de la sala',
+                  ca: 'Esperant els jugadors de la sala',
+                  en: 'Waiting for room players',
+                })}
+              </div>
+              <p className="text-xs text-zinc-300">
+                {pickLang(lang, {
+                  es: 'La partida empezará cuando acepten la invitación o el anfitrión pulse Play.',
+                  ca: "La partida començarà quan acceptin la invitació o l'amfitrió premi Play.",
+                  en: 'Match starts once invitees respond or the host presses Play.',
+                })}
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-1.5">
+              {activeState.players.map((pl) => (
+                <span
+                  key={pl.seatIndex}
+                  className="px-2.5 py-1 rounded-xl bg-white/[0.08] border border-white/15 text-xs font-bold text-white flex items-center gap-1.5"
+                >
+                  {pl.isBot ? <Bot className="w-3.5 h-3.5 text-emerald-300" /> : <Users className="w-3.5 h-3.5 text-purple-300" />}
+                  <span>{pl.name}</span>
+                </span>
+              ))}
+            </div>
+            {isHost && onStartMatchOnline ? (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('success');
+                  onStartMatchOnline();
+                }}
+                className="min-h-11 px-5 rounded-2xl bg-gradient-to-b from-emerald-500 to-emerald-600 hover:brightness-110 text-xs sm:text-sm font-black text-zinc-950 flex items-center gap-2 whitespace-nowrap cursor-pointer shadow-lg active:scale-95 transition-all"
+              >
+                <Play className="w-4 h-4 fill-current" />
+                <span>{pickLang(lang, { es: 'Play · Empezar ahora', ca: 'Play · Començar ara', en: 'Play · Start Now' })}</span>
+              </button>
+            ) : (
+              <span className="text-xs font-semibold text-amber-200/90">
+                {pickLang(lang, {
+                  es: 'Esperando a que el anfitrión inicie…',
+                  ca: "Esperant que l'amfitrió iniciï…",
+                  en: 'Waiting for host to start…',
+                })}
+              </span>
+            )}
           </div>
         )}
 

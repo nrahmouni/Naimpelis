@@ -4,8 +4,12 @@ import {
   BoardGameState,
   BoardGameType,
   CatalogMovie,
+  ChapasFlagId,
+  ChapasShotInput,
+  ChapasTeamId,
   ChatMessage,
   ChessPromotionPiece,
+  FutbolChapasState,
   OnlineAppUser,
   Participant,
   PartyColor,
@@ -26,7 +30,12 @@ import {
   TvRemoteCommandType,
   VideoState,
 } from '../types';
-import type { VoicePeerState, VoiceSignalPayload } from '../shared/protocol';
+import type {
+  RoomGameInviteType,
+  RoomMatchResponsesState,
+  VoicePeerState,
+  VoiceSignalPayload,
+} from '../shared/protocol';
 import { auth } from '../firebase';
 
 export interface SocketPayload {
@@ -53,12 +62,15 @@ export interface SocketPayload {
   pinturilloState?: PinturilloGameState | null;
   stroke?: PinturilloStroke;
   poolGameState?: Pool8BallState | null;
-  authoritativeState?: Pool8BallState | null;
-  shot?: PoolShotInput & {
+  chapasState?: FutbolChapasState | null;
+  preShotState?: FutbolChapasState | null;
+  matchResponses?: RoomMatchResponsesState | null;
+  authoritativeState?: Pool8BallState | FutbolChapasState | null;
+  shot?: (PoolShotInput | ChapasShotInput) & {
     shooterUserId: string;
     turnNumber: number;
-    cueStartX: number;
-    cueStartY: number;
+    cueStartX?: number;
+    cueStartY?: number;
   };
   preShotBalls?: PoolBallState[];
   checksum?: number;
@@ -859,6 +871,75 @@ class SocketService {
   closePoolGame() {
     if (!this.roomId) return;
     this.send('POOL_CLOSE', { roomId: this.roomId });
+  }
+
+  startPoolMatch() {
+    if (!this.roomId) return;
+    this.send('POOL_START_MATCH', { roomId: this.roomId });
+  }
+
+  startPinturilloMatch() {
+    if (!this.roomId) return;
+    this.send('PINTURILLO_START_MATCH', { roomId: this.roomId });
+  }
+
+  respondToGameInvite(
+    gameType: RoomGameInviteType,
+    response: 'accepted' | 'declined',
+    inviteId?: string
+  ) {
+    if (!this.roomId) return;
+    this.send('GAME_INVITE_RESPOND', {
+      roomId: this.roomId,
+      gameType,
+      inviteId,
+      response,
+    });
+  }
+
+  startChapasGame() {
+    if (!this.roomId) return;
+    this.send('CHAPAS_START', { roomId: this.roomId });
+  }
+
+  joinChapasSeat(seatIndex: 0 | 1 | 2 | 3 | 'spectate') {
+    if (!this.roomId) return;
+    this.send('CHAPAS_JOIN_SEAT', { roomId: this.roomId, seatIndex });
+  }
+
+  updateChapasTeam(team: ChapasTeamId, flag: ChapasFlagId) {
+    if (!this.roomId) return;
+    this.send('CHAPAS_UPDATE_TEAM', { roomId: this.roomId, team, flag });
+  }
+
+  toggleChapasBots(botsEnabled: boolean) {
+    if (!this.roomId) return;
+    this.send('CHAPAS_TOGGLE_BOTS', { roomId: this.roomId, botsEnabled });
+  }
+
+  startChapasMatch() {
+    if (!this.roomId) return;
+    this.send('CHAPAS_START_MATCH', { roomId: this.roomId });
+  }
+
+  shootChapasCap(shot: ChapasShotInput) {
+    if (!this.roomId) return;
+    this.send('CHAPAS_SHOOT', { roomId: this.roomId, shot });
+  }
+
+  forfeitChapasGame() {
+    if (!this.roomId) return;
+    this.send('CHAPAS_FORFEIT', { roomId: this.roomId });
+  }
+
+  rematchChapasGame() {
+    if (!this.roomId) return;
+    this.send('CHAPAS_REMATCH', { roomId: this.roomId });
+  }
+
+  closeChapasGame() {
+    if (!this.roomId) return;
+    this.send('CHAPAS_CLOSE', { roomId: this.roomId });
   }
 }
 

@@ -13,6 +13,76 @@ import type { AppLanguage } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 
+interface VoiceWaveBarsProps {
+  active: boolean;
+  level?: number;
+  muted?: boolean;
+  size?: 'sm' | 'md';
+  className?: string;
+}
+
+const WAVE_WEIGHTS = [0.68, 1.0, 0.84, 0.56];
+const WAVE_FALLBACK_CLASSES = ['nc-eq-bar-1', 'nc-eq-bar-2', 'nc-eq-bar-3', 'nc-eq-bar-2'];
+
+export const VoiceWaveBars: React.FC<VoiceWaveBarsProps> = ({
+  active,
+  level = 0,
+  muted = false,
+  size = 'sm',
+  className = '',
+}) => {
+  const heightCls = size === 'md' ? 'h-3.5' : 'h-2.5';
+  const barWidthCls = size === 'md' ? 'w-[2.5px]' : 'w-[2px]';
+  const normalized = Math.max(0, Math.min(1, level));
+
+  return (
+    <span
+      className={`inline-flex items-end gap-[2px] ${heightCls} shrink-0 ${className}`}
+      aria-hidden="true"
+    >
+      {WAVE_WEIGHTS.map((weight, idx) => {
+        if (muted) {
+          return (
+            <span
+              key={idx}
+              className={`${barWidthCls} h-full rounded-full bg-rose-300/65 origin-bottom transition-transform duration-150`}
+              style={{ transform: 'scaleY(0.22)' }}
+            />
+          );
+        }
+
+        if (active && normalized > 0.04) {
+          const scale = Math.max(0.26, Math.min(1, 0.24 + normalized * weight * 0.92));
+          return (
+            <span
+              key={idx}
+              className={`${barWidthCls} h-full rounded-full bg-emerald-200 origin-bottom transition-transform duration-75`}
+              style={{ transform: `scaleY(${scale.toFixed(2)})` }}
+            />
+          );
+        }
+
+        if (active) {
+          return (
+            <span
+              key={idx}
+              className={`${barWidthCls} h-full rounded-full bg-emerald-200 origin-bottom ${WAVE_FALLBACK_CLASSES[idx]}`}
+            />
+          );
+        }
+
+        return (
+          <span
+            key={idx}
+            className={`${barWidthCls} h-full rounded-full bg-emerald-300/55 origin-bottom transition-transform duration-150`}
+            style={{ transform: `scaleY(${(0.24 + (idx % 2) * 0.1).toFixed(2)})` }}
+          />
+        );
+      })}
+    </span>
+  );
+};
+
 interface GameVoiceBarProps {
   lang: AppLanguage;
   voice: GameVoiceChatState;
@@ -25,24 +95,31 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
   compact = false,
 }) => {
   const peerCount = voice.voicePeers.length;
-  const activeSpeakersCount = voice.speakingUserIds.length;
+  const isLocalSpeaking =
+    voice.isJoined &&
+    !voice.isMuted &&
+    (voice.localAudioLevel > 0.06 || voice.speakingUserIds.length > 0);
 
   return (
     <div className="space-y-1.5">
       <div
-        className={`rounded-xl border px-2.5 py-2 flex flex-wrap items-center justify-between gap-2 transition-colors ${
+        className={`rounded-xl border px-2.5 py-2 flex flex-wrap items-center justify-between gap-2 transition-all ${
           voice.isJoined
-            ? 'bg-emerald-500/[0.08] border-emerald-400/35'
+            ? isLocalSpeaking
+              ? 'bg-emerald-500/[0.14] border-emerald-400/65 shadow-[0_0_16px_rgba(16,185,129,0.22)]'
+              : 'bg-emerald-500/[0.08] border-emerald-400/35'
             : 'bg-white/[0.03] border-white/[0.08]'
         }`}
       >
         <div className="flex items-center gap-2 min-w-0">
           <div
-            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border ${
+            className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 border transition-all ${
               voice.isJoined
                 ? voice.isMuted
                   ? 'bg-rose-500/20 border-rose-400/40 text-rose-300'
-                  : 'bg-emerald-500/25 border-emerald-400/50 text-emerald-300'
+                  : isLocalSpeaking
+                  ? 'bg-emerald-500/30 border-emerald-300 text-emerald-100 ring-2 ring-emerald-400/60'
+                  : 'bg-emerald-500/20 border-emerald-400/45 text-emerald-300'
                 : 'bg-[#9146FF]/15 border-[#9146FF]/35 text-[#DFCCFF]'
             }`}
           >
@@ -60,8 +137,8 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
               <span>
                 {voice.isJoined
                   ? pickLang(lang, {
-                      es: 'Chat de Voz Activo',
-                      ca: 'Xat de Veu Actiu',
+                      es: 'Llamada de Voz Activa',
+                      ca: 'Trucada de Veu Activa',
                       en: 'Live Voice Active',
                     })
                   : pickLang(lang, {
@@ -74,8 +151,8 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
                 <span className="px-1.5 py-0.5 rounded-md bg-white/[0.08] text-[10px] font-mono tabular-nums text-zinc-200 shrink-0">
                   {peerCount}{' '}
                   {pickLang(lang, {
-                    es: peerCount === 1 ? 'jugador' : 'en voz',
-                    ca: peerCount === 1 ? 'jugador' : 'en veu',
+                    es: peerCount === 1 ? 'en voz' : 'en voz',
+                    ca: peerCount === 1 ? 'en veu' : 'en veu',
                     en: peerCount === 1 ? 'in call' : 'in voice',
                   })}
                 </span>
@@ -84,17 +161,17 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
             {!compact && (
               <p className="text-[10px] text-zinc-400 truncate">
                 {voice.isJoined
-                  ? activeSpeakersCount > 0
+                  ? isLocalSpeaking
                     ? pickLang(lang, {
-                        es: 'Audio en directo conectado · Hablando ahora',
-                        ca: 'Àudio en directe connectat · Parlant ara',
-                        en: 'Live peer audio connected · Speaking now',
+                        es: 'Audio en directo conectado · Detectando voz',
+                        ca: 'Àudio en directe connectat · Detectant veu',
+                        en: 'Live peer audio connected · Voice detected',
                       })
                     : voice.isMuted
                     ? pickLang(lang, {
-                        es: 'Micrófono silenciado · Escuchando a la mesa',
-                        ca: 'Micròfon silenciat · Escoltant la taula',
-                        en: 'Microphone muted · Listening to table',
+                        es: 'Micrófono silenciado · Escuchando a la sala',
+                        ca: 'Micròfon silenciat · Escoltant la sala',
+                        en: 'Microphone muted · Listening to room',
                       })
                     : pickLang(lang, {
                         es: 'Micrófono abierto · Habla con tu sala mientras juegas',
@@ -121,9 +198,11 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
                   triggerHaptic('light');
                   voice.toggleMute();
                 }}
-                className={`min-h-8 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                className={`min-h-8 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all border ${
                   voice.isMuted
                     ? 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-400/50 text-rose-200'
+                    : isLocalSpeaking
+                    ? 'bg-emerald-500/30 hover:bg-emerald-500/40 border-emerald-300 text-emerald-100 ring-1 ring-emerald-400/70'
                     : 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/50 text-emerald-200'
                 }`}
               >
@@ -141,12 +220,19 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
                 ) : (
                   <>
                     <Mic className="w-3.5 h-3.5 shrink-0" />
+                    <VoiceWaveBars active={isLocalSpeaking} level={voice.localAudioLevel} size="md" />
                     <span>
-                      {pickLang(lang, {
-                        es: 'Micro vivo',
-                        ca: 'Micro actiu',
-                        en: 'Mic On',
-                      })}
+                      {voice.localAudioLevel > 0.08
+                        ? pickLang(lang, {
+                            es: 'Hablando',
+                            ca: 'Parlant',
+                            en: 'Speaking',
+                          })
+                        : pickLang(lang, {
+                            es: 'Micro vivo',
+                            ca: 'Micro actiu',
+                            en: 'Mic On',
+                          })}
                     </span>
                   </>
                 )}
@@ -159,13 +245,13 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
                   voice.leaveVoice();
                 }}
                 title={pickLang(lang, {
-                  es: 'Salir de llamada',
-                  ca: 'Sortir de la trucada',
+                  es: 'Colgar llamada',
+                  ca: 'Penjar trucada',
                   en: 'Leave voice call',
                 })}
                 aria-label={pickLang(lang, {
-                  es: 'Salir de llamada',
-                  ca: 'Sortir de la trucada',
+                  es: 'Colgar llamada',
+                  ca: 'Penjar trucada',
                   en: 'Leave voice call',
                 })}
                 className="min-h-8 px-2 rounded-lg bg-white/[0.06] hover:bg-rose-500/25 border border-white/[0.1] text-[11px] font-semibold text-zinc-200 hover:text-rose-200 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
@@ -188,7 +274,11 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
               }}
               className="min-h-8 px-3 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] disabled:opacity-60 text-[11px] font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
             >
-              <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+              {voice.status === 'requesting' ? (
+                <Loader2 className="w-3.5 h-3.5 shrink-0 animate-spin" />
+              ) : (
+                <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+              )}
               <span>
                 {voice.status === 'requesting'
                   ? pickLang(lang, {
@@ -197,15 +287,43 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
                       en: 'Connecting...',
                     })
                   : pickLang(lang, {
-                      es: 'Unirse a Voz',
-                      ca: 'Unir-se a Veu',
-                      en: 'Join Voice',
+                      es: 'Abrir voz',
+                      ca: 'Obrir veu',
+                      en: 'Open Voice',
                     })}
               </span>
             </button>
           )}
         </div>
       </div>
+
+      {voice.audioPlaybackBlocked && voice.isJoined && (
+        <div
+          role="status"
+          className="rounded-xl border border-[#9146FF]/45 bg-[#9146FF]/15 px-3 py-2 flex items-center justify-between gap-2 text-[11px] text-[#DFCCFF]"
+        >
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Volume2 className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+            <span className="leading-snug">
+              {pickLang(lang, {
+                es: 'Toca para activar el audio de los jugadores en este dispositivo.',
+                ca: 'Toca per activar l’àudio dels jugadors en aquest dispositiu.',
+                en: 'Tap to enable remote players audio on this device.',
+              })}
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('medium');
+              voice.resumeRemoteAudio();
+            }}
+            className="px-2.5 py-1 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-[10px] font-bold text-white whitespace-nowrap shrink-0 cursor-pointer"
+          >
+            {pickLang(lang, { es: 'Activar audio', ca: 'Activar àudio', en: 'Enable Audio' })}
+          </button>
+        </div>
+      )}
 
       {voice.errorMessage && (
         <div
@@ -233,12 +351,14 @@ interface VoiceSpeakerIndicatorProps {
   inVoice: boolean;
   isSpeaking: boolean;
   isMuted: boolean;
+  audioLevel?: number;
 }
 
 export const VoiceSpeakerIndicator: React.FC<VoiceSpeakerIndicatorProps> = ({
   inVoice,
   isSpeaking,
   isMuted,
+  audioLevel = 0,
 }) => {
   if (!inVoice) return null;
 
@@ -253,18 +373,15 @@ export const VoiceSpeakerIndicator: React.FC<VoiceSpeakerIndicatorProps> = ({
     );
   }
 
-  if (isSpeaking) {
+  const speakingActive = isSpeaking || audioLevel > 0.06;
+  if (speakingActive) {
     return (
       <span
-        className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-400/60 text-emerald-200 shrink-0"
+        className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/25 border border-emerald-400/75 text-emerald-100 shadow-[0_0_10px_rgba(16,185,129,0.5)] shrink-0"
         title="Speaking"
       >
-        <Volume2 className="w-2.5 h-2.5 animate-pulse" />
-        <span className="flex items-end gap-[1.5px] h-2.5" aria-hidden="true">
-          <span className="w-[2px] h-1.5 bg-emerald-300 rounded-full animate-bounce" />
-          <span className="w-[2px] h-2.5 bg-emerald-200 rounded-full animate-pulse" />
-          <span className="w-[2px] h-1 bg-emerald-300 rounded-full animate-bounce" />
-        </span>
+        <Volume2 className="w-2.5 h-2.5 text-emerald-200 shrink-0" />
+        <VoiceWaveBars active level={audioLevel} size="sm" />
       </span>
     );
   }

@@ -21,7 +21,6 @@ import {
   UserPlus,
   Clock,
   ChevronUp,
-  Gamepad2,
   Pin,
 } from 'lucide-react';
 import {
@@ -34,16 +33,7 @@ import {
   SavedFriend,
   OnlineAppUser,
   RoomRole,
-  BoardClockMinutes,
-  BoardCoord,
-  BoardGameState,
-  BoardGameType,
-  ChessPromotionPiece,
-  PartyColor,
-  PartyGameState,
-  PartyGameType,
 } from '../types';
-import type { PartyOnlineAction } from './PartyGamesStage';
 import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
 import type { TypingUserPayload } from '../shared/protocol';
 import { UI_COPY, pickLang } from '../utils/i18n';
@@ -62,13 +52,7 @@ import {
 import { PartyPollCard } from './party/PartyPollCard';
 import { PartyQueuePanel } from './party/PartyQueuePanel';
 import { PartyModerationSheets } from './party/PartyModerationSheets';
-
-const RoomBoardGamePanel = React.lazy(() =>
-  import('./RoomBoardGamePanel').then((m) => ({ default: m.RoomBoardGamePanel }))
-);
-const PartyGamesStage = React.lazy(() =>
-  import('./PartyGamesStage').then((m) => ({ default: m.PartyGamesStage }))
-);
+import { GameVoiceBar } from './games/GameVoiceBar';
 
 interface PartySidebarProps {
   roomId: string;
@@ -150,30 +134,6 @@ interface PartySidebarProps {
   onUpdateProfile: (nextName: string, nextAvatar: string, nextColor: string) => void;
   onCreateNewRoom?: (customRoomName?: string) => void;
   onLeaveRoom: () => void;
-  gameState?: BoardGameState | null;
-  gameMoveError?: string | null;
-  onStartBoardGame?: (
-    gameType: BoardGameType,
-    soloLocal?: boolean,
-    clockMinutes?: BoardClockMinutes
-  ) => void;
-  onJoinGameSeat?: (side: 'w' | 'b' | 'spectate') => void;
-  onStartBoardMatch?: () => void;
-  onSendGameMove?: (from: BoardCoord, to: BoardCoord, promotionPiece?: ChessPromotionPiece) => void;
-  onResignBoardGame?: () => void;
-  onResetBoardGame?: (opts?: {
-    gameType?: BoardGameType;
-    swapColors?: boolean;
-    clockMinutes?: BoardClockMinutes;
-  }) => void;
-  onCloseBoardGame?: () => void;
-  partyGameState?: PartyGameState | null;
-  onStartPartyGame?: (gameType: PartyGameType) => void;
-  onPartyGameAction?: (
-    action: PartyOnlineAction,
-    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor; seatIndex?: number }
-  ) => void;
-  onClosePartyGame?: () => void;
   voiceChat?: GameVoiceChatState;
 }
 
@@ -260,19 +220,6 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   onUpdateProfile,
   onCreateNewRoom,
   onLeaveRoom,
-  gameState = null,
-  gameMoveError = null,
-  onStartBoardGame,
-  onJoinGameSeat,
-  onStartBoardMatch,
-  onSendGameMove,
-  onResignBoardGame,
-  onResetBoardGame,
-  onCloseBoardGame,
-  partyGameState = null,
-  onStartPartyGame,
-  onPartyGameAction,
-  onClosePartyGame,
   voiceChat,
 }) => {
   const t = UI_COPY[lang];
@@ -280,8 +227,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const selfMember = participants.find((p) => p.id === currentUser.id);
   const isCoHost = !isHost && (currentUser.role === 'mod' || selfMember?.role === 'mod');
   const canManageMedia = isHost || isCoHost;
-  const [activeTab, setActiveTab] = useState<'chat' | 'queue' | 'games' | 'room'>(initialView);
-  const [gamesSubTab, setGamesSubTab] = useState<'board' | 'party'>('board');
+  const [activeTab, setActiveTab] = useState<'chat' | 'queue' | 'room'>(initialView);
   const [undoRemovedItem, setUndoRemovedItem] = useState<RoomQueueItem | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputText, setInputText] = useState('');
@@ -308,12 +254,6 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   useEffect(() => {
     setActiveTab(initialView);
   }, [initialView]);
-
-  useEffect(() => {
-    if (partyGameState && !gameState) {
-      setGamesSubTab('party');
-    }
-  }, [partyGameState, gameState]);
 
   useEffect(() => {
     return () => {
@@ -484,8 +424,6 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   ? t.tabChat
                   : activeTab === 'queue'
                   ? pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' })
-                  : activeTab === 'games'
-                  ? pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })
                   : t.tabRoom}
               </span>
             )}
@@ -508,12 +446,6 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   label: pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' }),
                   icon: <ListVideo className="w-3 h-3 shrink-0" />,
                   badge: roomQueue.length,
-                },
-                {
-                  id: 'games',
-                  label: pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' }),
-                  icon: <Gamepad2 className="w-3 h-3 shrink-0" />,
-                  badge: gameState && gameState.status !== 'finished' ? '●' : undefined,
                 },
                 {
                   id: 'room',
@@ -581,6 +513,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       {/* ==================================================================== */}
       {activeTab === 'chat' && (
         <div className="flex-1 flex flex-col min-h-0 relative">
+          {voiceChat && (voiceChat.isJoined || voiceChat.voicePeers.length > 0) && (
+            <div className="px-3 pt-2 shrink-0">
+              <GameVoiceBar lang={lang} voice={voiceChat} compact />
+            </div>
+          )}
           {/* Active Poll Banner (if open) */}
           {activePoll && !activePoll.isClosed && (
             <PartyPollCard
@@ -960,92 +897,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* TAB 3: ONLINE MULTIPLAYER BOARD & PARTY GAMES (4P + 1V1)             */}
-      {/* ==================================================================== */}
-      {activeTab === 'games' && (
-        <div className="flex-1 flex flex-col min-h-0">
-          <div className="px-3 py-2 border-b border-white/[0.07] bg-[#0B0B10] flex items-center gap-1.5 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setGamesSubTab('board');
-              }}
-              className={`flex-1 min-h-8 px-2.5 rounded-lg text-[11px] font-bold whitespace-nowrap cursor-pointer transition-colors ${
-                gamesSubTab === 'board'
-                  ? 'bg-[#9146FF] text-white'
-                  : 'bg-white/[0.05] text-zinc-300 hover:bg-white/[0.1]'
-              }`}
-            >
-              {pickLang(lang, { es: '1v1 Tablero', ca: '1v1 Tauler', en: '1v1 Board' })}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setGamesSubTab('party');
-              }}
-              className={`flex-1 min-h-8 px-2.5 rounded-lg text-[11px] font-bold whitespace-nowrap cursor-pointer transition-colors ${
-                gamesSubTab === 'party'
-                  ? 'bg-[#9146FF] text-white'
-                  : 'bg-white/[0.05] text-zinc-300 hover:bg-white/[0.1]'
-              }`}
-            >
-              {pickLang(lang, { es: 'Parchís & UNO 4P', ca: 'Parxís & UNO 4P', en: 'Ludo & UNO 4P' })}
-            </button>
-          </div>
-
-          <Suspense
-            fallback={
-              <div className="flex-1 flex items-center justify-center p-6 text-xs text-zinc-400">
-                {pickLang(lang, { es: 'Cargando juego…', ca: 'Carregant joc…', en: 'Loading game…' })}
-              </div>
-            }
-          >
-            {gamesSubTab === 'board' ? (
-              <RoomBoardGamePanel
-                gameState={gameState}
-                currentUser={currentUser}
-                lang={lang}
-                moveError={gameMoveError}
-                onStartGame={(gt, solo, clockMin) => onStartBoardGame?.(gt, solo, clockMin)}
-                onJoinSeat={(side) => onJoinGameSeat?.(side)}
-                onStartMatch={() => onStartBoardMatch?.()}
-                onMove={(from, to, promo) => onSendGameMove?.(from, to, promo)}
-                onResign={() => onResignBoardGame?.()}
-                onReset={(opts) => onResetBoardGame?.(opts)}
-                onCloseGame={() => onCloseBoardGame?.()}
-                onBack={hideInternalTabs ? () => setActiveTab('room') : undefined}
-                voiceChat={voiceChat}
-                isOnlineRoom={true}
-                isHost={isHost}
-              />
-            ) : (
-              <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
-                <PartyGamesStage
-                  lang={lang}
-                  currentUser={currentUser}
-                  participants={participants}
-                  partyGameState={partyGameState}
-                  isOffline={false}
-                  isHost={isHost}
-                  voiceChat={voiceChat}
-                  onStartOnline={onStartPartyGame}
-                  onOnlineAction={onPartyGameAction}
-                  onCloseOnline={onClosePartyGame}
-                  onBack={hideInternalTabs ? () => setActiveTab('room') : undefined}
-                />
-              </div>
-            )}
-          </Suspense>
-        </div>
-      )}
-
-      {/* ==================================================================== */}
-      {/* TAB 4: ROOM & PARTICIPANTS (Clean View + Bottom Sheets for Tools)    */}
+      {/* TAB 3: ROOM & PARTICIPANTS (Clean View + Bottom Sheets for Tools)    */}
       {/* ==================================================================== */}
       {activeTab === 'room' && (
         <div className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar">
+          {voiceChat && <GameVoiceBar lang={lang} voice={voiceChat} />}
           {/* Primary Action Card: Room Info + Share Link & TV Remote */}
           <div className="p-4 rounded-3xl nc-specular-surface border border-white/[0.1] space-y-3.5">
             <div className="flex items-center justify-between gap-2">
@@ -1125,49 +981,6 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 </span>
               </SecondaryButton>
             </div>
-          </div>
-
-          {/* Quick Launcher for Online Room Board Games */}
-          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#9146FF]/15 via-[#1C1C24] to-[#1C1C24] border border-[#9146FF]/35 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-9 h-9 rounded-xl bg-[#9146FF]/20 border border-[#9146FF]/40 flex items-center justify-center text-[#DFCCFF] shrink-0">
-                <Gamepad2 className="w-4 h-4" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-xs font-bold text-white truncate">
-                  {partyGameState
-                    ? partyGameState.gameType === 'parchis'
-                      ? pickLang(lang, { es: 'Parchís 4P en curso', ca: 'Parxís 4P actiu', en: '4P Ludo active' })
-                      : pickLang(lang, { es: 'UNO 4P en curso', ca: 'UNO 4P actiu', en: '4P UNO active' })
-                    : gameState
-                    ? gameState.gameType === 'chess'
-                      ? pickLang(lang, { es: 'Partida de Ajedrez en curso', ca: 'Partida d’Escacs activa', en: 'Chess match active' })
-                      : gameState.gameType === 'connect4'
-                      ? pickLang(lang, { es: 'Conecta 4 en curso', ca: 'Connecta 4 actiu', en: 'Connect 4 active' })
-                      : pickLang(lang, { es: 'Partida de Damas en curso', ca: 'Partida de Dames activa', en: 'Checkers match active' })
-                    : pickLang(lang, { es: 'Juegos Online en Sala', ca: 'Jocs Online a la Sala', en: 'Online Room Games' })}
-                </div>
-                <div className="text-[11px] text-zinc-400 truncate">
-                  {pickLang(lang, {
-                    es: 'Parchís, UNO, Conecta 4, Damas y Ajedrez',
-                    ca: 'Parxís, UNO, Connecta 4, Dames i Escacs',
-                    en: 'Ludo, UNO, Connect 4, Checkers & Chess',
-                  })}
-                </div>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setActiveTab('games');
-              }}
-              className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
-            >
-              {gameState || partyGameState
-                ? pickLang(lang, { es: 'Ver Juego', ca: 'Veure Joc', en: 'Open Game' })
-                : pickLang(lang, { es: 'Jugar', ca: 'Jugar', en: 'Play' })}
-            </button>
           </div>
 
           {inviteSentFeedback && (

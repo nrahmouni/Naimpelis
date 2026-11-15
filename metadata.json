@@ -1,7 +1,9 @@
 {
   "name": "NAIMCINE",
   "description": "NAIMCINE — Tu sala privada para ver películas, series, fútbol en directo y YouTube sincronizado con tus amigos sin anuncios.",
-  "requestFramePermissions": [],
+  "requestFramePermissions": [
+    "microphone"
+  ],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
   ]

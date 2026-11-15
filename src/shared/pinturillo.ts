@@ -55,7 +55,7 @@ export interface PinturilloGuessEntry {
 export interface PinturilloGameState {
   id: string;
   gameType: 'pinturillo';
-  status: 'choosing' | 'drawing' | 'round_end' | 'finished';
+  status: 'waiting' | 'choosing' | 'drawing' | 'round_end' | 'finished';
   players: PinturilloPlayer[];
   round: number;
   totalRounds: number;
@@ -601,16 +601,19 @@ export function buildPinturilloSeats(
 
 export function createInitialPinturilloState(
   humans: Array<{ id: string; name: string; avatar?: string; color?: string }>,
-  preserved?: PinturilloPlayer[]
+  preserved?: PinturilloPlayer[],
+  opts?: { waitForHost?: boolean }
 ): PinturilloGameState {
   const players = buildPinturilloSeats(humans, preserved);
   const now = Date.now();
   const drawerSeat = 0;
   const wordChoices = pickRandomWordChoices();
+  const waitForHost = Boolean(opts?.waitForHost);
+
   return {
     id: `pinturillo-${now}`,
     gameType: 'pinturillo',
-    status: 'choosing',
+    status: waitForHost ? 'waiting' : 'choosing',
     players,
     round: 1,
     totalRounds: Math.min(6, Math.max(4, players.length)),
@@ -626,13 +629,97 @@ export function createInitialPinturilloState(
         id: `sys-start-${now}`,
         userId: 'system',
         userName: 'Pinturillo',
-        text: `${players[drawerSeat].name} está eligiendo una palabra…`,
+        text: waitForHost
+          ? 'Esperando a que los jugadores de la sala acepten la invitación…'
+          : `${players[drawerSeat].name} está eligiendo una palabra…`,
         kind: 'system',
         timestamp: now,
       },
     ],
-    phaseDeadlineAt: now + PINTURILLO_CHOOSE_MS,
+    phaseDeadlineAt: waitForHost ? 0 : now + PINTURILLO_CHOOSE_MS,
     winnerSeat: null,
+    updatedAt: now,
+  };
+}
+
+export function joinPinturilloPlayer(
+  state: PinturilloGameState,
+  user: { id: string; name: string; avatar?: string; color?: string }
+): PinturilloGameState {
+  if (state.players.some((p) => !p.isBot && p.userId === user.id)) {
+    return state;
+  }
+  const now = Date.now();
+  const nextPlayers = state.players.map((p) => ({ ...p }));
+  const botIdx = nextPlayers.findIndex((p) => p.isBot);
+  if (botIdx !== -1) {
+    nextPlayers[botIdx] = {
+      seatIndex: botIdx,
+      userId: user.id,
+      name: user.name,
+      avatar: user.avatar || '🎨',
+      color: user.color || '#9146FF',
+      isBot: false,
+      score: 0,
+      streak: 0,
+      hasGuessedThisRound: false,
+      roundPoints: 0,
+    };
+  } else if (nextPlayers.length < PINTURILLO_MAX_PLAYERS) {
+    nextPlayers.push({
+      seatIndex: nextPlayers.length,
+      userId: user.id,
+      name: user.name,
+      avatar: user.avatar || '🎨',
+      color: user.color || '#9146FF',
+      isBot: false,
+      score: 0,
+      streak: 0,
+      hasGuessedThisRound: false,
+      roundPoints: 0,
+    });
+  } else {
+    return state;
+  }
+
+  return {
+    ...state,
+    players: nextPlayers,
+    totalRounds: Math.min(6, Math.max(4, nextPlayers.length)),
+    guesses: [
+      ...state.guesses.slice(-18),
+      {
+        id: `sys-join-${now}-${user.id}`,
+        userId: 'system',
+        userName: 'Pinturillo',
+        text: `👋 ${user.name} se unió a Pinturillo`,
+        kind: 'system',
+        timestamp: now,
+      },
+    ],
+    updatedAt: now,
+  };
+}
+
+export function startPinturilloMatch(state: PinturilloGameState): PinturilloGameState {
+  if (state.status !== 'waiting') return state;
+  const now = Date.now();
+  const drawer = state.players[state.drawerSeat] || state.players[0];
+  return {
+    ...state,
+    status: 'choosing',
+    phaseDeadlineAt: now + PINTURILLO_CHOOSE_MS,
+    guesses: [
+      ...state.guesses.slice(-18),
+      {
+        id: `sys-go-${now}`,
+        userId: 'system',
+        userName: 'Pinturillo',
+        text: `🎨 ¡Comienza la partida! ${drawer?.name || 'Jugador'} elige palabra…`,
+        kind: 'system',
+        timestamp: now,
+      },
+    ],
     updatedAt: now,
   };
 }
