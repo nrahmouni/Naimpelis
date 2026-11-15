@@ -33,6 +33,7 @@ import {
   ThumbsUp,
   Plus,
   ChevronUp,
+  Gamepad2,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -44,7 +45,12 @@ import {
   SavedFriend,
   OnlineAppUser,
   RoomRole,
+  BoardCoord,
+  BoardGameState,
+  BoardGameType,
+  ChessPromotionPiece,
 } from '../types';
+import { RoomBoardGamePanel } from './RoomBoardGamePanel';
 import type { TypingUserPayload } from '../shared/protocol';
 import { UI_COPY, pickLang } from '../utils/i18n';
 import { buildShortInviteUrl } from '../utils/shortLink';
@@ -141,6 +147,14 @@ interface PartySidebarProps {
   onUpdateProfile: (nextName: string, nextAvatar: string, nextColor: string) => void;
   onCreateNewRoom?: (customRoomName?: string) => void;
   onLeaveRoom: () => void;
+  gameState?: BoardGameState | null;
+  gameMoveError?: string | null;
+  onStartBoardGame?: (gameType: BoardGameType, soloLocal?: boolean) => void;
+  onJoinGameSeat?: (side: 'w' | 'b' | 'spectate') => void;
+  onSendGameMove?: (from: BoardCoord, to: BoardCoord, promotionPiece?: ChessPromotionPiece) => void;
+  onResignBoardGame?: () => void;
+  onResetBoardGame?: (opts?: { gameType?: BoardGameType; swapColors?: boolean }) => void;
+  onCloseBoardGame?: () => void;
 }
 
 const QUICK_REACTIONS = ['🔥', '😂', '❤️', '👏', '😱', '⚽', '🍿', '🎉'];
@@ -221,10 +235,18 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   onUpdateProfile,
   onCreateNewRoom,
   onLeaveRoom,
+  gameState = null,
+  gameMoveError = null,
+  onStartBoardGame,
+  onJoinGameSeat,
+  onSendGameMove,
+  onResignBoardGame,
+  onResetBoardGame,
+  onCloseBoardGame,
 }) => {
   const t = UI_COPY[lang];
   const isHost = currentUser.isHost || currentUser.id === hostId;
-  const [activeTab, setActiveTab] = useState<'chat' | 'queue' | 'room'>(initialView);
+  const [activeTab, setActiveTab] = useState<'chat' | 'queue' | 'games' | 'room'>(initialView);
   const [inputText, setInputText] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [roomNameDraft, setRoomNameDraft] = useState(roomName);
@@ -405,6 +427,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   ? t.tabChat
                   : activeTab === 'queue'
                   ? pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' })
+                  : activeTab === 'games'
+                  ? pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })
                   : t.tabRoom}
               </span>
             )}
@@ -427,6 +451,12 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   label: pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' }),
                   icon: <ListVideo className="w-3 h-3 shrink-0" />,
                   badge: roomQueue.length,
+                },
+                {
+                  id: 'games',
+                  label: pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' }),
+                  icon: <Gamepad2 className="w-3 h-3 shrink-0" />,
+                  badge: gameState && gameState.status !== 'finished' ? '●' : undefined,
                 },
                 {
                   id: 'room',
@@ -1051,7 +1081,26 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* TAB 3: ROOM & PARTICIPANTS (Clean View + Bottom Sheets for Tools)    */}
+      {/* TAB 3: ONLINE MULTIPLAYER BOARD GAMES (CHECKERS & CHESS)             */}
+      {/* ==================================================================== */}
+      {activeTab === 'games' && (
+        <RoomBoardGamePanel
+          gameState={gameState}
+          currentUser={currentUser}
+          lang={lang}
+          moveError={gameMoveError}
+          onStartGame={(gt, solo) => onStartBoardGame?.(gt, solo)}
+          onJoinSeat={(side) => onJoinGameSeat?.(side)}
+          onMove={(from, to, promo) => onSendGameMove?.(from, to, promo)}
+          onResign={() => onResignBoardGame?.()}
+          onReset={(opts) => onResetBoardGame?.(opts)}
+          onCloseGame={() => onCloseBoardGame?.()}
+          onBack={hideInternalTabs ? () => setActiveTab('room') : undefined}
+        />
+      )}
+
+      {/* ==================================================================== */}
+      {/* TAB 4: ROOM & PARTICIPANTS (Clean View + Bottom Sheets for Tools)    */}
       {/* ==================================================================== */}
       {activeTab === 'room' && (
         <div className="flex-1 overflow-y-auto p-3.5 space-y-4 custom-scrollbar">
@@ -1134,6 +1183,43 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 </span>
               </SecondaryButton>
             </div>
+          </div>
+
+          {/* Quick Launcher for Online Room Board Games */}
+          <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#9146FF]/15 via-[#1C1C24] to-[#1C1C24] border border-[#9146FF]/35 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-xl bg-[#9146FF]/20 border border-[#9146FF]/40 flex items-center justify-center text-[#DFCCFF] shrink-0">
+                <Gamepad2 className="w-4 h-4" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-white truncate">
+                  {gameState
+                    ? gameState.gameType === 'chess'
+                      ? pickLang(lang, { es: 'Partida de Ajedrez en curso', ca: 'Partida d’Escacs activa', en: 'Chess match active' })
+                      : pickLang(lang, { es: 'Partida de Damas en curso', ca: 'Partida de Dames activa', en: 'Checkers match active' })
+                    : pickLang(lang, { es: 'Juegos Online en Sala', ca: 'Jocs Online a la Sala', en: 'Online Room Games' })}
+                </div>
+                <div className="text-[11px] text-zinc-400 truncate">
+                  {pickLang(lang, {
+                    es: 'Damas y Ajedrez 1v1 en directo con amigos',
+                    ca: 'Dames i Escacs 1v1 en directe amb amics',
+                    en: 'Live 1v1 Checkers & Chess with friends',
+                  })}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setActiveTab('games');
+              }}
+              className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+            >
+              {gameState
+                ? pickLang(lang, { es: 'Ver Tablero', ca: 'Veure Tauler', en: 'Open Board' })
+                : pickLang(lang, { es: 'Jugar', ca: 'Jugar', en: 'Play' })}
+            </button>
           </div>
 
           {inviteSentFeedback && (

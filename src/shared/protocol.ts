@@ -3,6 +3,22 @@
  * Single source of truth for Client <-> Server WebSocket messages and Real-time Payloads.
  */
 
+import type {
+  BoardCoord,
+  BoardGameState,
+  BoardGameType,
+  BoardSide,
+  ChessPromotionPiece,
+} from './boardGames';
+
+export type {
+  BoardCoord,
+  BoardGameState,
+  BoardGameType,
+  BoardSide,
+  ChessPromotionPiece,
+};
+
 export type MediaType = 'movie' | 'tv' | 'youtube' | 'direct' | 'stream' | 'cloud';
 
 export type VideoSyncAction = 'play' | 'pause' | 'seek' | 'change_url' | 'sync_request';
@@ -68,6 +84,7 @@ export interface RoomStatePayload {
   messages: RoomChatMessage[];
   hasPin: boolean;
   hostOnlyControl?: boolean;
+  gameState?: BoardGameState | null;
   createdAt: number;
   serverTime?: number;
 }
@@ -151,6 +168,50 @@ export type ClientWsMessage =
         roomId?: string;
         roomName?: string;
       };
+    }
+  | {
+      type: 'GAME_START';
+      payload: {
+        roomId: string;
+        gameType: BoardGameType;
+        soloLocal?: boolean;
+      };
+    }
+  | {
+      type: 'GAME_JOIN_SEAT';
+      payload: {
+        roomId: string;
+        side: 'w' | 'b' | 'spectate';
+      };
+    }
+  | {
+      type: 'GAME_MOVE';
+      payload: {
+        roomId: string;
+        from: BoardCoord;
+        to: BoardCoord;
+        promotionPiece?: ChessPromotionPiece;
+      };
+    }
+  | {
+      type: 'GAME_RESIGN';
+      payload: {
+        roomId: string;
+      };
+    }
+  | {
+      type: 'GAME_RESET';
+      payload: {
+        roomId: string;
+        gameType?: BoardGameType;
+        swapColors?: boolean;
+      };
+    }
+  | {
+      type: 'GAME_CLOSE';
+      payload: {
+        roomId: string;
+      };
     };
 
 export type ServerWsMessage =
@@ -175,6 +236,20 @@ export type ServerWsMessage =
   | { type: 'NEW_CHAT_MESSAGE'; payload: RoomChatMessage }
   | { type: 'TYPING_UPDATED'; payload: { typingUsers: Array<{ userId: string; userName: string }> } }
   | { type: 'FLOATING_REACTION'; payload: FloatingReactionEvent }
+  | {
+      type: 'GAME_STATE_UPDATED';
+      payload: {
+        gameState: BoardGameState | null;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'GAME_MOVE_REJECTED';
+      payload: {
+        error: string;
+        gameState?: BoardGameState | null;
+      };
+    }
   | {
       type: 'ONLINE_USERS_UPDATED';
       payload: {

@@ -1,3 +1,21 @@
+import type {
+  BoardCoord,
+  BoardGameState,
+  BoardGameType,
+  BoardSide,
+  ChessPromotionPiece,
+  LegalBoardMove,
+} from './shared/boardGames';
+
+export type {
+  BoardCoord,
+  BoardGameState,
+  BoardGameType,
+  BoardSide,
+  ChessPromotionPiece,
+  LegalBoardMove,
+};
+
 export type AppLanguage = 'es' | 'ca' | 'en';
 export type AppTheme = 'oled' | 'soft-dark' | 'high-contrast' | 'light' | 'dark';
 export type TextDensity = 'comfortable' | 'compact';
@@ -726,6 +744,7 @@ export interface RoomData {
   hasPin?: boolean;
   hostOnlyControl?: boolean;
   activePoll?: RoomPollState | null;
+  gameState?: BoardGameState | null;
   videoState: VideoState;
   queue?: RoomQueueItem[];
   cloudState?: CloudBrowserState;

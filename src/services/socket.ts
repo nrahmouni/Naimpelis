@@ -1,6 +1,10 @@
 import {
+  BoardCoord,
+  BoardGameState,
+  BoardGameType,
   CatalogMovie,
   ChatMessage,
+  ChessPromotionPiece,
   OnlineAppUser,
   Participant,
   PollProposalItem,
@@ -29,6 +33,7 @@ export interface SocketPayload {
   hasPin?: boolean;
   activePoll?: RoomPollState | null;
   poll?: RoomPollState | null;
+  gameState?: BoardGameState | null;
   participants?: Participant[];
   messages?: ChatMessage[];
   message?: ChatMessage;
@@ -491,6 +496,56 @@ class SocketService {
     fromUser: { id: string; name: string; avatar: string; color: string };
   }) {
     this.send('NOTIFY_FRIEND_ADDED', params);
+  }
+
+  startBoardGame(gameType: BoardGameType, soloLocal = false) {
+    if (!this.roomId) return;
+    this.send('GAME_START', {
+      roomId: this.roomId,
+      gameType,
+      soloLocal,
+    });
+  }
+
+  joinGameSeat(side: 'w' | 'b' | 'spectate') {
+    if (!this.roomId) return;
+    this.send('GAME_JOIN_SEAT', {
+      roomId: this.roomId,
+      side,
+    });
+  }
+
+  sendGameMove(from: BoardCoord, to: BoardCoord, promotionPiece?: ChessPromotionPiece) {
+    if (!this.roomId) return;
+    this.send('GAME_MOVE', {
+      roomId: this.roomId,
+      from,
+      to,
+      promotionPiece,
+    });
+  }
+
+  resignBoardGame() {
+    if (!this.roomId) return;
+    this.send('GAME_RESIGN', {
+      roomId: this.roomId,
+    });
+  }
+
+  resetBoardGame(opts?: { gameType?: BoardGameType; swapColors?: boolean }) {
+    if (!this.roomId) return;
+    this.send('GAME_RESET', {
+      roomId: this.roomId,
+      gameType: opts?.gameType,
+      swapColors: opts?.swapColors,
+    });
+  }
+
+  closeBoardGame() {
+    if (!this.roomId) return;
+    this.send('GAME_CLOSE', {
+      roomId: this.roomId,
+    });
   }
 }
 

@@ -30,6 +30,7 @@ import {
 import { triggerApkDownload } from './utils/apkDownload';
 import {
   AppLanguage,
+  BoardGameState,
   CatalaEpisodeItem,
   CatalaSeriesDetails,
   CatalogMovie,
@@ -415,6 +416,8 @@ export function App() {
   const [hostId, setHostId] = useState<string>('');
   const [hostOnlyControl, setHostOnlyControl] = useState<boolean>(false);
   const [activePoll, setActivePoll] = useState<RoomPollState | null>(null);
+  const [roomGameState, setRoomGameState] = useState<BoardGameState | null>(null);
+  const [gameMoveError, setGameMoveError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [roomQueue, setRoomQueue] = useState<RoomQueueItem[]>([]);
@@ -1348,6 +1351,8 @@ export function App() {
         setRoomHasPin(Boolean(payload.hasPin));
         setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
         setActivePoll(payload.activePoll || null);
+        setRoomGameState(payload.gameState || null);
+        setGameMoveError(null);
         setParticipants(payload.participants || []);
         setMessages(payload.messages || []);
         setRoomQueue(payload.queue || []);
@@ -1551,6 +1556,22 @@ export function App() {
             Boolean(payload.isTyping)
           );
         }
+      } else if (type === 'GAME_STATE_UPDATED') {
+        setRoomGameState(payload.gameState || null);
+        setGameMoveError(null);
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message!]);
+          if (mobileTabRef.current !== 'chat') {
+            setUnreadChatCount((c) => c + 1);
+          }
+        }
+      } else if (type === 'GAME_MOVE_REJECTED') {
+        if (payload.gameState !== undefined) {
+          setRoomGameState(payload.gameState || null);
+        }
+        const errTxt = String(payload.error || 'Jugada no válida');
+        setGameMoveError(errTxt);
+        setTimeout(() => setGameMoveError(null), 3200);
       }
     });
 
@@ -1689,6 +1710,8 @@ export function App() {
     setCinemaModePersist(false);
     setSecondaryStream(null);
     setActivePoll(null);
+    setRoomGameState(null);
+    setGameMoveError(null);
     setHostOnlyControl(false);
     setRoomHasPin(false);
     setVideoState(INITIAL_VIDEO_STATE);
@@ -1724,6 +1747,8 @@ export function App() {
     setCinemaModePersist(false);
     setSecondaryStream(null);
     setActivePoll(null);
+    setRoomGameState(null);
+    setGameMoveError(null);
     setHostOnlyControl(false);
     setRoomHasPin(false);
     setRoomId('');
@@ -1752,6 +1777,8 @@ export function App() {
         setCinemaModePersist(false);
         setSecondaryStream(null);
         setActivePoll(null);
+        setRoomGameState(null);
+        setGameMoveError(null);
         setHostOnlyControl(false);
         setRoomHasPin(false);
         setRoomId('');
@@ -5197,6 +5224,14 @@ export function App() {
                   onUpdateProfile={handleUpdateProfile}
                   onCreateNewRoom={handleCreateFreshRoom}
                   onLeaveRoom={handleLeaveRoom}
+                  gameState={roomGameState}
+                  gameMoveError={gameMoveError}
+                  onStartBoardGame={(gt, solo) => socketService.startBoardGame(gt, solo)}
+                  onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
+                  onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
+                  onResignBoardGame={() => socketService.resignBoardGame()}
+                  onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
+                  onCloseBoardGame={() => socketService.closeBoardGame()}
                 />
               </div>
             )}
@@ -5512,6 +5547,14 @@ export function App() {
                 onUpdateProfile={handleUpdateProfile}
                 onCreateNewRoom={handleCreateFreshRoom}
                 onLeaveRoom={handleLeaveRoom}
+                gameState={roomGameState}
+                gameMoveError={gameMoveError}
+                onStartBoardGame={(gt, solo) => socketService.startBoardGame(gt, solo)}
+                onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
+                onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
+                onResignBoardGame={() => socketService.resignBoardGame()}
+                onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
+                onCloseBoardGame={() => socketService.closeBoardGame()}
               />
             </div>
           )}

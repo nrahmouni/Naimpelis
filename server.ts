@@ -57,6 +57,17 @@ import {
 } from './server/services/vestMirrorService.ts';
 import { buildSignedApkBuffer } from './server/services/apkBuilderService.ts';
 import { channelHealthMonitor } from './server/services/channelHealthMonitor.ts';
+import {
+  applyBoardMove,
+  createInitialBoardGameState,
+  joinGameSeat,
+  resetBoardGame,
+  resignBoardGame,
+  type BoardCoord,
+  type BoardGameState,
+  type BoardGameType,
+  type ChessPromotionPiece,
+} from './src/shared/boardGames.ts';
 
 // Prefer IPv4 to avoid transient container IPv6 socket resets with upstream CDNs
 dns.setDefaultResultOrder('ipv4first');
@@ -3525,6 +3536,7 @@ interface RoomRecord {
     senderName: string;
     ts: number;
   };
+  gameState?: BoardGameState | null;
   createdAt: number;
 }
 
@@ -3917,6 +3929,7 @@ function getOrCreateRoom(roomId: string, roomName?: string): { room: RoomRecord;
     pinCode: undefined,
     hostOnlyControl: false,
     activePoll: null,
+    gameState: null,
     videoState: {
       mode: 'idle',
       url: '',
@@ -4948,6 +4961,249 @@ wss.on('connection', (ws) => {
             }
           }
         });
+      } else if (type === 'GAME_START') {
+        const senderMeta = clients.get(ws);
+        const targetRoomId = String(payload?.roomId || senderMeta?.roomId || '')
+          .trim()
+          .toLowerCase();
+        if (!targetRoomId) return;
+        const room = rooms.get(targetRoomId);
+        if (!room) return;
+
+        const gameType: BoardGameType =
+          payload?.gameType === 'chess' ? 'chess' : 'checkers';
+        const soloLocal = Boolean(payload?.soloLocal);
+        const actor =
+          room.participants.find((p) => p.id === senderMeta?.userId) ||
+          (senderMeta?.userId
+            ? {
+                id: senderMeta.userId,
+                name: senderMeta.userName || 'Jugador',
+                avatar: senderMeta.userAvatar || '🎮',
+                color: senderMeta.userColor || '#9146FF',
+              }
+            : undefined);
+
+        room.gameState = createInitialBoardGameState(gameType, actor, soloLocal);
+
+        const gameLabel = gameType === 'chess' ? 'Ajedrez' : 'Damas';
+        const sysMsg = {
+          id: `game-start-${Date.now()}`,
+          senderId: 'system',
+          senderName: 'NAIM CINE',
+          senderAvatar: gameType === 'chess' ? '♟️' : '🔴',
+          senderColor: '#9146FF',
+          text: `${actor?.name || 'Un participante'} abrió una partida de ${gameLabel}${
+            soloLocal ? ' (Modo libre / 2 lados)' : ''
+          }.`,
+          timestamp: Date.now(),
+          isSystem: true,
+        };
+        room.messages.push(sysMsg);
+        if (room.messages.length > 150) room.messages = room.messages.slice(-150);
+        schedulePersistRoomsToDisk();
+
+        broadcastToRoom(room.id, {
+          type: 'GAME_STATE_UPDATED',
+          payload: {
+            gameState: room.gameState,
+            message: sysMsg,
+          },
+        });
+      } else if (type === 'GAME_JOIN_SEAT') {
+        const senderMeta = clients.get(ws);
+        const targetRoomId = String(payload?.roomId || senderMeta?.roomId || '')
+          .trim()
+          .toLowerCase();
+        const room = rooms.get(targetRoomId);
+        if (!room || !room.gameState || !senderMeta?.userId) return;
+
+        const side: 'w' | 'b' | 'spectate' =
+          payload?.side === 'w' ? 'w' : payload?.side === 'b' ? 'b' : 'spectate';
+        const actor = room.participants.find((p) => p.id === senderMeta.userId) || {
+          id: senderMeta.userId,
+          name: senderMeta.userName || 'Jugador',
+          avatar: senderMeta.userAvatar || '🎮',
+          color: senderMeta.userColor || '#9146FF',
+        };
+
+        // Prevent hijacking another player's occupied seat while playing
+        if (
+          side !== 'spectate' &&
+          !room.gameState.soloLocal &&
+          room.gameState.players[side] &&
+          room.gameState.players[side]!.userId !== actor.id
+        ) {
+          ws.send(
+            JSON.stringify({
+              type: 'GAME_MOVE_REJECTED',
+              payload: {
+                error: 'Ese asiento ya está ocupado por otro jugador.',
+                gameState: room.gameState,
+              },
+            })
+          );
+          return;
+        }
+
+        room.gameState = joinGameSeat(room.gameState, actor, side);
+        broadcastToRoom(room.id, {
+          type: 'GAME_STATE_UPDATED',
+          payload: {
+            gameState: room.gameState,
+          },
+        });
+      } else if (type === 'GAME_MOVE') {
+        const senderMeta = clients.get(ws);
+        const targetRoomId = String(payload?.roomId || senderMeta?.roomId || '')
+          .trim()
+          .toLowerCase();
+        const room = rooms.get(targetRoomId);
+        if (!room || !room.gameState || !senderMeta?.userId) return;
+
+        const from = payload?.from as BoardCoord | undefined;
+        const to = payload?.to as BoardCoord | undefined;
+        if (
+          !from ||
+          !to ||
+          typeof from.r !== 'number' ||
+          typeof from.c !== 'number' ||
+          typeof to.r !== 'number' ||
+          typeof to.c !== 'number'
+        ) {
+          return;
+        }
+
+        const promo: ChessPromotionPiece =
+          payload?.promotionPiece === 'R' ||
+          payload?.promotionPiece === 'B' ||
+          payload?.promotionPiece === 'N'
+            ? payload.promotionPiece
+            : 'Q';
+
+        const result = applyBoardMove(room.gameState, senderMeta.userId, from, to, promo);
+        if (!result.ok) {
+          ws.send(
+            JSON.stringify({
+              type: 'GAME_MOVE_REJECTED',
+              payload: {
+                error: result.error,
+                gameState: room.gameState,
+              },
+            })
+          );
+          return;
+        }
+
+        room.gameState = result.state;
+        let finishMsg = null;
+        if (result.finishedNow) {
+          const winnerName =
+            result.state.winner === 'draw'
+              ? null
+              : result.state.winner
+              ? result.state.players[result.state.winner]?.name ||
+                (result.state.winner === 'w' ? 'Blancas' : 'Negras')
+              : null;
+          finishMsg = {
+            id: `game-end-${Date.now()}`,
+            senderId: 'system',
+            senderName: 'NAIM CINE',
+            senderAvatar: '🏆',
+            senderColor: '#10b981',
+            text:
+              result.state.winner === 'draw'
+                ? 'Tablas en el tablero de la sala.'
+                : `🏆 ${winnerName} gana la partida (${result.notation}).`,
+            timestamp: Date.now(),
+            isSystem: true,
+          };
+          room.messages.push(finishMsg);
+          if (room.messages.length > 150) room.messages = room.messages.slice(-150);
+          schedulePersistRoomsToDisk();
+        }
+
+        broadcastToRoom(room.id, {
+          type: 'GAME_STATE_UPDATED',
+          payload: {
+            gameState: room.gameState,
+            message: finishMsg,
+          },
+        });
+      } else if (type === 'GAME_RESIGN') {
+        const senderMeta = clients.get(ws);
+        const targetRoomId = String(payload?.roomId || senderMeta?.roomId || '')
+          .trim()
+          .toLowerCase();
+        const room = rooms.get(targetRoomId);
+        if (!room || !room.gameState || !senderMeta?.userId) return;
+
+        const next = resignBoardGame(room.gameState, senderMeta.userId);
+        if (!next) return;
+        room.gameState = next;
+        const winnerName =
+          next.winner && next.winner !== 'draw'
+            ? next.players[next.winner]?.name || (next.winner === 'w' ? 'Blancas' : 'Negras')
+            : 'Rival';
+        const sysMsg = {
+          id: `game-resign-${Date.now()}`,
+          senderId: 'system',
+          senderName: 'NAIM CINE',
+          senderAvatar: '🏳️',
+          senderColor: '#f59e0b',
+          text: `${senderMeta.userName || 'Un jugador'} se rindió · Gana ${winnerName}.`,
+          timestamp: Date.now(),
+          isSystem: true,
+        };
+        room.messages.push(sysMsg);
+        if (room.messages.length > 150) room.messages = room.messages.slice(-150);
+        schedulePersistRoomsToDisk();
+
+        broadcastToRoom(room.id, {
+          type: 'GAME_STATE_UPDATED',
+          payload: {
+            gameState: room.gameState,
+            message: sysMsg,
+          },
+        });
+      } else if (type === 'GAME_RESET') {
+        const senderMeta = clients.get(ws);
+        const targetRoomId = String(payload?.roomId || senderMeta?.roomId || '')
+          .trim()
+          .toLowerCase();
+        const room = rooms.get(targetRoomId);
+        if (!room || !room.gameState) return;
+
+        const nextType: BoardGameType | undefined =
+          payload?.gameType === 'chess' || payload?.gameType === 'checkers'
+            ? payload.gameType
+            : undefined;
+        room.gameState = resetBoardGame(room.gameState, {
+          gameType: nextType,
+          swapColors: Boolean(payload?.swapColors),
+        });
+
+        broadcastToRoom(room.id, {
+          type: 'GAME_STATE_UPDATED',
+          payload: {
+            gameState: room.gameState,
+          },
+        });
+      } else if (type === 'GAME_CLOSE') {
+        const senderMeta = clients.get(ws);
+        const targetRoomId = String(payload?.roomId || senderMeta?.roomId || '')
+          .trim()
+          .toLowerCase();
+        const room = rooms.get(targetRoomId);
+        if (!room || !room.gameState) return;
+        room.gameState = null;
+
+        broadcastToRoom(room.id, {
+          type: 'GAME_STATE_UPDATED',
+          payload: {
+            gameState: null,
+          },
+        });
       }
     } catch (err) {
       console.error('WS message handling error:', err);
@@ -4973,6 +5229,34 @@ wss.on('connection', (ws) => {
     if (!room) return;
 
     room.participants = room.participants.filter((p) => p.id !== meta.userId);
+
+    // Vacate board-game seat if this user left the room
+    let gameSeatChanged = false;
+    if (room.gameState) {
+      const nextPlayers = { ...room.gameState.players };
+      if (nextPlayers.w?.userId === meta.userId) {
+        nextPlayers.w = null;
+        gameSeatChanged = true;
+      }
+      if (nextPlayers.b?.userId === meta.userId) {
+        nextPlayers.b = null;
+        gameSeatChanged = true;
+      }
+      if (gameSeatChanged) {
+        room.gameState = {
+          ...room.gameState,
+          players: nextPlayers,
+          status:
+            room.gameState.status === 'finished'
+              ? 'finished'
+              : nextPlayers.w && nextPlayers.b
+              ? 'playing'
+              : 'waiting',
+          updatedAt: Date.now(),
+        };
+      }
+    }
+
     schedulePersistRoomsToDisk();
     if (room.participants.length === 0) {
       await stopCloudSession(meta.roomId);
@@ -5011,6 +5295,14 @@ wss.on('connection', (ws) => {
         message: leaveMsg,
       },
     });
+    if (gameSeatChanged) {
+      broadcastToRoom(meta.roomId, {
+        type: 'GAME_STATE_UPDATED',
+        payload: {
+          gameState: room.gameState ?? null,
+        },
+      });
+    }
   });
 });
 
