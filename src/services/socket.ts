@@ -6,16 +6,21 @@ import {
   CatalogMovie,
   ChatMessage,
   ChessPromotionPiece,
+  KartInputState,
+  KartTrackId,
   OnlineAppUser,
   Participant,
   PartyColor,
   PartyGameState,
   PartyGameType,
+  PinturilloGameState,
+  PinturilloStroke,
   PollProposalItem,
   RestoredRoomBlueprint,
   RoomPollState,
   RoomQueueItem,
   RoomRole,
+  TurboKartState,
   TvRemoteCommandType,
   VideoState,
 } from '../types';
@@ -43,6 +48,9 @@ export interface SocketPayload {
   poll?: RoomPollState | null;
   gameState?: BoardGameState | null;
   partyGameState?: PartyGameState | null;
+  pinturilloState?: PinturilloGameState | null;
+  stroke?: PinturilloStroke;
+  kartGameState?: TurboKartState | null;
   pinnedMessage?: ChatMessage | null;
   participants?: Participant[];
   messages?: ChatMessage[];
@@ -114,6 +122,7 @@ const NON_QUEUEABLE_TYPES = new Set([
   'VOICE_LEAVE',
   'VOICE_STATE_UPDATE',
   'VOICE_SIGNAL',
+  'KART_INPUT',
 ]);
 
 class SocketService {
@@ -754,6 +763,81 @@ class SocketService {
       roomId: this.roomId,
       ...payload,
     });
+  }
+
+  startPinturillo() {
+    if (!this.roomId) return;
+    this.send('PINTURILLO_START', { roomId: this.roomId });
+  }
+
+  pickPinturilloWord(wordId: string) {
+    if (!this.roomId) return;
+    this.send('PINTURILLO_PICK_WORD', { roomId: this.roomId, wordId });
+  }
+
+  sendPinturilloStroke(stroke: PinturilloStroke) {
+    if (!this.roomId) return;
+    this.send('PINTURILLO_STROKE', { roomId: this.roomId, stroke });
+  }
+
+  undoPinturilloStroke() {
+    if (!this.roomId) return;
+    this.send('PINTURILLO_UNDO', { roomId: this.roomId });
+  }
+
+  clearPinturilloCanvas() {
+    if (!this.roomId) return;
+    this.send('PINTURILLO_CLEAR', { roomId: this.roomId });
+  }
+
+  sendPinturilloGuess(text: string) {
+    if (!this.roomId) return;
+    this.send('PINTURILLO_GUESS', { roomId: this.roomId, text });
+  }
+
+  rematchPinturillo() {
+    if (!this.roomId) return;
+    this.send('PINTURILLO_REMATCH', { roomId: this.roomId });
+  }
+
+  closePinturillo() {
+    if (!this.roomId) return;
+    this.send('PINTURILLO_CLOSE', { roomId: this.roomId });
+  }
+
+  startTurboKart(trackId?: KartTrackId) {
+    if (!this.roomId) return;
+    this.send('KART_START', { roomId: this.roomId, trackId });
+  }
+
+  selectTurboKartTrack(trackId: KartTrackId) {
+    if (!this.roomId) return;
+    this.send('KART_SELECT_TRACK', { roomId: this.roomId, trackId });
+  }
+
+  beginTurboKartRace() {
+    if (!this.roomId) return;
+    this.send('KART_BEGIN_RACE', { roomId: this.roomId });
+  }
+
+  sendTurboKartInput(input: KartInputState) {
+    if (!this.roomId) return;
+    this.sendRaw('KART_INPUT', { roomId: this.roomId, input });
+  }
+
+  useTurboKartItem() {
+    if (!this.roomId) return;
+    this.send('KART_USE_ITEM', { roomId: this.roomId });
+  }
+
+  rematchTurboKart(trackId?: KartTrackId) {
+    if (!this.roomId) return;
+    this.send('KART_REMATCH', { roomId: this.roomId, trackId });
+  }
+
+  closeTurboKart() {
+    if (!this.roomId) return;
+    this.send('KART_CLOSE', { roomId: this.roomId });
   }
 }
 

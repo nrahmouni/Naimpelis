@@ -8,10 +8,20 @@ import type {
   LegalBoardMove,
 } from './shared/boardGames';
 import type {
+  ParchisGameState,
   PartyColor,
   PartyGameState,
   PartyGameType,
 } from './shared/partyGames';
+import type {
+  PinturilloGameState,
+  PinturilloStroke,
+} from './shared/pinturillo';
+import type {
+  KartInputState,
+  KartTrackId,
+  TurboKartState,
+} from './shared/turboKart';
 
 export type {
   BoardClockMinutes,
@@ -20,10 +30,16 @@ export type {
   BoardGameType,
   BoardSide,
   ChessPromotionPiece,
+  KartInputState,
+  KartTrackId,
   LegalBoardMove,
+  ParchisGameState,
   PartyColor,
   PartyGameState,
   PartyGameType,
+  PinturilloGameState,
+  PinturilloStroke,
+  TurboKartState,
 };
 
 export type AppLanguage = 'es' | 'ca' | 'en';
@@ -757,6 +773,8 @@ export interface RoomData {
   activePoll?: RoomPollState | null;
   gameState?: BoardGameState | null;
   partyGameState?: import('./shared/partyGames').PartyGameState | null;
+  pinturilloState?: PinturilloGameState | null;
+  kartGameState?: TurboKartState | null;
   videoState: VideoState;
   queue?: RoomQueueItem[];
   cloudState?: CloudBrowserState;

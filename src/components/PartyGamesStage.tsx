@@ -214,14 +214,14 @@ const DiceFacePips: React.FC<{ value: number; className?: string }> = ({ value, 
   const active = DICE_PIP_POSITIONS[value] || DICE_PIP_POSITIONS[1];
   return (
     <div
-      className={`grid grid-cols-3 grid-rows-3 gap-[2.5px] p-1.5 w-full h-full rounded-[9px] bg-gradient-to-br from-[#FFFDF7] via-[#F2E9D5] to-[#D4C5A3] border border-white/80 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9),inset_0_-2px_4px_rgba(0,0,0,0.22)] ${className}`}
+      className={`grid grid-cols-3 grid-rows-3 gap-[3px] p-2 w-full h-full rounded-[11px] bg-gradient-to-br from-[#FFFDF7] via-[#F2E9D5] to-[#D4C5A3] border border-white/85 shadow-[inset_0_1px_2px_rgba(255,255,255,0.9),inset_0_-2px_4px_rgba(0,0,0,0.22)] ${className}`}
     >
       {Array.from({ length: 9 }).map((_, i) => (
         <span key={i} className="flex items-center justify-center">
           {active.includes(i) && (
             <span
-              className={`w-[5.5px] h-[5.5px] rounded-full shadow-[inset_0_1px_1px_rgba(0,0,0,0.75)] ${
-                value === 1 ? 'bg-rose-600 w-[7px] h-[7px]' : 'bg-zinc-900'
+              className={`rounded-full shadow-[inset_0_1px_1px_rgba(0,0,0,0.75)] ${
+                value === 1 ? 'bg-rose-600 w-[9px] h-[9px]' : 'bg-zinc-900 w-[6.5px] h-[6.5px]'
               }`}
             />
           )}
@@ -259,31 +259,33 @@ const Interactive3DDice: React.FC<{
         triggerHaptic('medium');
         onRoll();
       }}
-      aria-label="Dado 3D"
-      className={`nc-dice-scene w-11 h-11 p-0.5 rounded-xl shrink-0 transition-transform ${
-        canRoll ? 'cursor-pointer hover:scale-110 active:scale-95 ring-2 ring-white/70' : 'cursor-default'
+      aria-label="Dado 3D · Tocar para tirar"
+      className={`nc-dice-scene w-14 h-14 p-1 rounded-2xl shrink-0 transition-all ${
+        canRoll
+          ? 'cursor-pointer hover:scale-110 active:scale-95 ring-2 ring-amber-300/90 animate-pulse'
+          : 'cursor-default opacity-90'
       }`}
       style={{
-        boxShadow: canRoll ? `0 0 18px ${accentHex}66` : '0 4px 12px rgba(0,0,0,0.5)',
-        backgroundColor: `${accentHex}28`,
+        boxShadow: canRoll ? `0 0 24px ${accentHex}99` : '0 4px 12px rgba(0,0,0,0.5)',
+        backgroundColor: canRoll ? `${accentHex}38` : `${accentHex}20`,
       }}
     >
       <div className={`nc-dice-cube ${tumbling ? 'nc-dice-tumbling' : ''}`}>
         <div
           className="absolute inset-0"
-          style={{ transform: 'translateZ(18px)' }}
+          style={{ transform: 'translateZ(24px)' }}
         >
           <DiceFacePips value={faceVal} />
         </div>
         <div
           className="absolute inset-0 opacity-75"
-          style={{ transform: 'rotateY(90deg) translateZ(18px)' }}
+          style={{ transform: 'rotateY(90deg) translateZ(24px)' }}
         >
           <DiceFacePips value={((faceVal + 1) % 6) + 1} />
         </div>
         <div
           className="absolute inset-0 opacity-75"
-          style={{ transform: 'rotateX(90deg) translateZ(18px)' }}
+          style={{ transform: 'rotateX(90deg) translateZ(24px)' }}
         >
           <DiceFacePips value={((faceVal + 3) % 6) + 1} />
         </div>
@@ -1071,12 +1073,16 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
               onRoll={() => dispatchAction('roll_dice')}
             />
             <div className="min-w-0">
-              <div className="text-xs font-bold text-white truncate">
+              <div className="text-xs sm:text-sm font-bold text-white truncate">
                 {pState.status === 'finished' && winnerSeat
                   ? `🏆 ${winnerSeat.name}`
                   : isMyTurn
                   ? pState.phase === 'roll'
-                    ? pickLang(lang, { es: 'Tu turno · Tira el dado', ca: 'El teu torn · Tira el dau', en: 'Your turn · Roll dice' })
+                    ? pickLang(lang, {
+                        es: 'Tu turno · Toca el dado para tirar',
+                        ca: 'El teu torn · Toca el dau',
+                        en: 'Your turn · Tap the die',
+                      })
                     : pState.bonusSteps > 0
                     ? pickLang(lang, {
                         es: `Bonus +${pState.bonusSteps} · Elige ficha`,
@@ -1101,19 +1107,6 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 shrink-0">
-            {pState.status === 'playing' && isMyTurn && pState.phase === 'roll' && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  dispatchAction('roll_dice');
-                }}
-                className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
-              >
-                <Dices className="w-4 h-4 shrink-0" />
-                <span>{pickLang(lang, { es: 'Tirar', ca: 'Tirar', en: 'Roll' })}</span>
-              </button>
-            )}
             <button
               type="button"
               onClick={() => dispatchAction('rematch')}
@@ -1779,19 +1772,38 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
       {/* Interactive Curved Fan Player Hand (Zero Horizontal Scroll Cutoff) */}
       {mySeatIndex >= 0 && (
         <div className="shrink-0 pt-1 pb-1">
-          <div className="flex items-center justify-between text-[11px] text-zinc-400 px-1 mb-1">
-            <span className="font-semibold text-zinc-200">
+          <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-400 px-1 mb-1.5">
+            <span className="font-semibold text-zinc-200 shrink-0">
               {pickLang(lang, {
                 es: `Tu mano (${myHand.length})`,
                 ca: `La teva mà (${myHand.length})`,
                 en: `Your hand (${myHand.length})`,
               })}
             </span>
-            <span className="text-[10px] text-zinc-400">
-              {isMyTurn
-                ? pickLang(lang, { es: 'Toca una carta iluminada', ca: 'Toca una carta', en: 'Tap highlighted card' })
-                : pickLang(lang, { es: 'Esperando turno', ca: 'Esperant torn', en: 'Waiting turn' })}
-            </span>
+
+            {canCallUno ? (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  dispatchAction('call_uno');
+                }}
+                className="min-h-8 px-3.5 rounded-full bg-gradient-to-r from-rose-600 via-red-500 to-amber-500 hover:brightness-110 text-xs font-black text-white flex items-center gap-1.5 shadow-[0_0_22px_rgba(244,63,94,0.85)] ring-2 ring-white/90 animate-pulse cursor-pointer active:scale-95 shrink-0"
+              >
+                <Megaphone className="w-3.5 h-3.5" />
+                <span>¡UNO!</span>
+              </button>
+            ) : uState.status === 'playing' && myHand.length <= 2 && uState.unoCalledSeats.includes(mySeatIndex) ? (
+              <span className="px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/50 text-[10px] font-black text-emerald-200 shrink-0">
+                ✓ ¡UNO! cantado
+              </span>
+            ) : (
+              <span className="text-[10px] text-zinc-400 truncate">
+                {isMyTurn
+                  ? pickLang(lang, { es: 'Toca una carta iluminada', ca: 'Toca una carta', en: 'Tap highlighted card' })
+                  : pickLang(lang, { es: 'Esperando turno', ca: 'Esperant torn', en: 'Waiting turn' })}
+              </span>
+            )}
           </div>
 
           <div className="relative flex items-end justify-center min-h-[104px] sm:min-h-[120px] px-2 overflow-visible select-none">

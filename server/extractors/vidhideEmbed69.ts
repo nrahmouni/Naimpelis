@@ -4,7 +4,7 @@ import { LruTtlCache } from '../utils/lruCache.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import {
   CHROME_UA,
-  TrackRecord,
+  type TrackRecord,
   buildHlsProxyUrl,
   curlGetText,
   curlPostJsonText,

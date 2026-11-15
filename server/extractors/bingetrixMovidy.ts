@@ -6,7 +6,7 @@ import {
 } from '../services/vestMirrorService.ts';
 import {
   CHROME_UA,
-  TrackRecord,
+  type TrackRecord,
   buildHlsProxyUrl,
   curlGetBuffer,
   curlGetText,

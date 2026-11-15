@@ -26,9 +26,16 @@ import {
   wsEnvelopeSchema,
   wsGameMoveSchema,
   wsJoinRoomSchema,
+  wsKartInputSchema,
+  wsKartRoomSchema,
+  wsKartTrackSchema,
   wsPartyGameActionSchema,
   wsPartyGameStartSchema,
   wsPinChatSchema,
+  wsPinturilloGuessSchema,
+  wsPinturilloPickWordSchema,
+  wsPinturilloRoomSchema,
+  wsPinturilloStrokeSchema,
   wsPollStartSchema,
   wsQueueReorderSchema,
   WsRateLimiter,
@@ -78,6 +85,30 @@ import {
   type PartyGameState,
   type PartyGameType,
 } from '../../src/shared/partyGames.ts';
+import {
+  addPinturilloStroke,
+  advancePinturilloRound,
+  buildBotSketchStrokes,
+  clearPinturilloCanvas,
+  createInitialPinturilloState,
+  endPinturilloRound,
+  pickBotPinturilloGuess,
+  redactPinturilloForUser,
+  revealPinturilloHintIfDue,
+  selectPinturilloWord,
+  submitPinturilloGuess,
+  undoPinturilloStroke,
+  type PinturilloGameState,
+} from '../../src/shared/pinturillo.ts';
+import {
+  createInitialTurboKartState,
+  setTurboKartTrack,
+  startTurboKartRace,
+  stepTurboKartSimulation,
+  useTurboKartItem,
+  type KartInputState,
+  type TurboKartState,
+} from '../../src/shared/turboKart.ts';
 import type { VoicePeerState } from '../../src/shared/protocol.ts';
 
 export interface CloudRoomSession extends CloudSessionLite {
@@ -161,6 +192,8 @@ export interface RoomRecord {
   };
   gameState?: BoardGameState | null;
   partyGameState?: PartyGameState | null;
+  pinturilloState?: PinturilloGameState | null;
+  kartGameState?: TurboKartState | null;
   createdAt: number;
 }
 
@@ -198,6 +231,9 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   const roomPollTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const partyBotTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const boardTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const pinturilloTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const kartRaceLoops = new Map<string, ReturnType<typeof setInterval>>();
+  const kartInputsByRoom = new Map<string, Map<string, KartInputState>>();
   const roomVoicePeers = new Map<string, Map<string, VoicePeerState>>();
 
   const tvPairingSessions = new LruTtlCache<string, TvPairingSession>(400, 15 * 60 * 1000);
@@ -412,14 +448,190 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
     });
   }
 
-  function serializeRoomForClient(room: RoomRecord) {
+  function serializeRoomForClient(room: RoomRecord, viewerUserId = '') {
     const { pinCode, ...safeRoom } = room;
     return {
       ...safeRoom,
+      pinturilloState: redactPinturilloForUser(room.pinturilloState ?? null, viewerUserId),
       hasPin: Boolean(pinCode),
       voicePeers: getVoicePeersForRoom(room.id),
       videoState: computeAuthoritativeVideoState(room),
     };
+  }
+
+  function broadcastPinturilloState(room: RoomRecord, message?: RoomChatMessageRecord | null) {
+    clients.forEach((meta, clientWs) => {
+      if (meta.roomId === room.id && clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(
+          JSON.stringify({
+            type: 'PINTURILLO_STATE_UPDATED',
+            payload: {
+              pinturilloState: redactPinturilloForUser(
+                room.pinturilloState ?? null,
+                meta.userId || ''
+              ),
+              message: message ?? null,
+            },
+          })
+        );
+      }
+    });
+  }
+
+  function stopPinturilloTimer(roomId: string) {
+    const t = pinturilloTimers.get(roomId);
+    if (t) {
+      clearTimeout(t);
+      pinturilloTimers.delete(roomId);
+    }
+  }
+
+  function schedulePinturilloLifecycle(room: RoomRecord) {
+    stopPinturilloTimer(room.id);
+    const ps = room.pinturilloState;
+    if (!ps || ps.status === 'finished') return;
+
+    const drawer = ps.players[ps.drawerSeat];
+    const now = Date.now();
+    let delayMs = 950;
+    if (ps.status === 'choosing') {
+      delayMs = drawer?.isBot ? 1100 : Math.max(250, ps.phaseDeadlineAt - now);
+    } else if (ps.status === 'round_end') {
+      delayMs = Math.max(250, ps.phaseDeadlineAt - now);
+    } else if (ps.status === 'drawing') {
+      delayMs = drawer?.isBot ? 850 : 1200;
+    }
+
+    const t = setTimeout(() => {
+      pinturilloTimers.delete(room.id);
+      const latestRoom = rooms.get(room.id);
+      const curr = latestRoom?.pinturilloState;
+      if (!latestRoom || !curr || curr.status === 'finished') return;
+      if (latestRoom.participants.length === 0) return;
+
+      const tickNow = Date.now();
+      let changed = false;
+
+      if (curr.status === 'choosing') {
+        const curDrawer = curr.players[curr.drawerSeat];
+        if ((curDrawer?.isBot || tickNow >= curr.phaseDeadlineAt) && curr.wordChoices.length > 0) {
+          const picked = curr.wordChoices[Math.floor(Math.random() * curr.wordChoices.length)];
+          const res = selectPinturilloWord(curr, curDrawer?.userId || '', picked.id);
+          if (res.ok) {
+            latestRoom.pinturilloState = res.state;
+            changed = true;
+          }
+        }
+      } else if (curr.status === 'round_end') {
+        if (tickNow >= curr.phaseDeadlineAt) {
+          latestRoom.pinturilloState = advancePinturilloRound(curr);
+          changed = true;
+        }
+      } else if (curr.status === 'drawing') {
+        let nextState = curr;
+        // Deadline expired
+        if (tickNow >= nextState.phaseDeadlineAt) {
+          nextState = endPinturilloRound(nextState, tickNow);
+          latestRoom.pinturilloState = nextState;
+          changed = true;
+        } else {
+          // Progressive hints
+          const hinted = revealPinturilloHintIfDue(nextState, tickNow);
+          if (hinted !== nextState) {
+            nextState = hinted;
+            changed = true;
+          }
+          // Bot drawer progressive sketching
+          const curDrawer = nextState.players[nextState.drawerSeat];
+          if (curDrawer?.isBot && nextState.secretWord) {
+            const template = buildBotSketchStrokes(nextState.secretWord.id);
+            if (nextState.strokes.length < template.length) {
+              const strokeToAdd = template[nextState.strokes.length];
+              const sRes = addPinturilloStroke(nextState, curDrawer.userId, strokeToAdd);
+              if (sRes.ok) {
+                nextState = sRes.state;
+                changed = true;
+              }
+            }
+          }
+          // Periodic AI Bot guesser
+          if (nextState.status === 'drawing' && Math.random() < 0.34) {
+            const botGuess = pickBotPinturilloGuess(nextState);
+            if (botGuess) {
+              const gRes = submitPinturilloGuess(nextState, botGuess.botUserId, botGuess.guessText);
+              if (gRes.ok) {
+                nextState = gRes.state;
+                changed = true;
+              }
+            }
+          }
+          if (changed) {
+            latestRoom.pinturilloState = nextState;
+          }
+        }
+      }
+
+      if (changed) {
+        broadcastPinturilloState(latestRoom);
+      }
+      schedulePinturilloLifecycle(latestRoom);
+    }, delayMs);
+    t.unref?.();
+    pinturilloTimers.set(room.id, t);
+  }
+
+  function stopKartRaceLoop(roomId: string) {
+    const iv = kartRaceLoops.get(roomId);
+    if (iv) {
+      clearInterval(iv);
+      kartRaceLoops.delete(roomId);
+    }
+  }
+
+  function startKartRaceLoop(room: RoomRecord) {
+    stopKartRaceLoop(room.id);
+    const ks = room.kartGameState;
+    if (!ks || (ks.status !== 'countdown' && ks.status !== 'racing')) return;
+
+    let lastTick = Date.now();
+    const iv = setInterval(() => {
+      const latestRoom = rooms.get(room.id);
+      const curr = latestRoom?.kartGameState;
+      if (!latestRoom || !curr || (curr.status !== 'countdown' && curr.status !== 'racing')) {
+        stopKartRaceLoop(room.id);
+        return;
+      }
+      if (latestRoom.participants.length === 0) {
+        stopKartRaceLoop(room.id);
+        return;
+      }
+
+      const now = Date.now();
+      const dtSec = Math.max(0.02, Math.min(0.08, (now - lastTick) / 1000));
+      lastTick = now;
+
+      const inputMap = kartInputsByRoom.get(room.id);
+      const inputObj: Record<string, KartInputState> = {};
+      if (inputMap) {
+        inputMap.forEach((v, k) => {
+          inputObj[k] = v;
+        });
+      }
+
+      const nextState = stepTurboKartSimulation(curr, inputObj, dtSec, now);
+      latestRoom.kartGameState = nextState;
+
+      broadcastToRoom(room.id, {
+        type: 'KART_STATE_UPDATED',
+        payload: { kartGameState: nextState },
+      });
+
+      if (nextState.status === 'finished') {
+        stopKartRaceLoop(room.id);
+      }
+    }, 55);
+    iv.unref?.();
+    kartRaceLoops.set(room.id, iv);
   }
 
   function broadcastToRoom(roomId: string, message: unknown, excludeWs?: WebSocket) {
@@ -1216,7 +1428,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           ws.send(
             JSON.stringify({
               type: 'ROOM_STATE',
-              payload: { ...serializeRoomForClient(room), serverTime: Date.now() },
+              payload: { ...serializeRoomForClient(room, userId), serverTime: Date.now() },
             })
           );
 
@@ -1246,7 +1458,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           ws.send(
             JSON.stringify({
               type: 'ROOM_STATE',
-              payload: { ...serializeRoomForClient(room), serverTime: Date.now() },
+              payload: { ...serializeRoomForClient(room, senderMeta?.userId || ''), serverTime: Date.now() },
             })
           );
           return;
@@ -2708,6 +2920,267 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           return;
         }
 
+        // Pinturillo (Draw & Guess · 2–6 Players + AI Bots)
+        if (type === 'PINTURILLO_START') {
+          const valid = wsPinturilloRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const roomId = valid.data.roomId.toLowerCase();
+          const room = rooms.get(roomId);
+          if (!room) return;
+
+          const humans = room.participants
+            .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
+            .slice(0, 6)
+            .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+
+          room.pinturilloState = createInitialPinturilloState(humans);
+          const sysMsg: RoomChatMessageRecord = {
+            id: `pinturillo-start-${Date.now()}`,
+            senderId: 'system',
+            senderName: 'NAIM CINE',
+            senderAvatar: '🎨',
+            senderColor: '#F59E0B',
+            text: `Mesa de Pinturillo abierta · ¡Dibuja y adivina la palabra!`,
+            timestamp: Date.now(),
+            isSystem: true,
+          };
+          room.messages.push(sysMsg);
+          if (room.messages.length > 150) room.messages = room.messages.slice(-150);
+          broadcastPinturilloState(room, sysMsg);
+          schedulePinturilloLifecycle(room);
+          return;
+        }
+
+        if (type === 'PINTURILLO_PICK_WORD') {
+          const valid = wsPinturilloPickWordSchema.safeParse(payload);
+          if (!valid.success) return;
+          const roomId = valid.data.roomId.toLowerCase();
+          const room = rooms.get(roomId);
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pinturilloState || !senderMeta?.userId) return;
+
+          const res = selectPinturilloWord(room.pinturilloState, senderMeta.userId, valid.data.wordId);
+          if (!res.ok) return;
+          room.pinturilloState = res.state;
+          broadcastPinturilloState(room);
+          schedulePinturilloLifecycle(room);
+          return;
+        }
+
+        if (type === 'PINTURILLO_STROKE') {
+          const valid = wsPinturilloStrokeSchema.safeParse(payload);
+          if (!valid.success) return;
+          const roomId = valid.data.roomId.toLowerCase();
+          const room = rooms.get(roomId);
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pinturilloState || !senderMeta?.userId) return;
+
+          const res = addPinturilloStroke(room.pinturilloState, senderMeta.userId, valid.data.stroke);
+          if (!res.ok) return;
+          room.pinturilloState = res.state;
+          broadcastToRoom(
+            room.id,
+            {
+              type: 'PINTURILLO_STROKE_ADDED',
+              payload: { stroke: res.state.strokes[res.state.strokes.length - 1] },
+            },
+            ws
+          );
+          return;
+        }
+
+        if (type === 'PINTURILLO_UNDO') {
+          const valid = wsPinturilloRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pinturilloState || !senderMeta?.userId) return;
+          const res = undoPinturilloStroke(room.pinturilloState, senderMeta.userId);
+          if (!res.ok) return;
+          room.pinturilloState = res.state;
+          broadcastPinturilloState(room);
+          return;
+        }
+
+        if (type === 'PINTURILLO_CLEAR') {
+          const valid = wsPinturilloRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pinturilloState || !senderMeta?.userId) return;
+          const res = clearPinturilloCanvas(room.pinturilloState, senderMeta.userId);
+          if (!res.ok) return;
+          room.pinturilloState = res.state;
+          broadcastPinturilloState(room);
+          return;
+        }
+
+        if (type === 'PINTURILLO_GUESS') {
+          const valid = wsPinturilloGuessSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pinturilloState || !senderMeta?.userId) return;
+
+          const res = submitPinturilloGuess(room.pinturilloState, senderMeta.userId, valid.data.text);
+          if (!res.ok) return;
+          room.pinturilloState = res.state;
+          broadcastPinturilloState(room);
+          if (res.roundCompleted) {
+            schedulePinturilloLifecycle(room);
+          }
+          return;
+        }
+
+        if (type === 'PINTURILLO_REMATCH') {
+          const valid = wsPinturilloRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room) return;
+          const humans = room.participants
+            .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
+            .slice(0, 6)
+            .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+          room.pinturilloState = createInitialPinturilloState(humans);
+          broadcastPinturilloState(room);
+          schedulePinturilloLifecycle(room);
+          return;
+        }
+
+        if (type === 'PINTURILLO_CLOSE') {
+          const valid = wsPinturilloRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room) return;
+          stopPinturilloTimer(room.id);
+          room.pinturilloState = null;
+          broadcastPinturilloState(room);
+          return;
+        }
+
+        // Turbo Kart (Mario Kart-style Multiplayer Racing · 2–6 Players + AI Bots)
+        if (type === 'KART_START') {
+          const valid = wsKartTrackSchema.safeParse(payload);
+          if (!valid.success) return;
+          const roomId = valid.data.roomId.toLowerCase();
+          const room = rooms.get(roomId);
+          if (!room) return;
+
+          const humans = room.participants
+            .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
+            .slice(0, 6)
+            .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+
+          stopKartRaceLoop(room.id);
+          kartInputsByRoom.delete(room.id);
+          room.kartGameState = createInitialTurboKartState(humans, {
+            trackId: valid.data.trackId,
+            waitForHost: true,
+          });
+          broadcastToRoom(room.id, {
+            type: 'KART_STATE_UPDATED',
+            payload: { kartGameState: room.kartGameState },
+          });
+          return;
+        }
+
+        if (type === 'KART_SELECT_TRACK') {
+          const valid = wsKartTrackSchema.safeParse(payload);
+          if (!valid.success || !valid.data.trackId) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room || !room.kartGameState || room.kartGameState.status !== 'waiting') return;
+          room.kartGameState = setTurboKartTrack(room.kartGameState, valid.data.trackId);
+          broadcastToRoom(room.id, {
+            type: 'KART_STATE_UPDATED',
+            payload: { kartGameState: room.kartGameState },
+          });
+          return;
+        }
+
+        if (type === 'KART_BEGIN_RACE') {
+          const valid = wsKartRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room || !room.kartGameState) return;
+          room.kartGameState = startTurboKartRace(room.kartGameState);
+          kartInputsByRoom.set(room.id, new Map());
+          broadcastToRoom(room.id, {
+            type: 'KART_STATE_UPDATED',
+            payload: { kartGameState: room.kartGameState },
+          });
+          startKartRaceLoop(room);
+          return;
+        }
+
+        if (type === 'KART_INPUT') {
+          const valid = wsKartInputSchema.safeParse(payload);
+          if (!valid.success) return;
+          const senderMeta = clients.get(ws);
+          const roomId = valid.data.roomId.toLowerCase();
+          if (!senderMeta?.userId) return;
+          let map = kartInputsByRoom.get(roomId);
+          if (!map) {
+            map = new Map();
+            kartInputsByRoom.set(roomId, map);
+          }
+          map.set(senderMeta.userId, valid.data.input);
+          return;
+        }
+
+        if (type === 'KART_USE_ITEM') {
+          const valid = wsKartRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.kartGameState || !senderMeta?.userId) return;
+          const res = useTurboKartItem(room.kartGameState, senderMeta.userId);
+          if (!res.ok) return;
+          room.kartGameState = res.state;
+          broadcastToRoom(room.id, {
+            type: 'KART_STATE_UPDATED',
+            payload: { kartGameState: room.kartGameState },
+          });
+          return;
+        }
+
+        if (type === 'KART_REMATCH') {
+          const valid = wsKartTrackSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room) return;
+          const humans = room.participants
+            .filter((p) => !p.name.includes('(TV)') && p.avatar !== '📺')
+            .slice(0, 6)
+            .map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color }));
+          stopKartRaceLoop(room.id);
+          kartInputsByRoom.set(room.id, new Map());
+          room.kartGameState = createInitialTurboKartState(humans, {
+            trackId: valid.data.trackId || room.kartGameState?.trackId || 'neon_sun',
+            waitForHost: false,
+          });
+          broadcastToRoom(room.id, {
+            type: 'KART_STATE_UPDATED',
+            payload: { kartGameState: room.kartGameState },
+          });
+          startKartRaceLoop(room);
+          return;
+        }
+
+        if (type === 'KART_CLOSE') {
+          const valid = wsKartRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room) return;
+          stopKartRaceLoop(room.id);
+          kartInputsByRoom.delete(room.id);
+          room.kartGameState = null;
+          broadcastToRoom(room.id, {
+            type: 'KART_STATE_UPDATED',
+            payload: { kartGameState: null },
+          });
+          return;
+        }
+
         // WebRTC Live Voice Chat Signaling for Multiplayer Games
         if (type === 'VOICE_JOIN') {
           const valid = wsVoiceRoomSchema.safeParse(payload);
@@ -2882,6 +3355,9 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
 
       schedulePersistRoom(meta.roomId);
       if (room.participants.length === 0) {
+        stopPinturilloTimer(meta.roomId);
+        stopKartRaceLoop(meta.roomId);
+        kartInputsByRoom.delete(meta.roomId);
         await stopCloudSession(meta.roomId);
         return;
       }

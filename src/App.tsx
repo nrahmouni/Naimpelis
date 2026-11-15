@@ -43,6 +43,7 @@ import {
   OnlineAppUser,
   Participant,
   PartyGameState,
+  PinturilloGameState,
   PlaybackEngineMode,
   PollProposalItem,
   RestoredRoomBlueprint,
@@ -54,6 +55,7 @@ import {
   SpanishTdtChannel,
   SportsMatch,
   StreamTrack,
+  TurboKartState,
   TvEpisodeItem,
   TvRemoteCommandType,
   TvSeriesDetails,
@@ -419,6 +421,8 @@ export function App() {
   const [activePoll, setActivePoll] = useState<RoomPollState | null>(null);
   const [roomGameState, setRoomGameState] = useState<BoardGameState | null>(null);
   const [partyGameState, setPartyGameState] = useState<PartyGameState | null>(null);
+  const [pinturilloState, setPinturilloState] = useState<PinturilloGameState | null>(null);
+  const [kartGameState, setKartGameState] = useState<TurboKartState | null>(null);
   const [gameMoveError, setGameMoveError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -1311,6 +1315,8 @@ export function App() {
         setActivePoll(payload.activePoll || null);
         setRoomGameState(payload.gameState || null);
         setPartyGameState(payload.partyGameState || null);
+        setPinturilloState(payload.pinturilloState || null);
+        setKartGameState(payload.kartGameState || null);
         setGameMoveError(null);
         setParticipants(payload.participants || []);
         setMessages(payload.messages || []);
@@ -1537,6 +1543,22 @@ export function App() {
         setPinnedMessage(payload.pinnedMessage || null);
       } else if (type === 'PARTY_GAME_STATE_UPDATED') {
         setPartyGameState(payload.partyGameState || null);
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message!]);
+          if (mobileTabRef.current !== 'chat') {
+            setUnreadChatCount((c) => c + 1);
+          }
+        }
+      } else if (type === 'PINTURILLO_STATE_UPDATED') {
+        setPinturilloState(payload.pinturilloState || null);
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message!]);
+          if (mobileTabRef.current !== 'chat') {
+            setUnreadChatCount((c) => c + 1);
+          }
+        }
+      } else if (type === 'KART_STATE_UPDATED') {
+        setKartGameState(payload.kartGameState || null);
         if (payload.message) {
           setMessages((prev) => [...prev.slice(-149), payload.message!]);
           if (mobileTabRef.current !== 'chat') {
@@ -5459,6 +5481,8 @@ export function App() {
                   participants={participants}
                   roomBoardGame={roomGameState}
                   roomPartyGame={partyGameState}
+                  roomPinturilloGame={pinturilloState}
+                  roomKartGame={kartGameState}
                   gameMoveError={gameMoveError}
                   isHost={isHostUser}
                   voiceChat={voiceChat}
@@ -5474,6 +5498,21 @@ export function App() {
                   onStartRoomPartyGame={(gt) => socketService.startPartyGame(gt)}
                   onRoomPartyAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
                   onCloseRoomPartyGame={() => socketService.closePartyGame()}
+                  onStartRoomPinturillo={() => socketService.startPinturillo()}
+                  onPinturilloPickWord={(wordId) => socketService.pickPinturilloWord(wordId)}
+                  onPinturilloStroke={(stroke) => socketService.sendPinturilloStroke(stroke)}
+                  onPinturilloUndo={() => socketService.undoPinturilloStroke()}
+                  onPinturilloClear={() => socketService.clearPinturilloCanvas()}
+                  onPinturilloGuess={(text) => socketService.sendPinturilloGuess(text)}
+                  onPinturilloRematch={() => socketService.rematchPinturillo()}
+                  onCloseRoomPinturillo={() => socketService.closePinturillo()}
+                  onStartRoomKart={(trackId) => socketService.startTurboKart(trackId)}
+                  onKartSelectTrack={(trackId) => socketService.selectTurboKartTrack(trackId)}
+                  onKartBeginRace={() => socketService.beginTurboKartRace()}
+                  onKartInput={(input) => socketService.sendTurboKartInput(input)}
+                  onKartUseItem={() => socketService.useTurboKartItem()}
+                  onKartRematch={(trackId) => socketService.rematchTurboKart(trackId)}
+                  onCloseRoomKart={() => socketService.closeTurboKart()}
                 />
 
                 {/* Minimalist Footer (Legal & Design System live cleanly inside Mi Perfil) */}

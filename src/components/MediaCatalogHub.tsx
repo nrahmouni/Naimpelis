@@ -48,16 +48,21 @@ import {
   ChessPromotionPiece,
   EpgProgramItem,
   FavoriteChannelItem,
+  KartInputState,
+  KartTrackId,
   LiveScoreMatch,
   Participant,
   PartyColor,
   PartyGameState,
   PartyGameType,
+  PinturilloGameState,
+  PinturilloStroke,
   RoomQueueItem,
   SpanishTdtChannel,
   SportsMatch,
   StreamingProviderId,
   TdtCategory,
+  TurboKartState,
   TvEpisodeItem,
   TvSeriesDetails,
   WatchHistoryItem,
@@ -660,6 +665,8 @@ interface MediaCatalogHubProps {
   participants?: Participant[];
   roomBoardGame?: BoardGameState | null;
   roomPartyGame?: PartyGameState | null;
+  roomPinturilloGame?: PinturilloGameState | null;
+  roomKartGame?: TurboKartState | null;
   gameMoveError?: string | null;
   isHost?: boolean;
   voiceChat?: GameVoiceChatState;
@@ -684,6 +691,21 @@ interface MediaCatalogHubProps {
     opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor; seatIndex?: number }
   ) => void;
   onCloseRoomPartyGame?: () => void;
+  onStartRoomPinturillo?: () => void;
+  onPinturilloPickWord?: (wordId: string) => void;
+  onPinturilloStroke?: (stroke: PinturilloStroke) => void;
+  onPinturilloUndo?: () => void;
+  onPinturilloClear?: () => void;
+  onPinturilloGuess?: (text: string) => void;
+  onPinturilloRematch?: () => void;
+  onCloseRoomPinturillo?: () => void;
+  onStartRoomKart?: (trackId?: KartTrackId) => void;
+  onKartSelectTrack?: (trackId: KartTrackId) => void;
+  onKartBeginRace?: () => void;
+  onKartInput?: (input: KartInputState) => void;
+  onKartUseItem?: () => void;
+  onKartRematch?: (trackId?: KartTrackId) => void;
+  onCloseRoomKart?: () => void;
 }
 
 export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
@@ -723,6 +745,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   participants = [],
   roomBoardGame = null,
   roomPartyGame = null,
+  roomPinturilloGame = null,
+  roomKartGame = null,
   gameMoveError = null,
   isHost = false,
   voiceChat,
@@ -736,6 +760,21 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onStartRoomPartyGame,
   onRoomPartyAction,
   onCloseRoomPartyGame,
+  onStartRoomPinturillo,
+  onPinturilloPickWord,
+  onPinturilloStroke,
+  onPinturilloUndo,
+  onPinturilloClear,
+  onPinturilloGuess,
+  onPinturilloRematch,
+  onCloseRoomPinturillo,
+  onStartRoomKart,
+  onKartSelectTrack,
+  onKartBeginRace,
+  onKartInput,
+  onKartUseItem,
+  onKartRematch,
+  onCloseRoomKart,
 }) => {
   const t = UI_COPY[lang];
 
@@ -8243,6 +8282,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             participants={participants}
             roomBoardGame={roomBoardGame}
             roomPartyGame={roomPartyGame}
+            roomPinturilloGame={roomPinturilloGame}
+            roomKartGame={roomKartGame}
             gameMoveError={gameMoveError}
             isHost={isHost}
             voiceChat={voiceChat}
@@ -8256,6 +8297,21 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             onStartRoomPartyGame={onStartRoomPartyGame}
             onRoomPartyAction={onRoomPartyAction}
             onCloseRoomPartyGame={onCloseRoomPartyGame}
+            onStartRoomPinturillo={onStartRoomPinturillo}
+            onPinturilloPickWord={onPinturilloPickWord}
+            onPinturilloStroke={onPinturilloStroke}
+            onPinturilloUndo={onPinturilloUndo}
+            onPinturilloClear={onPinturilloClear}
+            onPinturilloGuess={onPinturilloGuess}
+            onPinturilloRematch={onPinturilloRematch}
+            onCloseRoomPinturillo={onCloseRoomPinturillo}
+            onStartRoomKart={onStartRoomKart}
+            onKartSelectTrack={onKartSelectTrack}
+            onKartBeginRace={onKartBeginRace}
+            onKartInput={onKartInput}
+            onKartUseItem={onKartUseItem}
+            onKartRematch={onKartRematch}
+            onCloseRoomKart={onCloseRoomKart}
           />
         </React.Suspense>
       )}

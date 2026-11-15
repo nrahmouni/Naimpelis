@@ -18,6 +18,15 @@ import type {
   PartyGameType,
   UnoGameState,
 } from './partyGames';
+import type {
+  PinturilloGameState,
+  PinturilloStroke,
+} from './pinturillo';
+import type {
+  KartInputState,
+  KartTrackId,
+  TurboKartState,
+} from './turboKart';
 
 export type {
   BoardClockMinutes,
@@ -26,10 +35,15 @@ export type {
   BoardGameType,
   BoardSide,
   ChessPromotionPiece,
+  KartInputState,
+  KartTrackId,
   ParchisGameState,
   PartyColor,
   PartyGameState,
   PartyGameType,
+  PinturilloGameState,
+  PinturilloStroke,
+  TurboKartState,
   UnoGameState,
 };
 
@@ -126,6 +140,8 @@ export interface RoomStatePayload {
   hostOnlyControl?: boolean;
   gameState?: BoardGameState | null;
   partyGameState?: PartyGameState | null;
+  pinturilloState?: PinturilloGameState | null;
+  kartGameState?: TurboKartState | null;
   createdAt: number;
   serverTime?: number;
 }
@@ -344,6 +360,66 @@ export type ClientWsMessage =
   | {
       type: 'VOICE_SIGNAL';
       payload: VoiceSignalPayload;
+    }
+  | {
+      type: 'PINTURILLO_START';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'PINTURILLO_PICK_WORD';
+      payload: { roomId: string; wordId: string };
+    }
+  | {
+      type: 'PINTURILLO_STROKE';
+      payload: { roomId: string; stroke: PinturilloStroke };
+    }
+  | {
+      type: 'PINTURILLO_UNDO';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'PINTURILLO_CLEAR';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'PINTURILLO_GUESS';
+      payload: { roomId: string; text: string };
+    }
+  | {
+      type: 'PINTURILLO_REMATCH';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'PINTURILLO_CLOSE';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'KART_START';
+      payload: { roomId: string; trackId?: KartTrackId };
+    }
+  | {
+      type: 'KART_SELECT_TRACK';
+      payload: { roomId: string; trackId: KartTrackId };
+    }
+  | {
+      type: 'KART_BEGIN_RACE';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'KART_INPUT';
+      payload: { roomId: string; input: KartInputState };
+    }
+  | {
+      type: 'KART_USE_ITEM';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'KART_REMATCH';
+      payload: { roomId: string; trackId?: KartTrackId };
+    }
+  | {
+      type: 'KART_CLOSE';
+      payload: { roomId: string };
     };
 
 export type ServerWsMessage =
@@ -418,5 +494,25 @@ export type ServerWsMessage =
       type: 'VOICE_SIGNAL';
       payload: VoiceSignalPayload & {
         fromUserId: string;
+      };
+    }
+  | {
+      type: 'PINTURILLO_STATE_UPDATED';
+      payload: {
+        pinturilloState: PinturilloGameState | null;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'PINTURILLO_STROKE_ADDED';
+      payload: {
+        stroke: PinturilloStroke;
+      };
+    }
+  | {
+      type: 'KART_STATE_UPDATED';
+      payload: {
+        kartGameState: TurboKartState | null;
+        message?: RoomChatMessage | null;
       };
     };

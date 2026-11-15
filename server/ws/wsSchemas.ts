@@ -159,6 +159,57 @@ export const wsVoiceSignalSchema = z.object({
     .optional(),
 });
 
+export const wsPinturilloRoomSchema = z.object({
+  roomId: roomIdSchema,
+});
+
+export const wsPinturilloPickWordSchema = z.object({
+  roomId: roomIdSchema,
+  wordId: safeIdSchema,
+});
+
+export const wsPinturilloStrokeSchema = z.object({
+  roomId: roomIdSchema,
+  stroke: z.object({
+    id: safeIdSchema,
+    color: z.string().trim().min(3).max(24),
+    size: z.number().min(2).max(28),
+    isEraser: z.boolean().optional(),
+    points: z
+      .array(
+        z.object({
+          x: z.number().min(0).max(1),
+          y: z.number().min(0).max(1),
+        })
+      )
+      .min(1)
+      .max(400),
+  }),
+});
+
+export const wsPinturilloGuessSchema = z.object({
+  roomId: roomIdSchema,
+  text: z.string().trim().min(1).max(60),
+});
+
+export const wsKartRoomSchema = z.object({
+  roomId: roomIdSchema,
+});
+
+export const wsKartTrackSchema = z.object({
+  roomId: roomIdSchema,
+  trackId: z.enum(['neon_sun', 'emerald_lake', 'volcano_turbo']).optional(),
+});
+
+export const wsKartInputSchema = z.object({
+  roomId: roomIdSchema,
+  input: z.object({
+    steer: z.number().min(-1).max(1),
+    throttle: z.number().min(-0.5).max(1),
+    drift: z.boolean(),
+  }),
+});
+
 export const wsEnvelopeSchema = z.object({
   type: z.string().trim().min(1).max(48),
   payload: z.record(z.string(), z.any()).optional().default({}),
@@ -181,7 +232,11 @@ const WS_EVENT_LIMITS: Record<string, { max: number; windowMs: number }> = {
   VOICE_LEAVE: { max: 12, windowMs: 10_000 },
   VOICE_STATE_UPDATE: { max: 30, windowMs: 10_000 },
   VOICE_SIGNAL: { max: 120, windowMs: 10_000 },
-  __GLOBAL__: { max: 200, windowMs: 10_000 },
+  PINTURILLO_STROKE: { max: 90, windowMs: 5_000 },
+  PINTURILLO_GUESS: { max: 15, windowMs: 5_000 },
+  KART_INPUT: { max: 120, windowMs: 5_000 },
+  KART_USE_ITEM: { max: 15, windowMs: 5_000 },
+  __GLOBAL__: { max: 240, windowMs: 10_000 },
 };
 
 export class WsRateLimiter {
