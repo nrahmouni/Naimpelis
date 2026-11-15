@@ -39,7 +39,9 @@ import {
   CHAPAS_TURN_TIMEOUT_MS,
   chooseChapasAiShot,
   createInitialChapasState,
+  isChapasFlippedForTeam,
   joinChapasSeat,
+  orientChapasArenaPoint,
   shootChapasCap,
   startChapasMatch,
   stepChapasPhysicsFrame,
@@ -315,7 +317,12 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   const [isSimulatingUI, setIsSimulatingUI] = useState(false);
   const [goalBanner, setGoalBanner] = useState<{ team: ChapasTeamId; flag: ChapasFlagId } | null>(null);
   const [emojiMenuOpen, setEmojiMenuOpen] = useState(false);
-  const [floatingReaction, setFloatingReaction] = useState<{ emoji: string; id: number } | null>(null);
+  const [floatingReaction, setFloatingReaction] = useState<{
+    emoji: string;
+    senderName?: string;
+    id: number;
+  } | null>(null);
+  const reactionTimerRef = useRef<number | null>(null);
   const [localMuted] = useGameSoundMute();
   const muted = mutedOverride !== undefined ? mutedOverride : localMuted;
 
@@ -337,6 +344,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   mutedRef.current = muted;
   const isOfflineRef = useRef<boolean>(isOffline);
   isOfflineRef.current = isOffline;
+  const isFlippedViewRef = useRef<boolean>(false);
 
   // Reset local state whenever entering offline mode
   useEffect(() => {
@@ -368,13 +376,34 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
     return () => window.clearInterval(id);
   }, [activeState?.status, activeState?.turnDeadlineAt]);
 
-  // Listen to online CHAPAS_SHOT_BROADCAST for 60fps smooth replay
+  const triggerFloatingReactionToast = useCallback((emoji: string, senderName?: string) => {
+    if (reactionTimerRef.current) {
+      window.clearTimeout(reactionTimerRef.current);
+    }
+    setFloatingReaction({ emoji, senderName, id: Date.now() });
+    reactionTimerRef.current = window.setTimeout(() => {
+      setFloatingReaction(null);
+      reactionTimerRef.current = null;
+    }, 1700);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (reactionTimerRef.current) {
+        window.clearTimeout(reactionTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Listen to online CHAPAS_SHOT_BROADCAST & FLOATING_REACTION for 60fps smooth replay
   useEffect(() => {
     if (isOffline) return;
     const unsub = socketService.subscribe((evt) => {
-      if (evt.type === 'REACTION' && evt.payload?.emoji) {
-        setFloatingReaction({ emoji: String(evt.payload.emoji), id: Date.now() });
-        window.setTimeout(() => setFloatingReaction(null), 1600);
+      if (evt.type === 'FLOATING_REACTION' && evt.payload?.emoji) {
+        triggerFloatingReactionToast(
+          String(evt.payload.emoji),
+          typeof evt.payload.senderName === 'string' ? evt.payload.senderName : undefined
+        );
       }
       if (evt.type !== 'CHAPAS_SHOT_BROADCAST') return;
       const payload = evt.payload;
@@ -432,6 +461,15 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       Boolean(p && !p.isBot && p.userId === currentUser.id)
     );
   }, [activeState, currentUser.id]);
+
+  const mySeatForView = useMemo(() => {
+    if (!activeState || mySeats.length === 0) return null;
+    return mySeats.find((s) => s.team === activeState.activeTeam) || mySeats[0];
+  }, [activeState, mySeats]);
+
+  // Auto-flip pitch 180° for Team A so BOTH sides always attack bottom-to-top
+  const isFlippedView = isChapasFlippedForTeam(mySeatForView?.team);
+  isFlippedViewRef.current = isFlippedView;
 
   const activeSeat = activeState ? activeState.players[activeState.activeSeatIndex] : null;
   const isMyTurn = Boolean(
@@ -517,16 +555,15 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
     prevWinnerRef.current = w;
   }, [activeState?.winnerTeam, muted]);
 
-  // Pointer coordinate converter
+  // Pointer coordinate converter (respects per-player bottom-to-top flip)
   const screenToArena = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: CHAPAS_ARENA_W / 2, y: CHAPAS_ARENA_H / 2 };
     const r = canvas.getBoundingClientRect();
     const tr = transformRef.current;
-    return {
-      x: (clientX - r.left - tr.offsetX) / Math.max(0.1, tr.scale),
-      y: (clientY - r.top - tr.offsetY) / Math.max(0.1, tr.scale),
-    };
+    const rawX = (clientX - r.left - tr.offsetX) / Math.max(0.1, tr.scale);
+    const rawY = (clientY - r.top - tr.offsetY) / Math.max(0.1, tr.scale);
+    return orientChapasArenaPoint(rawX, rawY, isFlippedViewRef.current);
   }, []);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
@@ -752,6 +789,14 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       ctx.save();
       ctx.translate(offsetX, offsetY);
       ctx.scale(scale, scale);
+
+      const flipped = isFlippedViewRef.current;
+      if (flipped) {
+        ctx.save();
+        ctx.translate(CHAPAS_ARENA_W / 2, CHAPAS_ARENA_H / 2);
+        ctx.rotate(Math.PI);
+        ctx.translate(-CHAPAS_ARENA_W / 2, -CHAPAS_ARENA_H / 2);
+      }
 
       // Subtle floodlight illumination over pitch center
       const apronGrad = ctx.createRadialGradient(
@@ -1186,8 +1231,12 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
             ctx.fill();
             ctx.restore();
 
-            // Clean power % tag opposite drag pull
+            // Clean power % tag upright on viewer's screen
             const pct = Math.round(drag.power * 100);
+            ctx.save();
+            if (flipped) {
+              ctx.rotate(Math.PI);
+            }
             ctx.fillStyle = 'rgba(9, 13, 22, 0.85)';
             ctx.beginPath();
             ctx.roundRect(-22, -ringR - 22, 44, 18, 9);
@@ -1197,6 +1246,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
             ctx.textAlign = 'center';
             ctx.textBaseline = 'middle';
             ctx.fillText(`${pct}%`, 0, -ringR - 13);
+            ctx.restore();
           }
 
           ctx.restore();
@@ -1221,6 +1271,9 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
 
         ctx.save();
         ctx.translate(cap.x, cap.y);
+        if (flipped) {
+          ctx.rotate(Math.PI);
+        }
 
         // Pulsing outer ring halo around active team's chapas
         if (isMovable) {
@@ -1377,6 +1430,10 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
         ctx.restore();
       }
 
+      if (flipped) {
+        ctx.restore(); // restore 180° pitch flip before drawing upright apron HUD pills
+      }
+
       // ================================================================
       // NON-OVERLAPPING BOTTOM APRON HUD PILLS (LEFT & RIGHT OF GOAL)
       // Bottom goal spans x = 202..338, y = 716..752 -> keep labels strictly
@@ -1505,8 +1562,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   const sendQuickReaction = (emoji: string) => {
     setEmojiMenuOpen(false);
     triggerHaptic('light');
-    setFloatingReaction({ emoji, id: Date.now() });
-    window.setTimeout(() => setFloatingReaction(null), 1600);
+    triggerFloatingReactionToast(emoji, currentUser.name);
     if (!isOffline) {
       socketService.sendReaction(currentUser, emoji);
     }
@@ -1739,13 +1795,19 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
           </button>
         </div>
 
-        {/* Floating Reaction Toast */}
+        {/* Non-Intrusive Floating Reaction Toast */}
         {floatingReaction && (
           <div
             key={floatingReaction.id}
-            className="pointer-events-none absolute right-14 top-1/2 -translate-y-1/2 z-20 text-4xl animate-bounce drop-shadow-2xl"
+            aria-live="polite"
+            className="pointer-events-none select-none absolute right-3 top-3 z-20 flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-[#0D1017]/82 backdrop-blur-md border border-white/15 shadow-xl animate-bounce"
           >
-            {floatingReaction.emoji}
+            <span className="text-2xl leading-none">{floatingReaction.emoji}</span>
+            {floatingReaction.senderName && (
+              <span className="text-[10px] font-bold text-zinc-100 max-w-[90px] truncate">
+                {floatingReaction.senderName}
+              </span>
+            )}
           </div>
         )}
 

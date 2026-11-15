@@ -6550,7 +6550,7 @@ app.get('/api/extract/stream', async (req, res) => {
         if (webIdx !== -1) {
           const webCand = orderedTracks[webIdx];
           const proxiedWeb =
-            isSandboxedFrame || /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc)/i.test(webCand.sourceUrl)
+            isSandboxedFrame || /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc|vidfast\.[a-z.]+)/i.test(webCand.sourceUrl)
               ? `/api/embed-proxy?url=${encodeURIComponent(webCand.sourceUrl)}`
               : webCand.sourceUrl;
           orderedTracks[webIdx] = { ...webCand, resolvedStreamUrl: proxiedWeb };
@@ -6794,7 +6794,29 @@ app.get('/api/extract/stream', async (req, res) => {
         const idStr = String(resolvedTmdbId);
         const s = Math.max(1, effectiveSeason || 1);
         const e = Math.max(1, effectiveEpisode || 1);
-        const baseEntries =
+        const isExplicitVidfastInput = /(^|\/|https?:\/\/)(?:www\.)?vidfast\.[a-z.]+/i.test(rawInput);
+        const vidfastEntry =
+          effectiveMediaType === 'tv'
+            ? {
+                id: `embed-vidfast-${idStr}-${s}-${e}`,
+                label: 'Servidor Web · VidFast HD',
+                url: isExplicitVidfastInput && /vidfast\.[a-z.]+\/tv\//i.test(rawInput)
+                  ? rawInput
+                  : `https://vidfast.vc/tv/${idStr}/${s}/${e}?autoPlay=true&theme=9146FF`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              }
+            : {
+                id: `embed-vidfast-${idStr}`,
+                label: 'Servidor Web · VidFast HD',
+                url: isExplicitVidfastInput && /vidfast\.[a-z.]+\/movie\//i.test(rawInput)
+                  ? rawInput
+                  : `https://vidfast.vc/movie/${idStr}?autoPlay=true&theme=9146FF`,
+                proxyHtml: true,
+                sandboxSafe: true,
+              };
+
+        const otherEntries =
           effectiveMediaType === 'tv'
             ? [
                 {
@@ -6829,13 +6851,6 @@ app.get('/api/extract/stream', async (req, res) => {
                   id: `embed-vidsrcsh-${idStr}-${s}-${e}`,
                   label: 'Servidor Web 5 · VidSrc',
                   url: `https://vidsrc.sh/embed/tv/${idStr}/${s}/${e}`,
-                  proxyHtml: false,
-                  sandboxSafe: false,
-                },
-                {
-                  id: `embed-vidfast-${idStr}-${s}-${e}`,
-                  label: 'Servidor Web 6 · VidFast',
-                  url: `https://vidfast.vc/tv/${idStr}/${s}/${e}?autoPlay=true&theme=9146FF`,
                   proxyHtml: false,
                   sandboxSafe: false,
                 },
@@ -6876,21 +6891,17 @@ app.get('/api/extract/stream', async (req, res) => {
                   proxyHtml: false,
                   sandboxSafe: false,
                 },
-                {
-                  id: `embed-vidfast-${idStr}`,
-                  label: 'Servidor Web 6 · VidFast',
-                  url: `https://vidfast.vc/movie/${idStr}?autoPlay=true&theme=9146FF`,
-                  proxyHtml: false,
-                  sandboxSafe: false,
-                },
               ];
 
-        // Inside sandboxed preview frames, exclude hosts that self-block with "This content can't be embedded in a sandboxed frame"
-        // or send X-Frame-Options: SAMEORIGIN, and proxy HTML-sanitizable players through /api/embed-proxy to strip popups & ad overlays.
+        const baseEntries = isExplicitVidfastInput
+          ? [vidfastEntry, ...otherEntries]
+          : [...otherEntries.slice(0, 3), vidfastEntry, ...otherEntries.slice(3)];
+
+        // Inside sandboxed preview frames, exclude hosts that self-block and proxy HTML-sanitizable players (including VidFast) through /api/embed-proxy
         const orderedEntries = (isSandboxedFrame
           ? baseEntries.filter((entry) => entry.sandboxSafe)
           : baseEntries
-        ).slice(0, 4);
+        ).slice(0, 5);
 
         return orderedEntries.map((entry) => ({
           id: entry.id,
@@ -7005,46 +7016,48 @@ app.get('/api/extract/stream', async (req, res) => {
         return res.json(formatExtractResponseForClient(req, result));
       }
 
-      // If no raw HLS/MP4 stream was sniffed, check if the external source allows clean iframe embedding;
-      // otherwise automatically launch it in the ad-free Cloud Browser so playback never hits a 404 wall!
+      // Route external embed pages through /api/embed-proxy so they render inline without leaving the page or hitting sandbox blocks
       let canFrame = false;
-      const isSandboxHostileHost = (() => {
-        try {
-          return /(^|\.)vidfast\./i.test(new URL(fullTargetUrl).hostname);
-        } catch {
-          return false;
-        }
-      })();
-      if (!(isSandboxedFrame && isSandboxHostileHost)) {
-        try {
-          const probeController = new AbortController();
-          const probeTimer = setTimeout(() => probeController.abort(), 3000);
-          const probeRes = await fetch(fullTargetUrl, {
-            headers: { 'User-Agent': CHROME_UA },
-            signal: probeController.signal,
-          });
-          clearTimeout(probeTimer);
-          const xfo = String(probeRes.headers.get('x-frame-options') || '').toLowerCase();
-          const csp = String(probeRes.headers.get('content-security-policy') || '').toLowerCase();
-          probeController.abort();
-          const blockedByXfo = xfo.includes('deny') || xfo.includes('sameorigin');
-          const blockedByCsp =
-            csp.includes('frame-ancestors') &&
-            !csp.includes('frame-ancestors *') &&
-            !csp.includes('frame-ancestors https:');
-          canFrame = probeRes.ok && !blockedByXfo && !blockedByCsp;
-        } catch {
-          canFrame = false;
-        }
+      let canProxyInline = false;
+      try {
+        const probeController = new AbortController();
+        const probeTimer = setTimeout(() => probeController.abort(), 3500);
+        const probeRes = await fetch(fullTargetUrl, {
+          headers: { 'User-Agent': CHROME_UA },
+          signal: probeController.signal,
+        });
+        clearTimeout(probeTimer);
+        const ct = String(probeRes.headers.get('content-type') || '').toLowerCase();
+        const xfo = String(probeRes.headers.get('x-frame-options') || '').toLowerCase();
+        const csp = String(probeRes.headers.get('content-security-policy') || '').toLowerCase();
+        probeController.abort();
+        const blockedByXfo = xfo.includes('deny') || xfo.includes('sameorigin');
+        const blockedByCsp =
+          csp.includes('frame-ancestors') &&
+          !csp.includes('frame-ancestors *') &&
+          !csp.includes('frame-ancestors https:');
+        canFrame = probeRes.ok && !blockedByXfo && !blockedByCsp;
+        canProxyInline = probeRes.ok && ct.includes('text/html');
+      } catch {
+        canFrame = false;
+        canProxyInline = false;
       }
+
+      const useInlineProxy =
+        canProxyInline ||
+        /(^|\.)(vidfast\.[a-z.]+|vidsrc\.[a-z.]+|videm\.buzz|2embed\.cc)/i.test(fullTargetUrl);
+      const inlineEmbedUrl = useInlineProxy
+        ? `/api/embed-proxy?url=${encodeURIComponent(fullTargetUrl)}`
+        : fullTargetUrl;
+      const playInline = canFrame || useInlineProxy;
 
       const extFallbackResult: ExtractedStreamResult = {
         success: true,
-        mode: canFrame ? 'embed' : 'cloud',
-        streamUrl: fullTargetUrl,
+        mode: playInline ? 'embed' : 'cloud',
+        streamUrl: playInline ? inlineEmbedUrl : fullTargetUrl,
         rawStreamUrl: fullTargetUrl,
         title: titleHint || 'Señal Web Directa',
-        tracks: canFrame
+        tracks: playInline
           ? [
               {
                 id: 'ext-web-embed-1',
@@ -7052,13 +7065,13 @@ app.get('/api/extract/stream', async (req, res) => {
                 lang: preferLang || 'ES',
                 sourceUrl: fullTargetUrl,
                 resolverType: 'web_embed',
-                resolvedStreamUrl: fullTargetUrl,
+                resolvedStreamUrl: inlineEmbedUrl,
               },
             ]
           : [],
         expiresAt: Date.now() + 2 * 60 * 1000,
       };
-      return res.json(extFallbackResult);
+      return res.json(formatExtractResponseForClient(req, extFallbackResult));
     }
 
     return res.status(404).json({
@@ -10993,25 +11006,12 @@ async function startServer() {
   const PORT = ENV.port;
   const isProd = ENV.isProd;
 
-  if (ENV.nodeEnv !== 'test') {
-    channelHealthMonitor.startScheduler(
-      () => [
-        ...SPANISH_TDT_CHANNELS,
-        ...CATALA_LIVE_CHANNELS,
-        ...getPermanent247SportsMatches(),
-        ...(cachedSportsSchedule?.matches || []),
-      ],
-      3 * 60 * 1000,
-      8_000
-    );
-    startCatalogRefreshScheduler(15 * 60 * 1000);
-  }
-
   // Mount global API error handler prior to Vite / SPA fallback
   app.use(expressErrorHandler);
 
   if (!isProd) {
     let viteMiddleware: express.RequestHandler | null = null;
+    let viteInitError: unknown = null;
     const viteReady = (async () => {
       const { createServer: createViteServer } = await import('vite');
       const hmrEnabled = process.env.DISABLE_HMR !== 'true';
@@ -11019,50 +11019,93 @@ async function startServer() {
         server: {
           middlewareMode: true,
           allowedHosts: true,
-          hmr: hmrEnabled,
-          ws: { server: httpServer },
+          hmr: hmrEnabled ? { server: httpServer } : false,
         },
         appType: 'spa',
       });
       viteMiddleware = vite.middlewares;
-    })();
+    })().catch((err) => {
+      viteInitError = err;
+      logger.error({ err }, 'vite_dev_server_init_failed');
+    });
 
     app.use(async (req, res, next) => {
-      if (!viteMiddleware) {
+      if (!viteMiddleware && !viteInitError) {
         await viteReady;
       }
-      return viteMiddleware!(req, res, next);
-    });
-
-    httpServer.listen(PORT, '0.0.0.0', () => {
-      logger.info({ port: PORT, env: ENV.nodeEnv }, 'naim_cine_engine_started');
+      if (viteInitError || !viteMiddleware) {
+        res.status(503).json({
+          ok: false,
+          error: 'Dev frontend compiler unavailable',
+        });
+        return;
+      }
+      return viteMiddleware(req, res, next);
     });
   } else {
-    app.use(
-      express.static(path.resolve(__dirname, 'dist'), {
-        maxAge: '7d',
-        setHeaders: (res, filePath) => {
-          if (filePath.endsWith('.html') || filePath.endsWith('sw.js')) {
-            res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-          }
-        },
-      })
-    );
+    const distDir = path.resolve(__dirname, 'dist');
+    const distIndex = path.join(distDir, 'index.html');
+    if (fs.existsSync(distDir)) {
+      app.use(
+        express.static(distDir, {
+          maxAge: '7d',
+          setHeaders: (res, filePath) => {
+            if (filePath.endsWith('.html') || filePath.endsWith('sw.js')) {
+              res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+            }
+          },
+        })
+      );
+    } else {
+      logger.warn({ distDir }, 'production_dist_directory_missing');
+    }
+
     app.get('*', (req, res) => {
       if (req.path === '/tv' || req.path === '/tv/') {
         return sendSmartTvReceiverHtml(res);
       }
       res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-      res.sendFile(path.resolve(__dirname, 'dist', 'index.html'));
-    });
-
-    httpServer.listen(PORT, '0.0.0.0', () => {
-      logger.info({ port: PORT, env: ENV.nodeEnv }, 'naim_cine_engine_started');
+      if (fs.existsSync(distIndex)) {
+        return res.sendFile(distIndex);
+      }
+      return res
+        .status(503)
+        .type('text/plain')
+        .send('NAIM CINE engine is running; frontend build (dist/index.html) not found.');
     });
   }
+
+  httpServer.on('error', (err) => {
+    logger.error({ err, port: PORT }, 'http_server_listen_error');
+  });
+
+  httpServer.listen(PORT, '0.0.0.0', () => {
+    logger.info({ port: PORT, env: ENV.nodeEnv }, 'naim_cine_engine_started');
+    if (ENV.nodeEnv !== 'test') {
+      setImmediate(() => {
+        try {
+          channelHealthMonitor.startScheduler(
+            () => [
+              ...SPANISH_TDT_CHANNELS,
+              ...CATALA_LIVE_CHANNELS,
+              ...getPermanent247SportsMatches(),
+              ...(cachedSportsSchedule?.matches || []),
+            ],
+            3 * 60 * 1000,
+            8_000
+          );
+          startCatalogRefreshScheduler(15 * 60 * 1000);
+        } catch (err) {
+          logger.error({ err }, 'background_scheduler_init_error');
+        }
+      });
+    }
+  });
 }
 
-startServer();
+startServer().catch((err) => {
+  logger.error({ err }, 'fatal_start_server_error');
+});
 
 process.on('uncaughtException', (err) => {
   logger.error({ err }, 'uncaught_exception');

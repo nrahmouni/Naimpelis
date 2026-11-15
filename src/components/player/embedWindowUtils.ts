@@ -1,6 +1,6 @@
 export type EmbedServerStatus = 'inline_ok' | 'window_required';
 
-const EMBED_SERVER_STATUS_KEY = 'naim_embed_server_status_v1';
+const EMBED_SERVER_STATUS_KEY = 'naim_embed_server_status_v2';
 
 /**
  * Unwraps `/api/embed-proxy?url=...` into the direct provider HTTPS URL so

@@ -19,6 +19,14 @@ import {
   purgeLocalAndCloudHistory,
 } from '../src/utils/gdprExport';
 import { checkRemoteAppVersion } from '../src/utils/versionSync';
+import {
+  CHAPAS_ARENA_H,
+  CHAPAS_ARENA_W,
+  isChapasFlippedForTeam,
+  orientChapasArenaPoint,
+} from '../src/shared/futbolChapas';
+import { sanitizeEmbedHtml, sanitizeEmbedScript } from '../server/extractors/httpHelpers';
+import { unwrapEmbedUrl } from '../src/components/player/embedWindowUtils';
 
 function createMemoryStorage() {
   const map = new Map<string, string>();
@@ -178,5 +186,45 @@ describe('Audit & Feature Verification Suite', () => {
     expect(html).toContain('461');
     expect(html).toContain('413');
     expect(html).toContain('enableWorker: !isSmartTvUa');
+  });
+
+  it('orients Fútbol Chapas bottom-to-top per player team symmetrically', () => {
+    expect(isChapasFlippedForTeam('A')).toBe(true);
+    expect(isChapasFlippedForTeam('B')).toBe(false);
+    expect(isChapasFlippedForTeam(undefined)).toBe(false);
+
+    // For Team A (flipped), top goal (y=20) maps to bottom side (CHAPAS_ARENA_H - 20) in screen space and vice versa
+    const flipped = orientChapasArenaPoint(120, 45, true);
+    expect(flipped.x).toBe(CHAPAS_ARENA_W - 120);
+    expect(flipped.y).toBe(CHAPAS_ARENA_H - 45);
+    const roundTrip = orientChapasArenaPoint(flipped.x, flipped.y, true);
+    expect(roundTrip.x).toBe(120);
+    expect(roundTrip.y).toBe(45);
+
+    const canonical = orientChapasArenaPoint(120, 45, false);
+    expect(canonical).toEqual({ x: 120, y: 45 });
+  });
+
+  it('neutralizes VidFast sandbox detectors and rewrites Next.js chunks through /api/embed-script', () => {
+    const rawChunk =
+      '(0,a.useEffect)(()=>{if(!eQ.current&&(eQ.current=!0,window.self!==window.top)){let e=()=>{document.body.innerHTML=\'<div style="display:flex"><h1>Please Disable Sandbox</h1></div>\'};}},[])';
+    const sanitizedChunk = sanitizeEmbedScript(rawChunk, 'https://vidfast.vc/_next/static/chunks/304.js');
+    expect(sanitizedChunk).not.toContain('Please Disable Sandbox');
+    expect(sanitizedChunk).toContain('if(false)');
+
+    const sampleVidfastHtml = `<html><head><script src="/_next/static/chunks/304.df0b3d32fd5ef888.js" integrity="sha384-abc" crossorigin=""></script></head><body></body></html>`;
+    const cleanHtml = sanitizeEmbedHtml(
+      sampleVidfastHtml,
+      'https://vidfast.vc/tv/62104/1/1?autoPlay=true&theme=9146FF'
+    );
+    expect(cleanHtml).toContain('/api/embed-script?url=');
+    expect(cleanHtml).not.toContain('integrity="sha384-abc"');
+    expect(cleanHtml).toContain("Object.defineProperty(document,'domain'");
+    expect(cleanHtml).toContain('data:application/pdf');
+    expect(cleanHtml).toContain('/api/embed-fetch?url=');
+
+    expect(
+      unwrapEmbedUrl('/api/embed-proxy?url=https%3A%2F%2Fvidfast.vc%2Ftv%2F62104%2F1%2F1')
+    ).toBe('https://vidfast.vc/tv/62104/1/1');
   });
 });

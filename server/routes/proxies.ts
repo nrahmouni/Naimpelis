@@ -22,6 +22,7 @@ import {
   resolveKnownUpstreamReferer,
   rewriteVidsrcBuzzM3u8,
   sanitizeEmbedHtml,
+  sanitizeEmbedScript,
   shouldBypassNodeFetch,
   TDT_DVB_UA,
   unwrapRelaySegmentUrl,
@@ -627,9 +628,59 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
     }
   });
 
+  app.get('/api/embed-script', async (req, res) => {
+    const reqId = getOrCreateRequestId(req);
+    const targetUrl = String(req.query.url || '').trim();
+    const explicitReferer = String(req.query.referer || '').trim();
+    if (!targetUrl) return res.status(400).send('Missing url');
+    try {
+      await assertSafeProxyUrl(targetUrl);
+    } catch {
+      return res.status(403).send('Forbidden target host');
+    }
+
+    try {
+      const parsedTarget = new URL(targetUrl);
+      const headers: Record<string, string> = {
+        'User-Agent': CHROME_UA,
+        Accept: '*/*',
+        Referer: explicitReferer || `${parsedTarget.origin}/`,
+      };
+      let jsCode = '';
+      let effectiveUrl = targetUrl;
+      try {
+        const up = await streamingFetch(targetUrl, { headers, timeoutMs: 6500 });
+        if (up.ok) {
+          effectiveUrl = up.url || targetUrl;
+          jsCode = await up.text();
+        }
+      } catch {
+        // fallback to curl
+      }
+      if (!jsCode) {
+        const fb = await curlGetText(targetUrl, headers, 7, true).catch(() => ({
+          text: '',
+          effectiveUrl: targetUrl,
+        }));
+        jsCode = fb.text || '';
+        effectiveUrl = fb.effectiveUrl || targetUrl;
+      }
+      if (!jsCode) {
+        return res.status(502).send('// Upstream script unavailable');
+      }
+      const cleanJs = sanitizeEmbedScript(jsCode, effectiveUrl);
+      applyProxyCorsHeaders(res, reqId);
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'public, max-age=1800');
+      return res.status(200).send(cleanJs);
+    } catch {
+      return res.status(502).send('// Embed script proxy failed');
+    }
+  });
+
   app.all(
     '/api/embed-fetch',
-    express.text({ type: ['text/*', 'application/x-www-form-urlencoded'], limit: '256kb' }),
+    express.raw({ type: '*/*', limit: '1mb' }),
     async (req, res) => {
       const reqId = getOrCreateRequestId(req);
       if (req.method === 'OPTIONS') {
@@ -660,9 +711,18 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
           // keep parsedTarget.origin
         }
 
+        const forwardedPlayerHeaders: Record<string, string> = {};
+        for (const hName of ['x-requested-with', 'x-csrf-token', 'x-csrf', 'x-token']) {
+          const val = req.headers[hName];
+          if (typeof val === 'string' && val.trim()) {
+            forwardedPlayerHeaders[hName] = val.trim();
+          }
+        }
+
         if (req.method === 'POST') {
-          const rawBody =
-            typeof req.body === 'string'
+          const rawBody = Buffer.isBuffer(req.body)
+            ? req.body.toString('utf8')
+            : typeof req.body === 'string'
               ? req.body
               : req.body && typeof req.body === 'object' && Object.keys(req.body).length > 0
                 ? JSON.stringify(req.body)
@@ -672,8 +732,11 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
             Accept: 'application/json, text/plain, */*',
             Referer: refererHeader,
             Origin: originHeader,
-            'Content-Type': String(req.headers['content-type'] || 'application/json'),
+            ...forwardedPlayerHeaders,
           };
+          if (req.headers['content-type']) {
+            postHeaders['Content-Type'] = String(req.headers['content-type']);
+          }
           let status = 200;
           let respText = '';
           let respCt = 'application/json; charset=utf-8';
@@ -681,7 +744,7 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
             const up = await streamingFetch(targetUrl, {
               method: 'POST',
               headers: postHeaders,
-              body: rawBody,
+              body: rawBody || undefined,
               timeoutMs: 6500,
             });
             status = up.status;

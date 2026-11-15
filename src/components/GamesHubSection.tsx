@@ -53,7 +53,13 @@ import { PartyGamesStage, type PartyOnlineAction } from './PartyGamesStage';
 import { PinturilloStage } from './PinturilloStage';
 import { Pool8BallStage } from './Pool8BallStage';
 import { FutbolChapasStage } from './FutbolChapasStage';
-import { GameMuteButton, useGameSoundMute } from './games/GameEffects';
+import {
+  GameFloatingReactionToast,
+  GameMuteButton,
+  GameReactionButton,
+  useGameFloatingReaction,
+  useGameSoundMute,
+} from './games/GameEffects';
 import { VoiceWaveBars } from './games/GameVoiceBar';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
@@ -200,6 +206,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   const [localBoardGame, setLocalBoardGame] = useState<BoardGameState | null>(null);
   const [localMoveErr, setLocalMoveErr] = useState<string | null>(null);
   const [muted, toggleMute] = useGameSoundMute();
+  const { floatingReaction, sendReaction } = useGameFloatingReaction(hubMode === 'offline');
 
   useEffect(() => {
     onSelectedGameChange?.(selectedGame);
@@ -666,10 +673,21 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                   <span className="hidden sm:inline">IA</span>
                 </button>
               </div>
+              {!isChapas && (
+                <GameReactionButton
+                  lang={lang}
+                  compact
+                  onSelectEmoji={(emoji) => sendReaction(currentUser, emoji)}
+                />
+              )}
               <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
               {renderVoiceCompact(true)}
             </div>
           </div>
+
+          {!isChapas && (
+            <GameFloatingReactionToast reaction={floatingReaction} className="top-14 right-3" />
+          )}
 
           {voiceChat?.errorMessage && (
             <div

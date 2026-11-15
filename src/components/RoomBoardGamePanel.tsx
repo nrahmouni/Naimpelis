@@ -38,9 +38,12 @@ import {
 import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
 import { GameVoiceBar, VoiceSpeakerIndicator } from './games/GameVoiceBar';
 import {
+  GameFloatingReactionToast,
   GameMuteButton,
+  GameReactionButton,
   VictoryCelebrationOverlay,
   playGameSfx,
+  useGameFloatingReaction,
   useGameSoundMute,
 } from './games/GameEffects';
 import { pickLang } from '../utils/i18n';
@@ -342,7 +345,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
 
     for (let r = 0; r < 8; r++) {
       for (let c = 0; c < 8; c++) {
-        const p = gameState.board[r]?.[c];
+        const p: string | null | undefined = gameState.board[r]?.[c];
         if (p && (p[0] === 'w' || p[0] === 'b')) {
           const s = p[0] as 'w' | 'b';
           const k = p[1];
@@ -762,9 +765,11 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
       ? pickLang(lang, { es: 'Empate', ca: 'Empat', en: 'Draw' })
       : pickLang(lang, { es: 'Todas las fichas capturadas', ca: 'Totes capturades', en: 'All captured' });
 
+  const { floatingReaction, sendReaction } = useGameFloatingReaction(!isOnlineRoom);
+
   const renderBoardContent = (largeMode: boolean) => (
     <div
-      className={`flex flex-col ${
+      className={`relative flex flex-col ${
         fullScreenMode
           ? 'justify-between h-full overflow-hidden gap-2 max-w-[600px] w-full mx-auto'
           : largeMode
@@ -772,6 +777,9 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
           : 'gap-2 w-full'
       }`}
     >
+      {!fullScreenMode && (
+        <GameFloatingReactionToast reaction={floatingReaction} className="top-10 right-2" />
+      )}
       {/* Compact Utility Bar (No multi-game switcher strip) */}
       {!hideGameSwitcher && (
         <div className="flex items-center justify-between gap-2 shrink-0">
@@ -806,6 +814,13 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
               >
                 <ArrowUpDown className="w-3.5 h-3.5" />
               </button>
+            )}
+            {!fullScreenMode && (
+              <GameReactionButton
+                lang={lang}
+                compact
+                onSelectEmoji={(emoji) => sendReaction(currentUser, emoji)}
+              />
             )}
             <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
             {!fullScreenMode && (

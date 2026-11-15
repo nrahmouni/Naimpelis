@@ -1,4 +1,4 @@
-import { CN_IPTV_UA, TrackRecord, curlGetText } from './httpHelpers.ts';
+import { CN_IPTV_UA, type TrackRecord, curlGetText } from './httpHelpers.ts';
 
 export interface ChineseFootballChannelDef {
   id: string;

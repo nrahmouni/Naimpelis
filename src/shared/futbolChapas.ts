@@ -962,3 +962,26 @@ export function chooseChapasAiShot(state: FutbolChapasState): ChapasShotInput | 
     power: bestPower,
   };
 }
+
+/**
+ * Team B defends the bottom goal and attacks bottom-to-top natively.
+ * Team A defends the top goal in canonical physics coordinates, so flipping
+ * Team A's view by 180° around the arena center puts BOTH teams playing
+ * comfortably from bottom-to-top on their own screens.
+ */
+export function isChapasFlippedForTeam(team: ChapasTeamId | null | undefined): boolean {
+  return team === 'A';
+}
+
+export function orientChapasArenaPoint(
+  x: number,
+  y: number,
+  isFlipped: boolean
+): { x: number; y: number } {
+  if (!isFlipped) return { x, y };
+  return {
+    x: CHAPAS_ARENA_W - x,
+    y: CHAPAS_ARENA_H - y,
+  };
+}
+

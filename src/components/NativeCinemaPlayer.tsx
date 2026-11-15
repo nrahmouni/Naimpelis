@@ -269,6 +269,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
   latestCurrentTimeRef.current = currentTime;
 
+  const activeEmbedInlineUrl =
+    videoState.mode === 'embed'
+      ? videoState.tracks[videoState.activeTrackIndex]?.resolvedStreamUrl ||
+        videoState.tracks[videoState.activeTrackIndex]?.sourceUrl ||
+        videoState.url ||
+        ''
+      : '';
   const rawActiveEmbedUrl =
     videoState.mode === 'embed'
       ? videoState.tracks[videoState.activeTrackIndex]?.sourceUrl ||
@@ -399,6 +406,34 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     inlineRetryUrl,
     inlineRetryNonce,
   ]);
+
+  // Listen for iframe playback / VidFast ready status postMessage to immediately verify inline playback
+  useEffect(() => {
+    if (videoState.mode !== 'embed' || !activeEmbedDirectUrl) return;
+    const onMessage = (ev: MessageEvent) => {
+      const d = ev?.data;
+      if (!d || typeof d !== 'object') return;
+      const isProxyReady =
+        d.source === 'naim-embed-proxy' &&
+        (d.event === 'playing' || d.event === 'loadeddata');
+      const isVidfastReady = d.event === 'status' && Number(d.data) === 200;
+      const isGenericPlayerReady =
+        d.type === 'PLAYER_EVENT' ||
+        (d.event === 'ready' && Boolean(d.data));
+      if (isProxyReady || isVidfastReady || isGenericPlayerReady) {
+        setEmbedServerStatus(activeEmbedDirectUrl, 'inline_ok');
+        setEmbedWatchdogPhase('verified');
+        if (watchdogTimerRef.current) {
+          clearTimeout(watchdogTimerRef.current);
+          watchdogTimerRef.current = null;
+        }
+      }
+    };
+    window.addEventListener('message', onMessage);
+    return () => {
+      window.removeEventListener('message', onMessage);
+    };
+  }, [videoState.mode, activeEmbedDirectUrl]);
 
   // Ensure timers are cleared on unmount without force-closing user's external window
   useEffect(() => {
@@ -3846,9 +3881,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             return activeTrackUrl;
           })();
 
-          const inlineIframeSrc = activeTrackUrl || unwrapEmbedUrl(videoState.url);
+          const inlineIframeSrc = activeEmbedInlineUrl || videoState.url;
           const lastAttemptedUrl =
-            lastAttemptedEmbedUrlRef.current || activeTrackUrl || inlineIframeSrc;
+            lastAttemptedEmbedUrlRef.current || activeTrackUrl || activeEmbedDirectUrl;
           const canPrevEpisode = Boolean(
             videoState.seriesMeta &&
               onPrevEpisode &&

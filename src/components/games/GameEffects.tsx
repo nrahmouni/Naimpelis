@@ -4,13 +4,16 @@ import {
   RefreshCw,
   RotateCcw,
   Shield,
+  Smile,
   Sparkles,
   Trophy,
   Volume2,
   VolumeX,
 } from 'lucide-react';
 import { pickLang } from '../../utils/i18n';
-import type { AppLanguage } from '../../types';
+import { triggerHaptic } from '../../utils/haptics';
+import { socketService } from '../../services/socket';
+import type { AppLanguage, Participant } from '../../types';
 
 export type GameSfxKind =
   | 'card_play'
@@ -430,4 +433,164 @@ export const VictoryCelebrationOverlay: React.FC<{
     </div>
   );
 };
+
+export const QUICK_GAME_EMOJIS = ['🔥', '👏', '😂', '😱', '😎', '🏆'] as const;
+
+export interface ActiveGameFloatingReaction {
+  id: string;
+  emoji: string;
+  senderName?: string;
+}
+
+export function useGameFloatingReaction(isOffline: boolean) {
+  const [floatingReaction, setFloatingReaction] = useState<ActiveGameFloatingReaction | null>(null);
+  const timerRef = React.useRef<number | null>(null);
+
+  const showReaction = useCallback((emoji: string, senderName?: string) => {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+    }
+    setFloatingReaction({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      emoji,
+      senderName,
+    });
+    timerRef.current = window.setTimeout(() => {
+      setFloatingReaction(null);
+      timerRef.current = null;
+    }, 1800);
+  }, []);
+
+  useEffect(() => {
+    if (isOffline) return;
+    const unsub = socketService.subscribe((evt) => {
+      if (evt.type === 'FLOATING_REACTION' && evt.payload?.emoji) {
+        showReaction(
+          String(evt.payload.emoji),
+          typeof evt.payload.senderName === 'string' ? evt.payload.senderName : undefined
+        );
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, [isOffline, showReaction]);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) {
+        window.clearTimeout(timerRef.current);
+      }
+    };
+  }, []);
+
+  const sendReaction = useCallback(
+    (sender: Participant, emoji: string) => {
+      triggerHaptic('light');
+      showReaction(emoji, sender.name);
+      if (!isOffline) {
+        socketService.sendReaction(sender, emoji);
+      }
+    },
+    [isOffline, showReaction]
+  );
+
+  return { floatingReaction, sendReaction };
+}
+
+export const GameReactionButton: React.FC<{
+  lang: AppLanguage;
+  onSelectEmoji: (emoji: string) => void;
+  emojis?: readonly string[];
+  compact?: boolean;
+}> = ({ lang, onSelectEmoji, emojis = QUICK_GAME_EMOJIS, compact = false }) => {
+  const [open, setOpen] = useState(false);
+  const rootRef = React.useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handleOutside = (e: PointerEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    window.addEventListener('pointerdown', handleOutside);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      window.removeEventListener('pointerdown', handleOutside);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [open]);
+
+  return (
+    <div ref={rootRef} className="relative shrink-0">
+      <button
+        type="button"
+        onClick={() => {
+          triggerHaptic('light');
+          setOpen((v) => !v);
+        }}
+        aria-expanded={open}
+        aria-label={pickLang(lang, { es: 'Enviar reacción', ca: 'Enviar reacció', en: 'Send reaction' })}
+        title={pickLang(lang, { es: 'Reacciones rápidas', ca: 'Reaccions ràpides', en: 'Quick reactions' })}
+        className={`${
+          compact ? 'h-7 w-7 rounded-lg' : 'min-h-8 min-w-8 px-2 rounded-xl'
+        } flex items-center justify-center border cursor-pointer transition-all active:scale-95 ${
+          open
+            ? 'bg-amber-400/25 border-amber-300/60 text-amber-200'
+            : 'bg-white/[0.06] hover:bg-white/[0.14] border-white/[0.1] text-amber-300'
+        }`}
+      >
+        <Smile className="w-3.5 h-3.5 shrink-0" />
+      </button>
+
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 top-full mt-1.5 z-[220] p-1 rounded-xl bg-[#0D1017]/95 backdrop-blur-md border border-white/15 shadow-2xl flex items-center gap-0.5"
+        >
+          {emojis.map((em) => (
+            <button
+              key={em}
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setOpen(false);
+                onSelectEmoji(em);
+              }}
+              className="w-8 h-8 rounded-lg hover:bg-white/15 flex items-center justify-center text-base cursor-pointer active:scale-90 transition-transform"
+            >
+              {em}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export const GameFloatingReactionToast: React.FC<{
+  reaction: ActiveGameFloatingReaction | null;
+  className?: string;
+}> = ({ reaction, className = 'top-14 right-3' }) => {
+  if (!reaction) return null;
+  return (
+    <div
+      key={reaction.id}
+      aria-live="polite"
+      className={`pointer-events-none select-none absolute z-[205] flex items-center gap-1.5 px-2.5 py-1 rounded-2xl bg-[#0D1017]/82 backdrop-blur-md border border-white/15 shadow-xl animate-bounce ${className}`}
+    >
+      <span className="text-2xl leading-none">{reaction.emoji}</span>
+      {reaction.senderName && (
+        <span className="text-[10px] font-bold text-zinc-100 max-w-[90px] truncate">
+          {reaction.senderName}
+        </span>
+      )}
+    </div>
+  );
+};
+
 

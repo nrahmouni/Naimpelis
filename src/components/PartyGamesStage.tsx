@@ -48,9 +48,12 @@ import { UNO_CARD_BACK_SRC, getUnoCardSvgSrc } from '../assets/uno';
 import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
 import { GameVoiceBar, VoiceSpeakerIndicator } from './games/GameVoiceBar';
 import {
+  GameFloatingReactionToast,
   GameMuteButton,
+  GameReactionButton,
   VictoryCelebrationOverlay,
   playGameSfx,
+  useGameFloatingReaction,
   useGameSoundMute,
 } from './games/GameEffects';
 import { pickLang } from '../utils/i18n';
@@ -583,6 +586,8 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
     prevUnoDiscardLenRef.current = discardLen;
   }, [activeState, muted]);
 
+  const { floatingReaction, sendReaction } = useGameFloatingReaction(isOffline);
+
   const startOfflineGame = (gameType: PartyGameType) => {
     triggerHaptic('medium');
     setPendingWildCardId(null);
@@ -812,11 +817,19 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
         : pickLang(lang, { es: '🃏 UNO Oficial 1971', ca: '🃏 UNO Oficial 1971', en: '🃏 Official UNO' });
 
     return (
-      <div className="flex-1 flex flex-col justify-between p-2.5 sm:p-4 overflow-hidden gap-3">
+      <div className="relative flex-1 flex flex-col justify-between p-2.5 sm:p-4 overflow-hidden gap-3">
+        {!hideHeaderChrome && (
+          <GameFloatingReactionToast reaction={floatingReaction} className="top-12 right-2" />
+        )}
         {!hideHeaderChrome && (
           <div className="flex items-center justify-between gap-2 shrink-0">
             <h3 className="text-sm sm:text-base font-extrabold text-white truncate">{gameTitle}</h3>
             <div className="flex items-center gap-1.5 shrink-0">
+              <GameReactionButton
+                lang={lang}
+                compact
+                onSelectEmoji={(emoji) => sendReaction(currentUser, emoji)}
+              />
               <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
               <button
                 type="button"
@@ -1013,6 +1026,11 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
               )}
             </div>
             <div className="flex items-center gap-1.5 shrink-0">
+              <GameReactionButton
+                lang={lang}
+                compact
+                onSelectEmoji={(emoji) => sendReaction(currentUser, emoji)}
+              />
               <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
               <button
                 type="button"
@@ -1432,7 +1450,10 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
     handLen <= 5 ? -6 : handLen <= 8 ? -16 : handLen <= 11 ? -24 : -30;
 
   return (
-    <div className={`flex-1 flex flex-col ${fullScreenMode ? 'justify-between overflow-hidden p-1.5 sm:p-2 gap-1.5' : 'overflow-y-auto p-3 space-y-2.5 custom-scrollbar'}`}>
+    <div className={`relative flex-1 flex flex-col ${fullScreenMode ? 'justify-between overflow-hidden p-1.5 sm:p-2 gap-1.5' : 'overflow-y-auto p-3 space-y-2.5 custom-scrollbar'}`}>
+      {!hideHeaderChrome && (
+        <GameFloatingReactionToast reaction={floatingReaction} className="top-12 right-2" />
+      )}
       {!hideHeaderChrome && (
         <div className="flex items-center justify-between gap-2 shrink-0">
           <div className="flex items-center gap-2 min-w-0">
@@ -1454,6 +1475,11 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
             )}
           </div>
           <div className="flex items-center gap-1.5 shrink-0">
+            <GameReactionButton
+              lang={lang}
+              compact
+              onSelectEmoji={(emoji) => sendReaction(currentUser, emoji)}
+            />
             <GameMuteButton muted={muted} onToggle={toggleMute} lang={lang} />
             <button
               type="button"

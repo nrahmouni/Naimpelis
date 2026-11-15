@@ -63,8 +63,8 @@ export function registerOperationalRoutes(
   app: express.Express,
   deps: HealthRouteDeps
 ): void {
-  // Health & Readiness endpoints
-  app.get(['/health', '/api/health'], (_req, res) => {
+  // Health & Readiness endpoints (including Cloud Run / GCP health probe aliases)
+  app.get(['/health', '/healthz', '/_ah/health', '/api/health'], (_req, res) => {
     const stats = deps.getStats();
     res.json({
       ok: true,
