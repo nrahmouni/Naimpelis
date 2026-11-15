@@ -5,6 +5,7 @@ import {
   Compass,
   Film,
   Flame,
+  Gamepad2,
   PanelLeftClose,
   PanelLeftOpen,
   Play,
@@ -58,7 +59,7 @@ const FAST_CATEGORY_LABELS: Record<FastChannelItem['category'], { es: string; ca
   news: { es: 'Noticias 24h', ca: 'Notícies 24h', en: '24h News' },
 };
 
-type RailPillarId = 'explore' | 'catalog' | 'anime' | 'live' | 'mylist';
+type RailPillarId = 'explore' | 'catalog' | 'anime' | 'live' | 'games' | 'mylist';
 
 export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
   lang,
@@ -126,6 +127,12 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
       icon: Radio,
     },
     {
+      id: 'games',
+      targetSection: 'games',
+      label: pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' }),
+      icon: Gamepad2,
+    },
+    {
       id: 'mylist',
       targetSection: 'direct',
       label: t.pillarMyList,
@@ -155,6 +162,9 @@ export const TwitchChannelRail: React.FC<TwitchChannelRailProps> = ({
         catalogSection === 'sports' ||
         catalogSection === 'youtube'
       );
+    }
+    if (id === 'games') {
+      return catalogSection === 'games';
     }
     return false;
   };

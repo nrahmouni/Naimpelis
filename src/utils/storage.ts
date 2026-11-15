@@ -276,6 +276,21 @@ export function getRecentRooms(): RecentRoomEntry[] {
   return [];
 }
 
+export function saveRecentRooms(rooms: RecentRoomEntry[]): RecentRoomEntry[] {
+  const normalized = Array.isArray(rooms)
+    ? rooms
+        .filter((r) => r && typeof r.id === 'string' && typeof r.name === 'string')
+        .slice(0, 4)
+    : [];
+  if (typeof window === 'undefined') return normalized;
+  try {
+    localStorage.setItem(RECENT_ROOMS_KEY, JSON.stringify(normalized));
+  } catch {
+    // ignore
+  }
+  return normalized;
+}
+
 export function addRecentRoom(room: {
   id: string;
   name: string;

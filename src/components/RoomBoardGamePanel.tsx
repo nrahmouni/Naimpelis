@@ -14,9 +14,14 @@ import {
   X,
   ArrowLeft,
   Swords,
+  Clock,
+  Trophy,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react';
 import {
   AppLanguage,
+  BoardClockMinutes,
   BoardCoord,
   BoardGameState,
   BoardGameType,
@@ -25,6 +30,7 @@ import {
   Participant,
 } from '../types';
 import {
+  getConnect4DropRow,
   getLegalMovesForSquare,
   getPieceSide,
 } from '../shared/boardGames';
@@ -35,14 +41,23 @@ interface RoomBoardGamePanelProps {
   gameState: BoardGameState | null;
   currentUser: Participant;
   lang: AppLanguage;
-  onStartGame: (gameType: BoardGameType, soloLocal?: boolean) => void;
+  onStartGame: (gameType: BoardGameType, soloLocal?: boolean, clockMinutes?: BoardClockMinutes) => void;
   onJoinSeat: (side: 'w' | 'b' | 'spectate') => void;
   onMove: (from: BoardCoord, to: BoardCoord, promotionPiece?: ChessPromotionPiece) => void;
   onResign: () => void;
-  onReset: (opts?: { gameType?: BoardGameType; swapColors?: boolean }) => void;
+  onReset: (opts?: { gameType?: BoardGameType; swapColors?: boolean; clockMinutes?: BoardClockMinutes }) => void;
   onCloseGame: () => void;
   moveError?: string | null;
   onBack?: () => void;
+}
+
+const CLOCK_OPTIONS: BoardClockMinutes[] = [0, 3, 5, 10];
+
+function formatClockMs(ms: number): string {
+  const safe = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(safe / 60);
+  const s = safe % 60;
+  return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
 // Clean Web Audio tactile feedback without external sound files
@@ -50,7 +65,9 @@ let sharedAudioCtx: AudioContext | null = null;
 function playBoardSfx(kind: 'move' | 'capture' | 'check' | 'win' | 'error') {
   try {
     if (typeof window === 'undefined') return;
-    const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     if (!AudioCtx) return;
     if (!sharedAudioCtx) sharedAudioCtx = new AudioCtx();
     if (sharedAudioCtx.state === 'suspended') {
@@ -166,6 +183,20 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
   const [manualFlip, setManualFlip] = useState<boolean | null>(null);
   const [isExpanded, setIsExpanded] = useState(false);
   const [muted, setMuted] = useState(false);
+  const [selectedClockMin, setSelectedClockMin] = useState<BoardClockMinutes>(0);
+  const [hoverCol, setHoverCol] = useState<number | null>(null);
+  const [nowTs, setNowTs] = useState<number>(() => Date.now());
+  const [showHistory, setShowHistory] = useState(false);
+
+  // Tick live countdown when chess/board clock is active
+  useEffect(() => {
+    if (!gameState?.clockMinutes || !gameState.clocksMs || gameState.status !== 'playing') {
+      return;
+    }
+    setNowTs(Date.now());
+    const id = window.setInterval(() => setNowTs(Date.now()), 500);
+    return () => window.clearInterval(id);
+  }, [gameState?.clockMinutes, gameState?.clocksMs, gameState?.status, gameState?.updatedAt]);
 
   // Clear selection whenever turn or board updates
   useEffect(() => {
@@ -225,7 +256,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
   }, [gameState?.mustContinueFrom, gameState?.gameType, canInteractCurrentTurn]);
 
   const legalMoves = useMemo(() => {
-    if (!gameState || !selected) return [];
+    if (!gameState || !selected || gameState.gameType === 'connect4') return [];
     return getLegalMovesForSquare(gameState, selected);
   }, [gameState, selected]);
 
@@ -236,6 +267,15 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
       if (!gameState || gameState.status === 'finished') return;
       if (!canInteractCurrentTurn) {
         triggerHaptic('light');
+        return;
+      }
+
+      if (gameState.gameType === 'connect4') {
+        const dropRow = getConnect4DropRow(gameState.board, c);
+        if (dropRow >= 0) {
+          triggerHaptic('light');
+          onMove({ r: 0, c }, { r: dropRow, c });
+        }
         return;
       }
 
@@ -292,14 +332,14 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
           </button>
         )}
 
-        <div className="p-4 rounded-3xl nc-specular-surface border border-white/[0.1] space-y-2">
+        <div className="p-4 rounded-3xl nc-specular-surface border border-white/[0.1] space-y-2.5">
           <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-[#BF94FF]">
             <Swords className="w-4 h-4" />
             <span>
               {pickLang(lang, {
-                es: 'Juegos en Sala Online',
-                ca: 'Jocs a la Sala Online',
-                en: 'Live Room Board Games',
+                es: 'Juegos de Tablero 1v1 en Sala',
+                ca: 'Jocs de Tauler 1v1 a la Sala',
+                en: 'Live 1v1 Room Board Games',
               })}
             </span>
           </div>
@@ -310,9 +350,83 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
               en: 'Challenge friends live inside this room while watching together. Moves and rules are validated server-side.',
             })}
           </p>
+
+          {/* Clock selector */}
+          <div className="flex flex-wrap items-center gap-1.5 pt-1">
+            <span className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1 mr-1">
+              <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
+              <span>{pickLang(lang, { es: 'Reloj:', ca: 'Rellotge:', en: 'Clock:' })}</span>
+            </span>
+            {CLOCK_OPTIONS.map((mins) => (
+              <button
+                key={mins}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setSelectedClockMin(mins);
+                }}
+                className={`h-7 px-2.5 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                  selectedClockMin === mins
+                    ? 'bg-[#9146FF] text-white'
+                    : 'bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300'
+                }`}
+              >
+                {mins === 0
+                  ? pickLang(lang, { es: 'Sin reloj', ca: 'Sense temps', en: 'Untimed' })
+                  : `${mins} min`}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid grid-cols-1 gap-2.5">
+          {/* Connect 4 Card */}
+          <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/25 to-rose-600/25 border border-amber-400/35 flex items-center justify-center text-lg shrink-0">
+                  🟡
+                </div>
+                <div className="min-w-0">
+                  <h4 className="text-sm font-bold text-white truncate">
+                    {pickLang(lang, { es: 'Conecta 4', ca: 'Connecta 4', en: 'Connect 4' })}
+                  </h4>
+                  <p className="text-[11px] text-zinc-400 truncate">
+                    {pickLang(lang, {
+                      es: 'Tablero 7×6 · Alinea 4 fichas horizontales, verticales o diagonales',
+                      ca: 'Tauler 7×6 · Alinea 4 fitxes seguides',
+                      en: '7×6 grid · Connect 4 discs horizontally, vertically or diagonally',
+                    })}
+                  </p>
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('medium');
+                  onStartGame('connect4', false, selectedClockMin);
+                }}
+                className="min-h-10 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
+              >
+                <Users className="w-3.5 h-3.5 shrink-0" />
+                <span>{pickLang(lang, { es: 'Jugar Online', ca: 'Jugar Online', en: 'Play Online' })}</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onStartGame('connect4', true, selectedClockMin);
+                }}
+                className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+                <span>{pickLang(lang, { es: 'Modo Libre (Solo)', ca: 'Mode Lliure', en: 'Solo Practice' })}</span>
+              </button>
+            </div>
+          </div>
+
           {/* Checkers Card */}
           <div className="p-3.5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-3">
             <div className="flex items-center justify-between gap-2">
@@ -339,7 +453,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                 type="button"
                 onClick={() => {
                   triggerHaptic('medium');
-                  onStartGame('checkers', false);
+                  onStartGame('checkers', false, selectedClockMin);
                 }}
                 className="min-h-10 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
               >
@@ -350,7 +464,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
-                  onStartGame('checkers', true);
+                  onStartGame('checkers', true, selectedClockMin);
                 }}
                 className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
               >
@@ -386,7 +500,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                 type="button"
                 onClick={() => {
                   triggerHaptic('medium');
-                  onStartGame('chess', false);
+                  onStartGame('chess', false, selectedClockMin);
                 }}
                 className="min-h-10 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
               >
@@ -397,7 +511,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
-                  onStartGame('chess', true);
+                  onStartGame('chess', true, selectedClockMin);
                 }}
                 className="min-h-10 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
               >
@@ -419,34 +533,51 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
   const displayRows = isFlipped ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
   const displayCols = isFlipped ? [7, 6, 5, 4, 3, 2, 1, 0] : [0, 1, 2, 3, 4, 5, 6, 7];
 
+  const getSideClockMs = (side: BoardSide): number | null => {
+    if (!gameState.clockMinutes || !gameState.clocksMs) return null;
+    const base = gameState.clocksMs[side] ?? 0;
+    if (gameState.status === 'playing' && gameState.turn === side && gameState.turnStartedAt) {
+      return Math.max(0, base - Math.max(0, nowTs - gameState.turnStartedAt));
+    }
+    return base;
+  };
+
+  const getSideLabel = (side: BoardSide) => {
+    if (gameState.gameType === 'connect4') {
+      return side === 'w'
+        ? pickLang(lang, { es: 'Amarillas', ca: 'Grogues', en: 'Yellow' })
+        : pickLang(lang, { es: 'Rojas', ca: 'Roges', en: 'Red' });
+    }
+    if (side === 'w') return pickLang(lang, { es: 'Blancas', ca: 'Blanques', en: 'White' });
+    return gameState.gameType === 'checkers'
+      ? pickLang(lang, { es: 'Rojas', ca: 'Roges', en: 'Red' })
+      : pickLang(lang, { es: 'Negras', ca: 'Negres', en: 'Black' });
+  };
+
   const turnLabel =
     gameState.status === 'finished'
       ? gameState.winner === 'draw'
-        ? pickLang(lang, { es: 'Tablas', ca: 'Taules', en: 'Draw' })
+        ? pickLang(lang, { es: 'Empate', ca: 'Empat', en: 'Draw' })
         : pickLang(lang, {
             es: `Gana ${
               gameState.winner === 'w'
-                ? whiteSeat?.name || 'Blancas'
-                : blackSeat?.name || 'Negras'
+                ? whiteSeat?.name || getSideLabel('w')
+                : blackSeat?.name || getSideLabel('b')
             }`,
             ca: `Guanya ${
               gameState.winner === 'w'
-                ? whiteSeat?.name || 'Blanques'
-                : blackSeat?.name || 'Negres'
+                ? whiteSeat?.name || getSideLabel('w')
+                : blackSeat?.name || getSideLabel('b')
             }`,
             en: `${
               gameState.winner === 'w'
-                ? whiteSeat?.name || 'White'
-                : blackSeat?.name || 'Black'
+                ? whiteSeat?.name || getSideLabel('w')
+                : blackSeat?.name || getSideLabel('b')
             } wins`,
           })
       : gameState.soloLocal
       ? `${pickLang(lang, { es: 'Modo Libre', ca: 'Mode Lliure', en: 'Free Play' })} · ${
-          gameState.turn === 'w'
-            ? pickLang(lang, { es: 'Mueven Blancas', ca: 'Mouen Blanques', en: 'White to move' })
-            : gameState.gameType === 'checkers'
-            ? pickLang(lang, { es: 'Mueven Rojas', ca: 'Mouen Roges', en: 'Red to move' })
-            : pickLang(lang, { es: 'Mueven Negras', ca: 'Mouen Negres', en: 'Black to move' })
+          gameState.turn === 'w' ? getSideLabel('w') : getSideLabel('b')
         }`
       : !whiteSeat || !blackSeat
       ? pickLang(lang, {
@@ -459,27 +590,29 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
       : pickLang(lang, {
           es: `Turno de ${
             gameState.turn === 'w'
-              ? whiteSeat?.name || 'Blancas'
-              : blackSeat?.name || 'Negras'
+              ? whiteSeat?.name || getSideLabel('w')
+              : blackSeat?.name || getSideLabel('b')
           }`,
           ca: `Torn de ${
             gameState.turn === 'w'
-              ? whiteSeat?.name || 'Blanques'
-              : blackSeat?.name || 'Negres'
+              ? whiteSeat?.name || getSideLabel('w')
+              : blackSeat?.name || getSideLabel('b')
           }`,
           en: `${
             gameState.turn === 'w'
-              ? whiteSeat?.name || 'White'
-              : blackSeat?.name || 'Black'
+              ? whiteSeat?.name || getSideLabel('w')
+              : blackSeat?.name || getSideLabel('b')
           }'s turn`,
         });
+
+  const matchHistory = gameState.matchHistory || [];
 
   const renderBoardContent = (largeMode: boolean) => (
     <div className={`flex flex-col ${largeMode ? 'gap-3 max-w-[540px] w-full mx-auto' : 'gap-2.5 w-full'}`}>
       {/* Top Action Strip: Game Switcher + Expand + Close */}
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded-xl border border-white/[0.08]">
-          {(['checkers', 'chess'] as BoardGameType[]).map((gt) => {
+        <div className="flex items-center gap-1 bg-white/[0.04] p-0.5 rounded-xl border border-white/[0.08] overflow-x-auto no-scrollbar">
+          {(['connect4', 'checkers', 'chess'] as BoardGameType[]).map((gt) => {
             const active = gameState.gameType === gt;
             return (
               <button
@@ -491,13 +624,15 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                     onReset({ gameType: gt });
                   }
                 }}
-                className={`h-7 px-2.5 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                className={`h-7 px-2 rounded-lg text-[11px] font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                   active
                     ? 'bg-[#9146FF] text-white shadow-sm'
                     : 'text-zinc-400 hover:text-white'
                 }`}
               >
-                {gt === 'checkers'
+                {gt === 'connect4'
+                  ? pickLang(lang, { es: '🟡 Conecta 4', ca: '🟡 Connecta 4', en: '🟡 Connect 4' })
+                  : gt === 'checkers'
                   ? pickLang(lang, { es: '🔴 Damas', ca: '🔴 Dames', en: '🔴 Checkers' })
                   : pickLang(lang, { es: '♟️ Ajedrez', ca: '♟️ Escacs', en: '♟️ Chess' })}
               </button>
@@ -506,14 +641,16 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          <button
-            type="button"
-            onClick={() => setManualFlip((f) => !(f ?? isFlipped))}
-            title={pickLang(lang, { es: 'Girar tablero', ca: 'Girar tauler', en: 'Flip board' })}
-            className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-zinc-300 cursor-pointer"
-          >
-            <ArrowUpDown className="w-3.5 h-3.5" />
-          </button>
+          {gameState.gameType !== 'connect4' && (
+            <button
+              type="button"
+              onClick={() => setManualFlip((f) => !(f ?? isFlipped))}
+              title={pickLang(lang, { es: 'Girar tablero', ca: 'Girar tauler', en: 'Flip board' })}
+              className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-zinc-300 cursor-pointer"
+            >
+              <ArrowUpDown className="w-3.5 h-3.5" />
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setMuted((m) => !m)}
@@ -544,18 +681,15 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
         </div>
       </div>
 
-      {/* Player Seats Row (White vs Black) */}
+      {/* Player Seats Row (White/Yellow vs Black/Red) + Live Clocks */}
       <div className="grid grid-cols-2 gap-2">
         {(['w', 'b'] as BoardSide[]).map((side) => {
           const seat = gameState.players[side];
           const isTurn = gameState.status !== 'finished' && gameState.turn === side;
           const isMe = seat?.userId === currentUser.id;
-          const sideLabel =
-            side === 'w'
-              ? pickLang(lang, { es: 'Blancas', ca: 'Blanques', en: 'White' })
-              : gameState.gameType === 'checkers'
-              ? pickLang(lang, { es: 'Rojas', ca: 'Roges', en: 'Red' })
-              : pickLang(lang, { es: 'Negras', ca: 'Negres', en: 'Black' });
+          const sideLabel = getSideLabel(side);
+          const clockMs = getSideClockMs(side);
+          const isLowClock = clockMs !== null && clockMs < 30_000;
 
           return (
             <div
@@ -569,7 +703,11 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
               <div className="flex items-center gap-2 min-w-0">
                 <span
                   className={`w-3.5 h-3.5 rounded-full shrink-0 border ${
-                    side === 'w'
+                    gameState.gameType === 'connect4'
+                      ? side === 'w'
+                        ? 'bg-amber-400 border-amber-200'
+                        : 'bg-rose-500 border-rose-300'
+                      : side === 'w'
                       ? 'bg-zinc-100 border-zinc-400'
                       : gameState.gameType === 'checkers'
                       ? 'bg-rose-600 border-rose-300'
@@ -598,17 +736,32 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                 )}
               </div>
 
-              {!seat && !gameState.soloLocal && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('medium');
-                    onJoinSeat(side);
-                  }}
-                  className="h-7 px-2 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-[10px] font-bold text-white whitespace-nowrap shrink-0 cursor-pointer"
+              {clockMs !== null ? (
+                <span
+                  className={`px-1.5 py-0.5 rounded-md font-mono text-[11px] font-bold tabular-nums shrink-0 ${
+                    isLowClock
+                      ? 'bg-rose-500/25 text-rose-200 animate-pulse'
+                      : isTurn
+                      ? 'bg-[#9146FF]/35 text-white'
+                      : 'bg-white/[0.06] text-zinc-300'
+                  }`}
                 >
-                  {pickLang(lang, { es: 'Jugar', ca: 'Jugar', en: 'Join' })}
-                </button>
+                  {formatClockMs(clockMs)}
+                </span>
+              ) : (
+                !seat &&
+                !gameState.soloLocal && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      onJoinSeat(side);
+                    }}
+                    className="h-7 px-2 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-[10px] font-bold text-white whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    {pickLang(lang, { es: 'Jugar', ca: 'Jugar', en: 'Join' })}
+                  </button>
+                )
               )}
             </div>
           );
@@ -655,160 +808,245 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
         </div>
       )}
 
-      {/* 8x8 Interactive Board */}
-      <div className="relative w-full aspect-square rounded-2xl overflow-hidden border border-white/[0.14] shadow-[0_14px_40px_rgba(0,0,0,0.65)] select-none touch-manipulation">
-        <div className="grid grid-cols-8 grid-rows-8 w-full h-full">
-          {displayRows.map((r) =>
-            displayCols.map((c) => {
-              const isDark = (r + c) % 2 === 1;
-              const piece = gameState.board[r][c];
-              const isSelected = selected?.r === r && selected?.c === c;
-              const isLastFrom =
-                gameState.lastMove?.from.r === r && gameState.lastMove?.from.c === c;
-              const isLastTo =
-                gameState.lastMove?.to.r === r && gameState.lastMove?.to.c === c;
-              const legalTarget = legalMoves.find((m) => m.r === r && m.c === c);
-              const isKingInCheck =
-                gameState.gameType === 'chess' &&
-                gameState.inCheck &&
-                piece === `${gameState.inCheck}K`;
+      {/* Interactive Board: Connect 4 (6x7) OR Checkers/Chess (8x8) */}
+      {gameState.gameType === 'connect4' ? (
+        <div className="relative w-full aspect-[7/6] rounded-2xl overflow-hidden border border-blue-400/30 bg-gradient-to-b from-[#1e3a8a] to-[#172554] p-2 shadow-[0_14px_40px_rgba(0,0,0,0.65)] select-none touch-manipulation">
+          <div className="grid grid-cols-7 grid-rows-6 gap-1.5 w-full h-full">
+            {Array.from({ length: 6 }).map((_, r) =>
+              Array.from({ length: 7 }).map((__, c) => {
+                const cell = gameState.board[r]?.[c] ?? null;
+                const isLastDrop =
+                  gameState.lastMove?.to.r === r && gameState.lastMove?.to.c === c;
+                const nextDropRow = getConnect4DropRow(gameState.board, c);
+                const isPreviewTarget =
+                  hoverCol === c && nextDropRow === r && canInteractCurrentTurn && !cell;
 
-              const squareBg = isKingInCheck
-                ? 'bg-rose-600/80'
-                : isSelected
-                ? 'bg-[#9146FF]/65'
-                : isLastTo || isLastFrom
-                ? isDark
-                  ? 'bg-[#4C3575]'
-                  : 'bg-[#6F5899]'
-                : isDark
-                ? 'bg-[#282834]'
-                : 'bg-[#525263]';
+                return (
+                  <button
+                    key={`c4-${r}-${c}`}
+                    type="button"
+                    onMouseEnter={() => setHoverCol(c)}
+                    onMouseLeave={() => setHoverCol((curr) => (curr === c ? null : curr))}
+                    onClick={() => handleSquareClick(r, c)}
+                    aria-label={`Columna ${c + 1} Fila ${r + 1}`}
+                    className={`relative w-full h-full rounded-full border transition-all cursor-pointer flex items-center justify-center ${
+                      cell === 'w'
+                        ? 'bg-gradient-to-b from-amber-300 to-amber-500 border-amber-200 shadow-[inset_0_-3px_6px_rgba(0,0,0,0.3)]'
+                        : cell === 'b'
+                        ? 'bg-gradient-to-b from-rose-400 to-rose-600 border-rose-200 shadow-[inset_0_-3px_6px_rgba(0,0,0,0.3)]'
+                        : isPreviewTarget
+                        ? gameState.turn === 'w'
+                          ? 'bg-amber-400/35 border-amber-200/60'
+                          : 'bg-rose-400/35 border-rose-200/60'
+                        : 'bg-[#0b0d14] border-black/50 shadow-[inset_0_3px_6px_rgba(0,0,0,0.8)]'
+                    } ${isLastDrop ? 'ring-2 ring-white' : ''}`}
+                  />
+                );
+              })
+            )}
+          </div>
 
-              const showRank = c === displayCols[0];
-              const showFile = r === displayRows[7];
-
-              return (
+          {gameState.status === 'finished' && (
+            <div className="absolute inset-0 z-20 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-4 text-center">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-2xl">
+                🏆
+              </div>
+              <div>
+                <h4 className="text-base font-extrabold text-white">{turnLabel}</h4>
+                <p className="text-xs text-zinc-300 mt-0.5">
+                  {gameState.winReason === 'connect4'
+                    ? pickLang(lang, { es: '4 en raya', ca: '4 en ratlla', en: '4 in a row!' })
+                    : gameState.winReason === 'timeout'
+                    ? pickLang(lang, { es: 'Por tiempo agotado', ca: 'Per temps esgotat', en: 'Time out' })
+                    : gameState.winReason === 'resign'
+                    ? pickLang(lang, { es: 'Por rendición', ca: 'Per rendició', en: 'By resignation' })
+                    : pickLang(lang, { es: 'Tablero completo (Empate)', ca: 'Tauler ple (Empat)', en: 'Board full (Draw)' })}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2">
                 <button
-                  key={`${r}-${c}`}
-                  type="button"
-                  onClick={() => handleSquareClick(r, c)}
-                  aria-label={`${FILES[c]}${8 - r}`}
-                  className={`relative w-full h-full flex items-center justify-center cursor-pointer transition-colors ${squareBg}`}
-                >
-                  {showRank && (
-                    <span className="absolute top-0.5 left-0.5 text-[8px] font-mono leading-none opacity-55 text-white pointer-events-none">
-                      {8 - r}
-                    </span>
-                  )}
-                  {showFile && (
-                    <span className="absolute bottom-0.5 right-0.5 text-[8px] font-mono leading-none opacity-55 text-white pointer-events-none">
-                      {FILES[c]}
-                    </span>
-                  )}
-
-                  {piece && renderBoardPiece(piece)}
-
-                  {legalTarget && (
-                    <span
-                      className={`pointer-events-none absolute ${
-                        legalTarget.isCapture
-                          ? 'inset-1 rounded-full border-[3px] border-emerald-400/90 shadow-[0_0_10px_rgba(16,185,129,0.75)]'
-                          : 'w-[28%] h-[28%] rounded-full bg-emerald-400/85 shadow-[0_0_8px_rgba(16,185,129,0.7)]'
-                      }`}
-                    />
-                  )}
-                </button>
-              );
-            })
-          )}
-        </div>
-
-        {/* Chess Promotion Picker Overlay */}
-        {pendingPromo && (
-          <div className="absolute inset-0 z-20 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-4">
-            <span className="text-xs font-bold uppercase tracking-wider text-white">
-              {pickLang(lang, {
-                es: 'Promocionar peón a:',
-                ca: 'Promocionar peó a:',
-                en: 'Promote pawn to:',
-              })}
-            </span>
-            <div className="grid grid-cols-4 gap-2">
-              {(['Q', 'R', 'B', 'N'] as ChessPromotionPiece[]).map((p) => (
-                <button
-                  key={p}
                   type="button"
                   onClick={() => {
-                    onMove(pendingPromo.from, pendingPromo.to, p);
-                    setPendingPromo(null);
-                    setSelected(null);
+                    triggerHaptic('medium');
+                    onReset({ swapColors: false });
                   }}
-                  className="w-12 h-12 rounded-2xl bg-[#26262C] hover:bg-[#9146FF] border border-white/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                  className="min-h-9 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95"
                 >
-                  {renderBoardPiece(`${gameState.turn}${p}`)}
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{pickLang(lang, { es: 'Revancha', ca: 'Revenja', en: 'Rematch' })}</span>
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onReset({ swapColors: true });
+                  }}
+                  className="min-h-9 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{pickLang(lang, { es: 'Cambiar turnos', ca: 'Canviar torns', en: 'Swap starter' })}</span>
+                </button>
+              </div>
             </div>
-          </div>
-        )}
+          )}
+        </div>
+      ) : (
+        <div className="relative w-full aspect-square rounded-2xl overflow-hidden border border-white/[0.14] shadow-[0_14px_40px_rgba(0,0,0,0.65)] select-none touch-manipulation">
+          <div className="grid grid-cols-8 grid-rows-8 w-full h-full">
+            {displayRows.map((r) =>
+              displayCols.map((c) => {
+                const isDark = (r + c) % 2 === 1;
+                const piece = gameState.board[r][c];
+                const isSelected = selected?.r === r && selected?.c === c;
+                const isLastFrom =
+                  gameState.lastMove?.from.r === r && gameState.lastMove?.from.c === c;
+                const isLastTo =
+                  gameState.lastMove?.to.r === r && gameState.lastMove?.to.c === c;
+                const legalTarget = legalMoves.find((m) => m.r === r && m.c === c);
+                const isKingInCheck =
+                  gameState.gameType === 'chess' &&
+                  gameState.inCheck &&
+                  piece === `${gameState.inCheck}K`;
 
-        {/* Finished Overlay with 1-Tap Rematch */}
-        {gameState.status === 'finished' && (
-          <div className="absolute inset-0 z-20 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-4 text-center">
-            <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-2xl">
-              🏆
-            </div>
-            <div>
-              <h4 className="text-base font-extrabold text-white">{turnLabel}</h4>
-              <p className="text-xs text-zinc-300 mt-0.5">
-                {gameState.winReason === 'checkmate'
-                  ? pickLang(lang, { es: 'Jaque mate', ca: 'Escac i mat', en: 'Checkmate' })
-                  : gameState.winReason === 'stalemate'
-                  ? pickLang(lang, { es: 'Rey ahogado', ca: 'Rei ofegat', en: 'Stalemate' })
-                  : gameState.winReason === 'resign'
-                  ? pickLang(lang, { es: 'Por rendición', ca: 'Per rendició', en: 'By resignation' })
-                  : gameState.winReason === 'no_moves'
-                  ? pickLang(lang, { es: 'Sin movimientos legales', ca: 'Sense moviments', en: 'No legal moves' })
-                  : pickLang(lang, { es: 'Sin fichas rivales', ca: 'Sense fitxes rivals', en: 'All pieces captured' })}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  onReset({ swapColors: false });
-                }}
-                className="min-h-9 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95"
-              >
-                <RotateCcw className="w-3.5 h-3.5" />
-                <span>{pickLang(lang, { es: 'Revancha', ca: 'Revenja', en: 'Rematch' })}</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  onReset({ swapColors: true });
-                }}
-                className="min-h-9 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>{pickLang(lang, { es: 'Cambiar colores', ca: 'Canviar colors', en: 'Swap colors' })}</span>
-              </button>
-            </div>
+                const squareBg = isKingInCheck
+                  ? 'bg-rose-600/80'
+                  : isSelected
+                  ? 'bg-[#9146FF]/65'
+                  : isLastTo || isLastFrom
+                  ? isDark
+                    ? 'bg-[#4C3575]'
+                    : 'bg-[#6F5899]'
+                  : isDark
+                  ? 'bg-[#282834]'
+                  : 'bg-[#525263]';
+
+                const showRank = c === displayCols[0];
+                const showFile = r === displayRows[7];
+
+                return (
+                  <button
+                    key={`${r}-${c}`}
+                    type="button"
+                    onClick={() => handleSquareClick(r, c)}
+                    aria-label={`${FILES[c]}${8 - r}`}
+                    className={`relative w-full h-full flex items-center justify-center cursor-pointer transition-colors ${squareBg}`}
+                  >
+                    {showRank && (
+                      <span className="absolute top-0.5 left-0.5 text-[8px] font-mono leading-none opacity-55 text-white pointer-events-none">
+                        {8 - r}
+                      </span>
+                    )}
+                    {showFile && (
+                      <span className="absolute bottom-0.5 right-0.5 text-[8px] font-mono leading-none opacity-55 text-white pointer-events-none">
+                        {FILES[c]}
+                      </span>
+                    )}
+
+                    {piece && renderBoardPiece(piece)}
+
+                    {legalTarget && (
+                      <span
+                        className={`pointer-events-none absolute ${
+                          legalTarget.isCapture
+                            ? 'inset-1 rounded-full border-[3px] border-emerald-400/90 shadow-[0_0_10px_rgba(16,185,129,0.75)]'
+                            : 'w-[28%] h-[28%] rounded-full bg-emerald-400/85 shadow-[0_0_8px_rgba(16,185,129,0.7)]'
+                        }`}
+                      />
+                    )}
+                  </button>
+                );
+              })
+            )}
           </div>
-        )}
-      </div>
+
+          {/* Chess Promotion Picker Overlay */}
+          {pendingPromo && (
+            <div className="absolute inset-0 z-20 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-4">
+              <span className="text-xs font-bold uppercase tracking-wider text-white">
+                {pickLang(lang, {
+                  es: 'Promocionar peón a:',
+                  ca: 'Promocionar peó a:',
+                  en: 'Promote pawn to:',
+                })}
+              </span>
+              <div className="grid grid-cols-4 gap-2">
+                {(['Q', 'R', 'B', 'N'] as ChessPromotionPiece[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => {
+                      onMove(pendingPromo.from, pendingPromo.to, p);
+                      setPendingPromo(null);
+                      setSelected(null);
+                    }}
+                    className="w-12 h-12 rounded-2xl bg-[#26262C] hover:bg-[#9146FF] border border-white/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                  >
+                    {renderBoardPiece(`${gameState.turn}${p}`)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Finished Overlay with 1-Tap Rematch */}
+          {gameState.status === 'finished' && (
+            <div className="absolute inset-0 z-20 bg-black/75 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-4 text-center">
+              <div className="w-11 h-11 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 flex items-center justify-center text-2xl">
+                🏆
+              </div>
+              <div>
+                <h4 className="text-base font-extrabold text-white">{turnLabel}</h4>
+                <p className="text-xs text-zinc-300 mt-0.5">
+                  {gameState.winReason === 'checkmate'
+                    ? pickLang(lang, { es: 'Jaque mate', ca: 'Escac i mat', en: 'Checkmate' })
+                    : gameState.winReason === 'stalemate'
+                    ? pickLang(lang, { es: 'Rey ahogado', ca: 'Rei ofegat', en: 'Stalemate' })
+                    : gameState.winReason === 'timeout'
+                    ? pickLang(lang, { es: 'Por tiempo agotado', ca: 'Per temps esgotat', en: 'Time out' })
+                    : gameState.winReason === 'resign'
+                    ? pickLang(lang, { es: 'Por rendición', ca: 'Per rendició', en: 'By resignation' })
+                    : gameState.winReason === 'no_moves'
+                    ? pickLang(lang, { es: 'Sin movimientos legales', ca: 'Sense moviments', en: 'No legal moves' })
+                    : pickLang(lang, { es: 'Sin fichas rivales', ca: 'Sense fitxes rivals', en: 'All pieces captured' })}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center justify-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    onReset({ swapColors: false });
+                  }}
+                  className="min-h-9 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{pickLang(lang, { es: 'Revancha', ca: 'Revenja', en: 'Rematch' })}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onReset({ swapColors: true });
+                  }}
+                  className="min-h-9 px-3 rounded-xl bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap cursor-pointer"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{pickLang(lang, { es: 'Cambiar colores', ca: 'Canviar colors', en: 'Swap colors' })}</span>
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Bottom Move History & Controls */}
       <div className="flex items-center justify-between gap-2 pt-0.5">
         <div className="flex-1 min-w-0 overflow-x-auto whitespace-nowrap text-[11px] font-mono tabular-nums text-zinc-400 bg-white/[0.03] border border-white/[0.06] rounded-xl px-2.5 py-1.5">
           {gameState.moveHistory.length === 0
             ? pickLang(lang, {
-                es: 'Sin jugadas aún · Empiezan Blancas',
-                ca: 'Sense jugades encara · Comencen Blanques',
-                en: 'No moves yet · White opens',
+                es: `Sin jugadas aún · Empiezan ${getSideLabel('w')}`,
+                ca: `Sense jugades encara · Comencen ${getSideLabel('w')}`,
+                en: `No moves yet · ${getSideLabel('w')} opens`,
               })
             : gameState.moveHistory.slice(-8).join(' · ')}
         </div>
@@ -841,6 +1079,43 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Collapsible Match History */}
+      {matchHistory.length > 0 && (
+        <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowHistory((v) => !v)}
+            className="w-full px-3 py-1.5 flex items-center justify-between text-[11px] font-semibold text-zinc-300 hover:text-white cursor-pointer"
+          >
+            <span className="flex items-center gap-1.5">
+              <Trophy className="w-3.5 h-3.5 text-amber-400" />
+              <span>
+                {pickLang(lang, {
+                  es: `Historial de partidas (${matchHistory.length})`,
+                  ca: `Historial de partides (${matchHistory.length})`,
+                  en: `Match history (${matchHistory.length})`,
+                })}
+              </span>
+            </span>
+            {showHistory ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+          </button>
+          {showHistory && (
+            <div className="px-3 pb-2 space-y-1 border-t border-white/[0.06] pt-1.5 max-h-32 overflow-y-auto custom-scrollbar">
+              {[...matchHistory].reverse().map((mh) => (
+                <div key={mh.id} className="flex items-center justify-between text-[11px] text-zinc-400">
+                  <span className="truncate">
+                    <strong className="text-zinc-200">{mh.winnerName}</strong> · {mh.gameType}
+                  </span>
+                  <span className="font-mono text-[10px] text-zinc-500 shrink-0">
+                    {mh.reason || 'fin'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 

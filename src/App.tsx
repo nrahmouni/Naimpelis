@@ -22,14 +22,17 @@ import {
   Download,
   Bookmark,
   ChevronUp,
+  Gamepad2,
 } from 'lucide-react';
 import {
   checkRemoteAppVersion,
+  clearStaleCachesAndReload,
   type NativeApkUpdateAvailable,
 } from './utils/versionSync';
 import { triggerApkDownload } from './utils/apkDownload';
 import {
   AppLanguage,
+  BoardClockMinutes,
   BoardGameState,
   CatalaEpisodeItem,
   CatalaSeriesDetails,
@@ -45,6 +48,9 @@ import {
   LanguageNoticePopup,
   OnlineAppUser,
   Participant,
+  PartyColor,
+  PartyGameState,
+  PartyGameType,
   PlaybackEngineMode,
   PollProposalItem,
   RestoredRoomBlueprint,
@@ -233,7 +239,7 @@ function loadSessionRoomPins(): Record<string, string> {
   }
 }
 
-type MobileNavTab = 'home' | 'movies' | 'tdt' | 'sports' | 'youtube' | 'chat' | 'room';
+type MobileNavTab = 'home' | 'movies' | 'tdt' | 'sports' | 'youtube' | 'games' | 'chat' | 'room';
 
 export function App() {
   const [lang, setLang] = useState<AppLanguage>('es');
@@ -330,6 +336,8 @@ export function App() {
   const setTypingUser = useAppStore((s) => s.setTypingUser);
   const swUpdate = useAppStore((s) => s.swUpdate);
   const applySwUpdateNow = useAppStore((s) => s.applySwUpdateNow);
+  const deferredAppUpdateVersion = useAppStore((s) => s.deferredAppUpdateVersion);
+  const setDeferredAppUpdateVersion = useAppStore((s) => s.setDeferredAppUpdateVersion);
 
   const notifications = useNotificationStore((s) => s.notifications);
   const pushNotification = useNotificationStore((s) => s.pushNotification);
@@ -419,9 +427,11 @@ export function App() {
   const [hostOnlyControl, setHostOnlyControl] = useState<boolean>(true);
   const [activePoll, setActivePoll] = useState<RoomPollState | null>(null);
   const [roomGameState, setRoomGameState] = useState<BoardGameState | null>(null);
+  const [partyGameState, setPartyGameState] = useState<PartyGameState | null>(null);
   const [gameMoveError, setGameMoveError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [pinnedMessage, setPinnedMessage] = useState<ChatMessage | null>(null);
   const [roomQueue, setRoomQueue] = useState<RoomQueueItem[]>([]);
   const [videoState, setVideoState] = useState<VideoState>(INITIAL_VIDEO_STATE);
   const [secondaryStream, setSecondaryStream] = useState<SecondaryStreamState | null>(null);
@@ -525,6 +535,11 @@ export function App() {
   roomQueueRef.current = roomQueue;
   const videoStateUrlRef = useRef<string>(videoState.url);
   videoStateUrlRef.current = videoState.url;
+  const videoStateRef = useRef<VideoState>(videoState);
+  videoStateRef.current = videoState;
+  const isCinemaModeRef = useRef<boolean>(isCinemaMode);
+  isCinemaModeRef.current = isCinemaMode;
+  const nextEpPreloadRef = useRef<string>('');
   const handlePlayQueueItemRef = useRef<(item: RoomQueueItem) => void>(() => {});
   const lockToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const queueToastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -850,8 +865,13 @@ export function App() {
   // Automatic Cross-Platform Version Control & OTA Sync (Web, Android Mobile APK & Google TV)
   useEffect(() => {
     const runVersionCheck = () => {
-      void checkRemoteAppVersion((apkUpdate) => {
-        setNativeApkUpdate(apkUpdate);
+      void checkRemoteAppVersion({
+        onApkUpdate: (apkUpdate) => setNativeApkUpdate(apkUpdate),
+        shouldDeferReload: () => {
+          const vs = videoStateRef.current;
+          return (vs.mode !== 'idle' && vs.isPlaying) || isCinemaModeRef.current;
+        },
+        onDeferredUpdate: (remoteVer) => setDeferredAppUpdateVersion(remoteVer),
       });
     };
     runVersionCheck();
@@ -866,7 +886,7 @@ export function App() {
       document.removeEventListener('visibilitychange', onVisible);
       window.clearInterval(interval);
     };
-  }, []);
+  }, [setDeferredAppUpdateVersion]);
 
   // ============================================================================
   // FIREBASE AUTHENTICATION, CLOUD SYNC & DIRECT ROOM AUTO-ENTRY FOR LOGGED USERS
@@ -1122,6 +1142,50 @@ export function App() {
       const activeId = activeHistoryIdRef.current;
       if (!activeId || currentTimeSec <= 4) return;
 
+      // Pre-resolve next episode in background when < 2 minutes remain for instant transitions
+      const vs = videoStateRef.current;
+      const meta = vs.seriesMeta;
+      if (
+        meta &&
+        !vs.isLive &&
+        durationSec > 120 &&
+        durationSec - currentTimeSec <= 120
+      ) {
+        let nextSeason = meta.season;
+        let nextEp = meta.episode + 1;
+        if (meta.totalEpisodesInSeason && nextEp > meta.totalEpisodesInSeason) {
+          if (!meta.totalSeasons || meta.season < meta.totalSeasons) {
+            nextSeason = meta.season + 1;
+            nextEp = 1;
+          } else {
+            nextEp = -1;
+          }
+        }
+        if (nextEp > 0) {
+          const preloadKey = `${meta.tmdbId}-${nextSeason}-${nextEp}`;
+          if (nextEpPreloadRef.current !== preloadKey) {
+            nextEpPreloadRef.current = preloadKey;
+            const activeTrackLang = String(
+              vs.tracks[vs.activeTrackIndex]?.lang || ''
+            ).toUpperCase();
+            const preferLang =
+              activeTrackLang === 'LAT' || activeTrackLang === 'VOSE' || activeTrackLang === 'EN'
+                ? activeTrackLang
+                : 'ES';
+            const params = new URLSearchParams({
+              mediaType: 'tv',
+              tmdbId: String(meta.tmdbId),
+              season: String(nextSeason),
+              episode: String(nextEp),
+              preferLang,
+              title: meta.seriesTitle,
+              ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
+            });
+            fetch(`/api/extract/stream?${params.toString()}`).catch(() => {});
+          }
+        }
+      }
+
       const { list, updated } = updateWatchHistoryProgress(
         activeId,
         currentTimeSec,
@@ -1139,7 +1203,7 @@ export function App() {
         ).catch(() => {});
       }
     },
-    []
+    [isNestedSandboxFrame]
   );
 
   // ============================================================================
@@ -1372,9 +1436,11 @@ export function App() {
         setPinPromptState({ open: false, roomName: '', invalidAttempt: false });
         setActivePoll(payload.activePoll || null);
         setRoomGameState(payload.gameState || null);
+        setPartyGameState(payload.partyGameState || null);
         setGameMoveError(null);
         setParticipants(payload.participants || []);
         setMessages(payload.messages || []);
+        setPinnedMessage(payload.pinnedMessage || null);
         setRoomQueue(payload.queue || []);
         addRecentRoom({ id: roomId, name: nextRoomTitle });
         setRecentRooms(getRecentRooms());
@@ -1593,6 +1659,16 @@ export function App() {
         const errTxt = String(payload.error || 'Jugada no válida');
         setGameMoveError(errTxt);
         setTimeout(() => setGameMoveError(null), 3200);
+      } else if (type === 'PINNED_MESSAGE_UPDATED') {
+        setPinnedMessage(payload.pinnedMessage || null);
+      } else if (type === 'PARTY_GAME_STATE_UPDATED') {
+        setPartyGameState(payload.partyGameState || null);
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message!]);
+          if (mobileTabRef.current !== 'chat') {
+            setUnreadChatCount((c) => c + 1);
+          }
+        }
       }
     });
 
@@ -1732,6 +1808,8 @@ export function App() {
     setSecondaryStream(null);
     setActivePoll(null);
     setRoomGameState(null);
+    setPartyGameState(null);
+    setPinnedMessage(null);
     setGameMoveError(null);
     setHostId('');
     setCreatorId('');
@@ -1771,6 +1849,8 @@ export function App() {
     setSecondaryStream(null);
     setActivePoll(null);
     setRoomGameState(null);
+    setPartyGameState(null);
+    setPinnedMessage(null);
     setGameMoveError(null);
     setHostId('');
     setCreatorId('');
@@ -1803,6 +1883,8 @@ export function App() {
         setSecondaryStream(null);
         setActivePoll(null);
         setRoomGameState(null);
+        setPartyGameState(null);
+        setPinnedMessage(null);
         setGameMoveError(null);
         setHostId('');
         setCreatorId('');
@@ -5125,6 +5207,7 @@ export function App() {
                     } else if (sec === 'tdt') setMobileTab('tdt');
                     else if (sec === 'sports') setMobileTab('sports');
                     else if (sec === 'youtube') setMobileTab('youtube');
+                    else if (sec === 'games') setMobileTab('games');
                   }}
                 />
 
@@ -5222,8 +5305,13 @@ export function App() {
                   onPlayQueueItem={handlePlayQueueItem}
                   onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
                   onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
+                  onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
+                  onRestoreQueueItem={(item) => socketService.addToQueue(item)}
                   onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
                   onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
+                  pinnedMessage={pinnedMessage}
+                  onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
+                  onUnpinMessage={() => socketService.unpinChatMessage()}
                   typingUsers={typingUsers}
                   onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
                   activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
@@ -5277,12 +5365,18 @@ export function App() {
                   onLeaveRoom={handleLeaveRoom}
                   gameState={roomGameState}
                   gameMoveError={gameMoveError}
-                  onStartBoardGame={(gt, solo) => socketService.startBoardGame(gt, solo)}
+                  onStartBoardGame={(gt, solo, clockMin) =>
+                    socketService.startBoardGame(gt, solo, clockMin)
+                  }
                   onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
                   onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
                   onResignBoardGame={() => socketService.resignBoardGame()}
                   onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
                   onCloseBoardGame={() => socketService.closeBoardGame()}
+                  partyGameState={partyGameState}
+                  onStartPartyGame={(gt) => socketService.startPartyGame(gt)}
+                  onPartyGameAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
+                  onClosePartyGame={() => socketService.closePartyGame()}
                 />
               </div>
             )}
@@ -5471,6 +5565,8 @@ export function App() {
                       setMobileTab('sports');
                     } else if (sec === 'youtube') {
                       setMobileTab('youtube');
+                    } else if (sec === 'games') {
+                      setMobileTab('games');
                     }
                   }}
                   lang={lang}
@@ -5505,6 +5601,22 @@ export function App() {
                   onCreateNewRoom={handleCreateFreshRoom}
                   showWatchlistOnly={showWatchlistOnly}
                   onWatchlistOnlyChange={setShowWatchlistOnly}
+                  currentUser={currentUser}
+                  participants={participants}
+                  roomBoardGame={roomGameState}
+                  roomPartyGame={partyGameState}
+                  gameMoveError={gameMoveError}
+                  onStartRoomBoardGame={(gt, solo, clockMin) =>
+                    socketService.startBoardGame(gt, solo, clockMin)
+                  }
+                  onJoinBoardSeat={(side) => socketService.joinGameSeat(side)}
+                  onMoveBoardGame={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
+                  onResignBoardGame={() => socketService.resignBoardGame()}
+                  onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
+                  onCloseBoardGame={() => socketService.closeBoardGame()}
+                  onStartRoomPartyGame={(gt) => socketService.startPartyGame(gt)}
+                  onRoomPartyAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
+                  onCloseRoomPartyGame={() => socketService.closePartyGame()}
                 />
 
                 {/* Minimalist Footer (Legal & Design System live cleanly inside Mi Perfil) */}
@@ -5565,8 +5677,13 @@ export function App() {
                 onPlayQueueItem={handlePlayQueueItem}
                 onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
                 onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
+                onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
+                onRestoreQueueItem={(item) => socketService.addToQueue(item)}
                 onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
                 onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
+                pinnedMessage={pinnedMessage}
+                onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
+                onUnpinMessage={() => socketService.unpinChatMessage()}
                 typingUsers={typingUsers}
                 onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
                 activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
@@ -5600,12 +5717,18 @@ export function App() {
                 onLeaveRoom={handleLeaveRoom}
                 gameState={roomGameState}
                 gameMoveError={gameMoveError}
-                onStartBoardGame={(gt, solo) => socketService.startBoardGame(gt, solo)}
+                onStartBoardGame={(gt, solo, clockMin) =>
+                  socketService.startBoardGame(gt, solo, clockMin)
+                }
                 onJoinGameSeat={(side) => socketService.joinGameSeat(side)}
                 onSendGameMove={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
                 onResignBoardGame={() => socketService.resignBoardGame()}
                 onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
                 onCloseBoardGame={() => socketService.closeBoardGame()}
+                partyGameState={partyGameState}
+                onStartPartyGame={(gt) => socketService.startPartyGame(gt)}
+                onPartyGameAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
+                onClosePartyGame={() => socketService.closePartyGame()}
               />
             </div>
           )}
@@ -5627,7 +5750,7 @@ export function App() {
                 }`}
               >
                 <nav
-              className="bg-[#141418]/92 backdrop-blur-2xl border border-white/[0.11] rounded-2xl p-1 grid grid-cols-5 gap-1 shadow-[0_14px_38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.1)]"
+              className="bg-[#141418]/92 backdrop-blur-2xl border border-white/[0.11] rounded-2xl p-1 grid grid-cols-6 gap-0.5 shadow-[0_14px_38px_rgba(0,0,0,0.78),inset_0_1px_0_rgba(255,255,255,0.1)]"
               aria-label={pickLang(lang, {
                 es: 'Navegación móvil NAIM CINE',
                 ca: 'Navegació mòbil NAIM CINE',
@@ -5692,9 +5815,9 @@ export function App() {
                   {
                     id: 'live',
                     label: pickLang(lang, {
-                      es: 'En Directo',
-                      ca: 'En Directe',
-                      en: 'Live TV',
+                      es: 'Directo',
+                      ca: 'Directe',
+                      en: 'Live',
                     }),
                     icon: Radio,
                     isActive:
@@ -5719,10 +5842,29 @@ export function App() {
                     },
                   },
                   {
+                    id: 'games',
+                    label: pickLang(lang, {
+                      es: 'Juegos',
+                      ca: 'Jocs',
+                      en: 'Games',
+                    }),
+                    icon: Gamepad2,
+                    isActive:
+                      mobileTab !== 'chat' &&
+                      mobileTab !== 'room' &&
+                      !showWatchlistOnly &&
+                      catalogSection === 'games',
+                    onSelect: () => {
+                      setShowWatchlistOnly(false);
+                      setMobileTab('games');
+                      setCatalogSection('games');
+                    },
+                  },
+                  {
                     id: 'mylist',
                     label: pickLang(lang, {
                       es: 'Mi Lista',
-                      ca: 'Meva Llista',
+                      ca: 'Llista',
                       en: 'My List',
                     }),
                     icon: Bookmark,
@@ -5853,7 +5995,7 @@ export function App() {
           </div>
         )}
         {/* Service Worker / Cross-Platform Version Update Toast */}
-        {(swUpdate || nativeApkUpdate) && (
+        {(swUpdate || nativeApkUpdate || deferredAppUpdateVersion) && (
           <div className="fixed bottom-20 sm:bottom-6 right-4 z-[70] max-w-xs px-4 py-3 rounded-2xl bg-[#18181B]/95 backdrop-blur-xl border border-[#9146FF]/40 shadow-2xl flex items-center justify-between gap-3">
             <div className="text-xs text-white font-semibold">
               {nativeApkUpdate
@@ -5863,9 +6005,9 @@ export function App() {
                     en: `New APK v${nativeApkUpdate.versionName} ready`,
                   })
                 : pickLang(lang, {
-                    es: 'Nueva versión de NAIM CINE disponible',
-                    ca: 'Nova versió de NAIM CINE disponible',
-                    en: 'New version of NAIM CINE available',
+                    es: `Nueva versión ${deferredAppUpdateVersion || ''} lista`.trim(),
+                    ca: `Nova versió ${deferredAppUpdateVersion || ''} llesta`.trim(),
+                    en: `Update ${deferredAppUpdateVersion || ''} ready`.trim(),
                   })}
             </div>
             {nativeApkUpdate ? (
@@ -5887,7 +6029,13 @@ export function App() {
             ) : (
               <button
                 type="button"
-                onClick={applySwUpdateNow}
+                onClick={() => {
+                  if (swUpdate) {
+                    applySwUpdateNow();
+                  } else if (deferredAppUpdateVersion) {
+                    void clearStaleCachesAndReload();
+                  }
+                }}
                 className="min-h-8 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer"
               >
                 <RefreshCw className="w-3.5 h-3.5" />

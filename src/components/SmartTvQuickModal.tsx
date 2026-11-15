@@ -307,9 +307,9 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
               </div>
               <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
                 {pickLang(lang, {
-                  es: 'Chromecast, AirPlay 2 o Samsung Smart View sin escribir código.',
-                  ca: 'Chromecast, AirPlay 2 o Samsung Smart View sense escriure codi.',
-                  en: 'Chromecast, AirPlay 2 or Samsung Smart View without typing a code.',
+                  es: 'Chromecast, AirPlay 2 (LG / Apple) o Smart View sin escribir código.',
+                  ca: 'Chromecast, AirPlay 2 (LG / Apple) o Smart View sense escriure codi.',
+                  en: 'Chromecast, AirPlay 2 (LG / Apple), or Smart View without typing a code.',
                 })}
               </p>
             </div>
@@ -340,9 +340,9 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             <div className="min-w-0">
               <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF]">
                 {pickLang(lang, {
-                  es: 'Código Smart TV (4 dígitos)',
-                  ca: 'Codi Smart TV (4 dígits)',
-                  en: 'Smart TV Code (4 digits)',
+                  es: 'LG webOS, Samsung y Google TV (4 dígitos)',
+                  ca: 'LG webOS, Samsung i Google TV (4 dígits)',
+                  en: 'LG webOS, Samsung & Google TV (4 digits)',
                 })}
               </div>
               <p className="text-xs text-zinc-300 mt-0.5 leading-snug break-words">
@@ -351,9 +351,9 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                   {tvUrl.replace(/^https?:\/\//, '')}
                 </span>{' '}
                 {pickLang(lang, {
-                  es: 'en tu TV e introduce el código:',
-                  ca: 'a la teva TV i introdueix el codi:',
-                  en: 'on your TV and enter the code:',
+                  es: 'en el navegador de tu LG Smart TV (webOS) o Android TV e introduce el código:',
+                  ca: 'al navegador de la teva LG Smart TV (webOS) o Android TV i introdueix el codi:',
+                  en: 'in your LG Smart TV (webOS) browser or Android TV and enter the code:',
                 })}
               </p>
             </div>

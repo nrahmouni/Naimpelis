@@ -31,18 +31,28 @@ import {
   VolumeX,
   Bookmark,
   SlidersHorizontal,
+  Gamepad2,
 } from 'lucide-react';
 import {
   AppLanguage,
+  BoardClockMinutes,
+  BoardCoord,
+  BoardGameState,
+  BoardGameType,
   CatalaCatalogItem,
   CatalaCommunityLink,
   CatalaEpisodeItem,
   CatalaSeriesDetails,
   CatalogMovie,
   ChannelLiveEpg,
+  ChessPromotionPiece,
   EpgProgramItem,
   FavoriteChannelItem,
   LiveScoreMatch,
+  Participant,
+  PartyColor,
+  PartyGameState,
+  PartyGameType,
   RoomQueueItem,
   SpanishTdtChannel,
   SportsMatch,
@@ -66,11 +76,19 @@ import {
   sanitizeItemKey,
 } from '../utils/storage';
 import { MediaDetailsModal } from './MediaDetailsModal';
-import { FootballMatchboard } from './FootballMatchboard';
-import { ExpandedDiscoverySection } from './ExpandedDiscoverySection';
 import { LatestReleasesSection } from './LatestReleasesSection';
-import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.jpg';
-import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
+import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.webp';
+import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.webp';
+
+const FootballMatchboard = React.lazy(() =>
+  import('./FootballMatchboard').then((m) => ({ default: m.FootballMatchboard }))
+);
+const ExpandedDiscoverySection = React.lazy(() =>
+  import('./ExpandedDiscoverySection').then((m) => ({ default: m.ExpandedDiscoverySection }))
+);
+const GamesHubSection = React.lazy(() =>
+  import('./GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
+);
 
 function formatShortTime(sec?: number): string {
   if (!sec || !Number.isFinite(sec) || sec <= 0) return '';
@@ -93,15 +111,17 @@ export type CatalogSection =
   | 'tdt'
   | 'sports'
   | 'youtube'
-  | 'direct';
+  | 'direct'
+  | 'games';
 
-export type CatalogPillar = 'explore' | 'catalog' | 'anime' | 'live' | 'mylist';
+export type CatalogPillar = 'explore' | 'catalog' | 'anime' | 'live' | 'games' | 'mylist';
 
 export function normalizeCatalogPillar(
   section: CatalogSection,
   showWatchlistOnly = false
 ): CatalogPillar {
   if (showWatchlistOnly || section === 'direct') return 'mylist';
+  if (section === 'games') return 'games';
   if (section === 'home') return 'explore';
   if (section === 'anime' || section === 'catala') return 'anime';
   if (section === 'tdt' || section === 'sports' || section === 'youtube') return 'live';
@@ -634,12 +654,38 @@ interface MediaCatalogHubProps {
   onCreateNewRoom?: (customRoomName?: string) => void;
   showWatchlistOnly?: boolean;
   onWatchlistOnlyChange?: (val: boolean) => void;
+  currentUser?: Participant;
+  participants?: Participant[];
+  roomBoardGame?: BoardGameState | null;
+  roomPartyGame?: PartyGameState | null;
+  gameMoveError?: string | null;
+  onStartRoomBoardGame?: (
+    gt: BoardGameType,
+    soloLocal?: boolean,
+    clockMinutes?: BoardClockMinutes
+  ) => void;
+  onJoinBoardSeat?: (side: 'w' | 'b' | 'spectate') => void;
+  onMoveBoardGame?: (from: BoardCoord, to: BoardCoord, promo?: ChessPromotionPiece) => void;
+  onResignBoardGame?: () => void;
+  onResetBoardGame?: (opts?: {
+    gameType?: BoardGameType;
+    swapColors?: boolean;
+    clockMinutes?: BoardClockMinutes;
+  }) => void;
+  onCloseBoardGame?: () => void;
+  onStartRoomPartyGame?: (gt: PartyGameType) => void;
+  onRoomPartyAction?: (
+    action: 'roll_dice' | 'move_piece' | 'play_card' | 'draw_card' | 'pass_turn' | 'rematch',
+    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor }
+  ) => void;
+  onCloseRoomPartyGame?: () => void;
 }
 
 export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   activeSection,
   onChangeSection,
   lang,
+  userName,
   activeVideoRawUrl,
   activeMediaTitle = '',
   loadingItemId,
@@ -668,6 +714,20 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   onPlaySecondaryChannel,
   showWatchlistOnly: controlledWatchlistOnly,
   onWatchlistOnlyChange,
+  currentUser,
+  participants = [],
+  roomBoardGame = null,
+  roomPartyGame = null,
+  gameMoveError = null,
+  onStartRoomBoardGame,
+  onJoinBoardSeat,
+  onMoveBoardGame,
+  onResignBoardGame,
+  onResetBoardGame,
+  onCloseBoardGame,
+  onStartRoomPartyGame,
+  onRoomPartyAction,
+  onCloseRoomPartyGame,
 }) => {
   const t = UI_COPY[lang];
 
@@ -4106,6 +4166,17 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         onChangeSection('youtube');
                       },
                     },
+                    {
+                      id: 'games',
+                      label: pickLang(lang, { es: 'Juegos & 4P', ca: 'Jocs & 4P', en: 'Games Hub' }),
+                      mark: 'PLAY · 4P',
+                      markClass: 'text-[#C6A2FF] tracking-tight text-xs sm:text-sm font-black',
+                      onClick: () => {
+                        triggerHaptic('light');
+                        setFocusedHub('all');
+                        onChangeSection('games');
+                      },
+                    },
                   ].map((tile) => (
                     <button
                       key={tile.id}
@@ -4358,29 +4429,35 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               )}
 
               {/* Expanded Discovery: 24/7 FAST Channels, 6 Editorial Collections & 14-Genre Explorer */}
-              <ExpandedDiscoverySection
-                lang={lang}
-                onSelectItem={(item) => setPreviewItem(item)}
-                onPlayFastChannel={(ch) => {
-                  if (ch.mode === 'youtube' && ch.youtubeId) {
-                    onPlayYouTubeVideo({
-                      id: ch.id,
-                      videoId: ch.youtubeId,
-                      title: ch.name,
-                      channel: ch.quality,
-                      duration: 'LIVE',
-                      views: '24/7',
-                      thumbnail: `https://i.ytimg.com/vi/${ch.youtubeId}/hqdefault.jpg`,
-                      url: ch.streamUrl,
-                    });
-                  } else {
-                    onPlayCustomUrl(ch.streamUrl);
-                  }
-                }}
-                onAddToQueue={onAddToQueue}
-                isBookmarked={isBookmarked}
-                onToggleBookmark={(item) => onToggleCatalogFavorite(item)}
-              />
+              <React.Suspense
+                fallback={
+                  <div className="h-44 rounded-3xl bg-white/[0.03] border border-white/[0.07] skeleton-shimmer" />
+                }
+              >
+                <ExpandedDiscoverySection
+                  lang={lang}
+                  onSelectItem={(item) => setPreviewItem(item)}
+                  onPlayFastChannel={(ch) => {
+                    if (ch.mode === 'youtube' && ch.youtubeId) {
+                      onPlayYouTubeVideo({
+                        id: ch.id,
+                        videoId: ch.youtubeId,
+                        title: ch.name,
+                        channel: ch.quality,
+                        duration: 'LIVE',
+                        views: '24/7',
+                        thumbnail: `https://i.ytimg.com/vi/${ch.youtubeId}/hqdefault.jpg`,
+                        url: ch.streamUrl,
+                      });
+                    } else {
+                      onPlayCustomUrl(ch.streamUrl);
+                    }
+                  }}
+                  onAddToQueue={onAddToQueue}
+                  isBookmarked={isBookmarked}
+                  onToggleBookmark={(item) => onToggleCatalogFavorite(item)}
+                />
+              </React.Suspense>
 
               {/* Últimos Estrenos en Cine y Nuevas Temporadas */}
               <LatestReleasesSection
@@ -4408,7 +4485,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           <div className="flex items-center justify-between gap-2 pb-1.5 border-b border-white/[0.07]">
             {/* Left: Compact back button (when deep in a hub) + single concise mode switch */}
             <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
-              {(focusedHub !== 'all' || streamingProvider !== 'all' || activeSection === 'direct') && (
+              {(focusedHub !== 'all' ||
+                streamingProvider !== 'all' ||
+                activeSection === 'direct' ||
+                activeSection === 'games') && (
                 <button
                   type="button"
                   onClick={goToHomeGrid}
@@ -4417,6 +4497,19 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 >
                   <ArrowLeft className="w-4 h-4" />
                 </button>
+              )}
+
+              {activeSection === 'games' && (
+                <span className="font-display font-bold text-sm text-white flex items-center gap-1.5 px-1.5">
+                  <Gamepad2 className="w-4 h-4 text-[#BF94FF]" />
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Zona de Juegos (Online y Offline)',
+                      ca: 'Zona de Jocs (Online i Offline)',
+                      en: 'Games Hub (Online & Offline)',
+                    })}
+                  </span>
+                </span>
               )}
 
               {/* CATALOG MODE SWITCH: Películas | Series | Castellano */}
@@ -4656,7 +4749,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </div>
 
             {/* Right: Compact Search Toggle + Collapsible Filters Drawer Toggle */}
-            {activeSection !== 'direct' && !showWatchlistOnly && (
+            {activeSection !== 'direct' && activeSection !== 'games' && !showWatchlistOnly && (
               <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   type="button"
@@ -4713,7 +4806,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           </div>
 
           {/* Expandable Slim Search Input (only shown when toggled or query non-empty) */}
-          {activeSection !== 'direct' && !showWatchlistOnly && isSectionSearchVisible && (
+          {activeSection !== 'direct' && activeSection !== 'games' && !showWatchlistOnly && isSectionSearchVisible && (
             <div className="relative">
               <Search className="w-3.5 h-3.5 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
               <input
@@ -7472,30 +7565,36 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
           {/* Live Football Matchboard */}
           {(sportFilter === 'soccer' || sportFilter === 'all') && (
-            <FootballMatchboard
-              lang={lang}
-              searchQuery={sportsSearch}
-              onSearchQueryChange={setSportsSearch}
-              activeVideoRawUrl={activeVideoRawUrl}
-              loadingItemId={loadingItemId}
-              onPlaySportsMatch={onPlaySportsMatch}
-              onPlaySecondaryChannel={
-                onPlaySecondaryChannel
-                  ? (match, chIdx) => {
-                      const ch = match.channels[chIdx] || match.channels[0];
-                      if (ch?.sourceUrl) {
-                        onPlaySecondaryChannel({
-                          sourceUrl: ch.sourceUrl,
-                          title: `${match.title} · ${ch.label}`,
-                          subtitle: match.competition,
-                        });
-                      }
-                    }
-                  : undefined
+            <React.Suspense
+              fallback={
+                <div className="h-52 rounded-3xl bg-white/[0.03] border border-white/[0.07] skeleton-shimmer" />
               }
-              isChannelFavorited={isChannelFavorited}
-              onToggleChannelFavorite={onToggleChannelFavorite}
-            />
+            >
+              <FootballMatchboard
+                lang={lang}
+                searchQuery={sportsSearch}
+                onSearchQueryChange={setSportsSearch}
+                activeVideoRawUrl={activeVideoRawUrl}
+                loadingItemId={loadingItemId}
+                onPlaySportsMatch={onPlaySportsMatch}
+                onPlaySecondaryChannel={
+                  onPlaySecondaryChannel
+                    ? (match, chIdx) => {
+                        const ch = match.channels[chIdx] || match.channels[0];
+                        if (ch?.sourceUrl) {
+                          onPlaySecondaryChannel({
+                            sourceUrl: ch.sourceUrl,
+                            title: `${match.title} · ${ch.label}`,
+                            subtitle: match.competition,
+                          });
+                        }
+                      }
+                    : undefined
+                }
+                isChannelFavorited={isChannelFavorited}
+                onToggleChannelFavorite={onToggleChannelFavorite}
+              />
+            </React.Suspense>
           )}
 
           {/* Non-soccer Match Scoreboards */}
@@ -8110,6 +8209,44 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             </form>
           </div>
         </div>
+      )}
+
+      {/* ================================================================== */}
+      {/* SECTION 6B: STANDALONE GAMES HUB (ONLINE & OFFLINE PARCHIS/UNO/1V1) */}
+      {/* ================================================================== */}
+      {activeSection === 'games' && (
+        <React.Suspense
+          fallback={
+            <div className="h-64 rounded-3xl bg-white/[0.03] border border-white/[0.07] skeleton-shimmer" />
+          }
+        >
+          <GamesHubSection
+            lang={lang}
+            currentUser={
+              currentUser || {
+                id: 'local-player',
+                name: userName || 'Player',
+                avatar: '🎮',
+                color: '#9146FF',
+                isHost: true,
+                joinedAt: Date.now(),
+              }
+            }
+            participants={participants}
+            roomBoardGame={roomBoardGame}
+            roomPartyGame={roomPartyGame}
+            gameMoveError={gameMoveError}
+            onStartRoomBoardGame={onStartRoomBoardGame}
+            onJoinBoardSeat={onJoinBoardSeat}
+            onMoveBoardGame={onMoveBoardGame}
+            onResignBoardGame={onResignBoardGame}
+            onResetBoardGame={onResetBoardGame}
+            onCloseBoardGame={onCloseBoardGame}
+            onStartRoomPartyGame={onStartRoomPartyGame}
+            onRoomPartyAction={onRoomPartyAction}
+            onCloseRoomPartyGame={onCloseRoomPartyGame}
+          />
+        </React.Suspense>
       )}
 
       {/* ================================================================== */}

@@ -42,7 +42,7 @@ import {
   BottomSheet,
   SegmentedControl,
 } from './ui/DesignSystem';
-import twitchBroadcastHeroImg from '../assets/images/twitch_broadcast_hero_1794673805657.jpg';
+import twitchBroadcastHeroImg from '../assets/images/twitch_broadcast_hero_1794673805657.webp';
 
 const RANDOM_NAMES = [
   'Naim',

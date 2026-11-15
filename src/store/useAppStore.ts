@@ -7,6 +7,9 @@ const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
 
 export type ShellNavSection = 'home' | 'search' | 'rooms' | 'my_list' | 'profile';
 
+const TYPING_EXPIRY_MS = 4500;
+const typingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+
 interface SwUpdateRegistration {
   waitingWorker: ServiceWorker | null;
 }
@@ -24,6 +27,7 @@ interface AppShellState {
   miniPlayerDismissed: boolean;
   scheduledRooms: ScheduledRoomItem[];
   swUpdate: SwUpdateRegistration | null;
+  deferredAppUpdateVersion: string | null;
   setActiveNavSection: (section: ShellNavSection) => void;
   setShowDesignSystem: (open: boolean) => void;
   setShowLegalModal: (open: boolean) => void;
@@ -38,6 +42,7 @@ interface AppShellState {
   addScheduledRoom: (item: Omit<ScheduledRoomItem, 'id'>) => void;
   removeScheduledRoom: (id: string) => void;
   setSwUpdate: (reg: SwUpdateRegistration | null) => void;
+  setDeferredAppUpdateVersion: (version: string | null) => void;
   applySwUpdateNow: () => void;
 }
 
@@ -92,6 +97,7 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   miniPlayerDismissed: false,
   scheduledRooms: loadScheduledRooms(),
   swUpdate: null,
+  deferredAppUpdateVersion: null,
 
   setActiveNavSection: (activeNavSection) => set({ activeNavSection }),
   setShowDesignSystem: (showDesignSystem) => set({ showDesignSystem }),
@@ -101,6 +107,22 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setShowSurpriseModal: (showSurpriseModal) => set({ showSurpriseModal }),
 
   setTypingUser: (userId, userName, isTyping, roomId = '') => {
+    const prevTimer = typingExpiryTimers.get(userId);
+    if (prevTimer) {
+      clearTimeout(prevTimer);
+      typingExpiryTimers.delete(userId);
+    }
+
+    if (isTyping) {
+      const expiryTimer = setTimeout(() => {
+        typingExpiryTimers.delete(userId);
+        set((state) => ({
+          typingUsers: state.typingUsers.filter((u) => u.userId !== userId),
+        }));
+      }, TYPING_EXPIRY_MS);
+      typingExpiryTimers.set(userId, expiryTimer);
+    }
+
     set((state) => {
       const filtered = state.typingUsers.filter((u) => u.userId !== userId);
       return {
@@ -161,13 +183,14 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   },
 
   setSwUpdate: (swUpdate) => set({ swUpdate }),
+  setDeferredAppUpdateVersion: (deferredAppUpdateVersion) => set({ deferredAppUpdateVersion }),
 
   applySwUpdateNow: () => {
     const worker = get().swUpdate?.waitingWorker;
     if (worker) {
       worker.postMessage({ type: 'SKIP_WAITING' });
     }
-    set({ swUpdate: null });
+    set({ swUpdate: null, deferredAppUpdateVersion: null });
     if (typeof window !== 'undefined') {
       window.setTimeout(() => window.location.reload(), 250);
     }

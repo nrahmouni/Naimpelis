@@ -316,6 +316,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const lastManualHideAtRef = useRef<number>(0);
   const lastMousePosRef = useRef<{ x: number; y: number } | null>(null);
   const lastProgressEmitRef = useRef<number>(0);
+  const streamLoadStartRef = useRef<number>(Date.now());
+  const qoeStartupSentForUrlRef = useRef<string>('');
+  const rebufferCountRef = useRef<number>(0);
+  const smoothDriftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [batterySaverTvMode, setBatterySaverTvMode] = useState<boolean>(false);
 
   const [isMuted, setIsMuted] = useState(false);
@@ -1060,16 +1064,21 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   // Stall 8s Auto-Failover & QoE Metrics Reporter
   useEffect(() => {
     if (!isBuffering || !localPlaying || videoState.mode === 'idle') return;
+    rebufferCountRef.current += 1;
     const stallTimer = setTimeout(() => {
+      const elapsedSinceLoad = Math.max(0, Date.now() - streamLoadStartRef.current);
+      const activeTrack = videoState.tracks?.[videoState.activeTrackIndex];
       fetch('/api/metrics/qoe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          event: 'rebuffer_8s_failover',
-          title: videoState.title,
-          mode: videoState.mode,
-          isLive: videoState.isLive,
-          activeTrackIndex: videoState.activeTrackIndex,
+          platform: isTvMode ? 'smart-tv' : 'web',
+          startupMs: Math.min(60_000, elapsedSinceLoad),
+          rebufferCount: rebufferCountRef.current,
+          rebufferMs: 8000,
+          stallFailoverUsed: true,
+          failed: true,
+          sourceUrl: activeTrack?.sourceUrl || videoState.url || undefined,
         }),
       }).catch(() => {});
       if (
@@ -1091,15 +1100,16 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   }, [
     isBuffering,
     localPlaying,
+    isTvMode,
     videoState.mode,
-    videoState.title,
-    videoState.isLive,
-    videoState.tracks.length,
+    videoState.url,
+    videoState.tracks,
     videoState.activeTrackIndex,
     canControlRoom,
     onSelectTrack,
     currentTime,
     lang,
+    showTransientToast,
   ]);
 
   // ============================================================================
@@ -1901,19 +1911,19 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         return;
       }
 
-      // Path 6: Universal Smart TV Hub (4-Digit Code / QR / Smart View)
+      // Path 6: Universal Smart TV Hub (LG webOS / Samsung / Google TV 4-Digit Code & AirPlay 2)
       if (onOpenSmartTvModal) {
         showTransientToast(
           hasNativeStream
             ? pickLang(lang, {
-                es: 'Conecta tu Smart TV en 1 toque o con código de 4 dígitos',
-                ca: 'Connecta la teva Smart TV en 1 toc o amb codi de 4 dígits',
-                en: 'Connect your Smart TV in 1 tap or with a 4-digit code',
+                es: 'Conecta tu LG webOS, Samsung o Google TV con código de 4 dígitos o AirPlay 2',
+                ca: 'Connecta la teva LG webOS, Samsung o Google TV amb codi de 4 dígits o AirPlay 2',
+                en: 'Connect your LG webOS, Samsung, or Google TV with a 4-digit code or AirPlay 2',
               })
             : pickLang(lang, {
-                es: 'Elige una película o conecta tu TV con 4 dígitos',
-                ca: 'Tria una pel·lícula o connecta la teva TV amb 4 dígits',
-                en: 'Pick a movie or pair your TV with 4 digits',
+                es: 'Elige un título o vincula tu Smart TV LG / Samsung en /tv con 4 dígitos',
+                ca: 'Tria un títol o vincula la teva Smart TV LG / Samsung a /tv amb 4 dígits',
+                en: 'Pick a title or pair your LG / Samsung Smart TV at /tv with 4 digits',
               })
         );
         onOpenSmartTvModal();
@@ -1922,9 +1932,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
       showTransientToast(
         pickLang(lang, {
-          es: 'Usa el botón Smart TV arriba para conectar tu TV con 4 dígitos o AirPlay',
-          ca: 'Fes servir el botó Smart TV amunt per connectar la teva TV amb 4 dígits o AirPlay',
-          en: 'Use the Smart TV button above to pair your TV with 4 digits or AirPlay',
+          es: 'Usa Smart TV arriba para abrir /tv en tu LG webOS (código 4 dígitos) o AirPlay 2',
+          ca: 'Fes servir Smart TV amunt per obrir /tv a la teva LG webOS (codi 4 dígits) o AirPlay 2',
+          en: 'Use Smart TV above to open /tv on LG webOS (4-digit code) or AirPlay 2',
         })
       );
     },
@@ -1990,6 +2000,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
     let cancelled = false;
     let videoWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    streamLoadStartRef.current = Date.now();
+    rebufferCountRef.current = 0;
+    qoeStartupSentForUrlRef.current = '';
     setIsBuffering(true);
 
     const targetResumeSec =
@@ -2296,20 +2309,52 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     };
   }, [videoState.mode, videoState.url]);
 
-  // Synchronize remote Play / Pause / Seek
+  // Synchronize remote Play / Pause / Smooth Clock-Offset Drift Compensation
   useEffect(() => {
     if (videoState.mode !== 'hls' && videoState.mode !== 'direct') return;
     const video = videoRef.current;
     if (!video || !videoState.url) return;
 
     isApplyingRemoteRef.current = true;
+    if (smoothDriftTimerRef.current) {
+      clearTimeout(smoothDriftTimerRef.current);
+      smoothDriftTimerRef.current = null;
+    }
 
-    if (!videoState.isLive && Number.isFinite(videoState.currentTime)) {
-      const drift = Math.abs((video.currentTime || 0) - videoState.currentTime);
-      // Only seek if drift is substantial (> 6 seconds) so minor network jitter never triggers buffering stalls
-      if (drift > 6 && video.readyState >= 1) {
+    if (!videoState.isLive && Number.isFinite(videoState.currentTime) && video.readyState >= 1) {
+      const serverNow = Date.now() + socketService.serverClockOffsetMs;
+      const elapsedSec =
+        videoState.isPlaying && Number.isFinite(videoState.lastUpdated) && videoState.lastUpdated > 0
+          ? Math.max(0, Math.min(12, (serverNow - videoState.lastUpdated) / 1000))
+          : 0;
+      const expectedTime = videoState.currentTime + elapsedSec + syncOffsetMs / 1000;
+      const signedDrift = expectedTime - (video.currentTime || 0); // >0 means local client is behind
+      const absDrift = Math.abs(signedDrift);
+
+      if (absDrift > 2.5) {
         try {
-          video.currentTime = videoState.currentTime;
+          video.playbackRate = playbackSpeed || 1;
+          video.currentTime = Math.max(0, expectedTime);
+        } catch {
+          // ignore
+        }
+      } else if (videoState.isPlaying && absDrift >= 0.35 && absDrift <= 2.0) {
+        // Gentle catch-up without triggering MSE seeks or buffering stalls
+        const baseRate = playbackSpeed || 1;
+        const nudgeRate = signedDrift > 0 ? Math.min(1.04, baseRate * 1.02) : Math.max(0.96, baseRate * 0.98);
+        try {
+          video.playbackRate = nudgeRate;
+          smoothDriftTimerRef.current = setTimeout(() => {
+            if (videoRef.current) {
+              videoRef.current.playbackRate = playbackSpeed || 1;
+            }
+          }, 2600);
+        } catch {
+          // ignore
+        }
+      } else if (Math.abs((video.playbackRate || 1) - (playbackSpeed || 1)) > 0.005) {
+        try {
+          video.playbackRate = playbackSpeed || 1;
         } catch {
           // ignore
         }
@@ -2332,13 +2377,22 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       isApplyingRemoteRef.current = false;
     }, 350);
 
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      if (smoothDriftTimerRef.current) {
+        clearTimeout(smoothDriftTimerRef.current);
+        smoothDriftTimerRef.current = null;
+      }
+    };
   }, [
     videoState.isPlaying,
     videoState.currentTime,
     videoState.lastUpdated,
     videoState.mode,
     videoState.url,
+    videoState.isLive,
+    playbackSpeed,
+    syncOffsetMs,
   ]);
 
   // ============================================================================
@@ -2461,10 +2515,29 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     if (videoState.mode !== 'youtube' || !ytPlayerRef.current?.getPlayerState) return;
     isApplyingRemoteRef.current = true;
     const yt = ytPlayerRef.current;
+    const serverNow = Date.now() + socketService.serverClockOffsetMs;
+    const elapsedSec =
+      videoState.isPlaying && Number.isFinite(videoState.lastUpdated) && videoState.lastUpdated > 0
+        ? Math.max(0, Math.min(12, (serverNow - videoState.lastUpdated) / 1000))
+        : 0;
+    const expectedTime = videoState.currentTime + elapsedSec + syncOffsetMs / 1000;
     const ytTime = yt.getCurrentTime?.() || 0;
-    if (Math.abs(ytTime - videoState.currentTime) > 3) {
-      yt.seekTo?.(videoState.currentTime, true);
+    const signedDrift = expectedTime - ytTime;
+    const absDrift = Math.abs(signedDrift);
+
+    if (absDrift > 2.5) {
+      yt.setPlaybackRate?.(1);
+      yt.seekTo?.(Math.max(0, expectedTime), true);
+    } else if (videoState.isPlaying && absDrift >= 0.45 && absDrift <= 2.0) {
+      yt.setPlaybackRate?.(signedDrift > 0 ? 1.05 : 0.95);
+      if (smoothDriftTimerRef.current) clearTimeout(smoothDriftTimerRef.current);
+      smoothDriftTimerRef.current = setTimeout(() => {
+        ytPlayerRef.current?.setPlaybackRate?.(1);
+      }, 2400);
+    } else {
+      yt.setPlaybackRate?.(1);
     }
+
     if (videoState.isPlaying) {
       yt.playVideo?.();
     } else {
@@ -2473,12 +2546,15 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     const timer = setTimeout(() => {
       isApplyingRemoteRef.current = false;
     }, 450);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+    };
   }, [
     videoState.isPlaying,
     videoState.currentTime,
     videoState.lastUpdated,
     videoState.mode,
+    syncOffsetMs,
   ]);
 
   // ============================================================================
@@ -3837,10 +3913,39 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 }
               }, 1600);
             }}
-            onPlaying={() => {
+            onPlaying={(e) => {
               clearBufferingIndicator();
               setLocalPlaying(true);
               setStreamError(null);
+              if (
+                videoState.url &&
+                qoeStartupSentForUrlRef.current !== videoState.url
+              ) {
+                qoeStartupSentForUrlRef.current = videoState.url;
+                const startupMs = Math.max(0, Math.min(60_000, Date.now() - streamLoadStartRef.current));
+                const activeTrack = videoState.tracks?.[videoState.activeTrackIndex];
+                const v = e.currentTarget;
+                const resolution =
+                  v.videoHeight >= 1080
+                    ? '1080p'
+                    : v.videoHeight >= 720
+                    ? '720p'
+                    : v.videoHeight > 0
+                    ? `${v.videoHeight}p`
+                    : undefined;
+                fetch('/api/metrics/qoe', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    platform: isTvMode ? 'smart-tv' : 'web',
+                    startupMs,
+                    rebufferCount: rebufferCountRef.current,
+                    resolution,
+                    stallFailoverUsed: false,
+                    sourceUrl: activeTrack?.sourceUrl || videoState.url,
+                  }),
+                }).catch(() => {});
+              }
               if (showControlsRef.current) {
                 scheduleHideControls();
               }

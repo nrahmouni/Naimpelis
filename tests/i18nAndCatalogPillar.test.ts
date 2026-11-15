@@ -48,6 +48,7 @@ describe('3-language i18n dictionary & 5-pillar catalog navigation', () => {
       sports: 'live',
       youtube: 'live',
       direct: 'mylist',
+      games: 'games',
     };
 
     (Object.keys(expectedMapping) as CatalogSection[]).forEach((section) => {

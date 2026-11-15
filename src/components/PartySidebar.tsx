@@ -34,6 +34,10 @@ import {
   Plus,
   ChevronUp,
   Gamepad2,
+  Pin,
+  ArrowUp,
+  ArrowDown,
+  RotateCcw,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -45,12 +49,17 @@ import {
   SavedFriend,
   OnlineAppUser,
   RoomRole,
+  BoardClockMinutes,
   BoardCoord,
   BoardGameState,
   BoardGameType,
   ChessPromotionPiece,
+  PartyColor,
+  PartyGameState,
+  PartyGameType,
 } from '../types';
 import { RoomBoardGamePanel } from './RoomBoardGamePanel';
+import { PartyGamesStage } from './PartyGamesStage';
 import type { TypingUserPayload } from '../shared/protocol';
 import { UI_COPY, pickLang } from '../utils/i18n';
 import { buildShortInviteUrl } from '../utils/shortLink';
@@ -106,8 +115,13 @@ interface PartySidebarProps {
   onPlayQueueItem: (item: RoomQueueItem) => void;
   onRemoveFromQueue: (id: string) => void;
   onPromoteQueueItem?: (id: string) => void;
+  onReorderQueueItem?: (id: string, direction: 'up' | 'down') => void;
+  onRestoreQueueItem?: (item: RoomQueueItem) => void;
   onVoteQueueItem?: (id: string) => void;
   onSetParticipantRole?: (userId: string, role: RoomRole) => void;
+  pinnedMessage?: ChatMessage | null;
+  onPinMessage?: (messageId: string) => void;
+  onUnpinMessage?: () => void;
   typingUsers?: TypingUserPayload[];
   onTypingChange?: (isTyping: boolean) => void;
   activeMediaTitle?: string;
@@ -149,12 +163,27 @@ interface PartySidebarProps {
   onLeaveRoom: () => void;
   gameState?: BoardGameState | null;
   gameMoveError?: string | null;
-  onStartBoardGame?: (gameType: BoardGameType, soloLocal?: boolean) => void;
+  onStartBoardGame?: (
+    gameType: BoardGameType,
+    soloLocal?: boolean,
+    clockMinutes?: BoardClockMinutes
+  ) => void;
   onJoinGameSeat?: (side: 'w' | 'b' | 'spectate') => void;
   onSendGameMove?: (from: BoardCoord, to: BoardCoord, promotionPiece?: ChessPromotionPiece) => void;
   onResignBoardGame?: () => void;
-  onResetBoardGame?: (opts?: { gameType?: BoardGameType; swapColors?: boolean }) => void;
+  onResetBoardGame?: (opts?: {
+    gameType?: BoardGameType;
+    swapColors?: boolean;
+    clockMinutes?: BoardClockMinutes;
+  }) => void;
   onCloseBoardGame?: () => void;
+  partyGameState?: PartyGameState | null;
+  onStartPartyGame?: (gameType: PartyGameType) => void;
+  onPartyGameAction?: (
+    action: 'roll_dice' | 'move_piece' | 'play_card' | 'draw_card' | 'pass_turn' | 'rematch',
+    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor }
+  ) => void;
+  onClosePartyGame?: () => void;
 }
 
 const QUICK_REACTIONS = ['🔥', '😂', '❤️', '👏', '😱', '⚽', '🍿', '🎉'];
@@ -205,8 +234,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   onPlayQueueItem,
   onRemoveFromQueue,
   onPromoteQueueItem,
+  onReorderQueueItem,
+  onRestoreQueueItem,
   onVoteQueueItem,
   onSetParticipantRole,
+  pinnedMessage = null,
+  onPinMessage,
+  onUnpinMessage,
   typingUsers = [],
   onTypingChange,
   activeMediaTitle = '',
@@ -243,6 +277,10 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   onResignBoardGame,
   onResetBoardGame,
   onCloseBoardGame,
+  partyGameState = null,
+  onStartPartyGame,
+  onPartyGameAction,
+  onClosePartyGame,
 }) => {
   const t = UI_COPY[lang];
   const isHost = currentUser.isHost || currentUser.id === hostId;
@@ -250,6 +288,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const isCoHost = !isHost && (currentUser.role === 'mod' || selfMember?.role === 'mod');
   const canManageMedia = isHost || isCoHost;
   const [activeTab, setActiveTab] = useState<'chat' | 'queue' | 'games' | 'room'>(initialView);
+  const [gamesSubTab, setGamesSubTab] = useState<'board' | 'party'>('board');
+  const [undoRemovedItem, setUndoRemovedItem] = useState<RoomQueueItem | null>(null);
+  const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputText, setInputText] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
   const [roomNameDraft, setRoomNameDraft] = useState(roomName);
@@ -274,6 +315,29 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   useEffect(() => {
     setActiveTab(initialView);
   }, [initialView]);
+
+  useEffect(() => {
+    if (partyGameState && !gameState) {
+      setGamesSubTab('party');
+    }
+  }, [partyGameState, gameState]);
+
+  useEffect(() => {
+    return () => {
+      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    };
+  }, []);
+
+  const handleQueueDeleteWithUndo = (item: RoomQueueItem) => {
+    onRemoveFromQueue(item.id);
+    if (!onRestoreQueueItem) return;
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    setUndoRemovedItem(item);
+    undoTimerRef.current = setTimeout(() => {
+      setUndoRemovedItem(null);
+      undoTimerRef.current = null;
+    }, 5000);
+  };
 
   useEffect(() => {
     if (openQueueTrigger && openQueueTrigger > 0) {
@@ -593,6 +657,34 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             </motion.div>
           )}
 
+          {/* Pinned Chat Message Bar */}
+          {pinnedMessage && (
+            <div className="mx-3 mt-2 px-3 py-2 rounded-xl bg-[#9146FF]/15 border border-[#9146FF]/35 flex items-start justify-between gap-2 shrink-0">
+              <div className="flex items-start gap-2 min-w-0">
+                <Pin className="w-3.5 h-3.5 text-[#BF94FF] shrink-0 mt-0.5" />
+                <div className="min-w-0">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-[#BF94FF] truncate">
+                    {pickLang(lang, { es: 'Fijado por sala', ca: 'Fixat', en: 'Pinned' })} · {pinnedMessage.senderName}
+                  </div>
+                  <p className="text-xs text-white line-clamp-2 break-words">{pinnedMessage.text}</p>
+                </div>
+              </div>
+              {canManageMedia && onUnpinMessage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onUnpinMessage();
+                  }}
+                  aria-label={pickLang(lang, { es: 'Desfijar mensaje', ca: 'Desfixar missatge', en: 'Unpin message' })}
+                  className="w-6 h-6 rounded-md hover:bg-white/10 text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Borderless Chat Stream */}
           <div
             className={`flex-1 overflow-y-auto px-3.5 py-2.5 space-y-2.5 custom-scrollbar ${
@@ -679,16 +771,40 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
                     {/* Borderless Message Content */}
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-baseline gap-2">
-                        <span
-                          className="text-xs font-bold truncate"
-                          style={{ color: msg.senderColor || '#BF94FF' }}
-                        >
-                          {msg.senderName}
-                        </span>
-                        <span className="text-[0.68rem] font-mono text-[#ADADB8] shrink-0">
-                          {formatTime(msg.timestamp)}
-                        </span>
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="flex items-baseline gap-2 min-w-0">
+                          <span
+                            className="text-xs font-bold truncate"
+                            style={{ color: msg.senderColor || '#BF94FF' }}
+                          >
+                            {msg.senderName}
+                          </span>
+                          <span className="text-[0.68rem] font-mono text-[#ADADB8] shrink-0">
+                            {formatTime(msg.timestamp)}
+                          </span>
+                        </div>
+                        {canManageMedia && onPinMessage && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              onPinMessage(msg.id);
+                            }}
+                            title={pickLang(lang, {
+                              es: 'Fijar mensaje en la sala',
+                              ca: 'Fixar missatge a la sala',
+                              en: 'Pin message in room',
+                            })}
+                            aria-label={pickLang(lang, {
+                              es: 'Fijar mensaje',
+                              ca: 'Fixar missatge',
+                              en: 'Pin message',
+                            })}
+                            className="opacity-0 group-hover:opacity-100 focus:opacity-100 w-6 h-6 rounded-md hover:bg-white/10 text-zinc-400 hover:text-[#BF94FF] flex items-center justify-center shrink-0 cursor-pointer transition-opacity"
+                          >
+                            <Pin className="w-3 h-3" />
+                          </button>
+                        )}
                       </div>
                       <p className="text-sm text-[#EFEFF1] leading-relaxed break-words select-text mt-0.5">
                         {onSeekToTimestamp
@@ -983,6 +1099,30 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             />
           ) : (
             <div className="space-y-2.5">
+              {undoRemovedItem && onRestoreQueueItem && (
+                <div className="p-2.5 rounded-xl bg-amber-500/15 border border-amber-400/35 flex items-center justify-between gap-2">
+                  <span className="text-xs text-amber-100 truncate">
+                    {pickLang(lang, {
+                      es: `Quitado "${undoRemovedItem.title}"`,
+                      ca: `Tret "${undoRemovedItem.title}"`,
+                      en: `Removed "${undoRemovedItem.title}"`,
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+                      onRestoreQueueItem(undoRemovedItem);
+                      setUndoRemovedItem(null);
+                    }}
+                    className="px-2.5 py-1 rounded-lg bg-amber-400 text-[#140E02] text-xs font-bold flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>{pickLang(lang, { es: 'Deshacer', ca: 'Desfer', en: 'Undo' })}</span>
+                  </button>
+                </div>
+              )}
+
               {roomQueue.map((item, idx) => (
                 <div
                   key={item.id}
@@ -1018,7 +1158,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1.5 shrink-0">
+                  <div className="flex items-center gap-1 shrink-0">
                     {onVoteQueueItem && (
                       <button
                         type="button"
@@ -1036,7 +1176,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                           ca: 'Votar aquest títol a la cua',
                           en: 'Vote for this title in queue',
                         })}
-                        className={`min-h-9 px-2.5 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
+                        className={`min-h-9 px-2 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
                           item.voterIds?.includes(currentUser.id)
                             ? 'bg-[#9146FF]/25 border border-[#9146FF]/55 text-[#BF94FF]'
                             : 'bg-[#26262C] hover:bg-white/[0.12] text-[#EFEFF1]'
@@ -1048,6 +1188,34 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     )}
                     {canManageMedia && (
                       <>
+                        {onReorderQueueItem && roomQueue.length > 1 && (
+                          <div className="flex items-center gap-0.5">
+                            <button
+                              type="button"
+                              disabled={idx === 0}
+                              onClick={() => {
+                                triggerHaptic('light');
+                                onReorderQueueItem(item.id, 'up');
+                              }}
+                              aria-label={pickLang(lang, { es: 'Subir en la cola', ca: 'Pujar a la cua', en: 'Move up' })}
+                              className="w-7 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-30 flex items-center justify-center text-zinc-300 cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <ArrowUp className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              disabled={idx === roomQueue.length - 1}
+                              onClick={() => {
+                                triggerHaptic('light');
+                                onReorderQueueItem(item.id, 'down');
+                              }}
+                              aria-label={pickLang(lang, { es: 'Bajar en la cola', ca: 'Baixar a la cua', en: 'Move down' })}
+                              className="w-7 h-8 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] disabled:opacity-30 flex items-center justify-center text-zinc-300 cursor-pointer disabled:cursor-not-allowed"
+                            >
+                              <ArrowDown className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        )}
                         {idx > 0 && onPromoteQueueItem && (
                           <button
                             type="button"
@@ -1065,7 +1233,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                               ca: 'Posar següent a reproduir-se',
                               en: 'Move to play next',
                             })}
-                            className="min-h-9 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[10px] font-bold text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
+                            className="min-h-8 px-2 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-[10px] font-bold text-zinc-300 hover:text-white flex items-center gap-1 cursor-pointer transition-colors"
                           >
                             <span>↑ #1</span>
                           </button>
@@ -1087,7 +1255,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                           <Play className="w-4 h-4 fill-current" />
                         </IconButton>
                         <IconButton
-                          onClick={() => onRemoveFromQueue(item.id)}
+                          onClick={() => handleQueueDeleteWithUndo(item)}
                           variant="ghost"
                           title={pickLang(lang, {
                             es: 'Quitar de la cola',
@@ -1113,22 +1281,71 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* TAB 3: ONLINE MULTIPLAYER BOARD GAMES (CHECKERS & CHESS)             */}
+      {/* TAB 3: ONLINE MULTIPLAYER BOARD & PARTY GAMES (4P + 1V1)             */}
       {/* ==================================================================== */}
       {activeTab === 'games' && (
-        <RoomBoardGamePanel
-          gameState={gameState}
-          currentUser={currentUser}
-          lang={lang}
-          moveError={gameMoveError}
-          onStartGame={(gt, solo) => onStartBoardGame?.(gt, solo)}
-          onJoinSeat={(side) => onJoinGameSeat?.(side)}
-          onMove={(from, to, promo) => onSendGameMove?.(from, to, promo)}
-          onResign={() => onResignBoardGame?.()}
-          onReset={(opts) => onResetBoardGame?.(opts)}
-          onCloseGame={() => onCloseBoardGame?.()}
-          onBack={hideInternalTabs ? () => setActiveTab('room') : undefined}
-        />
+        <div className="flex-1 flex flex-col min-h-0">
+          <div className="px-3 py-2 border-b border-white/[0.07] bg-[#0B0B10] flex items-center gap-1.5 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setGamesSubTab('board');
+              }}
+              className={`flex-1 min-h-8 px-2.5 rounded-lg text-[11px] font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                gamesSubTab === 'board'
+                  ? 'bg-[#9146FF] text-white'
+                  : 'bg-white/[0.05] text-zinc-300 hover:bg-white/[0.1]'
+              }`}
+            >
+              {pickLang(lang, { es: '1v1 Tablero', ca: '1v1 Tauler', en: '1v1 Board' })}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setGamesSubTab('party');
+              }}
+              className={`flex-1 min-h-8 px-2.5 rounded-lg text-[11px] font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                gamesSubTab === 'party'
+                  ? 'bg-[#9146FF] text-white'
+                  : 'bg-white/[0.05] text-zinc-300 hover:bg-white/[0.1]'
+              }`}
+            >
+              {pickLang(lang, { es: 'Parchís & UNO 4P', ca: 'Parxís & UNO 4P', en: 'Ludo & UNO 4P' })}
+            </button>
+          </div>
+
+          {gamesSubTab === 'board' ? (
+            <RoomBoardGamePanel
+              gameState={gameState}
+              currentUser={currentUser}
+              lang={lang}
+              moveError={gameMoveError}
+              onStartGame={(gt, solo, clockMin) => onStartBoardGame?.(gt, solo, clockMin)}
+              onJoinSeat={(side) => onJoinGameSeat?.(side)}
+              onMove={(from, to, promo) => onSendGameMove?.(from, to, promo)}
+              onResign={() => onResignBoardGame?.()}
+              onReset={(opts) => onResetBoardGame?.(opts)}
+              onCloseGame={() => onCloseBoardGame?.()}
+              onBack={hideInternalTabs ? () => setActiveTab('room') : undefined}
+            />
+          ) : (
+            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+              <PartyGamesStage
+                lang={lang}
+                currentUser={currentUser}
+                participants={participants}
+                partyGameState={partyGameState}
+                isOffline={false}
+                onStartOnline={onStartPartyGame}
+                onOnlineAction={onPartyGameAction}
+                onCloseOnline={onClosePartyGame}
+                onBack={hideInternalTabs ? () => setActiveTab('room') : undefined}
+              />
+            </div>
+          )}
+        </div>
       )}
 
       {/* ==================================================================== */}
@@ -1225,17 +1442,23 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-white truncate">
-                  {gameState
+                  {partyGameState
+                    ? partyGameState.gameType === 'parchis'
+                      ? pickLang(lang, { es: 'Parchís 4P en curso', ca: 'Parxís 4P actiu', en: '4P Ludo active' })
+                      : pickLang(lang, { es: 'UNO 4P en curso', ca: 'UNO 4P actiu', en: '4P UNO active' })
+                    : gameState
                     ? gameState.gameType === 'chess'
                       ? pickLang(lang, { es: 'Partida de Ajedrez en curso', ca: 'Partida d’Escacs activa', en: 'Chess match active' })
+                      : gameState.gameType === 'connect4'
+                      ? pickLang(lang, { es: 'Conecta 4 en curso', ca: 'Connecta 4 actiu', en: 'Connect 4 active' })
                       : pickLang(lang, { es: 'Partida de Damas en curso', ca: 'Partida de Dames activa', en: 'Checkers match active' })
                     : pickLang(lang, { es: 'Juegos Online en Sala', ca: 'Jocs Online a la Sala', en: 'Online Room Games' })}
                 </div>
                 <div className="text-[11px] text-zinc-400 truncate">
                   {pickLang(lang, {
-                    es: 'Damas y Ajedrez 1v1 en directo con amigos',
-                    ca: 'Dames i Escacs 1v1 en directe amb amics',
-                    en: 'Live 1v1 Checkers & Chess with friends',
+                    es: 'Parchís, UNO, Conecta 4, Damas y Ajedrez',
+                    ca: 'Parxís, UNO, Connecta 4, Dames i Escacs',
+                    en: 'Ludo, UNO, Connect 4, Checkers & Chess',
                   })}
                 </div>
               </div>
@@ -1248,8 +1471,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               }}
               className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
             >
-              {gameState
-                ? pickLang(lang, { es: 'Ver Tablero', ca: 'Veure Tauler', en: 'Open Board' })
+              {gameState || partyGameState
+                ? pickLang(lang, { es: 'Ver Juego', ca: 'Veure Joc', en: 'Open Game' })
                 : pickLang(lang, { es: 'Jugar', ca: 'Jugar', en: 'Play' })}
             </button>
           </div>

@@ -25,7 +25,9 @@ import type {
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
 import { buildChannelFavId } from '../utils/storage';
-import { LiveMatchCenter } from './LiveMatchCenter';
+const LiveMatchCenter = React.lazy(() =>
+  import('./LiveMatchCenter').then((m) => ({ default: m.LiveMatchCenter }))
+);
 
 interface FootballMatchboardProps {
   lang: AppLanguage;
@@ -981,25 +983,27 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                               </div>
 
                               {/* Real-Time Match Center */}
-                              <LiveMatchCenter
-                                lang={lang}
-                                details={details}
-                                loading={loadingDetailId === item.id}
-                                homeTeam={item.homeTeam}
-                                awayTeam={item.awayTeam}
-                                homeShort={item.homeShort}
-                                awayShort={item.awayShort}
-                                homeLogo={item.homeLogo}
-                                awayLogo={item.awayLogo}
-                                homeScore={item.homeScore}
-                                awayScore={item.awayScore}
-                                statusState={item.statusState}
-                                statusLabel={item.statusLabel}
-                                competition={item.groupTitle}
-                                variant="expanded"
-                                defaultTab="lineups"
-                                onRefresh={() => loadMatchDetails(item, true)}
-                              />
+                              <React.Suspense fallback={null}>
+                                <LiveMatchCenter
+                                  lang={lang}
+                                  details={details}
+                                  loading={loadingDetailId === item.id}
+                                  homeTeam={item.homeTeam}
+                                  awayTeam={item.awayTeam}
+                                  homeShort={item.homeShort}
+                                  awayShort={item.awayShort}
+                                  homeLogo={item.homeLogo}
+                                  awayLogo={item.awayLogo}
+                                  homeScore={item.homeScore}
+                                  awayScore={item.awayScore}
+                                  statusState={item.statusState}
+                                  statusLabel={item.statusLabel}
+                                  competition={item.groupTitle}
+                                  variant="expanded"
+                                  defaultTab="lineups"
+                                  onRefresh={() => loadMatchDetails(item, true)}
+                                />
+                              </React.Suspense>
                             </div>
                           </motion.div>
                         )}

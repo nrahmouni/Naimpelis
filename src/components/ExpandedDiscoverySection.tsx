@@ -17,7 +17,7 @@ import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
 import { PosterImage } from './ui/PosterImage';
 import { VirtualizedPosterGrid } from './VirtualizedPosterGrid';
-import cosmosBannerImg from '../assets/images/documentary_cosmos_banner_1794673308607.jpg';
+import cosmosBannerImg from '../assets/images/documentary_cosmos_banner_1794673308607.webp';
 
 interface CatalogGenreItem {
   id: number;

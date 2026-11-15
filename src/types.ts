@@ -1,4 +1,5 @@
 import type {
+  BoardClockMinutes,
   BoardCoord,
   BoardGameState,
   BoardGameType,
@@ -6,14 +7,23 @@ import type {
   ChessPromotionPiece,
   LegalBoardMove,
 } from './shared/boardGames';
+import type {
+  PartyColor,
+  PartyGameState,
+  PartyGameType,
+} from './shared/partyGames';
 
 export type {
+  BoardClockMinutes,
   BoardCoord,
   BoardGameState,
   BoardGameType,
   BoardSide,
   ChessPromotionPiece,
   LegalBoardMove,
+  PartyColor,
+  PartyGameState,
+  PartyGameType,
 };
 
 export type AppLanguage = 'es' | 'ca' | 'en';
@@ -745,11 +755,13 @@ export interface RoomData {
   hostOnlyControl?: boolean;
   activePoll?: RoomPollState | null;
   gameState?: BoardGameState | null;
+  partyGameState?: import('./shared/partyGames').PartyGameState | null;
   videoState: VideoState;
   queue?: RoomQueueItem[];
   cloudState?: CloudBrowserState;
   participants: Participant[];
   messages: ChatMessage[];
+  pinnedMessage?: ChatMessage | null;
   createdAt: number;
 }
 

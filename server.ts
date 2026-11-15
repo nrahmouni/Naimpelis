@@ -5436,11 +5436,69 @@ async function resolveTmdbIdByTitle(
   }
 }
 
+const subtitleSearchCache = new LruTtlCache<string, { tracks: any[]; ts: number }>(
+  250,
+  15 * 60 * 1000
+);
+
+async function fetchAndCacheSubtitles(
+  tmdbId: string,
+  season = 0,
+  episode = 0,
+  timeoutMs = 5000
+): Promise<any[]> {
+  const cleanId = String(tmdbId || '').replace(/\D/g, '');
+  if (!cleanId) return [];
+  const cacheKey = `${cleanId}|${season}|${episode}`;
+  const cached = subtitleSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
+    return cached.tracks;
+  }
+  try {
+    const qs = new URLSearchParams({ id: cleanId });
+    if (season > 0 && episode > 0) {
+      qs.set('season', String(season));
+      qs.set('episode', String(episode));
+    }
+    const subRes = await fetch(`https://sub.wyzie.ru/search?${qs.toString()}`, {
+      headers: { 'User-Agent': CHROME_UA },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    if (!subRes.ok) return [];
+    const rawList: any[] = await subRes.json();
+    if (!Array.isArray(rawList)) return [];
+    const prioritized = rawList
+      .filter((s) => s?.url && /^(es|spa|en|eng)/i.test(String(s.language || '')))
+      .slice(0, 10)
+      .map((s, idx) => {
+        const code = String(s.language || '').toLowerCase();
+        const isEs = code.startsWith('es') || code.startsWith('spa');
+        return {
+          id: `sub-${cleanId}-${idx}-${code}`,
+          label: `${isEs ? 'Español' : 'English'}${s.display ? ` · ${s.display}` : ''} #${idx + 1}`,
+          lang: isEs ? 'ES' : 'EN',
+          url: `/api/subtitles/proxy?url=${encodeURIComponent(s.url)}`,
+        };
+      });
+    subtitleSearchCache.set(cacheKey, { tracks: prioritized, ts: Date.now() });
+    return prioritized;
+  } catch {
+    return [];
+  }
+}
+
 function formatExtractResponseForClient(
   req: express.Request,
   payload: ExtractedStreamResult
-): ExtractedStreamResult {
-  if (String(req.query.abs || '') !== '1') return payload;
+): ExtractedStreamResult & { requestId?: string } {
+  const headerReqId = typeof req.headers['x-request-id'] === 'string' ? req.headers['x-request-id'] : '';
+  const requestId =
+    (payload as { requestId?: string }).requestId ||
+    headerReqId ||
+    `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  if (String(req.query.abs || '') !== '1') {
+    return { ...payload, requestId };
+  }
   const publicOrigin = getPublicOrigin(req);
   const absProxyUrl = (u?: string): string | undefined => {
     if (!u) return u;
@@ -5455,6 +5513,7 @@ function formatExtractResponseForClient(
   };
   return {
     ...payload,
+    requestId,
     streamUrl: absProxyUrl(payload.streamUrl) || payload.streamUrl,
     tracks: Array.isArray(payload.tracks)
       ? payload.tracks.map((tr) => ({
@@ -6033,10 +6092,32 @@ app.get('/api/extract/stream', async (req, res) => {
         return 4;
       };
 
+      const healthMap = channelHealthMonitor.getAllTrackStatuses();
+      const healthStatusRank = (status?: string): number => {
+        if (status === 'up') return 0;
+        if (status === 'unknown' || !status) return 1;
+        if (status === 'degraded') return 2;
+        return 3; // 'down'
+      };
+      const getTrackHealthScore = (tr: TrackRecord): number => {
+        const key = String(tr.resolvedStreamUrl || tr.sourceUrl || '').trim();
+        const info = (key && healthMap[key]) || healthMap[String(tr.sourceUrl || '').trim()];
+        if (!info) return 100;
+        const statusBase = healthStatusRank(info.status) * 1000;
+        const qoePenalty = (info.qoeFailures || 0) * 80 + (info.qoeRebuffers || 0) * 15 + (info.failCount || 0) * 50;
+        const latencyScore = Math.min(400, Math.round((info.latencyMs || 150) / 10));
+        return statusBase + qoePenalty + latencyScore;
+      };
+
       const orderedTracks: TrackRecord[] = [...allDiscovered].sort((a, b) => {
         const lDiff = getLangScore(a.lang) - getLangScore(b.lang);
         if (lDiff !== 0) return lDiff;
-        return resolverPriority(a.resolverType) - resolverPriority(b.resolverType);
+        const hA = getTrackHealthScore(a);
+        const hB = getTrackHealthScore(b);
+        if (Math.abs(hA - hB) >= 250) return hA - hB;
+        const rDiff = resolverPriority(a.resolverType) - resolverPriority(b.resolverType);
+        if (rDiff !== 0) return rDiff;
+        return hA - hB;
       });
 
       // Resolve the first available track that produces a valid proxied HLS stream,
@@ -6151,6 +6232,16 @@ app.get('/api/extract/stream', async (req, res) => {
               : baseCleanTitle
             : 'NAIMCINE HD');
 
+        let combinedSubtitles = vestSubtitles;
+        if (combinedSubtitles.length === 0 && resolvedTmdbId) {
+          combinedSubtitles = await fetchAndCacheSubtitles(
+            String(resolvedTmdbId),
+            effectiveMediaType === 'tv' ? effectiveSeason : 0,
+            effectiveMediaType === 'tv' ? effectiveEpisode : 0,
+            1800
+          );
+        }
+
         const result: ExtractedStreamResult = {
           success: true,
           mode: primaryMode,
@@ -6163,7 +6254,7 @@ app.get('/api/extract/stream', async (req, res) => {
             ? `/api/img-proxy?url=${encodeURIComponent(vestDetailMeta.coverHorizontalUrl)}`
             : undefined,
           tracks: validTracks,
-          subtitles: vestSubtitles.length > 0 ? vestSubtitles : undefined,
+          subtitles: combinedSubtitles.length > 0 ? combinedSubtitles : undefined,
           requestedLang: preferLang,
           resolvedLang,
           resolvedLabel,
@@ -6833,11 +6924,6 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
 // ============================================================================
 // REST API: CLOUD SUBTITLES SEARCH & PROXY (SPANISH + ENGLISH .SRT/.VTT)
 // ============================================================================
-const subtitleSearchCache = new LruTtlCache<string, { tracks: any[]; ts: number }>(
-  250,
-  15 * 60 * 1000
-);
-
 app.get('/api/subtitles/search', async (req, res) => {
   try {
     const tmdbId = String(req.query.tmdbId || '').replace(/\D/g, '');
@@ -6845,42 +6931,7 @@ app.get('/api/subtitles/search', async (req, res) => {
     const season = parseInt(String(req.query.season || '0'), 10) || 0;
     const episode = parseInt(String(req.query.episode || '0'), 10) || 0;
 
-    const cacheKey = `${tmdbId}|${season}|${episode}`;
-    const cached = subtitleSearchCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < 15 * 60 * 1000) {
-      return res.json({ success: true, tracks: cached.tracks });
-    }
-
-    const qs = new URLSearchParams({ id: tmdbId });
-    if (season > 0 && episode > 0) {
-      qs.set('season', String(season));
-      qs.set('episode', String(episode));
-    }
-
-    const subRes = await fetch(`https://sub.wyzie.ru/search?${qs.toString()}`, {
-      headers: { 'User-Agent': CHROME_UA },
-      signal: AbortSignal.timeout(5000),
-    });
-    if (!subRes.ok) return res.json({ success: true, tracks: [] });
-
-    const rawList: any[] = await subRes.json();
-    if (!Array.isArray(rawList)) return res.json({ success: true, tracks: [] });
-
-    const prioritized = rawList
-      .filter((s) => s?.url && /^(es|spa|en|eng)/i.test(String(s.language || '')))
-      .slice(0, 10)
-      .map((s, idx) => {
-        const code = String(s.language || '').toLowerCase();
-        const isEs = code.startsWith('es') || code.startsWith('spa');
-        return {
-          id: `sub-${tmdbId}-${idx}-${code}`,
-          label: `${isEs ? 'Español' : 'English'}${s.display ? ` · ${s.display}` : ''} #${idx + 1}`,
-          lang: isEs ? 'ES' : 'EN',
-          url: `/api/subtitles/proxy?url=${encodeURIComponent(s.url)}`,
-        };
-      });
-
-    subtitleSearchCache.set(cacheKey, { tracks: prioritized, ts: Date.now() });
+    const prioritized = await fetchAndCacheSubtitles(tmdbId, season, episode, 5000);
     res.json({ success: true, tracks: prioritized });
   } catch {
     res.json({ success: true, tracks: [] });

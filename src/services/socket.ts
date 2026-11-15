@@ -1,4 +1,5 @@
 import {
+  BoardClockMinutes,
   BoardCoord,
   BoardGameState,
   BoardGameType,
@@ -7,6 +8,9 @@ import {
   ChessPromotionPiece,
   OnlineAppUser,
   Participant,
+  PartyColor,
+  PartyGameState,
+  PartyGameType,
   PollProposalItem,
   RestoredRoomBlueprint,
   RoomPollState,
@@ -15,6 +19,7 @@ import {
   TvRemoteCommandType,
   VideoState,
 } from '../types';
+import { auth } from '../firebase';
 
 export interface SocketPayload {
   id?: string;
@@ -36,6 +41,8 @@ export interface SocketPayload {
   activePoll?: RoomPollState | null;
   poll?: RoomPollState | null;
   gameState?: BoardGameState | null;
+  partyGameState?: PartyGameState | null;
+  pinnedMessage?: ChatMessage | null;
   participants?: Participant[];
   messages?: ChatMessage[];
   message?: ChatMessage;
@@ -85,6 +92,14 @@ export interface ConnectRoomOptions {
 
 type Listener = (event: SocketEvent) => void;
 
+const NON_QUEUEABLE_TYPES = new Set([
+  'PING',
+  'TYPING_STATE',
+  'JOIN_ROOM',
+  'REGISTER_PRESENCE',
+  'CLOUD_BROWSER_INPUT',
+]);
+
 class SocketService {
   private ws: WebSocket | null = null;
   private listeners: Set<Listener> = new Set();
@@ -93,11 +108,36 @@ class SocketService {
   private user: Participant | null = null;
   private connectOptions: ConnectRoomOptions = {};
   private reconnectAttempts = 0;
+  private hasConnectedOnce = false;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private pendingMessages: Array<{ type: string; payload: unknown }> = [];
   private intentionalClose = false;
   public latencyMs = 24;
   public serverClockOffsetMs = 0;
+
+  private async resolveFirebaseIdToken(): Promise<string | undefined> {
+    try {
+      const current = auth?.currentUser;
+      if (!current) return undefined;
+      const token = await current.getIdToken();
+      return token || undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private flushPendingMessages() {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+    const queued = this.pendingMessages.splice(0, 20);
+    for (const item of queued) {
+      try {
+        this.ws.send(JSON.stringify(item));
+      } catch {
+        // ignore dropped message
+      }
+    }
+  }
 
   connect(
     roomId: string,
@@ -131,22 +171,34 @@ class SocketService {
       const socket = new WebSocket(wsUrl);
       this.ws = socket;
 
-      socket.onopen = () => {
+      socket.onopen = async () => {
+        const wasReconnect = this.hasConnectedOnce && this.reconnectAttempts > 0;
+        this.hasConnectedOnce = true;
         this.reconnectAttempts = 0;
+        const firebaseIdToken = await this.resolveFirebaseIdToken();
+        if (!this.ws || this.ws !== socket || socket.readyState !== WebSocket.OPEN) return;
+
         if (this.roomId) {
-          this.send('JOIN_ROOM', {
+          this.sendRaw('JOIN_ROOM', {
             roomId: this.roomId,
             roomName: this.roomName,
             user: this.user,
             pin: this.connectOptions.pin,
             tvAuthToken: this.connectOptions.tvAuthToken,
+            firebaseIdToken,
             restoredBlueprint: this.connectOptions.restoredBlueprint,
           });
+          if (wasReconnect) {
+            this.requestSync();
+          }
         } else if (this.user) {
-          this.send('REGISTER_PRESENCE', {
+          this.sendRaw('REGISTER_PRESENCE', {
             user: this.user,
+            firebaseIdToken,
           });
         }
+
+        this.flushPendingMessages();
         this.notifyListeners({ type: 'CONNECTION_STATUS', payload: { connected: true } });
         this.startHeartbeat();
       };
@@ -201,10 +253,13 @@ class SocketService {
   connectPresenceOnly(user: Participant) {
     this.user = user;
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.send('REGISTER_PRESENCE', {
-        user,
-        roomId: this.roomId || undefined,
-        roomName: this.roomName || undefined,
+      void this.resolveFirebaseIdToken().then((firebaseIdToken) => {
+        this.sendRaw('REGISTER_PRESENCE', {
+          user,
+          roomId: this.roomId || undefined,
+          roomName: this.roomName || undefined,
+          firebaseIdToken,
+        });
       });
       return;
     }
@@ -213,9 +268,9 @@ class SocketService {
 
   private startHeartbeat() {
     this.stopHeartbeat();
-    this.send('PING', { clientTs: Date.now() });
+    this.sendRaw('PING', { clientTs: Date.now() });
     this.pingTimer = setInterval(() => {
-      this.send('PING', { clientTs: Date.now() });
+      this.sendRaw('PING', { clientTs: Date.now() });
     }, 6000);
   }
 
@@ -228,8 +283,10 @@ class SocketService {
 
   disconnect() {
     this.intentionalClose = true;
+    this.hasConnectedOnce = false;
     this.roomId = '';
     this.roomName = '';
+    this.pendingMessages = [];
     this.stopHeartbeat();
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
@@ -261,10 +318,33 @@ class SocketService {
     this.listeners.forEach((listener) => listener(event));
   }
 
-  private send(type: string, payload: unknown) {
+  private sendRaw(type: string, payload: unknown) {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify({ type, payload }));
     }
+  }
+
+  private send(type: string, payload: unknown) {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ type, payload }));
+      return;
+    }
+    if (!NON_QUEUEABLE_TYPES.has(type) && !this.intentionalClose) {
+      this.pendingMessages.push({ type, payload });
+      if (this.pendingMessages.length > 20) {
+        this.pendingMessages.shift();
+      }
+    }
+  }
+
+  requestSync() {
+    if (!this.roomId) return;
+    this.sendRaw('SYNC_VIDEO_STATE', {
+      roomId: this.roomId,
+      action: 'sync_request',
+      videoState: {},
+      updatedBy: this.user?.name || 'Espectador',
+    });
   }
 
   syncVideoState(
@@ -285,6 +365,21 @@ class SocketService {
       roomId: this.roomId,
       text,
       user,
+    });
+  }
+
+  pinChatMessage(messageId: string) {
+    if (!this.roomId || !messageId) return;
+    this.send('PIN_CHAT_MESSAGE', {
+      roomId: this.roomId,
+      messageId,
+    });
+  }
+
+  unpinChatMessage() {
+    if (!this.roomId) return;
+    this.send('UNPIN_CHAT_MESSAGE', {
+      roomId: this.roomId,
     });
   }
 
@@ -390,6 +485,16 @@ class SocketService {
     });
   }
 
+  reorderQueueItem(itemId: string, direction?: 'up' | 'down', targetIndex?: number) {
+    if (!this.roomId || !itemId) return;
+    this.send('QUEUE_REORDER', {
+      roomId: this.roomId,
+      itemId,
+      direction,
+      targetIndex,
+    });
+  }
+
   voteQueueItem(itemId: string, userId: string) {
     this.send('QUEUE_VOTE', {
       roomId: this.roomId,
@@ -432,11 +537,14 @@ class SocketService {
   submitRoomPin(pin: string) {
     this.connectOptions = { ...this.connectOptions, pin };
     if (this.ws && this.ws.readyState === WebSocket.OPEN && this.user) {
-      this.send('JOIN_ROOM', {
-        roomId: this.roomId,
-        roomName: this.roomName,
-        user: this.user,
-        pin,
+      void this.resolveFirebaseIdToken().then((firebaseIdToken) => {
+        this.sendRaw('JOIN_ROOM', {
+          roomId: this.roomId,
+          roomName: this.roomName,
+          user: this.user,
+          pin,
+          firebaseIdToken,
+        });
       });
     } else if (this.roomId && this.user) {
       this.connect(this.roomId, this.user, this.roomName, this.connectOptions);
@@ -500,12 +608,17 @@ class SocketService {
     this.send('NOTIFY_FRIEND_ADDED', params);
   }
 
-  startBoardGame(gameType: BoardGameType, soloLocal = false) {
+  startBoardGame(
+    gameType: BoardGameType,
+    soloLocal = false,
+    clockMinutes: BoardClockMinutes = 0
+  ) {
     if (!this.roomId) return;
     this.send('GAME_START', {
       roomId: this.roomId,
       gameType,
       soloLocal,
+      clockMinutes,
     });
   }
 
@@ -534,18 +647,52 @@ class SocketService {
     });
   }
 
-  resetBoardGame(opts?: { gameType?: BoardGameType; swapColors?: boolean }) {
+  resetBoardGame(opts?: {
+    gameType?: BoardGameType;
+    swapColors?: boolean;
+    clockMinutes?: BoardClockMinutes;
+  }) {
     if (!this.roomId) return;
     this.send('GAME_RESET', {
       roomId: this.roomId,
       gameType: opts?.gameType,
       swapColors: opts?.swapColors,
+      clockMinutes: opts?.clockMinutes,
     });
   }
 
   closeBoardGame() {
     if (!this.roomId) return;
     this.send('GAME_CLOSE', {
+      roomId: this.roomId,
+    });
+  }
+
+  startPartyGame(gameType: PartyGameType) {
+    if (!this.roomId) return;
+    this.send('PARTY_GAME_START', {
+      roomId: this.roomId,
+      gameType,
+    });
+  }
+
+  sendPartyGameAction(
+    action: 'roll_dice' | 'move_piece' | 'play_card' | 'draw_card' | 'pass_turn' | 'rematch',
+    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor }
+  ) {
+    if (!this.roomId) return;
+    this.send('PARTY_GAME_ACTION', {
+      roomId: this.roomId,
+      action,
+      pieceId: opts?.pieceId,
+      cardId: opts?.cardId,
+      chosenColor: opts?.chosenColor,
+    });
+  }
+
+  closePartyGame() {
+    if (!this.roomId) return;
+    this.send('PARTY_GAME_CLOSE', {
       roomId: this.roomId,
     });
   }

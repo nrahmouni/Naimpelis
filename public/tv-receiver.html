@@ -1595,6 +1595,7 @@
         id="tv-video"
         playsinline
         webkit-playsinline
+        x-webkit-airplay="allow"
         preload="auto"
         poster="data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs="
       ></video>
@@ -1713,6 +1714,10 @@
           }
         } catch (e) {}
 
+        var uaStr = (typeof navigator !== 'undefined' && navigator.userAgent) ? navigator.userAgent : '';
+        var isLgWebOsUa = /Web0S|WebOS|LGE|NetCast/i.test(uaStr);
+        var isSmartTvUa = isLgWebOsUa || /Tizen|SMART-TV|GoogleTV|Android TV|BRAVIA|AFT/i.test(uaStr);
+
         var searchStr = window.location.search || '';
         var installedApkCode = 0;
         try {
@@ -1760,7 +1765,7 @@
             smLangEs: 'Castellano',
             smLangLat: 'Latino',
             smLangVose: 'VOSE (Sub ES)',
-            hostSub: 'Receptor 1080p para Google TV, Samsung y LG',
+            hostSub: 'Receptor 1080p para Google TV, LG webOS y Samsung',
             connecting: 'Conectando...',
             tvReady: '✓ TV lista esperando móvil',
             backToMenu: '← Volver al Menú TV',
@@ -2921,7 +2926,24 @@
             }
           });
           videoEl.addEventListener('error', function () {
-            if (!isLocalPlayback || currentMode === 'idle' || currentMode === 'embed' || currentMode === 'youtube') return;
+            if (currentMode === 'idle' || currentMode === 'embed' || currentMode === 'youtube') return;
+            if (!isLocalPlayback) {
+              if (currentMode === 'hls' && currentUrl && currentUrl.indexOf('/api/hls-proxy') !== -1 && currentUrl.indexOf('abs=1') === -1) {
+                var absUrl = currentUrl + (currentUrl.indexOf('?') === -1 ? '?' : '&') + 'abs=1';
+                applyVideoState({
+                  mode: 'hls',
+                  url: absUrl,
+                  title: hudTitle.textContent,
+                  subtitle: hudSub.textContent,
+                  currentTime: videoEl.currentTime || 0,
+                  isPlaying: true,
+                  isLive: currentIsLive,
+                }, true);
+                return;
+              }
+              showStandbyError(hudTitle.textContent || 'NAIM CINE', tvT('signalTempUnavail') + ' (LG/TV Decode Error).');
+              return;
+            }
             triggerPlaybackFailover('Video decode error');
           });
         }
@@ -2960,7 +2982,27 @@
         }
 
         function triggerPlaybackFailover(reasonText) {
-          if (!isLocalPlayback || autoFailoverLock) return;
+          if (autoFailoverLock) return;
+          if (!isLocalPlayback) {
+            autoFailoverLock = true;
+            clearVideoWatchdog();
+            if (currentUrl && currentUrl.indexOf('/api/hls-proxy') !== -1 && currentUrl.indexOf('abs=1') === -1) {
+              var upgraded = currentUrl + (currentUrl.indexOf('?') === -1 ? '?' : '&') + 'abs=1';
+              autoFailoverLock = false;
+              applyVideoState({
+                mode: currentMode,
+                url: upgraded,
+                title: hudTitle.textContent,
+                subtitle: hudSub.textContent,
+                currentTime: videoEl.currentTime || 0,
+                isPlaying: true,
+                isLive: currentIsLive,
+              }, true);
+              return;
+            }
+            showStandbyError(hudTitle.textContent || 'NAIM CINE', tvT('signalTempUnavail') + (reasonText ? ' (' + reasonText + ')' : '') + '.');
+            return;
+          }
           autoFailoverLock = true;
           clearVideoWatchdog();
 
@@ -3191,7 +3233,7 @@
             };
 
             var hls = new window.Hls({
-              enableWorker: true,
+              enableWorker: !isSmartTvUa,
               lowLatencyMode: false,
               backBufferLength: 30,
               maxBufferLength: 35,
@@ -3209,12 +3251,19 @@
               if (!data || !data.fatal) return;
               if (data.type === window.Hls.ErrorTypes.NETWORK_ERROR) {
                 netErrorCount++;
-                // If direct external HTTPS stream blocked by CORS/network on TV WebView, retry through /api/hls-proxy once!
+                // If direct external HTTPS stream blocked by CORS/network on TV WebView/webOS, retry through /api/hls-proxy with abs=1!
                 if (!directCorsRetried && nextUrl.indexOf('http') === 0 && nextUrl.indexOf('/api/') === -1) {
                   directCorsRetried = true;
-                  var proxied = '/api/hls-proxy/stream.m3u8?url=' + encodeURIComponent(nextUrl);
+                  var proxied = '/api/hls-proxy/stream.m3u8?abs=1&url=' + encodeURIComponent(nextUrl);
                   currentUrl = proxied;
                   hls.loadSource(proxied);
+                  return;
+                }
+                if (!directCorsRetried && currentUrl.indexOf('/api/hls-proxy') !== -1 && currentUrl.indexOf('abs=1') === -1) {
+                  directCorsRetried = true;
+                  var absProxied = currentUrl + (currentUrl.indexOf('?') === -1 ? '?' : '&') + 'abs=1';
+                  currentUrl = absProxied;
+                  hls.loadSource(absProxied);
                   return;
                 }
                 if (netErrorCount <= 1) {
@@ -4629,8 +4678,8 @@
 
           if (targetTag === 'INPUT' && code !== 27) return;
 
-          // Back / Escape / Tizen Return (10009) / Android Back (4)
-          if (code === 27 || code === 8 || code === 4 || code === 10009) {
+          // Back / Escape / Tizen Return (10009) / LG webOS Back (461) & Stop (413) / Android Back (4)
+          if (code === 27 || code === 8 || code === 4 || code === 10009 || code === 461 || code === 413) {
             if (seriesModal && seriesModal.style.display === 'block') {
               if (e.preventDefault) e.preventDefault();
               seriesModal.style.display = 'none';

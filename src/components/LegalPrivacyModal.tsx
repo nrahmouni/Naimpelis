@@ -1,6 +1,10 @@
-import React, { useState } from 'react';
-import { Download, ShieldCheck, Trash2, CheckCircle2, FileText } from 'lucide-react';
-import { exportUserDataAsJson, purgeLocalAndCloudHistory } from '../utils/gdprExport';
+import React, { useRef, useState } from 'react';
+import { Download, Upload, ShieldCheck, Trash2, CheckCircle2, FileText } from 'lucide-react';
+import {
+  exportUserDataAsJson,
+  importUserDataFromJson,
+  purgeLocalAndCloudHistory,
+} from '../utils/gdprExport';
 import { BottomSheet, PrimaryButton, SecondaryButton } from './ui/DesignSystem';
 import type { AppLanguage } from '../types';
 import { pickLang } from '../utils/i18n';
@@ -18,11 +22,44 @@ export const LegalPrivacyModal: React.FC<LegalPrivacyModalProps> = ({
 }) => {
   const [purged, setPurged] = useState(false);
   const [exported, setExported] = useState(false);
+  const [importFeedback, setImportFeedback] = useState<{ ok: boolean; text: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const handleExport = () => {
     exportUserDataAsJson();
     setExported(true);
     window.setTimeout(() => setExported(false), 2500);
+  };
+
+  const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const res = importUserDataFromJson(text);
+      if (res.ok) {
+        setImportFeedback({
+          ok: true,
+          text: pickLang(lang, {
+            es: `Restaurado (${res.restored.watchlistCount} lista, ${res.restored.historyCount} historial, ${res.restored.friendsCount} amigos).`,
+            ca: `Restaurat (${res.restored.watchlistCount} llista, ${res.restored.historyCount} historial, ${res.restored.friendsCount} amics).`,
+            en: `Restored (${res.restored.watchlistCount} watchlist, ${res.restored.historyCount} history, ${res.restored.friendsCount} friends).`,
+          }),
+        });
+        window.dispatchEvent(new Event('naim-storage-restored'));
+      } else {
+        setImportFeedback({
+          ok: false,
+          text: res.error || pickLang(lang, { es: 'JSON no válido', ca: 'JSON no vàlid', en: 'Invalid JSON' }),
+        });
+      }
+    } catch {
+      setImportFeedback({
+        ok: false,
+        text: pickLang(lang, { es: 'Error leyendo el archivo', ca: 'Error llegint el fitxer', en: 'Failed reading file' }),
+      });
+    }
   };
 
   const handlePurge = async () => {
@@ -89,52 +126,80 @@ export const LegalPrivacyModal: React.FC<LegalPrivacyModalProps> = ({
         <section className="p-4 rounded-2xl bg-white/[0.035] nc-specular-surface border border-white/[0.08] space-y-2">
           <h4 className="font-bold text-white">
             {pickLang(lang, {
-              es: '3. Tus derechos (Exportación GDPR y Eliminación)',
-              ca: '3. Els teus drets (Exportació GDPR i Eliminació)',
-              en: '3. Your rights (GDPR Export & Deletion)',
+              es: '3. Tus derechos (Exportación, Restauración GDPR y Borrado total)',
+              ca: '3. Els teus drets (Exportació, Restauració GDPR i Esborrat total)',
+              en: '3. Your rights (GDPR Export, Restore & Full Wipe)',
             })}
           </h4>
           <p>
             {pickLang(lang, {
-              es: 'Puedes descargar en cualquier momento una copia íntegra de tu perfil, salas recientes, favoritos e historial en formato JSON estándar o borrar tu historial local y en la nube.',
-              ca: 'Pots descarregar en qualsevol moment una còpia íntegra del teu perfil, sales recents, favorits i historial en format JSON estàndard o esborrar el teu historial local i al núvol.',
-              en: 'You can download a complete JSON export of your profile, recent rooms, favorites, and history at any time, or wipe your local and cloud history.',
+              es: 'Puedes exportar una copia íntegra de tu perfil, Mi Lista, canales favoritos, amigos e historial en JSON, restaurar una copia previa o borrar todos tus datos locales y el historial en la nube en un clic.',
+              ca: 'Pots exportar una còpia íntegra del teu perfil, La meva Llista, canals favorits, amics i historial en JSON, restaurar una còpia prèvia o esborrar totes les teves dades locals i l’historial al núvol amb un clic.',
+              en: 'You can export a full JSON backup of your profile, watchlist, favorite channels, friends, and watch history, restore a previous backup, or wipe all local data and cloud history in one click.',
             })}
           </p>
-          <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
-            <PrimaryButton onClick={handleExport} className="flex-1">
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="application/json,.json"
+            className="hidden"
+            onChange={handleImportFile}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2">
+            <PrimaryButton onClick={handleExport}>
               {exported ? <CheckCircle2 className="w-4 h-4" /> : <Download className="w-4 h-4" />}
-              <span>
+              <span className="truncate">
                 {exported
                   ? pickLang(lang, {
-                      es: 'Copia JSON descargada',
-                      ca: 'Còpia JSON descarregada',
-                      en: 'JSON backup downloaded',
+                      es: 'JSON descargado',
+                      ca: 'JSON descarregat',
+                      en: 'JSON downloaded',
                     })
                   : pickLang(lang, {
-                      es: 'Exportar mis datos (.json)',
-                      ca: 'Exportar les meves dades (.json)',
-                      en: 'Export my data (.json)',
+                      es: 'Exportar (.json)',
+                      ca: 'Exportar (.json)',
+                      en: 'Export (.json)',
                     })}
               </span>
             </PrimaryButton>
-            <SecondaryButton onClick={handlePurge} className="flex-1">
+            <SecondaryButton onClick={() => fileInputRef.current?.click()}>
+              <Upload className="w-4 h-4 text-[#BF94FF]" />
+              <span className="truncate">
+                {pickLang(lang, {
+                  es: 'Restaurar (.json)',
+                  ca: 'Restaurar (.json)',
+                  en: 'Restore (.json)',
+                })}
+              </span>
+            </SecondaryButton>
+            <SecondaryButton onClick={handlePurge}>
               <Trash2 className="w-4 h-4 text-rose-400" />
-              <span>
+              <span className="truncate">
                 {purged
                   ? pickLang(lang, {
-                      es: 'Historial eliminado',
-                      ca: 'Historial eliminat',
-                      en: 'History deleted',
+                      es: 'Datos eliminados',
+                      ca: 'Dades eliminades',
+                      en: 'Data wiped',
                     })
                   : pickLang(lang, {
-                      es: 'Borrar historial local y nube',
-                      ca: 'Esborrar historial local i núvol',
-                      en: 'Delete local & cloud history',
+                      es: 'Borrar todo',
+                      ca: 'Esborrar tot',
+                      en: 'Wipe all data',
                     })}
               </span>
             </SecondaryButton>
           </div>
+          {importFeedback && (
+            <div
+              className={`mt-2 px-3 py-2 rounded-xl text-[11px] font-medium border ${
+                importFeedback.ok
+                  ? 'bg-emerald-500/12 border-emerald-500/35 text-emerald-200'
+                  : 'bg-rose-500/12 border-rose-500/35 text-rose-200'
+              }`}
+            >
+              {importFeedback.text}
+            </div>
+          )}
         </section>
       </div>
     </BottomSheet>

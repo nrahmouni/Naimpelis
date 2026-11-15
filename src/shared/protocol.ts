@@ -4,19 +4,33 @@
  */
 
 import type {
+  BoardClockMinutes,
   BoardCoord,
   BoardGameState,
   BoardGameType,
   BoardSide,
   ChessPromotionPiece,
 } from './boardGames';
+import type {
+  ParchisGameState,
+  PartyColor,
+  PartyGameState,
+  PartyGameType,
+  UnoGameState,
+} from './partyGames';
 
 export type {
+  BoardClockMinutes,
   BoardCoord,
   BoardGameState,
   BoardGameType,
   BoardSide,
   ChessPromotionPiece,
+  ParchisGameState,
+  PartyColor,
+  PartyGameState,
+  PartyGameType,
+  UnoGameState,
 };
 
 export type MediaType = 'movie' | 'tv' | 'youtube' | 'direct' | 'stream' | 'cloud';
@@ -84,9 +98,11 @@ export interface RoomStatePayload {
   participants: RoomParticipant[];
   videoState: AuthoritativeVideoState;
   messages: RoomChatMessage[];
+  pinnedMessage?: RoomChatMessage | null;
   hasPin: boolean;
   hostOnlyControl?: boolean;
   gameState?: BoardGameState | null;
+  partyGameState?: PartyGameState | null;
   createdAt: number;
   serverTime?: number;
 }
@@ -108,6 +124,7 @@ export type ClientWsMessage =
         user: Omit<RoomParticipant, 'joinedAt' | 'isHost'>;
         pin?: string;
         tvAuthToken?: string;
+        firebaseIdToken?: string;
         sessionId?: string;
       };
     }
@@ -126,6 +143,19 @@ export type ClientWsMessage =
         roomId: string;
         text: string;
         user: Omit<RoomParticipant, 'joinedAt' | 'isHost'>;
+      };
+    }
+  | {
+      type: 'PIN_CHAT_MESSAGE';
+      payload: {
+        roomId: string;
+        messageId: string;
+      };
+    }
+  | {
+      type: 'UNPIN_CHAT_MESSAGE';
+      payload: {
+        roomId: string;
       };
     }
   | {
@@ -149,6 +179,15 @@ export type ClientWsMessage =
       };
     }
   | {
+      type: 'QUEUE_REORDER';
+      payload: {
+        roomId: string;
+        itemId: string;
+        direction?: 'up' | 'down';
+        targetIndex?: number;
+      };
+    }
+  | {
       type: 'SET_PARTICIPANT_ROLE';
       payload: {
         roomId: string;
@@ -169,6 +208,7 @@ export type ClientWsMessage =
         user: Omit<RoomParticipant, 'joinedAt' | 'isHost'>;
         roomId?: string;
         roomName?: string;
+        firebaseIdToken?: string;
       };
     }
   | {
@@ -177,6 +217,7 @@ export type ClientWsMessage =
         roomId: string;
         gameType: BoardGameType;
         soloLocal?: boolean;
+        clockMinutes?: BoardClockMinutes;
       };
     }
   | {
@@ -207,10 +248,34 @@ export type ClientWsMessage =
         roomId: string;
         gameType?: BoardGameType;
         swapColors?: boolean;
+        clockMinutes?: BoardClockMinutes;
       };
     }
   | {
       type: 'GAME_CLOSE';
+      payload: {
+        roomId: string;
+      };
+    }
+  | {
+      type: 'PARTY_GAME_START';
+      payload: {
+        roomId: string;
+        gameType: PartyGameType;
+      };
+    }
+  | {
+      type: 'PARTY_GAME_ACTION';
+      payload: {
+        roomId: string;
+        action: 'roll_dice' | 'move_piece' | 'play_card' | 'draw_card' | 'pass_turn' | 'rematch';
+        pieceId?: number;
+        cardId?: string;
+        chosenColor?: PartyColor;
+      };
+    }
+  | {
+      type: 'PARTY_GAME_CLOSE';
       payload: {
         roomId: string;
       };
@@ -236,12 +301,23 @@ export type ServerWsMessage =
       };
     }
   | { type: 'NEW_CHAT_MESSAGE'; payload: RoomChatMessage }
+  | {
+      type: 'PINNED_MESSAGE_UPDATED';
+      payload: { pinnedMessage: RoomChatMessage | null };
+    }
   | { type: 'TYPING_UPDATED'; payload: { typingUsers: Array<{ userId: string; userName: string }> } }
   | { type: 'FLOATING_REACTION'; payload: FloatingReactionEvent }
   | {
       type: 'GAME_STATE_UPDATED';
       payload: {
         gameState: BoardGameState | null;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'PARTY_GAME_STATE_UPDATED';
+      payload: {
+        partyGameState: PartyGameState | null;
         message?: RoomChatMessage | null;
       };
     }

@@ -113,10 +113,21 @@ export async function clearStaleCachesAndReload(): Promise<void> {
   }, 220);
 }
 
+export interface CheckRemoteVersionOptions {
+  onApkUpdate?: (info: NativeApkUpdateAvailable) => void;
+  shouldDeferReload?: () => boolean;
+  onDeferredUpdate?: (remoteVersion: string) => void;
+}
+
 export async function checkRemoteAppVersion(
-  onApkUpdate?: (info: NativeApkUpdateAvailable) => void
+  onApkUpdateOrOpts?: ((info: NativeApkUpdateAvailable) => void) | CheckRemoteVersionOptions
 ): Promise<void> {
   if (typeof window === 'undefined') return;
+  const opts: CheckRemoteVersionOptions =
+    typeof onApkUpdateOrOpts === 'function'
+      ? { onApkUpdate: onApkUpdateOrOpts }
+      : onApkUpdateOrOpts || {};
+
   try {
     const ctx = detectNativeApkContext();
     const platform = ctx.isGoogleTvApk ? 'tv' : ctx.isAndroidMobileApk ? 'mobile' : 'web';
@@ -145,8 +156,8 @@ export async function checkRemoteAppVersion(
       const flavor = ctx.isGoogleTvApk ? 'tv' : 'mobile';
       const targetMeta = flavor === 'tv' ? data.tv : data.mobile;
       const latestCode = Number(targetMeta?.versionCode || 0);
-      if (latestCode > ctx.installedCode && targetMeta?.apkUrl && onApkUpdate) {
-        onApkUpdate({
+      if (latestCode > ctx.installedCode && targetMeta?.apkUrl && opts.onApkUpdate) {
+        opts.onApkUpdate({
           flavor,
           currentCode: ctx.installedCode,
           latestCode,
@@ -156,15 +167,25 @@ export async function checkRemoteAppVersion(
       }
     }
 
-    // If backend serves a newer build than currently running client bundle, auto-sync!
+    // If backend serves a newer build than currently running client bundle, auto-sync when safe
     if (remoteWebVersion !== CLIENT_APP_VERSION || remoteWebVersion !== knownVersion) {
-      try {
-        localStorage.setItem(VERSION_STORAGE_KEY, remoteWebVersion);
-      } catch {
-        // ignore
-      }
       if (remoteWebVersion !== CLIENT_APP_VERSION) {
+        if (opts.shouldDeferReload?.()) {
+          opts.onDeferredUpdate?.(remoteWebVersion);
+          return;
+        }
+        try {
+          localStorage.setItem(VERSION_STORAGE_KEY, remoteWebVersion);
+        } catch {
+          // ignore
+        }
         await clearStaleCachesAndReload();
+      } else {
+        try {
+          localStorage.setItem(VERSION_STORAGE_KEY, remoteWebVersion);
+        } catch {
+          // ignore
+        }
       }
     }
   } catch {

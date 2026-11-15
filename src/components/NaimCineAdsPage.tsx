@@ -22,9 +22,9 @@ import {
 import { NaimBrandLogo } from './NaimBrandLogo';
 import { getDisplayAppHost } from '../utils/shortLink';
 import { triggerHaptic } from '../utils/haptics';
-import stadiumBackdrop from '../assets/images/esports_arena_live_1794673806740.jpg';
-import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.jpg';
-import cinemaHeroBackdrop from '../assets/images/cinema_hero_lobby_1794353709142.jpg';
+import stadiumBackdrop from '../assets/images/esports_arena_live_1794673806740.webp';
+import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.webp';
+import cinemaHeroBackdrop from '../assets/images/cinema_hero_lobby_1794353709142.webp';
 
 export type AdsExportFormat = 'poster' | 'story' | 'full' | 'landscape';
 
