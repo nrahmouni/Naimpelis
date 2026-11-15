@@ -23,6 +23,7 @@ import {
   AlertCircle,
   Radio,
   SkipForward,
+  SkipBack,
   Youtube,
   Moon,
   Sun,
@@ -69,6 +70,12 @@ import { useDirectCast } from './player/useDirectCast';
 import { CloudBrowserOverlay } from './player/CloudBrowserOverlay';
 import { PlayerProSettingsModal } from './player/PlayerProSettingsModal';
 import { VoiceWaveBars } from './games/GameVoiceBar';
+import {
+  getEmbedServerStatus,
+  isMobileExternalTabContext,
+  setEmbedServerStatus,
+  unwrapEmbedUrl,
+} from './player/embedWindowUtils';
 
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   videoState,
@@ -84,6 +91,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onSelectTrack,
   onPromoteCloudStreamToNative,
   onOpenCatalogSection,
+  onPrevEpisode,
   onNextEpisode,
   onProgressUpdate,
   isCinemaMode = false,
@@ -181,6 +189,26 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [playerToast, setPlayerToast] = useState<string | null>(null);
   const [embedRescueDismissedUrl, setEmbedRescueDismissedUrl] = useState<string>('');
 
+  // Controlled External Window ('cineplayer') + Inline Embed Watchdog State
+  const externalWinRef = useRef<Window | null>(null);
+  const lastNavigatedExternalUrlRef = useRef<string>('');
+  const triedEmbedIndicesRef = useRef<Set<number>>(new Set());
+  const watchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastAttemptedEmbedUrlRef = useRef<string>('');
+  const latestSelectTrackRef = useRef(onSelectTrack);
+  latestSelectTrackRef.current = onSelectTrack;
+  const latestCurrentTimeRef = useRef<number>(0);
+
+  const [externalWinState, setExternalWinState] = useState<
+    'idle' | 'open' | 'closed' | 'blocked'
+  >('idle');
+  const [externalTargetUrl, setExternalTargetUrl] = useState<string>('');
+  const [embedWatchdogPhase, setEmbedWatchdogPhase] = useState<
+    'watching' | 'verified' | 'window_preferred' | 'exhausted'
+  >('watching');
+  const [inlineRetryUrl, setInlineRetryUrl] = useState<string>('');
+  const [inlineRetryNonce, setInlineRetryNonce] = useState<number>(0);
+
   // Local Language Popup State & Floating Chat State
   const [localLangPopup, setLocalLangPopup] = useState<LanguageNoticePopup | null>(null);
   const langPopupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -238,6 +266,271 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       setPlayerToast((cur) => (cur === msg ? null : cur));
     }, 3400);
   }, []);
+
+  latestCurrentTimeRef.current = currentTime;
+
+  const rawActiveEmbedUrl =
+    videoState.mode === 'embed'
+      ? videoState.tracks[videoState.activeTrackIndex]?.sourceUrl ||
+        videoState.tracks[videoState.activeTrackIndex]?.resolvedStreamUrl ||
+        videoState.url ||
+        ''
+      : '';
+  const activeEmbedDirectUrl =
+    videoState.mode === 'embed'
+      ? unwrapEmbedUrl(rawActiveEmbedUrl || videoState.url)
+      : '';
+  const isMobileExternal = isMobileExternalTabContext();
+  const embedMediaIdentityKey =
+    videoState.mode === 'embed'
+      ? `${videoState.rawSourceUrl || ''}::${videoState.seriesMeta?.season || ''}::${videoState.seriesMeta?.episode || ''}`
+      : '';
+
+  // Reset tried-track chain whenever movie or series episode changes
+  useEffect(() => {
+    if (!embedMediaIdentityKey) return;
+    triedEmbedIndicesRef.current = new Set([videoState.activeTrackIndex]);
+    setInlineRetryUrl('');
+  }, [embedMediaIdentityKey]);
+
+  // Poll `ref.closed` every 1s while controlled external window is open
+  useEffect(() => {
+    if (externalWinState !== 'open') return;
+    const pollId = window.setInterval(() => {
+      const w = externalWinRef.current;
+      if (!w || w.closed) {
+        externalWinRef.current = null;
+        setExternalWinState('closed');
+      }
+    }, 1000);
+    return () => {
+      window.clearInterval(pollId);
+    };
+  }, [externalWinState]);
+
+  // If external window is already open and episode/season/server changes, navigate that SAME window
+  useEffect(() => {
+    if (videoState.mode !== 'embed' || !activeEmbedDirectUrl) return;
+    if (externalWinState !== 'open') return;
+    const w = externalWinRef.current;
+    if (!w || w.closed) {
+      externalWinRef.current = null;
+      setExternalWinState('closed');
+      return;
+    }
+    if (lastNavigatedExternalUrlRef.current !== activeEmbedDirectUrl) {
+      lastNavigatedExternalUrlRef.current = activeEmbedDirectUrl;
+      setExternalTargetUrl(activeEmbedDirectUrl);
+      try {
+        w.location.href = activeEmbedDirectUrl;
+      } catch {
+        // ignore cross-origin restrictions if browser blocks location write
+      }
+    }
+  }, [videoState.mode, activeEmbedDirectUrl, externalWinState]);
+
+  // Inline Embed Watchdog (17s) + localStorage per-server preference
+  useEffect(() => {
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+    if (
+      videoState.mode !== 'embed' ||
+      !activeEmbedDirectUrl ||
+      isExtracting ||
+      externalWinState === 'open'
+    ) {
+      return;
+    }
+
+    triedEmbedIndicesRef.current.add(videoState.activeTrackIndex);
+    lastAttemptedEmbedUrlRef.current = activeEmbedDirectUrl;
+
+    const savedStatus = getEmbedServerStatus(activeEmbedDirectUrl);
+    if (savedStatus === 'inline_ok') {
+      setEmbedWatchdogPhase('verified');
+      return;
+    }
+    if (savedStatus === 'window_required' && inlineRetryUrl !== activeEmbedDirectUrl) {
+      setEmbedWatchdogPhase('window_preferred');
+      return;
+    }
+
+    setEmbedWatchdogPhase('watching');
+    const snapshotUrl = activeEmbedDirectUrl;
+    const snapshotIdx = videoState.activeTrackIndex;
+
+    watchdogTimerRef.current = setTimeout(() => {
+      watchdogTimerRef.current = null;
+      setEmbedServerStatus(snapshotUrl, 'window_required');
+
+      const webIndices = videoState.tracks
+        .map((tr, i) => ({ tr, i }))
+        .filter(({ tr, i }) => i !== snapshotIdx && tr.resolverType === 'web_embed')
+        .map(({ i }) => i);
+
+      const nextUntriedIdx = webIndices.find(
+        (i) => !triedEmbedIndicesRef.current.has(i)
+      );
+
+      if (nextUntriedIdx !== undefined) {
+        triedEmbedIndicesRef.current.add(nextUntriedIdx);
+        latestSelectTrackRef.current(nextUntriedIdx, latestCurrentTimeRef.current);
+      } else {
+        lastAttemptedEmbedUrlRef.current = snapshotUrl;
+        setEmbedWatchdogPhase('exhausted');
+      }
+    }, 17_000);
+
+    return () => {
+      if (watchdogTimerRef.current) {
+        clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
+    };
+  }, [
+    videoState.mode,
+    videoState.activeTrackIndex,
+    videoState.tracks,
+    activeEmbedDirectUrl,
+    isExtracting,
+    externalWinState,
+    inlineRetryUrl,
+    inlineRetryNonce,
+  ]);
+
+  // Ensure timers are cleared on unmount without force-closing user's external window
+  useEffect(() => {
+    return () => {
+      if (watchdogTimerRef.current) {
+        clearTimeout(watchdogTimerRef.current);
+        watchdogTimerRef.current = null;
+      }
+    };
+  }, []);
+
+  const openControlledExternalWindow = useCallback(
+    (urlOverride?: string) => {
+      const targetUrl = unwrapEmbedUrl(
+        urlOverride ||
+          externalTargetUrl ||
+          lastAttemptedEmbedUrlRef.current ||
+          activeEmbedDirectUrl
+      );
+      if (!targetUrl) return;
+      setExternalTargetUrl(targetUrl);
+
+      if (externalWinRef.current && !externalWinRef.current.closed) {
+        lastNavigatedExternalUrlRef.current = targetUrl;
+        try {
+          externalWinRef.current.location.href = targetUrl;
+          externalWinRef.current.focus();
+        } catch {
+          // ignore
+        }
+        setExternalWinState('open');
+        return;
+      }
+
+      const features = isMobileExternal
+        ? undefined
+        : 'width=1280,height=720,menubar=no,toolbar=no';
+      let opened: Window | null = null;
+      try {
+        opened = window.open(targetUrl, 'cineplayer', features);
+      } catch {
+        opened = null;
+      }
+
+      if (!opened) {
+        setExternalWinState('blocked');
+        showTransientToast('Permite ventanas emergentes para este sitio');
+        return;
+      }
+
+      externalWinRef.current = opened;
+      lastNavigatedExternalUrlRef.current = targetUrl;
+      setExternalWinState('open');
+      try {
+        opened.focus();
+      } catch {
+        // ignore
+      }
+    },
+    [
+      externalTargetUrl,
+      activeEmbedDirectUrl,
+      isMobileExternal,
+      showTransientToast,
+    ]
+  );
+
+  const handleFocusExternalWindow = useCallback(() => {
+    const w = externalWinRef.current;
+    if (!w || w.closed) {
+      externalWinRef.current = null;
+      setExternalWinState('closed');
+      return;
+    }
+    try {
+      w.focus();
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const handleCloseExternalWindow = useCallback(() => {
+    const w = externalWinRef.current;
+    externalWinRef.current = null;
+    try {
+      w?.close();
+    } catch {
+      // ignore
+    }
+    setExternalWinState('idle');
+  }, []);
+
+  const handleSelectExternalServer = useCallback(
+    (trackIdx: number) => {
+      const track = videoState.tracks[trackIdx];
+      if (!track) return;
+      const targetUrl = unwrapEmbedUrl(track.sourceUrl || track.resolvedStreamUrl || '');
+      if (targetUrl && externalWinRef.current && !externalWinRef.current.closed) {
+        lastNavigatedExternalUrlRef.current = targetUrl;
+        setExternalTargetUrl(targetUrl);
+        try {
+          externalWinRef.current.location.href = targetUrl;
+        } catch {
+          // ignore
+        }
+      }
+      onSelectTrack(trackIdx, currentTime);
+    },
+    [videoState.tracks, onSelectTrack, currentTime]
+  );
+
+  const handleMarkInlineServerWorking = useCallback(() => {
+    if (!activeEmbedDirectUrl) return;
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+    setEmbedServerStatus(activeEmbedDirectUrl, 'inline_ok');
+    setEmbedWatchdogPhase('verified');
+    showTransientToast('Servidor guardado como funcional');
+  }, [activeEmbedDirectUrl, showTransientToast]);
+
+  const handleRetryInlineEmbed = useCallback(() => {
+    if (watchdogTimerRef.current) {
+      clearTimeout(watchdogTimerRef.current);
+      watchdogTimerRef.current = null;
+    }
+    setExternalWinState('idle');
+    setInlineRetryUrl(activeEmbedDirectUrl);
+    setInlineRetryNonce((n) => n + 1);
+    setEmbedWatchdogPhase('watching');
+  }, [activeEmbedDirectUrl]);
 
   const {
     isCastingToTv,
@@ -3511,17 +3804,19 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         )}
 
         {/* ================================================================== */}
-        {/* UNIVERSAL WEB EMBED STAGE (MULTI-SERVER FALLBACK PLAYER)           */}
+        {/* UNIVERSAL WEB EMBED STAGE (INLINE + CONTROLLED EXTERNAL WINDOW)    */}
         {/* ================================================================== */}
         {videoState.mode === 'embed' && videoState.url && (() => {
-          const activeTrackUrl =
-            videoState.tracks[videoState.activeTrackIndex]?.sourceUrl || videoState.url;
+          const activeTrack = videoState.tracks[videoState.activeTrackIndex];
+          const activeTrackUrl = unwrapEmbedUrl(
+            activeTrack?.sourceUrl || activeTrack?.resolvedStreamUrl || videoState.url
+          );
           const externalVidfastHref = (() => {
             const candidates = [
               activeTrackUrl,
-              videoState.rawSourceUrl,
-              videoState.url,
-              ...videoState.tracks.map((tr) => tr.sourceUrl),
+              unwrapEmbedUrl(videoState.rawSourceUrl || ''),
+              unwrapEmbedUrl(videoState.url),
+              ...videoState.tracks.map((tr) => unwrapEmbedUrl(tr.sourceUrl)),
             ].filter(Boolean);
 
             for (const c of candidates) {
@@ -3551,21 +3846,283 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             return activeTrackUrl;
           })();
 
-          const safeIframeSrc =
-            !videoState.url.startsWith('/api/embed-proxy') &&
-            /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc)/i.test(videoState.url)
-              ? `/api/embed-proxy?url=${encodeURIComponent(videoState.url)}`
-              : videoState.url;
+          const inlineIframeSrc = activeTrackUrl || unwrapEmbedUrl(videoState.url);
+          const lastAttemptedUrl =
+            lastAttemptedEmbedUrlRef.current || activeTrackUrl || inlineIframeSrc;
+          const canPrevEpisode = Boolean(
+            videoState.seriesMeta &&
+              onPrevEpisode &&
+              (videoState.seriesMeta.season > 1 || videoState.seriesMeta.episode > 1)
+          );
 
+          // 1) Controlled External Window Active Panel
+          if (externalWinState === 'open') {
+            return (
+              <div className="relative w-full h-full bg-gradient-to-b from-[#171226] via-[#0F0F15] to-black flex flex-col items-center justify-center p-3 sm:p-5 text-center overflow-y-auto">
+                <div className="w-full max-w-lg rounded-2xl bg-[#14141B]/95 border border-[#9146FF]/45 p-3.5 sm:p-4 shadow-2xl space-y-3">
+                  <div className="flex items-center justify-between gap-2 text-left">
+                    <div className="min-w-0">
+                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-bold uppercase tracking-wider mb-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>
+                          {isMobileExternal
+                            ? 'Reproduciendo en pestaña externa'
+                            : 'Reproduciendo en ventana externa'}
+                        </span>
+                      </div>
+                      <h4 className="font-display font-bold text-xs sm:text-sm text-white truncate">
+                        {videoState.title}
+                      </h4>
+                      <p className="text-[11px] text-zinc-400 truncate">
+                        {activeTrack?.label || 'Servidor Web'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Window focus / close controls */}
+                  <div className="flex flex-wrap items-center justify-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        handleFocusExternalWindow();
+                      }}
+                      className="min-h-9 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      <span>Traer al frente</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        handleCloseExternalWindow();
+                      }}
+                      className="min-h-9 px-3.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-100 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                      <span>
+                        {isMobileExternal ? 'Cerrar pestaña' : 'Cerrar ventana'}
+                      </span>
+                    </button>
+                  </div>
+
+                  {/* Episode Prev / Next controls when watching a series */}
+                  {videoState.seriesMeta && (onPrevEpisode || onNextEpisode) && (
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1 border-t border-white/[0.08]">
+                      {onPrevEpisode && (
+                        <button
+                          type="button"
+                          disabled={!canPrevEpisode || isExtracting}
+                          onClick={() => {
+                            triggerHaptic('light');
+                            onPrevEpisode();
+                          }}
+                          className="min-h-8 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <SkipBack className="w-3.5 h-3.5" />
+                          <span>Capítulo anterior</span>
+                        </button>
+                      )}
+                      {onNextEpisode && (
+                        <button
+                          type="button"
+                          disabled={isExtracting}
+                          onClick={() => {
+                            triggerHaptic('light');
+                            onNextEpisode();
+                          }}
+                          className="min-h-8 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                        >
+                          <span>Siguiente capítulo</span>
+                          <SkipForward className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Server Switcher inside active External Window Panel */}
+                  {videoState.tracks.length > 1 && (
+                    <div className="pt-1 border-t border-white/[0.08]">
+                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
+                        Cambiar servidor en {isMobileExternal ? 'pestaña' : 'ventana'}
+                      </div>
+                      <div className="flex flex-wrap items-center justify-center gap-1.5">
+                        {videoState.tracks.slice(0, 6).map((tr, idx) => {
+                          const isAct = idx === videoState.activeTrackIndex;
+                          const label = tr.label.split('·')[0].trim() || `Servidor ${idx + 1}`;
+                          return (
+                            <button
+                              key={tr.id || idx}
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                handleSelectExternalServer(idx);
+                              }}
+                              className={`min-h-7 px-2.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+                                isAct
+                                  ? 'bg-[#9146FF] text-white'
+                                  : 'bg-white/[0.08] hover:bg-white/[0.16] text-zinc-200'
+                              }`}
+                            >
+                              {label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          }
+
+          // 2) Controlled External Window Closed State (detected by 1s ref.closed poll)
+          if (externalWinState === 'closed') {
+            return (
+              <div className="relative w-full h-full bg-[#0E0E14] flex flex-col items-center justify-center p-4 text-center gap-3">
+                <div className="w-11 h-11 rounded-2xl bg-white/[0.07] border border-white/15 flex items-center justify-center text-zinc-200">
+                  <ExternalLink className="w-5 h-5" />
+                </div>
+                <div className="space-y-1 max-w-md">
+                  <h4 className="font-display font-bold text-sm sm:text-base text-white">
+                    {isMobileExternal ? 'Pestaña cerrada' : 'Ventana cerrada'}
+                  </h4>
+                  <p className="text-xs text-zinc-400 truncate">{videoState.title}</p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      openControlledExternalWindow(activeTrackUrl);
+                    }}
+                    className="min-h-10 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <span>Reabrir</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRetryInlineEmbed}
+                    className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-100 text-xs font-semibold cursor-pointer"
+                  >
+                    Reintentar inline
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // 3) Popup Blocker Fallback State (window.open returned null)
+          if (externalWinState === 'blocked') {
+            const fallbackHref = externalTargetUrl || activeTrackUrl || externalVidfastHref;
+            return (
+              <div className="relative w-full h-full bg-[#120E18] flex flex-col items-center justify-center p-4 text-center gap-3">
+                <AlertCircle className="w-8 h-8 text-amber-400" />
+                <div className="space-y-1 max-w-md">
+                  <h4 className="font-display font-bold text-sm sm:text-base text-white">
+                    Permite ventanas emergentes para este sitio
+                  </h4>
+                  <p className="text-xs text-zinc-300">
+                    El navegador bloqueó la ventana controlada. Puedes reintentar o abrir en pestaña normal.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      openControlledExternalWindow(fallbackHref);
+                    }}
+                    className="min-h-10 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Reintentar</span>
+                  </button>
+                  <a
+                    href={fallbackHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-h-10 px-4 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-100 text-xs font-bold inline-flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Abrir fuera</span>
+                  </a>
+                  <button
+                    type="button"
+                    onClick={handleRetryInlineEmbed}
+                    className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-200 text-xs font-semibold cursor-pointer"
+                  >
+                    Reintentar inline
+                  </button>
+                </div>
+              </div>
+            );
+          }
+
+          // 4) Watchdog Exhausted OR Server Persisted as window_required
+          if (
+            embedWatchdogPhase === 'exhausted' ||
+            embedWatchdogPhase === 'window_preferred'
+          ) {
+            return (
+              <div className="relative w-full h-full bg-gradient-to-b from-[#171224] to-black flex flex-col items-center justify-center p-4 text-center gap-3">
+                <div className="space-y-1 max-w-md">
+                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF]">
+                    {activeTrack?.label || 'Servidor Web'}
+                  </div>
+                  <h4 className="font-display font-bold text-sm sm:text-base text-white">
+                    {embedWatchdogPhase === 'window_preferred'
+                      ? 'Este servidor requiere ventana externa para reproducir sin bloqueos'
+                      : 'Los servidores integrados no respondieron a tiempo'}
+                  </h4>
+                  <p className="text-xs text-zinc-400">
+                    Abre el reproductor directamente en {isMobileExternal ? 'una pestaña' : 'una ventana'} controlada con cambio de capítulos y servidores.
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('success');
+                      openControlledExternalWindow(lastAttemptedUrl);
+                    }}
+                    className="min-h-11 px-5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs sm:text-sm font-bold inline-flex items-center gap-2 shadow-[0_10px_28px_rgba(145,70,255,0.45)] cursor-pointer transition-all"
+                  >
+                    <Play className="w-4 h-4 fill-current" />
+                    <span>Reproducir en ventana externa</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRetryInlineEmbed}
+                    className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-zinc-100 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                    <span>Reintentar inline</span>
+                  </button>
+                  <a
+                    href={externalVidfastHref}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-zinc-100 text-xs font-semibold inline-flex items-center gap-1.5"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    <span>Abrir fuera</span>
+                  </a>
+                </div>
+              </div>
+            );
+          }
+
+          // 5) Default Inline Iframe Mode (clean Permissions Policy `allow`, NO sandbox tricks)
           return (
             <div className="relative w-full h-full bg-black">
               <iframe
-                key={safeIframeSrc}
-                src={safeIframeSrc}
+                key={inlineIframeSrc}
+                src={inlineIframeSrc}
                 title={videoState.title || 'Reproductor Web HD'}
-                {...(safeIframeSrc.startsWith('/api/embed-proxy')
-                  ? {}
-                  : { sandbox: 'allow-scripts allow-same-origin allow-forms allow-presentation' })}
                 allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
                 allowFullScreen
                 referrerPolicy="no-referrer"
@@ -3575,13 +4132,32 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               {!isMinimized && embedRescueDismissedUrl !== videoState.url && (
                 <div className="absolute bottom-2.5 right-2.5 left-2.5 sm:left-auto z-20 flex flex-wrap items-center justify-end gap-1.5 pointer-events-none">
                   <div className="pointer-events-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#111116]/90 backdrop-blur-md border border-white/15 shadow-xl text-[11px] text-zinc-200 max-w-full overflow-x-auto no-scrollbar">
-                    <span className="text-zinc-400 whitespace-nowrap hidden sm:inline">
-                      {pickLang(lang, {
-                        es: '¿Pantalla negra o lento?',
-                        ca: 'Pantalla negra o lent?',
-                        en: 'Black screen or slow?',
-                      })}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        openControlledExternalWindow(activeTrackUrl);
+                      }}
+                      className="min-h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
+                    >
+                      <Play className="w-3 h-3 fill-current" />
+                      <span>Reproducir en ventana</span>
+                    </button>
+
+                    {embedWatchdogPhase !== 'verified' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('success');
+                          handleMarkInlineServerWorking();
+                        }}
+                        title="Confirmar que este servidor funciona integrado y detener cambio automático"
+                        className="min-h-7 px-2.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/35 text-emerald-200 font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
+                      >
+                        <Check className="w-3 h-3" />
+                        <span>Funciona</span>
+                      </button>
+                    )}
 
                     {videoState.tracks.length > 1 && (
                       <button
@@ -3592,7 +4168,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                             (videoState.activeTrackIndex + 1) % videoState.tracks.length;
                           onSelectTrack(nextIdx, currentTime);
                         }}
-                        className="min-h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
+                        className="min-h-7 px-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
                       >
                         {pickLang(lang, {
                           es: 'Otro servidor',
@@ -4241,7 +4817,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                         type="button"
                         onClick={() => {
                           triggerHaptic('light');
-                          onSelectTrack(idx, currentTime);
+                          if (externalWinState === 'open') {
+                            handleSelectExternalServer(idx);
+                          } else {
+                            onSelectTrack(idx, currentTime);
+                          }
                         }}
                         title={tr.label}
                         className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
@@ -4254,6 +4834,24 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       </button>
                     );
                   })}
+                  {videoState.mode === 'embed' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        openControlledExternalWindow();
+                      }}
+                      title={
+                        isMobileExternal
+                          ? 'Reproducir en pestaña externa controlada'
+                          : 'Reproducir en ventana externa controlada'
+                      }
+                      className="min-h-[34px] px-2.5 rounded-xl text-xs font-bold bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] border border-[#9146FF]/45 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+                    >
+                      <Play className="w-3 h-3 fill-current shrink-0" />
+                      <span>Reproducir en ventana</span>
+                    </button>
+                  )}
                   {videoState.mode === 'embed' && onOpenInCloudBrowser && (
                     <button
                       type="button"
@@ -4356,6 +4954,19 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                         ? pickLang(lang, { es: 'Señal en directo', ca: 'Senyal en directe', en: 'Live feed' })
                         : pickLang(lang, { es: 'Proyección activa', ca: 'Projecció activa', en: 'Now playing' }))}
                   </span>
+                  {videoState.mode === 'embed' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        openControlledExternalWindow();
+                      }}
+                      className="min-h-[32px] px-2.5 rounded-xl text-xs font-bold bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] border border-[#9146FF]/45 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
+                    >
+                      <Play className="w-3 h-3 fill-current shrink-0" />
+                      <span>Reproducir en ventana</span>
+                    </button>
+                  )}
                   {videoState.mode === 'embed' && onOpenInCloudBrowser && (
                     <button
                       type="button"

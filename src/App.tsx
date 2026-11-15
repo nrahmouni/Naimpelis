@@ -124,6 +124,7 @@ import { NaimBrandLogo } from './components/NaimBrandLogo';
 import { CloudAccountButton } from './components/CloudAccountButton';
 import { useViewLayoutMode } from './components/MobileViewportGuard';
 import { OfflineIndicator } from './components/PWAInstallPrompt';
+import { PreviewAutoEscapeBanner } from './components/player/PreviewAutoEscapeBanner';
 import {
   FriendsInviteModal,
   GlobalIncomingInviteBanner,
@@ -2417,7 +2418,7 @@ export function App() {
     await handlePlayMovie(item, 'ES');
   };
 
-  const handleNextEpisode = async () => {
+  const handleStepEpisode = async (delta: -1 | 1) => {
     if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
@@ -2425,14 +2426,32 @@ export function App() {
     const meta = videoState.seriesMeta;
     if (!meta) return;
 
-    let nextSeason = meta.season;
-    let nextEp = meta.episode + 1;
-    if (meta.totalEpisodesInSeason && nextEp > meta.totalEpisodesInSeason) {
-      if (!meta.totalSeasons || meta.season < meta.totalSeasons) {
-        nextSeason = meta.season + 1;
-        nextEp = 1;
-      } else {
-        return;
+    let targetSeason = meta.season;
+    let targetEp = meta.episode + delta;
+
+    if (delta > 0) {
+      if (meta.totalEpisodesInSeason && targetEp > meta.totalEpisodesInSeason) {
+        if (!meta.totalSeasons || meta.season < meta.totalSeasons) {
+          targetSeason = meta.season + 1;
+          targetEp = 1;
+        } else {
+          return;
+        }
+      }
+    } else if (targetEp < 1) {
+      if (meta.season <= 1) return;
+      targetSeason = meta.season - 1;
+      try {
+        const seasonRes = await fetch(
+          `/api/catalog/tv/${meta.tmdbId}?season=${targetSeason}&lang=${lang}`
+        );
+        const seasonData = await seasonRes.json();
+        const epsCount = Array.isArray(seasonData?.details?.episodes)
+          ? seasonData.details.episodes.length
+          : 0;
+        targetEp = epsCount > 0 ? epsCount : 1;
+      } catch {
+        targetEp = 1;
       }
     }
 
@@ -2446,18 +2465,18 @@ export function App() {
     setIsExtracting(true);
     setExtractionError(null);
     setExtractionLabel(
-      `${meta.seriesTitle} (${nextSeason}x${String(nextEp).padStart(
+      `${meta.seriesTitle} (${targetSeason}x${String(targetEp).padStart(
         2,
         '0'
-      )}) · Siguiente episodio...`
+      )}) · ${delta > 0 ? 'Siguiente episodio...' : 'Capítulo anterior...'}`
     );
 
     try {
       const params = new URLSearchParams({
         mediaType: 'tv',
         tmdbId: String(meta.tmdbId),
-        season: String(nextSeason),
-        episode: String(nextEp),
+        season: String(targetSeason),
+        episode: String(targetEp),
         preferLang,
         title: meta.seriesTitle,
         ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
@@ -2465,7 +2484,11 @@ export function App() {
       const res = await fetch(`/api/extract/stream?${params.toString()}`);
       const data = await res.json();
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        setExtractionError('No hay más episodios disponibles en esta temporada.');
+        setExtractionError(
+          delta > 0
+            ? 'No hay más episodios disponibles en esta temporada.'
+            : 'No se pudo cargar el capítulo anterior.'
+        );
         return;
       }
 
@@ -2475,14 +2498,14 @@ export function App() {
         tracks.findIndex((tr) => tr.resolvedStreamUrl === data.streamUrl)
       );
 
-      const epLoadId = sanitizeItemKey(`tv-${meta.tmdbId}-${nextSeason}-${nextEp}`);
+      const epLoadId = sanitizeItemKey(`tv-${meta.tmdbId}-${targetSeason}-${targetEp}`);
       activeHistoryIdRef.current = epLoadId;
 
       const nextState: VideoState = {
         mode: data.mode || 'hls',
         url: data.streamUrl,
         rawSourceUrl: epLoadId,
-        title: `${meta.seriesTitle} · ${nextSeason}x${String(nextEp).padStart(2, '0')}`,
+        title: `${meta.seriesTitle} · ${targetSeason}x${String(targetEp).padStart(2, '0')}`,
         subtitle: tracks[activeIdx]?.label || preferLang,
         poster: meta.poster,
         backdrop: meta.backdrop,
@@ -2494,8 +2517,8 @@ export function App() {
         subtitles: Array.isArray(data.subtitles) ? data.subtitles : undefined,
         seriesMeta: {
           ...meta,
-          season: nextSeason,
-          episode: nextEp,
+          season: targetSeason,
+          episode: targetEp,
           episodeTitle: undefined,
         },
         lastUpdated: Date.now(),
@@ -2507,11 +2530,11 @@ export function App() {
         mediaType: 'tv',
         tmdbId: meta.tmdbId,
         title: meta.seriesTitle,
-        subtitle: `${nextSeason}x${String(nextEp).padStart(2, '0')}`,
+        subtitle: `${targetSeason}x${String(targetEp).padStart(2, '0')}`,
         poster: meta.poster || '',
         backdrop: meta.backdrop || meta.poster || '',
-        season: nextSeason,
-        episode: nextEp,
+        season: targetSeason,
+        episode: targetEp,
         preferLang,
         resumeTimeSec: 0,
       });
@@ -2523,11 +2546,18 @@ export function App() {
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
     } catch {
-      setExtractionError('Error al cargar el siguiente episodio.');
+      setExtractionError(
+        delta > 0
+          ? 'Error al cargar el siguiente episodio.'
+          : 'Error al cargar el capítulo anterior.'
+      );
     } finally {
       setIsExtracting(false);
     }
   };
+
+  const handleNextEpisode = () => handleStepEpisode(1);
+  const handlePrevEpisode = () => handleStepEpisode(-1);
 
   const handlePlaySportsMatch = async (
     match: SportsMatch,
@@ -4151,6 +4181,7 @@ export function App() {
   if (!inRoom) {
     return (
       <MotionConfig reducedMotion={reducedMotion ? 'always' : 'user'}>
+        <PreviewAutoEscapeBanner variant="floating" />
         {showIntro && (
           <NaimcineIntro
             withSound={introWithSound}
@@ -4250,6 +4281,7 @@ export function App() {
             onSyncAction={handleSyncPlayerAction}
             onSelectTrack={handleSelectTrack}
             onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
+            onPrevEpisode={handlePrevEpisode}
             onNextEpisode={handleNextEpisode}
             roomCode={roomId}
             roomDisplayName={roomName || `Sala ${roomId.toUpperCase()}`}
@@ -4455,6 +4487,7 @@ export function App() {
             : 'bg-[#0B0B0E]'
         }`}
       >
+        <PreviewAutoEscapeBanner variant="bar" />
         <OfflineIndicator lang={lang} />
 
         {/* Live In-App Room Invite & Friend-Added Banner */}
@@ -4493,6 +4526,12 @@ export function App() {
           roomId={roomId}
           roomName={roomName || `Sala ${roomId.toUpperCase()}`}
           activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : undefined}
+          activeMediaPoster={
+            videoState.mode !== 'idle'
+              ? videoState.poster || videoState.backdrop
+              : undefined
+          }
+          activeMediaIsLive={videoState.mode !== 'idle' && Boolean(videoState.isLive)}
           currentUser={currentUser}
           participants={participants}
           savedFriends={savedFriends}
@@ -5136,6 +5175,7 @@ export function App() {
                     onSyncAction={handleSyncPlayerAction}
                     onSelectTrack={handleSelectTrack}
                     onPromoteCloudStreamToNative={handlePromoteCloudStreamToNative}
+                    onPrevEpisode={handlePrevEpisode}
                     onNextEpisode={handleNextEpisode}
                     onProgressUpdate={handlePlayerProgressUpdate}
                     isCinemaMode={isCinemaMode}
@@ -5318,6 +5358,12 @@ export function App() {
                     typingUsers={typingUsers}
                     onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
                     activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
+                    activeMediaPoster={
+                      videoState.mode !== 'idle'
+                        ? videoState.poster || videoState.backdrop || ''
+                        : ''
+                    }
+                    activeMediaIsLive={videoState.mode !== 'idle' && Boolean(videoState.isLive)}
                     currentVideoTimeSec={
                       videoState.mode !== 'idle' && !videoState.isLive
                         ? livePlaybackSec || videoState.currentTime || 0
@@ -5742,6 +5788,12 @@ export function App() {
                   typingUsers={typingUsers}
                   onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
                   activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
+                  activeMediaPoster={
+                    videoState.mode !== 'idle'
+                      ? videoState.poster || videoState.backdrop || ''
+                      : ''
+                  }
+                  activeMediaIsLive={videoState.mode !== 'idle' && Boolean(videoState.isLive)}
                   currentVideoTimeSec={
                     videoState.mode !== 'idle' && !videoState.isLive
                       ? livePlaybackSec || videoState.currentTime || 0

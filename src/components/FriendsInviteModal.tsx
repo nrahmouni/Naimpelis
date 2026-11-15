@@ -13,6 +13,9 @@ import {
   Sparkles,
   Copy,
   QrCode,
+  Film,
+  Radio,
+  MessageCircle,
 } from 'lucide-react';
 import {
   AppLanguage,
@@ -26,6 +29,10 @@ import { deriveFriendCode } from '../utils/storage';
 import { buildShortInviteUrl } from '../utils/shortLink';
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
+import {
+  buildLocalizedInviteMessage,
+  buildWhatsAppShareUrl,
+} from '../utils/inviteShare';
 import { useFocusTrap } from '../utils/useFocusTrap';
 
 interface FriendsInviteModalProps {
@@ -36,6 +43,8 @@ interface FriendsInviteModalProps {
   roomId: string;
   roomName: string;
   activeMediaTitle?: string;
+  activeMediaPoster?: string;
+  activeMediaIsLive?: boolean;
   participants: Participant[];
   savedFriends: SavedFriend[];
   onlineUsers: OnlineAppUser[];
@@ -63,6 +72,9 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
   currentUser,
   roomId,
   roomName,
+  activeMediaTitle,
+  activeMediaPoster,
+  activeMediaIsLive = false,
   participants,
   savedFriends,
   onlineUsers,
@@ -164,17 +176,29 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     }
   };
 
+  const localizedInviteText = buildLocalizedInviteMessage({
+    lang,
+    roomName,
+    userName: currentUser.name,
+    activeMediaTitle,
+    activeMediaIsLive,
+  });
+  const whatsappShareUrl = buildWhatsAppShareUrl({
+    lang,
+    roomName,
+    inviteUrl,
+    userName: currentUser.name,
+    activeMediaTitle,
+    activeMediaIsLive,
+  });
+
   const handleShareOrCopyLink = async () => {
     triggerHaptic('success');
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
-          title: `${roomName} — NAIM CINE`,
-          text: pickLang(lang, {
-            es: `Únete a mi sala en directo (${roomName}):`,
-            ca: `Uneix-te a la meva sala en directe (${roomName}):`,
-            en: `Join my live watch room (${roomName}):`,
-          }),
+          title: activeMediaTitle ? `${activeMediaTitle} — NAIM CINE` : `${roomName} — NAIM CINE`,
+          text: localizedInviteText,
           url: inviteUrl,
         });
         return;
@@ -183,7 +207,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
       }
     }
     try {
-      await navigator.clipboard.writeText(inviteUrl);
+      await navigator.clipboard.writeText(`${localizedInviteText}\n${inviteUrl}`);
       setCopiedRoomLink(true);
       setTimeout(() => setCopiedRoomLink(false), 2200);
     } catch {
@@ -393,35 +417,111 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
               </div>
             )}
 
-            <button
-              type="button"
-              onClick={handleShareOrCopyLink}
-              className="w-full min-h-10 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] border border-white/10 text-xs font-semibold text-white flex items-center justify-center gap-2 cursor-pointer transition-colors"
-            >
-              {copiedRoomLink ? (
-                <>
-                  <Check className="w-4 h-4 text-emerald-400" />
-                  <span>
-                    {pickLang(lang, {
-                      es: '¡Enlace de sala copiado al portapapeles!',
-                      ca: 'Enllaç de sala copiat al porta-retalls!',
-                      en: 'Room link copied to clipboard!',
-                    })}
-                  </span>
-                </>
-              ) : (
-                <>
-                  <Share2 className="w-4 h-4 text-[#BF94FF]" />
-                  <span>
-                    {pickLang(lang, {
-                      es: 'Compartir enlace de la sala (WhatsApp / Copiar)',
-                      ca: 'Compartir enllaç de la sala (WhatsApp / Copiar)',
-                      en: 'Share room link (WhatsApp / Copy)',
-                    })}
-                  </span>
-                </>
-              )}
-            </button>
+            {/* Active Movie Poster or Live Channel Preview + WhatsApp Share */}
+            {(activeMediaTitle || activeMediaPoster) && (
+              <div className="p-2.5 rounded-xl bg-black/40 border border-white/[0.08] flex items-center gap-3">
+                {activeMediaPoster ? (
+                  <img
+                    src={activeMediaPoster}
+                    alt={activeMediaTitle || roomName}
+                    referrerPolicy="no-referrer"
+                    className={`shrink-0 rounded-lg border border-white/10 ${
+                      activeMediaIsLive
+                        ? 'w-14 h-12 object-contain bg-black/70 p-1'
+                        : 'w-12 h-16 object-cover'
+                    }`}
+                  />
+                ) : (
+                  <div className="w-12 h-14 rounded-lg bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0">
+                    {activeMediaIsLive ? (
+                      <Radio className="w-5 h-5 text-[#EB0400]" />
+                    ) : (
+                      <Film className="w-5 h-5" />
+                    )}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1 space-y-1">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {activeMediaIsLive ? (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#EB0400]/20 border border-[#EB0400]/45 text-[10px] font-extrabold uppercase tracking-wider text-rose-200">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400] animate-pulse" />
+                        <span>
+                          {pickLang(lang, {
+                            es: 'Canal en directo',
+                            ca: 'Canal en directe',
+                            en: 'Live channel',
+                          })}
+                        </span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#9146FF]/20 border border-[#9146FF]/45 text-[10px] font-bold uppercase tracking-wider text-[#D8B4FE]">
+                        {pickLang(lang, {
+                          es: 'Viendo ahora',
+                          ca: 'Veient ara',
+                          en: 'Now watching',
+                        })}
+                      </span>
+                    )}
+                  </div>
+                  {activeMediaTitle && (
+                    <div className="text-xs font-bold text-white truncate">
+                      {activeMediaTitle}
+                    </div>
+                  )}
+                  <p className="text-[11px] text-zinc-400 line-clamp-2 leading-snug">
+                    “{localizedInviteText}”
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <a
+                href={whatsappShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full min-h-10 px-4 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-xs font-bold text-emerald-100 flex items-center justify-center gap-2 transition-colors"
+              >
+                <MessageCircle className="w-4 h-4 text-emerald-300 shrink-0" />
+                <span>
+                  {pickLang(lang, {
+                    es: 'Enviar por WhatsApp',
+                    ca: 'Enviar per WhatsApp',
+                    en: 'Send on WhatsApp',
+                  })}
+                </span>
+              </a>
+
+              <button
+                type="button"
+                onClick={handleShareOrCopyLink}
+                className="w-full min-h-10 px-4 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] border border-white/10 text-xs font-semibold text-white flex items-center justify-center gap-2 cursor-pointer transition-colors"
+              >
+                {copiedRoomLink ? (
+                  <>
+                    <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        es: '¡Copiado!',
+                        ca: 'Copiat!',
+                        en: 'Copied!',
+                      })}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        es: 'Compartir / Copiar',
+                        ca: 'Compartir / Copiar',
+                        en: 'Share / Copy',
+                      })}
+                    </span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
 
           {/* 2. Saved Friends List */}

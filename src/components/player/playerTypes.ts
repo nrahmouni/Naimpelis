@@ -170,6 +170,7 @@ export interface NativeCinemaPlayerProps {
       | 'games'
       | 'direct'
   ) => void;
+  onPrevEpisode?: () => void;
   onNextEpisode?: () => void;
   onProgressUpdate?: (currentTimeSec: number, durationSec: number) => void;
   isCinemaMode?: boolean;

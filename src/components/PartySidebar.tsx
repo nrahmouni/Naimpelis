@@ -22,6 +22,9 @@ import {
   Clock,
   ChevronUp,
   Pin,
+  Film,
+  Radio,
+  MessageCircle,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -37,6 +40,10 @@ import {
 import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
 import type { TypingUserPayload } from '../shared/protocol';
 import { UI_COPY, pickLang } from '../utils/i18n';
+import {
+  buildLocalizedInviteMessage,
+  buildWhatsAppShareUrl,
+} from '../utils/inviteShare';
 import { buildShortInviteUrl } from '../utils/shortLink';
 import { deriveFriendCode } from '../utils/storage';
 import { triggerHaptic } from '../utils/haptics';
@@ -98,6 +105,8 @@ interface PartySidebarProps {
   typingUsers?: TypingUserPayload[];
   onTypingChange?: (isTyping: boolean) => void;
   activeMediaTitle?: string;
+  activeMediaPoster?: string;
+  activeMediaIsLive?: boolean;
   currentVideoTimeSec?: number;
   onSeekToTimestamp?: (seconds: number) => void;
   onPlayCustomUrl: (rawUrl: string) => void;
@@ -195,6 +204,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   typingUsers = [],
   onTypingChange,
   activeMediaTitle = '',
+  activeMediaPoster = '',
+  activeMediaIsLive = false,
   currentVideoTimeSec = 0,
   onSeekToTimestamp,
   onPlayCustomUrl,
@@ -304,24 +315,28 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
     Boolean(pairedCodeLabel) ||
     forceShowRemote;
 
-  const handleShareInvite = async () => {
-    const shareText = activeMediaTitle
-      ? pickLang(lang, {
-          es: `🍿 Estamos viendo «${activeMediaTitle}» en directo en la sala de ${currentUser.name}. ¡Entra en 1 toque:`,
-          ca: `🍿 Estem veient «${activeMediaTitle}» en directe a la sala de ${currentUser.name}. Entra en 1 toc:`,
-          en: `🍿 We're watching "${activeMediaTitle}" live in ${currentUser.name}'s room. Join in 1 tap:`,
-        })
-      : pickLang(lang, {
-          es: `🍿 Únete a nuestra sala de cine y fútbol en directo (${roomName}):`,
-          ca: `🍿 Uneix-te a la nostra sala de cinema i futbol en directe (${roomName}):`,
-          en: `🍿 Join our live cinema & sports watch room (${roomName}):`,
-        });
+  const localizedInviteText = buildLocalizedInviteMessage({
+    lang,
+    roomName,
+    userName: currentUser.name,
+    activeMediaTitle,
+    activeMediaIsLive,
+  });
+  const whatsappShareUrl = buildWhatsAppShareUrl({
+    lang,
+    roomName,
+    inviteUrl,
+    userName: currentUser.name,
+    activeMediaTitle,
+    activeMediaIsLive,
+  });
 
+  const handleShareInvite = async () => {
     if (typeof navigator !== 'undefined' && navigator.share) {
       try {
         await navigator.share({
-          title: `${roomName} — NAIM CINE`,
-          text: shareText,
+          title: activeMediaTitle ? `${activeMediaTitle} — NAIM CINE` : `${roomName} — NAIM CINE`,
+          text: localizedInviteText,
           url: inviteUrl,
         });
         return;
@@ -330,7 +345,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       }
     }
     try {
-      await navigator.clipboard.writeText(`${shareText}\n${inviteUrl}`);
+      await navigator.clipboard.writeText(`${localizedInviteText}\n${inviteUrl}`);
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
     } catch {
@@ -950,7 +965,72 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-2.5">
+            {(activeMediaTitle || activeMediaPoster) && (
+              <div className="p-2.5 rounded-xl bg-black/35 border border-white/[0.08] flex items-center gap-2.5">
+                {activeMediaPoster ? (
+                  <img
+                    src={activeMediaPoster}
+                    alt={activeMediaTitle || roomName}
+                    referrerPolicy="no-referrer"
+                    className={`shrink-0 rounded-lg border border-white/10 ${
+                      activeMediaIsLive
+                        ? 'w-12 h-10 object-contain bg-black/70 p-1'
+                        : 'w-10 h-14 object-cover'
+                    }`}
+                  />
+                ) : (
+                  <div className="w-10 h-12 rounded-lg bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0">
+                    {activeMediaIsLive ? (
+                      <Radio className="w-4 h-4 text-[#EB0400]" />
+                    ) : (
+                      <Film className="w-4 h-4" />
+                    )}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1 space-y-0.5">
+                  {activeMediaIsLive ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-[#EB0400]/20 border border-[#EB0400]/45 text-[9px] font-extrabold uppercase tracking-wider text-rose-200">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400] animate-pulse" />
+                      <span>
+                        {pickLang(lang, {
+                          es: 'Canal en directo',
+                          ca: 'Canal en directe',
+                          en: 'Live channel',
+                        })}
+                      </span>
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-[#9146FF]/20 border border-[#9146FF]/45 text-[9px] font-bold uppercase tracking-wider text-[#D8B4FE]">
+                      {pickLang(lang, {
+                        es: 'Viendo ahora',
+                        ca: 'Veient ara',
+                        en: 'Now watching',
+                      })}
+                    </span>
+                  )}
+                  {activeMediaTitle && (
+                    <div className="text-xs font-bold text-white truncate">
+                      {activeMediaTitle}
+                    </div>
+                  )}
+                  <p className="text-[10px] text-zinc-400 line-clamp-2 leading-snug">
+                    “{localizedInviteText}”
+                  </p>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-2">
+              <a
+                href={whatsappShareUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="min-h-10 px-3 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-xs font-bold text-emerald-100 flex items-center justify-center gap-1.5 whitespace-nowrap transition-colors"
+              >
+                <MessageCircle className="w-4 h-4 text-emerald-300 shrink-0" />
+                <span>WhatsApp</span>
+              </a>
+
               <SecondaryButton onClick={handleShareInvite} fullWidth className="whitespace-nowrap">
                 {copiedLink ? (
                   <>
@@ -966,21 +1046,21 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   </>
                 )}
               </SecondaryButton>
-
-              <SecondaryButton
-                onClick={() => setShowTvRemoteSheet(true)}
-                active={hasConnectedSmartTv}
-                fullWidth
-                className="whitespace-nowrap"
-              >
-                <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
-                <span>
-                  {hasConnectedSmartTv
-                    ? pickLang(lang, { es: 'TV Activa', ca: 'TV Activa', en: 'TV Active' })
-                    : pickLang(lang, { es: 'Mando TV', ca: 'Comandament TV', en: 'TV Remote' })}
-                </span>
-              </SecondaryButton>
             </div>
+
+            <SecondaryButton
+              onClick={() => setShowTvRemoteSheet(true)}
+              active={hasConnectedSmartTv}
+              fullWidth
+              className="whitespace-nowrap"
+            >
+              <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
+              <span>
+                {hasConnectedSmartTv
+                  ? pickLang(lang, { es: 'TV Activa', ca: 'TV Activa', en: 'TV Active' })
+                  : pickLang(lang, { es: 'Mando TV', ca: 'Comandament TV', en: 'TV Remote' })}
+              </span>
+            </SecondaryButton>
           </div>
 
           {inviteSentFeedback && (
