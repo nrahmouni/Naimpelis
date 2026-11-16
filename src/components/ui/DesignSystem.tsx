@@ -11,39 +11,48 @@ import {
   Maximize2,
   Unlink,
   Subtitles,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
 } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { useFocusTrap } from '../../utils/useFocusTrap';
+import { PosterImage } from './PosterImage';
 
 // ============================================================================
-// 1. SINGLE SOURCE OF TRUTH: BUTTONS & INPUTS (Min 44x44px Touch Target)
+// 1. SINGLE SOURCE OF TRUTH: BUTTONS & INPUTS (Min 48px Touch Target)
 // ============================================================================
 
 export interface PrimaryButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   children: React.ReactNode;
   fullWidth?: boolean;
   size?: 'md' | 'lg';
+  loading?: boolean;
 }
 
 export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
   children,
   fullWidth = false,
   size = 'md',
+  loading = false,
+  disabled,
   className = '',
   ...props
 }) => {
   const sizeClass =
     size === 'lg'
       ? 'min-h-12 px-6 py-3 text-sm rounded-2xl'
-      : 'min-h-11 px-4 py-2.5 text-xs rounded-2xl';
+      : 'min-h-12 px-4 py-2.5 text-xs rounded-2xl';
   return (
     <button
       {...props}
-      className={`group relative overflow-hidden inline-flex items-center justify-center gap-2 font-bold text-white bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] hover:from-[#A96EFF] hover:to-[#8738F5] active:scale-[0.97] transition-all duration-150 shadow-[0_8px_24px_rgba(145,70,255,0.34),inset_0_1px_0_rgba(255,255,255,0.28)] disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer ${
+      disabled={disabled || loading}
+      className={`group relative overflow-hidden inline-flex items-center justify-center gap-2 font-bold text-white bg-[#9146FF] hover:bg-[#7C2AE8] active:scale-[0.97] transition-all duration-150 shadow-[0_6px_18px_rgba(145,70,255,0.28)] disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer ${
         fullWidth ? 'w-full' : ''
       } ${sizeClass} ${className}`}
     >
+      {loading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : null}
       {children}
     </button>
   );
@@ -54,6 +63,7 @@ export interface SecondaryButtonProps extends React.ButtonHTMLAttributes<HTMLBut
   fullWidth?: boolean;
   active?: boolean;
   size?: 'md' | 'lg';
+  loading?: boolean;
 }
 
 export const SecondaryButton: React.FC<SecondaryButtonProps> = ({
@@ -61,22 +71,26 @@ export const SecondaryButton: React.FC<SecondaryButtonProps> = ({
   fullWidth = false,
   active = false,
   size = 'md',
+  loading = false,
+  disabled,
   className = '',
   ...props
 }) => {
   const sizeClass =
     size === 'lg'
       ? 'min-h-12 px-6 py-3 text-sm rounded-2xl'
-      : 'min-h-11 px-4 py-2.5 text-xs rounded-2xl';
+      : 'min-h-12 px-4 py-2.5 text-xs rounded-2xl';
   return (
     <button
       {...props}
-      className={`inline-flex items-center justify-center gap-2 font-semibold backdrop-blur-xl active:scale-[0.97] transition-all duration-150 disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer border shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] ${
+      disabled={disabled || loading}
+      className={`inline-flex items-center justify-center gap-2 font-semibold active:scale-[0.97] transition-all duration-150 disabled:opacity-45 disabled:pointer-events-none select-none cursor-pointer border ${
         active
-          ? 'bg-[#9146FF]/22 border-[#9146FF]/60 text-white shadow-[0_0_22px_rgba(145,70,255,0.26),inset_0_1px_0_rgba(255,255,255,0.16)]'
-          : 'bg-white/[0.055] hover:bg-white/[0.11] border-white/[0.09] hover:border-white/[0.18] text-zinc-100 hover:text-white'
+          ? 'bg-[#9146FF]/22 border-[#9146FF]/60 text-white'
+          : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.1] hover:border-white/[0.18] text-zinc-100 hover:text-white'
       } ${fullWidth ? 'w-full' : ''} ${sizeClass} ${className}`}
     >
+      {loading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : null}
       {children}
     </button>
   );
@@ -97,19 +111,19 @@ export const IconButton: React.FC<IconButtonProps> = ({
 }) => {
   const variantClasses =
     variant === 'crimson'
-      ? 'bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] hover:from-[#A96EFF] hover:to-[#8738F5] text-white border border-white/20 shadow-[0_8px_20px_rgba(145,70,255,0.34)]'
+      ? 'bg-[#9146FF] hover:bg-[#7C2AE8] text-white border border-white/15'
       : variant === 'ghost'
       ? active
         ? 'bg-white/15 text-white'
         : 'bg-transparent hover:bg-white/[0.09] text-zinc-300 hover:text-white'
       : active
-      ? 'bg-[#9146FF]/24 border border-[#9146FF]/60 text-white shadow-[0_0_18px_rgba(145,70,255,0.3)]'
-      : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] hover:border-white/[0.18] text-zinc-200 hover:text-white backdrop-blur-xl shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]';
+      ? 'bg-[#9146FF]/24 border border-[#9146FF]/60 text-white'
+      : 'bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-zinc-200 hover:text-white';
 
   return (
     <button
       {...props}
-      className={`min-h-11 min-w-11 rounded-2xl inline-flex items-center justify-center active:scale-90 transition-all duration-150 select-none cursor-pointer shrink-0 ${variantClasses} ${className}`}
+      className={`min-h-12 min-w-12 rounded-2xl inline-flex items-center justify-center active:scale-95 transition-all duration-150 select-none cursor-pointer shrink-0 ${variantClasses} ${className}`}
     >
       {children}
     </button>
@@ -133,9 +147,9 @@ export const StandardInput = React.forwardRef<HTMLInputElement, StandardInputPro
         <input
           ref={ref}
           {...props}
-          className={`w-full min-h-11 ${icon ? 'pl-10' : 'pl-4'} ${
+          className={`w-full min-h-12 ${icon ? 'pl-10' : 'pl-4'} ${
             rightElement ? 'pr-12' : 'pr-4'
-          } py-2.5 rounded-2xl bg-white/[0.045] hover:bg-white/[0.07] focus:bg-white/[0.085] border border-white/[0.09] focus:border-[#9146FF] focus:shadow-[0_0_0_3px_rgba(145,70,255,0.18)] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all ${className}`}
+          } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.085] border border-white/[0.1] focus:border-[#9146FF] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all duration-150 ${className}`}
         />
         {rightElement && (
           <div className="absolute right-1.5 flex items-center justify-center">
@@ -184,7 +198,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          transition={{ duration: 0.18, ease: 'easeOut' }}
+          transition={{ duration: 0.15, ease: 'easeOut' }}
           className="fixed inset-0 z-[190] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 overflow-x-hidden"
           onClick={onClose}
         >
@@ -194,23 +208,31 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
             aria-modal="true"
             aria-labelledby={titleId}
             tabIndex={-1}
-            initial={{ opacity: 0, y: 28, scale: 0.97 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.97 }}
-            transition={{ type: 'spring', stiffness: 420, damping: 34, mass: 0.9 }}
-            className={`w-full min-w-0 max-w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl border-t sm:border border-white/[0.12] shadow-[0_-24px_80px_rgba(0,0,0,0.92),inset_0_1px_0_rgba(255,255,255,0.12)] overflow-hidden flex flex-col max-h-[88dvh] outline-none`}
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 0 }}
+            dragElastic={{ top: 0, bottom: 0.45 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 90 || info.velocity.y > 480) {
+                onClose();
+              }
+            }}
+            initial={{ opacity: 0, y: 24 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 16 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className={`w-full min-w-0 max-w-full ${maxWidth} rounded-t-3xl sm:rounded-3xl bg-[#141418] border-t sm:border border-white/[0.1] shadow-[0_-24px_80px_rgba(0,0,0,0.92)] overflow-hidden flex flex-col max-h-[88dvh] outline-none`}
             onClick={(e) => e.stopPropagation()}
           >
-            {/* Drag handle for mobile feel */}
-            <div className="pt-2.5 pb-1 flex justify-center sm:hidden">
-              <div className="w-10 h-1.5 rounded-full bg-white/25" />
+            {/* Drag handle for mobile swipe-to-dismiss feel */}
+            <div className="pt-2.5 pb-1 flex justify-center sm:hidden touch-none">
+              <div className="w-10 h-1 rounded-full bg-white/25" />
             </div>
 
             {/* Header */}
-            <div className="px-4 sm:px-5 py-3.5 border-b border-white/[0.07] flex items-center justify-between gap-3 bg-gradient-to-b from-white/[0.03] to-transparent min-w-0">
+            <div className="px-4 sm:px-5 py-3 border-b border-white/[0.07] flex items-center justify-between gap-3 min-w-0">
               <div className="flex items-center gap-3 min-w-0">
                 {icon && (
-                  <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0 shadow-[inset_0_1px_0_rgba(255,255,255,0.14)]">
+                  <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0">
                     {icon}
                   </div>
                 )}
@@ -226,7 +248,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
               <IconButton
                 onClick={onClose}
                 variant="ghost"
-                aria-label={pickLang(lang, { es: 'Cerrar menú', ca: 'Tancar menú', en: 'Close menu' })}
+                aria-label={pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}
               >
                 <X className="w-5 h-5" />
               </IconButton>
@@ -280,7 +302,7 @@ export function SegmentedControl<T extends string>({
         compact
           ? 'w-auto inline-flex p-0.5 rounded-xl gap-0.5'
           : 'w-full min-w-0 p-1 rounded-2xl flex items-center gap-1'
-      } bg-white/[0.04] backdrop-blur-xl border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] items-center overflow-hidden ${className}`}
+      } bg-white/[0.04] border border-white/[0.08] items-center overflow-hidden ${className}`}
     >
       {options.map((option) => {
         const isActive = option.id === value;
@@ -291,17 +313,17 @@ export function SegmentedControl<T extends string>({
             onClick={() => onChange(option.id)}
             className={`relative flex items-center justify-center select-none cursor-pointer active:scale-[0.98] transition-colors duration-150 ${
               compact
-                ? 'flex-none h-7 min-h-7 px-2 py-0.5 rounded-lg text-[11px] font-semibold gap-1'
-                : 'flex-1 min-w-0 min-h-11 px-1.5 sm:px-3 py-2 rounded-xl text-[11px] sm:text-xs font-bold gap-1 sm:gap-1.5'
+                ? 'flex-none min-h-10 px-2.5 py-1 rounded-lg text-xs font-semibold gap-1'
+                : 'flex-1 min-w-0 min-h-12 px-2 sm:px-3 py-2 rounded-xl text-xs font-bold gap-1 sm:gap-1.5'
             } ${isActive ? 'text-white' : 'text-zinc-400 hover:text-zinc-100'}`}
           >
             {isActive && (
               <motion.span
                 layoutId={pillId}
-                transition={{ type: 'spring', stiffness: 480, damping: 36 }}
+                transition={{ duration: 0.16, ease: 'easeOut' }}
                 className={`absolute inset-0 ${
                   compact ? 'rounded-lg' : 'rounded-xl'
-                } bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] shadow-[0_4px_16px_rgba(145,70,255,0.42),inset_0_1px_0_rgba(255,255,255,0.26)]`}
+                } bg-[#9146FF]`}
                 aria-hidden="true"
               />
             )}
@@ -630,3 +652,142 @@ export const HapticTvRemote: React.FC<HapticTvRemoteProps> = ({
     </div>
   );
 };
+
+// ============================================================================
+// 6. REUSABLE UI PRIMITIVES: Button, Chip, Card, Poster, Skeleton, Error
+// ============================================================================
+
+export const Button = PrimaryButton;
+
+export interface ChipProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  active?: boolean;
+  children: React.ReactNode;
+}
+
+export const Chip: React.FC<ChipProps> = ({
+  active = false,
+  children,
+  className = '',
+  ...props
+}) => (
+  <button
+    type="button"
+    {...props}
+    className={`min-h-12 px-4 rounded-2xl text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-[0.97] transition-all duration-150 border disabled:opacity-45 disabled:pointer-events-none ${
+      active
+        ? 'bg-[#9146FF] border-[#9146FF] text-white'
+        : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.09] text-zinc-200'
+    } ${className}`}
+  >
+    {children}
+  </button>
+);
+
+export interface CardProps extends React.HTMLAttributes<HTMLDivElement> {
+  elevated?: boolean;
+  children: React.ReactNode;
+}
+
+export const Card: React.FC<CardProps> = ({
+  elevated = false,
+  children,
+  className = '',
+  ...props
+}) => (
+  <div
+    {...props}
+    className={`rounded-3xl border border-white/[0.09] ${
+      elevated ? 'bg-[#181B26] shadow-[0_14px_36px_rgba(0,0,0,0.65)]' : 'bg-[#11131B]'
+    } ${className}`}
+  >
+    {children}
+  </div>
+);
+
+export interface PosterProps {
+  src?: string | null;
+  title: string;
+  subtitle?: string;
+  onClick?: () => void;
+  topRight?: React.ReactNode;
+  aspect?: 'poster' | 'video';
+  className?: string;
+}
+
+export const Poster: React.FC<PosterProps> = ({
+  src,
+  title,
+  subtitle,
+  onClick,
+  topRight,
+  aspect = 'poster',
+  className = '',
+}) => (
+  <div
+    className={`group relative overflow-hidden rounded-2xl bg-[#0E0F16] border border-white/[0.08] hover:border-[#9146FF]/50 transition-colors ${
+      aspect === 'poster' ? 'aspect-[2/3]' : 'aspect-video'
+    } ${className}`}
+  >
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={title}
+      className="absolute inset-0 z-0 cursor-pointer rounded-2xl"
+    />
+    <div className="absolute inset-0 z-[1] pointer-events-none">
+      <PosterImage
+        src={src}
+        alt={title}
+        aspect={aspect}
+        imgClassName="sm:group-hover:scale-105 transition-transform duration-300"
+        fallbackTitle={title}
+      />
+    </div>
+    {topRight && <div className="absolute top-2 right-2 z-10">{topRight}</div>}
+    <div className="absolute inset-x-0 bottom-0 z-[2] pt-14 pb-3 px-3 bg-gradient-to-t from-black/95 via-black/75 to-transparent pointer-events-none">
+      <div className="font-display font-bold text-xs sm:text-sm text-white line-clamp-2 leading-snug">
+        {title}
+      </div>
+      {subtitle && (
+        <div className="text-[11px] text-zinc-300 mt-0.5 truncate tabular-nums">{subtitle}</div>
+      )}
+    </div>
+  </div>
+);
+
+export const Skeleton = SkeletonPosterGrid;
+export const EmptyState = EmptyStateCard;
+
+export const SkeletonList: React.FC<{ rows?: number; heightClass?: string }> = ({
+  rows = 5,
+  heightClass = 'h-20',
+}) => (
+  <div className="space-y-2.5">
+    {Array.from({ length: rows }).map((_, i) => (
+      <div
+        key={i}
+        className={`${heightClass} rounded-2xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer`}
+      />
+    ))}
+  </div>
+);
+
+export const ErrorRetryBanner: React.FC<{
+  message: string;
+  onRetry?: () => void;
+  lang?: AppLanguage;
+}> = ({ message, onRetry, lang = 'es' }) => (
+  <div className="p-4 rounded-2xl bg-[#141418] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
+    <div className="flex items-center gap-2.5 min-w-0">
+      <AlertCircle className="w-5 h-5 text-[#BF94FF] shrink-0" />
+      <p className="text-xs sm:text-sm text-zinc-200 line-clamp-2">{message}</p>
+    </div>
+    {onRetry && (
+      <SecondaryButton onClick={onRetry}>
+        <RefreshCw className="w-4 h-4" />
+        <span>{pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry' })}</span>
+      </SecondaryButton>
+    )}
+  </div>
+);
+

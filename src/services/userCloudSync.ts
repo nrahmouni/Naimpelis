@@ -1,7 +1,6 @@
 import {
   onAuthStateChanged,
   signInWithPopup,
-  signInWithRedirect,
   signOut,
   User,
 } from 'firebase/auth';
@@ -177,10 +176,16 @@ export function buildSavedRoomDocId(uid: string, rawRoomCode: string): string {
 // ============================================================================
 // AUTHENTICATION ACTIONS (GOOGLE POPUP ONLY)
 // ============================================================================
-export async function signInWithGoogleAccount(): Promise<User | null> {
+export interface GoogleSignInResult {
+  user: User | null;
+  errorCode?: string;
+  hostname?: string;
+}
+
+export async function signInWithGoogleAccountDetailed(): Promise<GoogleSignInResult> {
   try {
     const cred = await signInWithPopup(auth, googleProvider);
-    return cred.user;
+    return { user: cred.user };
   } catch (err: unknown) {
     const code =
       err && typeof err === 'object' && 'code' in err
@@ -190,17 +195,26 @@ export async function signInWithGoogleAccount(): Promise<User | null> {
       code === 'auth/popup-closed-by-user' ||
       code === 'auth/cancelled-popup-request'
     ) {
-      return null;
+      return { user: null };
+    }
+    const hostname =
+      typeof window !== 'undefined' ? window.location.hostname : '';
+    if (code === 'auth/unauthorized-domain') {
+      return { user: null, errorCode: code, hostname };
     }
     if (
       code === 'auth/popup-blocked' ||
       code === 'auth/operation-not-supported-in-this-environment'
     ) {
-      await signInWithRedirect(auth, googleProvider);
-      return null;
+      return { user: null, errorCode: code, hostname };
     }
-    throw err;
+    return { user: null, errorCode: code || 'auth/unknown', hostname };
   }
+}
+
+export async function signInWithGoogleAccount(): Promise<User | null> {
+  const res = await signInWithGoogleAccountDetailed();
+  return res.user;
 }
 
 export async function signOutGoogleAccount(): Promise<void> {

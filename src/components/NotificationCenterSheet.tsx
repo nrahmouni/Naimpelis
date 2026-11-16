@@ -58,21 +58,23 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
 
   const [showSettings, setShowSettings] = useState(false);
 
+  const sorted = [...notifications].sort((a, b) => b.createdAt - a.createdAt);
+  const showAdvancedControls = sorted.length > 5;
   const filtered =
-    activeFilter === 'all'
-      ? notifications
-      : notifications.filter((n) => n.category === activeFilter);
+    !showAdvancedControls || activeFilter === 'all'
+      ? sorted
+      : sorted.filter((n) => n.category === activeFilter);
 
   const renderCategoryIcon = (cat: AppNotificationItem['category']) => {
     switch (cat) {
       case 'invite':
         return <Users className="w-4 h-4 text-[#BF94FF]" />;
       case 'football':
-        return <Trophy className="w-4 h-4 text-emerald-400" />;
+        return <Trophy className="w-4 h-4 text-[#BF94FF]" />;
       case 'series':
-        return <Film className="w-4 h-4 text-sky-400" />;
+        return <Film className="w-4 h-4 text-[#BF94FF]" />;
       case 'update':
-        return <RefreshCw className="w-4 h-4 text-amber-400" />;
+        return <RefreshCw className="w-4 h-4 text-[#BF94FF]" />;
       default:
         return <Bell className="w-4 h-4 text-zinc-300" />;
     }
@@ -88,77 +90,82 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
         ca: 'Notificacions',
         en: 'Notifications',
       })}
-      subtitle={pickLang(lang, {
-        es: 'Invitaciones a salas, goles en directo, estrenos y actualizaciones',
-        ca: 'Invitacions a sales, gols en directe, estrenes i actualitzacions',
-        en: 'Room invites, live goals, premieres and app updates',
-      })}
       icon={<Bell className="w-5 h-5" />}
       maxWidth="sm:max-w-xl"
     >
-      {/* Top Toolbar */}
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
-          {CATEGORY_TABS.map((tab) => {
-            const active = activeFilter === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveFilter(tab.id)}
-                className={`min-h-9 px-3 rounded-xl text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                  active
-                    ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white shadow-[0_6px_16px_rgba(145,70,255,0.3)]'
-                    : 'bg-white/[0.045] text-[#EFEFF1] hover:bg-white/[0.1] border border-white/[0.08]'
-                }`}
-              >
-                {pickLang(lang, tab)}
-              </button>
-            );
-          })}
-        </div>
+      {/* Top Toolbar: hidden until > 5 notifications */}
+      {showAdvancedControls ? (
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+            {CATEGORY_TABS.map((tab) => {
+              const active = activeFilter === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveFilter(tab.id)}
+                  className={`min-h-12 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap transition-all duration-150 cursor-pointer ${
+                    active
+                      ? 'bg-[#9146FF] text-white'
+                      : 'bg-white/[0.045] text-[#EFEFF1] hover:bg-white/[0.1] border border-white/[0.08]'
+                  }`}
+                >
+                  {pickLang(lang, tab)}
+                </button>
+              );
+            })}
+          </div>
 
-        <div className="flex items-center gap-1.5">
-          {notifications.some((n) => !n.read) && (
+          <div className="flex items-center gap-1.5">
+            {notifications.some((n) => !n.read) && (
+              <button
+                type="button"
+                onClick={markAllRead}
+                className="min-h-12 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] text-xs font-medium text-zinc-200 flex items-center gap-1.5 cursor-pointer"
+              >
+                <CheckCheck className="w-4 h-4 text-[#BF94FF]" />
+                <span>{pickLang(lang, { es: 'Leídas', ca: 'Llegides', en: 'Mark read' })}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => setShowSettings((prev) => !prev)}
+              className={`min-h-12 min-w-12 px-3 rounded-xl text-xs font-medium flex items-center justify-center cursor-pointer transition-colors ${
+                showSettings
+                  ? 'bg-[#9146FF]/20 text-white border border-[#9146FF]/45'
+                  : 'bg-white/[0.045] border border-white/[0.08] text-[#EFEFF1] hover:bg-white/[0.1]'
+              }`}
+              aria-label={pickLang(lang, {
+                es: 'Preferencias',
+                ca: 'Preferències',
+                en: 'Preferences',
+              })}
+            >
+              <Settings className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      ) : (
+        notifications.some((n) => !n.read) && (
+          <div className="flex justify-end">
             <button
               type="button"
               onClick={markAllRead}
-              className="min-h-9 px-2.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] text-xs font-medium text-zinc-200 flex items-center gap-1.5 cursor-pointer"
-              title={pickLang(lang, {
-                es: 'Marcar todas como leídas',
-                ca: 'Marcar totes com a llegides',
-                en: 'Mark all as read',
-              })}
+              className="min-h-12 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.11] text-xs font-semibold text-zinc-200 flex items-center gap-1.5 cursor-pointer"
             >
-              <CheckCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>{pickLang(lang, { es: 'Leídas', ca: 'Llegides', en: 'Mark read' })}</span>
+              <CheckCheck className="w-4 h-4 text-[#BF94FF]" />
+              <span>{pickLang(lang, { es: 'Marcar leídas', ca: 'Marcar llegides', en: 'Mark read' })}</span>
             </button>
-          )}
-          <button
-            type="button"
-            onClick={() => setShowSettings((prev) => !prev)}
-            className={`min-h-9 min-w-9 px-2.5 rounded-xl text-xs font-medium flex items-center gap-1.5 cursor-pointer transition-colors ${
-              showSettings
-                ? 'bg-[#9146FF]/20 text-white border border-[#9146FF]/45'
-                : 'bg-white/[0.045] border border-white/[0.08] text-[#EFEFF1] hover:bg-white/[0.1]'
-            }`}
-            aria-label={pickLang(lang, {
-              es: 'Preferencias de notificaciones',
-              ca: 'Preferències de notificacions',
-              en: 'Notification preferences',
-            })}
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
+          </div>
+        )
+      )}
 
-      {/* Preferences Drawer */}
-      {showSettings && (
-        <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-3 animate-fade-in">
+      {/* Preferences Drawer (only when > 5 alerts) */}
+      {showAdvancedControls && showSettings && (
+        <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-3">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2 text-xs font-bold text-white">
-              <Moon className="w-4 h-4 text-sky-400" />
+              <Moon className="w-4 h-4 text-[#BF94FF]" />
               <span>
                 {pickLang(lang, {
                   es: `Horas de silencio (${preferences.quietStart} – ${preferences.quietEnd})`,
@@ -172,9 +179,9 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
               onClick={() =>
                 updatePreferences({ quietHoursEnabled: !preferences.quietHoursEnabled })
               }
-              className={`min-h-8 px-3 rounded-lg text-xs font-bold cursor-pointer ${
+              className={`min-h-12 px-3 rounded-xl text-xs font-bold cursor-pointer ${
                 preferences.quietHoursEnabled
-                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  ? 'bg-[#9146FF] text-white'
                   : 'bg-white/10 text-zinc-400'
               }`}
             >
@@ -188,16 +195,16 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
             {(
               [
                 ['invites', { es: 'Invitaciones', ca: 'Invitacions', en: 'Invites' }],
-                ['football', { es: 'Goles y partidos', ca: 'Gols i partits', en: 'Goals & matches' }],
-                ['series', { es: 'Nuevos episodios', ca: 'Nous episodis', en: 'New episodes' }],
-                ['updates', { es: 'Actualizaciones App', ca: 'Actualitzacions App', en: 'App updates' }],
+                ['football', { es: 'Partidos', ca: 'Partits', en: 'Matches' }],
+                ['series', { es: 'Episodios', ca: 'Episodis', en: 'Episodes' }],
+                ['updates', { es: 'Novedades', ca: 'Novetats', en: 'Updates' }],
               ] as const
             ).map(([key, labels]) => (
               <button
                 key={key}
                 type="button"
                 onClick={() => updatePreferences({ [key]: !preferences[key] })}
-                className={`min-h-10 px-3 rounded-xl text-xs font-medium flex items-center justify-between border cursor-pointer ${
+                className={`min-h-12 px-3 rounded-xl text-xs font-medium flex items-center justify-between border cursor-pointer ${
                   preferences[key]
                     ? 'bg-white/[0.07] border-white/15 text-white'
                     : 'bg-white/[0.02] border-white/[0.06] text-zinc-500'
@@ -212,19 +219,19 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
           <button
             type="button"
             onClick={() => updatePreferences({ soundEnabled: !preferences.soundEnabled })}
-            className="w-full min-h-10 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.09] text-xs font-medium text-zinc-200 flex items-center justify-between cursor-pointer"
+            className="w-full min-h-12 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.09] text-xs font-medium text-zinc-200 flex items-center justify-between cursor-pointer"
           >
             <span className="flex items-center gap-2">
               {preferences.soundEnabled ? (
-                <Volume2 className="w-4 h-4 text-emerald-400" />
+                <Volume2 className="w-4 h-4 text-[#BF94FF]" />
               ) : (
                 <VolumeX className="w-4 h-4 text-zinc-500" />
               )}
               <span>
                 {pickLang(lang, {
-                  es: 'Sonido de alertas en vivo',
-                  ca: 'So d’alertes en directe',
-                  en: 'Live alert sound',
+                  es: 'Sonido de avisos',
+                  ca: 'So d’avisos',
+                  en: 'Alert sound',
                 })}
               </span>
             </span>
@@ -239,28 +246,22 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
 
       {/* List */}
       {filtered.length === 0 ? (
-        <EmptyStateCard
-          icon={<BellOff className="w-6 h-6" />}
-          title={pickLang(lang, {
-            es: 'Sin notificaciones pendientes',
-            ca: 'Sense notificacions pendents',
-            en: 'No pending notifications',
+        <p className="py-10 text-center text-sm text-zinc-400">
+          {pickLang(lang, {
+            es: 'No tienes notificaciones.',
+            ca: 'No tens notificacions.',
+            en: 'No notifications.',
           })}
-          description={pickLang(lang, {
-            es: 'Cuando un amigo te invite a su sala, empiece un partido o haya una mejora de app, aparecerá aquí.',
-            ca: 'Quan un amic et convidi a la seva sala, comenci un partit o hi hagi una millora de l’app, apareixerà aquí.',
-            en: 'When a friend invites you to a room, a match kicks off, or an update arrives, it will show up here.',
-          })}
-        />
+        </p>
       ) : (
         <div className="space-y-2.5">
           {filtered.map((item) => (
             <div
               key={item.id}
-              className={`relative p-3.5 rounded-2xl border transition-colors flex items-start justify-between gap-3 ${
+              className={`relative p-3.5 rounded-2xl border transition-colors duration-150 flex items-start justify-between gap-3 ${
                 item.read
                   ? 'bg-white/[0.03] border-white/[0.07]'
-                  : 'bg-[#9146FF]/[0.12] nc-specular-surface border-[#9146FF]/40'
+                  : 'bg-[#9146FF]/[0.12] border-[#9146FF]/40'
               }`}
             >
               {!item.read && (
@@ -277,15 +278,15 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
               )}
 
               <div className="relative z-[1] flex items-start gap-3 min-w-0 pointer-events-none">
-                <div className="w-9 h-9 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
+                <div className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
                   {renderCategoryIcon(item.category)}
                 </div>
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <h4 className="text-xs font-bold text-white truncate">{item.title}</h4>
+                    <h4 className="text-xs font-bold text-white line-clamp-1">{item.title}</h4>
                     {!item.read && <span className="w-2 h-2 rounded-full bg-[#9146FF] shrink-0" />}
                   </div>
-                  <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed">{item.body}</p>
+                  <p className="text-xs text-zinc-300 mt-0.5 leading-relaxed line-clamp-2">{item.body}</p>
                   <div className="flex items-center gap-3 mt-2">
                     <span className="text-[11px] font-mono text-zinc-500">
                       {new Date(item.createdAt).toLocaleTimeString([], {
@@ -302,9 +303,9 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                           onActionNotification(item);
                           onClose();
                         }}
-                        className="relative z-10 pointer-events-auto text-xs font-bold text-[#BF94FF] hover:underline cursor-pointer"
+                        className="relative z-10 pointer-events-auto min-h-12 px-3 rounded-xl text-xs font-bold text-[#BF94FF] hover:underline cursor-pointer"
                       >
-                        {item.actionLabel} →
+                        {item.actionLabel}
                       </button>
                     )}
                   </div>
@@ -316,24 +317,24 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                   e.stopPropagation();
                   dismissNotification(item.id);
                 }}
-                className="relative z-10 min-h-8 min-w-8 rounded-lg text-zinc-500 hover:text-rose-400 hover:bg-white/[0.06] flex items-center justify-center shrink-0 cursor-pointer"
+                className="relative z-10 min-h-12 min-w-12 rounded-xl text-zinc-500 hover:text-rose-400 hover:bg-white/[0.06] flex items-center justify-center shrink-0 cursor-pointer"
                 aria-label={pickLang(lang, {
-                  es: 'Descartar notificación',
-                  ca: 'Descartar notificació',
-                  en: 'Dismiss notification',
+                  es: 'Eliminar notificación',
+                  ca: 'Eliminar notificació',
+                  en: 'Delete notification',
                 })}
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                <Trash2 className="w-4 h-4" />
               </button>
             </div>
           ))}
         </div>
       )}
 
-      {notifications.length > 0 && (
+      {showAdvancedControls && notifications.length > 0 && (
         <div className="pt-2 flex justify-end">
           <SecondaryButton onClick={clearAll}>
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="w-4 h-4" />
             <span>
               {pickLang(lang, {
                 es: 'Vaciar bandeja',

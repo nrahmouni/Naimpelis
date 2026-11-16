@@ -786,7 +786,7 @@ describe('Futbol Chapas Engine & Match Waiting Lobby Flows', () => {
 });
 
 describe('Audit Checklist & Asset Integrity', () => {
-  it('enforces updatedAt conflict resolution, 5-tab mobile bar without Mi Lista, online-first GamesHub, TV a11y, and WebP-only images', () => {
+  it('enforces updatedAt conflict resolution, World Shell architecture without bottom nav, online-first GamesHub, TV a11y, and WebP-only images', () => {
     expect(
       shouldSkipStaleCloudWrite({
         serverUpdatedMs: 20_000,
@@ -800,9 +800,10 @@ describe('Audit Checklist & Asset Integrity', () => {
       })
     ).toBe(false);
 
-    const navSrc = fs.readFileSync(path.join(ROOT, 'src/components/MobileBottomNav.tsx'), 'utf8');
-    expect(navSrc).toContain('grid-cols-5');
-    expect(navSrc).not.toContain("'mylist'");
+    expect(fs.existsSync(path.join(ROOT, 'src/components/MobileBottomNav.tsx'))).toBe(false);
+    expect(fs.existsSync(path.join(ROOT, 'src/components/EntryHomeScreen.tsx'))).toBe(true);
+    expect(fs.existsSync(path.join(ROOT, 'src/components/worlds/WorldShell.tsx'))).toBe(true);
+    expect(fs.existsSync(path.join(ROOT, 'src/components/AvatarMenuSheet.tsx'))).toBe(true);
 
     const gamesHubSrc = fs.readFileSync(path.join(ROOT, 'src/components/GamesHubSection.tsx'), 'utf8');
     expect(gamesHubSrc).toContain("useState<'offline' | 'online'>('online')");
@@ -816,7 +817,7 @@ describe('Audit Checklist & Asset Integrity', () => {
     expect(imgFiles.some((f) => /\.(jpe?g|png)$/i.test(f))).toBe(false);
   });
 
-  it('verifies AI Movie Request pipeline, SurpriseMe 2-mode UI, scalloped Futbol Chapas, and zero-scroll GamesHub cleanup', () => {
+  it('verifies AI Movie Request pipeline, SurpriseMe 2-mode UI, scalloped Futbol Chapas, and World Shell catalog structure', () => {
     const aiServiceSrc = fs.readFileSync(
       path.join(ROOT, 'server/services/aiMovieRequestService.ts'),
       'utf8'
@@ -847,11 +848,13 @@ describe('Audit Checklist & Asset Integrity', () => {
       path.join(ROOT, 'src/components/MediaCatalogHub.tsx'),
       'utf8'
     );
-    expect(catalogSrc).toContain("activeSection !== 'home' && activeSection !== 'games'");
-    expect(catalogSrc).not.toContain('Zona de Juegos (Online y Offline)');
+    expect(catalogSrc).toContain("worldMode === 'cine'");
+    expect(catalogSrc).toContain('Fútbol China (中文)');
+    expect(catalogSrc).toContain('欧冠/西甲/英超');
 
     const appSrc = fs.readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
-    expect(appSrc).toContain('isDesktopLayout && !isGamesSectionActive');
+    expect(appSrc).toContain('<EntryHomeScreen');
+    expect(appSrc).toContain('<WorldShell');
   });
 });
 

@@ -1,7 +1,9 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { QueryClientProvider } from '@tanstack/react-query';
 import App from './App';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { queryClient } from './hooks/useCatalogQueries';
 import { useAppStore } from './store/useAppStore';
 import { useThemeStore } from './store/useThemeStore';
 import './index.css';
@@ -59,8 +61,10 @@ try {
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <AppErrorBoundary>
-      <App />
-    </AppErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <AppErrorBoundary>
+        <App />
+      </AppErrorBoundary>
+    </QueryClientProvider>
   </React.StrictMode>
 );

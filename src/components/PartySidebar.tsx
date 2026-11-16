@@ -25,6 +25,12 @@ import {
   Film,
   Radio,
   MessageCircle,
+  MoreHorizontal,
+  Mic,
+  MicOff,
+  Copy,
+  Plus,
+  LogIn,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -55,6 +61,7 @@ import {
   StandardInput,
   SegmentedControl,
   EmptyStateCard,
+  BottomSheet,
 } from './ui/DesignSystem';
 import { PartyPollCard } from './party/PartyPollCard';
 import { PartyQueuePanel } from './party/PartyQueuePanel';
@@ -142,8 +149,10 @@ interface PartySidebarProps {
   onTransferHost: (newHostId: string) => void;
   onUpdateProfile: (nextName: string, nextAvatar: string, nextColor: string) => void;
   onCreateNewRoom?: (customRoomName?: string) => void;
+  onSwitchRoom?: (targetRoomCode: string) => void;
   onLeaveRoom: () => void;
   voiceChat?: GameVoiceChatState;
+  worldSalaMode?: boolean;
 }
 
 const QUICK_REACTIONS = ['🔥', '😂', '❤️', '👏', '😱', '⚽', '🍿', '🎉'];
@@ -230,8 +239,10 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   onTransferHost,
   onUpdateProfile,
   onCreateNewRoom,
+  onSwitchRoom,
   onLeaveRoom,
   voiceChat,
+  worldSalaMode = false,
 }) => {
   const t = UI_COPY[lang];
   const isHost = currentUser.isHost || currentUser.id === hostId;
@@ -245,6 +256,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const [copiedLink, setCopiedLink] = useState(false);
   const [roomNameDraft, setRoomNameDraft] = useState(roomName);
   const [newRoomNameDraft, setNewRoomNameDraft] = useState('');
+  const [joinRoomCodeDraft, setJoinRoomCodeDraft] = useState('');
   const [pinDraft, setPinDraft] = useState(currentHostPin || '');
   const [tvCodeInput, setTvCodeInput] = useState('');
   const [customUrlInput, setCustomUrlInput] = useState('');
@@ -255,6 +267,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const [confirmLeave, setConfirmLeave] = useState(false);
 
   // Progressive Disclosure Bottom Sheets
+  const [showSalaOptionsSheet, setShowSalaOptionsSheet] = useState(false);
   const [showUrlLoaderSheet, setShowUrlLoaderSheet] = useState(false);
   const [showRoomSettingsSheet, setShowRoomSettingsSheet] = useState(false);
   const [showTvRemoteSheet, setShowTvRemoteSheet] = useState(false);
@@ -410,10 +423,67 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
   return (
     <aside className="w-full h-full flex flex-col bg-[#18181B] border-l border-white/[0.08] select-none overflow-hidden relative">
-      {/* ==================================================================== */}
-      {/* ULTRA-COMPACT CORNER TABS BAR (LEAVES CHAT OPEN & UNOBSTRUCTED)      */}
-      {/* ==================================================================== */}
-      {(!hideInternalTabs || showMenusButton) && (
+      {worldSalaMode ? (
+        <div className="px-3.5 py-2.5 border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0 bg-[#141418]/95 backdrop-blur-xl z-20">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2 min-w-0">
+              <h3 className="font-display font-bold text-sm sm:text-base text-white truncate">
+                {roomName}
+              </h3>
+              {hasPin && <KeyRound className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />}
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-[#00F593] font-semibold mt-0.5">
+              <span className="w-2 h-2 rounded-full bg-[#00F593] shrink-0" />
+              <span className="tabular-nums">
+                {participants.length}{' '}
+                {pickLang(lang, {
+                  es: participants.length === 1 ? 'conectado' : 'conectados',
+                  ca: participants.length === 1 ? 'connectat' : 'connectats',
+                  en: participants.length === 1 ? 'connected' : 'connected',
+                })}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                void handleShareInvite();
+              }}
+              className="min-h-11 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-[0_4px_14px_rgba(145,70,255,0.35)]"
+            >
+              {copiedLink ? (
+                <>
+                  <Check className="w-4 h-4" />
+                  <span>{t.copied}</span>
+                </>
+              ) : (
+                <>
+                  <Share2 className="w-4 h-4" />
+                  <span>{pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}</span>
+                </>
+              )}
+            </button>
+
+            <IconButton
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setShowSalaOptionsSheet(true);
+              }}
+              aria-label={pickLang(lang, {
+                es: 'Más opciones de sala',
+                ca: 'Més opcions de sala',
+                en: 'More room options',
+              })}
+            >
+              <MoreHorizontal className="w-5 h-5" />
+            </IconButton>
+          </div>
+        </div>
+      ) : (!hideInternalTabs || showMenusButton) && (
         <div className="px-2.5 py-1.5 border-b border-white/[0.06] flex items-center justify-between gap-2 shrink-0 bg-[#18181B]/95 backdrop-blur-xl z-20">
           <div className="flex items-center gap-1.5 min-w-0">
             {showMenusButton && onShowMenus ? (
@@ -803,10 +873,52 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             </div>
           )}
 
+          {/* FLOATING CIRCULAR VOICE MIC BUTTON IN WORLD SALA MODE */}
+          {worldSalaMode && voiceChat && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                if (!voiceChat.isJoined) {
+                  void voiceChat.joinVoice();
+                } else {
+                  voiceChat.toggleMute();
+                }
+              }}
+              title={
+                !voiceChat.isJoined
+                  ? pickLang(lang, { es: 'Unirse al chat de voz', ca: 'Unir-se a la veu', en: 'Join voice chat' })
+                  : voiceChat.isMuted
+                  ? pickLang(lang, { es: 'Activar micrófono', ca: 'Activar micròfon', en: 'Unmute microphone' })
+                  : pickLang(lang, { es: 'Silenciar micrófono', ca: 'Silenciar micròfon', en: 'Mute microphone' })
+              }
+              aria-label={
+                !voiceChat.isJoined
+                  ? pickLang(lang, { es: 'Activar voz', ca: 'Activar veu', en: 'Join voice' })
+                  : voiceChat.isMuted
+                  ? pickLang(lang, { es: 'Activar micrófono', ca: 'Activar micròfon', en: 'Unmute mic' })
+                  : pickLang(lang, { es: 'Silenciar micrófono', ca: 'Silenciar micròfon', en: 'Mute mic' })
+              }
+              className={`absolute right-3 bottom-19 z-20 w-12 h-12 rounded-full flex items-center justify-center border shadow-[0_10px_24px_rgba(0,0,0,0.6)] cursor-pointer active:scale-95 transition-all ${
+                !voiceChat.isJoined
+                  ? 'bg-[#22222B] hover:bg-[#9146FF] border-white/15 text-zinc-200 hover:text-white'
+                  : voiceChat.isMuted
+                  ? 'bg-[#EB0400]/20 border-[#EB0400]/55 text-rose-200'
+                  : 'bg-[#00F593]/20 border-[#00F593]/60 text-[#00F593]'
+              }`}
+            >
+              {voiceChat.isJoined && voiceChat.isMuted ? (
+                <MicOff className="w-5 h-5" />
+              ) : (
+                <Mic className="w-5 h-5" />
+              )}
+            </button>
+          )}
+
           {/* Chat Input Bar */}
           <form
             onSubmit={handleSend}
-            className="p-2.5 border-t border-white/[0.08] bg-[#18181B]/95 backdrop-blur-xl flex items-center gap-1.5 shrink-0 z-20"
+            className="p-2.5 border-t border-white/[0.08] bg-[#18181B]/95 backdrop-blur-xl flex items-center gap-1.5 shrink-0 z-20 pb-[max(0.625rem,env(safe-area-inset-bottom))]"
           >
             {!showFloatingReactions && (
               <IconButton
@@ -1483,6 +1595,289 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
         newRoomNameDraft={newRoomNameDraft}
         setNewRoomNameDraft={setNewRoomNameDraft}
       />
+
+      {/* SALA OPTIONS BOTTOM SHEET (WORLD SALA MODE) */}
+      <BottomSheet
+        isOpen={showSalaOptionsSheet}
+        onClose={() => setShowSalaOptionsSheet(false)}
+        lang={lang}
+        title={roomName}
+        subtitle={`${pickLang(lang, { es: 'Código', ca: 'Codi', en: 'Code' })}: ${roomId}`}
+        maxWidth="sm:max-w-lg"
+      >
+        <div className="space-y-5">
+          {/* Code + Share / QR / WhatsApp */}
+          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs text-zinc-400">
+                  {pickLang(lang, { es: 'Código de sala', ca: 'Codi de sala', en: 'Room code' })}
+                </p>
+                <p className="text-base font-mono font-bold text-white tracking-wider">
+                  {roomId}
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <SecondaryButton
+                  onClick={() => {
+                    void handleShareInvite();
+                  }}
+                >
+                  <Copy className="w-4 h-4 text-[#BF94FF]" />
+                  <span>{copiedLink ? t.copied : pickLang(lang, { es: 'Copiar', ca: 'Copiar', en: 'Copy' })}</span>
+                </SecondaryButton>
+                <IconButton
+                  onClick={() => {
+                    setShowSalaOptionsSheet(false);
+                    setShowQrInviteSheet(true);
+                  }}
+                  aria-label="QR"
+                >
+                  <QrCode className="w-4 h-4 text-[#BF94FF]" />
+                </IconButton>
+              </div>
+            </div>
+
+            <a
+              href={whatsappShareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full min-h-11 px-3 rounded-xl bg-[#00F593]/12 hover:bg-[#00F593]/20 border border-[#00F593]/35 text-xs font-bold text-[#00F593] flex items-center justify-center gap-2 transition-colors"
+            >
+              <MessageCircle className="w-4 h-4 shrink-0" />
+              <span>{pickLang(lang, { es: 'Enviar por WhatsApp', ca: 'Enviar per WhatsApp', en: 'Send on WhatsApp' })}</span>
+            </a>
+          </div>
+
+          {/* Voice Bar inside options sheet for full peer controls */}
+          {voiceChat && <GameVoiceBar lang={lang} voice={voiceChat} />}
+
+          {/* Queue */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                {pickLang(lang, { es: `Cola (${roomQueue.length})`, ca: `Cua (${roomQueue.length})`, en: `Queue (${roomQueue.length})` })}
+              </span>
+            </div>
+            <div className="rounded-2xl border border-white/[0.08] overflow-hidden max-h-72 overflow-y-auto custom-scrollbar">
+              <PartyQueuePanel
+                lang={lang}
+                currentUser={currentUser}
+                roomQueue={roomQueue}
+                canManageMedia={canManageMedia}
+                undoRemovedItem={undoRemovedItem}
+                onRestoreUndoItem={(item) => {
+                  if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+                  onRestoreQueueItem?.(item);
+                  setUndoRemovedItem(null);
+                }}
+                onDeleteQueueItemWithUndo={handleQueueDeleteWithUndo}
+                onPlayQueueItem={(item) => {
+                  setShowSalaOptionsSheet(false);
+                  onPlayQueueItem(item);
+                }}
+                onStartPollFromQueue={() => {
+                  setShowSalaOptionsSheet(false);
+                  onStartPollFromQueue();
+                }}
+                onOpenUrlLoaderSheet={() => {
+                  setShowSalaOptionsSheet(false);
+                  setShowUrlLoaderSheet(true);
+                }}
+                onVoteQueueItem={onVoteQueueItem}
+                onPromoteQueueItem={onPromoteQueueItem}
+                onReorderQueueItem={onReorderQueueItem}
+                onRestoreQueueItem={onRestoreQueueItem}
+              />
+            </div>
+          </div>
+
+          {/* Participants & Friends */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                {t.participants} ({participants.length})
+              </span>
+              {onOpenFriendsModal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowSalaOptionsSheet(false);
+                    onOpenFriendsModal();
+                  }}
+                  className="text-xs font-semibold text-[#BF94FF] hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>{pickLang(lang, { es: 'Amigos', ca: 'Amics', en: 'Friends' })}</span>
+                </button>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              {participants.map((p) => {
+                const isSelf = p.id === currentUser.id;
+                const isTvDevice = p.name.includes('(TV)') || p.avatar === '📺';
+                const pCode = deriveFriendCode(p.id);
+                const alreadyFriend = savedFriends.some(
+                  (f) => f.friendId === p.id || f.friendCode === pCode
+                );
+
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between p-2.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white border border-white/15 shrink-0"
+                        style={{ backgroundColor: p.color || '#9146FF' }}
+                      >
+                        {p.avatar && p.avatar.length <= 2 ? p.avatar : getInitials(p.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-white truncate">
+                          {p.name} {isSelf ? `(${t.you})` : ''}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {!isSelf && !isTvDevice && onAddFriend && !alreadyFriend && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onAddFriend({
+                              friendId: p.id,
+                              name: p.name,
+                              avatar: p.avatar,
+                              color: p.color,
+                              friendCode: pCode,
+                            })
+                          }
+                          className="min-h-9 px-2.5 rounded-xl bg-[#9146FF]/20 border border-[#9146FF]/45 text-xs font-bold text-[#D8B4FE] cursor-pointer"
+                        >
+                          + {pickLang(lang, { es: 'Amigo', ca: 'Amic', en: 'Friend' })}
+                        </button>
+                      )}
+                      {(p.isHost || p.id === hostId) && (
+                        <span className="px-2 py-0.5 rounded-full bg-white/10 text-zinc-200 text-[11px] font-bold flex items-center gap-1">
+                          <Crown className="w-3 h-3 text-[#BF94FF]" />
+                          {t.hostLabel}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Create / Join Another Room */}
+          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-3">
+            {onCreateNewRoom && (
+              <SecondaryButton
+                fullWidth
+                onClick={() => {
+                  setShowSalaOptionsSheet(false);
+                  onCreateNewRoom();
+                }}
+              >
+                <Plus className="w-4 h-4 text-[#BF94FF]" />
+                <span>
+                  {pickLang(lang, {
+                    es: 'Crear sala nueva',
+                    ca: 'Crear sala nova',
+                    en: 'Create new room',
+                  })}
+                </span>
+              </SecondaryButton>
+            )}
+
+            {onSwitchRoom && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  const clean = joinRoomCodeDraft.trim().toUpperCase();
+                  if (!clean) return;
+                  setShowSalaOptionsSheet(false);
+                  setJoinRoomCodeDraft('');
+                  onSwitchRoom(clean);
+                }}
+                className="flex items-center gap-2"
+              >
+                <StandardInput
+                  value={joinRoomCodeDraft}
+                  onChange={(e) => setJoinRoomCodeDraft(e.target.value.toUpperCase())}
+                  placeholder={pickLang(lang, {
+                    es: 'Unirme con código...',
+                    ca: 'Unir-me amb codi...',
+                    en: 'Join with code...',
+                  })}
+                  className="uppercase font-mono"
+                />
+                <SecondaryButton type="submit" disabled={!joinRoomCodeDraft.trim()}>
+                  <LogIn className="w-4 h-4 text-[#BF94FF]" />
+                  <span>{pickLang(lang, { es: 'Entrar', ca: 'Entrar', en: 'Join' })}</span>
+                </SecondaryButton>
+              </form>
+            )}
+          </div>
+
+          {/* Connected TV Remote (Only shown if TV connected) + Room Settings + Leave */}
+          <div className="space-y-2">
+            {hasConnectedSmartTv && (
+              <SecondaryButton
+                fullWidth
+                active
+                onClick={() => {
+                  setShowSalaOptionsSheet(false);
+                  setShowTvRemoteSheet(true);
+                }}
+              >
+                <Tv className="w-4 h-4 text-[#00F593]" />
+                <span>{pickLang(lang, { es: 'Mando TV', ca: 'Comandament TV', en: 'TV Remote' })}</span>
+              </SecondaryButton>
+            )}
+
+            <SecondaryButton
+              fullWidth
+              onClick={() => {
+                setShowSalaOptionsSheet(false);
+                setShowRoomSettingsSheet(true);
+              }}
+            >
+              <SlidersHorizontal className="w-4 h-4 text-[#BF94FF]" />
+              <span>{pickLang(lang, { es: 'Ajustes de sala', ca: 'Ajustos de sala', en: 'Room settings' })}</span>
+            </SecondaryButton>
+
+            <SecondaryButton
+              onClick={() => {
+                triggerHaptic('medium');
+                if (confirmLeave) {
+                  setShowSalaOptionsSheet(false);
+                  onLeaveRoom();
+                  setConfirmLeave(false);
+                } else {
+                  setConfirmLeave(true);
+                  setTimeout(() => setConfirmLeave(false), 3200);
+                }
+              }}
+              fullWidth
+              className={confirmLeave ? '!bg-[#EB0400] !border-[#EB0400] !text-white' : ''}
+            >
+              <LogOut className={`w-4 h-4 ${confirmLeave ? 'text-white' : 'text-[#BF94FF]'}`} />
+              <span>
+                {confirmLeave
+                  ? pickLang(lang, {
+                      es: '¿Seguro? Pulsa para salir',
+                      ca: 'Segur? Prem per sortir',
+                      en: 'Sure? Tap to leave',
+                    })
+                  : t.leaveRoom}
+              </span>
+            </SecondaryButton>
+          </div>
+        </div>
+      </BottomSheet>
     </aside>
   );
 };

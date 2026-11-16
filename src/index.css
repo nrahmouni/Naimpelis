@@ -13,26 +13,44 @@
   --color-text-primary: #f4f5f8;
   --color-text-secondary: #a9aebe;
   --color-text-muted: #7c8296;
-  --color-accent: #8b5cf6;
-  --color-accent-hover: #7c3aed;
-  --color-live: #ff2e54;
+  --color-accent: #9146ff;
+  --color-accent-hover: #7c2ae8;
+  --color-live: #eb0400;
+  --color-connected: #00f593;
   --color-border-subtle: rgba(255, 255, 255, 0.08);
   --color-border-strong: rgba(255, 255, 255, 0.16);
 
-  --radius-card: 12px;
-  --radius-sheet: 20px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  --radius-card: 16px;
+  --radius-card-lg: 24px;
+  --radius-sheet: 24px;
   --radius-pill: 9999px;
 
   --shadow-elevation-1: 0 4px 14px rgba(0, 0, 0, 0.45);
   --shadow-elevation-2: 0 14px 36px rgba(0, 0, 0, 0.65);
   --shadow-elevation-3: 0 24px 64px rgba(0, 0, 0, 0.85);
+
+  --duration-fast: 150ms;
+  --duration-base: 220ms;
+  --duration-slow: 340ms;
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @layer base {
   :root {
-    --font-sans: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
-    --font-display: 'Outfit', 'Plus Jakarta Sans', sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
+    --font-sans: 'Plus Jakarta Sans', 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
+    --font-display: 'Outfit', 'Plus Jakarta Sans', 'Noto Sans SC', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+    --font-mono: var(--font-sans);
 
     --nc-bg-canvas: #07080c;
     --nc-bg-elevated: #11131b;
@@ -40,11 +58,15 @@
     --nc-bg-subtle: #222635;
     --nc-text-primary: #f4f5f8;
     --nc-text-secondary: #a9aebe;
-    --nc-accent: #8b5cf6;
+    --nc-accent: #9146ff;
+    --nc-accent-hover: #7c2ae8;
     --nc-border: rgba(255, 255, 255, 0.08);
-    --ambient-poster-glow: rgba(139, 92, 246, 0.28);
+    --ambient-poster-glow: rgba(145, 70, 255, 0.28);
     --nc-blur: 24px;
     --nc-density-pad: 1rem;
+    --nc-duration-fast: 150ms;
+    --nc-duration-base: 220ms;
+    --nc-ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   /* OLED Pure Black Theme */
@@ -147,7 +169,8 @@
 }
 
 .font-mono {
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
 }
 
 @layer utilities {
@@ -188,27 +211,84 @@
   }
 
   .glass-bar {
-    background: color-mix(in srgb, var(--nc-bg-canvas) 82%, transparent);
-    backdrop-filter: blur(var(--nc-blur)) saturate(185%);
-    -webkit-backdrop-filter: blur(var(--nc-blur)) saturate(185%);
+    background: color-mix(in srgb, var(--nc-bg-canvas) 94%, transparent);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .glass-bar {
+      background: color-mix(in srgb, var(--nc-bg-canvas) 82%, transparent);
+      backdrop-filter: blur(var(--nc-blur)) saturate(185%);
+      -webkit-backdrop-filter: blur(var(--nc-blur)) saturate(185%);
+    }
   }
 
   .liquid-glass {
-    background: color-mix(in srgb, var(--nc-bg-elevated) 84%, transparent);
-    backdrop-filter: blur(var(--nc-blur)) saturate(185%);
-    -webkit-backdrop-filter: blur(var(--nc-blur)) saturate(185%);
+    background: color-mix(in srgb, var(--nc-bg-elevated) 95%, transparent);
     border: 1px solid var(--nc-border);
     box-shadow:
       var(--shadow-elevation-2),
       inset 0 1px 0 rgba(255, 255, 255, 0.12);
   }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .liquid-glass {
+      background: color-mix(in srgb, var(--nc-bg-elevated) 84%, transparent);
+      backdrop-filter: blur(var(--nc-blur)) saturate(185%);
+      -webkit-backdrop-filter: blur(var(--nc-blur)) saturate(185%);
+    }
+  }
 
   .liquid-glass-pill {
-    background: rgba(255, 255, 255, 0.075);
-    backdrop-filter: blur(calc(var(--nc-blur) * 0.85)) saturate(175%);
-    -webkit-backdrop-filter: blur(calc(var(--nc-blur) * 0.85)) saturate(175%);
+    background: rgba(255, 255, 255, 0.085);
     border: 1px solid var(--nc-border);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+  @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+    .liquid-glass-pill {
+      backdrop-filter: blur(calc(var(--nc-blur) * 0.85)) saturate(175%);
+      -webkit-backdrop-filter: blur(calc(var(--nc-blur) * 0.85)) saturate(175%);
+    }
+  }
+
+  .scroll-snap-x {
+    scroll-snap-type: x mandatory;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+  .scroll-snap-item {
+    scroll-snap-align: start;
+  }
+
+  .text-fluid-greeting {
+    font-size: clamp(1.625rem, 5vw, 2.5rem);
+    line-height: 1.08;
+    letter-spacing: -0.025em;
+  }
+  .text-fluid-hero {
+    font-size: clamp(1.375rem, 4.2vw, 2.25rem);
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+  }
+  .text-fluid-title {
+    font-size: clamp(1.0625rem, 2.4vw, 1.375rem);
+    line-height: 1.2;
+  }
+
+  .world-tint-cine {
+    background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(145, 70, 255, 0.16), transparent 70%);
+  }
+  .world-tint-futbol {
+    background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(16, 185, 129, 0.12), rgba(145, 70, 255, 0.08) 55%, transparent 75%);
+  }
+  .world-tint-tv {
+    background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(56, 189, 248, 0.12), rgba(145, 70, 255, 0.08) 55%, transparent 75%);
+  }
+  .world-tint-juegos {
+    background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(168, 85, 247, 0.16), transparent 72%);
+  }
+  .world-tint-sala {
+    background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(145, 70, 255, 0.14), transparent 72%);
+  }
+  .world-tint-youtube {
+    background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(244, 63, 94, 0.12), rgba(145, 70, 255, 0.08) 55%, transparent 75%);
   }
 
   .nc-specular-surface {

@@ -2,22 +2,12 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { MotionConfig } from 'motion/react';
 import {
-  MessageSquare,
-  Check,
-  LogOut,
   Play,
   Square,
   Lock,
-  Tv,
-  Trophy,
   ListVideo,
-  UserPlus,
-  Bell,
-  Search,
-  Sparkles,
   RefreshCw,
   Download,
-  ChevronUp,
 } from 'lucide-react';
 import {
   checkRemoteAppVersion,
@@ -103,7 +93,7 @@ import {
   deleteCloudSavedRoom,
   deleteCloudWatchHistoryItem,
   flushPendingCloudWatchProgress,
-  signInWithGoogleAccount,
+  signInWithGoogleAccountDetailed,
   signOutGoogleAccount,
   updateCloudUserProfile,
   updateCloudWatchProgressOnly,
@@ -121,8 +111,7 @@ import {
   parseRoomFromWindow,
 } from './utils/shortLink';
 import { NaimBrandLogo } from './components/NaimBrandLogo';
-import { CloudAccountButton } from './components/CloudAccountButton';
-import { useViewLayoutMode } from './components/MobileViewportGuard';
+import { getMonogramInitials, useViewLayoutMode } from './components/MobileViewportGuard';
 import { OfflineIndicator } from './components/PWAInstallPrompt';
 import { PreviewAutoEscapeBanner } from './components/player/PreviewAutoEscapeBanner';
 import {
@@ -130,6 +119,11 @@ import {
   GlobalIncomingInviteBanner,
 } from './components/FriendsInviteModal';
 import type { ProfileHubTab } from './components/UserProfileHubModal';
+import { EntryHomeScreen } from './components/EntryHomeScreen';
+import { WorldShell } from './components/worlds/WorldShell';
+import { AvatarMenuSheet } from './components/AvatarMenuSheet';
+import { SettingsBottomSheet } from './components/SettingsBottomSheet';
+import { FloatingRoomBubble } from './components/FloatingRoomBubble';
 
 const UserProfileHubModal = React.lazy(() =>
   import('./components/UserProfileHubModal').then((m) => ({ default: m.UserProfileHubModal }))
@@ -170,18 +164,21 @@ const LegalPrivacyModal = React.lazy(() =>
 const DesignSystemShowcase = React.lazy(() =>
   import('./components/DesignSystemShowcase').then((m) => ({ default: m.DesignSystemShowcase }))
 );
+const GamesHubSection = React.lazy(() =>
+  import('./components/GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
+);
 
 import { NaimcineIntro } from './components/NaimcineIntro';
 import { LobbyScreen } from './components/LobbyScreen';
 import { CatalogSection, MediaCatalogHub } from './components/MediaCatalogHub';
-import { MobileBottomNav } from './components/MobileBottomNav';
-import { TwitchChannelRail, FastChannelItem } from './components/TwitchChannelRail';
 import { useThemeStore } from './store/useThemeStore';
-import { useAppStore } from './store/useAppStore';
+import { useAppStore, type PrimaryWorldId, type WorldId } from './store/useAppStore';
 import { useNotificationStore } from './store/useNotificationStore';
 import { useCloudSyncSubscriptions } from './hooks/useCloudSyncSubscriptions';
 import { useTvRemoteBridge } from './hooks/useTvRemoteBridge';
 import { useGameVoiceChat } from './hooks/useGameVoiceChat';
+import { useLiveScoresQuery } from './hooks/useCatalogQueries';
+import { runWithViewTransition } from './lib/viewTransition';
 import { isGoogleTvEnvironment } from './utils/tvSpatialNav';
 import { GameMatchInviteModal } from './components/games/GameMatchInviteModal';
 
@@ -319,6 +316,17 @@ export function App() {
 
   const syncDomAttributes = useThemeStore((s) => s.syncDomAttributes);
   const reducedMotion = useThemeStore((s) => s.reducedMotion);
+  const activeWorld = useAppStore((s) => s.activeWorld);
+  const setActiveWorld = useAppStore((s) => s.setActiveWorld);
+  const lastUsedWorld = useAppStore((s) => s.lastUsedWorld);
+  const cineTab = useAppStore((s) => s.cineTab);
+  const setCineTab = useAppStore((s) => s.setCineTab);
+  const cineCastellano = useAppStore((s) => s.cineCastellano);
+  const setCineCastellano = useAppStore((s) => s.setCineCastellano);
+  const futbolTab = useAppStore((s) => s.futbolTab);
+  const setFutbolTab = useAppStore((s) => s.setFutbolTab);
+  const isFloatingRoomOpen = useAppStore((s) => s.isFloatingRoomOpen);
+  const setIsFloatingRoomOpen = useAppStore((s) => s.setIsFloatingRoomOpen);
   const showDesignSystem = useAppStore((s) => s.showDesignSystem);
   const setShowDesignSystem = useAppStore((s) => s.setShowDesignSystem);
   const showLegalModal = useAppStore((s) => s.showLegalModal);
@@ -363,6 +371,10 @@ export function App() {
   );
   const [inRoom, setInRoom] = useState<boolean>(Boolean(effectiveInitialRoom));
 
+  const [worldSearchQuery, setWorldSearchQuery] = useState<string>('');
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState<boolean>(false);
+  const [settingsSheetOpen, setSettingsSheetOpen] = useState<boolean>(false);
+
   // Player Minimize, Local Close, Auto-Scroll PiP, 4-Corner Drag & 'Modo Cine' State
   const [isPlayerMinimized, setIsPlayerMinimized] = useState<boolean>(false);
   const [isAutoMiniByScroll, setIsAutoMiniByScroll] = useState<boolean>(false);
@@ -375,8 +387,6 @@ export function App() {
   );
   const catalogScrollRef = useRef<HTMLDivElement | null>(null);
   const lastScrollCompressToggleRef = useRef<number>(0);
-  const [isChromeHidden, setIsChromeHidden] = useState<boolean>(false);
-  const lastChromeScrollYRef = useRef<number>(0);
   const isNestedSandboxFrame =
     typeof window !== 'undefined' &&
     (() => {
@@ -453,8 +463,6 @@ export function App() {
   const [openQueueTrigger, setOpenQueueTrigger] = useState<number>(0);
   const [queueAddedNotice, setQueueAddedNotice] = useState<string | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
-  const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
-  const [copiedHeaderInvite, setCopiedHeaderInvite] = useState<boolean>(false);
 
   const [isExtracting, setIsExtracting] = useState<boolean>(false);
   const [extractionLabel, setExtractionLabel] = useState<string>('');
@@ -645,6 +653,54 @@ export function App() {
     enabled: inRoom && Boolean(roomId),
   });
 
+  const { data: liveScores = [] } = useLiveScoresQuery(inRoom && !isTvMode);
+  const liveMatchesCount = liveScores.filter((m) => m.isLive).length;
+
+  const enterWorld = useCallback(
+    (nextWorld: WorldId) => {
+      setWorldSearchQuery('');
+      setShowWatchlistOnly(false);
+      runWithViewTransition(() => {
+        setActiveWorld(nextWorld);
+        if (nextWorld === 'cine') {
+          setCatalogSection('movies');
+          setMobileTab('movies');
+        } else if (nextWorld === 'futbol') {
+          setCatalogSection('sports');
+          setMobileTab('sports');
+        } else if (nextWorld === 'tv') {
+          setCatalogSection('tdt');
+          setMobileTab('tdt');
+        } else if (nextWorld === 'youtube') {
+          setCatalogSection('youtube');
+          setMobileTab('youtube');
+        } else if (nextWorld === 'juegos') {
+          setCatalogSection('games');
+          setMobileTab('games');
+        } else if (nextWorld === 'sala') {
+          setMobileTab('room');
+          setUnreadChatCount(0);
+        } else {
+          setCatalogSection('home');
+          setMobileTab('home');
+        }
+      });
+      mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [setActiveWorld]
+  );
+
+  const preloadWorld = useCallback((world: PrimaryWorldId) => {
+    if (world === 'futbol') {
+      void import('./components/FootballMatchboard');
+    } else if (world === 'juegos') {
+      void import('./components/GamesHubSection');
+    } else if (world === 'cine') {
+      void import('./components/ExpandedDiscoverySection');
+    }
+  }, []);
+
   useEffect(() => {
     setIncomingGameInvite(null);
   }, [roomId, inRoom]);
@@ -655,19 +711,16 @@ export function App() {
       setIncomingGameInvite(null);
       setCinemaModePersist(false);
       setFloatingChatOpen(false);
-      setShowWatchlistOnly(false);
-      setIsChromeHidden(false);
       if (videoStateRef.current.mode !== 'idle') {
         setIsPlayerMinimized(true);
       }
-      setCatalogSection('games');
-      setMobileTab('games');
+      enterWorld('juegos');
       setForcedOpenGame({
         gameType: invite.gameType,
         seq: Date.now(),
       });
     },
-    [setCinemaModePersist]
+    [setCinemaModePersist, enterWorld]
   );
 
   const showHostLockNotice = useCallback(
@@ -965,7 +1018,44 @@ export function App() {
 
   const handleGoogleSignIn = async () => {
     manualLobbyStayRef.current = false;
-    await signInWithGoogleAccount();
+    useAppStore.getState().setAuthNotice(null);
+    const res = await signInWithGoogleAccountDetailed();
+    if (res.user) {
+      useAppStore.getState().setAuthNotice(null);
+      return;
+    }
+    if (res.errorCode === 'auth/unauthorized-domain') {
+      const hostHint = res.hostname ? ` (${res.hostname})` : '';
+      useAppStore
+        .getState()
+        .setAuthNotice(
+          pickLang(lang, {
+            es: `Este dominio${hostHint} aún no está autorizado en Firebase Auth. Puedes entrar con tu nombre sin cuenta.`,
+            ca: `Aquest domini${hostHint} encara no està autoritzat a Firebase Auth. Pots entrar amb el teu nom sense compte.`,
+            en: `This domain${hostHint} is not yet authorized in Firebase Auth. You can enter with your name right away.`,
+          })
+        );
+    } else if (res.errorCode === 'auth/popup-blocked') {
+      useAppStore
+        .getState()
+        .setAuthNotice(
+          pickLang(lang, {
+            es: 'El navegador bloqueó la ventana de Google. Permite ventanas emergentes o entra con tu nombre.',
+            ca: 'El navegador ha blocat la finestra de Google. Permet finestres emergents o entra amb el teu nom.',
+            en: 'Popup was blocked by the browser. Allow popups or enter with your name.',
+          })
+        );
+    } else if (res.errorCode) {
+      useAppStore
+        .getState()
+        .setAuthNotice(
+          pickLang(lang, {
+            es: 'No se pudo completar el acceso con Google ahora. Puedes continuar con tu nombre.',
+            ca: 'No s’ha pogut completar l’accés amb Google ara. Pots continuar amb el teu nom.',
+            en: 'Could not complete Google sign-in right now. You can continue with your name.',
+          })
+        );
+    }
   };
 
   const handleGoogleSignOut = async () => {
@@ -1787,6 +1877,9 @@ export function App() {
     }
     setCatalogSection('home');
     setMobileTab('home');
+    setActiveWorld('entry');
+    setWorldSearchQuery('');
+    setAvatarMenuOpen(false);
     setRoomId(targetRoomId);
     setRoomName(customName || `Sala ${targetRoomId.toUpperCase()}`);
     setInRoom(true);
@@ -1818,6 +1911,9 @@ export function App() {
     setCloudState(null);
     setCatalogSection('home');
     setMobileTab('home');
+    setActiveWorld('entry');
+    setWorldSearchQuery('');
+    setAvatarMenuOpen(false);
     setRoomId(targetRoomId);
     setRoomName(customName || `Sala ${targetRoomId.toUpperCase()}`);
     setInRoom(true);
@@ -1836,6 +1932,10 @@ export function App() {
     manualLobbyStayRef.current = true;
     socketService.disconnect();
     setInRoom(false);
+    setActiveWorld('entry');
+    setWorldSearchQuery('');
+    setAvatarMenuOpen(false);
+    setIsFloatingRoomOpen(false);
     setIsTvMode(false);
     setIsTvPairLobby(false);
     setTvAuthToken('');
@@ -3457,13 +3557,8 @@ export function App() {
 
   const handleOpenRoomQueueView = () => {
     setQueueAddedNotice(null);
-    if (isDesktopLayout) {
-      setSidebarOpen(true);
-      setOpenQueueTrigger((n) => n + 1);
-    } else {
-      setMobileTab('chat');
-      setOpenQueueTrigger((n) => n + 1);
-    }
+    enterWorld('sala');
+    setOpenQueueTrigger((n) => n + 1);
   };
 
   const handlePlayQueueItem = (qItem: RoomQueueItem) => {
@@ -3687,12 +3782,7 @@ export function App() {
       proposals,
       25
     );
-    if (!isDesktopLayout) {
-      setMobileTab('chat');
-      setUnreadChatCount(0);
-    } else {
-      setSidebarOpen(true);
-    }
+    enterWorld('sala');
   };
 
   const handleVotePoll = (pollId: string, optionId: string) => {
@@ -4038,6 +4128,8 @@ export function App() {
     setCloudState(null);
     setCatalogSection('home');
     setMobileTab('home');
+    setActiveWorld('entry');
+    setWorldSearchQuery('');
     setRoomId(invite.roomId);
     setRoomName(invite.roomName || `Sala ${invite.roomId.toUpperCase()}`);
     setInRoom(true);
@@ -4079,14 +4171,6 @@ export function App() {
     clearCloudWatchHistoryItems(prevItems).catch(() => {});
   };
 
-  const onlineSavedFriendsCount = savedFriends.filter((f) =>
-    onlineUsers.some(
-      (u) =>
-        u.userId !== profile.id &&
-        (u.userId === f.friendId || u.friendCode === f.friendCode)
-    )
-  ).length;
-
   // Physical Google TV / Chromecast Remote Back & Channel Zapping Integration
   useTvRemoteBridge({
     isAdsPageOpen,
@@ -4099,8 +4183,8 @@ export function App() {
     setProfileHubOpen,
     floatingChatOpen,
     setFloatingChatOpen,
-    sidebarOpen,
-    setSidebarOpen,
+    sidebarOpen: isFloatingRoomOpen,
+    setSidebarOpen: setIsFloatingRoomOpen,
     videoState,
     isExtracting,
     isPlayerClosedLocally,
@@ -4108,21 +4192,19 @@ export function App() {
     setIsExtracting,
     inRoom,
     catalogSection,
-    setCatalogSection,
+    setCatalogSection: (sec) => {
+      if (sec === 'home') {
+        enterWorld('entry');
+      } else {
+        setCatalogSection(sec);
+      }
+    },
     setMobileTab,
     handleSelectTrack,
   });
 
-  const isOnMobileSocialTab =
-    !isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room');
-  const isGamesSectionActive = catalogSection === 'games' && !isOnMobileSocialTab;
-  const effectiveChromeHidden = isChromeHidden && !isGamesSectionActive;
-
-  useEffect(() => {
-    if (isGamesSectionActive && isChromeHidden) {
-      setIsChromeHidden(false);
-    }
-  }, [isGamesSectionActive, isChromeHidden]);
+  const isOnMobileSocialTab = activeWorld === 'sala';
+  const isGamesSectionActive = activeWorld === 'juegos';
 
   if (showDesignSystem) {
     return (
@@ -4348,18 +4430,6 @@ export function App() {
 
   const handleCatalogOrWorkspaceScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const st = e.currentTarget.scrollTop;
-    const prevY = lastChromeScrollYRef.current;
-    const delta = st - prevY;
-    lastChromeScrollYRef.current = st;
-
-    if (!isOnMobileSocialTab && !isAutoImmersiveLandscape && !isGamesSectionActive) {
-      if (st > 52 && delta > 10 && !isChromeHidden) {
-        setIsChromeHidden(true);
-      } else if ((delta < -16 || st <= 16) && isChromeHidden) {
-        setIsChromeHidden(false);
-      }
-    }
-
     if (
       effectiveVideoState.mode === 'idle' ||
       isExtracting ||
@@ -4378,15 +4448,6 @@ export function App() {
       lastScrollCompressToggleRef.current = now;
       setIsAutoMiniByScroll(false);
     }
-  };
-
-  const handleWorkspaceBackgroundClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isChromeHidden) return;
-    const target = e.target as HTMLElement | null;
-    if (target?.closest('button, a, input, select, textarea, video, iframe, [role="button"]')) {
-      return;
-    }
-    setIsChromeHidden(false);
   };
 
   const handleMiniPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
@@ -4673,6 +4734,55 @@ export function App() {
             onLeaveRoom={handleLeaveRoom}
           />
 
+          {/* Avatar Menu Sheet & Shared Settings Bottom Sheet */}
+          <AvatarMenuSheet
+            isOpen={avatarMenuOpen}
+            onClose={() => setAvatarMenuOpen(false)}
+            lang={lang}
+            displayName={profile.name}
+            avatar={profile.avatar || '🎬'}
+            color={profile.color || '#9146FF'}
+            authUser={authUser}
+            unreadNotificationsCount={unreadNotificationsCount}
+            hasConnectedSmartTv={hasConnectedSmartTv}
+            onOpenProfile={() => {
+              setProfileHubTab('account');
+              setProfileHubOpen(true);
+            }}
+            onOpenContinueWatching={() => {
+              setProfileHubTab('history');
+              setProfileHubOpen(true);
+            }}
+            onOpenSaved={() => {
+              setProfileHubTab('favorites');
+              setProfileHubOpen(true);
+            }}
+            onOpenNotifications={() => setShowNotificationCenter(true)}
+            onOpenFriends={() => setFriendsModalOpen(true)}
+            onOpenSmartTv={() => setSmartTvModalOpen(true)}
+            onOpenYouTube={() => enterWorld('youtube')}
+            onOpenSettings={() => setSettingsSheetOpen(true)}
+          />
+
+          <SettingsBottomSheet
+            isOpen={settingsSheetOpen}
+            onClose={() => setSettingsSheetOpen(false)}
+            lang={lang}
+            onChangeLang={setLang}
+            effectiveView={effectiveView}
+            onToggleViewMode={toggleViewMode}
+            authUser={authUser}
+            authLoading={authLoading}
+            onSignIn={handleGoogleSignIn}
+            onSignOut={handleGoogleSignOut}
+            hasConnectedSmartTv={hasConnectedSmartTv}
+            onOpenSmartTv={() => setSmartTvModalOpen(true)}
+            onOpenTvPairLobby={handleSwitchThisDeviceToTvLobby}
+            roomId={roomId}
+            onClaimTvCode={handleClaimTvCode}
+            onLeaveRoom={handleLeaveRoom}
+          />
+
           {/* Non-intrusive Guest Welcome Card when entering via invite link */}
           {showGuestPopup && !showIntro && !authUser && !pinPromptState.open && (
             <GuestWelcomePopup
@@ -4697,431 +4807,67 @@ export function App() {
           />
         )}
 
-        {/* Top Workspace Bar (Animated Collapsible 3-Zone Header) */}
-        <div
-          className={`grid transition-[grid-template-rows,opacity] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] shrink-0 z-30 ${
-            isMobileChatWithKeyboard || isAutoImmersiveLandscape
-              ? 'hidden'
-              : effectiveChromeHidden
-              ? 'grid-rows-[0fr] opacity-0 pointer-events-none'
-              : 'grid-rows-[1fr] opacity-100'
-          }`}
-        >
-          <div className="overflow-hidden">
-            <header
-              className={`${
-                isDesktopLayout ? 'h-[58px] px-4 flex' : 'h-13 px-3 flex'
-              } bg-[#111115]/90 backdrop-blur-2xl border-b border-white/[0.07] items-center justify-between gap-2.5 shadow-[0_6px_28px_rgba(0,0,0,0.4)] transition-transform duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] ${
-                effectiveChromeHidden ? '-translate-y-full' : 'translate-y-0'
-              }`}
-            >
-          {/* Zone 1: Brand + Active Room Switcher Pill */}
-          <div className="flex items-center gap-2.5 min-w-0">
+        {/* Minimal Entry Header (ONLY Logo + RiffanTV & Avatar with Notification Dot) */}
+        {activeWorld === 'entry' && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
+          <header className="shrink-0 z-30 h-14 px-4 bg-[#0B0B0E]/90 backdrop-blur-xl border-b border-white/[0.06] flex items-center justify-between gap-3">
             <button
               type="button"
               onClick={() => {
-                setCatalogSection('home');
-                setMobileTab('home');
+                triggerHaptic('light');
                 catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+                mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               }}
-              title={pickLang(lang, {
-                es: 'RiffanTV · Inicio',
-                ca: 'RiffanTV · Inici',
-                en: 'RiffanTV · Home',
-              })}
-              className="shrink-0 cursor-pointer rounded-xl overflow-hidden hover:scale-105 active:scale-95 transition-transform shadow-[0_0_18px_rgba(145,70,255,0.28)]"
+              aria-label="RiffanTV"
+              className="flex items-center gap-2.5 min-h-11 py-1 cursor-pointer active:scale-95 transition-transform"
             >
-              <NaimBrandLogo size={isDesktopLayout ? 36 : 32} />
+              <NaimBrandLogo size={32} />
+              <span className="font-display font-bold text-base tracking-[-0.015em] leading-none text-[#F4F5F8]">
+                Riffan<span className="text-[#A78BFA] font-extrabold">TV</span>
+              </span>
             </button>
 
             <button
               type="button"
               onClick={() => {
                 triggerHaptic('light');
-                if (!isDesktopLayout && mobileTab !== 'room') {
-                  setMobileTab('room');
-                  return;
-                }
-                setProfileHubTab('account');
-                setProfileHubOpen(true);
+                setAvatarMenuOpen(true);
               }}
-              className="min-h-9 px-2.5 py-1 rounded-xl bg-white/[0.045] hover:bg-white/[0.09] border border-white/[0.08] flex items-center gap-2 min-w-0 text-left cursor-pointer group transition-all"
-              title={pickLang(lang, {
-                es: 'Gestionar sala activa o cambiar de sala',
-                ca: 'Gestionar sala activa o canviar de sala',
-                en: 'Manage active room or switch room',
+              aria-label={pickLang(lang, {
+                es: 'Menú de perfil',
+                ca: 'Menú de perfil',
+                en: 'Profile menu',
               })}
+              className="relative w-10 h-10 rounded-2xl border border-white/15 flex items-center justify-center text-sm font-bold text-white cursor-pointer active:scale-95 transition-transform shrink-0 overflow-visible"
+              style={{ backgroundColor: profile.color || '#9146FF' }}
             >
-              <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_#34d399]" />
-              <span className="font-display font-bold text-xs sm:text-[13px] text-white truncate max-w-[7rem] sm:max-w-44">
-                {roomName || `Sala ${roomId.toUpperCase()}`}
-              </span>
-              {isDesktopLayout && (
-                <span className="text-[11px] font-mono text-zinc-400 tabular-nums shrink-0">
-                  · {participants.length}
-                </span>
+              {authUser?.photoURL ? (
+                <img
+                  src={authUser.photoURL}
+                  alt={profile.name}
+                  className="w-full h-full object-cover rounded-2xl"
+                />
+              ) : (
+                <span>{getMonogramInitials(profile.name)}</span>
               )}
-              {roomHasPin && (
-                <Lock
-                  className="w-3 h-3 text-amber-400 shrink-0"
-                  aria-label={pickLang(lang, {
-                    es: 'Sala con PIN privado',
-                    ca: 'Sala amb PIN privat',
-                    en: 'Private PIN room',
-                  })}
+              {unreadNotificationsCount > 0 && (
+                <span
+                  aria-hidden="true"
+                  className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-[#EB0400] ring-2 ring-[#0B0B0E]"
                 />
               )}
             </button>
-          </div>
+          </header>
+        )}
 
-          {/* Zone 2 (Desktop): Centered Unified Command Search Spotlight + Sorpréndeme */}
-          {isDesktopLayout && (
-            <div className="flex-1 max-w-md mx-2 flex items-center gap-1.5">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setShowCommandSearch(true);
-                }}
-                title={pickLang(lang, {
-                  es: 'Búsqueda universal (Ctrl/⌘ + K)',
-                  ca: 'Cerca universal (Ctrl/⌘ + K)',
-                  en: 'Universal search (Ctrl/⌘ + K)',
-                })}
-                aria-label={pickLang(lang, {
-                  es: 'Búsqueda rápida',
-                  ca: 'Cerca ràpida',
-                  en: 'Quick search',
-                })}
-                className="flex-1 h-9 px-3.5 rounded-xl bg-white/[0.045] hover:bg-white/[0.085] border border-white/[0.09] hover:border-[#9146FF]/45 text-zinc-400 hover:text-zinc-100 text-xs flex items-center justify-between gap-2 cursor-pointer transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-              >
-                <span className="flex items-center gap-2 truncate">
-                  <Search className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
-                  <span className="truncate">
-                    {pickLang(lang, {
-                      es: 'Buscar películas, series, canales...',
-                      ca: 'Cercar pel·lícules, sèries, canals...',
-                      en: 'Search movies, series, channels...',
-                    })}
-                  </span>
-                </span>
-                <kbd className="px-1.5 py-0.5 rounded-md bg-white/[0.07] border border-white/[0.08] text-[10px] font-mono text-zinc-300 shrink-0">
-                  ⌘K
-                </kbd>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setAiSearchLaunch((prev) => ({
-                    query: '',
-                    mediaType: 'all',
-                    mode: 'surprise',
-                    seq: (prev?.seq || 0) + 1,
-                  }));
-                  setShowSurpriseModal(true);
-                }}
-                title={pickLang(lang, {
-                  es: 'Sorpréndeme · Recomendación al instante',
-                  ca: 'Sorprèn-me · Recomanació a l’instant',
-                  en: 'Surprise Me · Instant pick',
-                })}
-                aria-label={pickLang(lang, {
-                  es: 'Sorpréndeme',
-                  ca: 'Sorprèn-me',
-                  en: 'Surprise Me',
-                })}
-                className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-[#9146FF]/22 border border-white/[0.09] hover:border-[#9146FF]/45 text-amber-300 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
-              >
-                <Sparkles className="w-4 h-4 shrink-0" />
-              </button>
-            </div>
-          )}
-
-          {/* Zone 3: Focused Workspace Actions */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {!isDesktopLayout && (
-              <>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setShowCommandSearch(true);
-                  }}
-                  title={pickLang(lang, {
-                    es: 'Buscar catálogo',
-                    ca: 'Cercar catàleg',
-                    en: 'Search catalog',
-                  })}
-                  aria-label={pickLang(lang, {
-                    es: 'Buscar catálogo',
-                    ca: 'Cercar catàleg',
-                    en: 'Search catalog',
-                  })}
-                  className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
-                >
-                  <Search className="w-4 h-4 shrink-0" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setAiSearchLaunch((prev) => ({
-                      query: '',
-                      mediaType: 'all',
-                      mode: 'surprise',
-                      seq: (prev?.seq || 0) + 1,
-                    }));
-                    setShowSurpriseModal(true);
-                  }}
-                  title={pickLang(lang, {
-                    es: 'Sorpréndeme',
-                    ca: 'Sorprèn-me',
-                    en: 'Surprise Me',
-                  })}
-                  aria-label={pickLang(lang, {
-                    es: 'Sorpréndeme',
-                    ca: 'Sorprèn-me',
-                    en: 'Surprise Me',
-                  })}
-                  className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.09] text-amber-300 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all"
-                >
-                  <Sparkles className="w-4 h-4 shrink-0" />
-                </button>
-              </>
-            )}
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setShowNotificationCenter(true);
-              }}
-              title={pickLang(lang, {
-                es: 'Centro de notificaciones',
-                ca: 'Centre de notificacions',
-                en: 'Notification center',
-              })}
-              aria-label={pickLang(lang, {
-                es: 'Centro de notificaciones',
-                ca: 'Centre de notificacions',
-                en: 'Notification center',
-              })}
-              className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-white/[0.12] border border-white/[0.09] text-zinc-200 flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all relative"
-            >
-              <Bell className="w-4 h-4 shrink-0" />
-              {unreadNotificationsCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[17px] h-[17px] px-1 rounded-full bg-[#9146FF] text-white text-[10px] font-bold flex items-center justify-center tabular-nums shadow-sm">
-                  {unreadNotificationsCount > 9 ? '9+' : unreadNotificationsCount}
-                </span>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setSmartTvModalOpen(true);
-              }}
-              title={pickLang(lang, {
-                es: 'Conectar Smart TV y Mando',
-                ca: 'Connectar Smart TV i Comandament',
-                en: 'Connect Smart TV & Remote',
-              })}
-              className={`min-h-[36px] px-2.5 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all relative ${
-                hasConnectedSmartTv
-                  ? 'bg-[#00F593]/15 hover:bg-[#00F593]/25 border-[#00F593]/45 text-[#00F593]'
-                  : 'bg-white/[0.055] hover:bg-white/[0.12] border-white/[0.09] text-[#EFEFF1]'
-              }`}
-            >
-              <Tv className="w-4 h-4 shrink-0" />
-              <span className={isDesktopLayout ? 'inline' : 'hidden'}>TV</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleShareOrCopyHeaderInvite}
-              title={pickLang(lang, {
-                es: 'Amigos e Invitación Directa a la Sala',
-                ca: 'Amics i Invitació Directa a la Sala',
-                en: 'Friends & Direct Room Invite',
-              })}
-              className="min-h-[36px] px-3 rounded-xl bg-gradient-to-b from-[#9E5CFF] to-[#7C2AE8] hover:from-[#A96EFF] hover:to-[#8738F5] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all shadow-[0_6px_18px_rgba(145,70,255,0.34),inset_0_1px_0_rgba(255,255,255,0.24)] relative"
-            >
-              {copiedHeaderInvite ? (
-                <>
-                  <Check className="w-3.5 h-3.5 shrink-0" />
-                  <span>{t.copied}</span>
-                </>
-              ) : (
-                <>
-                  <UserPlus className="w-3.5 h-3.5 shrink-0" />
-                  <span className={isDesktopLayout ? 'inline' : 'hidden sm:inline'}>
-                    {isDesktopLayout
-                      ? pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })
-                      : t.invite}
-                  </span>
-                  {onlineSavedFriendsCount > 0 && (
-                    <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-black/40 text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
-                      {onlineSavedFriendsCount}
-                    </span>
-                  )}
-                </>
-              )}
-            </button>
-
-            {isDesktopLayout && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSidebarOpen((v) => !v);
-                  setUnreadChatCount(0);
-                }}
-                className={`min-h-[36px] px-3 rounded-xl border text-xs font-semibold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all relative whitespace-nowrap shrink-0 ${
-                  sidebarOpen
-                    ? 'bg-[#9146FF]/22 text-[#C6A2FF] border-[#9146FF]/55 shadow-[0_0_18px_rgba(145,70,255,0.22)]'
-                    : 'bg-white/[0.055] hover:bg-white/[0.12] border-white/[0.09] text-[#EFEFF1]'
-                }`}
-                title={
-                  sidebarOpen
-                    ? pickLang(lang, {
-                        es: 'Ocultar Sala y Chat',
-                        ca: 'Amagar Sala i Xat',
-                        en: 'Hide Room & Chat',
-                      })
-                    : pickLang(lang, {
-                        es: 'Abrir Sala, Cola y Chat',
-                        ca: 'Obrir Sala, Cua i Xat',
-                        en: 'Open Room, Queue & Chat',
-                      })
-                }
-                aria-label={pickLang(lang, {
-                  es: 'Alternar Sala y Chat',
-                  ca: 'Alternar Sala i Xat',
-                  en: 'Toggle Room & Chat',
-                })}
-              >
-                <MessageSquare className="w-3.5 h-3.5" />
-                <span>{pickLang(lang, { es: 'Sala', ca: 'Sala', en: 'Room' })}</span>
-                {!sidebarOpen && unreadChatCount + roomQueue.length > 0 && (
-                  <span className="min-w-[16px] h-[16px] px-1 rounded-full bg-[#9146FF] text-white text-[10px] font-bold flex items-center justify-center tabular-nums">
-                    {unreadChatCount + roomQueue.length > 9
-                      ? '9+'
-                      : unreadChatCount + roomQueue.length}
-                  </span>
-                )}
-              </button>
-            )}
-
-            <CloudAccountButton
-              user={authUser}
-              authLoading={authLoading}
-              displayName={profile.name}
-              lang={lang}
-              isDesktop={isDesktopLayout}
-              onSignIn={handleGoogleSignIn}
-              onSignOut={handleGoogleSignOut}
-              onOpenProfileHub={() => {
-                setProfileHubTab('history');
-                setProfileHubOpen(true);
-              }}
-              compact
-            />
-
-            {!isGamesSectionActive && (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setIsChromeHidden(true);
-                }}
-                className="w-8 h-9 rounded-xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.07] text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
-                title={pickLang(lang, {
-                  es: 'Ocultar menús superior e inferior',
-                  ca: 'Amagar menús superior i inferior',
-                  en: 'Hide top & bottom bars',
-                })}
-                aria-label={pickLang(lang, {
-                  es: 'Ocultar menús superior e inferior',
-                  ca: 'Amagar menús superior i inferior',
-                  en: 'Hide top & bottom bars',
-                })}
-              >
-                <ChevronUp className="w-4 h-4" />
-              </button>
-            )}
-
-            {isDesktopLayout && (
-              <button
-                type="button"
-                onClick={handleLeaveRoom}
-                className="w-9 h-9 rounded-xl bg-white/[0.055] hover:bg-rose-500/20 border border-white/[0.09] hover:border-rose-500/35 text-zinc-400 hover:text-rose-200 flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0"
-                title={t.leaveRoom}
-                aria-label={t.leaveRoom}
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-        </header>
-          </div>
-        </div>
-
-        {/* Main 3-Pane Twitch Broadcast Workspace */}
-        <div
-          className={`flex-1 min-h-0 min-w-0 flex ${
-            isDesktopLayout ? 'flex-row' : 'flex-col'
-          } overflow-hidden`}
-        >
-          {isDesktopLayout && (
-            <TwitchChannelRail
-              lang={lang}
-              recentRooms={recentRooms}
-              favoriteChannels={favoriteChannels}
-              activeRoomId={roomId}
-              activeVideoUrl={videoState.rawSourceUrl || videoState.url}
-              catalogSection={catalogSection}
-              showWatchlistOnly={showWatchlistOnly}
-              onSelectRoom={(targetCode, targetName) =>
-                handleSwitchActiveRoom(targetCode, targetName)
-              }
-              onSelectFastChannel={(ch: FastChannelItem) => {
-                if (ch.mode === 'youtube' && ch.youtubeId) {
-                  handlePlayYouTubeVideo({
-                    id: ch.id,
-                    videoId: ch.youtubeId,
-                    title: ch.name,
-                    channel: ch.quality,
-                    duration: 'LIVE',
-                    views: '24/7',
-                    thumbnail: `https://i.ytimg.com/vi/${ch.youtubeId}/hqdefault.jpg`,
-                    url: ch.streamUrl,
-                  });
-                } else {
-                  handlePlayCustomUrl(ch.streamUrl);
-                }
-              }}
-              onSelectFavoriteChannel={handlePlayFavoriteChannel}
-              onChangeCatalogSection={(sec) => {
-                setShowWatchlistOnly(false);
-                setCatalogSection(sec);
-                mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              onOpenMyList={() => {
-                setShowWatchlistOnly(true);
-                setCatalogSection('movies');
-                mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-              }}
-              onOpenTvModal={() => setSmartTvModalOpen(true)}
-            />
-          )}
+        {/* Main Progressive World Workspace */}
+        <div className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden">
           <div
             ref={mainScrollRef}
-            onScroll={isDesktopLayout ? handleCatalogOrWorkspaceScroll : undefined}
-            onClick={isDesktopLayout ? handleWorkspaceBackgroundClick : undefined}
+            onScroll={handleCatalogOrWorkspaceScroll}
             className={`flex-1 min-h-0 min-w-0 flex flex-col ${
-              isDesktopLayout && !isGamesSectionActive ? 'overflow-y-auto' : 'overflow-hidden'
+              activeWorld === 'sala' || activeWorld === 'juegos'
+                ? 'overflow-hidden'
+                : 'overflow-y-auto overflow-x-clip'
             }`}
           >
             {/* SINGLE NATIVE CINEMA PLAYER INSTANCE (Stays Docked Inline at Top & Compresses on Scroll) */}
@@ -5167,7 +4913,6 @@ export function App() {
                     : 'relative'
                 }
               >
-                {/* Dynamic Ambilight Cinema Glow from Active Poster / Backdrop */}
                 {isPlayerActive &&
                   !isDockedMini &&
                   !isScrollCompressed &&
@@ -5254,27 +4999,19 @@ export function App() {
                     onToggleFloatingChat={() => setFloatingChatOpen((v) => !v)}
                     voiceChat={voiceChat}
                     compactVideoForMobileKeyboard={
-                      !isDesktopLayout && isMobileKeyboardOpen && mobileTab === 'chat'
+                      !isDesktopLayout && isMobileKeyboardOpen && activeWorld === 'sala'
                     }
                     onOpenCatalogSection={(sec) => {
                       setCatalogSection(sec);
-                      if (
-                        sec === 'movies' ||
-                        sec === 'series' ||
-                        sec === 'anime' ||
-                        sec === 'castellano' ||
-                        sec === 'catala'
-                      ) {
-                        setMobileTab('movies');
-                      } else if (sec === 'tdt') setMobileTab('tdt');
-                      else if (sec === 'sports') setMobileTab('sports');
-                      else if (sec === 'youtube') setMobileTab('youtube');
-                      else if (sec === 'games') setMobileTab('games');
+                      if (sec === 'tdt') enterWorld('tv');
+                      else if (sec === 'sports') enterWorld('futbol');
+                      else if (sec === 'youtube') enterWorld('youtube');
+                      else if (sec === 'games') enterWorld('juegos');
+                      else enterWorld('cine');
                     }}
                   />
                 </React.Suspense>
 
-                {/* 1-Tap Quick Multiview Bar if secondary stream active */}
                 {isPlayerActive && !isDockedMini && !isExtracting && secondaryStream && (
                   <div className="px-3 py-1.5 bg-[#18181B] border-t border-white/[0.08] flex items-center justify-between gap-2">
                     <span className="text-[11px] font-semibold text-[#EFEFF1] truncate">
@@ -5297,13 +5034,13 @@ export function App() {
 
             {/* Host Lock Non-Intrusive Toast */}
             {lockNoticeToast && (
-              <div className="fixed top-17 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-2xl bg-[#18181B]/95 backdrop-blur-md border border-amber-500/40 text-amber-200 text-xs font-semibold shadow-2xl flex items-center gap-2 pointer-events-none animate-fade-in">
-                <Lock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+              <div className="fixed top-17 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-2xl bg-[#18181B]/95 backdrop-blur-md border border-white/15 text-zinc-100 text-xs font-semibold shadow-2xl flex items-center gap-2 pointer-events-none animate-fade-in">
+                <Lock className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
                 <span>{lockNoticeToast}</span>
               </div>
             )}
 
-            {/* Added-to-Queue Instant Confirmation Toast with 1-Tap "Ver Cola" */}
+            {/* Added-to-Queue Instant Confirmation Toast */}
             {queueAddedNotice && (
               <div className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[60] w-[calc(100%-1.5rem)] max-w-md px-3.5 py-2.5 rounded-2xl bg-[#18181B]/95 backdrop-blur-xl border border-white/15 text-white text-xs shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex items-center justify-between gap-2.5 animate-fade-in">
                 <div className="flex items-center gap-2 min-w-0">
@@ -5331,141 +5068,15 @@ export function App() {
               </div>
             )}
 
-            {/* Mobile Chat / Queue / Room View with Floating Segmented Control */}
-            {!isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room') && (
-              <div className="flex-1 min-h-0 min-w-0 flex flex-col">
-                <React.Suspense fallback={null}>
-                  <PartySidebar
-                    roomId={roomId}
-                    currentUser={currentUser}
-                    hostId={hostId}
-                    participants={participants}
-                    messages={messages}
-                    lang={lang}
-                    effectiveView={effectiveView}
-                    onToggleViewMode={toggleViewMode}
-                    authUser={authUser}
-                    authLoading={authLoading}
-                    onSignIn={handleGoogleSignIn}
-                    onSignOut={handleGoogleSignOut}
-                    hostOnlyControl={hostOnlyControl}
-                    onToggleHostLock={handleToggleHostLock}
-                    roomName={roomName}
-                    onRenameRoom={handleRenameRoom}
-                    hasPin={roomHasPin}
-                    currentHostPin={currentHostPin}
-                    onSetRoomPin={handleSetRoomPin}
-                    isCurrentRoomPermanent={isCurrentRoomPermanent}
-                    onTogglePermanentRoom={handleTogglePermanentRoom}
-                    onClaimTvCode={handleClaimTvCode}
-                    tvClaimStatus={tvClaimStatus}
-                    isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
-                    onRemoteTogglePlay={handleRemoteTogglePlay}
-                    onRemoteSeekDelta={handleRemoteSeekDelta}
-                    onSendTvRemoteCommand={handleSendTvRemoteCommand}
-                    onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
-                    activePoll={activePoll}
-                    roomQueue={roomQueue}
-                    onPlayQueueItem={handlePlayQueueItem}
-                    onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
-                    onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
-                    onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
-                    onRestoreQueueItem={(item) => socketService.addToQueue(item)}
-                    onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
-                    onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
-                    pinnedMessage={pinnedMessage}
-                    onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
-                    onUnpinMessage={() => socketService.unpinChatMessage()}
-                    typingUsers={typingUsers}
-                    onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
-                    activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
-                    activeMediaPoster={
-                      videoState.mode !== 'idle'
-                        ? videoState.poster || videoState.backdrop || ''
-                        : ''
-                    }
-                    activeMediaIsLive={videoState.mode !== 'idle' && Boolean(videoState.isLive)}
-                    currentVideoTimeSec={
-                      videoState.mode !== 'idle' && !videoState.isLive
-                        ? livePlaybackSec || videoState.currentTime || 0
-                        : 0
-                    }
-                    onSeekToTimestamp={
-                      videoState.mode !== 'idle' && !videoState.isLive
-                        ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
-                        : undefined
-                    }
-                    onPlayCustomUrl={handlePlayCustomUrl}
-                    onOpenCloudBrowser={handleOpenCloudBrowser}
-                    onStartPollFromQueue={handleStartPollFromQueue}
-                    onVotePoll={handleVotePoll}
-                    onClosePoll={handleClosePoll}
-                    initialView={
-                      mobileTab === 'room'
-                        ? 'room'
-                        : unreadChatCount === 0 && roomQueue.length > 0
-                        ? 'queue'
-                        : 'chat'
-                    }
-                    hideInternalTabs={mobileTab === 'room'}
-                    openQueueTrigger={openQueueTrigger}
-                    isKeyboardOpen={isMobileKeyboardOpen}
-                    showMenusButton={isChromeHidden && isOnMobileSocialTab}
-                    onShowMenus={() => setIsChromeHidden(false)}
-                    onOpenFloatingChatOnVideo={
-                      isPlayerActive
-                        ? () => {
-                            setFloatingChatOpen(true);
-                            setMobileTab('movies');
-                            mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-                          }
-                        : undefined
-                    }
-                    savedFriends={savedFriends}
-                    onlineUsers={onlineUsers}
-                    onOpenFriendsModal={() => setFriendsModalOpen(true)}
-                    onAddFriend={handleAddFriend}
-                    onSendDirectRoomInvite={handleSendDirectRoomInvite}
-                    inviteSentFeedback={inviteSentFeedback}
-                    onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
-                    onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
-                    onTransferHost={(newId) => socketService.transferHost(newId)}
-                    onUpdateProfile={handleUpdateProfile}
-                    onCreateNewRoom={handleCreateFreshRoom}
-                    onLeaveRoom={handleLeaveRoom}
-                    voiceChat={voiceChat}
-                  />
-                </React.Suspense>
-              </div>
-            )}
-
-            {/* Scrollable Catalog Hub (zero-scroll full-height fit inside Games Hub) */}
-            <div
-              ref={catalogScrollRef}
-              onScroll={!isDesktopLayout && !isGamesSectionActive ? handleCatalogOrWorkspaceScroll : undefined}
-              onClick={!isDesktopLayout && !isGamesSectionActive ? handleWorkspaceBackgroundClick : undefined}
-              className={`flex-1 min-h-0 min-w-0 ${
-                isGamesSectionActive
-                  ? 'overflow-hidden px-3 sm:px-6 py-2 flex flex-col'
-                  : isDesktopLayout
-                  ? 'overflow-visible px-6 py-5'
-                  : 'overflow-y-auto overflow-x-clip overscroll-contain px-3.5 py-3'
-              } ${
-                !isDesktopLayout && (mobileTab === 'chat' || mobileTab === 'room')
-                  ? 'hidden'
-                  : isGamesSectionActive
-                  ? 'flex'
-                  : 'block'
-              }`}
-            >
-              <div
-                className={
-                  isGamesSectionActive
-                    ? 'w-full min-w-0 max-w-7xl mx-auto flex-1 min-h-0 flex flex-col'
-                    : 'w-full min-w-0 max-w-7xl mx-auto space-y-4 pb-6'
-                }
-              >
-                {/* REAL-TIME LIVE MATCH CENTER DOCKED RIGHT BELOW THE PLAYER */}
+            {/* Player Docks & Error Notices */}
+            {((videoState.mode !== 'idle' &&
+              !isPlayerClosedLocally &&
+              !isPlayerMinimized &&
+              !isAutoImmersiveLandscape &&
+              (activeSportsMatch || videoState.seriesMeta)) ||
+              (isPlayerClosedLocally && videoState.mode !== 'idle') ||
+              (extractionError && !isPlayerActive)) && (
+              <div className="w-full max-w-6xl mx-auto px-3 sm:px-5 pt-3 space-y-3 shrink-0">
                 {videoState.mode !== 'idle' &&
                   !isPlayerClosedLocally &&
                   !isPlayerMinimized &&
@@ -5505,7 +5116,7 @@ export function App() {
                             triggerHaptic('light');
                             setShowLiveMatchDock(true);
                           }}
-                          className="min-h-8 px-3 rounded-xl bg-[#FFBD0F] text-[#141720] text-xs font-extrabold whitespace-nowrap cursor-pointer hover:bg-[#ffc93b] transition-colors"
+                          className="min-h-8 px-3 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-extrabold whitespace-nowrap cursor-pointer transition-colors"
                         >
                           {pickLang(lang, {
                             es: 'Ver estadísticas en vivo',
@@ -5517,7 +5128,6 @@ export function App() {
                     )
                   )}
 
-                {/* NEXT EPISODES DOCK DIRECTLY BELOW PLAYER WHEN WATCHING A SERIES */}
                 {videoState.mode !== 'idle' &&
                   !isPlayerClosedLocally &&
                   !isPlayerMinimized &&
@@ -5543,7 +5153,6 @@ export function App() {
                     </React.Suspense>
                   )}
 
-                {/* If user closed their local player while friends are still watching in room */}
                 {isPlayerClosedLocally && videoState.mode !== 'idle' && (
                   <div className="p-3.5 rounded-2xl bg-[#18181B] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
                     <div className="min-w-0">
@@ -5606,166 +5215,58 @@ export function App() {
                     </button>
                   </div>
                 )}
+              </div>
+            )}
 
-                <MediaCatalogHub
-                  activeSection={catalogSection}
-                  onChangeSection={(sec) => {
-                    if (!isDesktopLayout && sec === 'direct') {
-                      setMobileTab('chat');
-                      setOpenQueueTrigger((n) => n + 1);
-                      return;
-                    }
-                    setCatalogSection(sec);
-                    if (sec === 'home') {
-                      setMobileTab('home');
-                    } else if (
-                      sec === 'movies' ||
-                      sec === 'vose' ||
-                      sec === 'series' ||
-                      sec === 'anime' ||
-                      sec === 'castellano' ||
-                      sec === 'catala'
-                    ) {
-                      setMobileTab('movies');
-                    } else if (sec === 'tdt') {
-                      setMobileTab('tdt');
-                    } else if (sec === 'sports') {
-                      setMobileTab('sports');
-                    } else if (sec === 'youtube') {
-                      setMobileTab('youtube');
-                    } else if (sec === 'games') {
-                      setMobileTab('games');
-                    }
-                  }}
+            {/* WORLD ROUTER */}
+            {activeWorld === 'entry' ? (
+              <div ref={catalogScrollRef} className="flex-1 min-h-0">
+                <EntryHomeScreen
                   lang={lang}
-                  userName={currentUser.name}
-                  activeVideoRawUrl={videoState.rawSourceUrl}
-                  activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
-                  loadingItemId={loadingItemId}
-                  roomQueue={roomQueue}
+                  displayName={profile.name}
+                  isGuestName={!profile.isCustomized}
+                  onUpdateDisplayName={(newName) =>
+                    handleUpdateProfile(newName, profile.avatar, profile.color)
+                  }
                   watchHistory={watchHistory}
-                  watchlist={watchlist}
-                  favoriteChannels={favoriteChannels}
-                  onToggleCatalogFavorite={handleToggleCatalogFavorite}
-                  onToggleChannelFavorite={handleToggleChannelFavorite}
-                  onPlayFavoriteChannel={handlePlayFavoriteChannel}
-                  onPlayMovie={handlePlayMovie}
-                  onPlaySeriesEpisode={handlePlaySeriesEpisode}
-                  onPlayCatalaEpisode={handlePlayCatalaEpisode}
-                  onReplayHistoryItem={handleReplayHistoryItem}
-                  onRemoveHistoryItem={handleRemoveHistoryItem}
-                  onClearHistory={handleClearAllHistory}
-                  onPlaySportsMatch={handlePlaySportsMatch}
-                  onPlayTdtChannel={handlePlayTdtChannel}
-                  onPlayYouTubeVideo={handlePlayYouTubeVideo}
-                  onPlayCustomUrl={handlePlayCustomUrl}
-                  onOpenCloudBrowser={handleOpenCloudBrowser}
-                  onAddToQueue={handleAddToQueue}
-                  onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
-                  onPlayQueueItem={handlePlayQueueItem}
-                  onStartPollFromQueue={handleStartPollFromQueue}
-                  onPlaySecondaryChannel={handlePlaySecondaryChannel}
-                  hasConnectedSmartTv={hasConnectedSmartTv}
-                  onCreateNewRoom={handleCreateFreshRoom}
-                  showWatchlistOnly={showWatchlistOnly}
-                  onWatchlistOnlyChange={setShowWatchlistOnly}
-                  currentUser={currentUser}
-                  participants={participants}
-                  roomBoardGame={roomGameState}
-                  roomPartyGame={partyGameState}
-                  roomPinturilloGame={pinturilloState}
-                  roomPoolGame={poolGameState}
-                  roomChapasGame={chapasGameState}
-                  matchResponses={matchResponses}
-                  gameMoveError={gameMoveError}
-                  isHost={isHostUser}
-                  voiceChat={voiceChat}
-                  requestedGameOpen={forcedOpenGame}
-                  onSelectedGameChange={(game) => {
-                    activeHubGameRef.current = game;
+                  onResumeHistoryItem={(item) => {
+                    void handleReplayHistoryItem(item, false);
                   }}
-                  onStartRoomBoardGame={(gt, solo, clockMin) =>
-                    socketService.startBoardGame(gt, solo, clockMin)
-                  }
-                  onJoinBoardSeat={(side) => socketService.joinGameSeat(side)}
-                  onStartBoardMatch={() => socketService.startBoardMatch()}
-                  onMoveBoardGame={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
-                  onResignBoardGame={() => socketService.resignBoardGame()}
-                  onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
-                  onCloseBoardGame={() => socketService.closeBoardGame()}
-                  onStartRoomPartyGame={(gt) => socketService.startPartyGame(gt)}
-                  onRoomPartyAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
-                  onCloseRoomPartyGame={() => socketService.closePartyGame()}
-                  onStartRoomPinturillo={() => socketService.startPinturillo()}
-                  onStartPinturilloMatch={() => socketService.startPinturilloMatch()}
-                  onPinturilloPickWord={(wordId) => socketService.pickPinturilloWord(wordId)}
-                  onPinturilloStroke={(stroke) => socketService.sendPinturilloStroke(stroke)}
-                  onPinturilloUndo={() => socketService.undoPinturilloStroke()}
-                  onPinturilloClear={() => socketService.clearPinturilloCanvas()}
-                  onPinturilloGuess={(text) => socketService.sendPinturilloGuess(text)}
-                  onPinturilloRematch={() => socketService.rematchPinturillo()}
-                  onCloseRoomPinturillo={() => socketService.closePinturillo()}
-                  onStartRoomPool={(difficulty) => socketService.startPoolGame(difficulty)}
-                  onStartPoolMatch={() => socketService.startPoolMatch()}
-                  onPoolJoinSeat={(seat) => socketService.joinPoolSeat(seat)}
-                  onPoolCallPocket={(pocketId) => socketService.callPoolPocket(pocketId)}
-                  onPoolPlaceCue={(x, y) => socketService.placePoolCueBall(x, y)}
-                  onPoolTakeShot={(shot) => socketService.takePoolShot(shot)}
-                  onPoolSyncChecksum={(turnNumber, checksum) =>
-                    socketService.syncPoolChecksum(turnNumber, checksum)
-                  }
-                  onPoolForfeit={() => socketService.forfeitPoolGame()}
-                  onPoolRematch={() => socketService.rematchPoolGame()}
-                  onCloseRoomPool={() => socketService.closePoolGame()}
-                  onStartRoomChapas={() => socketService.startChapasGame()}
-                  onChapasJoinSeat={(seat) => socketService.joinChapasSeat(seat)}
-                  onChapasUpdateTeam={(team, flag) => socketService.updateChapasTeam(team, flag)}
-                  onChapasToggleBots={(botsEnabled) => socketService.toggleChapasBots(botsEnabled)}
-                  onChapasStartMatch={() => socketService.startChapasMatch()}
-                  onChapasShoot={(shot) => socketService.shootChapasCap(shot)}
-                  onChapasForfeit={() => socketService.forfeitChapasGame()}
-                  onChapasRematch={() => socketService.rematchChapasGame()}
-                  onCloseRoomChapas={() => socketService.closeChapasGame()}
-                  onSearchWithAi={(query, mediaType = 'all') => {
-                    setShowCommandSearch(false);
+                  onOpenContinueWatchingAll={() => {
+                    setProfileHubTab('history');
+                    setProfileHubOpen(true);
+                  }}
+                  onOpenSurpriseMe={() => {
                     setAiSearchLaunch((prev) => ({
-                      query,
-                      mediaType,
-                      mode: 'request',
+                      query: '',
+                      mediaType: 'all',
+                      mode: 'surprise',
                       seq: (prev?.seq || 0) + 1,
                     }));
                     setShowSurpriseModal(true);
                   }}
+                  onSelectWorld={(world) => enterWorld(world)}
+                  onPreloadWorld={preloadWorld}
+                  lastUsedWorld={lastUsedWorld}
+                  liveMatchesCount={liveMatchesCount}
+                  roomParticipantsCount={participants.length}
                 />
-
-                {/* Minimalist Footer (Hidden in Games Hub so grid fills viewport cleanly without gap or scroll) */}
-                {!isGamesSectionActive && (
-                  <footer className="mt-14 pt-5 pb-3 border-t border-white/[0.06] flex flex-wrap items-center justify-between gap-3 text-[11px] text-zinc-500">
-                    <span>RiffanTV (RTV) · Web · Android APK · Google TV</span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setIsAdsPageOpen(true);
-                        if (typeof window !== 'undefined') {
-                          window.history.pushState({}, '', '/ads');
-                        }
-                      }}
-                      className="text-[11px] font-mono tracking-wider text-zinc-500 hover:text-zinc-200 transition-colors cursor-pointer py-1 px-2.5 rounded-full hover:bg-white/[0.05]"
-                    >
-                      RTV Studio
-                    </button>
-                  </footer>
-                )}
               </div>
-            </div>
-          </div>
-
-          {/* Desktop Right Party Sidebar */}
-          {isDesktopLayout && sidebarOpen && (
-            <div className="flex w-[22rem] xl:w-[23.5rem] shrink-0 h-full">
-              <React.Suspense fallback={null}>
+            ) : activeWorld === 'sala' ? (
+              <WorldShell
+                world="sala"
+                title={pickLang(lang, {
+                  es: 'Sala con Amigos',
+                  ca: 'Sala amb Amics',
+                  en: 'Watch Party',
+                })}
+                lang={lang}
+                onBack={() => enterWorld('entry')}
+                onGoHome={() => enterWorld('entry')}
+                fullHeight
+              >
                 <PartySidebar
+                  worldSalaMode
                   roomId={roomId}
                   currentUser={currentUser}
                   hostId={hostId}
@@ -5830,7 +5331,9 @@ export function App() {
                   onStartPollFromQueue={handleStartPollFromQueue}
                   onVotePoll={handleVotePoll}
                   onClosePoll={handleClosePoll}
+                  initialView="chat"
                   openQueueTrigger={openQueueTrigger}
+                  isKeyboardOpen={isMobileKeyboardOpen}
                   savedFriends={savedFriends}
                   onlineUsers={onlineUsers}
                   onOpenFriendsModal={() => setFriendsModalOpen(true)}
@@ -5842,122 +5345,317 @@ export function App() {
                   onTransferHost={(newId) => socketService.transferHost(newId)}
                   onUpdateProfile={handleUpdateProfile}
                   onCreateNewRoom={handleCreateFreshRoom}
+                  onSwitchRoom={(targetCode) => handleSwitchActiveRoom(targetCode)}
                   onLeaveRoom={handleLeaveRoom}
                   voiceChat={voiceChat}
                 />
-              </React.Suspense>
-            </div>
-          )}
+              </WorldShell>
+            ) : activeWorld === 'juegos' ? (
+              <WorldShell
+                world="juegos"
+                title={pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })}
+                lang={lang}
+                onBack={() => enterWorld('entry')}
+                onGoHome={() => enterWorld('entry')}
+                fullHeight
+              >
+                <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-3 pb-24">
+                  <GamesHubSection
+                    lang={lang}
+                    currentUser={currentUser}
+                    participants={participants}
+                    roomBoardGame={roomGameState}
+                    roomPartyGame={partyGameState}
+                    roomPinturilloGame={pinturilloState}
+                    roomPoolGame={poolGameState}
+                    roomChapasGame={chapasGameState}
+                    matchResponses={matchResponses}
+                    gameMoveError={gameMoveError}
+                    isHost={isHostUser}
+                    voiceChat={voiceChat}
+                    requestedGameOpen={forcedOpenGame}
+                    onSelectedGameChange={(game) => {
+                      activeHubGameRef.current = game;
+                    }}
+                    onStartRoomBoardGame={(gt, solo, clockMin) =>
+                      socketService.startBoardGame(gt, solo, clockMin)
+                    }
+                    onJoinBoardSeat={(side) => socketService.joinGameSeat(side)}
+                    onStartBoardMatch={() => socketService.startBoardMatch()}
+                    onMoveBoardGame={(from, to, promo) => socketService.sendGameMove(from, to, promo)}
+                    onResignBoardGame={() => socketService.resignBoardGame()}
+                    onResetBoardGame={(opts) => socketService.resetBoardGame(opts)}
+                    onCloseBoardGame={() => socketService.closeBoardGame()}
+                    onStartRoomPartyGame={(gt) => socketService.startPartyGame(gt)}
+                    onRoomPartyAction={(act, opts) => socketService.sendPartyGameAction(act, opts)}
+                    onCloseRoomPartyGame={() => socketService.closePartyGame()}
+                    onStartRoomPinturillo={() => socketService.startPinturillo()}
+                    onStartPinturilloMatch={() => socketService.startPinturilloMatch()}
+                    onPinturilloPickWord={(wordId) => socketService.pickPinturilloWord(wordId)}
+                    onPinturilloStroke={(stroke) => socketService.sendPinturilloStroke(stroke)}
+                    onPinturilloUndo={() => socketService.undoPinturilloStroke()}
+                    onPinturilloClear={() => socketService.clearPinturilloCanvas()}
+                    onPinturilloGuess={(text) => socketService.sendPinturilloGuess(text)}
+                    onPinturilloRematch={() => socketService.rematchPinturillo()}
+                    onCloseRoomPinturillo={() => socketService.closePinturillo()}
+                    onStartRoomPool={(difficulty) => socketService.startPoolGame(difficulty)}
+                    onStartPoolMatch={() => socketService.startPoolMatch()}
+                    onPoolJoinSeat={(seat) => socketService.joinPoolSeat(seat)}
+                    onPoolCallPocket={(pocketId) => socketService.callPoolPocket(pocketId)}
+                    onPoolPlaceCue={(x, y) => socketService.placePoolCueBall(x, y)}
+                    onPoolTakeShot={(shot) => socketService.takePoolShot(shot)}
+                    onPoolSyncChecksum={(turnNumber, checksum) =>
+                      socketService.syncPoolChecksum(turnNumber, checksum)
+                    }
+                    onPoolForfeit={() => socketService.forfeitPoolGame()}
+                    onPoolRematch={() => socketService.rematchPoolGame()}
+                    onCloseRoomPool={() => socketService.closePoolGame()}
+                    onStartRoomChapas={() => socketService.startChapasGame()}
+                    onChapasJoinSeat={(seat) => socketService.joinChapasSeat(seat)}
+                    onChapasUpdateTeam={(team, flag) => socketService.updateChapasTeam(team, flag)}
+                    onChapasToggleBots={(botsEnabled) => socketService.toggleChapasBots(botsEnabled)}
+                    onChapasStartMatch={() => socketService.startChapasMatch()}
+                    onChapasShoot={(shot) => socketService.shootChapasCap(shot)}
+                    onChapasForfeit={() => socketService.forfeitChapasGame()}
+                    onChapasRematch={() => socketService.rematchChapasGame()}
+                    onCloseRoomChapas={() => socketService.closeChapasGame()}
+                  />
+                </div>
+              </WorldShell>
+            ) : (
+              <WorldShell
+                world={activeWorld}
+                title={
+                  activeWorld === 'cine'
+                    ? pickLang(lang, { es: 'Cine', ca: 'Cinema', en: 'Cinema' })
+                    : activeWorld === 'futbol'
+                    ? pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' })
+                    : activeWorld === 'tv'
+                    ? pickLang(lang, { es: 'TV en Directo', ca: 'TV en Directe', en: 'Live TV' })
+                    : 'YouTube'
+                }
+                lang={lang}
+                onBack={() => enterWorld('entry')}
+                onGoHome={() => enterWorld('entry')}
+                searchValue={worldSearchQuery}
+                onSearchChange={setWorldSearchQuery}
+                searchPlaceholder={
+                  activeWorld === 'cine'
+                    ? pickLang(lang, {
+                        es: 'Buscar película, serie o enlace...',
+                        ca: 'Cercar pel·lícula, sèrie o enllaç...',
+                        en: 'Search movie, series or URL...',
+                      })
+                    : activeWorld === 'futbol'
+                    ? pickLang(lang, {
+                        es: 'Buscar partido, equipo o canal...',
+                        ca: 'Cercar partit, equip o canal...',
+                        en: 'Search match, team or channel...',
+                      })
+                    : activeWorld === 'tv'
+                    ? pickLang(lang, {
+                        es: 'Buscar canal o programa...',
+                        ca: 'Cercar canal o programa...',
+                        en: 'Search channel or show...',
+                      })
+                    : pickLang(lang, {
+                        es: 'Buscar en YouTube...',
+                        ca: 'Cercar a YouTube...',
+                        en: 'Search YouTube...',
+                      })
+                }
+              >
+                <MediaCatalogHub
+                  worldMode={activeWorld}
+                  externalSearchQuery={worldSearchQuery}
+                  onExternalSearchChange={setWorldSearchQuery}
+                  cineTab={cineTab}
+                  onCineTabChange={setCineTab}
+                  cineCastellano={cineCastellano}
+                  onCineCastellanoChange={setCineCastellano}
+                  futbolTab={futbolTab}
+                  onFutbolTabChange={setFutbolTab}
+                  activeSection={catalogSection}
+                  onChangeSection={(sec) => {
+                    if (sec === 'tdt') enterWorld('tv');
+                    else if (sec === 'sports') enterWorld('futbol');
+                    else if (sec === 'youtube') enterWorld('youtube');
+                    else if (sec === 'games') enterWorld('juegos');
+                    else if (sec === 'direct') enterWorld('sala');
+                    else setCatalogSection(sec);
+                  }}
+                  lang={lang}
+                  userName={currentUser.name}
+                  activeVideoRawUrl={videoState.rawSourceUrl}
+                  activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
+                  loadingItemId={loadingItemId}
+                  roomQueue={roomQueue}
+                  watchHistory={watchHistory}
+                  watchlist={watchlist}
+                  favoriteChannels={favoriteChannels}
+                  onToggleCatalogFavorite={handleToggleCatalogFavorite}
+                  onToggleChannelFavorite={handleToggleChannelFavorite}
+                  onPlayFavoriteChannel={handlePlayFavoriteChannel}
+                  onPlayMovie={handlePlayMovie}
+                  onPlaySeriesEpisode={handlePlaySeriesEpisode}
+                  onPlayCatalaEpisode={handlePlayCatalaEpisode}
+                  onReplayHistoryItem={handleReplayHistoryItem}
+                  onRemoveHistoryItem={handleRemoveHistoryItem}
+                  onClearHistory={handleClearAllHistory}
+                  onPlaySportsMatch={handlePlaySportsMatch}
+                  onPlayTdtChannel={handlePlayTdtChannel}
+                  onPlayYouTubeVideo={handlePlayYouTubeVideo}
+                  onPlayCustomUrl={handlePlayCustomUrl}
+                  onOpenCloudBrowser={handleOpenCloudBrowser}
+                  onAddToQueue={handleAddToQueue}
+                  onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+                  onPlayQueueItem={handlePlayQueueItem}
+                  onStartPollFromQueue={handleStartPollFromQueue}
+                  onPlaySecondaryChannel={handlePlaySecondaryChannel}
+                  hasConnectedSmartTv={hasConnectedSmartTv}
+                  onCreateNewRoom={handleCreateFreshRoom}
+                  showWatchlistOnly={showWatchlistOnly}
+                  onWatchlistOnlyChange={setShowWatchlistOnly}
+                  currentUser={currentUser}
+                  participants={participants}
+                  roomBoardGame={roomGameState}
+                  roomPartyGame={partyGameState}
+                  roomPinturilloGame={pinturilloState}
+                  roomPoolGame={poolGameState}
+                  roomChapasGame={chapasGameState}
+                  matchResponses={matchResponses}
+                  gameMoveError={gameMoveError}
+                  isHost={isHostUser}
+                  voiceChat={voiceChat}
+                  requestedGameOpen={forcedOpenGame}
+                  onSelectedGameChange={(game) => {
+                    activeHubGameRef.current = game;
+                  }}
+                  onSearchWithAi={(query, mediaType = 'all') => {
+                    setShowCommandSearch(false);
+                    setAiSearchLaunch((prev) => ({
+                      query,
+                      mediaType,
+                      mode: 'request',
+                      seq: (prev?.seq || 0) + 1,
+                    }));
+                    setShowSurpriseModal(true);
+                  }}
+                  onOpenSurpriseMe={() => {
+                    setAiSearchLaunch((prev) => ({
+                      query: '',
+                      mediaType: 'all',
+                      mode: 'surprise',
+                      seq: (prev?.seq || 0) + 1,
+                    }));
+                    setShowSurpriseModal(true);
+                  }}
+                />
+              </WorldShell>
+            )}
+          </div>
         </div>
 
-        {/* Floating 5-Tab Glass Bottom Navigation Bar */}
-        {!isDesktopLayout && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-          <MobileBottomNav
-            lang={lang}
-            mobileTab={mobileTab}
-            catalogSection={catalogSection}
-            showWatchlistOnly={showWatchlistOnly}
-            unreadChatCount={unreadChatCount}
-            roomQueueCount={roomQueue.length}
-            isChromeHidden={effectiveChromeHidden}
-            onSelectHome={() => {
-              setShowWatchlistOnly(false);
-              setMobileTab('home');
-              setCatalogSection('home');
-              catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            onSelectMovies={() => {
-              setShowWatchlistOnly(false);
-              setMobileTab('movies');
-              if (
-                catalogSection !== 'movies' &&
-                catalogSection !== 'vose' &&
-                catalogSection !== 'series' &&
-                catalogSection !== 'anime' &&
-                catalogSection !== 'castellano' &&
-                catalogSection !== 'catala'
-              ) {
-                setCatalogSection('movies');
+        {/* Floating Room Chat Bubble across all worlds except Sala */}
+        <FloatingRoomBubble
+          lang={lang}
+          visible={inRoom && activeWorld !== 'sala' && !isAutoImmersiveLandscape}
+          participantsCount={participants.length}
+          voiceActive={voiceChat.isJoined}
+          isSheetOpen={isFloatingRoomOpen}
+          onOpenSheet={() => {
+            setIsFloatingRoomOpen(true);
+            setUnreadChatCount(0);
+          }}
+          onCloseSheet={() => setIsFloatingRoomOpen(false)}
+          onOpenFullSala={() => enterWorld('sala')}
+        >
+          <React.Suspense fallback={null}>
+            <PartySidebar
+              roomId={roomId}
+              currentUser={currentUser}
+              hostId={hostId}
+              participants={participants}
+              messages={messages}
+              lang={lang}
+              effectiveView={effectiveView}
+              onToggleViewMode={toggleViewMode}
+              authUser={authUser}
+              authLoading={authLoading}
+              onSignIn={handleGoogleSignIn}
+              onSignOut={handleGoogleSignOut}
+              hostOnlyControl={hostOnlyControl}
+              onToggleHostLock={handleToggleHostLock}
+              roomName={roomName}
+              onRenameRoom={handleRenameRoom}
+              hasPin={roomHasPin}
+              currentHostPin={currentHostPin}
+              onSetRoomPin={handleSetRoomPin}
+              isCurrentRoomPermanent={isCurrentRoomPermanent}
+              onTogglePermanentRoom={handleTogglePermanentRoom}
+              onClaimTvCode={handleClaimTvCode}
+              tvClaimStatus={tvClaimStatus}
+              isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
+              onRemoteTogglePlay={handleRemoteTogglePlay}
+              onRemoteSeekDelta={handleRemoteSeekDelta}
+              onSendTvRemoteCommand={handleSendTvRemoteCommand}
+              onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
+              activePoll={activePoll}
+              roomQueue={roomQueue}
+              onPlayQueueItem={handlePlayQueueItem}
+              onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+              onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
+              onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
+              onRestoreQueueItem={(item) => socketService.addToQueue(item)}
+              onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
+              onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
+              pinnedMessage={pinnedMessage}
+              onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
+              onUnpinMessage={() => socketService.unpinChatMessage()}
+              typingUsers={typingUsers}
+              onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
+              activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
+              activeMediaPoster={
+                videoState.mode !== 'idle'
+                  ? videoState.poster || videoState.backdrop || ''
+                  : ''
               }
-            }}
-            onSelectLive={() => {
-              setShowWatchlistOnly(false);
-              if (
-                catalogSection !== 'tdt' &&
-                catalogSection !== 'sports' &&
-                catalogSection !== 'youtube'
-              ) {
-                setMobileTab('tdt');
-                setCatalogSection('tdt');
-              } else {
-                setMobileTab(
-                  catalogSection === 'sports'
-                    ? 'sports'
-                    : catalogSection === 'youtube'
-                    ? 'youtube'
-                    : 'tdt'
-                );
+              activeMediaIsLive={videoState.mode !== 'idle' && Boolean(videoState.isLive)}
+              currentVideoTimeSec={
+                videoState.mode !== 'idle' && !videoState.isLive
+                  ? livePlaybackSec || videoState.currentTime || 0
+                  : 0
               }
-            }}
-            onSelectGames={() => {
-              setShowWatchlistOnly(false);
-              setIsChromeHidden(false);
-              setMobileTab('games');
-              setCatalogSection('games');
-            }}
-            onSelectChat={() => {
-              if (unreadChatCount === 0 && roomQueue.length > 0) {
-                setOpenQueueTrigger((n) => n + 1);
+              onSeekToTimestamp={
+                videoState.mode !== 'idle' && !videoState.isLive
+                  ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
+                  : undefined
               }
-              setMobileTab('chat');
-              setUnreadChatCount(0);
-            }}
-          />
-        )}
-
-        {/* Click-to-Reveal Floating Pill when Top/Bottom Chrome is Hidden (disabled in Games Hub) */}
-        {effectiveChromeHidden && !isOnMobileSocialTab && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-          <div className="fixed bottom-[max(0.65rem,env(safe-area-inset-bottom))] left-1/2 -translate-x-1/2 z-40 flex items-center gap-1.5 animate-fade-in">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setIsChromeHidden(false);
-              }}
-              aria-label={pickLang(lang, {
-                es: 'Mostrar menús',
-                ca: 'Mostrar menús',
-                en: 'Show menus',
-              })}
-              className="min-h-9 px-3.5 rounded-full bg-[#141418]/90 hover:bg-[#1E1E26] backdrop-blur-xl border border-white/15 text-xs font-semibold text-zinc-100 shadow-[0_10px_28px_rgba(0,0,0,0.75)] flex items-center gap-1.5 whitespace-nowrap cursor-pointer active:scale-95 transition-all"
-            >
-              <ChevronUp className="w-3.5 h-3.5 text-[#BF94FF]" />
-              <span>
-                {pickLang(lang, {
-                  es: 'Menús',
-                  ca: 'Menús',
-                  en: 'Menus',
-                })}
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setIsChromeHidden(false);
-                setShowCommandSearch(true);
-              }}
-              aria-label={pickLang(lang, {
-                es: 'Búsqueda rápida',
-                ca: 'Cerca ràpida',
-                en: 'Quick search',
-              })}
-              className="w-9 h-9 rounded-full bg-[#141418]/90 hover:bg-[#1E1E26] backdrop-blur-xl border border-white/15 text-zinc-200 shadow-[0_10px_28px_rgba(0,0,0,0.75)] flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-            >
-              <Search className="w-3.5 h-3.5 text-[#BF94FF]" />
-            </button>
-          </div>
-        )}
+              onPlayCustomUrl={handlePlayCustomUrl}
+              onOpenCloudBrowser={handleOpenCloudBrowser}
+              onStartPollFromQueue={handleStartPollFromQueue}
+              onVotePoll={handleVotePoll}
+              onClosePoll={handleClosePoll}
+              initialView="chat"
+              hideInternalTabs
+              openQueueTrigger={openQueueTrigger}
+              savedFriends={savedFriends}
+              onlineUsers={onlineUsers}
+              onOpenFriendsModal={() => setFriendsModalOpen(true)}
+              onAddFriend={handleAddFriend}
+              onSendDirectRoomInvite={handleSendDirectRoomInvite}
+              inviteSentFeedback={inviteSentFeedback}
+              onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
+              onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
+              onTransferHost={(newId) => socketService.transferHost(newId)}
+              onUpdateProfile={handleUpdateProfile}
+              onCreateNewRoom={handleCreateFreshRoom}
+              onSwitchRoom={(targetCode) => handleSwitchActiveRoom(targetCode)}
+              onLeaveRoom={handleLeaveRoom}
+              voiceChat={voiceChat}
+            />
+          </React.Suspense>
+        </FloatingRoomBubble>
         {/* Service Worker / Cross-Platform Version Update Toast */}
         {(swUpdate || nativeApkUpdate || deferredAppUpdateVersion) && (
           <div className="fixed bottom-20 sm:bottom-6 right-4 z-[70] max-w-xs px-4 py-3 rounded-2xl bg-[#18181B]/95 backdrop-blur-xl border border-[#9146FF]/40 shadow-2xl flex items-center justify-between gap-3">

@@ -4845,7 +4845,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     const shortLabel =
                       tr.resolverType === 'youtube'
                         ? tr.label.replace(/\s*\([^)]*\)/g, '')
-                        : tr.label.split('·')[0].trim() || `${pickLang(lang, { es: 'Opción', ca: 'Opció', en: 'Option' })} ${idx + 1}`;
+                        : tr.label.split('·')[0].trim() || `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`;
                     return (
                       <button
                         key={tr.id || idx}
@@ -4957,6 +4957,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 <div className="flex items-center gap-1 bg-[#26262C]/80 p-1 rounded-2xl border border-white/[0.08]">
                   {videoState.tracks.slice(0, 5).map((tr, idx) => {
                     const active = idx === videoState.activeTrackIndex;
+                    const hasZh = String(tr.lang || '').toUpperCase() === 'ZH' || /中文/.test(tr.label || '');
+                    const signalText = `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`;
                     return (
                       <button
                         key={tr.id || idx}
@@ -4965,13 +4967,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                           triggerHaptic('light');
                           onSelectTrack(idx, 0);
                         }}
-                        className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all ${
+                        className={`min-h-10 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 ${
                           active
                             ? 'bg-[#9146FF] text-white shadow-sm'
                             : 'text-zinc-300 hover:bg-white/10'
                         }`}
                       >
-                        {tr.label || `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`}
+                        {hasZh && (
+                          <span className="px-1.5 py-0.5 rounded bg-white/15 text-[10px] font-bold">
+                            中文
+                          </span>
+                        )}
+                        <span>{signalText}</span>
                       </button>
                     );
                   })}

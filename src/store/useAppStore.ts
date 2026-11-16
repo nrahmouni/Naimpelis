@@ -4,8 +4,25 @@ import type { ScheduledRoomItem, SubtitleStyleSettings } from '../types';
 
 const SUBTITLE_STYLE_KEY = 'naimcine_subtitle_style_v1';
 const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
+const LAST_WORLD_KEY = 'riffantv_last_world_v1';
 
 export type ShellNavSection = 'home' | 'search' | 'rooms' | 'my_list' | 'profile';
+export type PrimaryWorldId = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala';
+export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
+export type CineSubTab = 'movies' | 'series' | 'platforms';
+export type FutbolSubTab = 'matches' | 'channels';
+
+const PRIMARY_WORLDS: PrimaryWorldId[] = ['cine', 'futbol', 'tv', 'juegos', 'sala'];
+
+function loadLastUsedWorld(): PrimaryWorldId | null {
+  if (typeof localStorage === 'undefined') return null;
+  try {
+    const raw = localStorage.getItem(LAST_WORLD_KEY);
+    return PRIMARY_WORLDS.includes(raw as PrimaryWorldId) ? (raw as PrimaryWorldId) : null;
+  } catch {
+    return null;
+  }
+}
 
 const TYPING_EXPIRY_MS = 4500;
 const typingExpiryTimers = new Map<string, ReturnType<typeof setTimeout>>();
@@ -16,6 +33,12 @@ interface SwUpdateRegistration {
 
 interface AppShellState {
   activeNavSection: ShellNavSection;
+  activeWorld: WorldId;
+  lastUsedWorld: PrimaryWorldId | null;
+  cineTab: CineSubTab;
+  cineCastellano: boolean;
+  futbolTab: FutbolSubTab;
+  isFloatingRoomOpen: boolean;
   showDesignSystem: boolean;
   showLegalModal: boolean;
   showNotificationCenter: boolean;
@@ -28,12 +51,19 @@ interface AppShellState {
   scheduledRooms: ScheduledRoomItem[];
   swUpdate: SwUpdateRegistration | null;
   deferredAppUpdateVersion: string | null;
+  authNotice: string | null;
   setActiveNavSection: (section: ShellNavSection) => void;
+  setActiveWorld: (world: WorldId) => void;
+  setCineTab: (tab: CineSubTab) => void;
+  setCineCastellano: (enabled: boolean) => void;
+  setFutbolTab: (tab: FutbolSubTab) => void;
+  setIsFloatingRoomOpen: (open: boolean) => void;
   setShowDesignSystem: (open: boolean) => void;
   setShowLegalModal: (open: boolean) => void;
   setShowNotificationCenter: (open: boolean) => void;
   setShowCommandSearch: (open: boolean) => void;
   setShowSurpriseModal: (open: boolean) => void;
+  setAuthNotice: (msg: string | null) => void;
   setTypingUser: (userId: string, userName: string, isTyping: boolean, roomId?: string) => void;
   updateSubtitleStyle: (patch: Partial<SubtitleStyleSettings>) => void;
   setSubtitleStyle: (patch: Partial<SubtitleStyleSettings>) => void;
@@ -84,6 +114,12 @@ function loadScheduledRooms(): ScheduledRoomItem[] {
 
 export const useAppStore = create<AppShellState>((set, get) => ({
   activeNavSection: 'home',
+  activeWorld: 'entry',
+  lastUsedWorld: loadLastUsedWorld(),
+  cineTab: 'movies',
+  cineCastellano: true,
+  futbolTab: 'matches',
+  isFloatingRoomOpen: false,
   showDesignSystem:
     typeof window !== 'undefined' &&
     window.location.pathname.toLowerCase().includes('/design-system'),
@@ -98,13 +134,34 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   scheduledRooms: loadScheduledRooms(),
   swUpdate: null,
   deferredAppUpdateVersion: null,
+  authNotice: null,
 
   setActiveNavSection: (activeNavSection) => set({ activeNavSection }),
+  setActiveWorld: (activeWorld) => {
+    if (PRIMARY_WORLDS.includes(activeWorld as PrimaryWorldId)) {
+      const primary = activeWorld as PrimaryWorldId;
+      set({ activeWorld, lastUsedWorld: primary, isFloatingRoomOpen: false });
+      if (typeof localStorage !== 'undefined') {
+        try {
+          localStorage.setItem(LAST_WORLD_KEY, primary);
+        } catch {
+          // ignore
+        }
+      }
+      return;
+    }
+    set({ activeWorld, isFloatingRoomOpen: false });
+  },
+  setCineTab: (cineTab) => set({ cineTab }),
+  setCineCastellano: (cineCastellano) => set({ cineCastellano }),
+  setFutbolTab: (futbolTab) => set({ futbolTab }),
+  setIsFloatingRoomOpen: (isFloatingRoomOpen) => set({ isFloatingRoomOpen }),
   setShowDesignSystem: (showDesignSystem) => set({ showDesignSystem }),
   setShowLegalModal: (showLegalModal) => set({ showLegalModal }),
   setShowNotificationCenter: (showNotificationCenter) => set({ showNotificationCenter }),
   setShowCommandSearch: (showCommandSearch) => set({ showCommandSearch }),
   setShowSurpriseModal: (showSurpriseModal) => set({ showSurpriseModal }),
+  setAuthNotice: (authNotice) => set({ authNotice }),
 
   setTypingUser: (userId, userName, isTyping, roomId = '') => {
     const prevTimer = typingExpiryTimers.get(userId);

@@ -1,19 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { AnimatePresence, motion } from 'motion/react';
 import {
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Columns2,
   Loader2,
   Play,
-  Radio,
-  RefreshCw,
-  Search,
   Shield,
   Star,
-  Tv,
-  X,
 } from 'lucide-react';
 import type {
   AppLanguage,
@@ -25,6 +18,8 @@ import type {
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
 import { buildChannelFavId } from '../utils/storage';
+import { BottomSheet, SegmentedControl } from './ui/DesignSystem';
+
 const LiveMatchCenter = React.lazy(() =>
   import('./LiveMatchCenter').then((m) => ({ default: m.LiveMatchCenter }))
 );
@@ -33,6 +28,8 @@ interface FootballMatchboardProps {
   lang: AppLanguage;
   searchQuery: string;
   onSearchQueryChange: (val: string) => void;
+  langFilter?: 'all' | 'ZH';
+  leagueFilter?: string;
   activeVideoRawUrl?: string;
   loadingItemId?: string | null;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
@@ -41,7 +38,8 @@ interface FootballMatchboardProps {
   onToggleChannelFavorite: (item: Omit<FavoriteChannelItem, 'addedAt'>) => void;
 }
 
-type StatusTab = 'all' | 'live' | 'upcoming' | 'finished';
+type StatusTab = 'live' | 'upcoming' | 'all';
+type MatchSheetTab = 'signals' | 'stats';
 
 function formatOffsetDateKey(dayOffset: number): {
   dateKey: string;
@@ -89,7 +87,7 @@ function toSportsMatch(item: FootballMatchboardItem, lang: AppLanguage): SportsM
     sport: 'soccer',
     time:
       item.statusState === 'live'
-        ? item.statusLabel || pickLang(lang, { es: 'EN DIRECTO', ca: 'EN DIRECTE', en: 'LIVE' })
+        ? item.statusLabel || pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE' })
         : item.kickoffTime,
     isLive: item.statusState === 'live',
     is247Channel: false,
@@ -112,6 +110,16 @@ function toSportsMatch(item: FootballMatchboardItem, lang: AppLanguage): SportsM
   };
 }
 
+function hasValidScore(homeScore?: string, awayScore?: string): boolean {
+  const h = String(homeScore ?? '').trim();
+  const a = String(awayScore ?? '').trim();
+  if (!h || !a) return false;
+  if (h === '-' || h === '–' || a === '-' || a === '–' || h === '·' || a === '·') {
+    return false;
+  }
+  return /^\d+$/.test(h) && /^\d+$/.test(a);
+}
+
 const TeamCrestImg: React.FC<{
   src?: string;
   shortCode: string;
@@ -123,9 +131,9 @@ const TeamCrestImg: React.FC<{
     return (
       <span
         aria-hidden="true"
-        className="w-5 h-5 rounded-full bg-white/[0.08] border border-white/[0.12] flex items-center justify-center text-[9px] font-bold text-zinc-200 shrink-0"
+        className="w-6 h-6 rounded-full bg-white/[0.08] border border-white/[0.12] flex items-center justify-center text-[10px] font-bold text-zinc-200 shrink-0"
       >
-        {shortCode.slice(0, 2) || <Shield className="w-3 h-3 text-zinc-400" />}
+        {shortCode.slice(0, 2) || <Shield className="w-3.5 h-3.5 text-zinc-400" />}
       </span>
     );
   }
@@ -137,7 +145,7 @@ const TeamCrestImg: React.FC<{
       referrerPolicy="no-referrer"
       loading="lazy"
       onError={() => setFailed(true)}
-      className="w-5 h-5 object-contain shrink-0"
+      className="w-6 h-6 object-contain shrink-0"
     />
   );
 };
@@ -167,7 +175,8 @@ const RegionFlagImg: React.FC<{
 export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   lang,
   searchQuery,
-  onSearchQueryChange,
+  langFilter = 'all',
+  leagueFilter = '',
   activeVideoRawUrl,
   loadingItemId,
   onPlaySportsMatch,
@@ -181,7 +190,8 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   const [loading, setLoading] = useState<boolean>(true);
   const [hasAutoSelectedTab, setHasAutoSelectedTab] = useState<boolean>(false);
 
-  const [expandedMatchId, setExpandedMatchId] = useState<string | null>(null);
+  const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
+  const [sheetTab, setSheetTab] = useState<MatchSheetTab>('signals');
   const [detailsMap, setDetailsMap] = useState<Record<string, FootballMatchDetails>>({});
   const [loadingDetailId, setLoadingDetailId] = useState<string | null>(null);
 
@@ -264,45 +274,40 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     [activeDateInfo.dateKey, detailsMap]
   );
 
-  const expandedMatchObj = useMemo(
-    () => matches.find((m) => m.id === expandedMatchId) || null,
-    [matches, expandedMatchId]
+  const selectedMatchObj = useMemo(
+    () => matches.find((m) => m.id === selectedMatchId) || null,
+    [matches, selectedMatchId]
   );
 
   useEffect(() => {
-    if (!expandedMatchObj || expandedMatchObj.statusState !== 'live') return;
+    if (!selectedMatchObj || selectedMatchObj.statusState !== 'live') return;
     const timer = setInterval(() => {
-      loadMatchDetails(expandedMatchObj, true);
+      loadMatchDetails(selectedMatchObj, true);
     }, 15000);
     return () => clearInterval(timer);
-  }, [expandedMatchObj, loadMatchDetails]);
-
-  const liveCount = useMemo(
-    () => matches.filter((m) => m.statusState === 'live').length,
-    [matches]
-  );
-  const upcomingCount = useMemo(
-    () => matches.filter((m) => m.statusState === 'upcoming').length,
-    [matches]
-  );
-  const finishedCount = useMemo(
-    () => matches.filter((m) => m.statusState === 'finished').length,
-    [matches]
-  );
+  }, [selectedMatchObj, loadMatchDetails]);
 
   const filteredMatches = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
+    const lf = leagueFilter.trim().toLowerCase();
     return matches.filter((m) => {
       if (statusTab === 'live' && m.statusState !== 'live') return false;
       if (statusTab === 'upcoming' && m.statusState !== 'upcoming') return false;
-      if (statusTab === 'finished' && m.statusState !== 'finished') return false;
+      if (langFilter === 'ZH') {
+        const hasZh = m.channels.some((c) => c.lang === 'ZH' || /中文/.test(c.label || ''));
+        if (!hasZh) return false;
+      }
+      if (lf) {
+        const hayLeague = `${m.groupTitle} ${m.leagueSlug} ${m.regionName}`.toLowerCase();
+        if (!hayLeague.includes(lf)) return false;
+      }
       if (q) {
         const hay = `${m.homeTeam} ${m.awayTeam} ${m.groupTitle} ${m.regionName}`.toLowerCase();
         if (!hay.includes(q)) return false;
       }
       return true;
     });
-  }, [matches, statusTab, searchQuery]);
+  }, [matches, statusTab, searchQuery, langFilter, leagueFilter]);
 
   const groupedCompetitions = useMemo(() => {
     const groups: {
@@ -333,486 +338,281 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     return groups;
   }, [filteredMatches]);
 
-  const featuredLiveMatch = useMemo(() => {
-    return (
-      matches.find((m) => m.statusState === 'live' && m.channels.length > 0) ||
-      matches.find((m) => m.statusState === 'live') ||
-      matches.find((m) => m.channels.length > 0) ||
-      null
-    );
-  }, [matches]);
-
-  const handleToggleExpand = (item: FootballMatchboardItem) => {
+  const handleOpenMatchSheet = (item: FootballMatchboardItem, defaultTab: MatchSheetTab = 'signals') => {
     triggerHaptic('light');
-    if (expandedMatchId === item.id) {
-      setExpandedMatchId(null);
-      return;
-    }
-    setExpandedMatchId(item.id);
+    setSheetTab(defaultTab);
+    setSelectedMatchId(item.id);
     loadMatchDetails(item, true);
   };
 
-  const handleQuickPlayTv = (e: React.MouseEvent, item: FootballMatchboardItem) => {
+  const handleQuickWatch = (e: React.MouseEvent, item: FootballMatchboardItem) => {
     e.stopPropagation();
     triggerHaptic('medium');
-    setExpandedMatchId(item.id);
-    loadMatchDetails(item, true);
     if (item.channels.length > 0) {
       onPlaySportsMatch(toSportsMatch(item, lang), 0);
+    } else {
+      handleOpenMatchSheet(item, 'stats');
     }
   };
 
+  const statusOptions = useMemo(
+    () => [
+      { id: 'live' as StatusTab, label: pickLang(lang, { es: 'En vivo', ca: 'En directe', en: 'Live' }) },
+      { id: 'upcoming' as StatusTab, label: pickLang(lang, { es: 'Próximos', ca: 'Pròxims', en: 'Upcoming' }) },
+      { id: 'all' as StatusTab, label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
+    ],
+    [lang]
+  );
+
+  const selectedSportsMatch = selectedMatchObj ? toSportsMatch(selectedMatchObj, lang) : null;
+  const selectedMatchDetails = selectedMatchObj ? detailsMap[selectedMatchObj.id] || null : null;
+
   return (
-    <section className="rounded-3xl overflow-hidden nc-specular-surface border border-white/[0.1] shadow-2xl">
-      {/* Featured Live Match Spotlight Banner */}
-      {featuredLiveMatch && !searchQuery.trim() && (
-        <div className="relative p-4 sm:p-5 bg-gradient-to-r from-[#13141D] via-[#1B1F2E] to-[#13141D] border-b border-white/[0.08] flex flex-col sm:flex-row sm:items-center justify-between gap-3 overflow-hidden">
-          <div className="flex items-center gap-3 min-w-0 relative z-10">
-            <div className="px-2.5 py-1 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shrink-0">
-              <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
-              <span>
-                {featuredLiveMatch.statusState === 'live'
-                  ? featuredLiveMatch.statusLabel ||
-                    pickLang(lang, { es: 'EN VIVO', ca: 'EN DIRECTE', en: 'LIVE' })
-                  : featuredLiveMatch.kickoffTime}
-              </span>
-            </div>
-            <div className="min-w-0">
-              <div className="text-[11px] text-zinc-400 truncate">
-                {featuredLiveMatch.groupTitle}
-              </div>
-              <div className="font-display font-bold text-sm sm:text-base text-white truncate flex items-center gap-2">
-                <TeamCrestImg
-                  src={featuredLiveMatch.homeLogo}
-                  shortCode={featuredLiveMatch.homeShort}
-                  alt={featuredLiveMatch.homeTeam}
-                />
-                <span className="truncate">{featuredLiveMatch.homeTeam}</span>
-                <span className="font-mono text-[#FFBD0F] tabular-nums shrink-0">
-                  {featuredLiveMatch.homeScore} - {featuredLiveMatch.awayScore}
-                </span>
-                <span className="truncate">{featuredLiveMatch.awayTeam}</span>
-                <TeamCrestImg
-                  src={featuredLiveMatch.awayLogo}
-                  shortCode={featuredLiveMatch.awayShort}
-                  alt={featuredLiveMatch.awayTeam}
-                />
-              </div>
-            </div>
+    <>
+      <section className="rounded-3xl overflow-hidden bg-[#141418] border border-white/[0.08]">
+        {/* Single-Row Top Bar: Simple Status Chips + Date Switcher */}
+        <div className="px-3 sm:px-4 py-3 bg-[#18181D] border-b border-white/[0.07] flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+            {statusOptions.map((opt) => {
+              const active = statusTab === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setStatusTab(opt.id);
+                  }}
+                  className={`min-h-12 px-3.5 rounded-2xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                    active
+                      ? 'bg-[#9146FF] text-white'
+                      : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300'
+                  }`}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0 relative z-10">
+          {/* Single-row Date Switcher */}
+          <div className="inline-flex items-center rounded-2xl bg-white/[0.05] border border-white/[0.08] shrink-0">
             <button
               type="button"
-              onClick={() => handleToggleExpand(featuredLiveMatch)}
-              className="min-h-[42px] px-3.5 rounded-2xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-xs font-semibold text-white cursor-pointer transition-all active:scale-95 whitespace-nowrap"
-            >
-              {pickLang(lang, {
-                es: 'Ver Estadísticas y XI',
-                ca: 'Estadístiques i XI',
-                en: 'Stats & Lineups',
+              onClick={() => {
+                triggerHaptic('light');
+                setDayOffset((d) => Math.max(-2, d - 1));
+                setStatusTab('all');
+              }}
+              aria-label={pickLang(lang, {
+                es: 'Día anterior',
+                ca: 'Dia anterior',
+                en: 'Previous day',
               })}
+              className="min-w-12 min-h-12 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4" />
             </button>
-            {featuredLiveMatch.channels.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setDayOffset(0);
+              }}
+              className="px-2 min-h-12 text-xs font-bold text-white whitespace-nowrap cursor-pointer"
+            >
+              {activeDateLabel}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setDayOffset((d) => Math.min(2, d + 1));
+                setStatusTab('all');
+              }}
+              aria-label={pickLang(lang, {
+                es: 'Día siguiente',
+                ca: 'Dia següent',
+                en: 'Next day',
+              })}
+              className="min-w-12 min-h-12 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
+            >
+              <ChevronRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Matchboard Body */}
+        {loading && matches.length === 0 ? (
+          <div className="divide-y divide-white/[0.06]">
+            {Array.from({ length: 6 }).map((_, idx) => (
+              <div
+                key={idx}
+                className="h-20 bg-[#141418] px-4 flex items-center justify-between skeleton-shimmer"
+              >
+                <div className="w-14 h-7 rounded bg-white/[0.06]" />
+                <div className="flex-1 mx-4 space-y-2">
+                  <div className="w-40 h-3.5 rounded bg-white/[0.07]" />
+                  <div className="w-32 h-3.5 rounded bg-white/[0.05]" />
+                </div>
+                <div className="w-20 h-10 rounded-xl bg-white/[0.06]" />
+              </div>
+            ))}
+          </div>
+        ) : groupedCompetitions.length === 0 ? (
+          <div className="p-8 text-center bg-[#141418] space-y-3">
+            <p className="text-sm text-zinc-300 font-medium">
+              {statusTab === 'live'
+                ? pickLang(lang, {
+                    es: 'No hay partidos en vivo ahora mismo.',
+                    ca: 'No hi ha partits en directe ara mateix.',
+                    en: 'No live matches right now.',
+                  })
+                : pickLang(lang, {
+                    es: 'No hay partidos con estos filtros.',
+                    ca: 'No hi ha partits amb aquests filtres.',
+                    en: 'No matches match these filters.',
+                  })}
+            </p>
+            {statusTab !== 'all' && matches.length > 0 && (
               <button
                 type="button"
-                disabled={Boolean(loadingItemId)}
-                onClick={(e) => handleQuickPlayTv(e, featuredLiveMatch)}
-                className="min-h-[42px] px-4 rounded-2xl bg-[#FFBD0F] hover:bg-amber-300 text-[#11131A] text-xs font-extrabold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 shadow-[0_6px_18px_rgba(255,189,15,0.28)] whitespace-nowrap"
+                onClick={() => setStatusTab('all')}
+                className="min-h-12 px-5 rounded-2xl bg-[#9146FF] text-white text-xs font-bold cursor-pointer"
               >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>
-                  {pickLang(lang, { es: 'Ver Partido', ca: 'Veure Partit', en: 'Watch Live' })}
-                </span>
+                {pickLang(lang, {
+                  es: 'Ver todos los partidos',
+                  ca: 'Veure tots els partits',
+                  en: 'View all matches',
+                })}
               </button>
             )}
           </div>
-        </div>
-      )}
+        ) : (
+          <div>
+            {groupedCompetitions.map((group) => (
+              <div key={group.key}>
+                {/* League Group Header */}
+                <div className="px-3.5 sm:px-4 py-2.5 bg-[#1B1B22] border-y border-white/[0.06] flex items-center gap-2.5">
+                  <RegionFlagImg src={group.regionFlagUrl} alt={group.regionName} />
+                  <h3 className="text-xs font-bold text-zinc-200 leading-snug">
+                    {group.groupTitle}
+                  </h3>
+                </div>
 
-      {/* Top Toolbar: Status Filter Buttons + Day Switcher + Search */}
-      <div className="p-3 sm:p-4 bg-[#171A23] border-b border-white/[0.07] space-y-3">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          {/* Status Filter Buttons */}
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setStatusTab('all');
-              }}
-              className={`min-h-[38px] px-3.5 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                statusTab === 'all'
-                  ? 'bg-[#FFBD0F] text-[#141720]'
-                  : 'bg-[#2A2F3D] hover:bg-[#343A4B] text-zinc-300'
-              }`}
-            >
-              {pickLang(lang, {
-                es: `Todas (${matches.length})`,
-                ca: `Tots (${matches.length})`,
-                en: `All (${matches.length})`,
-              })}
-            </button>
+                {/* Compact Match Rows */}
+                <div className="divide-y divide-white/[0.06]">
+                  {group.items.map((item) => {
+                    const primaryCh = item.channels[0];
+                    const favId = primaryCh
+                      ? buildChannelFavId(primaryCh.sourceUrl, `${item.homeTeam} vs ${item.awayTeam}`)
+                      : '';
+                    const isSaved = favId ? isChannelFavorited(favId) : false;
+                    const isPlayingThisMatch = item.channels.some(
+                      (c) => activeVideoRawUrl && c.sourceUrl === activeVideoRawUrl
+                    );
+                    const isExtracting = Boolean(loadingItemId?.startsWith(item.id));
+                    const showNumericScore = hasValidScore(item.homeScore, item.awayScore);
+                    const hasZhChannel = item.channels.some(
+                      (c) => c.lang === 'ZH' || /中文/.test(c.label || '')
+                    );
 
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setStatusTab('live');
-              }}
-              className={`min-h-[38px] px-3.5 rounded-lg text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                statusTab === 'live'
-                  ? 'bg-[#FFBD0F] text-[#141720]'
-                  : 'bg-[#2A2F3D] hover:bg-[#343A4B] text-zinc-200'
-              }`}
-            >
-              <Radio className="w-3.5 h-3.5 shrink-0" />
-              <span>
-                {pickLang(lang, {
-                  es: `En vivo (${liveCount})`,
-                  ca: `En directe (${liveCount})`,
-                  en: `Live (${liveCount})`,
-                })}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setStatusTab('upcoming');
-              }}
-              className={`min-h-[38px] px-3.5 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                statusTab === 'upcoming'
-                  ? 'bg-[#FFBD0F] text-[#141720]'
-                  : 'bg-[#2A2F3D] hover:bg-[#343A4B] text-zinc-300'
-              }`}
-            >
-              {pickLang(lang, {
-                es: `Próximos (${upcomingCount})`,
-                ca: `Pròxims (${upcomingCount})`,
-                en: `Upcoming (${upcomingCount})`,
-              })}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setStatusTab('finished');
-              }}
-              className={`min-h-[38px] px-3.5 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                statusTab === 'finished'
-                  ? 'bg-[#FFBD0F] text-[#141720]'
-                  : 'bg-[#2A2F3D] hover:bg-[#343A4B] text-zinc-300'
-              }`}
-            >
-              {pickLang(lang, {
-                es: `Terminados (${finishedCount})`,
-                ca: `Finalitzats (${finishedCount})`,
-                en: `Finished (${finishedCount})`,
-              })}
-            </button>
-          </div>
-
-          {/* Date Navigation + Refresh */}
-          <div className="flex items-center gap-1.5 ml-auto">
-            <div className="inline-flex items-center rounded-lg bg-[#242833] border border-white/[0.07]">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setDayOffset((d) => Math.max(-2, d - 1));
-                  setStatusTab('all');
-                }}
-                aria-label={pickLang(lang, {
-                  es: 'Día anterior',
-                  ca: 'Dia anterior',
-                  en: 'Previous day',
-                })}
-                className="min-w-[38px] min-h-[38px] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
-              >
-                <ChevronLeft className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setDayOffset(0);
-                }}
-                className="px-2.5 min-h-[38px] text-xs font-semibold text-white whitespace-nowrap cursor-pointer"
-              >
-                {activeDateLabel}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setDayOffset((d) => Math.min(2, d + 1));
-                  setStatusTab('all');
-                }}
-                aria-label={pickLang(lang, {
-                  es: 'Día siguiente',
-                  ca: 'Dia següent',
-                  en: 'Next day',
-                })}
-                className="min-w-[38px] min-h-[38px] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
-              >
-                <ChevronRight className="w-4 h-4" />
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                fetchBoard(false);
-              }}
-              aria-label={pickLang(lang, {
-                es: 'Actualizar marcadores y señales',
-                ca: 'Actualitzar marcadors i senyals',
-                en: 'Refresh scores and streams',
-              })}
-              className="min-w-[38px] min-h-[38px] rounded-lg bg-[#242833] hover:bg-[#2E3442] border border-white/[0.07] flex items-center justify-center text-zinc-200 cursor-pointer transition-colors"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#FFBD0F]' : ''}`} />
-            </button>
-          </div>
-        </div>
-
-        {/* Inline Quick Search */}
-        <div className="relative">
-          <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchQueryChange(e.target.value)}
-            placeholder={pickLang(lang, {
-              es: 'Buscar selección, club o liga (España, Real Madrid, Champions, LaLiga...)',
-              ca: 'Cercar selecció, club o lliga (Espanya, Barça, Champions, LaLiga...)',
-              en: 'Search national team, club or league...',
-            })}
-            className="w-full h-10 pl-10 pr-9 rounded-xl bg-[#242833] border border-white/[0.07] focus:border-[#FFBD0F]/60 text-sm text-white placeholder:text-zinc-400 outline-none transition-colors"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => onSearchQueryChange('')}
-              aria-label={pickLang(lang, {
-                es: 'Limpiar búsqueda',
-                ca: 'Netejar cerca',
-                en: 'Clear search',
-              })}
-              className="w-9 h-9 absolute right-1 top-1/2 -translate-y-1/2 flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Matchboard Body */}
-      {loading && matches.length === 0 ? (
-        <div className="divide-y divide-white/[0.05]">
-          {Array.from({ length: 6 }).map((_, idx) => (
-            <div
-              key={idx}
-              className="h-16 bg-[#18181B] px-4 flex items-center justify-between skeleton-shimmer"
-            >
-              <div className="w-12 h-7 rounded bg-white/[0.06]" />
-              <div className="flex-1 mx-4 space-y-2">
-                <div className="w-40 h-3.5 rounded bg-white/[0.07]" />
-                <div className="w-32 h-3.5 rounded bg-white/[0.05]" />
-              </div>
-              <div className="w-16 h-8 rounded bg-white/[0.06]" />
-            </div>
-          ))}
-        </div>
-      ) : groupedCompetitions.length === 0 ? (
-        <div className="p-8 text-center bg-[#18181B] space-y-3">
-          <p className="text-sm text-zinc-300 font-medium">
-            {statusTab === 'live'
-              ? pickLang(lang, {
-                  es: 'No hay partidos en juego en este preciso instante.',
-                  ca: 'No hi ha partits en joc en aquest precís instant.',
-                  en: 'No matches are currently in play right now.',
-                })
-              : pickLang(lang, {
-                  es: 'No se encontraron partidos con ese filtro.',
-                  ca: 'No s’han trobat partits amb aquest filtre.',
-                  en: 'No matches found for this filter.',
-                })}
-          </p>
-          {statusTab !== 'all' && matches.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setStatusTab('all')}
-              className="min-h-[40px] px-4 rounded-lg bg-[#FFBD0F] text-[#141720] text-xs font-bold cursor-pointer"
-            >
-              {pickLang(lang, {
-                es: `Ver todos los partidos de ${activeDateInfo.labelEs.toLowerCase()} (${matches.length})`,
-                ca: `Veure tots els partits d’${activeDateInfo.labelCa.toLowerCase()} (${matches.length})`,
-                en: `View all matches (${matches.length})`,
-              })}
-            </button>
-          )}
-        </div>
-      ) : (
-        <div>
-          {groupedCompetitions.map((group) => (
-            <div key={group.key}>
-              {/* Competition Group Header with Region Flag */}
-              <div className="px-3.5 sm:px-4 py-2 bg-[#181B24] border-y border-white/[0.06] flex items-center gap-2.5">
-                <RegionFlagImg src={group.regionFlagUrl} alt={group.regionName} />
-                <h3 className="text-xs sm:text-[13px] font-semibold text-zinc-300 truncate">
-                  {group.groupTitle}
-                </h3>
-              </div>
-
-              {/* Match Rows */}
-              <div className="divide-y divide-white/[0.06]">
-                {group.items.map((item) => {
-                  const isExpanded = expandedMatchId === item.id;
-                  const sportsMatchObj = toSportsMatch(item, lang);
-                  const primaryCh = item.channels[0];
-                  const favId = primaryCh
-                    ? buildChannelFavId(primaryCh.sourceUrl, `${item.homeTeam} vs ${item.awayTeam}`)
-                    : '';
-                  const isSaved = favId ? isChannelFavorited(favId) : false;
-                  const isPlayingThisMatch = item.channels.some(
-                    (c) => activeVideoRawUrl && c.sourceUrl === activeVideoRawUrl
-                  );
-                  const isExtracting = Boolean(loadingItemId?.startsWith(item.id));
-                  const details = detailsMap[item.id] || null;
-
-                  return (
-                    <div key={item.id} className="bg-[#242833]">
+                    return (
                       <div
-                        className={`relative px-3 sm:px-4 py-2.5 min-h-[68px] flex items-center gap-3 transition-colors ${
+                        key={item.id}
+                        className={`relative px-3 sm:px-4 py-3 min-h-[76px] flex items-center gap-3 transition-colors ${
                           isPlayingThisMatch
-                            ? 'bg-[#2C3242]'
-                            : isExpanded
-                            ? 'bg-[#292E3C]'
-                            : 'hover:bg-[#2A2F3D]'
+                            ? 'bg-[#9146FF]/15'
+                            : 'bg-[#141418] hover:bg-white/[0.03]'
                         }`}
                       >
-                        {/* Non-nested semantic full-row trigger */}
+                        {/* Row click opens Match Detail BottomSheet (Signals + Stats/Lineups) */}
                         <button
                           type="button"
-                          onClick={() => handleToggleExpand(item)}
-                          aria-expanded={isExpanded}
+                          onClick={() => handleOpenMatchSheet(item, 'signals')}
                           aria-label={`${item.homeTeam} vs ${item.awayTeam} (${item.kickoffTime})`}
-                          className="absolute inset-0 z-0 cursor-pointer focus-visible:outline-2 focus-visible:outline-[#FFBD0F]"
+                          className="absolute inset-0 z-0 cursor-pointer"
                         />
 
-                        {/* Left Column: Kickoff HH:MM + Live Minute / Status */}
-                        <div className="relative z-[1] pointer-events-none w-12 sm:w-14 shrink-0 flex flex-col items-center justify-center text-center">
-                          <span className="text-xs font-mono tabular-nums text-zinc-300">
-                            {item.kickoffTime}
-                          </span>
-                          {item.statusLabel ? (
-                            <span
-                              className={`text-[11px] font-mono font-bold tabular-nums mt-1 ${
-                                item.statusState === 'live' ? 'text-[#22C55E]' : 'text-zinc-400'
-                              }`}
-                            >
-                              {item.statusLabel}
-                            </span>
-                          ) : null}
-                        </div>
-
-                        {/* Middle Column: Flags / Club Crests + Home & Away Team Names */}
-                        <div className="relative z-[1] pointer-events-none flex-1 min-w-0 space-y-2">
-                          <div className="flex items-center gap-2 min-w-0">
-                            <TeamCrestImg
-                              src={item.homeLogo}
-                              shortCode={item.homeShort}
-                              alt={item.homeTeam}
-                            />
-                            <span className="text-sm font-medium text-white truncate">
-                              {item.homeTeam}
-                            </span>
-                            {(item.homeRedCards || 0) > 0 && (
-                              <span
-                                className="w-2 h-3 rounded-[2px] bg-rose-500 shrink-0"
-                                title={pickLang(lang, {
-                                  es: 'Tarjeta roja',
-                                  ca: 'Targeta vermella',
-                                  en: 'Red card',
-                                })}
-                              />
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 min-w-0">
-                            <TeamCrestImg
-                              src={item.awayLogo}
-                              shortCode={item.awayShort}
-                              alt={item.awayTeam}
-                            />
-                            <span className="text-sm font-medium text-zinc-100 truncate">
-                              {item.awayTeam}
-                            </span>
-                            {(item.awayRedCards || 0) > 0 && (
-                              <span
-                                className="w-2 h-3 rounded-[2px] bg-rose-500 shrink-0"
-                                title={pickLang(lang, {
-                                  es: 'Tarjeta roja',
-                                  ca: 'Targeta vermella',
-                                  en: 'Red card',
-                                })}
-                              />
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Score Column (Tabular Numerals) */}
-                        <div className="relative z-[1] pointer-events-none w-7 shrink-0 flex flex-col items-end justify-center space-y-2 text-right">
-                          <span
-                            className={`text-sm font-mono font-bold tabular-nums ${
-                              item.statusState === 'live' ? 'text-white' : 'text-zinc-200'
-                            }`}
-                          >
-                            {item.homeScore}
-                          </span>
-                          <span
-                            className={`text-sm font-mono font-bold tabular-nums ${
-                              item.statusState === 'live' ? 'text-white' : 'text-zinc-200'
-                            }`}
-                          >
-                            {item.awayScore}
-                          </span>
-                        </div>
-
-                        {/* Right Action Column: Direct TV Play Button + Favorite Star */}
-                        <div className="relative z-10 pointer-events-auto shrink-0 flex flex-col items-center justify-center -my-1">
-                          {item.channels.length > 0 && (
-                            <button
-                              type="button"
-                              disabled={Boolean(loadingItemId)}
-                              onClick={(e) => handleQuickPlayTv(e, item)}
-                              title={pickLang(lang, {
-                                es: `Ver señal en directo: ${item.homeTeam} vs ${item.awayTeam}`,
-                                ca: `Veure senyal en directe: ${item.homeTeam} vs ${item.awayTeam}`,
-                                en: `Watch live: ${item.homeTeam} vs ${item.awayTeam}`,
-                              })}
-                              aria-label={pickLang(lang, {
-                                es: `Ver en directo ${item.homeTeam} contra ${item.awayTeam}`,
-                                ca: `Veure en directe ${item.homeTeam} contra ${item.awayTeam}`,
-                                en: `Watch live ${item.homeTeam} versus ${item.awayTeam}`,
-                              })}
-                              className="min-w-[44px] min-h-[34px] flex items-center justify-center text-[#FFBD0F] hover:text-amber-300 cursor-pointer transition-transform active:scale-95"
-                            >
-                              {isExtracting ? (
-                                <Loader2 className="w-4 h-4 animate-spin text-[#FFBD0F]" />
-                              ) : (
-                                <span className="relative inline-flex items-center justify-center">
-                                  <Tv className="w-5 h-5 stroke-[2.2]" />
-                                  <Play className="w-2 h-2 fill-current absolute top-[7px]" />
+                        {/* Time / EN VIVO */}
+                        <div className="relative z-[1] pointer-events-none w-16 shrink-0 flex flex-col items-center justify-center text-center gap-1">
+                          {item.statusState === 'live' ? (
+                            <>
+                              <span className="px-2 py-0.5 rounded-md bg-[#EB0400] text-white text-[10px] font-extrabold tracking-wide whitespace-nowrap">
+                                EN VIVO
+                              </span>
+                              {item.statusLabel && (
+                                <span className="text-xs font-bold tabular-nums text-white whitespace-nowrap">
+                                  {item.statusLabel}
                                 </span>
                               )}
-                            </button>
+                            </>
+                          ) : (
+                            <>
+                              <span className="text-xs font-bold tabular-nums text-zinc-200 whitespace-nowrap">
+                                {item.kickoffTime}
+                              </span>
+                              {item.statusLabel && (
+                                <span className="text-[11px] font-medium text-zinc-400 whitespace-nowrap">
+                                  {item.statusLabel}
+                                </span>
+                              )}
+                            </>
                           )}
+                        </div>
 
+                        {/* Teams + Score */}
+                        <div className="relative z-[1] pointer-events-none flex-1 min-w-0 space-y-2">
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <TeamCrestImg
+                                src={item.homeLogo}
+                                shortCode={item.homeShort}
+                                alt={item.homeTeam}
+                              />
+                              <span className="text-sm font-semibold text-white leading-tight line-clamp-2">
+                                {item.homeTeam}
+                              </span>
+                              {hasZhChannel && (
+                                <span className="px-1.5 py-0.5 rounded bg-white/10 text-zinc-200 text-[10px] font-bold shrink-0">
+                                  中文
+                                </span>
+                              )}
+                            </div>
+                            {showNumericScore && (
+                              <span className="text-sm font-extrabold tabular-nums text-white shrink-0">
+                                {item.homeScore}
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2 min-w-0">
+                            <div className="flex items-center gap-2 min-w-0">
+                              <TeamCrestImg
+                                src={item.awayLogo}
+                                shortCode={item.awayShort}
+                                alt={item.awayTeam}
+                              />
+                              <span className="text-sm font-semibold text-zinc-200 leading-tight line-clamp-2">
+                                {item.awayTeam}
+                              </span>
+                            </div>
+                            {showNumericScore ? (
+                              <span className="text-sm font-extrabold tabular-nums text-white shrink-0">
+                                {item.awayScore}
+                              </span>
+                            ) : (
+                              <span className="text-[11px] font-medium text-zinc-400 shrink-0 whitespace-nowrap">
+                                {item.statusState === 'upcoming'
+                                  ? pickLang(lang, { es: 'Por empezar', ca: 'Per començar', en: 'Upcoming' })
+                                  : '–'}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Single Watch Button + Favorite */}
+                        <div className="relative z-10 pointer-events-auto shrink-0 flex items-center gap-1">
                           {primaryCh && (
                             <button
                               type="button"
@@ -825,9 +625,9 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                   channelLabel:
                                     primaryCh.label ||
                                     pickLang(lang, {
-                                      es: 'Señal Principal',
-                                      ca: 'Senyal Principal',
-                                      en: 'Main Feed',
+                                      es: 'Señal 1',
+                                      ca: 'Senyal 1',
+                                      en: 'Feed 1',
                                     }),
                                   channelUrl: primaryCh.sourceUrl,
                                   competition: item.groupTitle,
@@ -835,193 +635,187 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                 });
                               }}
                               aria-label={pickLang(lang, {
-                                es: 'Guardar partido en favoritos',
-                                ca: 'Desar partit a preferits',
-                                en: 'Save match to favorites',
+                                es: 'Guardar partido',
+                                ca: 'Desar partit',
+                                en: 'Save match',
                               })}
-                              className="min-w-[44px] min-h-[32px] flex items-center justify-center text-zinc-400 hover:text-[#FFBD0F] cursor-pointer"
+                              className="min-w-12 min-h-12 flex items-center justify-center rounded-2xl text-zinc-400 hover:text-[#9146FF] cursor-pointer"
                             >
                               <Star
                                 className={`w-4 h-4 ${
-                                  isSaved ? 'fill-current text-[#FFBD0F]' : ''
+                                  isSaved ? 'fill-current text-[#9146FF]' : ''
                                 }`}
                               />
                             </button>
                           )}
+
+                          <button
+                            type="button"
+                            disabled={Boolean(loadingItemId)}
+                            onClick={(e) => handleQuickWatch(e, item)}
+                            className="min-h-12 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
+                          >
+                            {isExtracting ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Play className="w-3.5 h-3.5 fill-current" />
+                            )}
+                            <span>{pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}</span>
+                          </button>
                         </div>
                       </div>
-
-                      {/* Expanded Panel: Direct Broadcast Servers + LiveMatchCenter */}
-                      <AnimatePresence initial={false}>
-                        {isExpanded && (
-                          <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            transition={{ duration: 0.2 }}
-                            className="overflow-hidden"
-                          >
-                            <div className="px-3.5 sm:px-5 py-4 bg-[#14161F] border-t border-white/[0.07] space-y-4">
-                              {/* Server / Signal Selector Strip */}
-                              <div className="space-y-2">
-                                <div className="flex items-center justify-between gap-2 text-xs text-zinc-400">
-                                  <span className="font-semibold text-zinc-200">
-                                    {pickLang(lang, {
-                                      es: 'Señales en Directo Disponibles',
-                                      ca: 'Senyals en Directe Disponibles',
-                                      en: 'Available Live Signals',
-                                    })}
-                                  </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setExpandedMatchId(null)}
-                                    className="inline-flex items-center gap-1 text-zinc-400 hover:text-white cursor-pointer"
-                                  >
-                                    <span>
-                                      {pickLang(lang, {
-                                        es: 'Cerrar',
-                                        ca: 'Tancar',
-                                        en: 'Close',
-                                      })}
-                                    </span>
-                                    <ChevronDown className="w-3.5 h-3.5 rotate-180" />
-                                  </button>
-                                </div>
-
-                                {item.channels.length > 0 ? (
-                                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
-                                    {item.channels.map((ch, idx) => {
-                                      const isActiveServer = activeVideoRawUrl === ch.sourceUrl;
-                                      const latency = ch.health?.latencyMs;
-                                      const statusColor =
-                                        ch.health?.status === 'up'
-                                          ? 'bg-emerald-400'
-                                          : ch.health?.status === 'degraded'
-                                          ? 'bg-amber-400'
-                                          : ch.health?.status === 'down'
-                                          ? 'bg-rose-500'
-                                          : '';
-                                      return (
-                                        <div
-                                          key={`${item.id}-${ch.id}-${idx}`}
-                                          className="inline-flex items-center rounded-xl overflow-hidden shrink-0 border border-white/[0.1]"
-                                        >
-                                          <button
-                                            type="button"
-                                            disabled={Boolean(loadingItemId)}
-                                            onClick={() => {
-                                              triggerHaptic('medium');
-                                              onPlaySportsMatch(sportsMatchObj, idx);
-                                            }}
-                                            className={`min-h-[42px] px-3.5 text-xs font-bold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
-                                              isActiveServer
-                                                ? 'bg-[#FFBD0F] text-[#141720]'
-                                                : 'bg-[#242833] hover:bg-[#2F3545] text-white'
-                                            }`}
-                                          >
-                                            <Play className="w-3 h-3 fill-current" />
-                                            {ch.lang === 'ZH' && (
-                                              <span className="px-1.5 py-0.5 rounded bg-rose-500/20 text-rose-300 border border-rose-500/35 text-[9px] font-black tracking-tight shrink-0">
-                                                中文
-                                              </span>
-                                            )}
-                                            <span>{ch.label}</span>
-                                            {statusColor && (
-                                              <span className="inline-flex items-center gap-1 text-[10px] font-mono opacity-80">
-                                                <span className={`w-1.5 h-1.5 rounded-full ${statusColor}`} />
-                                                {typeof latency === 'number' && latency > 0
-                                                  ? `${latency}ms`
-                                                  : null}
-                                              </span>
-                                            )}
-                                          </button>
-
-                                          {activeVideoRawUrl &&
-                                            !isActiveServer &&
-                                            onPlaySecondaryChannel && (
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  triggerHaptic('light');
-                                                  onPlaySecondaryChannel(sportsMatchObj, idx);
-                                                }}
-                                                title={pickLang(lang, {
-                                                  es: 'Abrir en segunda pantalla Multiview',
-                                                  ca: 'Obrir en segona pantalla Multiview',
-                                                  en: 'Open in Multiview second screen',
-                                                })}
-                                                aria-label={pickLang(lang, {
-                                                  es: 'Abrir en Multiview',
-                                                  ca: 'Obrir en Multiview',
-                                                  en: 'Open in Multiview',
-                                                })}
-                                                className="min-h-[42px] px-2.5 bg-[#1D212B] hover:bg-[#2A3040] border-l border-white/[0.08] text-sky-300 flex items-center justify-center cursor-pointer"
-                                              >
-                                                <Columns2 className="w-3.5 h-3.5" />
-                                              </button>
-                                            )}
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                ) : (
-                                  <div className="px-3.5 py-2.5 rounded-xl bg-[#1E222D] border border-white/[0.07] text-xs text-zinc-300">
-                                    {item.statusState === 'finished'
-                                      ? pickLang(lang, {
-                                          es: 'Encuentro finalizado.',
-                                          ca: 'Partit finalitzat.',
-                                          en: 'Match finished.',
-                                        })
-                                      : item.statusState === 'upcoming'
-                                      ? pickLang(lang, {
-                                          es: `Las señales dedicadas de este partido se activarán minutos antes del inicio (${item.kickoffTime}). También puedes sintonizar beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+ o DAZN arriba.`,
-                                          ca: `Els senyals dedicats d’aquest partit s’activaran minuts abans de l’inici (${item.kickoffTime}). També pots sintonitzar beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+ o DAZN a dalt.`,
-                                          en: `Dedicated live streams open shortly before kickoff (${item.kickoffTime}).`,
-                                        })
-                                      : pickLang(lang, {
-                                          es: 'Sin enlace dedicado para este encuentro; sintoniza arriba el canal oficial en vivo (beIN SPORTS, ESPN 1–7, DSports, TNT Sports, Movistar+ o DAZN).',
-                                          ca: 'Sense enllaç dedicat per a aquest partit; sintonitza a dalt el canal oficial en directe (beIN SPORTS, ESPN 1–7, DSports, TNT Sports, Movistar+ o DAZN).',
-                                          en: 'Check the live sports channels bar above (beIN SPORTS, ESPN, DSports, TNT Sports, Movistar+, DAZN).',
-                                        })}
-                                  </div>
-                                )}
-                              </div>
-
-                              {/* Real-Time Match Center */}
-                              <React.Suspense fallback={null}>
-                                <LiveMatchCenter
-                                  lang={lang}
-                                  details={details}
-                                  loading={loadingDetailId === item.id}
-                                  homeTeam={item.homeTeam}
-                                  awayTeam={item.awayTeam}
-                                  homeShort={item.homeShort}
-                                  awayShort={item.awayShort}
-                                  homeLogo={item.homeLogo}
-                                  awayLogo={item.awayLogo}
-                                  homeScore={item.homeScore}
-                                  awayScore={item.awayScore}
-                                  statusState={item.statusState}
-                                  statusLabel={item.statusLabel}
-                                  competition={item.groupTitle}
-                                  variant="expanded"
-                                  defaultTab="lineups"
-                                  onRefresh={() => loadMatchDetails(item, true)}
-                                />
-                              </React.Suspense>
-                            </div>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {/* Match Detail BottomSheet: Signals + Stats/Lineups */}
+      <BottomSheet
+        isOpen={Boolean(selectedMatchObj)}
+        onClose={() => setSelectedMatchId(null)}
+        title={
+          selectedMatchObj
+            ? `${selectedMatchObj.homeTeam} vs ${selectedMatchObj.awayTeam}`
+            : ''
+        }
+        subtitle={selectedMatchObj?.groupTitle}
+        maxWidth="sm:max-w-2xl"
+        lang={lang}
+      >
+        {selectedMatchObj && selectedSportsMatch && (
+          <div className="space-y-4">
+            <SegmentedControl<MatchSheetTab>
+              value={sheetTab}
+              onChange={(val) => {
+                setSheetTab(val);
+                if (val === 'stats') {
+                  loadMatchDetails(selectedMatchObj, false);
+                }
+              }}
+              layoutId="match-detail-sheet-tabs"
+              options={[
+                {
+                  id: 'signals',
+                  label: pickLang(lang, { es: 'Señales', ca: 'Senyals', en: 'Signals' }),
+                },
+                {
+                  id: 'stats',
+                  label: pickLang(lang, {
+                    es: 'Estadísticas y alineaciones',
+                    ca: 'Estadístiques i alineacions',
+                    en: 'Stats & lineups',
+                  }),
+                },
+              ]}
+            />
+
+            {sheetTab === 'signals' ? (
+              <div className="space-y-2.5">
+                {selectedMatchObj.channels.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {selectedMatchObj.channels.map((ch, idx) => {
+                      const isActiveSignal = activeVideoRawUrl === ch.sourceUrl;
+                      const isZh = ch.lang === 'ZH' || /中文/.test(ch.label || '');
+                      return (
+                        <div
+                          key={`${selectedMatchObj.id}-${ch.id}-${idx}`}
+                          className="flex items-center gap-2"
+                        >
+                          <button
+                            type="button"
+                            disabled={Boolean(loadingItemId)}
+                            onClick={() => {
+                              triggerHaptic('medium');
+                              onPlaySportsMatch(selectedSportsMatch, idx);
+                              setSelectedMatchId(null);
+                            }}
+                            className={`flex-1 min-h-12 px-4 rounded-2xl text-xs font-bold flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                              isActiveSignal
+                                ? 'bg-[#9146FF] text-white'
+                                : 'bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1]'
+                            }`}
+                          >
+                            <span className="flex items-center gap-2">
+                              <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                              <span>
+                                {pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} {idx + 1}
+                              </span>
+                            </span>
+                            {isZh && (
+                              <span className="px-2 py-0.5 rounded bg-white/15 text-[11px] font-bold">
+                                中文
+                              </span>
+                            )}
+                          </button>
+
+                          {activeVideoRawUrl && !isActiveSignal && onPlaySecondaryChannel && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                onPlaySecondaryChannel(selectedSportsMatch, idx);
+                                setSelectedMatchId(null);
+                              }}
+                              aria-label={pickLang(lang, {
+                                es: 'Segunda pantalla',
+                                ca: 'Segona pantalla',
+                                en: 'Second screen',
+                              })}
+                              className="min-w-12 min-h-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-zinc-200 flex items-center justify-center cursor-pointer"
+                            >
+                              <Columns2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-sm text-zinc-300 py-3">
+                    {selectedMatchObj.statusState === 'finished'
+                      ? pickLang(lang, {
+                          es: 'Partido finalizado.',
+                          ca: 'Partit finalitzat.',
+                          en: 'Match finished.',
+                        })
+                      : pickLang(lang, {
+                          es: `Las señales se activarán antes del inicio (${selectedMatchObj.kickoffTime}).`,
+                          ca: `Els senyals s’activaran abans de l’inici (${selectedMatchObj.kickoffTime}).`,
+                          en: `Streams open before kickoff (${selectedMatchObj.kickoffTime}).`,
+                        })}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <React.Suspense fallback={<div className="py-8 text-center text-xs text-zinc-400">Cargando...</div>}>
+                <LiveMatchCenter
+                  lang={lang}
+                  details={selectedMatchDetails}
+                  loading={loadingDetailId === selectedMatchObj.id}
+                  homeTeam={selectedMatchObj.homeTeam}
+                  awayTeam={selectedMatchObj.awayTeam}
+                  homeShort={selectedMatchObj.homeShort}
+                  awayShort={selectedMatchObj.awayShort}
+                  homeLogo={selectedMatchObj.homeLogo}
+                  awayLogo={selectedMatchObj.awayLogo}
+                  homeScore={selectedMatchObj.homeScore}
+                  awayScore={selectedMatchObj.awayScore}
+                  statusState={selectedMatchObj.statusState}
+                  statusLabel={selectedMatchObj.statusLabel}
+                  competition={selectedMatchObj.groupTitle}
+                  variant="expanded"
+                  defaultTab="lineups"
+                  onRefresh={() => loadMatchDetails(selectedMatchObj, true)}
+                />
+              </React.Suspense>
+            )}
+          </div>
+        )}
+      </BottomSheet>
+    </>
   );
 };
-

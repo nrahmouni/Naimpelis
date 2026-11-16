@@ -322,7 +322,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
           />
 
           <div className="relative rounded-[36px] shadow-[0_30px_90px_rgba(0,0,0,0.95),0_0_80px_rgba(139,92,246,0.42)] overflow-hidden">
-            <RiffanBrandLogo size={160} animated />
+            <RiffanBrandLogo size={160} frameStyle="obsidian" animated />
 
             {/* Specular 14° Glass Glint Sweep */}
             <div

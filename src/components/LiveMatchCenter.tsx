@@ -68,7 +68,7 @@ function getPlayerMetricText(
   switch (metric) {
     case 'club':
       return {
-        text: player.club ? (player.club.length > 13 ? `${player.club.slice(0, 12)}…` : player.club) : '—',
+        text: player.club || '—',
         isRating: false,
       };
     case 'age':
@@ -537,7 +537,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                   })}
                   className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#FFBD0F]' : ''}`} />
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#9146FF]' : ''}`} />
                 </button>
               )}
               <button
@@ -669,9 +669,9 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                   triggerHaptic('light');
                   setActiveTab(tab.key);
                 }}
-                className={`min-h-[38px] px-3.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap cursor-pointer transition-all flex items-center gap-1.5 ${
+                className={`min-h-12 px-3.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap cursor-pointer transition-all flex items-center gap-1.5 ${
                   activeTab === tab.key
-                    ? 'bg-[#FFBD0F] text-[#11131A] shadow-sm'
+                    ? 'bg-[#9146FF] text-white shadow-sm'
                     : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 hover:text-white'
                 }`}
               >
@@ -696,7 +696,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                   className="p-1 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white cursor-pointer"
                   title={pickLang(lang, { es: 'Actualizar', ca: 'Actualitzar', en: 'Refresh' })}
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-[#FFBD0F]' : ''}`} />
+                  <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-[#9146FF]' : ''}`} />
                 </button>
               )}
             </div>
@@ -704,7 +704,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
 
           {loading && !details ? (
             <div className="py-10 flex items-center justify-center gap-2.5 text-xs text-zinc-300">
-              <Loader2 className="w-5 h-5 animate-spin text-[#FFBD0F]" />
+              <Loader2 className="w-5 h-5 animate-spin text-[#9146FF]" />
               <span>
                 {pickLang(lang, {
                   es: 'Sincronizando datos en tiempo real del partido...',
@@ -737,9 +737,9 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                         triggerHaptic('light');
                         setLineupMetric(m.id);
                       }}
-                      className={`min-h-[34px] px-3 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
+                      className={`min-h-10 px-3 rounded-full text-xs font-bold whitespace-nowrap cursor-pointer transition-colors ${
                         lineupMetric === m.id
-                          ? 'bg-white text-[#0B0D12]'
+                          ? 'bg-[#9146FF] text-white'
                           : 'bg-[#242833] hover:bg-[#313746] text-zinc-300 border border-white/[0.08]'
                       }`}
                     >
@@ -760,9 +760,9 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                       key={v.id}
                       type="button"
                       onClick={() => setLineupTeamView(v.id)}
-                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+                      className={`min-h-10 px-3 py-1 rounded-lg text-xs font-bold cursor-pointer transition-colors ${
                         lineupTeamView === v.id
-                          ? 'bg-[#FFBD0F] text-[#11131A]'
+                          ? 'bg-[#9146FF] text-white'
                           : 'text-zinc-400 hover:text-white'
                       }`}
                     >
@@ -820,7 +820,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
 
               {/* Selected Player Quick Bio Strip */}
               {selectedPlayer && (
-                <div className="p-3 rounded-2xl bg-[#1E2330] border border-[#FFBD0F]/40 flex flex-wrap items-center justify-between gap-3 animate-fade-in">
+                <div className="p-3 rounded-2xl bg-[#1E2330] border border-[#9146FF]/45 flex flex-wrap items-center justify-between gap-3 animate-fade-in">
                   <div className="flex items-center gap-3">
                     <PlayerAvatarImg
                       src={selectedPlayer.photoUrl}
@@ -898,9 +898,9 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                       triggerHaptic('light');
                       setStatsPeriod(p.id);
                     }}
-                    className={`min-h-[34px] rounded-full text-xs font-extrabold transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
+                    className={`min-h-10 rounded-full text-xs font-extrabold transition-colors cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
                       statsPeriod === p.id
-                        ? 'bg-white text-[#0D1017]'
+                        ? 'bg-[#9146FF] text-white'
                         : 'text-zinc-300 hover:text-white'
                     }`}
                   >
@@ -1055,9 +1055,9 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
                         key={f.id}
                         type="button"
                         onClick={() => setShotFilter(f.id)}
-                        className={`min-h-[32px] px-3.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
+                        className={`min-h-10 px-3.5 rounded-full text-xs font-bold cursor-pointer transition-colors ${
                           shotFilter === f.id
-                            ? 'bg-white text-[#0B0D14]'
+                            ? 'bg-[#9146FF] text-white'
                             : 'bg-[#252A37] text-zinc-300 hover:text-white'
                         }`}
                       >
@@ -1291,7 +1291,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
             /* ================================================================ */
             <div className="space-y-2">
               <h4 className="text-xs font-bold uppercase tracking-wider text-zinc-400 px-1 flex items-center gap-1.5">
-                <Clock className="w-3.5 h-3.5 text-[#FFBD0F]" />
+                <Clock className="w-3.5 h-3.5 text-[#9146FF]" />
                 <span>
                   {pickLang(lang, {
                     es: 'Incidencias del Partido',

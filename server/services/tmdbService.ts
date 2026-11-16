@@ -10,15 +10,50 @@ const tmdbResponseCache = new LruTtlCache<string, unknown>(400, 5 * 60 * 1000);
 const tmdbStaleFallbackCache = new LruTtlCache<string, unknown>(400, 24 * 60 * 60 * 1000);
 const tmdbSingleFlight = new SingleFlightRegistry<unknown>();
 
-// Dedicated IPv4 keepAlive agent avoids Node/undici Happy Eyeballs IPv6 stalls & socket timeouts
-const tmdbIpv4KeepAliveAgent = new https.Agent({
+// Dedicated IPv4 keepAlive agent avoids Node/undici Happy Eyeballs IPv6 stalls
+let tmdbIpv4KeepAliveAgent = new https.Agent({
   keepAlive: true,
   family: 4,
-  maxSockets: 16,
-  keepAliveMsecs: 15_000,
+  maxSockets: 6,
+  keepAliveMsecs: 10_000,
 });
 
-function tmdbIpv4GetJson<T>(targetUrl: string, timeoutMs = 10_000): Promise<{ status: number; data: T | null }> {
+function resetTmdbKeepAliveAgent(): void {
+  try {
+    tmdbIpv4KeepAliveAgent.destroy();
+  } catch {
+    // ignore
+  }
+  tmdbIpv4KeepAliveAgent = new https.Agent({
+    keepAlive: true,
+    family: 4,
+    maxSockets: 6,
+    keepAliveMsecs: 10_000,
+  });
+}
+
+// Bound concurrent upstream requests to TMDB to avoid socket bursts / edge timeouts
+const MAX_CONCURRENT_TMDB = 4;
+let activeTmdbRequests = 0;
+const tmdbWaitQueue: Array<() => void> = [];
+
+async function withTmdbSemaphore<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeTmdbRequests >= MAX_CONCURRENT_TMDB) {
+    await new Promise<void>((resolve) => {
+      tmdbWaitQueue.push(resolve);
+    });
+  }
+  activeTmdbRequests += 1;
+  try {
+    return await fn();
+  } finally {
+    activeTmdbRequests = Math.max(0, activeTmdbRequests - 1);
+    const next = tmdbWaitQueue.shift();
+    if (next) next();
+  }
+}
+
+function tmdbIpv4GetJson<T>(targetUrl: string, timeoutMs = 6_000): Promise<{ status: number; data: T | null }> {
   return new Promise((resolve, reject) => {
     const req = https.get(
       targetUrl,
@@ -62,6 +97,21 @@ function tmdbIpv4GetJson<T>(targetUrl: string, timeoutMs = 10_000): Promise<{ st
     });
     req.on('error', reject);
   });
+}
+
+async function tmdbFreshFetchJson<T>(targetUrl: string, timeoutMs = 7_500): Promise<{ status: number; data: T | null }> {
+  const res = await fetch(targetUrl, {
+    signal: AbortSignal.timeout(timeoutMs),
+    headers: {
+      Accept: 'application/json',
+      'User-Agent': 'NAIMCINE-Catalog/3.1',
+    },
+  });
+  if (!res.ok) {
+    return { status: res.status, data: null };
+  }
+  const parsed = (await res.json()) as T;
+  return { status: res.status, data: parsed };
 }
 
 export function resolveTmdbLanguageTag(lang?: string): string {
@@ -112,40 +162,47 @@ export async function fetchTmdbJson<T>(
     return cached as T;
   }
 
-  return tmdbSingleFlight.run(cacheKey, async () => {
-    let lastErr: unknown = null;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const timeoutMs = attempt === 0 ? 9000 : 12000;
-        const { status, data } = await tmdbIpv4GetJson<T>(cacheKey, timeoutMs);
-        if (data !== null) {
-          tmdbResponseCache.set(cacheKey, data, cacheTtlMs);
-          tmdbStaleFallbackCache.set(cacheKey, data);
-          return data;
+  return tmdbSingleFlight.run(cacheKey, () =>
+    withTmdbSemaphore(async () => {
+      let lastErr: unknown = null;
+      for (let attempt = 0; attempt < 2; attempt += 1) {
+        try {
+          const { status, data } =
+            attempt === 0
+              ? await tmdbIpv4GetJson<T>(cacheKey, 6000)
+              : await tmdbFreshFetchJson<T>(cacheKey, 7500);
+          if (data !== null) {
+            tmdbResponseCache.set(cacheKey, data, cacheTtlMs);
+            tmdbStaleFallbackCache.set(cacheKey, data);
+            return data;
+          }
+          if (status >= 400 && status < 500 && status !== 429) {
+            logger.info({ status, endpointPath }, 'tmdb_fetch_non_ok');
+            return null;
+          }
+          lastErr = new Error(`TMDB HTTP ${status}`);
+        } catch (err) {
+          lastErr = err;
+          if (attempt === 0) {
+            resetTmdbKeepAliveAgent();
+          }
         }
-        if (status >= 400 && status < 500 && status !== 429) {
-          logger.warn({ status, endpointPath }, 'tmdb_fetch_non_ok');
-          return null;
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, 150));
         }
-        lastErr = new Error(`TMDB HTTP ${status}`);
-      } catch (err) {
-        lastErr = err;
       }
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, 200));
+
+      const stale = tmdbStaleFallbackCache.get(cacheKey);
+      if (stale !== undefined) {
+        logger.info({ endpointPath }, 'tmdb_fetch_served_stale_cache');
+        return stale as T;
       }
-    }
 
-    const stale = tmdbStaleFallbackCache.get(cacheKey);
-    if (stale !== undefined) {
-      logger.info({ endpointPath }, 'tmdb_fetch_served_stale_cache');
-      return stale as T;
-    }
-
-    const errMsg = lastErr instanceof Error ? lastErr.message : String(lastErr || 'unknown');
-    logger.warn({ endpointPath, reason: errMsg }, 'tmdb_fetch_error');
-    return null;
-  }) as Promise<T | null>;
+      const errMsg = lastErr instanceof Error ? lastErr.message : String(lastErr || 'unknown');
+      logger.info({ endpointPath, reason: errMsg }, 'tmdb_fetch_fallback_null');
+      return null;
+    })
+  ) as Promise<T | null>;
 }
 
 /**

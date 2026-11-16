@@ -1,0 +1,215 @@
+import React from 'react';
+import {
+  User,
+  PlayCircle,
+  Bookmark,
+  Bell,
+  Users,
+  Tv,
+  Youtube,
+  Settings,
+  ChevronRight,
+} from 'lucide-react';
+import type { User as FirebaseUser } from 'firebase/auth';
+import type { AppLanguage } from '../types';
+import { pickLang } from '../utils/i18n';
+import { triggerHaptic } from '../utils/haptics';
+import { BottomSheet } from './ui/DesignSystem';
+
+interface AvatarMenuSheetProps {
+  isOpen: boolean;
+  onClose: () => void;
+  lang: AppLanguage;
+  displayName: string;
+  avatar: string;
+  color: string;
+  authUser: FirebaseUser | null;
+  unreadNotificationsCount: number;
+  hasConnectedSmartTv: boolean;
+  onOpenProfile: () => void;
+  onOpenContinueWatching: () => void;
+  onOpenSaved: () => void;
+  onOpenNotifications: () => void;
+  onOpenFriends: () => void;
+  onOpenSmartTv: () => void;
+  onOpenYouTube: () => void;
+  onOpenSettings: () => void;
+}
+
+export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
+  isOpen,
+  onClose,
+  lang,
+  displayName,
+  avatar,
+  color,
+  authUser,
+  unreadNotificationsCount,
+  hasConnectedSmartTv,
+  onOpenProfile,
+  onOpenContinueWatching,
+  onOpenSaved,
+  onOpenNotifications,
+  onOpenFriends,
+  onOpenSmartTv,
+  onOpenYouTube,
+  onOpenSettings,
+}) => {
+  const runAction = (fn: () => void) => {
+    triggerHaptic('light');
+    onClose();
+    fn();
+  };
+
+  const items = [
+    {
+      id: 'profile',
+      icon: User,
+      label: pickLang(lang, { es: 'Perfil', ca: 'Perfil', en: 'Profile' }),
+      onClick: onOpenProfile,
+      badge: null as React.ReactNode,
+    },
+    {
+      id: 'continue',
+      icon: PlayCircle,
+      label: pickLang(lang, {
+        es: 'Continuar viendo',
+        ca: 'Continuar veient',
+        en: 'Continue watching',
+      }),
+      onClick: onOpenContinueWatching,
+      badge: null as React.ReactNode,
+    },
+    {
+      id: 'saved',
+      icon: Bookmark,
+      label: pickLang(lang, { es: 'Guardados', ca: 'Desats', en: 'Saved' }),
+      onClick: onOpenSaved,
+      badge: null as React.ReactNode,
+    },
+    {
+      id: 'notifications',
+      icon: Bell,
+      label: pickLang(lang, {
+        es: 'Notificaciones',
+        ca: 'Notificacions',
+        en: 'Notifications',
+      }),
+      onClick: onOpenNotifications,
+      badge:
+        unreadNotificationsCount > 0 ? (
+          <span className="min-w-6 h-6 px-1.5 rounded-full bg-[#9146FF] text-white text-xs font-bold flex items-center justify-center tabular-nums">
+            {unreadNotificationsCount > 99 ? '99+' : unreadNotificationsCount}
+          </span>
+        ) : null,
+    },
+    {
+      id: 'friends',
+      icon: Users,
+      label: pickLang(lang, {
+        es: 'Amigos e invitaciones',
+        ca: 'Amics i invitacions',
+        en: 'Friends & invites',
+      }),
+      onClick: onOpenFriends,
+      badge: null as React.ReactNode,
+    },
+    {
+      id: 'tv',
+      icon: Tv,
+      label: pickLang(lang, {
+        es: 'Enviar a TV',
+        ca: 'Enviar a TV',
+        en: 'Cast to TV',
+      }),
+      onClick: onOpenSmartTv,
+      badge: hasConnectedSmartTv ? (
+        <span className="w-2.5 h-2.5 rounded-full bg-[#00F593] shadow-[0_0_8px_#00F593]" />
+      ) : null,
+    },
+    {
+      id: 'youtube',
+      icon: Youtube,
+      label: 'YouTube',
+      onClick: onOpenYouTube,
+      badge: null as React.ReactNode,
+    },
+    {
+      id: 'settings',
+      icon: Settings,
+      label: pickLang(lang, { es: 'Ajustes', ca: 'Ajustos', en: 'Settings' }),
+      onClick: onOpenSettings,
+      badge: null as React.ReactNode,
+    },
+  ];
+
+  return (
+    <BottomSheet
+      isOpen={isOpen}
+      onClose={onClose}
+      lang={lang}
+      title={displayName || pickLang(lang, { es: 'Tu cuenta', ca: 'El teu compte', en: 'Account' })}
+      subtitle={
+        authUser?.email ||
+        pickLang(lang, {
+          es: 'Cuenta, listas y dispositivos',
+          ca: 'Compte, llistes i dispositius',
+          en: 'Account, lists & devices',
+        })
+      }
+      maxWidth="sm:max-w-md"
+    >
+      <div className="space-y-3 pb-2">
+        <div className="flex items-center gap-3 px-2 pb-2 border-b border-white/[0.06]">
+          <div
+            className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-bold text-white shrink-0 border border-white/15"
+            style={{ backgroundColor: color || '#9146FF' }}
+          >
+            {authUser?.photoURL ? (
+              <img
+                src={authUser.photoURL}
+                alt={displayName}
+                className="w-full h-full object-cover rounded-2xl"
+              />
+            ) : (
+              avatar || (displayName || 'U').slice(0, 1).toUpperCase()
+            )}
+          </div>
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-bold text-white truncate">{displayName}</p>
+            <p className="text-xs text-zinc-400 truncate">
+              {authUser
+                ? authUser.email || pickLang(lang, { es: 'Sesión iniciada', ca: 'Sessió iniciada', en: 'Signed in' })
+                : pickLang(lang, { es: 'Perfil invitado', ca: 'Perfil convidat', en: 'Guest profile' })}
+            </p>
+          </div>
+        </div>
+
+        <nav className="space-y-1">
+          {items.map((item) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={item.id}
+                type="button"
+                onClick={() => runAction(item.onClick)}
+                className="w-full min-h-12 px-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-transparent hover:border-white/[0.08] flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <Icon className="w-5 h-5 text-[#BF94FF] shrink-0" />
+                  <span className="text-sm font-semibold text-white truncate">
+                    {item.label}
+                  </span>
+                </span>
+                <span className="flex items-center gap-2 shrink-0">
+                  {item.badge}
+                  <ChevronRight className="w-4 h-4 text-zinc-500" />
+                </span>
+              </button>
+            );
+          })}
+        </nav>
+      </div>
+    </BottomSheet>
+  );
+};

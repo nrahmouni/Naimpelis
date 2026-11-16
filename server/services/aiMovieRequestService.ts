@@ -275,7 +275,7 @@ async function searchTmdbCandidatesForQueries(
   score: number;
 }>> {
   const tmdbLang = resolveTmdbLanguageTag(lang);
-  const uniqueQueries = Array.from(new Set(queries.map((q) => q.trim()).filter((q) => q.length >= 2))).slice(0, 5);
+  const uniqueQueries = Array.from(new Set(queries.map((q) => q.trim()).filter((q) => q.length >= 2))).slice(0, 3);
   const foundMap = new Map<string, any>();
 
   await Promise.all(

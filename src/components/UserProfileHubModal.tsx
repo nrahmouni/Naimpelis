@@ -256,18 +256,13 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 <h2 className="font-display font-bold text-base sm:text-lg text-white truncate">
                   {displayName}
                 </h2>
-                {authUser && (
-                  <span className="text-[11px] font-medium text-emerald-400 whitespace-nowrap">
-                    · Cloud Sync
-                  </span>
-                )}
               </div>
               <div className="text-xs text-zinc-400 truncate">
                 {authUser?.email ||
                   pickLang(lang, {
-                    es: 'Perfil local · Conecta Google para sincronizar entre dispositivos',
-                    ca: 'Perfil local · Connecta Google per sincronitzar entre dispositius',
-                    en: 'Local profile · Sign in to sync across devices',
+                    es: 'Perfil e historial',
+                    ca: 'Perfil i historial',
+                    en: 'Profile & history',
                   })}
               </div>
             </div>
@@ -277,13 +272,13 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label={pickLang(lang, {
-              es: 'Cerrar mi perfil',
-              ca: 'Tancar el meu perfil',
-              en: 'Close profile',
+              es: 'Cerrar',
+              ca: 'Tancar',
+              en: 'Close',
             })}
-            className="min-h-[44px] min-w-[44px] rounded-2xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer transition-colors shrink-0"
+            className="min-h-12 min-w-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer transition-colors shrink-0"
           >
-            <X className="w-4 h-4" />
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -302,25 +297,25 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
               {
                 id: 'history',
                 label: pickLang(lang, {
-                  es: `Continuar Viendo (${watchHistory.length})`,
-                  ca: `Continuar Veient (${watchHistory.length})`,
-                  en: `History (${watchHistory.length})`,
+                  es: 'Historial',
+                  ca: 'Historial',
+                  en: 'History',
                 }),
               },
               {
                 id: 'favorites',
                 label: pickLang(lang, {
-                  es: `Guardados (${totalSavedCount})`,
-                  ca: `Desats (${totalSavedCount})`,
-                  en: `Saved (${totalSavedCount})`,
+                  es: 'Guardados',
+                  ca: 'Desats',
+                  en: 'Saved',
                 }),
               },
               {
                 id: 'account',
                 label: pickLang(lang, {
-                  es: 'Cuenta y Salas',
-                  ca: 'Compte i Sales',
-                  en: 'Account & Rooms',
+                  es: 'Cuenta',
+                  ca: 'Compte',
+                  en: 'Account',
                 }),
               },
             ]}
@@ -597,23 +592,13 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                   </div>
                 </>
               ) : (
-                <div className="py-12 text-center space-y-2">
-                  <Clock className="w-8 h-8 text-zinc-600 mx-auto" />
-                  <p className="font-display font-semibold text-sm sm:text-base text-white">
-                    {pickLang(lang, {
-                      es: 'Aún no tienes películas ni series en tu historial',
-                      ca: 'Encara no tens pel·lícules ni sèries al teu historial',
-                      en: 'Your watch history is empty',
-                    })}
-                  </p>
-                  <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                    {pickLang(lang, {
-                      es: 'Cualquier película o episodio que reproduzcas se guardará aquí automáticamente con el segundo exacto donde lo dejaste.',
-                      ca: 'Qualsevol pel·lícula o episodi que reprodueixis es desarà aquí automàticament amb el segon exacte on ho vas deixar.',
-                      en: 'Movies and episodes you play will automatically appear here with your exact resume timestamp.',
-                    })}
-                  </p>
-                </div>
+                <p className="py-12 text-center text-sm text-zinc-400">
+                  {pickLang(lang, {
+                    es: 'Tu historial está vacío.',
+                    ca: 'El teu historial és buit.',
+                    en: 'Your watch history is empty.',
+                  })}
+                </p>
               )}
             </div>
           )}
@@ -861,23 +846,13 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                 (favFilter !== 'channels' &&
                   filteredWatchlist.length === 0 &&
                   (favFilter !== 'all' || favoriteChannels.length === 0))) && (
-                <div className="py-12 text-center space-y-2">
-                  <Heart className="w-8 h-8 text-zinc-600 mx-auto" />
-                  <p className="font-display font-semibold text-sm sm:text-base text-white">
-                    {pickLang(lang, {
-                      es: 'No tienes elementos guardados en esta sección',
-                      ca: 'No tens elements desats en aquesta secció',
-                      en: 'No saved items in this section',
-                    })}
-                  </p>
-                  <p className="text-xs text-zinc-400 max-w-md mx-auto">
-                    {pickLang(lang, {
-                      es: 'Pulsa el corazón (♥) en cualquier película o serie, o la estrella (★) en los canales de fútbol para tenerlos siempre a mano aquí.',
-                      ca: 'Prem el cor (♥) a qualsevol pel·lícula o sèrie, o l’estrella (★) als canals de futbol per tenir-los sempre a mà aquí.',
-                      en: 'Tap the heart on movies/series or the star on sports channels to save them here.',
-                    })}
-                  </p>
-                </div>
+                <p className="py-12 text-center text-sm text-zinc-400">
+                  {pickLang(lang, {
+                    es: 'No tienes elementos guardados.',
+                    ca: 'No tens elements desats.',
+                    en: 'No saved items.',
+                  })}
+                </p>
               )}
             </div>
           )}
