@@ -65,7 +65,7 @@ export function detectNativeApkContext(): {
   const isAndroidMobileApk =
     !isGoogleTvApk &&
     (platformParam === 'android' ||
-      (/Android/i.test(ua) && /wv\)|Version\/\d+/i.test(ua)) ||
+      /Android/i.test(ua) ||
       apkvParam > 0);
 
   return {
