@@ -167,12 +167,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               triggerHaptic('light');
               onReplayIntro();
             }}
-            className="flex items-center gap-3 min-w-0 cursor-pointer text-left group py-1 whitespace-nowrap shrink-0"
+            className="flex items-center min-w-0 cursor-pointer text-left group py-1 whitespace-nowrap shrink-0 active:scale-[0.98] transition-transform"
             aria-label="RiffanTV"
           >
-            <span className="font-display font-bold text-lg tracking-[-0.015em] leading-none text-[#F4F5F8] inline-flex items-center">
-              Riffan<span className="text-[#A78BFA] font-extrabold">TV</span>
-            </span>
+            <NaimBrandLogo variant="full" size={34} animated />
           </button>
 
           <IconButton
@@ -219,8 +217,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             initial={{ opacity: 0, y: 16 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.32, delay: 0.04, ease: [0.16, 1, 0.3, 1] }}
-            className="rounded-3xl bg-[#11131B]/95 border border-white/[0.1] shadow-[0_24px_64px_rgba(0,0,0,0.75)] p-5 sm:p-6 space-y-5"
+            className="relative overflow-hidden rounded-3xl bg-[#10121C]/95 border border-white/[0.1] shadow-[0_24px_64px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.08)] p-5 sm:p-6 space-y-5"
           >
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -top-20 -right-16 w-48 h-48 rounded-full bg-[#9146FF]/15 blur-3xl"
+            />
             {/* Continuar en tus salas (only if present) */}
             {recentRooms.length > 0 && (
               <div className="space-y-2 pb-4 border-b border-white/[0.07]">

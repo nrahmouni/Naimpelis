@@ -6,6 +6,7 @@ export interface ChineseFootballChannelDef {
   name: string;
   shortMark: string;
   brandTone: string;
+  logoUrl?: string;
   network: string;
   category: 'china_football';
   quality: string;
@@ -25,6 +26,7 @@ export const CHINESE_FOOTBALL_CHANNELS: ChineseFootballChannelDef[] = [
     name: 'CCTV-5 体育 (中文 HD)',
     shortMark: 'CCTV5',
     brandTone: '#DC2626',
+    logoUrl: 'https://raw.githubusercontent.com/fanmingming/live/main/tv/CCTV5.png',
     network: '央视体育 · 中文',
     category: 'china_football',
     quality: '1080p 中文',
@@ -55,6 +57,7 @@ export const CHINESE_FOOTBALL_CHANNELS: ChineseFootballChannelDef[] = [
     name: 'CCTV 风云足球 HD (欧冠/西甲/英超)',
     shortMark: '风云足球',
     brandTone: '#16A34A',
+    logoUrl: 'https://raw.githubusercontent.com/fanmingming/live/main/tv/CCTV5.png',
     network: '央视风云 · 中文',
     category: 'china_football',
     quality: '1080p 中文',
@@ -85,6 +88,7 @@ export const CHINESE_FOOTBALL_CHANNELS: ChineseFootballChannelDef[] = [
     name: '广东体育 HD (英超/西甲/欧冠 粤语/中文)',
     shortMark: '广东体育',
     brandTone: '#2563EB',
+    logoUrl: 'https://raw.githubusercontent.com/fanmingming/live/main/tv/GDTV3.png',
     network: '广东广播 · 粤/中文',
     category: 'china_football',
     quality: '720p 粤/中文',
@@ -107,6 +111,7 @@ export const CHINESE_FOOTBALL_CHANNELS: ChineseFootballChannelDef[] = [
     name: '北京体育休闲 BTV-6 HD (英超/欧冠/西甲)',
     shortMark: 'BTV体育',
     brandTone: '#9333EA',
+    logoUrl: 'https://raw.githubusercontent.com/BurningC4/tvg-logo/master/btv1.png',
     network: '北京广播 · 中文',
     category: 'china_football',
     quality: '720p 中文',
@@ -129,6 +134,7 @@ export const CHINESE_FOOTBALL_CHANNELS: ChineseFootballChannelDef[] = [
     name: 'CCTV-5+ 体育赛事 (中文 HD)',
     shortMark: 'CCTV5+',
     brandTone: '#B91C1C',
+    logoUrl: 'https://raw.githubusercontent.com/fanmingming/live/main/tv/CCTV5%2B.png',
     network: '央视体育+ · 中文',
     category: 'china_football',
     quality: '720p 中文',
@@ -151,6 +157,7 @@ export const CHINESE_FOOTBALL_CHANNELS: ChineseFootballChannelDef[] = [
     name: '天津体育 HD (中超/欧冠/英超 中文)',
     shortMark: '天津体育',
     brandTone: '#0284C7',
+    logoUrl: 'https://raw.githubusercontent.com/fanmingming/live/main/tv/tianjin.png',
     network: '天津广播 · 中文',
     category: 'china_football',
     quality: '720p 中文',
@@ -181,6 +188,7 @@ export const CHINESE_FOOTBALL_CHANNELS: ChineseFootballChannelDef[] = [
     name: 'CCTV-16 奥林匹克 HD (中文)',
     shortMark: 'CCTV16',
     brandTone: '#E11D48',
+    logoUrl: 'https://raw.githubusercontent.com/fanmingming/live/main/tv/CCTV16.png',
     network: '央视奥林匹克 · 中文',
     category: 'china_football',
     quality: '720p 中文',

@@ -25,6 +25,7 @@ import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { PosterImage } from '../ui/PosterImage';
 import { LanguageBadge } from '../ui/LanguageBadge';
+import { ChannelLogoBadge } from '../ui/ChannelLogoBadge';
 
 export type SearchCategoryFilter = 'all' | 'movies' | 'series' | 'sports' | 'tv' | 'games';
 
@@ -470,8 +471,8 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     <div className="w-full space-y-3">
       {/* 1. Large Tactile Smart Search Bar */}
       <div className="relative group">
-        <div className="relative flex items-center min-h-[52px] sm:min-h-[56px] w-full px-4 rounded-2xl bg-[#141622] hover:bg-[#181B2B] focus-within:bg-[#1A1D2E] border border-white/[0.12] focus-within:border-[#9146FF] shadow-[0_8px_24px_rgba(0,0,0,0.45)] transition-all duration-200">
-          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#9146FF]/20 text-[#BF94FF] mr-3 shrink-0">
+        <div className="relative flex items-center min-h-[52px] sm:min-h-[56px] w-full px-3.5 sm:px-4 rounded-2xl bg-[#10121C] hover:bg-[#131624] focus-within:bg-[#151828] border border-white/[0.09] focus-within:border-[#9146FF] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_28px_rgba(0,0,0,0.42)] transition-all duration-200">
+          <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#9146FF]/18 border border-[#9146FF]/30 text-[#C4A7FF] mr-3 shrink-0">
             <Search className="w-4 h-4" />
           </div>
 
@@ -498,14 +499,14 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
               }
             }}
             placeholder={pickLang(lang, {
-              es: 'Busca películas, series, fútbol, TV, juegos o describe qué ver...',
+              es: 'Busca películas, series, fútbol, TV o describe qué ver...',
               ca: 'Cerca pel·lícules, sèries, futbol, TV o descriu què veure...',
-              en: 'Search movies, series, football, live TV, games or describe...',
+              en: 'Search movies, series, football, live TV or describe...',
             })}
-            className="flex-1 min-w-0 bg-transparent text-sm sm:text-base font-medium text-white placeholder:text-zinc-500 focus:outline-none"
+            className="flex-1 min-w-0 bg-transparent text-sm sm:text-[15px] font-medium text-white placeholder:text-zinc-500 focus:outline-none"
           />
 
-          {cleanQuery && (
+          {cleanQuery ? (
             <div className="flex items-center gap-1.5 ml-2 shrink-0">
               {loadingRemote && (
                 <Loader2 className="w-4 h-4 text-[#9146FF] animate-spin shrink-0" />
@@ -525,6 +526,14 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 <X className="w-4 h-4" />
               </button>
             </div>
+          ) : (
+            <span
+              className="ml-2 shrink-0 inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-[#9146FF]/14 border border-[#9146FF]/28 text-[10px] font-bold tracking-wide text-[#D8B4FE] pointer-events-none select-none"
+              aria-hidden="true"
+            >
+              <Sparkles className="w-3 h-3" />
+              <span>{lang === 'en' ? 'AI' : 'IA'}</span>
+            </span>
           )}
         </div>
       </div>
@@ -772,12 +781,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                         }}
                         className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-sky-400/50 text-left cursor-pointer transition-all active:scale-[0.98]"
                       >
-                        <div
-                          className="w-9 h-9 rounded-xl flex items-center justify-center font-display font-extrabold text-xs text-white shrink-0 shadow-sm"
-                          style={{ backgroundColor: ch.brandTone || '#1E293B' }}
-                        >
-                          {ch.shortMark}
-                        </div>
+                        <ChannelLogoBadge channel={ch} size="sm" />
                         <div className="min-w-0">
                           <p className="text-xs font-bold text-white truncate">{ch.name}</p>
                           <p className="text-[10px] text-zinc-400">Dial {ch.dial}</p>

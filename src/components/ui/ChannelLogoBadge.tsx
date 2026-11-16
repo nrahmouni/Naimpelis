@@ -82,8 +82,24 @@ export function getCategoryRegion(category: 'all' | 'tdt_all' | TdtCategory): Tv
   return 'es';
 }
 
+import {
+  OFFICIAL_CHANNEL_LOGO_URLS,
+  resolveOfficialChannelLogoUrl,
+} from '../../shared/channelLogos';
+
+export { OFFICIAL_CHANNEL_LOGO_URLS };
+
+export function getOfficialChannelLogoUrl(
+  ch: Pick<SpanishTdtChannel, 'id' | 'logoUrl'>
+): string | null {
+  return resolveOfficialChannelLogoUrl(ch);
+}
+
 interface ChannelLogoBadgeProps {
-  channel: Pick<SpanishTdtChannel, 'id' | 'name' | 'shortMark' | 'brandTone' | 'network' | 'category'>;
+  channel: Pick<
+    SpanishTdtChannel,
+    'id' | 'name' | 'shortMark' | 'brandTone' | 'network' | 'category' | 'logoUrl'
+  >;
   size?: 'sm' | 'md' | 'lg';
   showLangTag?: boolean;
   className?: string;
@@ -770,13 +786,43 @@ export const ChannelLogoBadge: React.FC<ChannelLogoBadgeProps> = ({
   className = '',
 }) => {
   const regionMeta = getChannelRegionMeta(channel);
+  const officialLogoUrl = getOfficialChannelLogoUrl(channel);
+  const [imgFailed, setImgFailed] = React.useState(false);
+
+  React.useEffect(() => {
+    setImgFailed(false);
+  }, [officialLogoUrl, channel.id]);
+
+  const showOfficialImg = Boolean(officialLogoUrl && !imgFailed);
+  const tone = channel.brandTone || '#9146FF';
 
   return (
     <div
       className={`relative shrink-0 select-none shadow-md ${SIZE_CLASSES[size]} ${className}`}
     >
-      <div className="w-full h-full overflow-hidden rounded-[inherit] border border-white/15">
-        <RenderChannelArtwork channel={channel} />
+      <div
+        className="w-full h-full overflow-hidden rounded-[inherit] border border-white/[0.14] flex items-center justify-center relative bg-[#121521]"
+        style={
+          showOfficialImg
+            ? {
+                backgroundImage: `radial-gradient(circle at 25% 20%, ${tone}2E 0%, rgba(16,18,28,0.96) 72%)`,
+              }
+            : undefined
+        }
+      >
+        {showOfficialImg ? (
+          <img
+            src={officialLogoUrl!}
+            alt={channel.name}
+            loading="lazy"
+            decoding="async"
+            referrerPolicy="no-referrer"
+            onError={() => setImgFailed(true)}
+            className="w-[82%] h-[82%] object-contain drop-shadow-[0_1px_6px_rgba(255,255,255,0.14)]"
+          />
+        ) : (
+          <RenderChannelArtwork channel={channel} />
+        )}
       </div>
       {showLangTag && (
         <span

@@ -37,7 +37,7 @@ function getDefaultOrbPos(): { x: number; y: number } {
   const vh = window.innerHeight;
   return {
     x: Math.max(MARGIN, vw - ORB_SIZE - 16),
-    y: Math.max(MARGIN, vh - ORB_SIZE - (vw < 768 ? 84 : 24)),
+    y: Math.max(MARGIN, vh - ORB_SIZE - (vw < 768 ? 22 : 24)),
   };
 }
 

@@ -14,7 +14,7 @@ const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(
   app,
   {
-    experimentalAutoDetectLongPolling: true,
+    experimentalForceLongPolling: true,
     localCache: persistentLocalCache({
       tabManager: persistentMultipleTabManager(),
     }),
@@ -26,10 +26,10 @@ export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-if (typeof window !== 'undefined') {
+if (typeof window !== 'undefined' && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
   void getDocFromServer(doc(db, 'test', 'connection')).catch((error: unknown) => {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+    if (!isTransientFirestoreError(error)) {
+      console.warn('Firestore connection check deferred:', error instanceof Error ? error.message : String(error));
     }
   });
 }

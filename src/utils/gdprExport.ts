@@ -33,7 +33,7 @@ export interface GdprImportResult {
 export function exportUserDataAsJson(): void {
   const payload = {
     exportedAt: new Date().toISOString(),
-    app: 'NAIM CINE',
+    app: 'RiffanTV',
     version: 2,
     profile: getStoredProfile(),
     watchlist: getWatchlist(),
@@ -47,7 +47,7 @@ export function exportUserDataAsJson(): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement('a');
   anchor.href = url;
-  anchor.download = `naim-cine-export-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.download = `riffantv-export-${new Date().toISOString().slice(0, 10)}.json`;
   document.body.appendChild(anchor);
   anchor.click();
   document.body.removeChild(anchor);

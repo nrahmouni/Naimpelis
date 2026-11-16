@@ -4625,14 +4625,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       />
 
                       <div className="relative z-10 flex items-center justify-between gap-1.5">
-                        <div
-                          className="w-10 h-10 rounded-xl flex items-center justify-center border border-white/15 font-display font-extrabold text-[11px] text-white shadow-sm shrink-0"
-                          style={{
-                            background: `linear-gradient(135deg, ${ch.brandTone || '#9146FF'}45 0%, #151622 100%)`,
-                          }}
-                        >
-                          {ch.shortMark || ch.name.slice(0, 3)}
-                        </div>
+                        <ChannelLogoBadge channel={ch} size="sm" showLangTag />
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[9px] font-bold text-emerald-300">
                           <span className="w-1 h-1 rounded-full bg-emerald-400 animate-ping" />
                           LIVE
@@ -4715,14 +4708,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           }}
                           className="flex-1 min-w-0 flex items-center gap-3 text-left cursor-pointer"
                         >
-                          <div
-                            className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-xs text-white"
-                            style={{
-                              background: `linear-gradient(145deg, ${ch.brandTone}38 0%, #090A10 100%)`,
-                            }}
-                          >
-                            {ch.shortMark}
-                          </div>
+                          <ChannelLogoBadge channel={ch} size="md" showLangTag />
                           <div className="min-w-0 flex-1">
                             <p className="font-display font-bold text-sm text-white truncate">
                               {ch.name}
@@ -5404,7 +5390,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 aria-modal="true"
                 aria-label={selectedEpgChannel.name}
                 tabIndex={-1}
-                className="w-full sm:max-w-xl max-h-[86vh] rounded-t-3xl sm:rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.12] flex flex-col overflow-hidden shadow-2xl animate-sheet-up outline-none"
+                className="w-full sm:max-w-xl max-h-[86vh] rounded-t-3xl sm:rounded-3xl bg-[#10121C]/96 backdrop-blur-2xl nc-specular-surface border-t sm:border border-white/[0.12] flex flex-col overflow-hidden shadow-2xl animate-sheet-up outline-none"
                 onClick={(e) => e.stopPropagation()}
               >
                 {/* Mobile Drag Handle */}
@@ -5413,16 +5399,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 {/* Modal Header */}
                 <div className="p-4 sm:p-5 border-b border-white/[0.08] flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3 min-w-0">
-                    <div
-                      className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center border border-white/15"
-                      style={{
-                        background: `linear-gradient(145deg, ${selectedEpgChannel.brandTone}38 0%, #090A10 100%)`,
-                      }}
-                    >
-                      <span className="font-display font-extrabold text-xs text-white leading-none">
-                        {selectedEpgChannel.shortMark}
-                      </span>
-                    </div>
+                    <ChannelLogoBadge channel={selectedEpgChannel} size="md" showLangTag />
                     <div className="min-w-0">
                       <h3 className="font-display font-bold text-base sm:text-lg text-white truncate">
                         {selectedEpgChannel.name}

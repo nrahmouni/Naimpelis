@@ -66,12 +66,12 @@ export const WorldShell: React.FC<WorldShellProps> = ({
       }`}
     >
       {/* LIGHTWEIGHT WORLD TOP HEADER */}
-      <header className="sticky top-0 z-30 shrink-0 bg-[#0B0B0E]/90 backdrop-blur-xl border-b border-white/[0.06] px-2.5 sm:px-4">
+      <header className="sticky top-0 z-30 shrink-0 bg-[#07080C]/92 backdrop-blur-2xl border-b border-white/[0.07] shadow-[0_8px_32px_rgba(0,0,0,0.45)] px-2.5 sm:px-4">
         <div className="max-w-6xl mx-auto h-14 flex items-center justify-between gap-2">
           {searchOpen && onSearchChange ? (
             <div className="flex-1 flex items-center gap-2 min-w-0">
               <div className="relative flex-1 min-w-0">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Search className="w-4 h-4 text-[#BF94FF] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   ref={searchInputRef}
                   type="search"
@@ -85,14 +85,14 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                       en: 'Search here...',
                     })
                   }
-                  className="w-full min-h-11 pl-10 pr-4 rounded-2xl bg-white/[0.07] border border-[#9146FF]/60 text-sm text-white placeholder:text-zinc-400 focus:outline-none"
+                  className="w-full min-h-11 pl-10 pr-4 rounded-2xl bg-[#10121C] border border-[#9146FF]/60 text-sm text-white placeholder:text-zinc-400 focus:outline-none focus:ring-2 focus:ring-[#9146FF]/30"
                 />
               </div>
               <button
                 type="button"
                 onClick={handleCloseSearch}
                 aria-label={pickLang(lang, { es: 'Cerrar búsqueda', ca: 'Tancar cerca', en: 'Close search' })}
-                className="min-w-12 min-h-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] flex items-center justify-center text-zinc-200 cursor-pointer shrink-0"
+                className="min-w-11 min-h-11 rounded-2xl bg-[#10121C] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-zinc-200 cursor-pointer shrink-0 transition-colors"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -104,14 +104,22 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                   type="button"
                   onClick={onBack}
                   aria-label={pickLang(lang, { es: 'Volver', ca: 'Tornar', en: 'Back' })}
-                  className="min-w-12 min-h-12 rounded-2xl hover:bg-white/[0.08] active:scale-95 flex items-center justify-center text-white cursor-pointer transition-all shrink-0"
+                  className="min-w-11 min-h-11 rounded-2xl hover:bg-white/[0.08] active:scale-95 flex items-center justify-center text-white cursor-pointer transition-all shrink-0"
                 >
                   <ArrowLeft className="w-5 h-5" />
                 </button>
 
-                <h2 className="font-display font-extrabold text-base sm:text-lg text-white tracking-tight truncate pl-1">
-                  {title}
-                </h2>
+                <button
+                  type="button"
+                  onClick={onGoHome}
+                  aria-label="RiffanTV"
+                  className="flex items-center gap-2 min-w-0 py-1 pr-1 cursor-pointer active:scale-95 transition-transform group"
+                >
+                  <NaimBrandLogo variant="mark" size={28} />
+                  <h2 className="font-display font-extrabold text-base sm:text-lg text-white tracking-tight truncate">
+                    {title}
+                  </h2>
+                </button>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
@@ -121,9 +129,9 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                     type="button"
                     onClick={() => setSearchOpen(true)}
                     aria-label={pickLang(lang, { es: 'Buscar', ca: 'Cercar', en: 'Search' })}
-                    className="min-w-12 min-h-12 rounded-2xl bg-white/[0.05] hover:bg-white/[0.11] border border-white/[0.08] flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
+                    className="min-w-11 min-h-11 rounded-2xl bg-[#10121C] hover:bg-white/[0.09] border border-white/[0.09] flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
                   >
-                    <Search className="w-5 h-5" />
+                    <Search className="w-4.5 h-4.5" />
                   </button>
                 )}
               </div>

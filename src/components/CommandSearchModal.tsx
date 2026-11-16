@@ -5,6 +5,7 @@ import type { AppLanguage, CatalogMovie, SpanishTdtChannel } from '../types';
 import { pickLang } from '../utils/i18n';
 import { BottomSheet, StandardInput } from './ui/DesignSystem';
 import { PosterImage } from './ui/PosterImage';
+import { ChannelLogoBadge } from './ui/ChannelLogoBadge';
 
 interface CommandSearchModalProps {
   isOpen: boolean;
@@ -513,9 +514,7 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
                             : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.07]'
                         }`}
                       >
-                        <span className="w-10 h-10 rounded-lg bg-white/10 text-xs font-bold text-white flex items-center justify-center shrink-0">
-                          {ch.shortMark}
-                        </span>
+                        <ChannelLogoBadge channel={ch} size="sm" />
                         <div className="min-w-0 flex-1">
                           <div className="text-xs font-bold text-white truncate">{ch.name}</div>
                           <div className="text-[11px] text-[#BF94FF]">

@@ -607,6 +607,7 @@ export interface SpanishTdtChannel {
   name: string;
   shortMark: string;
   brandTone: string;
+  logoUrl?: string;
   network: string;
   category: TdtCategory;
   quality: string;

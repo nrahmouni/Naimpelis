@@ -343,7 +343,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             mode: 'idle',
             url: '',
             rawSourceUrl: '',
-            title: 'NAIM CINE · Elige película, serie, partido o YouTube',
+            title: 'RiffanTV · Elige película, serie, partido o YouTube',
             subtitle: 'Proyección sincronizada en alta definición sin anuncios',
             currentTime: 0,
             isPlaying: false,
@@ -456,7 +456,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         mode: 'idle',
         url: '',
         rawSourceUrl: '',
-        title: 'NAIM CINE · Elige película, serie, partido o YouTube',
+        title: 'RiffanTV · Elige película, serie, partido o YouTube',
         subtitle: 'Reproducción HD sincronizada sin anuncios',
         currentTime: 0,
         isPlaying: false,
@@ -471,10 +471,10 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         {
           id: `sys-welcome-${Date.now()}`,
           senderId: 'system',
-          senderName: 'NAIM CINE',
+          senderName: 'RiffanTV',
           senderAvatar: '🎬',
-          senderColor: '#e11d48',
-          text: 'Bienvenido a NAIM CINE. Elige cualquier película en Español o VO, serie, fútbol en vivo o vídeo para ver juntos sin anuncios.',
+          senderColor: '#9146FF',
+          text: 'Bienvenido a RiffanTV. Elige cualquier película en Español o VO, serie, fútbol en vivo o vídeo para ver juntos sin anuncios.',
           timestamp: Date.now(),
           isSystem: true,
         },
@@ -1055,7 +1055,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
     const sysMsg: RoomChatMessageRecord = {
       id: `poll-win-${Date.now()}`,
       senderId: 'system',
-      senderName: 'NAIMCINE',
+      senderName: 'RiffanTV',
       senderAvatar: '🏆',
       senderColor: '#f59e0b',
       text: bestOpt
@@ -1176,7 +1176,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         finishMsg = {
           id: `game-auto-${Date.now()}`,
           senderId: 'system',
-          senderName: 'NAIM CINE',
+          senderName: 'RiffanTV',
           senderAvatar: '⏱️',
           senderColor: '#f59e0b',
           text: `⏱️ 15s agotados · La máquina movió por ${seat?.name || 'el jugador'} (${res.notation}).`,
@@ -1194,7 +1194,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         finishMsg = {
           id: `game-end-${Date.now()}`,
           senderId: 'system',
-          senderName: 'NAIM CINE',
+          senderName: 'RiffanTV',
           senderAvatar: '🏆',
           senderColor: '#10b981',
           text:
@@ -1634,7 +1634,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             joinMsg = {
               id: `join-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
               senderId: 'system',
-              senderName: 'NAIM CINE',
+              senderName: 'RiffanTV',
               senderAvatar: userAvatar,
               senderColor: '#10b981',
               text: `${userName} se ha unido a la sala`,
@@ -1758,7 +1758,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             sysMsg = {
               id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
               senderId: 'system',
-              senderName: 'NAIMCINE',
+              senderName: 'RiffanTV',
               senderAvatar: '🎬',
               senderColor: '#e11d48',
               text: `${room.videoState.updatedBy} puso "${room.videoState.title}"`,
@@ -1799,7 +1799,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `qmsg-${Date.now()}`,
             senderId: 'system',
-            senderName: 'NAIMCINE',
+            senderName: 'RiffanTV',
             senderAvatar: '➕',
             senderColor: '#f59e0b',
             text: `${item.addedBy || 'Un amigo'} añadió "${item.title}" a la cola`,
@@ -1950,7 +1950,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `cohost-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             senderId: 'system',
-            senderName: 'NAIMCINE',
+            senderName: 'RiffanTV',
             senderAvatar: role === 'mod' ? '🛡️' : '👤',
             senderColor: role === 'mod' ? '#10b981' : '#71717a',
             text:
@@ -2245,7 +2245,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `lock-${Date.now()}`,
             senderId: 'system',
-            senderName: 'NAIMCINE',
+            senderName: 'RiffanTV',
             senderAvatar: room.hostOnlyControl ? '🔒' : '🔓',
             senderColor: '#f59e0b',
             text: room.hostOnlyControl
@@ -2314,7 +2314,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `poll-start-${now}`,
             senderId: 'system',
-            senderName: 'NAIMCINE',
+            senderName: 'RiffanTV',
             senderAvatar: '🗳️',
             senderColor: '#38bdf8',
             text: `${room.activePoll.createdBy} inició una votación en vivo (${clampedSec}s)`,
@@ -2410,7 +2410,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `pin-${Date.now()}`,
             senderId: 'system',
-            senderName: 'NAIMCINE',
+            senderName: 'RiffanTV',
             senderAvatar: room.pinCode ? '🔐' : '🔓',
             senderColor: '#f59e0b',
             text: room.pinCode
@@ -2706,7 +2706,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `game-start-${Date.now()}`,
             senderId: 'system',
-            senderName: 'NAIM CINE',
+            senderName: 'RiffanTV',
             senderAvatar: gameType === 'chess' ? '♟️' : gameType === 'connect4' ? '🟡' : '🔴',
             senderColor: '#9146FF',
             text: `${actor?.name || 'Un participante'} abrió mesa de ${gameLabel}${
@@ -2850,7 +2850,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
             finishMsg = {
               id: `game-end-${Date.now()}`,
               senderId: 'system',
-              senderName: 'NAIM CINE',
+              senderName: 'RiffanTV',
               senderAvatar: '🏆',
               senderColor: '#10b981',
               text:
@@ -2894,7 +2894,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `game-resign-${Date.now()}`,
             senderId: 'system',
-            senderName: 'NAIM CINE',
+            senderName: 'RiffanTV',
             senderAvatar: '🏳️',
             senderColor: '#f59e0b',
             text: `${senderMeta.userName || 'Un jugador'} se rindió · Gana ${winnerName}.`,
@@ -3018,7 +3018,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `party-start-${Date.now()}`,
             senderId: 'system',
-            senderName: 'NAIM CINE',
+            senderName: 'RiffanTV',
             senderAvatar: gameType === 'uno' ? '🃏' : '🎲',
             senderColor: '#10b981',
             text: `Mesa de ${gameType === 'uno' ? 'UNO Oficial (108 cartas)' : 'Parchís Español (68 casillas)'} abierta · Escoge color y espera al anfitrión.`,
@@ -3226,7 +3226,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `pinturillo-start-${Date.now()}`,
             senderId: 'system',
-            senderName: 'NAIM CINE',
+            senderName: 'RiffanTV',
             senderAvatar: '🎨',
             senderColor: '#F59E0B',
             text: waitForHost
@@ -3687,7 +3687,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           const sysMsg: RoomChatMessageRecord = {
             id: `chapas-start-${Date.now()}`,
             senderId: 'system',
-            senderName: 'NAIM CINE',
+            senderName: 'RiffanTV',
             senderAvatar: '⚽',
             senderColor: '#22C55E',
             text: `Mesa de Fútbol Chapas abierta · Elige equipo y pulsa Play.`,
@@ -4262,7 +4262,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
       const leaveMsg: RoomChatMessageRecord = {
         id: `leave-${Date.now()}`,
         senderId: 'system',
-        senderName: 'NAIM CINE',
+        senderName: 'RiffanTV',
         senderAvatar: '👋',
         senderColor: '#71717a',
         text: `${meta.userName || 'Un participante'} salió de la sala`,

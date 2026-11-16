@@ -369,9 +369,9 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
 
   return (
     <>
-      <section className="rounded-3xl overflow-hidden bg-[#141418] border border-white/[0.08]">
+      <section className="rounded-3xl overflow-hidden bg-[#10121C] border border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.45)]">
         {/* Single-Row Top Bar: Simple Status Chips + Date Switcher */}
-        <div className="px-3 sm:px-4 py-3 bg-[#18181D] border-b border-white/[0.07] flex items-center justify-between gap-2">
+        <div className="px-3 sm:px-4 py-3 bg-[#141724] border-b border-white/[0.07] flex items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             {statusOptions.map((opt) => {
               const active = statusTab === opt.id;
@@ -448,7 +448,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             {Array.from({ length: 6 }).map((_, idx) => (
               <div
                 key={idx}
-                className="h-20 bg-[#141418] px-4 flex items-center justify-between skeleton-shimmer"
+                className="h-20 bg-[#10121C] px-4 flex items-center justify-between skeleton-shimmer"
               >
                 <div className="w-14 h-7 rounded bg-white/[0.06]" />
                 <div className="flex-1 mx-4 space-y-2">
@@ -460,7 +460,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             ))}
           </div>
         ) : groupedCompetitions.length === 0 ? (
-          <div className="p-8 text-center bg-[#141418] space-y-3">
+          <div className="p-8 text-center bg-[#10121C] space-y-3">
             <p className="text-sm text-zinc-300 font-medium">
               {statusTab === 'live'
                 ? pickLang(lang, {
@@ -493,7 +493,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
             {groupedCompetitions.map((group) => (
               <div key={group.key}>
                 {/* League Group Header */}
-                <div className="px-3.5 sm:px-4 py-2.5 bg-[#1B1B22] border-y border-white/[0.06] flex items-center gap-2.5">
+                <div className="px-3.5 sm:px-4 py-2.5 bg-[#151824] border-y border-white/[0.06] flex items-center gap-2.5">
                   <RegionFlagImg src={group.regionFlagUrl} alt={group.regionName} />
                   <h3 className="text-xs font-bold text-zinc-200 leading-snug">
                     {group.groupTitle}
@@ -523,7 +523,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                         className={`relative px-3 sm:px-4 py-3 min-h-[76px] flex items-center gap-3 transition-colors ${
                           isPlayingThisMatch
                             ? 'bg-[#9146FF]/15'
-                            : 'bg-[#141418] hover:bg-white/[0.03]'
+                            : 'bg-[#10121C] hover:bg-white/[0.03]'
                         }`}
                       >
                         {/* Row click opens Match Detail BottomSheet (Signals + Stats/Lineups) */}

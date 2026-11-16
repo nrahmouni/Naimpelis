@@ -10,6 +10,7 @@ import { WebSocketServer } from 'ws';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { ENV } from './server/config/env.ts';
+import { resolveOfficialChannelLogoUrl } from './src/shared/channelLogos.ts';
 import { logger } from './server/utils/logger.ts';
 import { LruTtlCache } from './server/utils/lruCache.ts';
 import { assertSafeProxyUrl } from './server/utils/ssrfGuard.ts';
@@ -2836,6 +2837,7 @@ interface SpanishTdtChannelDef {
     | 'infantil_autonomicas';
   quality: string;
   description: string;
+  logoUrl?: string;
   channels: TrackRecord[];
 }
 
@@ -5239,7 +5241,10 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
 app.get('/api/catalog/tdt', (_req, res) => {
   res.json({
     success: true,
-    channels: channelHealthMonitor.prioritizeChannels(SPANISH_TDT_CHANNELS),
+    channels: channelHealthMonitor.prioritizeChannels(SPANISH_TDT_CHANNELS).map((ch) => ({
+      ...ch,
+      logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
+    })),
   });
 });
 
@@ -6703,7 +6708,7 @@ app.get('/api/extract/stream', async (req, res) => {
                     : `${effectiveSeason}x${String(effectiveEpisode).padStart(2, '0')}`
                 }`
               : baseCleanTitle
-            : 'NAIMCINE HD');
+            : 'RiffanTV HD');
 
         let combinedSubtitles = vestSubtitles;
         if (combinedSubtitles.length === 0 && resolvedTmdbId) {
@@ -6754,7 +6759,7 @@ app.get('/api/extract/stream', async (req, res) => {
                 effectiveEpisode
               ).padStart(2, '0')}`
             : fallbackBaseTitle
-          : 'NAIMCINE HD');
+          : 'RiffanTV HD');
 
       const parseYtSec = (durText: string): number => {
         const clean = String(durText || '').trim();
@@ -10321,7 +10326,10 @@ app.get('/api/catalog/catala', async (req, res) => {
     res.json({
       success: true,
       items: [...hydratedItems, ...dynamicArchiveItems],
-      liveChannels: channelHealthMonitor.prioritizeChannels(CATALA_LIVE_CHANNELS),
+      liveChannels: channelHealthMonitor.prioritizeChannels(CATALA_LIVE_CHANNELS).map((ch) => ({
+        ...ch,
+        logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
+      })),
       communityLinks: [
         {
           id: 'totsrucs-cat',
@@ -11129,7 +11137,7 @@ app.get(['/epg.xml', '/api/iptv/epg.xml'], async (req, res) => {
     const channels = getAllIptvChannels();
     const xmlParts: string[] = [
       '<?xml version="1.0" encoding="UTF-8"?>',
-      '<tv generator-info-name="NAIMCINE IPTV EPG" generator-info-url="' +
+      '<tv generator-info-name="RiffanTV IPTV EPG" generator-info-url="' +
         escapeXmlText(publicOrigin) +
         '">',
     ];
@@ -11266,7 +11274,7 @@ async function startServer() {
       return res
         .status(503)
         .type('text/plain')
-        .send('NAIM CINE engine is running; frontend build (dist/index.html) not found.');
+        .send('RiffanTV engine is running; frontend build (dist/index.html) not found.');
     });
   }
 

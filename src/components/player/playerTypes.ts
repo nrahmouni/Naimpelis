@@ -205,6 +205,7 @@ export interface NativeCinemaPlayerProps {
   onSendReaction?: (emoji: string) => void;
   floatingChatOpen?: boolean;
   onToggleFloatingChat?: () => void;
+  unreadChatCount?: number;
   compactVideoForMobileKeyboard?: boolean;
   onOpenInCloudBrowser?: (url: string) => void;
   voiceChat?: GameVoiceChatState;

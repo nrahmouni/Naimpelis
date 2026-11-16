@@ -4,12 +4,28 @@ import { AnimatePresence, motion } from 'motion/react';
 import type { AppLanguage } from '../../types';
 import { pickLang } from '../../utils/i18n';
 
-export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos';
+import { RiffanBrandLogo } from '../NaimBrandLogo';
+
+export type WorldPortalKind = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala';
 
 interface WorldPortalTransitionProps {
   portal: WorldPortalKind | null;
   lang: AppLanguage;
 }
+
+const PortalStudioLockup: React.FC = () => (
+  <motion.div
+    initial={{ opacity: 0, y: -8 }}
+    animate={{ opacity: 0.9, y: 0 }}
+    transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
+    className="pointer-events-none absolute top-[max(1.25rem,env(safe-area-inset-top))] left-1/2 -translate-x-1/2 z-20 inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/[0.04] backdrop-blur-md border border-white/[0.1]"
+  >
+    <RiffanBrandLogo size={18} variant="mark" frameStyle="none" />
+    <span className="font-display text-[11px] font-bold tracking-[0.16em] text-zinc-200 uppercase">
+      Riffan<span className="text-[#A78BFA]">TV</span>
+    </span>
+  </motion.div>
+);
 
 const CineStudioAperture: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
   const blades = [0, 60, 120, 180, 240, 300];
@@ -597,6 +613,165 @@ const JuegosArenaStage: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
   );
 };
 
-export const WorldPortalTransition: React.FC<WorldPortalTransitionProps> = () => {
-  return null;
+const SalaSocialStage: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
+  return (
+    <div className="relative w-full h-full flex items-center justify-center overflow-hidden bg-[#06060C]">
+      {/* Warm Electric Violet + Rose Watch-Party Radial Field */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            'radial-gradient(ellipse 72% 52% at 50% 48%, rgba(145, 70, 255, 0.24) 0%, rgba(244, 63, 94, 0.08) 44%, rgba(6, 6, 12, 1) 76%)',
+        }}
+      />
+
+      {/* Synchronized Orbital Sound Rings */}
+      <div className="pointer-events-none absolute inset-0 flex items-center justify-center opacity-50">
+        <svg viewBox="0 0 600 320" className="w-[min(92vw,720px)] h-auto">
+          {[74, 118, 162].map((r, i) => (
+            <motion.circle
+              key={r}
+              cx="300"
+              cy="160"
+              r={r}
+              fill="none"
+              stroke={i === 1 ? 'rgba(0, 245, 147, 0.28)' : 'rgba(167, 139, 250, 0.28)'}
+              strokeWidth="1.4"
+              strokeDasharray="8 10"
+              initial={{ scale: 0.78, opacity: 0 }}
+              animate={{ scale: 1.04, opacity: [0, 0.7, 0.28] }}
+              transition={{ duration: 0.62, delay: i * 0.06, ease: [0.22, 1, 0.36, 1] }}
+              style={{ transformOrigin: '300px 160px' }}
+            />
+          ))}
+        </svg>
+      </div>
+
+      {/* Central Social Sync Emblem + Wordmark */}
+      <div className="relative z-10 flex flex-col items-center gap-4 px-6 text-center">
+        <motion.div
+          initial={{ scale: 0.7, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 22 }}
+          className="relative w-24 h-24 sm:w-28 sm:h-28 flex items-center justify-center"
+        >
+          <svg viewBox="0 0 120 120" className="w-full h-full overflow-visible">
+            <defs>
+              <linearGradient id="sala-ring-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stopColor="#FFFFFF" />
+                <stop offset="50%" stopColor="#A78BFA" />
+                <stop offset="100%" stopColor="#00F593" />
+              </linearGradient>
+            </defs>
+            <circle
+              cx="60"
+              cy="60"
+              r="49"
+              fill="rgba(14, 13, 24, 0.92)"
+              stroke="url(#sala-ring-grad)"
+              strokeWidth="1.7"
+              strokeOpacity="0.78"
+            />
+            {/* Dual Sync Nodes */}
+            <motion.circle
+              cx="44"
+              cy="52"
+              r="11"
+              fill="rgba(145, 70, 255, 0.3)"
+              stroke="#C4B5FD"
+              strokeWidth="2"
+              initial={{ x: -8, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.08, type: 'spring', stiffness: 300, damping: 20 }}
+            />
+            <motion.circle
+              cx="76"
+              cy="52"
+              r="11"
+              fill="rgba(0, 245, 147, 0.25)"
+              stroke="#6EE7B7"
+              strokeWidth="2"
+              initial={{ x: 8, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              transition={{ delay: 0.12, type: 'spring', stiffness: 300, damping: 20 }}
+            />
+            {/* Sync Wave Bridge */}
+            <motion.path
+              d="M 30 78 Q 60 66 90 78"
+              fill="none"
+              stroke="#FFFFFF"
+              strokeWidth="2.4"
+              strokeLinecap="round"
+              initial={{ pathLength: 0, opacity: 0 }}
+              animate={{ pathLength: 1, opacity: 0.95 }}
+              transition={{ delay: 0.14, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            />
+          </svg>
+        </motion.div>
+
+        <div className="space-y-1.5">
+          <motion.h2
+            initial={{ opacity: 0, y: 10, letterSpacing: '0.26em' }}
+            animate={{ opacity: 1, y: 0, letterSpacing: '0.16em' }}
+            transition={{ delay: 0.08, duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+            className="font-display font-black text-2xl sm:text-3xl text-white uppercase pl-[0.16em]"
+          >
+            {pickLang(lang, { es: 'SALA', ca: 'SALA', en: 'WATCH PARTY' })}
+          </motion.h2>
+          <motion.p
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 0.82, y: 0 }}
+            transition={{ delay: 0.16, duration: 0.32, ease: 'easeOut' }}
+            className="text-xs sm:text-sm font-medium text-violet-200/85 tracking-wide"
+          >
+            {pickLang(lang, {
+              es: 'Chat en vivo, voz y cola compartida',
+              ca: 'Xat en directe, veu i cua compartida',
+              en: 'Live chat, voice & shared queue',
+            })}
+          </motion.p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export const WorldPortalTransition: React.FC<WorldPortalTransitionProps> = ({
+  portal,
+  lang,
+}) => {
+  const overlay = (
+    <AnimatePresence>
+      {portal && (
+        <motion.div
+          key={portal}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
+          className="fixed inset-0 w-screen h-[100dvh] z-[9998] pointer-events-none overflow-hidden select-none"
+          aria-hidden="true"
+        >
+          <PortalStudioLockup />
+          {portal === 'cine' ? (
+            <CineStudioAperture lang={lang} />
+          ) : portal === 'futbol' ? (
+            <FutbolBroadcastTunnel lang={lang} />
+          ) : portal === 'tv' ? (
+            <TvBroadcastStage lang={lang} />
+          ) : portal === 'sala' ? (
+            <SalaSocialStage lang={lang} />
+          ) : (
+            <JuegosArenaStage lang={lang} />
+          )}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(overlay, document.body);
+  }
+  return overlay;
 };

@@ -364,14 +364,11 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
       {/* Top TV Header */}
       <header className="relative z-10 flex flex-wrap items-center justify-between gap-4">
         <div className="flex items-center gap-3.5">
-          <NaimBrandLogo size={46} />
-          <div>
-            <div className="font-display font-bold text-lg sm:text-2xl tracking-[-0.015em] leading-none text-[#F4F5F8]">
-              Riffan<span className="text-[#A78BFA] font-extrabold">TV</span>{' '}
-              <span className="text-zinc-300 font-semibold text-sm sm:text-base tracking-normal ml-1">
-                Smart TV
-              </span>
-            </div>
+          <NaimBrandLogo variant="full" size={44} />
+          <div className="min-w-0">
+            <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-[#9146FF]/15 border border-[#9146FF]/35 text-[11px] font-bold text-[#D8B4FE] uppercase tracking-wider mb-0.5">
+              Smart TV
+            </span>
             <div className="text-xs sm:text-sm text-zinc-400">
               {liveTvLabel} ·{' '}
               {pickLang(lang, {

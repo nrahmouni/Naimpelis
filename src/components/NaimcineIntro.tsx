@@ -48,8 +48,10 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
   onCompleteRef.current = onComplete;
 
   const rawId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
-  const platId = `rtv-plat-${rawId}`;
+  const stemId = `rtv-stem-${rawId}`;
+  const archId = `rtv-arch-${rawId}`;
   const bladeId = `rtv-blade-${rawId}`;
+  const shadowLegId = `rtv-sleg-${rawId}`;
   const shimmerId = `rtv-shimmer-${rawId}`;
   const clipRId = `rtv-clip-r-${rawId}`;
 
@@ -185,20 +187,34 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
             className="pointer-events-none absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/25 to-transparent will-change-transform"
           />
 
-          {/* Vector SVG Kinetic Blade R with Split Piece Spring Assembly & Interior Shimmer */}
+          {/* Vector SVG 3D Folded Ribbon R with 3-Fold Spring Assembly & Interior Shimmer */}
           <svg
             viewBox="0 0 512 512"
             fill="none"
             xmlns="http://www.w3.org/2000/svg"
             role="img"
             aria-label="RiffanTV R Isotipo"
-            className="w-[88%] h-[88%] overflow-visible drop-shadow-[0_6px_18px_rgba(0,0,0,0.6)]"
+            className="w-[84%] h-[84%] overflow-visible drop-shadow-[0_6px_18px_rgba(0,0,0,0.6)]"
           >
             <defs>
-              <linearGradient id={bladeId} x1="136" y1="106" x2="376" y2="406" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#C084FC" />
-                <stop offset="42%" stopColor="#9146FF" />
-                <stop offset="100%" stopColor="#00F593" />
+              <linearGradient id={stemId} x1="165" y1="96" x2="145" y2="416" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#A855F7" />
+                <stop offset="48%" stopColor="#8B5CF6" />
+                <stop offset="100%" stopColor="#4C1D95" />
+              </linearGradient>
+              <linearGradient id={archId} x1="150" y1="96" x2="368" y2="278" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#FFFFFF" />
+                <stop offset="58%" stopColor="#F1EDFF" />
+                <stop offset="100%" stopColor="#C4B5FD" />
+              </linearGradient>
+              <linearGradient id={bladeId} x1="215" y1="248" x2="386" y2="416" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#7C3AED" />
+                <stop offset="45%" stopColor="#9146FF" />
+                <stop offset="100%" stopColor="#38BDF8" />
+              </linearGradient>
+              <linearGradient id={shadowLegId} x1="230" y1="246" x2="278" y2="318" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#04050A" stopOpacity="0.72" />
+                <stop offset="100%" stopColor="#04050A" stopOpacity="0" />
               </linearGradient>
               <linearGradient id={shimmerId} x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stopColor="rgba(255,255,255,0)" />
@@ -207,33 +223,28 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
               </linearGradient>
               <clipPath id={clipRId}>
                 <g id="rtv-clip-group">
-                  <path d="M 238 290 H 294 L 376 406 H 320 Z" />
-                  <path
-                    fillRule="evenodd"
-                    clipRule="evenodd"
-                    d="M 136 106 H 290 C 346 106 376 142 376 194 C 376 246 346 282 290 282 H 192 V 406 H 136 Z M 204 152 V 236 L 284 194 Z"
-                  />
+                  <path d="M 156 96 H 214 L 184 416 H 126 C 117 416 112 409 113 399 L 143 111 C 144 102 149 96 156 96 Z" />
+                  <path d="M 204 260 L 278 248 L 386 401 C 392 409 387 416 376 416 H 320 C 314 416 310 413 306 407 L 204 260 Z" />
+                  <path d="M 156 96 H 290 C 358 96 396 132 390 189 C 384 246 344 278 272 278 H 197 L 203 220 H 268 C 306 220 326 206 328 186 C 330 165 312 152 276 152 H 139 L 143 111 C 144 102 149 96 156 96 Z" />
                 </g>
               </clipPath>
             </defs>
 
             <g id="rtv-intro-r">
-              {/* Piece 1: Main Upper Body with Enlarged Centered Play Cutout (Unified Brand Gradient) */}
+              {/* Fold 1: Left Slanted Violet Pillar */}
               <motion.path
-                fillRule="evenodd"
-                clipRule="evenodd"
-                d="M 136 106 H 290 C 346 106 376 142 376 194 C 376 246 346 282 290 282 H 192 V 406 H 136 Z M 204 152 V 236 L 284 194 Z"
-                fill={`url(#${bladeId})`}
-                initial={{ x: -44, y: -34, opacity: 0, scale: 0.88 }}
-                animate={{ x: 0, y: 0, opacity: 1, scale: 1 }}
-                transition={{ type: 'spring', stiffness: 250, damping: 20, mass: 0.9 }}
+                d="M 156 96 H 214 L 184 416 H 126 C 117 416 112 409 113 399 L 143 111 C 144 102 149 96 156 96 Z"
+                fill={`url(#${stemId})`}
+                initial={{ y: 42, opacity: 0, scaleY: 0.72 }}
+                animate={{ y: 0, opacity: 1, scaleY: 1 }}
+                transition={{ type: 'spring', stiffness: 250, damping: 20, mass: 0.85 }}
               />
 
-              {/* Piece 2: Symmetrical Diagonal Lower Leg (Matching Unified Brand Gradient) */}
+              {/* Fold 2: Electric Violet -> Cyan Dynamic Diagonal Leg */}
               <motion.path
-                d="M 238 290 H 294 L 376 406 H 320 Z"
+                d="M 204 260 L 278 248 L 386 401 C 392 409 387 416 376 416 H 320 C 314 416 310 413 306 407 L 204 260 Z"
                 fill={`url(#${bladeId})`}
-                initial={{ x: 48, y: 44, opacity: 0, scale: 0.82 }}
+                initial={{ x: 40, y: 36, opacity: 0, scale: 0.82 }}
                 animate={{ x: 0, y: 0, opacity: 1, scale: 1 }}
                 transition={{
                   type: 'spring',
@@ -241,6 +252,30 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
                   damping: 19,
                   mass: 0.85,
                   delay: 0.14,
+                }}
+              />
+
+              {/* Cast Shadow Under Folded Arch */}
+              <motion.path
+                d="M 204 260 L 278 248 L 315 300 L 236 306 Z"
+                fill={`url(#${shadowLegId})`}
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2, duration: 0.25 }}
+              />
+
+              {/* Fold 3: Front Platinum Silk Upper Bow */}
+              <motion.path
+                d="M 156 96 H 290 C 358 96 396 132 390 189 C 384 246 344 278 272 278 H 197 L 203 220 H 268 C 306 220 326 206 328 186 C 330 165 312 152 276 152 H 139 L 143 111 C 144 102 149 96 156 96 Z"
+                fill={`url(#${archId})`}
+                initial={{ x: -34, y: -28, opacity: 0, scale: 0.88 }}
+                animate={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 245,
+                  damping: 20,
+                  mass: 0.9,
+                  delay: 0.08,
                 }}
               />
             </g>
@@ -293,8 +328,8 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
                   scale: 1,
                   textShadow: [
                     '0 0 0px rgba(145,70,255,0)',
-                    '0 0 28px rgba(167,139,250,0.95), 0 0 54px rgba(145,70,255,0.75)',
-                    '0 0 14px rgba(167,139,250,0.55)',
+                    '0 0 28px rgba(167,139,250,0.9), 0 0 54px rgba(56,189,248,0.65)',
+                    '0 0 14px rgba(145,70,255,0.45)',
                   ],
                 }}
                 transition={{
@@ -304,7 +339,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
                   scale: { type: 'spring', stiffness: 260, damping: 22, delay: 0.44 + (WORD_LEFT.length + idx) * 0.045 },
                   textShadow: { delay: 0.92, duration: 0.95, ease: 'easeInOut' },
                 }}
-                className="inline-block text-[#A78BFA] will-change-transform"
+                className="inline-block bg-gradient-to-r from-[#C084FC] via-[#9146FF] to-[#38BDF8] bg-clip-text text-transparent will-change-transform"
               >
                 {char}
               </motion.span>

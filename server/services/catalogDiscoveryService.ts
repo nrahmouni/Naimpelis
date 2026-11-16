@@ -345,9 +345,9 @@ export async function getEditorialCollections(lang = 'es'): Promise<EditorialCol
       titleEs: 'Tendencias Hoy · Top 10 Global',
       titleCa: 'Tendències Avui · Top 10 Global',
       titleEn: 'Trending Today · Global Top 10',
-      subtitleEs: 'Lo más proyectado ahora en salas NAIM CINE',
-      subtitleCa: 'El més projectat ara a les sales NAIM CINE',
-      subtitleEn: 'Most watched right now in NAIM CINE rooms',
+      subtitleEs: 'Lo más proyectado ahora en salas RiffanTV',
+      subtitleCa: 'El més projectat ara a les sales RiffanTV',
+      subtitleEn: 'Most watched right now in RiffanTV rooms',
       mediaType: 'movie',
       items: (trendingMovies?.results || [])
         .filter((r) => r.poster_path)

@@ -4,9 +4,11 @@ import {
   ArrowLeft,
   Bot,
   Crown,
+  Dices,
   Loader2,
   Mic,
   MicOff,
+  Palette,
   PhoneCall,
   PhoneOff,
   Users,
@@ -915,9 +917,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('pool')}
-          className="group relative rounded-3xl p-3.5 sm:p-4 nc-tabletop-slate border border-emerald-400/25 hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden"
+          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#131726] to-[#0B0D14] border border-emerald-400/25 hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
         >
-          <div className="flex items-center justify-between gap-2">
+          <span className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full bg-emerald-500/15 blur-2xl opacity-60 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#064E3B] via-[#0F766E] to-[#111827] border border-emerald-300/30 flex items-center justify-center shadow-md shrink-0">
               <span className="w-5.5 h-5.5 rounded-full bg-zinc-950 border border-white/25 flex items-center justify-center">
                 <span className="w-3 h-3 rounded-full bg-white text-[9px] font-black text-zinc-950 flex items-center justify-center leading-none">
@@ -927,7 +930,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
             <span className="text-[11px] font-mono text-emerald-300">8-BALL</span>
           </div>
-          <div className="min-w-0 space-y-0.5">
+          <div className="relative z-10 min-w-0 space-y-0.5">
             <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug">
               {pickLang(lang, { es: 'Billar Bola 8', ca: 'Billar Bola 8', en: '8-Ball Pool' })}
             </h3>
@@ -945,9 +948,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('parchis')}
-          className="group relative rounded-3xl p-3.5 sm:p-4 nc-tabletop-slate border border-white/[0.11] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden"
+          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#131726] to-[#0B0D14] border border-white/[0.09] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
         >
-          <div className="flex items-center justify-between gap-2">
+          <span className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full bg-[#9146FF]/15 blur-2xl opacity-50 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="flex items-center -space-x-1.5">
               {(['red', 'blue', 'yellow', 'green'] as PartyColor[]).map((col) => (
                 <span
@@ -959,9 +963,11 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 />
               ))}
             </div>
-            <span className="text-lg leading-none" aria-hidden="true">🎲</span>
+            <span className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/[0.1] flex items-center justify-center text-[#BF94FF] shrink-0" aria-hidden="true">
+              <Dices className="w-4 h-4" />
+            </span>
           </div>
-          <div className="min-w-0 space-y-0.5">
+          <div className="relative z-10 min-w-0 space-y-0.5">
             <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug">
               {pickLang(lang, { es: 'Parchís', ca: 'Parxís', en: 'Parchís' })}
             </h3>
@@ -975,9 +981,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('uno')}
-          className="group relative rounded-3xl p-3.5 sm:p-4 nc-tabletop-slate border border-white/[0.11] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden"
+          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#131726] to-[#0B0D14] border border-white/[0.09] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
         >
-          <div className="flex items-center justify-between gap-2">
+          <span className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full bg-rose-500/15 blur-2xl opacity-50 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="flex items-center -space-x-2">
               <img
                 src={getUnoCardSvgSrc('red', '7')}
@@ -992,9 +999,9 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 className="w-6.5 h-8.5 object-contain rotate-8 drop-shadow-md pointer-events-none"
               />
             </div>
-            <span className="text-xs font-black tracking-tight text-zinc-300">108</span>
+            <span className="text-xs font-black tracking-tight text-zinc-300 font-mono">108</span>
           </div>
-          <div className="min-w-0 space-y-0.5">
+          <div className="relative z-10 min-w-0 space-y-0.5">
             <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug">
               UNO
             </h3>
@@ -1008,17 +1015,20 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('pinturillo')}
-          className="group relative rounded-3xl p-3.5 sm:p-4 nc-tabletop-slate border border-white/[0.11] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden"
+          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#131726] to-[#0B0D14] border border-white/[0.09] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
         >
-          <div className="flex items-center justify-between gap-2">
+          <span className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full bg-sky-500/15 blur-2xl opacity-50 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="flex items-center gap-1.5">
               <span className="w-4 h-4 rounded-full bg-rose-500 border border-white/60" />
               <span className="w-4 h-4 rounded-full bg-[#9146FF] border border-white/60" />
               <span className="w-4 h-4 rounded-full bg-sky-500 border border-white/60" />
             </div>
-            <span className="text-lg leading-none" aria-hidden="true">🎨</span>
+            <span className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/[0.1] flex items-center justify-center text-sky-400 shrink-0" aria-hidden="true">
+              <Palette className="w-4 h-4" />
+            </span>
           </div>
-          <div className="min-w-0 space-y-0.5">
+          <div className="relative z-10 min-w-0 space-y-0.5">
             <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug">
               Pinturillo
             </h3>
@@ -1032,9 +1042,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('chess')}
-          className="group relative rounded-3xl p-3.5 sm:p-4 nc-tabletop-slate border border-white/[0.11] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden"
+          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#131726] to-[#0B0D14] border border-white/[0.09] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
         >
-          <div className="flex items-center justify-between gap-2">
+          <span className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full bg-slate-400/10 blur-2xl opacity-50 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#6c7488] to-[#2a2f3d] border border-white/15 flex items-center justify-center shadow-inner">
               <svg viewBox="0 0 45 45" className="w-6 h-6" aria-hidden="true">
                 <path
@@ -1060,7 +1071,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
             <span className="text-[11px] font-mono text-zinc-400">FIDE</span>
           </div>
-          <div className="min-w-0 space-y-0.5">
+          <div className="relative z-10 min-w-0 space-y-0.5">
             <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug">
               {pickLang(lang, { es: 'Ajedrez', ca: 'Escacs', en: 'Chess' })}
             </h3>
@@ -1074,9 +1085,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('checkers')}
-          className="group relative rounded-3xl p-3.5 sm:p-4 nc-tabletop-slate border border-white/[0.11] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden"
+          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#131726] to-[#0B0D14] border border-white/[0.09] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
         >
-          <div className="flex items-center justify-between gap-2">
+          <span className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full bg-rose-500/15 blur-2xl opacity-50 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="flex items-center -space-x-2">
               <div className="w-7 h-7 rounded-full bg-gradient-to-b from-[#FB7185] via-[#E11D48] to-[#881337] border border-rose-200/80 shadow-md flex items-center justify-center">
                 <Crown className="w-3.5 h-3.5 fill-white text-white" />
@@ -1085,7 +1097,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
             <span className="text-[11px] font-mono text-zinc-400">8×8</span>
           </div>
-          <div className="min-w-0 space-y-0.5">
+          <div className="relative z-10 min-w-0 space-y-0.5">
             <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug">
               {pickLang(lang, { es: 'Damas', ca: 'Dames', en: 'Checkers' })}
             </h3>
@@ -1099,9 +1111,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('connect4')}
-          className="group relative rounded-3xl p-3.5 sm:p-4 nc-tabletop-slate border border-white/[0.11] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden"
+          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#131726] to-[#0B0D14] border border-white/[0.09] hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
         >
-          <div className="flex items-center justify-between gap-2">
+          <span className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full bg-blue-500/15 blur-2xl opacity-50 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="w-11 h-8 rounded-xl bg-gradient-to-b from-[#2563EB] to-[#172554] border border-blue-300/35 p-1 grid grid-cols-3 grid-rows-2 gap-0.5 shrink-0 shadow-md">
               <span className="rounded-full bg-[#060912]" />
               <span className="rounded-full bg-[#9146FF]" />
@@ -1112,7 +1125,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
             <span className="text-[11px] font-mono text-zinc-400">7×6</span>
           </div>
-          <div className="min-w-0 space-y-0.5">
+          <div className="relative z-10 min-w-0 space-y-0.5">
             <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug">
               {pickLang(lang, { es: 'Conecta 4', ca: 'Connecta 4', en: 'Connect 4' })}
             </h3>
@@ -1126,9 +1139,10 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         <button
           type="button"
           onClick={() => openGameCard('chapas')}
-          className="group relative rounded-3xl p-3.5 sm:p-4 nc-tabletop-slate border border-emerald-400/25 hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden"
+          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#131726] to-[#0B0D14] border border-emerald-400/25 hover:border-[#9146FF]/75 text-left flex flex-col justify-between gap-3 min-h-[144px] sm:min-h-[164px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_10px_28px_rgba(0,0,0,0.45)]"
         >
-          <div className="flex items-center justify-between gap-2">
+          <span className="pointer-events-none absolute -top-8 -right-8 w-24 h-24 rounded-full bg-lime-500/15 blur-2xl opacity-50 group-hover:opacity-100 transition-opacity" />
+          <div className="relative z-10 flex items-center justify-between gap-2">
             <div className="w-11 h-8 rounded-xl bg-gradient-to-br from-[#3F7B21] via-[#2B5915] to-[#17330A] border border-lime-300/35 flex items-center justify-center shadow-md shrink-0 relative overflow-hidden">
               <svg viewBox="0 0 40 28" className="w-8 h-6" aria-hidden="true">
                 <line x1="20" y1="2" x2="20" y2="26" stroke="rgba(255,255,255,0.45)" strokeWidth="1.2" />
@@ -1141,7 +1155,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
             <span className="text-[11px] font-mono text-lime-300">2v2</span>
           </div>
-          <div className="min-w-0 space-y-0.5">
+          <div className="relative z-10 min-w-0 space-y-0.5">
             <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug">
               {pickLang(lang, { es: 'Fútbol Chapas', ca: 'Futbol Xapes', en: 'Soccer Caps' })}
             </h3>

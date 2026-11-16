@@ -87,7 +87,7 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
         ca: 'Fitxa de la pel·lícula i suggeriments',
         en: 'Movie details & suggestions',
       })}
-      className="rounded-2xl bg-[#111218]/95 border border-white/[0.08] overflow-hidden shadow-[0_14px_38px_rgba(0,0,0,0.5)]"
+      className="rounded-3xl bg-[#10121C]/95 border border-white/[0.09] overflow-hidden shadow-[0_18px_48px_rgba(0,0,0,0.65),inset_0_1px_0_rgba(255,255,255,0.06)]"
     >
       {/* Header */}
       <div className="px-3.5 py-2.5 flex items-center justify-between gap-2 border-b border-white/[0.06]">

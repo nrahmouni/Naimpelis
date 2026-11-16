@@ -45,6 +45,7 @@ import {
   PictureInPicture2,
 } from 'lucide-react';
 import {
+  type AppLanguage,
   ChatMessage,
   LanguageNoticePopup,
   SubtitleTrackItem,
@@ -80,6 +81,100 @@ import {
   setEmbedServerStatus,
   unwrapEmbedUrl,
 } from './player/embedWindowUtils';
+
+const KNOWN_HOST_LABELS: Array<[RegExp, string]> = [
+  [/vidfast/i, 'VidFast'],
+  [/vidrock/i, 'VidRock'],
+  [/vidsrc|vidsrccc/i, 'VidSrc'],
+  [/vidlink/i, 'VidLink'],
+  [/embed69/i, 'Embed69'],
+  [/vidhide|dhtpre|peymin/i, 'VidHide'],
+  [/voe\.sx|voe/i, 'VOE'],
+  [/streamwish|wish/i, 'StreamWish'],
+  [/filemoon/i, 'FileMoon'],
+  [/ok\.ru|okru/i, 'OK.ru'],
+  [/dood|d000d/i, 'Dood'],
+  [/mixdrop/i, 'MixDrop'],
+  [/mega\.nz/i, 'Mega'],
+];
+
+function extractDistinguishingTrackName(
+  track: { label?: string; sourceUrl?: string; resolvedStreamUrl?: string; resolverType?: string },
+  idx: number,
+  lang: AppLanguage
+): string {
+  if (track.resolverType === 'youtube') {
+    const cleaned = (track.label || '').replace(/\s*\([^)]*\)/g, '').trim();
+    if (cleaned) return cleaned;
+  }
+
+  const rawLabel = (track.label || '').trim();
+  const parts = rawLabel
+    .split('·')
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const genericFirst = /^(servidor\s*web|embed|web|stream|mirror|enlace|opci[oó]n|castellano|latino|english|vose|es|lat|en)$/i;
+  let candidate = '';
+  if (parts.length >= 2) {
+    // Pick the most descriptive part (usually provider/server)
+    candidate = genericFirst.test(parts[0]) ? parts.slice(1).join(' · ') : parts[0];
+  } else if (parts.length === 1 && !genericFirst.test(parts[0])) {
+    candidate = parts[0];
+  }
+
+  // Try matching provider token from label or unwrapped sourceUrl
+  const unwrapped = unwrapEmbedUrl(track.sourceUrl || track.resolvedStreamUrl || '');
+  for (const [rx, pretty] of KNOWN_HOST_LABELS) {
+    if (rx.test(candidate) || rx.test(rawLabel) || rx.test(unwrapped)) {
+      const langPrefix =
+        /\bVOSE\b/i.test(rawLabel)
+          ? 'VOSE '
+          : /\bLAT\b/i.test(rawLabel)
+          ? 'LAT '
+          : '';
+      candidate = `${langPrefix}${pretty}`.trim();
+      break;
+    }
+  }
+
+  if (!candidate || /^servidor\s*web$/i.test(candidate)) {
+    try {
+      const host = new URL(unwrapped).hostname.replace(/^www\./, '').split('.')[0];
+      if (host && host.length >= 2 && host !== 'localhost') {
+        candidate = host.charAt(0).toUpperCase() + host.slice(1, 12);
+      }
+    } catch {
+      // ignore invalid url
+    }
+  }
+
+  if (!candidate) {
+    const prefix = lang === 'ca' ? 'Servidor' : lang === 'en' ? 'Server' : 'Servidor';
+    candidate = `${prefix} ${idx + 1}`;
+  }
+
+  return candidate.length > 18 ? `${candidate.slice(0, 17)}…` : candidate;
+}
+
+function formatUniqueTrackChipLabels(
+  tracks: Array<{ label?: string; sourceUrl?: string; resolvedStreamUrl?: string; resolverType?: string }>,
+  lang: AppLanguage
+): string[] {
+  const raw = tracks.map((tr, idx) => extractDistinguishingTrackName(tr, idx, lang));
+  const totals = new Map<string, number>();
+  for (const name of raw) {
+    totals.set(name, (totals.get(name) || 0) + 1);
+  }
+  const seen = new Map<string, number>();
+  return raw.map((name) => {
+    const count = totals.get(name) || 1;
+    if (count <= 1) return name;
+    const nextIdx = (seen.get(name) || 0) + 1;
+    seen.set(name, nextIdx);
+    return `${name} ${nextIdx}`;
+  });
+}
 
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   videoState,
@@ -127,6 +222,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onSendReaction,
   floatingChatOpen = false,
   onToggleFloatingChat,
+  unreadChatCount = 0,
   compactVideoForMobileKeyboard = false,
   onOpenInCloudBrowser,
   voiceChat,
@@ -3828,27 +3924,31 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                         Cambiar servidor en {isMobileExternal ? 'pestaña' : 'ventana'}
                       </div>
                       <div className="flex flex-wrap items-center justify-center gap-1.5">
-                        {videoState.tracks.slice(0, 6).map((tr, idx) => {
-                          const isAct = idx === videoState.activeTrackIndex;
-                          const label = tr.label.split('·')[0].trim() || `Servidor ${idx + 1}`;
-                          return (
-                            <button
-                              key={tr.id || idx}
-                              type="button"
-                              onClick={() => {
-                                triggerHaptic('light');
-                                handleSelectExternalServer(idx);
-                              }}
-                              className={`min-h-7 px-2.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
-                                isAct
-                                  ? 'bg-[#9146FF] text-white'
-                                  : 'bg-white/[0.08] hover:bg-white/[0.16] text-zinc-200'
-                              }`}
-                            >
-                              {label}
-                            </button>
-                          );
-                        })}
+                        {(() => {
+                          const extTracks = videoState.tracks.slice(0, 6);
+                          const extLabels = formatUniqueTrackChipLabels(extTracks, lang);
+                          return extTracks.map((tr, idx) => {
+                            const isAct = idx === videoState.activeTrackIndex;
+                            const label = extLabels[idx] || `Servidor ${idx + 1}`;
+                            return (
+                              <button
+                                key={tr.id || idx}
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic('light');
+                                  handleSelectExternalServer(idx);
+                                }}
+                                className={`min-h-7 px-2.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
+                                  isAct
+                                    ? 'bg-[#9146FF] text-white'
+                                    : 'bg-white/[0.08] hover:bg-white/[0.16] text-zinc-200'
+                                }`}
+                              >
+                                {label}
+                              </button>
+                            );
+                          });
+                        })()}
                       </div>
                     </div>
                   )}
@@ -4009,8 +4109,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               />
 
               {!isMinimized && embedRescueDismissedUrl !== videoState.url && (
-                <div className="absolute top-3 right-3 z-30 flex items-center gap-1 pointer-events-none opacity-80 hover:opacity-100 transition-opacity">
-                  <div className="pointer-events-auto flex items-center gap-1 px-2 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/10 shadow-lg text-[10px] text-zinc-300">
+                <div className="absolute top-2.5 left-2.5 z-20 max-w-[calc(100%-9.5rem)] flex items-center pointer-events-none opacity-90 hover:opacity-100 transition-opacity">
+                  <div className="pointer-events-auto flex items-center gap-1 px-1.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/[0.12] shadow-lg text-[10px] text-zinc-200 overflow-x-auto no-scrollbar">
                     <button
                       type="button"
                       onClick={() => {
@@ -4020,7 +4120,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       className="min-h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
                     >
                       <Play className="w-3 h-3 fill-current" />
-                      <span>Reproducir en ventana</span>
+                      <span>
+                        {pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}
+                      </span>
                     </button>
 
                     {embedWatchdogPhase !== 'verified' && (
@@ -4031,29 +4133,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                           handleMarkInlineServerWorking();
                         }}
                         title="Confirmar que este servidor funciona integrado y detener cambio automático"
-                        className="min-h-7 px-2.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/35 text-emerald-200 font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
+                        className="min-h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/35 text-emerald-200 font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
                       >
                         <Check className="w-3 h-3" />
-                        <span>Funciona</span>
-                      </button>
-                    )}
-
-                    {videoState.tracks.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          const nextIdx =
-                            (videoState.activeTrackIndex + 1) % videoState.tracks.length;
-                          onSelectTrack(nextIdx, currentTime);
-                        }}
-                        className="min-h-7 px-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
-                      >
-                        {pickLang(lang, {
-                          es: 'Otro servidor',
-                          ca: 'Un altre servidor',
-                          en: 'Next server',
-                        })}
+                        <span>{pickLang(lang, { es: 'Funciona', ca: 'Funciona', en: 'Works' })}</span>
                       </button>
                     )}
 
@@ -4064,7 +4147,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                           triggerHaptic('medium');
                           onOpenInCloudBrowser(activeTrackUrl);
                         }}
-                        className="min-h-7 px-2.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
+                        className="min-h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
                       >
                         Cloud HD
                       </button>
@@ -4074,14 +4157,14 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       href={externalVidfastHref}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="min-h-7 px-2.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-100 font-semibold whitespace-nowrap inline-flex items-center gap-1 shrink-0 transition-colors"
+                      className="min-h-7 px-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-100 font-semibold whitespace-nowrap inline-flex items-center gap-1 shrink-0 transition-colors"
                     >
                       <ExternalLink className="w-3 h-3" />
                       <span>
                         {pickLang(lang, {
-                          es: 'Abrir fuera',
-                          ca: 'Obrir fora',
-                          en: 'Open external',
+                          es: 'Abrir',
+                          ca: 'Obrir',
+                          en: 'Open',
                         })}
                       </span>
                     </a>
@@ -4695,44 +4778,45 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         !compactVideoForMobileKeyboard &&
         videoState.mode !== 'idle' &&
         videoState.mode !== 'cloud' && (
-          <div className="bg-[#111116]/95 backdrop-blur-xl border-t border-white/[0.08] px-3 sm:px-4 py-2 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
-            {/* Left: Quick Language Pills (VOD), Multi-Server Fallback Switcher, OR Live Signal Pills */}
-            <div className="flex items-center gap-1.5 min-w-0 shrink-0">
+          <div className="bg-[#0B0C14]/96 backdrop-blur-2xl border-t border-white/[0.08] px-3 sm:px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            {/* Row 1 (Left on Desktop): Quick Language Pills (VOD), Unique Multi-Server Switcher, OR Live Signal Pills */}
+            <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
               {videoState.tracks.length > 1 &&
               (videoState.mode === 'embed' ||
                 (videoState.tracks || []).some(
                   (tr) => tr.resolverType === 'web_embed' || tr.resolverType === 'youtube'
                 )) ? (
-                <div className="flex items-center gap-1 bg-white/[0.045] p-1 rounded-2xl border border-white/[0.08]">
-                  {videoState.tracks.slice(0, 6).map((tr, idx) => {
-                    const active = idx === videoState.activeTrackIndex;
-                    const shortLabel =
-                      tr.resolverType === 'youtube'
-                        ? tr.label.replace(/\s*\([^)]*\)/g, '')
-                        : tr.label.split('·')[0].trim() || `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`;
-                    return (
-                      <button
-                        key={tr.id || idx}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          if (externalWinState === 'open') {
-                            handleSelectExternalServer(idx);
-                          } else {
-                            onSelectTrack(idx, currentTime);
-                          }
-                        }}
-                        title={tr.label}
-                        className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
-                          active
-                            ? 'bg-[#9146FF] text-white shadow-sm'
-                            : 'text-zinc-300 hover:bg-white/10'
-                        }`}
-                      >
-                        {shortLabel}
-                      </button>
-                    );
-                  })}
+                <div className="flex items-center gap-1 bg-[#121420] p-1 rounded-2xl border border-white/[0.08] shrink-0">
+                  {(() => {
+                    const visibleTracks = videoState.tracks.slice(0, 6);
+                    const uniqueLabels = formatUniqueTrackChipLabels(visibleTracks, lang);
+                    return visibleTracks.map((tr, idx) => {
+                      const active = idx === videoState.activeTrackIndex;
+                      const shortLabel = uniqueLabels[idx] || `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`;
+                      return (
+                        <button
+                          key={tr.id || idx}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            if (externalWinState === 'open') {
+                              handleSelectExternalServer(idx);
+                            } else {
+                              onSelectTrack(idx, currentTime);
+                            }
+                          }}
+                          title={tr.label}
+                          className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                            active
+                              ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                              : 'text-zinc-300 hover:bg-white/10'
+                          }`}
+                        >
+                          {shortLabel}
+                        </button>
+                      );
+                    });
+                  })()}
                   {videoState.mode === 'embed' && (
                     <button
                       type="button"
@@ -4748,7 +4832,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       className="min-h-[34px] px-2.5 rounded-xl text-xs font-bold bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] border border-[#9146FF]/45 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
                     >
                       <Play className="w-3 h-3 fill-current shrink-0" />
-                      <span>Reproducir en ventana</span>
+                      <span>{pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}</span>
                     </button>
                   )}
                   {videoState.mode === 'embed' && onOpenInCloudBrowser && (
@@ -4769,13 +4853,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       className="min-h-[34px] px-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
                     >
                       <Globe className="w-3.5 h-3.5 shrink-0" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Cloud Sin Anuncios',
-                          ca: 'Cloud Sense Anuncis',
-                          en: 'Ad-Free Cloud',
-                        })}
-                      </span>
+                      <span>Cloud HD</span>
                     </button>
                   )}
                 </div>
@@ -4784,7 +4862,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               (videoState.tracks || []).some((tr) =>
                 ['ES', 'LAT', 'VOSE', 'EN'].includes(String(tr.lang || '').toUpperCase())
               ) ? (
-                <div className="flex items-center gap-1 bg-[#26262C]/80 p-1 rounded-2xl border border-white/[0.08]">
+                <div className="flex items-center gap-1 bg-[#121420] p-1 rounded-2xl border border-white/[0.08] shrink-0">
                   {(
                     [
                       { code: 'ES', short: 'ES', title: 'Castellano' },
@@ -4808,7 +4886,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                           title={langBtn.title}
                           className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all ${
                             isCurrentLang
-                              ? 'bg-[#9146FF] text-white shadow-sm'
+                              ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
                               : 'text-zinc-200 hover:bg-white/10'
                           }`}
                         >
@@ -4818,7 +4896,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     })}
                 </div>
               ) : videoState.isLive && videoState.tracks.length > 1 ? (
-                <div className="flex items-center gap-1 bg-[#26262C]/80 p-1 rounded-2xl border border-white/[0.08]">
+                <div className="flex items-center gap-1 bg-[#121420] p-1 rounded-2xl border border-white/[0.08] shrink-0">
                   {videoState.tracks.slice(0, 5).map((tr, idx) => {
                     const active = idx === videoState.activeTrackIndex;
                     const hasZh = String(tr.lang || '').toUpperCase() === 'ZH' || /中文/.test(tr.label || '');
@@ -4831,9 +4909,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                           triggerHaptic('light');
                           onSelectTrack(idx, 0);
                         }}
-                        className={`min-h-10 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 ${
+                        className={`min-h-[36px] px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer active:scale-95 transition-all inline-flex items-center gap-1.5 ${
                           active
-                            ? 'bg-[#9146FF] text-white shadow-sm'
+                            ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
                             : 'text-zinc-300 hover:bg-white/10'
                         }`}
                       >
@@ -4870,7 +4948,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       className="min-h-[32px] px-2.5 rounded-xl text-xs font-bold bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] border border-[#9146FF]/45 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                     >
                       <Play className="w-3 h-3 fill-current shrink-0" />
-                      <span>Reproducir en ventana</span>
+                      <span>{pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}</span>
                     </button>
                   )}
                   {videoState.mode === 'embed' && onOpenInCloudBrowser && (
@@ -4883,21 +4961,36 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       className="min-h-[32px] px-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                     >
                       <Globe className="w-3.5 h-3.5 shrink-0" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Cloud Sin Anuncios',
-                          ca: 'Cloud Sense Anuncis',
-                          en: 'Ad-Free Cloud',
-                        })}
-                      </span>
+                      <span>Cloud HD</span>
                     </button>
                   )}
                 </div>
               )}
             </div>
 
-            {/* Right: Solo Mando (if TV connected) + Cast TV + Chat + Ajustes */}
-            <div className="flex items-center gap-2 shrink-0">
+            {/* Row 2 (Right on Desktop): Sala · X + Solo Mando + Cast TV + Voz + Ajustes */}
+            <div className="flex items-center justify-between sm:justify-end gap-1.5 shrink-0 overflow-x-auto no-scrollbar">
+              {onToggleFloatingChat && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onToggleFloatingChat();
+                  }}
+                  aria-pressed={floatingChatOpen}
+                  className={`relative min-h-[38px] px-3 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
+                    floatingChatOpen
+                      ? 'bg-[#9146FF] text-white border-[#BF94FF]/60 shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                      : 'bg-[#121420] hover:bg-white/[0.1] text-zinc-100 border-white/[0.1]'
+                  }`}
+                >
+                  <MessageSquare className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+                  <span className="tabular-nums">Sala · {Math.max(1, participantCount)}</span>
+                  {unreadChatCount > 0 && !floatingChatOpen && (
+                    <span className="w-2 h-2 rounded-full bg-[#EB0400] shrink-0" aria-hidden="true" />
+                  )}
+                </button>
+              )}
 
               {hasConnectedSmartTv && (
                 <button

@@ -422,9 +422,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   };
 
   return (
-    <aside className="w-full h-full flex flex-col bg-[#18181B] border-l border-white/[0.08] select-none overflow-hidden relative">
+    <aside className="w-full h-full flex flex-col bg-[#0B0D14] border-l border-white/[0.08] select-none overflow-hidden relative">
       {worldSalaMode ? (
-        <div className="border-b border-white/[0.08] shrink-0 bg-[#141418]/95 backdrop-blur-xl z-20">
+        <div className="border-b border-white/[0.08] shrink-0 bg-[#10121C]/95 backdrop-blur-xl z-20">
           <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 min-w-0">
@@ -513,7 +513,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           </div>
         </div>
       ) : (!hideInternalTabs || showMenusButton) && (
-        <div className="px-2.5 py-1.5 border-b border-white/[0.06] flex items-center justify-between gap-2 shrink-0 bg-[#18181B]/95 backdrop-blur-xl z-20">
+        <div className="px-2.5 py-1.5 border-b border-white/[0.06] flex items-center justify-between gap-2 shrink-0 bg-[#0D0F18]/95 backdrop-blur-xl z-20">
           <div className="flex items-center gap-1.5 min-w-0">
             {showMenusButton && onShowMenus ? (
               <button
@@ -888,7 +888,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 transition={{ duration: 0.16 }}
                 className="absolute inset-x-2 bottom-17 z-20 flex justify-center pointer-events-none"
               >
-                <div className="pointer-events-auto inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-[#141418]/95 backdrop-blur-2xl border border-white/[0.14] shadow-[0_12px_32px_rgba(0,0,0,0.82)] max-w-full overflow-x-auto no-scrollbar">
+                <div className="pointer-events-auto inline-flex items-center gap-0.5 px-2 py-1 rounded-full bg-[#10121C]/95 backdrop-blur-2xl border border-white/[0.14] shadow-[0_12px_32px_rgba(0,0,0,0.82)] max-w-full overflow-x-auto no-scrollbar">
                   {QUICK_REACTIONS.map((emoji) => (
                     <button
                       key={emoji}
@@ -912,7 +912,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   <button
                     type="button"
                     onClick={() => setShowFloatingReactions(false)}
-                    className="w-7 h-7 rounded-full hover:bg-white/15 text-[#ADADB8] hover:text-white flex items-center justify-center shrink-0 cursor-pointer ml-0.5 sticky right-0 bg-[#141418]/95"
+                    className="w-7 h-7 rounded-full hover:bg-white/15 text-[#ADADB8] hover:text-white flex items-center justify-center shrink-0 cursor-pointer ml-0.5 sticky right-0 bg-[#10121C]/95"
                     title={pickLang(lang, {
                       es: 'Ocultar barra de emojis',
                       ca: 'Amagar barra d’emojis',
@@ -933,7 +933,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
           {/* Typing indicator above input */}
           {typingUsers.filter((u) => u.userId !== currentUser.id).length > 0 && (
-            <div className="px-3.5 py-1 text-[11px] text-[#ADADB8] bg-[#18181B] border-t border-white/[0.06] truncate">
+            <div className="px-3.5 py-1 text-[11px] text-[#ADADB8] bg-[#0D0F18] border-t border-white/[0.06] truncate">
               {typingUsers
                 .filter((u) => u.userId !== currentUser.id)
                 .map((u) => u.userName)
@@ -991,7 +991,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {/* Chat Input Bar */}
           <form
             onSubmit={handleSend}
-            className="p-2.5 border-t border-white/[0.08] bg-[#18181B]/95 backdrop-blur-xl flex items-center gap-1.5 shrink-0 z-20 pb-[max(0.625rem,env(safe-area-inset-bottom))]"
+            className="p-2.5 border-t border-white/[0.08] bg-[#0D0F18]/95 backdrop-blur-xl flex items-center gap-1.5 shrink-0 z-20 pb-[max(0.625rem,env(safe-area-inset-bottom))]"
           >
             {!showFloatingReactions && (
               <IconButton

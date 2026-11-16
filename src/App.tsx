@@ -742,9 +742,12 @@ export function App() {
         (nextWorld === 'cine' ||
           nextWorld === 'futbol' ||
           nextWorld === 'tv' ||
-          nextWorld === 'juegos')
+          nextWorld === 'juegos' ||
+          nextWorld === 'sala')
       ) {
-        preloadWorld(nextWorld);
+        if (nextWorld !== 'sala') {
+          preloadWorld(nextWorld);
+        }
         playWorldPortalSound(nextWorld);
         setActivePortalTransition(nextWorld);
         const swapTimer = window.setTimeout(() => {
@@ -4696,8 +4699,7 @@ export function App() {
         )
       ));
 
-  const renderPartySidebar = useCallback(
-    () => (
+  const renderPartySidebar = () => (
       <React.Suspense fallback={null}>
         <PartySidebar
           roomId={roomId}
@@ -4782,61 +4784,7 @@ export function App() {
           voiceChat={voiceChat}
         />
       </React.Suspense>
-    ),
-    [
-      roomId,
-      currentUser,
-      hostId,
-      participants,
-      messages,
-      lang,
-      effectiveView,
-      toggleViewMode,
-      authUser,
-      authLoading,
-      handleGoogleSignIn,
-      handleGoogleSignOut,
-      hostOnlyControl,
-      handleToggleHostLock,
-      roomName,
-      handleRenameRoom,
-      roomHasPin,
-      currentHostPin,
-      handleSetRoomPin,
-      isCurrentRoomPermanent,
-      handleTogglePermanentRoom,
-      handleClaimTvCode,
-      tvClaimStatus,
-      videoState,
-      handleRemoteTogglePlay,
-      handleRemoteSeekDelta,
-      handleSendTvRemoteCommand,
-      handleSwitchThisDeviceToTvLobby,
-      activePoll,
-      roomQueue,
-      handlePlayQueueItem,
-      pinnedMessage,
-      typingUsers,
-      livePlaybackSec,
-      handleSyncPlayerAction,
-      handlePlayCustomUrl,
-      handleOpenCloudBrowser,
-      handleStartPollFromQueue,
-      handleVotePoll,
-      handleClosePoll,
-      openQueueTrigger,
-      savedFriends,
-      onlineUsers,
-      handleAddFriend,
-      handleSendDirectRoomInvite,
-      inviteSentFeedback,
-      handleUpdateProfile,
-      handleCreateFreshRoom,
-      handleSwitchActiveRoom,
-      handleLeaveRoom,
-      voiceChat,
-    ]
-  );
+    );
 
   // ============================================================================
   // RENDER 3: UNIFIED WORKSPACE (DESKTOP, ANDROID MOBILE APK & GOOGLE TV APK)
@@ -5098,7 +5046,7 @@ export function App() {
 
         {/* Minimal Entry Header (ONLY Logo + RiffanTV & Avatar with Notification Dot) */}
         {activeWorld === 'entry' && !isMobileChatWithKeyboard && !isAutoImmersiveLandscape && (
-          <header className="shrink-0 z-30 h-14 px-4 bg-[#0B0B0E]/90 backdrop-blur-xl border-b border-white/[0.06] flex items-center justify-between gap-3">
+          <header className="shrink-0 z-30 h-14 px-4 bg-[#07080C]/92 backdrop-blur-2xl border-b border-white/[0.07] shadow-[0_8px_32px_rgba(0,0,0,0.45)] flex items-center justify-between gap-3">
             <button
               type="button"
               onClick={() => {
@@ -5107,12 +5055,9 @@ export function App() {
                 mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
               }}
               aria-label="RiffanTV"
-              className="flex items-center gap-2.5 min-h-11 py-1 cursor-pointer active:scale-95 transition-transform"
+              className="flex items-center min-h-11 py-1 cursor-pointer active:scale-95 transition-transform group"
             >
-              <NaimBrandLogo size={32} />
-              <span className="font-display font-bold text-base tracking-[-0.015em] leading-none text-[#F4F5F8]">
-                Riffan<span className="text-[#A78BFA] font-extrabold">TV</span>
-              </span>
+              <NaimBrandLogo variant="full" size={32} />
             </button>
 
             <div className="flex items-center gap-2">
@@ -5322,9 +5267,11 @@ export function App() {
                       socketService.startCloudBrowser(targetUrl, profile.name);
                     }}
                     floatingChatOpen={isFloatingRoomOpen}
+                    unreadChatCount={unreadChatCount}
                     onToggleFloatingChat={() => {
-                      setIsFloatingRoomOpen(true);
-                      setUnreadChatCount(0);
+                      const next = !isFloatingRoomOpen;
+                      setIsFloatingRoomOpen(next);
+                      if (next) setUnreadChatCount(0);
                     }}
                     voiceChat={voiceChat}
                     compactVideoForMobileKeyboard={
@@ -5688,7 +5635,8 @@ export function App() {
                         world === 'cine' ||
                         world === 'futbol' ||
                         world === 'tv' ||
-                        world === 'juegos',
+                        world === 'juegos' ||
+                        world === 'sala',
                     })
                   }
                   onPreloadWorld={preloadWorld}
@@ -5734,11 +5682,11 @@ export function App() {
                     const mappedGame = (
                       gid === 'billar' ? 'pool' : gid
                     ) as RoomGameInviteType;
-                    enterWorld('juegos');
                     setForcedOpenGame({
                       gameType: mappedGame,
                       seq: Date.now(),
                     });
+                    enterWorld('juegos', { withPortal: true });
                   }}
                 />
               </div>
@@ -6049,7 +5997,12 @@ export function App() {
         {/* Floating Room Chat Bubble across all worlds except Sala */}
         <FloatingRoomBubble
           lang={lang}
-          visible={inRoom && activeWorld !== 'sala'}
+          visible={
+            inRoom &&
+            activeWorld !== 'sala' &&
+            (activeWorld !== 'entry' || isFloatingRoomOpen) &&
+            !(isPlayerActive && !isDockedMini && !isPlayerClosedLocally && !isFloatingRoomOpen)
+          }
           participantsCount={participants.length}
           voiceActive={voiceChat.isJoined}
           unreadCount={unreadChatCount}

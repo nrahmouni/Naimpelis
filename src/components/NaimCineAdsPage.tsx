@@ -119,7 +119,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
           : format === 'landscape'
           ? '16x9-keynote'
           : 'full-sheet';
-      link.download = `naimcine-ads-${suffix}-uhd.png`;
+      link.download = `riffantv-ads-${suffix}-uhd.png`;
       link.href = dataUrl;
       document.body.appendChild(link);
       link.click();
@@ -157,7 +157,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
 
             <div className="hidden lg:flex items-center gap-2 text-xs text-zinc-400 truncate">
               <span className="font-display font-bold text-white tracking-tight">
-                naimcine ads
+                RiffanTV Studio
               </span>
               <span className="text-zinc-600">·</span>
               <span>Carteles Oficiales & Exportación PNG Ultra-HD</span>

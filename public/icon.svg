@@ -1,44 +1,95 @@
 <svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
   <defs>
     <linearGradient id="rtv-bg-base" x1="60" y1="30" x2="452" y2="482" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#141726" />
+      <stop offset="0%" stop-color="#171A2B" />
       <stop offset="55%" stop-color="#07080C" />
       <stop offset="100%" stop-color="#020306" />
     </linearGradient>
-    <radialGradient id="rtv-glow-violet" cx="50%" cy="38%" r="56%">
-      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.35" />
-      <stop offset="52%" stop-color="#6366F1" stop-opacity="0.1" />
+    <radialGradient id="rtv-glow-violet" cx="46%" cy="30%" r="58%">
+      <stop offset="0%" stop-color="#8B5CF6" stop-opacity="0.42" />
+      <stop offset="52%" stop-color="#6366F1" stop-opacity="0.14" />
       <stop offset="100%" stop-color="#07080C" stop-opacity="0" />
     </radialGradient>
-    <radialGradient id="rtv-glow-cyan" cx="64%" cy="72%" r="42%">
-      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.2" />
+    <radialGradient id="rtv-glow-cyan" cx="72%" cy="76%" r="46%">
+      <stop offset="0%" stop-color="#38BDF8" stop-opacity="0.24" />
       <stop offset="100%" stop-color="#07080C" stop-opacity="0" />
     </radialGradient>
-    <linearGradient id="rtv-brand-grad" x1="130" y1="100" x2="390" y2="410" gradientUnits="userSpaceOnUse">
-      <stop offset="0%" stop-color="#C084FC" />
-      <stop offset="45%" stop-color="#8B5CF6" />
+
+    <!-- Fold 1: Left Vertical Pillar (Deep -> Electric Violet) -->
+    <linearGradient id="rtv-stem-grad" x1="165" y1="96" x2="145" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#A855F7" />
+      <stop offset="48%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#4C1D95" />
+    </linearGradient>
+
+    <!-- Fold 2: Dynamic Diagonal Kick Leg (Violet -> Cyan) -->
+    <linearGradient id="rtv-leg-grad" x1="215" y1="248" x2="386" y2="416" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#7C3AED" />
+      <stop offset="45%" stop-color="#9146FF" />
       <stop offset="100%" stop-color="#38BDF8" />
     </linearGradient>
+
+    <!-- Fold 3: Upper Folded Ribbon Arch (Bright Platinum Silk) -->
+    <linearGradient id="rtv-arch-grad" x1="150" y1="96" x2="368" y2="278" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="58%" stop-color="#F1EDFF" />
+      <stop offset="100%" stop-color="#C4B5FD" />
+    </linearGradient>
+
+    <!-- Fold Shadows for Real 3D Depth -->
+    <linearGradient id="rtv-shadow-leg" x1="230" y1="246" x2="278" y2="318" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#04050A" stop-opacity="0.58" />
+      <stop offset="100%" stop-color="#04050A" stop-opacity="0" />
+    </linearGradient>
+    <linearGradient id="rtv-shadow-stem" x1="172" y1="96" x2="165" y2="322" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#04050A" stop-opacity="0.58" />
+      <stop offset="28%" stop-color="#04050A" stop-opacity="0" />
+      <stop offset="72%" stop-color="#04050A" stop-opacity="0" />
+      <stop offset="100%" stop-color="#04050A" stop-opacity="0.52" />
+    </linearGradient>
+    <filter id="rtv-fold-drop" x="-10%" y="-10%" width="125%" height="125%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#03040A" flood-opacity="0.65" />
+    </filter>
   </defs>
 
   <!-- Cinema Obsidian Squircle Frame -->
-  <rect x="12" y="12" width="488" height="488" rx="112" fill="url(#rtv-bg-base)" stroke="rgba(255,255,255,0.14)" stroke-width="8" />
-  <rect x="12" y="12" width="488" height="488" rx="112" fill="url(#rtv-glow-violet)" />
-  <rect x="12" y="12" width="488" height="488" rx="112" fill="url(#rtv-glow-cyan)" />
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="url(#rtv-bg-base)" stroke="rgba(255,255,255,0.16)" stroke-width="8" />
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="url(#rtv-glow-violet)" />
+  <rect x="12" y="12" width="488" height="488" rx="116" fill="url(#rtv-glow-cyan)" />
 
   <!-- Top Rim Specular Glint -->
-  <path d="M 120 16 H 392" stroke="rgba(255,255,255,0.24)" stroke-width="4.5" stroke-linecap="round" />
+  <path d="M 148 16.5 H 364" stroke="rgba(255,255,255,0.22)" stroke-width="4" stroke-linecap="round" />
 
-  <!-- Brand New Aerodynamic R Emblem with Play Chevron -->
-  <g transform="translate(64, 48)">
+  <!-- 3D Folded Ribbon R Monogram -->
+  <g>
+    <!-- Fold 1: Left Slanted Pillar (Back Layer) -->
     <path
-      d="M 148 106 H 292 C 352 106 384 136 384 188 C 384 234 358 266 312 278 L 390 406 H 324 L 254 290 H 204 V 406 H 148 Z M 204 150 V 242 H 286 C 314 242 328 226 328 196 C 328 166 314 150 286 150 Z"
-      fill="url(#rtv-brand-grad)"
+      d="M 156 96 H 214 L 184 416 H 126 C 117 416 112 409 113 399 L 143 111 C 144 102 149 96 156 96 Z"
+      fill="url(#rtv-stem-grad)"
     />
-    <polygon
-      points="228,172 228,220 272,196"
-      fill="#FFFFFF"
-      opacity="0.92"
+    <!-- Subtle inner fold shadow where arch meets stem -->
+    <path
+      d="M 140 144 L 210 144 L 204 205 L 134 205 Z"
+      fill="url(#rtv-shadow-stem)"
+      opacity="0.42"
+    />
+
+    <!-- Fold 2: Dynamic Diagonal Kick Leg (Middle Layer) -->
+    <path
+      d="M 204 260 L 278 248 L 386 401 C 392 409 387 416 376 416 H 320 C 314 416 310 413 306 407 L 204 260 Z"
+      fill="url(#rtv-leg-grad)"
+    />
+    <!-- Cast shadow beneath upper arch onto diagonal leg -->
+    <path
+      d="M 204 260 L 278 248 L 315 300 L 236 306 Z"
+      fill="url(#rtv-shadow-leg)"
+    />
+
+    <!-- Fold 3: Upper Bow Ribbon (Front Sculpted Platinum Layer) -->
+    <path
+      filter="url(#rtv-fold-drop)"
+      d="M 156 96 H 290 C 358 96 396 132 390 189 C 384 246 344 278 272 278 H 197 L 203 220 H 268 C 306 220 326 206 328 186 C 330 165 312 152 276 152 H 138.8 L 143 111 C 144 102 149 96 156 96 Z"
+      fill="url(#rtv-arch-grad)"
     />
   </g>
 </svg>

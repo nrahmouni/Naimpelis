@@ -280,7 +280,7 @@ export function playNaimcineIntroSound(): boolean {
 
 export const playRiffanIntroSound = playNaimcineIntroSound;
 
-export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos') {
+export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala') {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -351,6 +351,22 @@ export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos'
         g.connect(master);
         osc.start(at);
         osc.stop(at + 0.36);
+      });
+    } else if (portal === 'sala') {
+      // Warm spatial watch-party major-7th chime (C4 -> E4 -> G4 -> B4)
+      [261.63, 329.63, 392.0, 493.88].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        const at = now + idx * 0.045;
+        osc.frequency.setValueAtTime(freq, at);
+        g.gain.setValueAtTime(0.001, at);
+        g.gain.linearRampToValueAtTime(0.09, at + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.42);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.44);
       });
     } else {
       // Snappy arcade triad lock-in (C5 -> E5 -> G5)
