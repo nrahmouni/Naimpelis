@@ -1,20 +1,28 @@
 import type { AppLanguage } from '../types';
 import { lookupZhTranslation } from './zhTranslations';
+import { lookupRifTranslation } from './rifTranslations';
 
 export interface LocalizedTextMap {
   es: string;
   ca: string;
   en: string;
   zh?: string;
+  rif?: string;
 }
 
 /**
- * Type-safe 4-language selector ensuring Spanish (es), Catalan (ca), English (en), and Chinese (zh)
+ * Type-safe language selector ensuring Spanish (es), Catalan (ca), English (en), Chinese (zh), and Riffian (rif)
  * never silently fall back to Spanish when another language is active.
  */
 export function pickLang(lang: AppLanguage, copy: LocalizedTextMap): string {
   if (lang === 'ca') return copy.ca;
   if (lang === 'en') return copy.en;
+  if (lang === 'rif') {
+    if (copy.rif) return copy.rif;
+    const translated = lookupRifTranslation(copy.en, copy.es);
+    if (translated) return translated;
+    return copy.en || copy.es;
+  }
   if (lang === 'zh') {
     if (copy.zh) return copy.zh;
     const translated = lookupZhTranslation(copy.en, copy.es);
@@ -425,5 +433,83 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     infoLabel: '详情',
     trailerPreviewMute: '静音预览',
     trailerPreviewUnmute: '开启预览声音',
+  },
+  rif: {
+    appTagline: 'RiffanTV · Ssinima, Imazraren, Tiliẓri srid, Takurt n uḍar d YouTube',
+    heroHeadline: 'Taxxamt aked imeddukal nni Ssinima, Imazraren, Tiliẓri d waddal.',
+    heroDescription: 'Isura d imazraren s Tarifit, Sbayniyul d Tenglizt 1080p, d tiliẓri srid d waddal.',
+    nicknameLabel: 'Isem-ik di taxxamt',
+    nicknamePlaceholder: 'Aru isem-ik (am Naim, Muḥand...)',
+    avatarLabel: 'Tugna',
+    accentLabel: 'Ini',
+    createRoomBtn: 'Sker taxxamt d dryel',
+    joinRoomLabel: 'Kcem s tangalt nɣ assaɣ',
+    roomCodePlaceholder: 'Tangalt nɣ assaɣ (am a8f2)',
+    joinBtn: 'Kcem',
+    recentRooms: 'Tixxamin timaynutin',
+    pillarExplore: 'Rzu',
+    pillarCatalog: 'Imazraren d Ssinima',
+    pillarAnime: 'Anime',
+    pillarLive: 'Tiliẓri srid',
+    pillarMyList: 'Tammart inu',
+    tabMovies: 'Ssinima',
+    tabVose: 'Tenglizt',
+    tabSeries: 'Imazraren',
+    tabTdt: 'Tiliẓri',
+    tabSports: 'Takurt n uḍar',
+    tabYoutube: 'YouTube',
+    tabDirect: 'Adras',
+    tabChat: 'Amsawal',
+    tabRoom: 'Taxxamt',
+    tabMyList: 'Tammart inu',
+    searchMoviesPlaceholder: 'Rzu isura (Tarifit, Sbayniyul d Tenglizt 1080p)...',
+    searchVoPlaceholder: 'Rzu isura s Tenglizt 1080p...',
+    searchSeriesPlaceholder: 'Rzu imazraren n tiliẓri...',
+    searchTdtPlaceholder: 'Rzu tiliẓri srid...',
+    searchSportsPlaceholder: 'Rzu takurt n uḍar, F1 d iɣmisen...',
+    searchYoutubePlaceholder: 'Rzu ividyuten n YouTube...',
+    unmuteAudio: 'Ssens imesli',
+    liveNow: 'SRID',
+    syncRoom: 'Mtawi',
+    invite: 'Sɣur',
+    smartTv: 'Smart TV',
+    leaveRoom: 'Ffeɣ',
+    chatPlaceholder: 'Aru awal i taxxamt...',
+    send: 'Azen',
+    participants: 'Imeddukal di taxxamt',
+    hostLabel: 'Anemhal',
+    modLabel: 'Amedyaz',
+    makeHost: 'Sker anemhal',
+    you: 'Kečči',
+    copyLink: 'Nɣel assaɣ',
+    copied: 'Yenɣel',
+    extractingTitle: 'Yettwasɣel uzeṭṭa…',
+    extractingSub: 'Amtawi aked taxxamt-ik',
+    standbyTitle: 'Taxxamt teǧǧa i tẓerri',
+    standbySub: ' Fren asaru, imazrar, tiliẓri srid nɣ YouTube ddaw-a.',
+    directTitle: 'Assaɣ n uzeṭṭa d usmel web',
+    directSub: 'Ssekcem assaɣ n YouTube nɣ web bach ad tẓerḍ di taxxamt-ik.',
+    playNativeBtn: 'Sseɣ di uskan',
+    openWebBtn: 'Ldi asmel web',
+    openCloudBtn: 'Ldi asmel web',
+    switchNativeHd: 'Beddel ɣer HD',
+    allSports: 'Makka',
+    soccer: 'Takurt n uḍar',
+    motor: 'F1 · Motor',
+    basketball: 'Basketball',
+    tennis: 'Tennis',
+    notificationsTitle: 'Iulɣuɣen',
+    surpriseMeTitle: 'Sleh-iyi',
+    legalTitle: 'Timslayin n tuɣalin',
+    qualityLabel: 'Tallunt n uvidyu',
+    qualityAuto: 'Automatique',
+    audioTrackLabel: 'Aẓawan n imesli',
+    audioTrackEmbedded: 'Imesli n uvidyu',
+    closeModal: 'Mdel tabwart',
+    watchNow: 'Ẓer tura',
+    addToQueue: 'Rnu ɣer adras',
+    infoLabel: 'Talɣut',
+    trailerPreviewMute: 'Ssens imesli n wammud',
+    trailerPreviewUnmute: 'Ssali imesli n wammud',
   },
 };

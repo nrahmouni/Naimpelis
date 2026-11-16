@@ -4,14 +4,17 @@ import {
   ArrowLeft,
   Bot,
   Check,
+  ChevronRight,
   Crown,
   Dices,
+  Gamepad2,
   Loader2,
   Mic,
   MicOff,
   Palette,
   PhoneCall,
   PhoneOff,
+  Play,
   Share2,
   Users,
 } from 'lucide-react';
@@ -210,6 +213,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
 }) => {
   const [selectedGame, setSelectedGame] = useState<UnifiedGameId | null>(null);
   const [hubMode, setHubMode] = useState<'offline' | 'online'>('online');
+  const [activeCategory, setActiveCategory] = useState<'all' | 'arcade' | 'party' | 'board'>('all');
   const [localBoardGame, setLocalBoardGame] = useState<BoardGameState | null>(null);
   const [localMoveErr, setLocalMoveErr] = useState<string | null>(null);
   const [inviteCopied, setInviteCopied] = useState(false);
@@ -967,7 +971,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   }
 
   // ==========================================================================
-  // SCROLLABLE TACTILE GAME HUB (8 LARGE CARDS, 2-COL MOBILE / 4-COL DESKTOP)
+  // REDESIGNED RIFFANTV ARCADE & TABLETOP LOUNGE
   // ==========================================================================
   const isLiveGame = (gt: UnifiedGameId) => {
     if (gt === 'pool') return Boolean(roomPoolGame);
@@ -977,284 +981,442 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
     return roomBoardGame?.gameType === gt;
   };
 
+  interface GameCatalogCard {
+    id: UnifiedGameId;
+    category: 'arcade' | 'party' | 'board';
+    title: string;
+    meta: string;
+    supportsOffline: boolean;
+    accentBorder: string;
+    stageBg: string;
+    renderStage: () => React.ReactNode;
+  }
+
+  const gameCatalog: GameCatalogCard[] = [
+    {
+      id: 'pool',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Billar Bola 8', ca: 'Billar Bola 8', en: '8-Ball Pool' }),
+      meta: pickLang(lang, { es: '1v1 · Física pro · IA', ca: '1v1 · Física pro · IA', en: '1v1 · Pro physics · AI' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-emerald-400/60',
+      stageBg: 'from-[#0B3B2E] via-[#082920] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+          <div className="absolute inset-2 rounded-xl border-2 border-[#6B3F22]/70 bg-[#0D4A3A] shadow-inner">
+            <span className="absolute top-1 left-1 w-2.5 h-2.5 rounded-full bg-black/90" />
+            <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-black/90" />
+            <span className="absolute bottom-1 left-1 w-2.5 h-2.5 rounded-full bg-black/90" />
+            <span className="absolute bottom-1 right-1 w-2.5 h-2.5 rounded-full bg-black/90" />
+          </div>
+          <div className="relative z-10 flex items-center gap-2.5">
+            <span className="w-6 h-6 rounded-full bg-gradient-to-br from-white to-zinc-300 shadow-[0_4px_12px_rgba(0,0,0,0.6)]" />
+            <span className="w-8 h-8 rounded-full bg-gradient-to-br from-zinc-700 via-zinc-950 to-black border border-white/20 flex items-center justify-center shadow-[0_6px_16px_rgba(0,0,0,0.75)]">
+              <span className="w-4 h-4 rounded-full bg-white text-[10px] font-black text-zinc-950 flex items-center justify-center leading-none">
+                8
+              </span>
+            </span>
+            <span className="w-6 h-6 rounded-full bg-gradient-to-br from-amber-400 to-orange-600 border border-white/30 shadow-[0_4px_12px_rgba(0,0,0,0.6)]" />
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'chapas',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Fútbol Chapas', ca: 'Futbol Xapes', en: 'Soccer Caps' }),
+      meta: pickLang(lang, { es: 'Estadio · 1v1 / 2v2 · IA', ca: 'Estadi · 1v1 / 2v2 · IA', en: 'Stadium · 1v1 / 2v2 · AI' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-lime-400/60',
+      stageBg: 'from-[#1B4214] via-[#132E10] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+          <svg viewBox="0 0 180 90" className="w-full h-full" aria-hidden="true">
+            <rect x="10" y="10" width="160" height="70" rx="10" fill="#1F5118" stroke="rgba(255,255,255,0.28)" strokeWidth="1.5" />
+            <line x1="90" y1="10" x2="90" y2="80" stroke="rgba(255,255,255,0.28)" strokeWidth="1.4" />
+            <circle cx="90" cy="45" r="15" fill="none" stroke="rgba(255,255,255,0.28)" strokeWidth="1.4" />
+            <circle cx="56" cy="45" r="11" fill="#E2E8F0" stroke="#0F172A" strokeWidth="1.5" />
+            <circle cx="56" cy="45" r="7.5" fill="#38BDF8" />
+            <circle cx="124" cy="45" r="11" fill="#E2E8F0" stroke="#0F172A" strokeWidth="1.5" />
+            <circle cx="124" cy="45" r="7.5" fill="#9146FF" />
+            <circle cx="90" cy="45" r="5" fill="#FFFFFF" stroke="#18181B" strokeWidth="1" />
+          </svg>
+        </div>
+      ),
+    },
+    {
+      id: 'uno',
+      category: 'party',
+      title: 'UNO',
+      meta: pickLang(lang, { es: '2–4 jugadores · 108 cartas', ca: '2–4 jugadors · 108 cartes', en: '2–4 players · 108 cards' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-rose-400/60',
+      stageBg: 'from-[#2A101B] via-[#1B0D17] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+          <div className="flex items-center -space-x-3 pt-1">
+            <img
+              src={getUnoCardSvgSrc('red', '7')}
+              alt=""
+              aria-hidden="true"
+              className="w-11 h-16 object-contain -rotate-12 drop-shadow-[0_8px_14px_rgba(0,0,0,0.65)] pointer-events-none"
+            />
+            <img
+              src={getUnoCardSvgSrc('wild', 'wild4')}
+              alt=""
+              aria-hidden="true"
+              className="w-12 h-17 object-contain z-10 drop-shadow-[0_10px_18px_rgba(0,0,0,0.75)] pointer-events-none"
+            />
+            <img
+              src={getUnoCardSvgSrc('blue', 'reverse')}
+              alt=""
+              aria-hidden="true"
+              className="w-11 h-16 object-contain rotate-12 drop-shadow-[0_8px_14px_rgba(0,0,0,0.65)] pointer-events-none"
+            />
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'parchis',
+      category: 'party',
+      title: pickLang(lang, { es: 'Parchís', ca: 'Parxís', en: 'Parchís' }),
+      meta: pickLang(lang, { es: 'Hasta 4 jugadores · Bots', ca: 'Fins a 4 jugadors · Bots', en: 'Up to 4 players · Bots' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-[#9146FF]/70',
+      stageBg: 'from-[#1F1638] via-[#141326] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center gap-3 overflow-hidden">
+          <div className="grid grid-cols-2 gap-1 p-1.5 rounded-xl bg-black/45 border border-white/10 shadow-md">
+            {(['red', 'blue', 'yellow', 'green'] as PartyColor[]).map((col) => (
+              <span
+                key={col}
+                className="w-5 h-5 rounded-md flex items-center justify-center"
+                style={{ backgroundColor: `${PARTY_COLOR_HEX[col].hex}30` }}
+              >
+                <span
+                  className="w-3 h-3 rounded-full border border-white/80 shadow-sm"
+                  style={{ backgroundColor: PARTY_COLOR_HEX[col].hex }}
+                />
+              </span>
+            ))}
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-white/[0.08] border border-white/15 flex items-center justify-center text-[#D8B4FE] shadow-md rotate-6">
+            <Dices className="w-5 h-5" />
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'pinturillo',
+      category: 'party',
+      title: 'Pinturillo',
+      meta: pickLang(lang, { es: 'Dibuja y adivina · 2–6 jug.', ca: 'Dibuixa i endevina · 2–6', en: 'Draw & guess · 2–6 pl.' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-sky-400/60',
+      stageBg: 'from-[#102235] via-[#0F1726] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden px-4">
+          <svg viewBox="0 0 160 72" className="w-full h-full" aria-hidden="true">
+            <path
+              d="M20 48 C 44 12, 72 60, 102 24 S 134 46, 146 28"
+              fill="none"
+              stroke="url(#pintBrush)"
+              strokeWidth="5"
+              strokeLinecap="round"
+            />
+            <defs>
+              <linearGradient id="pintBrush" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor="#F43F5E" />
+                <stop offset="50%" stopColor="#9146FF" />
+                <stop offset="100%" stopColor="#38BDF8" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <span className="absolute right-3 bottom-2.5 w-8 h-8 rounded-xl bg-sky-500/20 border border-sky-400/35 flex items-center justify-center text-sky-300">
+            <Palette className="w-4 h-4" />
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: 'chess',
+      category: 'board',
+      title: pickLang(lang, { es: 'Ajedrez', ca: 'Escacs', en: 'Chess' }),
+      meta: pickLang(lang, { es: 'FIDE · 1v1 y contra IA', ca: 'FIDE · 1v1 i contra IA', en: 'FIDE · 1v1 & vs AI' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-amber-300/55',
+      stageBg: 'from-[#221D19] via-[#17161E] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+          <div className="grid grid-cols-4 grid-rows-2 w-28 h-14 rounded-lg overflow-hidden border border-white/15 opacity-75">
+            {Array.from({ length: 8 }).map((_, idx) => {
+              const light = (Math.floor(idx / 4) + (idx % 4)) % 2 === 0;
+              return (
+                <span
+                  key={idx}
+                  className={light ? 'bg-[#E5D5BA]' : 'bg-[#6F533D]'}
+                />
+              );
+            })}
+          </div>
+          <svg viewBox="0 0 45 45" className="absolute w-11 h-11 drop-shadow-[0_6px_12px_rgba(0,0,0,0.8)]" aria-hidden="true">
+            <path d="M22.5 11.63V6M20 8h5" stroke="#1E1813" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+            <path d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5" fill="#FFFDF7" stroke="#1E1813" strokeWidth="1.6" />
+            <path d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-3.5-7.5-13-10.5-16-4-3 6 5 10 5 10V37z" fill="#FFFDF7" stroke="#1E1813" strokeWidth="1.6" />
+          </svg>
+        </div>
+      ),
+    },
+    {
+      id: 'checkers',
+      category: 'board',
+      title: pickLang(lang, { es: 'Damas', ca: 'Dames', en: 'Checkers' }),
+      meta: pickLang(lang, { es: '8×8 · Captura múltiple · IA', ca: '8×8 · Captura múltiple · IA', en: '8×8 · Multi-jump · AI' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-rose-400/60',
+      stageBg: 'from-[#28131D] via-[#191119] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center gap-2 overflow-hidden">
+          <div className="w-10 h-10 rounded-full bg-gradient-to-b from-[#FB7185] via-[#E11D48] to-[#881337] border-2 border-rose-200/80 shadow-[0_8px_18px_rgba(225,29,72,0.4)] flex items-center justify-center">
+            <Crown className="w-4.5 h-4.5 fill-white text-white" />
+          </div>
+          <div className="w-10 h-10 rounded-full bg-gradient-to-b from-[#FFFDF7] to-[#C8B99B] border-2 border-white/90 shadow-[0_8px_18px_rgba(0,0,0,0.65)]" />
+        </div>
+      ),
+    },
+    {
+      id: 'connect4',
+      category: 'board',
+      title: pickLang(lang, { es: 'Conecta 4', ca: 'Connecta 4', en: 'Connect 4' }),
+      meta: pickLang(lang, { es: '7×6 · 1v1 y contra IA', ca: '7×6 · 1v1 i contra IA', en: '7×6 · 1v1 & vs AI' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-blue-400/60',
+      stageBg: 'from-[#111D3B] via-[#101528] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+          <div className="w-24 h-16 rounded-xl bg-gradient-to-b from-[#2563EB] to-[#172554] border border-blue-300/35 p-1.5 grid grid-cols-4 grid-rows-3 gap-1 shadow-[0_10px_22px_rgba(37,99,235,0.3)]">
+            {[
+              0, 0, 1, 0,
+              2, 1, 2, 0,
+              2, 2, 1, 1,
+            ].map((cell, i) => (
+              <span
+                key={i}
+                className={`rounded-full ${
+                  cell === 1
+                    ? 'bg-[#9146FF] shadow-inner'
+                    : cell === 2
+                    ? 'bg-rose-500 shadow-inner'
+                    : 'bg-[#070B17]'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
+      ),
+    },
+  ];
+
+  const activeLiveGame = gameCatalog.find((g) => isLiveGame(g.id)) || null;
+  const featuredGame = activeLiveGame || gameCatalog[0];
+  const filteredGames = gameCatalog.filter(
+    (g) => activeCategory === 'all' || g.category === activeCategory
+  );
+
   return (
-    <div className="w-full max-w-5xl mx-auto flex-1 min-h-0 overflow-y-auto custom-scrollbar smooth-scroll-area px-1 py-1">
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pb-10">
-        {/* 1. BILLAR BOLA 8 */}
+    <div className="w-full max-w-5xl mx-auto flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar smooth-scroll-area px-2 sm:px-3 py-2 space-y-4">
+      {/* 1. COMPACT ARCADE HEADER & MODE SWITCHER */}
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <Gamepad2 className="w-5 h-5 text-[#BF94FF] shrink-0" />
+            <h2 className="font-display font-extrabold text-lg sm:text-xl text-white tracking-tight truncate">
+              {pickLang(lang, { es: 'Salón de Juegos', ca: 'Saló de Jocs', en: 'Games Lounge' })}
+            </h2>
+          </div>
+          <p className="text-xs text-zinc-400 mt-0.5">
+            {hubMode === 'online'
+              ? pickLang(lang, {
+                  es: `Sala en directo · ${participants.length} conectado${participants.length === 1 ? '' : 's'}`,
+                  ca: `Sala en directe · ${participants.length} connectat${participants.length === 1 ? '' : 's'}`,
+                  en: `Live room · ${participants.length} connected`,
+                })
+              : pickLang(lang, {
+                  es: 'Modo entrenamiento offline contra IA',
+                  ca: 'Mode entrenament offline contra IA',
+                  en: 'Offline practice mode vs AI',
+                })}
+          </p>
+        </div>
+
+        {/* Clean Online vs Solo Mode Toggle */}
+        <div className="flex items-center p-1 rounded-2xl bg-white/[0.04] border border-white/[0.08]">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setHubMode('online');
+            }}
+            className={`min-h-9 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+              hubMode === 'online'
+                ? 'bg-[#9146FF] text-white shadow-sm'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>{pickLang(lang, { es: 'Online', ca: 'Online', en: 'Online' })}</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setHubMode('offline');
+            }}
+            className={`min-h-9 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all ${
+              hubMode === 'offline'
+                ? 'bg-[#9146FF] text-white shadow-sm'
+                : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5" />
+            <span>{pickLang(lang, { es: 'Contra IA', ca: 'Contra IA', en: 'Vs AI' })}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 2. CATEGORY TABS */}
+      <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5 pr-6 shrink-0">
+        {(
+          [
+            { id: 'all', label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
+            { id: 'arcade', label: pickLang(lang, { es: 'Arcade', ca: 'Arcade', en: 'Arcade' }) },
+            { id: 'party', label: pickLang(lang, { es: 'Cartas & Party', ca: 'Cartes & Party', en: 'Cards & Party' }) },
+            { id: 'board', label: pickLang(lang, { es: 'Mesa Clásica', ca: 'Taula Clàssica', en: 'Classic Board' }) },
+          ] as const
+        ).map((tab) => {
+          const active = activeCategory === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                setActiveCategory(tab.id);
+              }}
+              className={`min-h-9 px-3.5 rounded-xl text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-all border ${
+                active
+                  ? 'bg-white text-zinc-950 border-white shadow-sm'
+                  : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 border-white/[0.08]'
+              }`}
+            >
+              {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 3. FEATURED SPOTLIGHT (ACTIVE LIVE MATCH OR 8-BALL SHOWCASE) */}
+      {activeCategory === 'all' && (
         <div
           role="button"
           tabIndex={0}
-          onClick={() => openGameCard('pool')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameCard('pool'); } }}
-          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#132024] via-[#10121C] to-[#080A10] nc-specular-surface border border-emerald-400/25 hover:border-[#9146FF] text-left flex flex-col justify-between gap-3 min-h-[150px] sm:min-h-[168px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.5)] hover:shadow-[0_14px_34px_rgba(145,70,255,0.22)]"
+          onClick={() => openGameCard(featuredGame.id)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+              e.preventDefault();
+              openGameCard(featuredGame.id);
+            }
+          }}
+          className={`group relative rounded-3xl overflow-hidden bg-gradient-to-br ${featuredGame.stageBg} border ${
+            activeLiveGame ? 'border-[#00F593]/50' : 'border-white/[0.12]'
+          } hover:border-[#9146FF] p-4 sm:p-5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4 cursor-pointer active:scale-[0.99] transition-all shadow-[0_18px_46px_rgba(0,0,0,0.55)]`}
         >
-          <span className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-emerald-500/18 blur-2xl opacity-65 group-hover:opacity-100 transition-opacity" />
-          <div className="relative z-10 flex items-center justify-between gap-2">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#065F46] via-[#0F766E] to-[#111827] border border-emerald-300/35 flex items-center justify-center shadow-[0_6px_16px_rgba(16,185,129,0.25)] group-hover:scale-105 transition-transform shrink-0">
-              <span className="w-6 h-6 rounded-full bg-zinc-950 border border-white/25 flex items-center justify-center shadow-inner">
-                <span className="w-3.5 h-3.5 rounded-full bg-white text-[9px] font-black text-zinc-950 flex items-center justify-center leading-none">
-                  8
+          <div className="flex-1 min-w-0 space-y-2.5">
+            <div className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-wider">
+              <span className={activeLiveGame ? 'text-[#00F593]' : 'text-[#BF94FF]'}>
+                {activeLiveGame
+                  ? pickLang(lang, { es: 'PARTIDA EN CURSO EN SALA', ca: 'PARTIDA EN CURS A LA SALA', en: 'ACTIVE ROOM MATCH' })
+                  : pickLang(lang, { es: 'DESTACADO HOY', ca: 'DESTACAT AVUI', en: 'FEATURED TODAY' })}
+              </span>
+            </div>
+
+            <div>
+              <h3 className="font-display font-black text-xl sm:text-2xl text-white tracking-tight leading-tight">
+                {featuredGame.title}
+              </h3>
+              <p className="text-xs sm:text-sm text-zinc-300 mt-1">{featuredGame.meta}</p>
+            </div>
+
+            <div className="flex items-center gap-2 pt-1">
+              <span className="min-h-10 px-4 rounded-xl bg-[#9146FF] group-hover:bg-[#7C2AE8] text-white text-xs font-bold inline-flex items-center gap-1.5 shadow-[0_8px_20px_rgba(145,70,255,0.35)] transition-colors">
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>
+                  {activeLiveGame
+                    ? pickLang(lang, { es: 'Entrar a la mesa', ca: 'Entrar a la taula', en: 'Join table' })
+                    : pickLang(lang, { es: 'Jugar ahora', ca: 'Jugar ara', en: 'Play now' })}
                 </span>
               </span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isLiveGame('pool') && <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />}
-              <span className="text-[11px] font-mono font-bold text-emerald-300">8-BALL</span>
-            </div>
-          </div>
-          <div className="relative z-10 min-w-0 space-y-0.5">
-            <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug group-hover:text-[#D8B4FE] transition-colors">
-              {pickLang(lang, { es: 'Billar Bola 8', ca: 'Billar Bola 8', en: '8-Ball Pool' })}
-            </h3>
-            <p className="text-xs text-zinc-400 line-clamp-2">
-              {pickLang(lang, { es: '1v1 y contra IA', ca: '1v1 i contra IA', en: '1v1 & vs AI' })}
-            </p>
-          </div>
-        </div>
-
-        {/* 2. PARCHÍS */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openGameCard('parchis')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameCard('parchis'); } }}
-          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#19152B] via-[#10121C] to-[#080A10] nc-specular-surface border border-[#9146FF]/22 hover:border-[#9146FF] text-left flex flex-col justify-between gap-3 min-h-[150px] sm:min-h-[168px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.5)] hover:shadow-[0_14px_34px_rgba(145,70,255,0.22)]"
-        >
-          <span className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-[#9146FF]/20 blur-2xl opacity-55 group-hover:opacity-100 transition-opacity" />
-          <div className="relative z-10 flex items-center justify-between gap-2">
-            <div className="flex items-center -space-x-1.5 group-hover:scale-105 transition-transform">
-              {(['red', 'blue', 'yellow', 'green'] as PartyColor[]).map((col) => (
-                <span
-                  key={col}
-                  className="w-5.5 h-5.5 rounded-full border border-white/85 shadow-md"
-                  style={{
-                    background: `radial-gradient(circle at 32% 28%, rgba(255,255,255,0.88) 0%, ${PARTY_COLOR_HEX[col].hex} 46%, #111 95%)`,
+              {roomId && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleInviteGame(featuredGame.id);
                   }}
-                />
-              ))}
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isLiveGame('parchis') && <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />}
-              <span className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/[0.1] flex items-center justify-center text-[#BF94FF] shrink-0" aria-hidden="true">
-                <Dices className="w-4 h-4" />
-              </span>
+                  className="min-h-10 px-3 rounded-xl bg-black/40 hover:bg-black/60 border border-white/15 text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  {inviteCopied ? <Check className="w-3.5 h-3.5 text-[#00F593]" /> : <Share2 className="w-3.5 h-3.5" />}
+                  <span>{inviteCopied ? 'Copiado' : 'Invitar'}</span>
+                </button>
+              )}
             </div>
           </div>
-          <div className="relative z-10 min-w-0 space-y-0.5">
-            <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug group-hover:text-[#D8B4FE] transition-colors">
-              {pickLang(lang, { es: 'Parchís', ca: 'Parxís', en: 'Parchís' })}
-            </h3>
-            <p className="text-xs text-zinc-400 line-clamp-2">
-              {pickLang(lang, { es: 'Hasta 4 jugadores', ca: 'Fins a 4 jugadors', en: 'Up to 4 players' })}
-            </p>
+
+          <div className="w-full sm:w-52 h-28 sm:h-32 rounded-2xl bg-black/35 border border-white/[0.1] shrink-0 overflow-hidden">
+            {featuredGame.renderStage()}
           </div>
         </div>
+      )}
 
-        {/* 3. UNO */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openGameCard('uno')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameCard('uno'); } }}
-          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#23121B] via-[#10121C] to-[#080A10] nc-specular-surface border border-rose-500/20 hover:border-[#9146FF] text-left flex flex-col justify-between gap-3 min-h-[150px] sm:min-h-[168px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.5)] hover:shadow-[0_14px_34px_rgba(145,70,255,0.22)]"
-        >
-          <span className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-rose-500/18 blur-2xl opacity-55 group-hover:opacity-100 transition-opacity" />
-          <div className="relative z-10 flex items-center justify-between gap-2">
-            <div className="flex items-center -space-x-2 group-hover:scale-105 transition-transform">
-              <img
-                src={getUnoCardSvgSrc('red', '7')}
-                alt=""
-                aria-hidden="true"
-                className="w-7 h-9 object-contain -rotate-8 drop-shadow-md pointer-events-none"
-              />
-              <img
-                src={getUnoCardSvgSrc('wild', 'wild4')}
-                alt=""
-                aria-hidden="true"
-                className="w-7 h-9 object-contain rotate-8 drop-shadow-md pointer-events-none"
-              />
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isLiveGame('uno') && <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />}
-              <span className="text-xs font-black tracking-tight text-zinc-300 font-mono">108</span>
-            </div>
-          </div>
-          <div className="relative z-10 min-w-0 space-y-0.5">
-            <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug group-hover:text-[#D8B4FE] transition-colors">
-              UNO
-            </h3>
-            <p className="text-xs text-zinc-400 line-clamp-2">
-              {pickLang(lang, { es: 'Hasta 4 jugadores', ca: 'Fins a 4 jugadors', en: 'Up to 4 players' })}
-            </p>
-          </div>
-        </div>
-
-        {/* 4. PINTURILLO */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openGameCard('pinturillo')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameCard('pinturillo'); } }}
-          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#121C2A] via-[#10121C] to-[#080A10] nc-specular-surface border border-sky-400/20 hover:border-[#9146FF] text-left flex flex-col justify-between gap-3 min-h-[150px] sm:min-h-[168px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.5)] hover:shadow-[0_14px_34px_rgba(145,70,255,0.22)]"
-        >
-          <span className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-sky-500/18 blur-2xl opacity-55 group-hover:opacity-100 transition-opacity" />
-          <div className="relative z-10 flex items-center justify-between gap-2">
-            <div className="flex items-center gap-1.5 group-hover:scale-105 transition-transform">
-              <span className="w-4.5 h-4.5 rounded-full bg-rose-500 border border-white/60 shadow" />
-              <span className="w-4.5 h-4.5 rounded-full bg-[#9146FF] border border-white/60 shadow" />
-              <span className="w-4.5 h-4.5 rounded-full bg-sky-500 border border-white/60 shadow" />
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isLiveGame('pinturillo') && <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />}
-              <span className="w-8 h-8 rounded-xl bg-white/[0.06] border border-white/[0.1] flex items-center justify-center text-sky-400 shrink-0" aria-hidden="true">
-                <Palette className="w-4 h-4" />
-              </span>
-            </div>
-          </div>
-          <div className="relative z-10 min-w-0 space-y-0.5">
-            <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug group-hover:text-[#D8B4FE] transition-colors">
-              Pinturillo
-            </h3>
-            <p className="text-xs text-zinc-400 line-clamp-2">
-              {pickLang(lang, { es: 'Dibuja y adivina · 2-6 jug.', ca: 'Dibuixa i endevina · 2-6', en: 'Draw & guess · 2-6 pl.' })}
-            </p>
-          </div>
-        </div>
-
-        {/* 5. AJEDREZ */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openGameCard('chess')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameCard('chess'); } }}
-          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#171B2A] via-[#10121C] to-[#080A10] nc-specular-surface border border-white/[0.1] hover:border-[#9146FF] text-left flex flex-col justify-between gap-3 min-h-[150px] sm:min-h-[168px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.5)] hover:shadow-[0_14px_34px_rgba(145,70,255,0.22)]"
-        >
-          <span className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-slate-400/12 blur-2xl opacity-55 group-hover:opacity-100 transition-opacity" />
-          <div className="relative z-10 flex items-center justify-between gap-2">
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#6c7488] to-[#2a2f3d] border border-white/15 flex items-center justify-center shadow-inner group-hover:scale-105 transition-transform">
-              <svg viewBox="0 0 45 45" className="w-6.5 h-6.5" aria-hidden="true">
-                <path d="M22.5 11.63V6M20 8h5" stroke="#292018" strokeWidth="2.1" fill="none" strokeLinecap="round" />
-                <path d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5" fill="#FFFDF7" stroke="#292018" strokeWidth="1.6" />
-                <path d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-3.5-7.5-13-10.5-16-4-3 6 5 10 5 10V37z" fill="#FFFDF7" stroke="#292018" strokeWidth="1.6" />
-              </svg>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isLiveGame('chess') && <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />}
-              <span className="text-[11px] font-mono text-zinc-400">FIDE</span>
-            </div>
-          </div>
-          <div className="relative z-10 min-w-0 space-y-0.5">
-            <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug group-hover:text-[#D8B4FE] transition-colors">
-              {pickLang(lang, { es: 'Ajedrez', ca: 'Escacs', en: 'Chess' })}
-            </h3>
-            <p className="text-xs text-zinc-400 line-clamp-2">
-              {pickLang(lang, { es: '1v1 y contra IA', ca: '1v1 i contra IA', en: '1v1 & vs AI' })}
-            </p>
-          </div>
-        </div>
-
-        {/* 6. DAMAS */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openGameCard('checkers')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameCard('checkers'); } }}
-          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#23141C] via-[#10121C] to-[#080A10] nc-specular-surface border border-white/[0.1] hover:border-[#9146FF] text-left flex flex-col justify-between gap-3 min-h-[150px] sm:min-h-[168px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.5)] hover:shadow-[0_14px_34px_rgba(145,70,255,0.22)]"
-        >
-          <span className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-rose-500/15 blur-2xl opacity-55 group-hover:opacity-100 transition-opacity" />
-          <div className="relative z-10 flex items-center justify-between gap-2">
-            <div className="flex items-center -space-x-2 group-hover:scale-105 transition-transform">
-              <div className="w-7.5 h-7.5 rounded-full bg-gradient-to-b from-[#FB7185] via-[#E11D48] to-[#881337] border border-rose-200/80 shadow-md flex items-center justify-center">
-                <Crown className="w-3.5 h-3.5 fill-white text-white" />
+      {/* 4. ILLUSTRATED GAME CARDS GRID */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pb-10">
+        {filteredGames.map((game) => {
+          const live = isLiveGame(game.id);
+          return (
+            <button
+              key={game.id}
+              type="button"
+              onClick={() => openGameCard(game.id)}
+              className={`group rounded-3xl bg-[#10121B] border border-white/[0.09] ${game.accentBorder} overflow-hidden text-left flex flex-col cursor-pointer active:scale-[0.97] transition-all shadow-[0_12px_30px_rgba(0,0,0,0.45)] hover:shadow-[0_16px_34px_rgba(145,70,255,0.2)]`}
+            >
+              {/* Custom Atmospheric Miniature Stage */}
+              <div className={`relative w-full h-24 sm:h-28 bg-gradient-to-br ${game.stageBg} border-b border-white/[0.06] overflow-hidden`}>
+                <div className="w-full h-full group-hover:scale-105 transition-transform duration-300">
+                  {game.renderStage()}
+                </div>
+                {live && (
+                  <span className="absolute top-2 right-2 px-2 py-0.5 rounded-md bg-[#00F593] text-zinc-950 text-[10px] font-black uppercase tracking-wider shadow-md">
+                    {pickLang(lang, { es: 'En sala', ca: 'En sala', en: 'Live' })}
+                  </span>
+                )}
               </div>
-              <div className="w-7.5 h-7.5 rounded-full bg-gradient-to-b from-[#FFFDF7] to-[#C8B99B] border border-white shadow-md" />
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isLiveGame('checkers') && <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />}
-              <span className="text-[11px] font-mono text-zinc-400">8×8</span>
-            </div>
-          </div>
-          <div className="relative z-10 min-w-0 space-y-0.5">
-            <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug group-hover:text-[#D8B4FE] transition-colors">
-              {pickLang(lang, { es: 'Damas', ca: 'Dames', en: 'Checkers' })}
-            </h3>
-            <p className="text-xs text-zinc-400 line-clamp-2">
-              {pickLang(lang, { es: '1v1 · Captura múltiple', ca: '1v1 · Captura múltiple', en: '1v1 · Multi-jump' })}
-            </p>
-          </div>
-        </div>
 
-        {/* 7. CONECTA 4 */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openGameCard('connect4')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameCard('connect4'); } }}
-          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#12192D] via-[#10121C] to-[#080A10] nc-specular-surface border border-blue-500/20 hover:border-[#9146FF] text-left flex flex-col justify-between gap-3 min-h-[150px] sm:min-h-[168px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.5)] hover:shadow-[0_14px_34px_rgba(145,70,255,0.22)]"
-        >
-          <span className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-blue-500/18 blur-2xl opacity-55 group-hover:opacity-100 transition-opacity" />
-          <div className="relative z-10 flex items-center justify-between gap-2">
-            <div className="w-11 h-8 rounded-xl bg-gradient-to-b from-[#2563EB] to-[#172554] border border-blue-300/35 p-1 grid grid-cols-3 grid-rows-2 gap-0.5 shrink-0 shadow-md group-hover:scale-105 transition-transform">
-              <span className="rounded-full bg-[#060912]" />
-              <span className="rounded-full bg-[#9146FF]" />
-              <span className="rounded-full bg-[#060912]" />
-              <span className="rounded-full bg-rose-500" />
-              <span className="rounded-full bg-[#9146FF]" />
-              <span className="rounded-full bg-rose-500" />
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isLiveGame('connect4') && <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />}
-              <span className="text-[11px] font-mono text-zinc-400">7×6</span>
-            </div>
-          </div>
-          <div className="relative z-10 min-w-0 space-y-0.5">
-            <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug group-hover:text-[#D8B4FE] transition-colors">
-              {pickLang(lang, { es: 'Conecta 4', ca: 'Connecta 4', en: 'Connect 4' })}
-            </h3>
-            <p className="text-xs text-zinc-400 line-clamp-2">
-              {pickLang(lang, { es: '1v1 y contra IA', ca: '1v1 i contra IA', en: '1v1 & vs AI' })}
-            </p>
-          </div>
-        </div>
-
-        {/* 8. FÚTBOL CHAPAS */}
-        <div
-          role="button"
-          tabIndex={0}
-          onClick={() => openGameCard('chapas')}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openGameCard('chapas'); } }}
-          className="group relative rounded-3xl p-3.5 sm:p-4 bg-[#10121C] bg-gradient-to-br from-[#142312] via-[#10121C] to-[#080A10] nc-specular-surface border border-lime-400/25 hover:border-[#9146FF] text-left flex flex-col justify-between gap-3 min-h-[150px] sm:min-h-[168px] cursor-pointer active:scale-[0.97] transition-all overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.5)] hover:shadow-[0_14px_34px_rgba(145,70,255,0.22)]"
-        >
-          <span className="pointer-events-none absolute -top-10 -right-10 w-28 h-28 rounded-full bg-lime-500/18 blur-2xl opacity-55 group-hover:opacity-100 transition-opacity" />
-          <div className="relative z-10 flex items-center justify-between gap-2">
-            <div className="w-11 h-8 rounded-xl bg-gradient-to-br from-[#3F7B21] via-[#2B5915] to-[#17330A] border border-lime-300/35 flex items-center justify-center shadow-md shrink-0 relative overflow-hidden group-hover:scale-105 transition-transform">
-              <svg viewBox="0 0 40 28" className="w-8 h-6" aria-hidden="true">
-                <line x1="20" y1="2" x2="20" y2="26" stroke="rgba(255,255,255,0.45)" strokeWidth="1.2" />
-                <circle cx="20" cy="14" r="6" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="1.2" />
-                <circle cx="13" cy="14" r="5" fill="#E2E8F0" stroke="#1E293B" strokeWidth="1" />
-                <circle cx="13" cy="14" r="3.4" fill="#75AADB" />
-                <circle cx="27" cy="14" r="5" fill="#E2E8F0" stroke="#1E293B" strokeWidth="1" />
-                <circle cx="27" cy="14" r="3.4" fill="#9146FF" />
-              </svg>
-            </div>
-            <div className="flex items-center gap-1.5">
-              {isLiveGame('chapas') && <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />}
-              <span className="text-[11px] font-mono font-bold text-lime-300">2v2</span>
-            </div>
-          </div>
-          <div className="relative z-10 min-w-0 space-y-0.5">
-            <h3 className="font-display font-extrabold text-sm sm:text-base text-white tracking-tight leading-snug group-hover:text-[#D8B4FE] transition-colors">
-              {pickLang(lang, { es: 'Fútbol Chapas', ca: 'Futbol Xapes', en: 'Soccer Caps' })}
-            </h3>
-            <p className="text-xs text-zinc-400 line-clamp-2">
-              {pickLang(lang, {
-                es: 'Estadio · 1v1 / 2v2 y IA',
-                ca: 'Estadi · 1v1 / 2v2 i IA',
-                en: 'Stadium · 1v1 / 2v2 & AI',
-              })}
-            </p>
-          </div>
-        </div>
+              {/* Clean Game Title + Metadata */}
+              <div className="p-3 sm:p-3.5 flex-1 flex flex-col justify-between gap-1.5 w-full min-w-0">
+                <div className="flex items-center justify-between gap-1.5 min-w-0">
+                  <h3 className="font-display font-bold text-sm sm:text-base text-white tracking-tight truncate group-hover:text-[#D8B4FE] transition-colors">
+                    {game.title}
+                  </h3>
+                  <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
+                </div>
+                <p className="text-[11px] sm:text-xs text-zinc-400 truncate">
+                  {game.meta}
+                </p>
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );

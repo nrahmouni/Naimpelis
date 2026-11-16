@@ -44,7 +44,7 @@ export function parseSmartUserInput(rawInput: string): ParsedSmartInput {
       return { kind: 'direct_stream', url: trimmed, streamFormat: 'mp4' };
     }
 
-    // 3. Check if it's an invite link to a NAIM CINE room
+    // 3. Check if it's an invite link to a RiffanTV room
     try {
       const parsed = new URL(trimmed);
       const roomParam = parsed.searchParams.get('room');
@@ -54,7 +54,8 @@ export function parseSmartUserInput(rawInput: string): ParsedSmartInput {
       const segments = parsed.pathname.split('/').filter(Boolean);
       const lastSeg = segments[segments.length - 1] || '';
       if (
-        (parsed.hostname.includes('naimcine') ||
+        (parsed.hostname.includes('riffantv') ||
+          parsed.hostname.includes('naimcine') ||
           parsed.hostname.includes('run.app') ||
           parsed.hostname === 'localhost') &&
         lastSeg &&

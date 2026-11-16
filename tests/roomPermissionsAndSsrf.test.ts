@@ -1,8 +1,11 @@
+import fs from 'fs';
+import path from 'path';
 import { describe, expect, it } from 'vitest';
 import {
   assignParticipantRole,
   canUserChangeRoomMedia,
   canUserControlRoom,
+  shouldEmitJoinSystemMessage,
 } from '../server/services/roomSync.ts';
 import {
   assertSafeProxyUrl,
@@ -127,5 +130,66 @@ describe('Creator-Only Host & Co-anfitrión Room Permissions', () => {
         participants: promoted,
       })
     ).toBe(true);
+  });
+});
+
+describe('Room Side Panel Architecture, Copyable Code & Join Deduplication', () => {
+  it('deduplicates consecutive join system events by systemUserId within cooldown window', () => {
+    const now = 1_750_000_000_000;
+    const shouldSkip = shouldEmitJoinSystemMessage({
+      roomId: 'jxz9',
+      userId: 'guest-neon-90',
+      userName: 'Invitado_Neon_90_New',
+      alreadyInRoom: false,
+      now,
+      existingMessages: [
+        {
+          id: 'join-1',
+          senderId: 'system',
+          senderName: 'RiffanTV',
+          senderAvatar: '🎬',
+          senderColor: '#10b981',
+          text: 'Invitado_Neon_90 se ha unido a la sala',
+          timestamp: now - 3000,
+          isSystem: true,
+          systemUserId: 'guest-neon-90',
+          systemType: 'join',
+        },
+      ],
+    });
+    expect(shouldSkip).toBe(false);
+  });
+
+  it('keeps 3 non-redundant sidebar tabs, 1-tap code copy, red-accent leave CTA, members voice copy, and mobile drawer sizing', () => {
+    const sidebarSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/PartySidebar.tsx'),
+      'utf8'
+    );
+    expect(sidebarSrc).toContain('grid-cols-3');
+    expect(sidebarSrc).toContain('handleCopyRoomCode');
+    expect(sidebarSrc).toContain('bg-red-500/10');
+    expect(sidebarSrc).toContain('break-words leading-snug');
+
+    const bubbleSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/FloatingRoomBubble.tsx'),
+      'utf8'
+    );
+    expect(bubbleSrc).toContain('w-[96vw]');
+    expect(bubbleSrc).toContain('bg-black/75 backdrop-blur-md');
+    expect(bubbleSrc).toContain('bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.14]');
+
+    const queueSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/party/PartyQueuePanel.tsx'),
+      'utf8'
+    );
+    expect(queueSrc).toContain('onBrowseCatalog');
+    expect(queueSrc).toContain('roomQueue.length > 0 &&');
+
+    const voiceSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/games/GameVoiceBar.tsx'),
+      'utf8'
+    );
+    expect(voiceSrc).toContain('Habla en directo con los miembros de la sala');
+    expect(voiceSrc).not.toContain('jugadores de la sala');
   });
 });

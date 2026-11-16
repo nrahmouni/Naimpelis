@@ -768,7 +768,7 @@ export const ZH_DICTIONARY: Record<string, string> = {
   "Géneros": "Genres",
   "HBO Max": "HBO Max",
   "HD Movie": "HD Movie",
-  "Habla en directo con los jugadores de la sala": "球员资料",
+  "Habla en directo con los miembros de la sala": "与房间成员实时语音通话",
   "Hablando": "正在说话",
   "Hacer Permanente": "保存",
   "Haptic Touch TV Remote": "Haptic Touch TV Remote",

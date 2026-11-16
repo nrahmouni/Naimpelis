@@ -1233,6 +1233,14 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         '巴萨下一场比赛什么时候？',
         '打开影院',
       ],
+      rif: [
+        'Ẓer takurt n uḍar DAZN LaLiga',
+        'Isura imezwura n tusna tasengant',
+        'Mamek taddal tafukt?',
+        'Aruy-iyi tabezzart i imnsi',
+        'Melmi ara tazzal Barqa?',
+        'Sker ssinima',
+      ],
     };
     return map[lang] || map.es;
   }, [lang]);

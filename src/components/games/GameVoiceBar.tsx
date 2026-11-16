@@ -174,14 +174,14 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
                         en: 'Microphone muted · Listening to room',
                       })
                     : pickLang(lang, {
-                        es: 'Micrófono abierto · Habla con tu sala mientras juegas',
-                        ca: 'Micròfon obert · Parla amb la sala mentre jugues',
-                        en: 'Microphone live · Talk with players while playing',
+                        es: 'Micrófono abierto · Habla con tu sala mientras ves contenido',
+                        ca: 'Micròfon obert · Parla amb la sala mentre veus contingut',
+                        en: 'Microphone live · Talk with room members',
                       })
                   : pickLang(lang, {
-                      es: 'Habla en directo con los jugadores de la sala',
-                      ca: 'Parla en directe amb els jugadors de la sala',
-                      en: 'Talk live with room players during the match',
+                      es: 'Habla en directo con los miembros de la sala',
+                      ca: 'Parla en directe amb els membres de la sala',
+                      en: 'Talk live with room members',
                     })}
               </p>
             )}
@@ -306,9 +306,9 @@ export const GameVoiceBar: React.FC<GameVoiceBarProps> = ({
             <Volume2 className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
             <span className="leading-snug">
               {pickLang(lang, {
-                es: 'Toca para activar el audio de los jugadores en este dispositivo.',
-                ca: 'Toca per activar l’àudio dels jugadors en aquest dispositiu.',
-                en: 'Tap to enable remote players audio on this device.',
+                es: 'Toca para activar el audio de los miembros en este dispositivo.',
+                ca: 'Toca per activar l’àudio dels membres en aquest dispositiu.',
+                en: 'Tap to enable remote members audio on this device.',
               })}
             </span>
           </div>

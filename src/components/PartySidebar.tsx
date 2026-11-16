@@ -126,6 +126,7 @@ interface PartySidebarProps {
   hideInternalTabs?: boolean;
   isKeyboardOpen?: boolean;
   onOpenFloatingChatOnVideo?: () => void;
+  onBrowseCatalog?: () => void;
   showMenusButton?: boolean;
   onShowMenus?: () => void;
   savedFriends?: SavedFriend[];
@@ -226,6 +227,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   openQueueTrigger,
   hideInternalTabs = false,
   onOpenFloatingChatOnVideo,
+  onBrowseCatalog,
   showMenusButton = false,
   onShowMenus,
   savedFriends = [],
@@ -249,11 +251,14 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const selfMember = participants.find((p) => p.id === currentUser.id);
   const isCoHost = !isHost && (currentUser.role === 'mod' || selfMember?.role === 'mod');
   const canManageMedia = isHost || isCoHost;
-  const [activeTab, setActiveTab] = useState<'chat' | 'friends' | 'queue' | 'room'>(initialView);
+  const resolvedInitialTab: 'chat' | 'friends' | 'queue' | 'room' =
+    !worldSalaMode && initialView === 'friends' ? 'room' : initialView;
+  const [activeTab, setActiveTab] = useState<'chat' | 'friends' | 'queue' | 'room'>(resolvedInitialTab);
   const [undoRemovedItem, setUndoRemovedItem] = useState<RoomQueueItem | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputText, setInputText] = useState('');
   const [copiedLink, setCopiedLink] = useState(false);
+  const [copiedCode, setCopiedCode] = useState(false);
   const [roomNameDraft, setRoomNameDraft] = useState(roomName);
   const [newRoomNameDraft, setNewRoomNameDraft] = useState('');
   const [joinRoomCodeDraft, setJoinRoomCodeDraft] = useState('');
@@ -277,8 +282,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    setActiveTab(initialView);
-  }, [initialView]);
+    setActiveTab(!worldSalaMode && initialView === 'friends' ? 'room' : initialView);
+  }, [initialView, worldSalaMode]);
 
   useEffect(() => {
     return () => {
@@ -374,6 +379,37 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       // ignore
     }
   };
+
+  const handleCopyRoomCode = async () => {
+    triggerHaptic('light');
+    try {
+      await navigator.clipboard.writeText(roomId);
+      setCopiedCode(true);
+      setTimeout(() => setCopiedCode(false), 2200);
+    } catch {
+      // ignore
+    }
+  };
+
+  const deduplicatedMessages = React.useMemo(() => {
+    const out: ChatMessage[] = [];
+    const seenIds = new Set<string>();
+    const recentJoinKeys = new Map<string, number>();
+    for (const m of messages) {
+      if (seenIds.has(m.id)) continue;
+      seenIds.add(m.id);
+      if (m.isSystem && m.systemType === 'join') {
+        const joinKey = (m.systemUserId || m.text.trim()).toLowerCase();
+        const prevTs = recentJoinKeys.get(joinKey);
+        if (prevTs !== undefined && Math.abs(m.timestamp - prevTs) < 180_000) {
+          continue;
+        }
+        recentJoinKeys.set(joinKey, m.timestamp);
+      }
+      out.push(m);
+    }
+    return out;
+  }, [messages]);
 
   const handleMapTvCommand = (
     action:
@@ -527,119 +563,102 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           </div>
         </div>
       ) : (!hideInternalTabs || showMenusButton) && (
-        <div className="px-2.5 py-1.5 border-b border-white/[0.06] flex items-center justify-between gap-2 shrink-0 bg-[#0D0F18]/95 backdrop-blur-xl z-20">
-          <div className="flex items-center gap-1.5 min-w-0">
-            {showMenusButton && onShowMenus ? (
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  onShowMenus();
-                }}
-                aria-label={pickLang(lang, {
-                  es: 'Mostrar menús',
-                  ca: 'Mostrar menús',
-                  en: 'Show menus',
-                })}
-                className="h-7 px-2 rounded-lg bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-semibold text-zinc-100 flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
-              >
-                <ChevronUp className="w-3 h-3 text-[#BF94FF]" />
-                <span>{pickLang(lang, { es: 'Menús', ca: 'Menús', en: 'Menus' })}</span>
-              </button>
-            ) : (
-              <span className="text-[11px] font-semibold text-zinc-400 truncate pl-0.5">
-                {activeTab === 'chat'
-                  ? t.tabChat
-                  : activeTab === 'friends'
-                  ? pickLang(lang, { es: 'Amigos', ca: 'Amics', en: 'Friends' })
-                  : activeTab === 'queue'
-                  ? pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' })
-                  : t.tabRoom}
-              </span>
-            )}
-          </div>
+        <div className="px-2.5 py-1.5 border-b border-white/[0.06] flex items-center gap-2 shrink-0 bg-[#0D0F18]/95 backdrop-blur-xl z-20 overflow-hidden">
+          {showMenusButton && onShowMenus && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                onShowMenus();
+              }}
+              aria-label={pickLang(lang, {
+                es: 'Mostrar menús',
+                ca: 'Mostrar menús',
+                en: 'Show menus',
+              })}
+              className="h-8 px-2.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/[0.1] text-[11px] font-semibold text-zinc-100 flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all shrink-0"
+            >
+              <ChevronUp className="w-3 h-3 text-[#BF94FF]" />
+              <span>{pickLang(lang, { es: 'Menús', ca: 'Menús', en: 'Menus' })}</span>
+            </button>
+          )}
 
           {!hideInternalTabs && (
-          <div className="flex items-center gap-1 shrink-0 ml-auto overflow-x-auto no-scrollbar">
-            <SegmentedControl
-              compact
-              value={activeTab}
-              onChange={setActiveTab}
-              options={[
-                {
-                  id: 'chat',
-                  label: t.tabChat,
-                  icon: <MessageSquare className="w-3 h-3 shrink-0" />,
-                },
-                {
-                  id: 'friends',
-                  label: pickLang(lang, { es: 'Amigos', ca: 'Amics', en: 'Friends' }),
-                  icon: <UserPlus className="w-3 h-3 shrink-0" />,
-                  badge: savedFriends.length > 0 ? savedFriends.length : undefined,
-                },
-                {
-                  id: 'queue',
-                  label: pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' }),
-                  icon: <ListVideo className="w-3 h-3 shrink-0" />,
-                  badge: roomQueue.length,
-                },
-                {
-                  id: 'room',
-                  label: t.tabRoom,
-                  icon: <Users className="w-3 h-3 shrink-0" />,
-                  badge: participants.length,
-                },
-              ]}
-            />
+            <div className="flex items-center gap-1.5 flex-1 min-w-0 overflow-hidden">
+              <SegmentedControl
+                compact
+                className="flex-1 min-w-0 !w-full !grid grid-cols-3"
+                value={activeTab === 'friends' ? 'room' : activeTab}
+                onChange={(val) => setActiveTab(val)}
+                options={[
+                  {
+                    id: 'chat',
+                    label: t.tabChat,
+                    icon: <MessageSquare className="w-3.5 h-3.5 shrink-0" />,
+                  },
+                  {
+                    id: 'queue',
+                    label: pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' }),
+                    icon: <ListVideo className="w-3.5 h-3.5 shrink-0" />,
+                    badge: roomQueue.length,
+                  },
+                  {
+                    id: 'room',
+                    label: t.tabRoom,
+                    icon: <Users className="w-3.5 h-3.5 shrink-0" />,
+                    badge: participants.length,
+                  },
+                ]}
+              />
 
-            {onOpenFloatingChatOnVideo && (
-              <button
-                type="button"
-                onClick={onOpenFloatingChatOnVideo}
-                title={pickLang(lang, {
-                  es: 'Superponer chat flotante sobre el vídeo',
-                  ca: 'Superposar xat flotant sobre el vídeo',
-                  en: 'Overlay floating chat on video',
-                })}
-                aria-label={pickLang(lang, {
-                  es: 'Chat flotante sobre el vídeo',
-                  ca: 'Xat flotant sobre el vídeo',
-                  en: 'Floating chat over video',
-                })}
-                className="w-7 h-7 rounded-lg bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-[#BF94FF] cursor-pointer shrink-0 transition-colors"
-              >
-                <Maximize2 className="w-3.5 h-3.5" />
-              </button>
-            )}
+              {onOpenFloatingChatOnVideo && (
+                <button
+                  type="button"
+                  onClick={onOpenFloatingChatOnVideo}
+                  title={pickLang(lang, {
+                    es: 'Superponer chat flotante sobre el vídeo',
+                    ca: 'Superposar xat flotant sobre el vídeo',
+                    en: 'Overlay floating chat on video',
+                  })}
+                  aria-label={pickLang(lang, {
+                    es: 'Chat flotante sobre el vídeo',
+                    ca: 'Xat flotant sobre el vídeo',
+                    en: 'Floating chat over video',
+                  })}
+                  className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.08] flex items-center justify-center text-[#BF94FF] cursor-pointer shrink-0 transition-colors"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+              )}
 
-            {effectiveView === 'desktop' && (
-              <button
-                type="button"
-                onClick={onOpenFriendsModal || handleShareInvite}
-                title={
-                  onOpenFriendsModal
-                    ? pickLang(lang, {
-                        es: 'Amigos e Invitación Directa',
-                        ca: 'Amics i Invitació Directa',
-                        en: 'Friends & Direct Invite',
-                      })
-                    : t.invite
-                }
-                aria-label={t.invite}
-                className={`w-7 h-7 rounded-lg border flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
-                  copiedLink
-                    ? 'bg-emerald-500/20 border-emerald-500/40 text-white'
-                    : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-[#BF94FF]'
-                }`}
-              >
-                {copiedLink ? (
-                  <Check className="w-3.5 h-3.5 text-white" />
-                ) : (
-                  <UserPlus className="w-3.5 h-3.5" />
-                )}
-              </button>
-            )}
-          </div>
+              {effectiveView === 'desktop' && (
+                <button
+                  type="button"
+                  onClick={onOpenFriendsModal || handleShareInvite}
+                  title={
+                    onOpenFriendsModal
+                      ? pickLang(lang, {
+                          es: 'Amigos e Invitación Directa',
+                          ca: 'Amics i Invitació Directa',
+                          en: 'Friends & Direct Invite',
+                        })
+                      : t.invite
+                  }
+                  aria-label={t.invite}
+                  className={`w-8 h-8 rounded-xl border flex items-center justify-center cursor-pointer shrink-0 transition-colors ${
+                    copiedLink
+                      ? 'bg-emerald-500/20 border-emerald-500/40 text-white'
+                      : 'bg-white/[0.06] hover:bg-white/[0.12] border-white/[0.08] text-[#BF94FF]'
+                  }`}
+                >
+                  {copiedLink ? (
+                    <Check className="w-3.5 h-3.5 text-white" />
+                  ) : (
+                    <UserPlus className="w-3.5 h-3.5" />
+                  )}
+                </button>
+              )}
+            </div>
           )}
         </div>
       )}
@@ -737,7 +756,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               showFloatingReactions ? 'pb-16' : 'pb-3'
             }`}
           >
-            {messages.length === 0 ? (
+            {deduplicatedMessages.length === 0 ? (
               <div className="space-y-3">
                 <EmptyStateCard
                   icon={<MessageSquare className="w-6 h-6" />}
@@ -798,7 +817,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                 </div>
               </div>
             ) : (
-              messages.map((msg) => {
+              deduplicatedMessages.map((msg) => {
                 if (msg.isSystem) {
                   return (
                     <div key={msg.id} className="flex justify-center py-0.5">
@@ -1115,6 +1134,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           onPlayQueueItem={onPlayQueueItem}
           onStartPollFromQueue={onStartPollFromQueue}
           onOpenUrlLoaderSheet={() => setShowUrlLoaderSheet(true)}
+          onBrowseCatalog={onBrowseCatalog}
           onVoteQueueItem={onVoteQueueItem}
           onPromoteQueueItem={onPromoteQueueItem}
           onReorderQueueItem={onReorderQueueItem}
@@ -1123,9 +1143,9 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       )}
 
       {/* ==================================================================== */}
-      {/* TAB 2B: AMIGOS EN SALA Y CONECTADOS                                  */}
+      {/* TAB 2B: AMIGOS EN SALA Y CONECTADOS (World Sala full screen only)    */}
       {/* ==================================================================== */}
-      {activeTab === 'friends' && (
+      {worldSalaMode && activeTab === 'friends' && (
         <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 space-y-5 custom-scrollbar">
           {inviteSentFeedback && (
             <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-xs font-semibold flex items-center gap-2">
@@ -1163,15 +1183,15 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     key={p.id}
                     className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
                   >
-                    <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
                       <div
                         className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold text-white border border-white/15 shrink-0"
                         style={{ backgroundColor: p.color || '#9146FF' }}
                       >
                         {isTvDevice ? '📺' : getInitials(p.name)}
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-sm font-bold text-white truncate">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-bold text-white break-words leading-snug">
                           {p.name} {isSelf ? `(${t.you})` : ''}
                         </p>
                         <p className="text-[11px] text-emerald-400 truncate">
@@ -1362,16 +1382,37 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           {voiceChat && <GameVoiceBar lang={lang} voice={voiceChat} />}
           {/* Primary Action Card: Room Info + Share Link & TV Remote */}
           <div className="p-4 rounded-3xl nc-specular-surface border border-white/[0.1] space-y-3.5">
-            <div className="flex items-center justify-between gap-2">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <h4 className="text-base font-bold text-white truncate">{roomName}</h4>
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 min-w-0">
+                  <h4 className="text-base font-bold text-white break-words leading-snug min-w-0">
+                    {roomName}
+                  </h4>
                   {hasPin && <KeyRound className="w-4 h-4 text-amber-400 shrink-0" />}
                 </div>
-                <p className="text-xs text-zinc-400 font-mono mt-0.5">
-                  {pickLang(lang, { es: 'Código:', ca: 'Codi:', en: 'Code:' })}{' '}
-                  <span className="text-white font-bold">{roomId}</span>
-                </p>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyRoomCode()}
+                  title={pickLang(lang, {
+                    es: 'Tocar para copiar código de sala',
+                    ca: 'Toca per copiar el codi de sala',
+                    en: 'Tap to copy room code',
+                  })}
+                  className="mt-1 inline-flex items-center gap-1.5 px-2 py-1 -ml-2 rounded-lg hover:bg-white/[0.08] active:scale-[0.98] text-xs font-mono text-zinc-400 hover:text-zinc-200 transition-colors cursor-pointer"
+                >
+                  <span>
+                    {pickLang(lang, { es: 'Código:', ca: 'Codi:', en: 'Code:' })}{' '}
+                    <span className="text-white font-bold">{roomId}</span>
+                  </span>
+                  {copiedCode ? (
+                    <span className="inline-flex items-center gap-1 text-[#00F593] font-sans font-semibold text-[11px]">
+                      <Check className="w-3.5 h-3.5 shrink-0" />
+                      <span>{t.copied}</span>
+                    </span>
+                  ) : (
+                    <Copy className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+                  )}
+                </button>
               </div>
 
               <div className="flex items-center gap-1.5 shrink-0">
@@ -1543,20 +1584,20 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     key={p.id}
                     className="flex items-center justify-between p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div
                         className="w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-bold text-white border border-white/15 shrink-0"
                         style={{ backgroundColor: p.color || '#9146FF' }}
                       >
                         {isTvDevice ? '📺' : getInitials(p.name)}
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <span className="text-sm font-bold text-white truncate">
+                          <span className="text-sm font-bold text-white break-words leading-snug">
                             {p.name}
                           </span>
                           {isSelf && (
-                            <span className="text-xs px-2.5 py-0.5 rounded-full bg-white/12 text-zinc-200 font-semibold leading-tight">
+                            <span className="text-xs px-2 py-0.5 rounded-full bg-white/12 text-zinc-200 font-semibold leading-tight shrink-0">
                               {t.you}
                             </span>
                           )}
@@ -1772,7 +1813,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                       key={friend.friendId}
                       className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
                     >
-                      <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
                         <div className="relative shrink-0">
                           <div
                             className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold text-white border border-white/15"
@@ -1786,8 +1827,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                             }`}
                           />
                         </div>
-                        <div className="min-w-0">
-                          <div className="text-sm font-bold text-white truncate">
+                        <div className="min-w-0 flex-1">
+                          <div className="text-sm font-bold text-white break-words leading-snug">
                             {friend.name}
                           </div>
                           <div className="text-xs truncate mt-0.5">
@@ -1846,7 +1887,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           </div>
 
           <div className="pt-2">
-            <SecondaryButton
+            <button
+              type="button"
               onClick={() => {
                 triggerHaptic('medium');
                 if (confirmLeave) {
@@ -1857,10 +1899,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   setTimeout(() => setConfirmLeave(false), 3200);
                 }
               }}
-              fullWidth
-              className={confirmLeave ? '!bg-[#EB0400] !border-[#EB0400] !text-white' : ''}
+              className={`w-full min-h-11 px-4 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] transition-all ${
+                confirmLeave
+                  ? 'bg-[#EB0400] hover:bg-red-600 border-[#EB0400] text-white'
+                  : 'bg-red-500/10 hover:bg-red-500/20 border-red-500/30 text-red-300 hover:text-red-200'
+              }`}
             >
-              <LogOut className={`w-4 h-4 ${confirmLeave ? 'text-white' : 'text-[#BF94FF]'}`} />
+              <LogOut className={`w-4 h-4 shrink-0 ${confirmLeave ? 'text-white' : 'text-red-400'}`} />
               <span>
                 {confirmLeave
                   ? pickLang(lang, {
@@ -1870,7 +1915,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     })
                   : t.leaveRoom}
               </span>
-            </SecondaryButton>
+            </button>
           </div>
         </div>
       )}
@@ -2013,6 +2058,14 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   setShowSalaOptionsSheet(false);
                   setShowUrlLoaderSheet(true);
                 }}
+                onBrowseCatalog={
+                  onBrowseCatalog
+                    ? () => {
+                        setShowSalaOptionsSheet(false);
+                        onBrowseCatalog();
+                      }
+                    : undefined
+                }
                 onVoteQueueItem={onVoteQueueItem}
                 onPromoteQueueItem={onPromoteQueueItem}
                 onReorderQueueItem={onReorderQueueItem}
@@ -2178,7 +2231,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               <span>{pickLang(lang, { es: 'Ajustes de sala', ca: 'Ajustos de sala', en: 'Room settings' })}</span>
             </SecondaryButton>
 
-            <SecondaryButton
+            <button
+              type="button"
               onClick={() => {
                 triggerHaptic('medium');
                 if (confirmLeave) {
@@ -2190,10 +2244,13 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   setTimeout(() => setConfirmLeave(false), 3200);
                 }
               }}
-              fullWidth
-              className={confirmLeave ? '!bg-[#EB0400] !border-[#EB0400] !text-white' : ''}
+              className={`w-full min-h-11 px-4 rounded-xl border text-xs font-bold flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98] transition-all ${
+                confirmLeave
+                  ? 'bg-[#EB0400] hover:bg-red-600 border-[#EB0400] text-white'
+                  : 'bg-red-500/10 hover:bg-red-500/20 border-red-500/30 text-red-300 hover:text-red-200'
+              }`}
             >
-              <LogOut className={`w-4 h-4 ${confirmLeave ? 'text-white' : 'text-[#BF94FF]'}`} />
+              <LogOut className={`w-4 h-4 shrink-0 ${confirmLeave ? 'text-white' : 'text-red-400'}`} />
               <span>
                 {confirmLeave
                   ? pickLang(lang, {
@@ -2203,7 +2260,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     })
                   : t.leaveRoom}
               </span>
-            </SecondaryButton>
+            </button>
           </div>
         </div>
       </BottomSheet>

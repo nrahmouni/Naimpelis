@@ -33,12 +33,14 @@ export function shouldEmitJoinSystemMessage(params: {
     return false;
   }
 
-  // Also guard against the last 6 chat messages already announcing this exact user joining recently
-  const recentDuplicate = params.existingMessages.slice(-8).some(
+  // Also guard against recent chat messages already announcing this exact user joining (by userId or userName)
+  const recentDuplicate = params.existingMessages.slice(-20).some(
     (m) =>
       m.isSystem &&
       m.systemType === 'join' &&
-      m.text.includes(params.userName) &&
+      ((typeof (m as { systemUserId?: string }).systemUserId === 'string' &&
+        (m as { systemUserId?: string }).systemUserId === params.userId) ||
+        m.text.includes(params.userName)) &&
       now - m.timestamp < JOIN_SPAM_COOLDOWN_MS
   );
   if (recentDuplicate) {

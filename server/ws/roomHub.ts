@@ -196,6 +196,7 @@ export interface RoomChatMessageRecord {
   text: string;
   timestamp: number;
   isSystem?: boolean;
+  systemUserId?: string;
   systemType?: 'join' | 'leave' | 'video_change' | 'host_transfer' | 'host_change' | 'poll' | 'lock';
 }
 
@@ -1640,6 +1641,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
               text: `${userName} se ha unido a la sala`,
               timestamp: Date.now(),
               isSystem: true,
+              systemUserId: userId,
               systemType: 'join',
             };
             room.messages.push(joinMsg);

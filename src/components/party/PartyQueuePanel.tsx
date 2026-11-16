@@ -7,6 +7,7 @@ import {
   ListVideo,
   Lock,
   Play,
+  Plus,
   RotateCcw,
   ThumbsUp,
   Trash2,
@@ -28,6 +29,7 @@ interface PartyQueuePanelProps {
   onPlayQueueItem: (item: RoomQueueItem) => void;
   onStartPollFromQueue: () => void;
   onOpenUrlLoaderSheet: () => void;
+  onBrowseCatalog?: () => void;
   onVoteQueueItem?: (id: string) => void;
   onPromoteQueueItem?: (id: string) => void;
   onReorderQueueItem?: (id: string, direction: 'up' | 'down') => void;
@@ -45,6 +47,7 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
   onPlayQueueItem,
   onStartPollFromQueue,
   onOpenUrlLoaderSheet,
+  onBrowseCatalog,
   onVoteQueueItem,
   onPromoteQueueItem,
   onReorderQueueItem,
@@ -78,7 +81,7 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
           </p>
         </div>
         {canManageMedia && (
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 shrink-0">
             {roomQueue.length >= 2 && (
               <SecondaryButton onClick={onStartPollFromQueue}>
                 <BarChart2 className="w-4 h-4 text-[#BF94FF]" />
@@ -92,12 +95,23 @@ export const PartyQueuePanel: React.FC<PartyQueuePanelProps> = ({
               </SecondaryButton>
             )}
 
-            <SecondaryButton onClick={onOpenUrlLoaderSheet}>
-              <Link2 className="w-4 h-4 text-sky-400" />
-              <span>
-                {pickLang(lang, { es: 'Enlace', ca: 'Enllaç', en: 'Link' })}
-              </span>
-            </SecondaryButton>
+            {roomQueue.length > 0 && (
+              <SecondaryButton onClick={onOpenUrlLoaderSheet}>
+                <Link2 className="w-4 h-4 text-sky-400" />
+                <span>
+                  {pickLang(lang, { es: 'Enlace', ca: 'Enllaç', en: 'Link' })}
+                </span>
+              </SecondaryButton>
+            )}
+
+            {onBrowseCatalog && (
+              <SecondaryButton onClick={onBrowseCatalog}>
+                <Plus className="w-4 h-4 text-[#BF94FF]" />
+                <span>
+                  {pickLang(lang, { es: 'Catálogo', ca: 'Catàleg', en: 'Catalog' })}
+                </span>
+              </SecondaryButton>
+            )}
           </div>
         )}
       </div>

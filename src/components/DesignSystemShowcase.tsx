@@ -1,8 +1,10 @@
 import React, { useRef, useState } from 'react';
 import { domToPng } from 'modern-screenshot';
+import { QRCodeSVG } from 'qrcode.react';
 import {
   ArrowLeft,
   Check,
+  Copy,
   Download,
   Film,
   Gamepad2,
@@ -12,7 +14,6 @@ import {
   Mic,
   Palette,
   Play,
-  QrCode,
   Share2,
   ShieldCheck,
   Sparkles,
@@ -56,7 +57,7 @@ const POSTER_I18N = {
     f5Title: 'Asistente por Voz con IA',
     f5Desc: '«Hola, ¿qué quieres ver hoy?» Pide canales, capítulos o partidos con tu voz.',
     cta: 'Descarga gratis el APK o disfruta online en cualquier navegador',
-    footerUrl: 'riffantv.app · Cine, Fútbol y Salas Multijugador',
+    footerUrl: 'riffantv.ai.studio · Cine, Fútbol y Salas Multijugador',
   },
   en: {
     tag: 'THE ULTIMATE STREAMING PLATFORM',
@@ -74,7 +75,7 @@ const POSTER_I18N = {
     f5Title: 'AI Voice Assistant',
     f5Desc: '“Hi, what do you want to watch today?” Instant voice tuning for channels, episodes, and matches.',
     cta: 'Download free Android & TV APK or watch instantly in any browser',
-    footerUrl: 'riffantv.app · Cinema, World Football & Live Watch Parties',
+    footerUrl: 'riffantv.ai.studio · Cinema, World Football & Live Watch Parties',
   },
   zh: {
     tag: '全能高清流媒体与体育互动平台',
@@ -92,7 +93,7 @@ const POSTER_I18N = {
     f5Title: 'AI智能声控助手',
     f5Desc: '“你好！今天想看什么？” 一句话声控点播剧集、换台或查询焦点赛事。',
     cta: '立即免费下载电视端APK或在浏览器直接观看',
-    footerUrl: 'riffantv.app · 高清电影 · 顶级足球直播 · 多人连麦影院',
+    footerUrl: 'riffantv.ai.studio · 高清电影 · 顶级足球直播 · 多人连麦影院',
   },
 };
 
@@ -196,7 +197,31 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <a
+              href="https://riffantv.ai.studio"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-h-10 px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-mono font-bold text-[#D8B4FE] inline-flex items-center gap-1.5 transition-colors"
+            >
+              <Globe className="w-3.5 h-3.5 text-[#00F0FF]" />
+              <span>riffantv.ai.studio</span>
+            </a>
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('light');
+                void navigator.clipboard?.writeText('https://riffantv.ai.studio').then(() => {
+                  setExportNotice('Enlace copiado: https://riffantv.ai.studio');
+                  setTimeout(() => setExportNotice(null), 2500);
+                });
+              }}
+              className="min-h-10 px-3 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/10 text-xs font-semibold text-zinc-200 inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+              title="Copiar enlace oficial"
+            >
+              <Copy className="w-3.5 h-3.5" />
+              <span>Copiar link</span>
+            </button>
             {onClose && (
               <SecondaryButton onClick={onClose}>
                 <ArrowLeft className="w-4 h-4" />
@@ -455,7 +480,7 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
                   </div>
 
                   <div className="w-12 h-12 rounded-xl bg-white p-1 flex items-center justify-center shrink-0 shadow-lg">
-                    <QrCode className="w-10 h-10 text-black" />
+                    <QRCodeSVG value="https://riffantv.ai.studio" size={40} level="M" includeMargin={false} />
                   </div>
                 </div>
               </div>

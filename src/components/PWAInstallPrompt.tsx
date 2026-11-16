@@ -204,40 +204,63 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
       })}
     >
       <div className="space-y-2.5">
-        {/* 1. Android */}
-        <button
-          type="button"
-          onClick={async () => {
-            triggerHaptic('medium');
-            if (pwa.isInstallable) {
-              await pwa.install();
-            } else {
-              setShowWebSteps(true);
+        {/* 1. Android APK (Direct APK + optional WebAPK) */}
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() =>
+              void handleDownloadApk('mobile', '/RIFFAN-TV.apk?v=300', 'RIFFAN-TV.apk')
             }
-          }}
-          className={cardClass(recommendedDevice === 'android')}
-        >
-          <span className="flex items-center gap-3 min-w-0">
-            <span className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center shrink-0">
-              <Smartphone className="w-5 h-5 text-[#BF94FF]" />
-            </span>
-            <span className="min-w-0">
-              <span className="block text-sm font-bold text-white">Android</span>
-              <span className="block text-xs text-zinc-400">
-                {pickLang(lang, {
-                  es: 'Instalación automática WebAPK en teléfono o tablet',
-                  ca: 'Instal·lació automàtica WebAPK en telèfon o tauleta',
-                  en: 'Automatic WebAPK install for phone or tablet',
-                })}
+            className={cardClass(recommendedDevice === 'android')}
+          >
+            <span className="flex items-center gap-3 min-w-0">
+              <span className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center shrink-0">
+                {apkDownloading === 'mobile' ? (
+                  <Loader2 className="w-5 h-5 animate-spin text-[#BF94FF]" />
+                ) : apkDone === 'mobile' ? (
+                  <Check className="w-5 h-5 text-emerald-400" />
+                ) : (
+                  <Smartphone className="w-5 h-5 text-[#BF94FF]" />
+                )}
+              </span>
+              <span className="min-w-0">
+                <span className="block text-sm font-bold text-white">Android (APK Oficial)</span>
+                <span className="block text-xs text-zinc-400">
+                  {pickLang(lang, {
+                    es: 'Descarga directa para móvil o tablet Android',
+                    ca: 'Descàrrega directa per a mòbil o tauleta Android',
+                    en: 'Direct APK download for Android phone or tablet',
+                  })}
+                </span>
               </span>
             </span>
-          </span>
-          {recommendedDevice === 'android' && (
-            <span className="px-2.5 py-1 rounded-full bg-[#9146FF] text-[10px] font-bold text-white shrink-0">
-              {pickLang(lang, { es: 'Tu dispositivo', ca: 'El teu dispositiu', en: 'Your device' })}
-            </span>
+            {recommendedDevice === 'android' && (
+              <span className="px-2.5 py-1 rounded-full bg-[#9146FF] text-[10px] font-bold text-white shrink-0">
+                {pickLang(lang, { es: 'Tu dispositivo', ca: 'El teu dispositiu', en: 'Your device' })}
+              </span>
+            )}
+          </button>
+
+          {pwa.isInstallable && (
+            <button
+              type="button"
+              onClick={async () => {
+                triggerHaptic('medium');
+                await pwa.install();
+              }}
+              className="w-full min-h-10 px-3.5 py-2 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-center gap-2 cursor-pointer transition-colors"
+            >
+              <Download className="w-3.5 h-3.5 text-[#BF94FF]" />
+              <span>
+                {pickLang(lang, {
+                  es: 'O instalar versión web instantánea (PWA)',
+                  ca: 'O instal·lar versió web instantània (PWA)',
+                  en: 'Or install instant web app (PWA)',
+                })}
+              </span>
+            </button>
           )}
-        </button>
+        </div>
 
         {/* 2. Google TV / Chromecast */}
         <button

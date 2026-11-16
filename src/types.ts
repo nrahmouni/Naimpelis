@@ -68,7 +68,7 @@ export type {
   PoolSimRuntime,
 };
 
-export type AppLanguage = 'es' | 'ca' | 'en' | 'zh';
+export type AppLanguage = 'es' | 'ca' | 'en' | 'zh' | 'rif';
 export type AppTheme = 'oled' | 'soft-dark' | 'high-contrast' | 'light' | 'dark';
 export type TextDensity = 'comfortable' | 'compact';
 export type RoomRole = 'host' | 'mod' | 'viewer';
@@ -669,6 +669,7 @@ export interface ChatMessage {
   text: string;
   timestamp: number;
   isSystem?: boolean;
+  systemUserId?: string;
   systemType?:
     | 'join'
     | 'leave'

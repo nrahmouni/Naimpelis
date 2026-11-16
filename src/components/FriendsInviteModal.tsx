@@ -786,10 +786,32 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
   onAcceptFriendBack,
   onDismissFriendNotice,
 }) => {
+  const [savingBack, setSavingBack] = useState(false);
+
+  React.useEffect(() => {
+    setSavingBack(false);
+    if (!friendAddedNotice) return;
+    const timer = window.setTimeout(() => {
+      onDismissFriendNotice();
+    }, 6500);
+    return () => window.clearTimeout(timer);
+  }, [friendAddedNotice, onDismissFriendNotice]);
+
+  React.useEffect(() => {
+    if (!friendAddedNotice) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onDismissFriendNotice();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [friendAddedNotice, onDismissFriendNotice]);
+
   if (!invite && !friendAddedNotice) return null;
 
   return (
-    <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[95] w-[calc(100%-20px)] max-w-[440px] space-y-2 pointer-events-none">
+    <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[240] w-[calc(100%-20px)] max-w-[440px] space-y-2 pointer-events-none">
       {invite && (
         <div className="pointer-events-auto p-3.5 rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border border-[#9146FF]/55 shadow-[0_24px_70px_rgba(145,70,255,0.42)] flex flex-col gap-3 animate-fade-in">
           <div className="flex items-start justify-between gap-2.5">
@@ -834,7 +856,7 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
                 ca: 'Tancar invitació',
                 en: 'Dismiss invite',
               })}
-              className="w-8 h-8 rounded-full bg-white/[0.06] hover:bg-white/[0.14] text-zinc-400 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
+              className="w-9 h-9 rounded-full bg-white/[0.08] hover:bg-white/[0.16] text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
             >
               <X className="w-4 h-4" />
             </button>
@@ -868,7 +890,14 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
       )}
 
       {friendAddedNotice && (
-        <div className="pointer-events-auto p-3 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border border-emerald-500/45 shadow-2xl flex items-center justify-between gap-2.5 animate-fade-in">
+        <div
+          role="status"
+          onClick={() => {
+            triggerHaptic('light');
+            onDismissFriendNotice();
+          }}
+          className="pointer-events-auto p-3 rounded-2xl bg-[#141418]/98 backdrop-blur-2xl nc-specular-surface border border-emerald-500/45 shadow-[0_18px_50px_rgba(0,0,0,0.75)] flex items-center justify-between gap-2.5 animate-fade-in cursor-pointer"
+        >
           <div className="flex items-center gap-2.5 min-w-0">
             <div
               className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
@@ -895,8 +924,14 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
             {!isAlreadyFriend && (
               <button
                 type="button"
-                onClick={() => onAcceptFriendBack(friendAddedNotice)}
-                className="min-h-8 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-[11px] font-bold text-slate-950 flex items-center gap-1 cursor-pointer"
+                disabled={savingBack}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (savingBack) return;
+                  setSavingBack(true);
+                  onAcceptFriendBack(friendAddedNotice);
+                }}
+                className="min-h-9 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-[11px] font-bold text-slate-950 flex items-center gap-1 cursor-pointer"
               >
                 <UserPlus className="w-3.5 h-3.5" />
                 <span>
@@ -906,11 +941,15 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
             )}
             <button
               type="button"
-              onClick={onDismissFriendNotice}
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic('light');
+                onDismissFriendNotice();
+              }}
               aria-label={pickLang(lang, { es: 'Cerrar aviso', ca: 'Tancar avís', en: 'Dismiss' })}
-              className="w-7 h-7 rounded-lg bg-white/5 text-zinc-400 hover:text-white flex items-center justify-center cursor-pointer"
+              className="w-10 h-10 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/10 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </div>
         </div>

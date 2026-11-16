@@ -1,7 +1,10 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 import zlib from 'zlib';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { buildSignedApkBuffer } from '../server/services/apkBuilderService';
+import { triggerApkDownload } from '../src/utils/apkDownload';
 
 function parseZipEntries(buf: Buffer) {
   let eocdOff = -1;
@@ -116,5 +119,53 @@ describe('Signed Android APK Builder Service', () => {
     const manifestTxt = entries.get('AndroidManifest.xml')!.data.toString('utf16le');
     expect(manifestTxt).toContain('com.naimcine.tv');
     expect(manifestTxt).toContain('LEANBACK_LAUNCHER');
+  });
+
+  it('embeds riffantv.ai.studio launch URL, RiffanTV resources.arsc label, and exposes /RIFFAN-TV*.apk routes on server', () => {
+    const apk = buildSignedApkBuffer('mobile', 'https://riffantv.ai.studio');
+    const { entries } = parseZipEntries(apk);
+    expect(entries.get('classes.dex')!.data.toString('utf8')).toContain(
+      'https://riffantv.ai.studio/?platform=android&web=1'
+    );
+    expect(entries.get('resources.arsc')!.data.toString('utf16le')).toContain('RiffanTV');
+
+    const serverSrc = fs.readFileSync(path.resolve(process.cwd(), 'server.ts'), 'utf8');
+    expect(serverSrc).toContain("'/RIFFAN-TV.apk'");
+    expect(serverSrc).toContain("'/RIFFAN-TV-TV.apk'");
+  });
+
+  it('rejects text/html SPA fallback responses in triggerApkDownload', async () => {
+    const origFetch = globalThis.fetch;
+    globalThis.fetch = vi.fn().mockResolvedValue(
+      new Response('<!doctype html><html></html>', {
+        status: 200,
+        headers: { 'content-type': 'text/html; charset=utf-8' },
+      })
+    ) as unknown as typeof fetch;
+
+    try {
+      const res = await triggerApkDownload('/RIFFAN-TV.apk', 'RIFFAN-TV.apk');
+      expect(res.ok).toBe(false);
+      expect(res.error).toContain('HTML');
+    } finally {
+      globalThis.fetch = origFetch;
+    }
+  });
+
+  it('points Design System poster URLs and QR to riffantv.ai.studio and keeps friend notice banner above floating bubble', () => {
+    const dsSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/DesignSystemShowcase.tsx'),
+      'utf8'
+    );
+    expect(dsSrc).toContain('https://riffantv.ai.studio');
+    expect(dsSrc).toContain('<QRCodeSVG value="https://riffantv.ai.studio"');
+
+    const friendsSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/FriendsInviteModal.tsx'),
+      'utf8'
+    );
+    expect(friendsSrc).toContain('z-[240]');
+    expect(friendsSrc).toContain('window.setTimeout');
+    expect(friendsSrc).toContain('onDismissFriendNotice()');
   });
 });

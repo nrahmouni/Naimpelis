@@ -113,6 +113,7 @@ export interface RoomChatMessage {
   text: string;
   timestamp: number;
   isSystem?: boolean;
+  systemUserId?: string;
   systemType?: 'join' | 'leave' | 'video_change' | 'host_transfer' | 'host_change' | 'poll' | 'lock';
 }
 

@@ -1,4 +1,5 @@
-import React, { useId } from 'react';
+import React, { useId, useState, useRef, useEffect } from 'react';
+import { ChevronDown, Check, Loader2 } from 'lucide-react';
 
 export type UnifiedLanguageCode = 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
 export type FlagCode =
@@ -17,7 +18,8 @@ export type FlagCode =
   | 'lat'
   | 'docs'
   | 'all'
-  | 'vose';
+  | 'vose'
+  | 'rif';
 
 export const FlagBadgeSvg: React.FC<{ code: FlagCode; className?: string }> = ({
   code,
@@ -81,6 +83,35 @@ export const FlagBadgeSvg: React.FC<{ code: FlagCode; className?: string }> = ({
         <circle cx="2.2" cy="6.5" r="0.65" fill="#FFFFFF" />
         <circle cx="5.2" cy="6.5" r="0.65" fill="#FFFFFF" />
         <circle cx="8.2" cy="6.5" r="0.65" fill="#FFFFFF" />
+      </svg>
+    );
+  }
+
+  if (code === 'rif') {
+    const crescentMaskId = `rifMoon-${uid}`;
+    return (
+      <svg viewBox="0 0 24 16" className={baseClass} aria-hidden="true">
+        <defs>
+          <mask id={crescentMaskId}>
+            <rect width="24" height="16" fill="#000000" />
+            <circle cx="9.8" cy="8" r="2.1" fill="#FFFFFF" />
+            <circle cx="10.65" cy="8" r="1.68" fill="#000000" />
+          </mask>
+        </defs>
+        <rect width="24" height="16" fill="#C8102E" />
+        <polygon points="12,1.5 21,8 12,14.5 3,8" fill="#FFFFFF" />
+        <rect
+          x="6.5"
+          y="4.5"
+          width="6.5"
+          height="7"
+          fill="#007A3D"
+          mask={`url(#${crescentMaskId})`}
+        />
+        <g fill="#007A3D">
+          <polygon points="14.4,6.15 16.0,8.93 12.8,8.93" />
+          <polygon points="14.4,9.85 16.0,7.07 12.8,7.07" />
+        </g>
       </svg>
     );
   }
@@ -297,3 +328,179 @@ export const LanguageBadge: React.FC<LanguageBadgeProps> = ({
     </Comp>
   );
 };
+
+export interface MediaLanguageOptionItem {
+  code: string;
+  label?: string;
+}
+
+export interface MediaLanguageSelectorProps {
+  labelPrefix?: string;
+  selectedLang: string;
+  availableLangs?: readonly (string | MediaLanguageOptionItem)[];
+  onSelectLang: (code: string) => void;
+  disabled?: boolean;
+  probing?: boolean;
+  size?: 'sm' | 'md';
+  align?: 'left' | 'right';
+  className?: string;
+  triggerClassName?: string;
+}
+
+/**
+ * High-polish accessible "Idioma:" dropdown selector displaying custom SVG flags,
+ * clean responsive popover, and checkmark selection indicator.
+ */
+export const MediaLanguageSelector: React.FC<MediaLanguageSelectorProps> = ({
+  labelPrefix = 'Idioma:',
+  selectedLang,
+  availableLangs,
+  onSelectLang,
+  disabled = false,
+  probing = false,
+  size = 'md',
+  align = 'left',
+  className = '',
+  triggerClassName = '',
+}) => {
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  // Normalize candidate options
+  const rawList: (string | MediaLanguageOptionItem)[] =
+    Array.isArray(availableLangs) && availableLangs.length > 0
+      ? [...availableLangs]
+      : ['ES', 'LAT', 'VOSE', 'EN'];
+
+  const options: Array<{ code: string; normCode: UnifiedLanguageCode; label: string; flag: FlagCode }> = [];
+  const seenCodes = new Set<string>();
+
+  for (const item of rawList) {
+    const rawCode = typeof item === 'string' ? item : item?.code;
+    if (!rawCode) continue;
+    const norm = normalizeLangCode(rawCode);
+    const codeKey = String(rawCode).trim().toUpperCase();
+    if (seenCodes.has(codeKey)) continue;
+    seenCodes.add(codeKey);
+    const meta = LANGUAGE_LABELS[norm];
+    const customLabel = typeof item === 'object' && item.label ? item.label : meta.title;
+    options.push({
+      code: codeKey,
+      normCode: norm,
+      label: customLabel,
+      flag: meta.flag,
+    });
+  }
+
+  // Active option info
+  const activeNorm = normalizeLangCode(selectedLang);
+  const activeMeta = LANGUAGE_LABELS[activeNorm];
+  const activeOption = options.find((o) => o.code === String(selectedLang).trim().toUpperCase()) || {
+    code: selectedLang,
+    normCode: activeNorm,
+    label: activeMeta.title,
+    flag: activeMeta.flag,
+  };
+
+  // Close on outside click
+  useEffect(() => {
+    if (!open) return;
+    const handleClickOutside = (e: MouseEvent | TouchEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    document.addEventListener('touchstart', handleClickOutside);
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('touchstart', handleClickOutside);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  const heightClass = size === 'sm' ? 'min-h-[34px] text-xs' : 'min-h-[42px] text-xs sm:text-sm';
+  const flagClass = size === 'sm' ? 'w-4 h-2.5' : 'w-5 h-3.5';
+
+  return (
+    <div ref={containerRef} className={`relative inline-block text-left ${className}`}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((prev) => !prev)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`group flex items-center gap-2 px-3 py-1.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 hover:border-[#9146FF]/50 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed select-none active:scale-[0.98] ${heightClass} ${triggerClassName}`}
+      >
+        <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400 group-hover:text-zinc-300">
+          {labelPrefix}
+        </span>
+        <span className="inline-flex items-center gap-1.5 font-bold text-white">
+          <FlagBadgeSvg code={activeOption.flag} className={flagClass} />
+          <span className="truncate max-w-[140px] sm:max-w-[200px]">{activeOption.label}</span>
+        </span>
+        {probing ? (
+          <Loader2 className="w-3.5 h-3.5 animate-spin text-[#BF94FF] shrink-0 ml-0.5" />
+        ) : (
+          <ChevronDown
+            className={`w-3.5 h-3.5 text-zinc-400 group-hover:text-white transition-transform duration-200 shrink-0 ${
+              open ? 'rotate-180 text-[#BF94FF]' : ''
+            }`}
+          />
+        )}
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          className={`absolute ${
+            align === 'right' ? 'right-0' : 'left-0'
+          } mt-2 z-[250] min-w-[220px] sm:min-w-[260px] rounded-2xl bg-[#0F111E]/95 backdrop-blur-2xl border border-white/15 p-1.5 shadow-[0_18px_45px_rgba(0,0,0,0.85)] animate-in fade-in zoom-in-95 duration-150`}
+        >
+          <div className="px-2.5 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-zinc-400 border-b border-white/[0.08] mb-1 flex items-center justify-between">
+            <span>{labelPrefix} Audio disponible</span>
+            {probing && <span className="text-[9px] text-[#BF94FF] normal-case">Comprobando...</span>}
+          </div>
+          <div className="space-y-0.5 max-h-60 overflow-y-auto no-scrollbar">
+            {options.map((opt) => {
+              const isSelected = opt.code === activeOption.code;
+              return (
+                <button
+                  key={opt.code}
+                  type="button"
+                  role="option"
+                  aria-selected={isSelected}
+                  onClick={() => {
+                    onSelectLang(opt.code);
+                    setOpen(false);
+                  }}
+                  className={`w-full min-h-[38px] px-2.5 py-2 rounded-xl flex items-center justify-between gap-2.5 text-left text-xs font-semibold cursor-pointer transition-all ${
+                    isSelected
+                      ? 'bg-[#9146FF]/25 text-[#E9D5FF] font-bold border border-[#9146FF]/40 shadow-sm'
+                      : 'text-zinc-200 hover:bg-white/[0.08] hover:text-white'
+                  }`}
+                >
+                  <span className="flex items-center gap-2 min-w-0">
+                    <FlagBadgeSvg code={opt.flag} className="w-5 h-3.5 shrink-0" />
+                    <span className="truncate">{opt.label}</span>
+                  </span>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="text-[10px] font-mono font-bold text-zinc-400 bg-black/40 px-1.5 py-0.5 rounded-md">
+                      {opt.code}
+                    </span>
+                    {isSelected && <Check className="w-4 h-4 text-[#BF94FF] shrink-0" />}
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+

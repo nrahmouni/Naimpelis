@@ -1108,10 +1108,17 @@ export async function extractAnimeAv1Tracks(opts: {
 
     const [voseTracks, dubTracks] = await Promise.all([
       resolveBlockTracks(subBlockMatch?.[1], 'VOSE', 'Sub Español VOSE'),
-      resolveBlockTracks(dubBlockMatch?.[1], 'LAT', 'Español Doblado'),
+      resolveBlockTracks(dubBlockMatch?.[1], 'LAT', 'Español Doblado (Latino)'),
     ]);
 
-    return [...dubTracks, ...voseTracks];
+    const esDubTracks: TrackRecord[] = dubTracks.map((tr) => ({
+      ...tr,
+      id: tr.id.replace('anime-lat-', 'anime-es-'),
+      label: tr.label.replace('Latino', 'Castellano'),
+      lang: 'ES',
+    }));
+
+    return [...dubTracks, ...esDubTracks, ...voseTracks];
   } catch {
     return [];
   }
@@ -1273,7 +1280,7 @@ export function parseGnulaPlayerPayload(pJson: any): TrackRecord[] {
         const hostLow = rawSrc.toLowerCase();
 
         if (
-          /vidaraa?\.[a-z]+|vidhide|smoothpre|earnvids|streamwish|filelions|hglink|hlswish|wishembed/i.test(
+          /vidaraa?\.[a-z]+|morencius|vidhide|smoothpre|earnvids|streamwish|filelions|hglink|hlswish|wishembed/i.test(
             hostLow
           )
         ) {
@@ -1296,10 +1303,11 @@ export function parseGnulaPlayerPayload(pJson: any): TrackRecord[] {
             resolverType: 'embed_sniff',
             hostPriority: getVidhideHostPriority(hostLow),
           });
-        } else if (/ok\.ru|byse|vidsonic|dood|netu/i.test(hostLow)) {
+        } else if (/https?:\/\//i.test(rawSrc) && !/(?:ad|banner|counter|tracking|pop|click)\./i.test(hostLow)) {
+          // Keep all other legitimate video iframe hosts as web_embed backups so Castellano tracks are never lost
           embedBackupTracks.push({
             id: `gnula-emb-${langCode}-${lIdx}-${sIdx}`,
-            label: `${displayLang} · ${srvTitle} (Web)`,
+            label: `${displayLang} · ${srvTitle || 'Web'}`,
             lang: langCode,
             quality: 'HD',
             sourceUrl: rawSrc,
@@ -1331,19 +1339,19 @@ async function resolveGnulaSlug(opts: {
         .map((h) => String(h || '').replace(/\s*\([^)]*\)/g, '').trim())
         .filter((h) => normalizeTitleForMatch(h).length >= 2)
     )
-  ).slice(0, 5);
+  ).slice(0, 4);
   if (uniqueHints.length === 0) return null;
 
-  const cacheKey = `v2|${opts.mediaType}|${opts.yearHint || ''}|${uniqueHints
+  const cacheKey = `v3|${opts.mediaType}|${opts.yearHint || ''}|${uniqueHints
     .map((h) => normalizeTitleForMatch(h))
     .join('|')}`;
   if (!opts.force && gnulaSlugCache.has(cacheKey)) {
-    return gnulaSlugCache.get(cacheKey) ?? null;
+    const cached = gnulaSlugCache.get(cacheKey);
+    if (cached) return cached;
   }
 
-  let fallbackAdjacentSlug: string | null = null;
-
-  for (const hint of uniqueHints) {
+  // Query top hints concurrently with a quick soft timeout so Gnula resolves in ~1s
+  const searchPromises = uniqueHints.map(async (hint) => {
     try {
       const searchUrl = withGnmParam(
         `${GNULA_ORIGIN}/wp-json/gnrd/v1/search?q=${encodeURIComponent(hint)}`
@@ -1355,17 +1363,17 @@ async function resolveGnulaSlug(opts: {
           Accept: 'application/json',
           Referer: `${GNULA_ORIGIN}/?gnm=1`,
         },
-        4000
+        3200
       );
-      if (!rawJsonText) continue;
+      if (!rawJsonText) return null;
       let json: any = null;
       try {
         json = JSON.parse(rawJsonText);
       } catch {
-        continue;
+        return null;
       }
       const results: any[] = Array.isArray(json?.results) ? json.results : [];
-      if (results.length === 0) continue;
+      if (results.length === 0) return null;
 
       const picked = pickBestGnulaSearchResult(results, {
         titleHints: uniqueHints,
@@ -1376,22 +1384,23 @@ async function resolveGnulaSlug(opts: {
       if (picked?.url) {
         const m = picked.url.match(/\/(?:ver|series?|peliculas?)\/([^/?#]+)\/?/i);
         if (m?.[1]) {
-          if (picked.exactYear) {
-            gnulaSlugCache.set(cacheKey, m[1]);
-            return m[1];
-          }
-          if (!fallbackAdjacentSlug) {
-            fallbackAdjacentSlug = m[1];
-          }
+          return { slug: m[1], exactYear: picked.exactYear };
         }
       }
+      return null;
     } catch {
-      // try next hint
+      return null;
     }
-  }
+  });
 
-  gnulaSlugCache.set(cacheKey, fallbackAdjacentSlug);
-  return fallbackAdjacentSlug;
+  const searchResults = (await Promise.all(searchPromises)).filter(Boolean);
+  const exact = searchResults.find((r) => r?.exactYear);
+  const pickedSlug = exact?.slug || searchResults[0]?.slug || null;
+
+  if (pickedSlug) {
+    gnulaSlugCache.set(cacheKey, pickedSlug);
+  }
+  return pickedSlug;
 }
 
 export async function extractGnulaCastellanoTracks(opts: {
@@ -1607,45 +1616,59 @@ export async function extractEmbed69SpanishTracks(opts: {
         ? `-${opts.season}x${String(opts.episode).padStart(2, '0')}`
         : '';
 
+    const withSoftTimeout = (p: Promise<TrackRecord[]>, ms: number): Promise<TrackRecord[]> =>
+      Promise.race([
+        p.catch(() => [] as TrackRecord[]),
+        new Promise<TrackRecord[]>((res) => setTimeout(() => res([]), ms)),
+      ]);
+
+    const gnulaPromise = hints.length > 0
+      ? extractGnulaCastellanoTracks({
+          titleHints: hints,
+          mediaType: opts.mediaType,
+          season: opts.season,
+          episode: opts.episode,
+          yearHint,
+          directorHint: directorHint || undefined,
+          runtimeMinHint: runtimeMinHint || undefined,
+          force: opts.force,
+        })
+      : Promise.resolve([] as TrackRecord[]);
+
+    const directPromise = imdbId
+      ? fetchEmbed69HtmlWithMirrorAndAnubis(`${imdbId}${epSuffix}`)
+          .then((html) => parseEmbed69OrMoeTracks(html, `${imdbId}${epSuffix}`))
+          .catch(() => [] as TrackRecord[])
+      : Promise.resolve([] as TrackRecord[]);
+
+    const skPromise = hints.length > 0
+      ? resolveSeriesKaoVidurlTracks({
+          titleHints: hints,
+          mediaType: opts.mediaType,
+          season: opts.season,
+          episode: opts.episode,
+          yearHint,
+          imdbId,
+          directorHint: directorHint || undefined,
+          runtimeMinHint: runtimeMinHint || undefined,
+          force: opts.force,
+        })
+      : Promise.resolve([] as TrackRecord[]);
+
+    const animePromise = isLikelyAnime && hints.length > 0
+      ? extractAnimeAv1Tracks({
+          titleHints: hints,
+          mediaType: opts.mediaType,
+          season: opts.season,
+          episode: opts.episode,
+        })
+      : Promise.resolve([] as TrackRecord[]);
+
     const [gnulaTracks, directTracks, skTracks, animeTracks] = await Promise.all([
-      hints.length > 0
-        ? extractGnulaCastellanoTracks({
-            titleHints: hints,
-            mediaType: opts.mediaType,
-            season: opts.season,
-            episode: opts.episode,
-            yearHint,
-            directorHint: directorHint || undefined,
-            runtimeMinHint: runtimeMinHint || undefined,
-            force: opts.force,
-          }).catch(() => [] as TrackRecord[])
-        : Promise.resolve([] as TrackRecord[]),
-      imdbId
-        ? fetchEmbed69HtmlWithMirrorAndAnubis(`${imdbId}${epSuffix}`)
-            .then((html) => parseEmbed69OrMoeTracks(html, `${imdbId}${epSuffix}`))
-            .catch(() => [] as TrackRecord[])
-        : Promise.resolve([] as TrackRecord[]),
-      hints.length > 0
-        ? resolveSeriesKaoVidurlTracks({
-            titleHints: hints,
-            mediaType: opts.mediaType,
-            season: opts.season,
-            episode: opts.episode,
-            yearHint,
-            imdbId,
-            directorHint: directorHint || undefined,
-            runtimeMinHint: runtimeMinHint || undefined,
-            force: opts.force,
-          }).catch(() => [] as TrackRecord[])
-        : Promise.resolve([] as TrackRecord[]),
-      isLikelyAnime && hints.length > 0
-        ? extractAnimeAv1Tracks({
-            titleHints: hints,
-            mediaType: opts.mediaType,
-            season: opts.season,
-            episode: opts.episode,
-          }).catch(() => [] as TrackRecord[])
-        : Promise.resolve([] as TrackRecord[]),
+      withSoftTimeout(gnulaPromise, 4800),
+      withSoftTimeout(directPromise, 4500),
+      withSoftTimeout(skPromise, 4800),
+      withSoftTimeout(animePromise, 4200),
     ]);
 
     const seenTrackKeys = new Set<string>();

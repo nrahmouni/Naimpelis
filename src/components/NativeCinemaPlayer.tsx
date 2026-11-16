@@ -76,6 +76,7 @@ import { useDirectCast } from './player/useDirectCast';
 import { CloudBrowserOverlay } from './player/CloudBrowserOverlay';
 import { PlayerProSettingsModal } from './player/PlayerProSettingsModal';
 import { VoiceWaveBars } from './games/GameVoiceBar';
+import { MediaLanguageSelector } from './ui/LanguageBadge';
 import {
   getEmbedServerStatus,
   isMobileExternalTabContext,
@@ -4856,120 +4857,107 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           <div className="bg-[#0B0C14]/96 backdrop-blur-2xl border-t border-white/[0.08] px-3 sm:px-4 py-2 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             {/* Row 1 (Left on Desktop): Quick Language Pills (VOD), Unique Multi-Server Switcher, OR Live Signal Pills */}
             <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
-              {videoState.tracks.length > 1 &&
-              (videoState.mode === 'embed' ||
-                (videoState.tracks || []).some(
-                  (tr) => tr.resolverType === 'web_embed' || tr.resolverType === 'youtube'
-                )) ? (
-                <div className="flex items-center gap-1 bg-[#121420] p-1 rounded-2xl border border-white/[0.08] shrink-0">
+              {!videoState.isLive && (videoState.tracks || []).length > 0 ? (
+                <div className="flex items-center gap-1.5 shrink-0 flex-wrap">
+                  {/* "Idioma:" Selector with authentic SVG flags */}
                   {(() => {
-                    const visibleTracks = videoState.tracks.slice(0, 6);
-                    const uniqueLabels = formatUniqueTrackChipLabels(visibleTracks, lang);
-                    return visibleTracks.map((tr, idx) => {
-                      const active = idx === videoState.activeTrackIndex;
-                      const shortLabel = uniqueLabels[idx] || `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`;
-                      return (
-                        <button
-                          key={tr.id || idx}
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            if (externalWinState === 'open') {
-                              handleSelectExternalServer(idx);
-                            } else {
-                              onSelectTrack(idx, currentTime);
-                            }
-                          }}
-                          title={tr.label}
-                          className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
-                            active
-                              ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
-                              : 'text-zinc-300 hover:bg-white/10'
-                          }`}
-                        >
-                          {shortLabel}
-                        </button>
-                      );
-                    });
-                  })()}
-                  {videoState.mode === 'embed' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        openControlledExternalWindow();
-                      }}
-                      title={
-                        isMobileExternal
-                          ? 'Reproducir en pestaña externa controlada'
-                          : 'Reproducir en ventana externa controlada'
-                      }
-                      className="min-h-[34px] px-2.5 rounded-xl text-xs font-bold bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] border border-[#9146FF]/45 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
-                    >
-                      <Play className="w-3 h-3 fill-current shrink-0" />
-                      <span>{pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}</span>
-                    </button>
-                  )}
-                  {videoState.mode === 'embed' && onOpenInCloudBrowser && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        onOpenInCloudBrowser(
-                          videoState.tracks[videoState.activeTrackIndex]?.sourceUrl ||
-                            videoState.url
-                        );
-                      }}
-                      title={pickLang(lang, {
-                        es: 'Abrir en Cloud Browser aislado sin ventanas emergentes',
-                        ca: 'Obrir en Cloud Browser aïllat sense finestres emergents',
-                        en: 'Open in isolated ad-free Cloud Browser',
-                      })}
-                      className="min-h-[34px] px-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
-                    >
-                      <Globe className="w-3.5 h-3.5 shrink-0" />
-                      <span>Cloud HD</span>
-                    </button>
-                  )}
-                </div>
-              ) : !videoState.isLive &&
-              (videoState.mode === 'hls' || videoState.mode === 'direct') &&
-              (videoState.tracks || []).some((tr) =>
-                ['ES', 'CAT', 'LAT', 'VOSE', 'EN'].includes(resolveTrackLang(tr))
-              ) ? (
-                <div className="flex items-center gap-1 bg-[#121420] p-1 rounded-2xl border border-white/[0.08] shrink-0">
-                  {(
-                    [
-                      { code: 'CAT', short: 'CAT', title: 'Català' },
-                      { code: 'ES', short: 'ES', title: 'Castellano' },
-                      { code: 'LAT', short: 'LAT', title: 'Latino' },
-                      { code: 'VOSE', short: 'VOSE', title: 'VOSE' },
-                      { code: 'EN', short: 'EN', title: 'English' },
-                    ] as const
-                  )
-                    .filter((langBtn) =>
-                      (videoState.tracks || []).some(
-                        (tr) => resolveTrackLang(tr) === langBtn.code
+                    const availableTrackLangs = Array.from(
+                      new Set(
+                        (videoState.tracks || [])
+                          .map(resolveTrackLang)
+                          .filter((c) => ['ES', 'CAT', 'LAT', 'VOSE', 'EN'].includes(c))
                       )
-                    )
-                    .map((langBtn) => {
-                      const isCurrentLang = activeTrackLangCode === langBtn.code;
-                      return (
-                        <button
-                          key={langBtn.code}
-                          type="button"
-                          onClick={() => handleQuickLanguageSwitch(langBtn.code)}
-                          title={langBtn.title}
-                          className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold flex items-center gap-1 whitespace-nowrap cursor-pointer active:scale-95 transition-all ${
-                            isCurrentLang
-                              ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
-                              : 'text-zinc-200 hover:bg-white/10'
-                          }`}
-                        >
-                          <span>{langBtn.short}</span>
-                        </button>
-                      );
-                    })}
+                    );
+                    if (availableTrackLangs.length === 0) return null;
+                    return (
+                      <MediaLanguageSelector
+                        labelPrefix={pickLang(lang, { es: 'Idioma:', ca: 'Idioma:', en: 'Language:' })}
+                        selectedLang={activeTrackLangCode || availableTrackLangs[0]}
+                        availableLangs={availableTrackLangs}
+                        onSelectLang={(code) => {
+                          handleQuickLanguageSwitch(code as any);
+                        }}
+                        size="sm"
+                      />
+                    );
+                  })()}
+
+                  {/* Multi-server / mirror switcher for active language */}
+                  {(() => {
+                    const sameLangTracks = (videoState.tracks || [])
+                      .map((tr, idx) => ({ tr, idx }))
+                      .filter(({ tr }) => resolveTrackLang(tr) === activeTrackLangCode);
+                    if (sameLangTracks.length <= 1 && videoState.mode !== 'embed') return null;
+                    return (
+                      <div className="flex items-center gap-1 bg-[#121420] p-1 rounded-2xl border border-white/[0.08] shrink-0">
+                        {sameLangTracks.length > 1 &&
+                          sameLangTracks.map(({ tr, idx }, srvIdx) => {
+                            const active = idx === videoState.activeTrackIndex;
+                            return (
+                              <button
+                                key={tr.id || idx}
+                                type="button"
+                                onClick={() => {
+                                  triggerHaptic('light');
+                                  if (externalWinState === 'open') {
+                                    handleSelectExternalServer(idx);
+                                  } else {
+                                    onSelectTrack(idx, currentTime);
+                                  }
+                                }}
+                                title={tr.label}
+                                className={`min-h-[34px] px-2.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                                  active
+                                    ? 'bg-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                                    : 'text-zinc-300 hover:bg-white/10'
+                                }`}
+                              >
+                                {pickLang(lang, { es: 'Servidor', ca: 'Servidor', en: 'Server' })} {srvIdx + 1}
+                              </button>
+                            );
+                          })}
+                        {videoState.mode === 'embed' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('medium');
+                              openControlledExternalWindow();
+                            }}
+                            title={
+                              isMobileExternal
+                                ? 'Reproducir en pestaña externa controlada'
+                                : 'Reproducir en ventana externa controlada'
+                            }
+                            className="min-h-[34px] px-2.5 rounded-xl text-xs font-bold bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] border border-[#9146FF]/45 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+                          >
+                            <Play className="w-3 h-3 fill-current shrink-0" />
+                            <span>{pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}</span>
+                          </button>
+                        )}
+                        {videoState.mode === 'embed' && onOpenInCloudBrowser && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('medium');
+                              onOpenInCloudBrowser(
+                                videoState.tracks[videoState.activeTrackIndex]?.sourceUrl ||
+                                  videoState.url
+                              );
+                            }}
+                            title={pickLang(lang, {
+                              es: 'Abrir en Cloud Browser aislado sin ventanas emergentes',
+                              ca: 'Obrir en Cloud Browser aïllat sense finestres emergents',
+                              en: 'Open in isolated ad-free Cloud Browser',
+                            })}
+                            className="min-h-[34px] px-2.5 rounded-xl text-xs font-bold bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-400/30 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
+                          >
+                            <Globe className="w-3.5 h-3.5 shrink-0" />
+                            <span>Cloud HD</span>
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </div>
               ) : videoState.isLive && videoState.tracks.length > 1 ? (
                 <div className="flex items-center gap-1 bg-[#121420] p-1 rounded-2xl border border-white/[0.08] shrink-0">

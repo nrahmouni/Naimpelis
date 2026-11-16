@@ -277,6 +277,8 @@ export function App() {
     useState<IncomingFriendAddedNotice | null>(null);
   const [inviteSentFeedback, setInviteSentFeedback] = useState<string | null>(null);
   const inviteFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const friendNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seenFriendNoticeBySenderRef = useRef<Map<string, number>>(new Map());
 
   // User-controlled Desktop <-> Mobile view switcher (NEVER forces mobile automatically)
   const {
@@ -1426,27 +1428,32 @@ export function App() {
   // FRIENDS LIST & DIRECT IN-APP ROOM INVITATIONS (REAL-TIME PRESENCE)
   // ============================================================================
   const handleAddFriend = useCallback(
-    (entry: {
-      friendId: string;
-      name: string;
-      avatar: string;
-      color: string;
-      friendCode?: string;
-    }) => {
+    (
+      entry: {
+        friendId: string;
+        name: string;
+        avatar: string;
+        color: string;
+        friendCode?: string;
+      },
+      opts?: { skipNotify?: boolean }
+    ) => {
       triggerHaptic('success');
       const { list, friend } = upsertLocalFriend(entry);
       setSavedFriends(list);
       upsertCloudFriend(friend).catch(() => {});
-      socketService.notifyFriendAdded({
-        toUserId: friend.friendId,
-        toFriendCode: friend.friendCode,
-        fromUser: {
-          id: profile.id,
-          name: profile.name,
-          avatar: profile.avatar || '🎬',
-          color: profile.color || '#9146FF',
-        },
-      });
+      if (!opts?.skipNotify) {
+        socketService.notifyFriendAdded({
+          toUserId: friend.friendId,
+          toFriendCode: friend.friendCode,
+          fromUser: {
+            id: profile.id,
+            name: profile.name,
+            avatar: profile.avatar || '🎬',
+            color: profile.color || '#9146FF',
+          },
+        });
+      }
       if (inviteFeedbackTimerRef.current) clearTimeout(inviteFeedbackTimerRef.current);
       setInviteSentFeedback(`✓ ${friend.name} guardado en Mis Amigos`);
       inviteFeedbackTimerRef.current = setTimeout(() => {
@@ -1533,10 +1540,21 @@ export function App() {
           });
         }
       } else if (type === 'INCOMING_FRIEND_ADDED') {
-        if (payload?.fromUserId && payload?.fromUserId !== profile.id) {
+        const senderId = String(payload?.fromUserId || '').trim();
+        if (senderId && senderId !== profile.id) {
+          const now = Date.now();
+          const prevSeenAt = seenFriendNoticeBySenderRef.current.get(senderId) || 0;
+          if (now - prevSeenAt < 45_000) {
+            return;
+          }
+          seenFriendNoticeBySenderRef.current.set(senderId, now);
           playCinemaSound('reaction');
           const notice = payload as unknown as IncomingFriendAddedNotice;
           setFriendAddedNotice(notice);
+          if (friendNoticeTimerRef.current) clearTimeout(friendNoticeTimerRef.current);
+          friendNoticeTimerRef.current = setTimeout(() => {
+            setFriendAddedNotice((curr) => (curr?.id === notice.id ? null : curr));
+          }, 7000);
           pushNotification({
             category: 'invite',
             title: `${notice.fromUserName || 'Nuevo amigo'} te añadió a sus amigos`,
@@ -1630,7 +1648,24 @@ export function App() {
         setMatchResponses(payload.matchResponses || null);
         setGameMoveError(null);
         setParticipants(payload.participants || []);
-        setMessages(payload.messages || []);
+        setMessages(() => {
+          const raw: ChatMessage[] = payload.messages || [];
+          const out: ChatMessage[] = [];
+          const seenIds = new Set<string>();
+          const recentJoins = new Map<string, number>();
+          for (const m of raw) {
+            if (seenIds.has(m.id)) continue;
+            seenIds.add(m.id);
+            if (m.isSystem && m.systemType === 'join') {
+              const key = (m.systemUserId || m.text.trim()).toLowerCase();
+              const prevTs = recentJoins.get(key);
+              if (prevTs !== undefined && Math.abs(m.timestamp - prevTs) < 180_000) continue;
+              recentJoins.set(key, m.timestamp);
+            }
+            out.push(m);
+          }
+          return out.slice(-150);
+        });
         setPinnedMessage(payload.pinnedMessage || null);
         setRoomQueue(payload.queue || []);
         addRecentRoom({ id: roomId, name: nextRoomTitle });
@@ -1716,9 +1751,23 @@ export function App() {
       } else if (type === 'PARTICIPANTS_UPDATED') {
         setParticipants(payload.participants || []);
         if (payload.hostId) setHostId(payload.hostId);
-        const joinMsg = payload.message;
+        const joinMsg = payload.message as ChatMessage | undefined;
         if (joinMsg) {
-          setMessages((prev) => [...prev.slice(-149), joinMsg]);
+          setMessages((prev) => {
+            if (prev.some((m) => m.id === joinMsg.id)) return prev;
+            if (joinMsg.isSystem && joinMsg.systemType === 'join') {
+              const key = (joinMsg.systemUserId || joinMsg.text.trim()).toLowerCase();
+              const isDupJoin = prev.slice(-20).some(
+                (m) =>
+                  m.isSystem &&
+                  m.systemType === 'join' &&
+                  (m.systemUserId || m.text.trim()).toLowerCase() === key &&
+                  Math.abs(joinMsg.timestamp - m.timestamp) < 180_000
+              );
+              if (isDupJoin) return prev;
+            }
+            return [...prev.slice(-149), joinMsg];
+          });
           playCinemaSound('join');
         }
       } else if (type === 'VIDEO_STATE_UPDATED') {
@@ -1746,16 +1795,23 @@ export function App() {
         }
         const vidMsg = payload.message;
         if (vidMsg) {
-          setMessages((prev) => [...prev.slice(-149), vidMsg]);
+          setMessages((prev) =>
+            prev.some((m) => m.id === vidMsg.id) ? prev : [...prev.slice(-149), vidMsg]
+          );
         }
       } else if (type === 'QUEUE_UPDATED') {
         setRoomQueue(payload.queue || []);
         const qMsg = payload.message;
         if (qMsg) {
-          setMessages((prev) => [...prev.slice(-149), qMsg]);
+          setMessages((prev) =>
+            prev.some((m) => m.id === qMsg.id) ? prev : [...prev.slice(-149), qMsg]
+          );
         }
       } else if (type === 'NEW_CHAT_MESSAGE') {
-        setMessages((prev) => [...prev.slice(-149), payload as unknown as ChatMessage]);
+        const incomingChat = payload as unknown as ChatMessage;
+        setMessages((prev) =>
+          prev.some((m) => m.id === incomingChat.id) ? prev : [...prev.slice(-149), incomingChat]
+        );
         if (mobileTabRef.current !== 'chat' && payload.senderId !== profile.id) {
           setUnreadChatCount((c) => c + 1);
         }
@@ -2228,7 +2284,7 @@ export function App() {
   // ============================================================================
   const handlePlayMovie = async (
     movie: CatalogMovie,
-    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT',
+    preferLang: string,
     startOrOpts?: number | { startAtSec?: number; forceSpanish?: boolean }
   ) => {
     if (!canChangeMedia) {
@@ -2241,14 +2297,15 @@ export function App() {
       typeof startOrOpts === 'object' && startOrOpts !== null
         ? Boolean(startOrOpts.forceSpanish)
         : false;
-    const langFullLabelMap: Record<'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT', string> = {
+    const langFullLabelMap: Record<string, string> = {
       ES: 'Castellano (España)',
       CAT: 'Català',
       LAT: 'Español Latino',
       VOSE: 'Subtitulado (VOSE)',
       EN: 'Inglés Original (EN)',
+      RIF: 'Tarifit (Riffian)',
     };
-    const requestedLangName = langFullLabelMap[preferLang] || 'Español HD';
+    const requestedLangName = langFullLabelMap[preferLang] || preferLang || 'Español HD';
 
     const histId = canonicalizeHistoryItemId({
       id: movie.id,
@@ -2272,7 +2329,7 @@ export function App() {
       poster: movie.poster,
       backdrop: movie.backdrop,
       overview: movie.overview,
-      preferLang,
+      preferLang: preferLang as any,
     });
     scrollDesktopToPlayer();
     setIsExtracting(true);
@@ -2379,7 +2436,7 @@ export function App() {
         poster: movie.poster,
         backdrop: movie.backdrop || movie.poster,
         year: movie.year,
-        preferLang,
+        preferLang: preferLang as any,
         bingetrixUrl: movie.bingetrixUrl,
         movidyUrl: movie.movidyUrl,
         vestUrl: movie.vestUrl,
@@ -2408,7 +2465,7 @@ export function App() {
   const handlePlaySeriesEpisode = async (
     series: TvSeriesDetails,
     episode: TvEpisodeItem,
-    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
+    preferLang: string,
     startOrOpts?: number | { startAtSec?: number; forceSpanish?: boolean }
   ) => {
     if (!canChangeMedia) {
@@ -2599,7 +2656,7 @@ export function App() {
         season: episode.seasonNumber,
         episode: episode.episodeNumber,
         episodeTitle: episode.title,
-        preferLang,
+        preferLang: preferLang as any,
         resumeTimeSec: resumeAtSec,
       });
       setWatchHistory(list);
@@ -4628,16 +4685,22 @@ export function App() {
           onAcceptInvite={handleAcceptIncomingRoomInvite}
           onDismissInvite={() => setIncomingInvite(null)}
           onAcceptFriendBack={(notice) => {
-            handleAddFriend({
-              friendId: notice.fromUserId,
-              name: notice.fromUserName,
-              avatar: notice.fromUserAvatar,
-              color: notice.fromUserColor,
-              friendCode: notice.fromFriendCode,
-            });
+            handleAddFriend(
+              {
+                friendId: notice.fromUserId,
+                name: notice.fromUserName,
+                avatar: notice.fromUserAvatar,
+                color: notice.fromUserColor,
+                friendCode: notice.fromFriendCode,
+              },
+              { skipNotify: true }
+            );
             setFriendAddedNotice(null);
           }}
-          onDismissFriendNotice={() => setFriendAddedNotice(null)}
+          onDismissFriendNotice={() => {
+            if (friendNoticeTimerRef.current) clearTimeout(friendNoticeTimerRef.current);
+            setFriendAddedNotice(null);
+          }}
         />
         <LobbyScreen
           initialProfile={profile}
@@ -4666,7 +4729,7 @@ export function App() {
           onOpenAdsPage={() => {
             setIsAdsPageOpen(true);
             if (typeof window !== 'undefined') {
-              window.history.pushState({}, '', '/naimcine-ads');
+              window.history.pushState({}, '', '/ads');
             }
           }}
         />
@@ -4974,6 +5037,10 @@ export function App() {
           }
           onPlayCustomUrl={handlePlayCustomUrl}
           onOpenCloudBrowser={handleOpenCloudBrowser}
+          onBrowseCatalog={() => {
+            setIsFloatingRoomOpen(false);
+            enterWorld('cine');
+          }}
           onStartPollFromQueue={handleStartPollFromQueue}
           onVotePoll={handleVotePoll}
           onClosePoll={handleClosePoll}
@@ -5036,16 +5103,22 @@ export function App() {
           onAcceptInvite={handleAcceptIncomingRoomInvite}
           onDismissInvite={() => setIncomingInvite(null)}
           onAcceptFriendBack={(notice) => {
-            handleAddFriend({
-              friendId: notice.fromUserId,
-              name: notice.fromUserName,
-              avatar: notice.fromUserAvatar,
-              color: notice.fromUserColor,
-              friendCode: notice.fromFriendCode,
-            });
+            handleAddFriend(
+              {
+                friendId: notice.fromUserId,
+                name: notice.fromUserName,
+                avatar: notice.fromUserAvatar,
+                color: notice.fromUserColor,
+                friendCode: notice.fromFriendCode,
+              },
+              { skipNotify: true }
+            );
             setFriendAddedNotice(null);
           }}
-          onDismissFriendNotice={() => setFriendAddedNotice(null)}
+          onDismissFriendNotice={() => {
+            if (friendNoticeTimerRef.current) clearTimeout(friendNoticeTimerRef.current);
+            setFriendAddedNotice(null);
+          }}
         />
 
         {/* Friends List & Direct Room Invite Modal */}
@@ -5957,6 +6030,7 @@ export function App() {
                   }
                   onPlayCustomUrl={handlePlayCustomUrl}
                   onOpenCloudBrowser={handleOpenCloudBrowser}
+                  onBrowseCatalog={() => enterWorld('cine')}
                   onStartPollFromQueue={handleStartPollFromQueue}
                   onVotePoll={handleVotePoll}
                   onClosePoll={handleClosePoll}
@@ -5989,7 +6063,7 @@ export function App() {
                 onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
                 fullHeight
               >
-                <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-3 pb-24">
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-2 sm:px-4 py-2 pb-24">
                   <GamesHubSection
                     lang={lang}
                     currentUser={currentUser}

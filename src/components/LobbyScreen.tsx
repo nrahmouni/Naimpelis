@@ -403,11 +403,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           </motion.section>
 
           {/* Compact single-row unified language selector exclusively on access screen */}
-          <div className="rounded-2xl bg-[#10121C]/85 border border-white/[0.08] p-1.5 grid grid-cols-4 gap-1.5">
+          <div className="rounded-2xl bg-[#10121C]/85 border border-white/[0.08] p-1.5 grid grid-cols-5 gap-1.5">
             {[
               { code: 'en' as AppLanguage, flag: 'en' as const, label: 'EN', title: 'English' },
               { code: 'es' as AppLanguage, flag: 'es' as const, label: 'ES', title: 'Español' },
               { code: 'ca' as AppLanguage, flag: 'ca' as const, label: 'CA', title: 'Català' },
+              { code: 'rif' as AppLanguage, flag: 'rif' as const, label: 'RIF', title: 'Tarifit (Riffian)' },
               { code: 'zh' as AppLanguage, flag: 'zh' as const, label: 'ZH', title: '中文' },
             ].map((item) => {
               const isSelected = lang === item.code;

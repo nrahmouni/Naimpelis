@@ -94,7 +94,7 @@ import {
   getCategoryRegion,
   type TvRegionId,
 } from './ui/ChannelLogoBadge';
-import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
+import { FlagBadgeSvg, type FlagCode, MediaLanguageSelector } from './ui/LanguageBadge';
 
 const FootballMatchboard = React.lazy(() =>
   import('./FootballMatchboard').then((m) => ({ default: m.FootballMatchboard }))
@@ -418,13 +418,13 @@ interface MediaCatalogHubProps {
   onPlayFavoriteChannel: (channel: FavoriteChannelItem) => void;
   onPlayMovie: (
     movie: CatalogMovie,
-    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
+    preferLang: string,
     opts?: number | { startAtSec?: number; forceSpanish?: boolean }
   ) => void;
   onPlaySeriesEpisode: (
     series: TvSeriesDetails,
     episode: TvEpisodeItem,
-    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
+    preferLang: string,
     opts?: number | { startAtSec?: number; forceSpanish?: boolean }
   ) => void;
   onPlayCatalaEpisode: (series: CatalaSeriesDetails, episode: CatalaEpisodeItem) => void;
@@ -701,7 +701,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   // Instant Series -> Season -> Episode Modal state
   const [selectedSeries, setSelectedSeries] = useState<TvSeriesDetails | null>(null);
-  const [seriesModalLang, setSeriesModalLang] = useState<'ES' | 'LAT' | 'VOSE' | 'EN'>('ES');
+  const [seriesModalLang, setSeriesModalLang] = useState<string>('ES');
   const [forceSpanishSeriesActive, setForceSpanishSeriesActive] = useState(false);
   const [loadingSeriesDetails, setLoadingSeriesDetails] = useState(false);
   const [probingSeriesLangs, setProbingSeriesLangs] = useState(false);
@@ -1486,7 +1486,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             setProbingSeriesLangs(false);
             const avail = nextSeries.availableLanguages;
             setSeriesModalLang((prev) =>
-              avail.includes('ES') ? 'ES' : avail.includes(prev) ? prev : avail[0]
+              avail.includes('ES' as any) ? 'ES' : avail.includes(prev as any) ? prev : avail[0]
             );
           } else {
             setProbingSeriesLangs(true);
@@ -1514,12 +1514,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   );
                   setSeriesModalLang((prev) =>
                     forceSpanishProbe
-                      ? avail.includes('ES')
+                      ? avail.includes('ES' as any)
                         ? 'ES'
                         : avail[0]
-                      : avail.includes('ES')
+                      : avail.includes('ES' as any)
                       ? 'ES'
-                      : avail.includes(prev)
+                      : avail.includes(prev as any)
                       ? prev
                       : avail[0]
                   );
@@ -2705,50 +2705,23 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         </span>
                       </button>
 
-                      {/* Audio Selector */}
-                      <div className="flex items-center gap-1 p-1 rounded-xl bg-black/55 border border-white/10 shrink-0">
-                        {(Array.isArray(selectedSeries.availableLanguages) &&
-                        selectedSeries.availableLanguages.length > 0
-                          ? (
-                              [
-                                { code: 'ES', label: 'ES' },
-                                { code: 'LAT', label: 'LAT' },
-                                { code: 'VOSE', label: 'VOSE' },
-                                { code: 'EN', label: 'EN' },
-                              ] as const
-                            ).filter((opt) =>
-                              selectedSeries.availableLanguages!.includes(opt.code)
-                            )
-                          : ([
-                              { code: 'ES', label: 'ES' },
-                              { code: 'EN', label: 'EN' },
-                            ] as const)
-                        ).map((opt) => (
-                          <button
-                            key={opt.code}
-                            type="button"
-                            onClick={() => {
-                              triggerHaptic('light');
-                              setSeriesModalLang(opt.code);
-                            }}
-                            className={`min-h-[32px] px-2.5 sm:px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
-                              seriesModalLang === opt.code
-                                ? 'bg-[#9146FF] text-white shadow-sm'
-                                : 'text-zinc-400 hover:text-white'
-                            }`}
-                          >
-                            {opt.label}
-                          </button>
-                        ))}
-                        {probingSeriesLangs && (
-                          <span
-                            title="Verificando pistas de audio..."
-                            className="px-1.5 flex items-center text-zinc-400"
-                          >
-                            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#E11D48]" />
-                          </span>
-                        )}
-                      </div>
+                      {/* "Idioma:" Dropdown with authentic SVG flags */}
+                      <MediaLanguageSelector
+                        labelPrefix={pickLang(lang, { es: 'Idioma:', ca: 'Idioma:', en: 'Language:' })}
+                        selectedLang={seriesModalLang}
+                        availableLangs={
+                          Array.isArray(selectedSeries.availableLanguages) &&
+                          selectedSeries.availableLanguages.length > 0
+                            ? selectedSeries.availableLanguages
+                            : ['ES', 'LAT', 'VOSE', 'EN']
+                        }
+                        onSelectLang={(code) => {
+                          triggerHaptic('light');
+                          setSeriesModalLang(code);
+                        }}
+                        probing={probingSeriesLangs}
+                        size="sm"
+                      />
 
                       <button
                         type="button"
@@ -3238,7 +3211,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                     tmdbId: selectedSeries.tmdbId,
                                     season: ep.seasonNumber,
                                     episode: ep.episodeNumber,
-                                    preferLang: seriesModalLang,
+                                    preferLang: seriesModalLang as any,
                                   });
                                 }}
                                 title={t.addToQueue}

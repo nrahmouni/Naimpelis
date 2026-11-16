@@ -1112,7 +1112,8 @@ export async function probeAvailableLanguages(opts: {
     foundSet.has(code)
   );
 
-  if (ordered.length > 0) {
+  // Only cache positive multi-language results or confirmed probes (never poison cache with lone EN timeout fallback)
+  if (ordered.length > 0 && !(ordered.length === 1 && ordered[0] === 'EN')) {
     availableLangsCache.set(cacheKey, ordered);
   }
 

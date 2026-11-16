@@ -25,7 +25,7 @@ import { pickLang } from '../utils/i18n';
 import { extractSafeAmbientColor } from '../utils/imageUrl';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { PosterImage } from './ui/PosterImage';
-import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
+import { FlagBadgeSvg, type FlagCode, MediaLanguageSelector } from './ui/LanguageBadge';
 
 export type MovieAudioLangPreference = 'ES' | 'LAT' | 'VOSE' | 'EN';
 
@@ -518,106 +518,33 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
               </p>
             )}
 
-            {/* Pre-Screening Audio & Language Selector */}
-            {!isSeries && (
-              <div className="pt-2 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-300 flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-[#9146FF]" />
-                    <span>
-                      {pickLang(lang, {
-                        es: 'Idiomas disponibles para proyectar',
-                        ca: 'Idiomes disponibles per projectar',
-                        en: 'Available audio languages',
-                      })}
-                    </span>
-                  </span>
-                  {visibleAudioOptions.length > 0 && (
-                    <span className="text-[11px] font-semibold text-[#BF94FF]">
-                      {selectedOptLabel}
-                    </span>
-                  )}
-                </div>
+            {/* Pre-Screening Audio & Language Selector (both movies and series) */}
+            <div className="pt-2 flex flex-wrap items-center justify-between gap-3">
+              <MediaLanguageSelector
+                labelPrefix={pickLang(lang, { es: 'Idioma:', ca: 'Idioma:', en: 'Language:' })}
+                selectedLang={selectedAudioLang}
+                availableLangs={
+                  visibleAudioOptions.length > 0
+                    ? visibleAudioOptions.map((opt) => ({
+                        code: opt.code,
+                        label: pickLang(lang, { es: opt.labelEs, ca: opt.labelCa, en: opt.labelEn }),
+                      }))
+                    : ['ES', 'LAT', 'VOSE', 'EN']
+                }
+                onSelectLang={(code) => {
+                  triggerHaptic('light');
+                  setSelectedAudioLang(code as MovieAudioLangPreference);
+                }}
+                probing={loading && !hasProbedLanguages}
+                size="md"
+              />
 
-                {loading && !hasProbedLanguages ? (
-                  <div className="min-h-[52px] px-4 rounded-2xl bg-white/[0.04] border border-white/[0.08] flex items-center gap-2.5 text-xs text-zinc-300">
-                    <Loader2 className="w-4 h-4 animate-spin text-[#9146FF] shrink-0" />
-                    <span>
-                      {pickLang(lang, {
-                        es: 'Comprobando idiomas disponibles en tiempo real...',
-                        ca: 'Comprovant idiomes disponibles en temps real...',
-                        en: 'Checking available audio languages...',
-                      })}
-                    </span>
-                  </div>
-                ) : visibleAudioOptions.length > 0 ? (
-                  <div
-                    className={`grid gap-2 ${
-                      visibleAudioOptions.length === 1
-                        ? 'grid-cols-1 sm:max-w-[260px]'
-                        : visibleAudioOptions.length === 2
-                        ? 'grid-cols-2 sm:max-w-[460px]'
-                        : visibleAudioOptions.length === 3
-                        ? 'grid-cols-2 sm:grid-cols-3'
-                        : 'grid-cols-2 sm:grid-cols-4'
-                    }`}
-                  >
-                    {visibleAudioOptions.map((opt) => {
-                      const active = selectedAudioLang === opt.code;
-                      return (
-                        <button
-                          key={opt.code}
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            setSelectedAudioLang(opt.code);
-                          }}
-                          className={`min-h-[52px] px-3 py-2 rounded-2xl border text-left transition-all cursor-pointer active:scale-[0.98] flex items-center gap-2.5 ${
-                            active
-                              ? 'bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] text-white border-[#BF94FF]/50 shadow-[0_8px_24px_rgba(145,70,255,0.32)]'
-                              : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
-                          }`}
-                        >
-                          <FlagBadgeSvg code={opt.flagCode} className="w-5 h-3.5" />
-                          <div className="min-w-0 flex-1">
-                            <div
-                              className={`text-xs font-bold truncate ${
-                                active ? 'text-white' : 'text-[#EFEFF1]'
-                              }`}
-                            >
-                              {pickLang(lang, {
-                                es: opt.labelEs,
-                                ca: opt.labelCa,
-                                en: opt.labelEn,
-                              })}
-                            </div>
-                            <div
-                              className={`text-[10px] truncate ${
-                                active ? 'text-[#EFEFF1]/85 font-medium' : 'text-zinc-400'
-                              }`}
-                            >
-                              {pickLang(lang, {
-                                es: opt.subEs,
-                                ca: opt.subCa,
-                                en: opt.subEn,
-                              })}
-                            </div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="min-h-[48px] px-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center text-xs text-zinc-400">
-                    {pickLang(lang, {
-                      es: 'Este título no tiene pistas directas activas en este momento.',
-                      ca: 'Aquest títol no té pistes directes actives en aquest moment.',
-                      en: 'No direct audio tracks currently active for this title.',
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
+              {visibleAudioOptions.length > 0 && (
+                <span className="text-xs font-semibold text-[#BF94FF]">
+                  {selectedOptLabel}
+                </span>
+              )}
+            </div>
 
             {/* Action Buttons Row */}
             <div className="pt-2 flex flex-wrap items-center gap-2.5">

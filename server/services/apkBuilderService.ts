@@ -42,7 +42,7 @@ function ensureSigningCert(): CertMaterial {
       '9125',
       '-sha256',
       '-subj',
-      '/CN=NAIM CINE/O=NAIM CINE Media/C=ES',
+      '/CN=RiffanTV/O=RiffanTV Media/C=ES',
     ]);
     execFileSync('openssl', [
       'x509',
@@ -567,8 +567,8 @@ function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
 // BINARY resources.arsc GENERATOR
 // ============================================================================
 function buildResourcesArsc(flavor: ApkFlavor): Buffer {
-  const pkgName = flavor === 'tv' ? 'com.naimcine.tv' : 'com.naimcine.mobile';
-  const appLabel = flavor === 'tv' ? 'NAIM CINE TV' : 'NAIM CINE';
+  const pkgName = flavor === 'tv' ? ENV.androidTvPkg : ENV.androidMobilePkg;
+  const appLabel = flavor === 'tv' ? 'RiffanTV TV' : 'RiffanTV';
   const iconResPath = 'res/mipmap-xxxhdpi-v4/ic_launcher.png';
 
   // Global string pool: [0] = icon path, [1] = app name
@@ -1133,7 +1133,7 @@ function buildManifestAndCertSf(files: { name: string; data: Buffer }[]): {
 } {
   const mfLines = [
     'Manifest-Version: 1.0',
-    'Created-By: NAIM CINE Build Engine 2.4',
+    'Created-By: RiffanTV Build Engine 3.1',
     '',
   ];
 
@@ -1153,7 +1153,7 @@ function buildManifestAndCertSf(files: { name: string; data: Buffer }[]): {
     'Signature-Version: 1.0',
     `SHA-256-Digest-Manifest: ${sha256Base64(manifestMf)}`,
     'X-Android-APK-Signed: 2',
-    'Created-By: NAIM CINE Build Engine 2.4',
+    'Created-By: RiffanTV Build Engine 3.1',
     '',
   ];
   for (const sec of sectionStrings) {

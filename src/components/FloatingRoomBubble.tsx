@@ -220,7 +220,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
       <AnimatePresence>
         {isSheetOpen && (
           <div className="fixed inset-0 z-[215] flex justify-end pointer-events-none">
-            {/* Soft non-intrusive backdrop so video remains clearly visible underneath */}
+            {/* Dark blurred backdrop so underlying home text does not create visual noise */}
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
@@ -230,7 +230,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
                 triggerHaptic('light');
                 onCloseSheet();
               }}
-              className="pointer-events-auto absolute inset-0 bg-black/10 cursor-pointer"
+              className="pointer-events-auto absolute inset-0 bg-black/75 backdrop-blur-md cursor-pointer"
               aria-hidden="true"
             />
 
@@ -247,15 +247,15 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
                 en: 'Live room & chat',
                 zh: '房间与实时聊天',
               })}
-              className="pointer-events-auto relative z-10 h-full w-[86vw] max-w-[380px] bg-[#0B0D14]/78 backdrop-blur-2xl border-l border-[#9146FF]/35 shadow-[-24px_0_64px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden"
+              className="pointer-events-auto relative z-10 h-full w-[96vw] sm:w-[88vw] max-w-[430px] bg-[#0B0D14]/96 backdrop-blur-2xl border-l border-[#9146FF]/35 shadow-[-24px_0_64px_rgba(0,0,0,0.88)] flex flex-col overflow-hidden"
             >
               {/* Curtain Top Header */}
-              <div className="shrink-0 h-12 px-3.5 bg-[#0B0B0F]/65 border-b border-white/[0.1] flex items-center justify-between gap-2 select-none">
-                <div className="flex items-center gap-2 min-w-0">
+              <div className="shrink-0 h-12 px-3.5 bg-[#0B0B0F]/80 border-b border-white/[0.1] flex items-center justify-between gap-2 select-none">
+                <div className="flex items-center gap-2 min-w-0 flex-1">
                   <span className="w-7 h-7 rounded-lg bg-[#9146FF]/22 border border-[#9146FF]/45 flex items-center justify-center text-[#D8B4FE] shrink-0">
                     <Users className="w-3.5 h-3.5" />
                   </span>
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <span className="block text-xs font-display font-bold text-white truncate tabular-nums">
                       {pickLang(lang, {
                         es: `Sala · ${participantsCount}`,
@@ -275,7 +275,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
                       onCloseSheet();
                       onOpenFullSala();
                     }}
-                    className="h-8 px-2.5 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors shadow-[0_4px_14px_rgba(145,70,255,0.4)]"
+                    className="h-8 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.14] text-zinc-200 hover:text-white text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors whitespace-nowrap shrink-0"
                     title={pickLang(lang, {
                       es: 'Abrir Sala completa',
                       ca: 'Obrir Sala completa',
@@ -283,7 +283,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
                       zh: '打开完整房间',
                     })}
                   >
-                    <ArrowUpRight className="w-3.5 h-3.5" />
+                    <ArrowUpRight className="w-3.5 h-3.5 text-zinc-400" />
                     <span>
                       {pickLang(lang, {
                         es: 'Sala completa',

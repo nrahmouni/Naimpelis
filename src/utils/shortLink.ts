@@ -94,14 +94,18 @@ export function parseRoomFromWindow(): {
 
 /**
  * Parses either a raw code ("k8x4", "#k8x4") or a pasted full invite URL
- * ("https://naimcine.ai.studio/k8x4").
+ * ("https://riffantv.ai.studio/k8x4").
  */
 export function extractRoomCodeFromInput(raw: string): string {
   const trimmed = raw.trim();
   if (!trimmed) return '';
 
   try {
-    if (/^https?:\/\//i.test(trimmed) || trimmed.includes('naimcine.')) {
+    if (
+      /^https?:\/\//i.test(trimmed) ||
+      trimmed.includes('riffantv.') ||
+      trimmed.includes('naimcine.')
+    ) {
       const normalized = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
       const url = new URL(normalized);
       const qRoom = url.searchParams.get('room');
@@ -125,7 +129,7 @@ export function extractRoomCodeFromInput(raw: string): string {
 }
 
 /**
- * Builds a clean, ultra-short invite URL (e.g. https://naimcine.ai.studio/k8x4)
+ * Builds a clean, ultra-short invite URL (e.g. https://riffantv.ai.studio/k8x4)
  */
 export function buildShortInviteUrl(roomId: string, tvMode = false): string {
   if (typeof window === 'undefined') return '';
@@ -147,7 +151,7 @@ export function buildGameInviteUrl(roomId: string, gameType: string): string {
 const PUBLIC_PRODUCTION_DOMAIN =
   (typeof import.meta !== 'undefined' &&
     (import.meta.env?.VITE_PUBLIC_APP_HOST as string | undefined)) ||
-  (typeof window !== 'undefined' ? window.location.host : 'localhost:3000');
+  'riffantv.ai.studio';
 
 /**
  * Returns true when running inside a private preview hostname that requires auth cookies.
@@ -162,8 +166,8 @@ export function isPrivateDevPreviewHost(): boolean {
  */
 export function buildTvPairingUrl(): string {
   if (typeof window === 'undefined') return `https://${PUBLIC_PRODUCTION_DOMAIN}/tv`;
-  if (isPrivateDevPreviewHost() && import.meta.env?.VITE_PUBLIC_APP_HOST) {
-    return `https://${import.meta.env.VITE_PUBLIC_APP_HOST}/tv`;
+  if (isPrivateDevPreviewHost()) {
+    return `https://${PUBLIC_PRODUCTION_DOMAIN}/tv`;
   }
   return `${window.location.origin}/tv`;
 }
@@ -173,8 +177,8 @@ export function buildTvPairingUrl(): string {
  */
 export function getDisplayAppHost(): string {
   if (typeof window === 'undefined') return PUBLIC_PRODUCTION_DOMAIN;
-  if (isPrivateDevPreviewHost() && import.meta.env?.VITE_PUBLIC_APP_HOST) {
-    return String(import.meta.env.VITE_PUBLIC_APP_HOST);
+  if (isPrivateDevPreviewHost()) {
+    return PUBLIC_PRODUCTION_DOMAIN;
   }
   return window.location.host || PUBLIC_PRODUCTION_DOMAIN;
 }

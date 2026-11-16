@@ -144,11 +144,14 @@ function getPublicOrigin(req: express.Request): string {
   const rawHost = String(req.headers['x-forwarded-host'] || req.get('host') || 'localhost:3000')
     .split(',')[0]
     .trim();
-  if (ENV.publicDomain && /^ais-dev-/i.test(rawHost)) {
+  const hostWithoutPort = rawHost.split(':')[0].toLowerCase();
+  if (ENV.publicDomain && /^ais-dev-/i.test(hostWithoutPort)) {
     return `https://${ENV.publicDomain}`;
   }
   const proto =
-    rawHost.endsWith('.run.app') || rawHost.endsWith('.ai.studio') ? 'https' : rawProto;
+    hostWithoutPort.endsWith('.run.app') || hostWithoutPort.endsWith('.ai.studio')
+      ? 'https'
+      : rawProto;
   return `${proto}://${rawHost}`;
 }
 
@@ -215,45 +218,75 @@ registerExpandedCatalogRoutes(app);
 registerProxyRoutes(app, { getPublicOrigin });
 
 // Direct Ready-to-Install Signed Android APK Download (Mobile & Google TV / Chromecast)
-app.get(['/NAIM-CINE-TV.apk', '/tv.apk', '/googletv.apk', '/api/download/apk-tv'], (req, res) => {
-  const pubTvApk = path.resolve(__dirname, 'public', 'NAIM-CINE-TV.apk');
-  const distTvApk = path.resolve(__dirname, 'dist', 'NAIM-CINE-TV.apk');
-  const target = fs.existsSync(pubTvApk) ? pubTvApk : distTvApk;
-  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-  res.setHeader('Content-Disposition', 'attachment; filename="NAIM-CINE-TV.apk"');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  if (fs.existsSync(target)) {
-    return res.sendFile(target);
+app.get(
+  [
+    '/RIFFAN-TV-TV.apk',
+    '/riffantv-tv.apk',
+    '/NAIM-CINE-TV.apk',
+    '/tv.apk',
+    '/googletv.apk',
+    '/api/download/apk-tv',
+  ],
+  (req, res) => {
+    const candidates = [
+      path.resolve(__dirname, 'public', 'RIFFAN-TV-TV.apk'),
+      path.resolve(__dirname, 'dist', 'RIFFAN-TV-TV.apk'),
+      path.resolve(__dirname, 'public', 'NAIM-CINE-TV.apk'),
+      path.resolve(__dirname, 'dist', 'NAIM-CINE-TV.apk'),
+    ];
+    const target = candidates.find((p) => fs.existsSync(p));
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="RIFFAN-TV-TV.apk"');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    if (target) {
+      return res.sendFile(target);
+    }
+    try {
+      const apkBuf = buildSignedApkBuffer('tv', getPublicOrigin(req));
+      res.setHeader('Content-Length', String(apkBuf.length));
+      return res.send(apkBuf);
+    } catch (err) {
+      logger.error({ err }, 'tv_apk_build_failed');
+      return res.status(500).json({ error: 'Unable to build Google TV APK package' });
+    }
   }
-  try {
-    const apkBuf = buildSignedApkBuffer('tv', getPublicOrigin(req));
-    res.setHeader('Content-Length', String(apkBuf.length));
-    return res.send(apkBuf);
-  } catch (err) {
-    logger.error({ err }, 'tv_apk_build_failed');
-    return res.status(500).json({ error: 'Unable to build Google TV APK package' });
-  }
-});
+);
 
-app.get(['/NAIM-CINE.apk', '/naimcine.apk', '/movil.apk', '/api/download/apk'], (req, res) => {
-  const pubApk = path.resolve(__dirname, 'public', 'NAIM-CINE.apk');
-  const distApk = path.resolve(__dirname, 'dist', 'NAIM-CINE.apk');
-  const target = fs.existsSync(pubApk) ? pubApk : distApk;
-  res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-  res.setHeader('Content-Disposition', 'attachment; filename="NAIM-CINE.apk"');
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  if (fs.existsSync(target)) {
-    return res.sendFile(target);
+app.get(
+  [
+    '/RIFFAN-TV.apk',
+    '/riffantv.apk',
+    '/NAIM-CINE.apk',
+    '/naimcine.apk',
+    '/movil.apk',
+    '/api/download/apk',
+  ],
+  (req, res) => {
+    const candidates = [
+      path.resolve(__dirname, 'public', 'RIFFAN-TV.apk'),
+      path.resolve(__dirname, 'dist', 'RIFFAN-TV.apk'),
+      path.resolve(__dirname, 'public', 'NAIM-CINE.apk'),
+      path.resolve(__dirname, 'dist', 'NAIM-CINE.apk'),
+    ];
+    const target = candidates.find((p) => fs.existsSync(p));
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="RIFFAN-TV.apk"');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    if (target) {
+      return res.sendFile(target);
+    }
+    try {
+      const apkBuf = buildSignedApkBuffer('mobile', getPublicOrigin(req));
+      res.setHeader('Content-Length', String(apkBuf.length));
+      return res.send(apkBuf);
+    } catch (err) {
+      logger.error({ err }, 'mobile_apk_build_failed');
+      return res.status(500).json({ error: 'Unable to build Mobile APK package' });
+    }
   }
-  try {
-    const apkBuf = buildSignedApkBuffer('mobile', getPublicOrigin(req));
-    res.setHeader('Content-Length', String(apkBuf.length));
-    return res.send(apkBuf);
-  } catch (err) {
-    logger.error({ err }, 'mobile_apk_build_failed');
-    return res.status(500).json({ error: 'Unable to build Mobile APK package' });
-  }
-});
+);
 
 // Serve Zero-Dependency Pure ES5 + Classic CSS Smart TV Receiver (/tv) directly
 // Works on 100% of Samsung Tizen, LG webOS, Bravia, Viera, VIDAA & Fire TV browsers!
@@ -2306,10 +2339,11 @@ app.get('/api/catalog/tv/:tmdbId/languages', async (req, res) => {
     });
 
     const availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[] =
-      probedLanguages.length > 0 ? probedLanguages : isReleasedShow ? ['EN'] : [];
+      probedLanguages.length > 0 ? probedLanguages : isReleasedShow ? ['ES', 'EN'] : [];
 
-    if (availableLanguages.length > 0) {
-      tvLangProbeCache.set(cacheKey, { availableLanguages, ts: Date.now() });
+    // Only cache positive probes that found authentic tracks (never lock cache onto temporary fallback)
+    if (probedLanguages.length > 0) {
+      tvLangProbeCache.set(cacheKey, { availableLanguages: probedLanguages, ts: Date.now() });
     }
     res.json({ success: true, availableLanguages });
   } catch {
@@ -7303,14 +7337,18 @@ app.get('/api/extract/stream', async (req, res) => {
       };
 
       const [ytFallback, embedFallbackTracks] = await Promise.all([
-        // Only run YouTube search when TMDB web embeds aren't available (TMDB-keyed players guarantee exact movie match)
-        resolvedTmdbId ? Promise.resolve(null) : searchYouTubeFullFallback(),
+        // Run YouTube search when preferLang is ES or when TMDB ID is absent so Spanish TV shows play in authentic Castellano
+        preferLang === 'ES' || !resolvedTmdbId
+          ? searchYouTubeFullFallback().catch(() => null)
+          : Promise.resolve(null),
         buildWebEmbedTracks(),
       ]);
 
       const combinedFallbackTracks: TrackRecord[] =
-        embedFallbackTracks.length > 0
-          ? embedFallbackTracks
+        ytFallback && (preferLang === 'ES' || embedFallbackTracks.length === 0)
+          ? [ytFallback.track, ...embedFallbackTracks]
+          : embedFallbackTracks.length > 0
+          ? [...embedFallbackTracks, ...(ytFallback ? [ytFallback.track] : [])]
           : ytFallback
           ? [ytFallback.track]
           : [];
@@ -8755,29 +8793,43 @@ const CURATED_CASTELLANO_SERIES_SEEDS: {
   providerId: string;
   platform: string;
 }[] = [
-  { tmdbId: 124364, providerId: 'hbomax', platform: 'HBO Max' }, // From (¡pedida explícitamente!)
+  // Spanish Comedy Classics (pedidas por el usuario)
+  { tmdbId: 35338, providerId: 'prime', platform: 'Prime Video / Mediaset' }, // La que se avecina
+  { tmdbId: 2282, providerId: 'netflix', platform: 'Netflix / Atresmedia' }, // Aquí no hay quien viva
+  { tmdbId: 215092, providerId: 'netflix', platform: 'Netflix' }, // Machos alfa
+  { tmdbId: 63980, providerId: 'movistar', platform: 'Telecinco' }, // Camera Café
+  { tmdbId: 89427, providerId: 'prime', platform: 'Prime Video' }, // El pueblo
+  { tmdbId: 1032, providerId: 'netflix', platform: 'Telecinco' }, // Aída
+  { tmdbId: 7283, providerId: 'prime', platform: 'Telecinco' }, // Los Serrano
+  { tmdbId: 111, providerId: 'movistar', platform: 'Telecinco' }, // 7 vidas
+  { tmdbId: 21631, providerId: 'netflix', platform: 'Atresplayer' }, // Física o química
+  { tmdbId: 34376, providerId: 'netflix', platform: 'Atresplayer' }, // Los hombres de Paco
+  { tmdbId: 66806, providerId: 'netflix', platform: 'Netflix' }, // Paquita Salas
+  { tmdbId: 226469, providerId: 'movistar', platform: 'Movistar+' }, // Poquita fe
+  { tmdbId: 237964, providerId: 'movistar', platform: 'Movistar+' }, // Muertos S.L.
+  { tmdbId: 62865, providerId: 'prime', platform: 'Cuatro' }, // Gym Tony
+  { tmdbId: 61776, providerId: 'netflix', platform: 'Antena 3' }, // Manos a la obra
+
+  // Top Spanish & International Flagships
+  { tmdbId: 203667, providerId: 'prime', platform: 'Prime Video' }, // Reina Roja
+  { tmdbId: 146176, providerId: 'netflix', platform: 'Netflix' }, // Berlín
+  { tmdbId: 128015, providerId: 'netflix', platform: 'Netflix' }, // Entrevías
+  { tmdbId: 96005, providerId: 'movistar', platform: 'Movistar+' }, // Antidisturbios
+  { tmdbId: 89844, providerId: 'hbomax', platform: 'HBO Max' }, // 30 Monedas
+  { tmdbId: 241539, providerId: 'movistar', platform: 'Movistar+' }, // Celeste
+  { tmdbId: 227042, providerId: 'netflix', platform: 'Netflix' }, // Clanes
+  { tmdbId: 229962, providerId: 'netflix', platform: 'Netflix' }, // El cuerpo en llamas
+  { tmdbId: 71446, providerId: 'netflix', platform: 'Netflix' }, // La Casa de Papel
+  { tmdbId: 62099, providerId: 'hbomax', platform: 'RTVE / HBO' }, // El Ministerio del Tiempo
+  { tmdbId: 124364, providerId: 'hbomax', platform: 'HBO Max' }, // From
   { tmdbId: 94997, providerId: 'hbomax', platform: 'HBO Max' }, // La Casa del Dragón
   { tmdbId: 100088, providerId: 'hbomax', platform: 'HBO Max' }, // The Last of Us
-  { tmdbId: 205715, providerId: 'prime', platform: 'Prime Video' }, // Reina Roja
   { tmdbId: 106379, providerId: 'prime', platform: 'Prime Video' }, // Fallout
-  { tmdbId: 71446, providerId: 'netflix', platform: 'Netflix' }, // La Casa de Papel
-  { tmdbId: 196890, providerId: 'netflix', platform: 'Netflix' }, // Berlín
-  { tmdbId: 40173, providerId: 'prime', platform: 'Prime Video' }, // La que se avecina
-  { tmdbId: 2361, providerId: 'netflix', platform: 'Netflix' }, // Aquí no hay quien viva
-  { tmdbId: 156933, providerId: 'netflix', platform: 'Netflix' }, // Entrevías
-  { tmdbId: 215720, providerId: 'netflix', platform: 'Netflix' }, // Machos Alfa
-  { tmdbId: 108296, providerId: 'movistar', platform: 'Movistar+' }, // Antidisturbios
-  { tmdbId: 106392, providerId: 'hbomax', platform: 'HBO Max' }, // 30 Monedas
-  { tmdbId: 259850, providerId: 'movistar', platform: 'Movistar+' }, // Querer
-  { tmdbId: 259915, providerId: 'movistar', platform: 'Movistar+' }, // Celeste
-  { tmdbId: 249980, providerId: 'netflix', platform: 'Netflix' }, // Clanes
-  { tmdbId: 210945, providerId: 'netflix', platform: 'Netflix' }, // El cuerpo en llamas
   { tmdbId: 66732, providerId: 'netflix', platform: 'Netflix' }, // Stranger Things
   { tmdbId: 76479, providerId: 'prime', platform: 'Prime Video' }, // The Boys
   { tmdbId: 1399, providerId: 'hbomax', platform: 'HBO Max' }, // Juego de Tronos
   { tmdbId: 95396, providerId: 'apple', platform: 'Apple TV+' }, // Severance (Separación)
   { tmdbId: 125988, providerId: 'apple', platform: 'Apple TV+' }, // Silo
-  { tmdbId: 62099, providerId: 'hbomax', platform: 'RTVE / HBO' }, // El Ministerio del Tiempo
   { tmdbId: 93405, providerId: 'netflix', platform: 'Netflix' }, // El juego del calamar
 ];
 
