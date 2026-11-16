@@ -241,7 +241,7 @@ describe('Audit & Feature Verification Suite', () => {
     expect(indexHtml).toContain('#07080C');
 
     const viteConfig = readFileSync(join(process.cwd(), 'vite.config.ts'), 'utf8');
-    expect(viteConfig).toContain("short_name: 'RiffanTV'");
+    expect(viteConfig).toContain("short_name: 'Riffan TV'");
     expect(viteConfig).toContain("cacheId: 'riffantv-studio-v1'");
 
     const logoSrc = readFileSync(join(process.cwd(), 'src/components/NaimBrandLogo.tsx'), 'utf8');

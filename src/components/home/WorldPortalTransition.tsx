@@ -597,28 +597,6 @@ const JuegosArenaStage: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
   );
 };
 
-export const WorldPortalTransition: React.FC<WorldPortalTransitionProps> = ({ portal, lang }) => {
-  if (typeof document === 'undefined') return null;
-
-  return createPortal(
-    <AnimatePresence>
-      {portal && (
-        <motion.div
-          key={portal}
-          initial={{ opacity: 1, scale: 1 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 1.035 }}
-          transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-          aria-hidden="true"
-          className="fixed inset-0 w-screen h-[100dvh] z-[9999] bg-[#050508] pointer-events-auto select-none"
-        >
-          {portal === 'cine' && <CineStudioAperture lang={lang} />}
-          {portal === 'futbol' && <FutbolBroadcastTunnel lang={lang} />}
-          {portal === 'tv' && <TvBroadcastStage lang={lang} />}
-          {portal === 'juegos' && <JuegosArenaStage lang={lang} />}
-        </motion.div>
-      )}
-    </AnimatePresence>,
-    document.body
-  );
+export const WorldPortalTransition: React.FC<WorldPortalTransitionProps> = () => {
+  return null;
 };

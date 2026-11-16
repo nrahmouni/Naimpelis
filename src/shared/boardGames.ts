@@ -1313,8 +1313,8 @@ export function startBoardMatch(state: BoardGameState): BoardGameState {
       ? { ...state.players.w }
       : {
           userId: 'bot-board-w',
-          name: 'Bot NAIM IA',
-          avatar: '🤖',
+          name: 'Poca-solta',
+          avatar: '🤪',
           color: '#9146FF',
           score: 0,
           isBot: true,
@@ -1323,8 +1323,8 @@ export function startBoardMatch(state: BoardGameState): BoardGameState {
       ? { ...state.players.b }
       : {
           userId: 'bot-board-b',
-          name: 'Bot NAIM IA',
-          avatar: '🤖',
+          name: 'Machupichu',
+          avatar: '🗿',
           color: '#E11D48',
           score: 0,
           isBot: true,

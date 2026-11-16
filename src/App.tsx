@@ -4669,6 +4669,7 @@ export function App() {
     activeWorld !== 'sala' &&
     activeWorld !== 'juegos';
   const isMoviePlaybackDockVisible =
+    !isFloatingRoomOpen &&
     videoState.mode !== 'idle' &&
     !isPlayerClosedLocally &&
     !isPlayerMinimized &&
@@ -4680,6 +4681,7 @@ export function App() {
     Boolean(activeMovieContext || videoState.title);
 
   const isChannelGuideDockVisible =
+    !isFloatingRoomOpen &&
     videoState.mode !== 'idle' &&
     !isPlayerClosedLocally &&
     !isPlayerMinimized &&
@@ -5359,10 +5361,10 @@ export function App() {
               </div>
             </div>
 
-            {/* Docked Room Chat right below player when playing a movie or channel */}
+            {/* Docked Room Chat fixed at the bottom filling remaining viewport without page scroll */}
             {isPlayerActive && !isDockedMini && !isPlayerClosedLocally && inRoom && isFloatingRoomOpen && (
-              <div className="w-full max-w-6xl mx-auto px-3 sm:px-5 pt-2 pb-2 animate-fade-in">
-                <div className="w-full h-[460px] sm:h-[520px] rounded-2xl bg-[#0D0E14]/95 backdrop-blur-xl border border-[#9146FF]/35 shadow-2xl flex flex-col overflow-hidden">
+              <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#0D0E14]/98 backdrop-blur-2xl border-t border-[#9146FF]/50 shadow-[0_-20px_60px_rgba(0,0,0,0.9)] flex flex-col h-[min(480px,calc(100dvh-160px))] animate-slide-up">
+                <div className="w-full h-full flex flex-col overflow-hidden">
                   {/* Header with Title + Participant Count + Full Sala + Close X */}
                   <div className="shrink-0 h-11 px-4 bg-[#151622] border-b border-white/[0.08] flex items-center justify-between gap-2 select-none">
                     <div className="flex items-center gap-2 min-w-0">
@@ -6083,7 +6085,7 @@ export function App() {
                 type="button"
                 onClick={() => {
                   const filename =
-                    nativeApkUpdate.flavor === 'tv' ? 'NAIM-CINE-TV.apk' : 'NAIM-CINE.apk';
+                    nativeApkUpdate.flavor === 'tv' ? 'RIFFAN-TV-TV.apk' : 'RIFFAN-TV.apk';
                   void triggerApkDownload(nativeApkUpdate.apkUrl, filename);
                   setNativeApkUpdate(null);
                 }}

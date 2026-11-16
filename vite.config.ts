@@ -26,10 +26,10 @@ export default defineConfig(() => {
         ],
         manifest: {
           id: '/',
-          name: 'RiffanTV — Cine, Directos y Sala Privada',
-          short_name: 'RiffanTV',
+          name: 'Riffan TV — Cine, Directos y Sala Privada',
+          short_name: 'Riffan TV',
           description:
-            'RiffanTV (RTV): tu plataforma multiplataforma en directo para ver películas, series, anime, fútbol y TV con amigos en tiempo real.',
+            'Riffan TV (RTV): tu plataforma multiplataforma en directo para ver películas, series, anime, fútbol y TV con amigos en tiempo real.',
           theme_color: '#07080C',
           background_color: '#07080C',
           display: 'standalone',

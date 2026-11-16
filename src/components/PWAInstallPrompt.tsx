@@ -203,7 +203,7 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
         <button
           type="button"
           onClick={() =>
-            void handleDownloadApk('mobile', '/NAIM-CINE.apk?v=300', 'NAIM-CINE.apk')
+            void handleDownloadApk('mobile', '/RIFFAN-TV.apk?v=300', 'RIFFAN-TV.apk')
           }
           className={cardClass(recommendedDevice === 'android')}
         >
@@ -239,7 +239,7 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
         <button
           type="button"
           onClick={() =>
-            void handleDownloadApk('tv', '/NAIM-CINE-TV.apk?v=300', 'NAIM-CINE-TV.apk')
+            void handleDownloadApk('tv', '/RIFFAN-TV-TV.apk?v=300', 'RIFFAN-TV-TV.apk')
           }
           className={cardClass(recommendedDevice === 'tv')}
         >

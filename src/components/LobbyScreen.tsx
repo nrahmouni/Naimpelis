@@ -28,6 +28,7 @@ import {
   StandardInput,
 } from './ui/DesignSystem';
 import { useAppStore } from '../store/useAppStore';
+import { PWAInstallLandingCard } from './PWAInstallPrompt';
 
 const RANDOM_NAMES = [
   'Naim',
@@ -169,10 +170,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             className="flex items-center gap-3 min-w-0 cursor-pointer text-left group py-1 whitespace-nowrap shrink-0"
             aria-label="RiffanTV"
           >
-            <NaimBrandLogo
-              size={isDesktop ? 40 : 34}
-              className="shrink-0 group-hover:scale-105 transition-transform duration-200"
-            />
             <span className="font-display font-bold text-lg tracking-[-0.015em] leading-none text-[#F4F5F8] inline-flex items-center">
               Riffan<span className="text-[#A78BFA] font-extrabold">TV</span>
             </span>
@@ -335,62 +332,68 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </PrimaryButton>
             </div>
 
-            {/* Discrete 1-line secondary actions */}
-            <div className="pt-2 flex flex-col items-center gap-2 border-t border-white/[0.07]">
-              {!authUser ? (
+            {/* Actions: Google & Join on same level, App Install below */}
+            <div className="pt-3 border-t border-white/[0.07] space-y-3">
+              <div className="grid grid-cols-2 gap-2 w-full">
+                {!authUser ? (
+                  <button
+                    type="button"
+                    disabled={authLoading}
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      void onSignIn();
+                    }}
+                    className="min-h-11 px-3 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[11px] font-semibold text-zinc-200 flex items-center justify-center gap-2 cursor-pointer transition-colors truncate"
+                  >
+                    <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="#4285F4"
+                        d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
+                      />
+                    </svg>
+                    <span className="truncate">
+                      {authLoading
+                        ? pickLang(lang, { es: '...', ca: '...', en: '...' })
+                        : pickLang(lang, { es: 'Google', ca: 'Google', en: 'Google' })}
+                    </span>
+                  </button>
+                ) : (
+                  <div className="min-h-11 px-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-semibold text-emerald-200 flex items-center justify-center gap-1.5 truncate">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                    <span className="truncate">{authUser.displayName || 'Google'}</span>
+                  </div>
+                )}
+
                 <button
                   type="button"
-                  disabled={authLoading}
                   onClick={() => {
-                    triggerHaptic('medium');
-                    void onSignIn();
+                    triggerHaptic('light');
+                    setShowJoinSheet(true);
                   }}
-                  className="min-h-12 w-full px-4 rounded-2xl hover:bg-white/[0.05] text-xs font-semibold text-zinc-200 flex items-center justify-center gap-2.5 cursor-pointer transition-colors"
+                  className="min-h-11 px-3 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[11px] font-semibold text-[#BF94FF] hover:text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors truncate"
                 >
-                  <svg className="w-4 h-4 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
-                    <path
-                      fill="#4285F4"
-                      d="M23.49 12.27c0-.79-.07-1.54-.19-2.27H12v4.51h6.47c-.29 1.48-1.14 2.73-2.4 3.58v3h3.86c2.26-2.09 3.56-5.17 3.56-8.82z"
-                    />
-                    <path
-                      fill="#34A853"
-                      d="M12 24c3.24 0 5.95-1.08 7.93-2.91l-3.86-3c-1.08.72-2.45 1.16-4.07 1.16-3.13 0-5.78-2.11-6.73-4.96H1.29v3.09C3.26 21.3 7.31 24 12 24z"
-                    />
-                    <path
-                      fill="#FBBC05"
-                      d="M5.27 14.29c-.25-.72-.38-1.49-.38-2.29s.13-1.57.38-2.29V6.62H1.29C.47 8.24 0 10.06 0 12s.47 3.76 1.29 5.38l3.98-3.09z"
-                    />
-                    <path
-                      fill="#EA4335"
-                      d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
-                    />
-                  </svg>
-                  <span>
-                    {authLoading
-                      ? pickLang(lang, {
-                          es: 'Conectando...',
-                          ca: 'Connectant...',
-                          en: 'Connecting...',
-                        })
-                      : pickLang(lang, {
-                          es: 'Continuar con Google',
-                          ca: 'Continuar amb Google',
-                          en: 'Continue with Google',
-                        })}
-                  </span>
-                </button>
-              ) : (
-                <div className="min-h-10 flex items-center gap-2 text-xs text-zinc-300">
-                  <span className="w-2 h-2 rounded-full bg-[#00F593]" />
-                  <span>
+                  <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                  <span className="truncate">
                     {pickLang(lang, {
-                      es: `Google conectado (${authUser.displayName || authUser.email})`,
-                      ca: `Google connectat (${authUser.displayName || authUser.email})`,
-                      en: `Google connected (${authUser.displayName || authUser.email})`,
+                      es: 'Unirme',
+                      ca: 'Unir-me',
+                      en: 'Join code',
                     })}
                   </span>
-                </div>
-              )}
+                </button>
+              </div>
 
               {!authUser && authNotice && (
                 <p className="w-full rounded-2xl bg-white/[0.04] border border-white/[0.1] px-3 py-2 text-[11px] leading-relaxed text-zinc-300 text-center">
@@ -398,23 +401,10 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 </p>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setShowJoinSheet(true);
-                }}
-                className="min-h-12 px-4 text-xs font-semibold text-[#BF94FF] hover:text-white underline-offset-4 hover:underline flex items-center gap-1.5 cursor-pointer transition-colors"
-              >
-                <KeyRound className="w-3.5 h-3.5" />
-                <span>
-                  {pickLang(lang, {
-                    es: 'Unirme con código',
-                    ca: 'Unir-me amb codi',
-                    en: 'Join with code',
-                  })}
-                </span>
-              </button>
+              {/* App download / install buttons below */}
+              <div className="w-full">
+                <PWAInstallLandingCard lang={lang} />
+              </div>
             </div>
           </motion.section>
         </main>

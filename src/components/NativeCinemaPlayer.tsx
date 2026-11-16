@@ -4009,8 +4009,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               />
 
               {!isMinimized && embedRescueDismissedUrl !== videoState.url && (
-                <div className="absolute bottom-2.5 right-2.5 left-2.5 sm:left-auto z-20 flex flex-wrap items-center justify-end gap-1.5 pointer-events-none">
-                  <div className="pointer-events-auto flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-[#111116]/90 backdrop-blur-md border border-white/15 shadow-xl text-[11px] text-zinc-200 max-w-full overflow-x-auto no-scrollbar">
+                <div className="absolute top-3 right-3 z-30 flex items-center gap-1 pointer-events-none opacity-80 hover:opacity-100 transition-opacity">
+                  <div className="pointer-events-auto flex items-center gap-1 px-2 py-1 rounded-lg bg-black/80 backdrop-blur-md border border-white/10 shadow-lg text-[10px] text-zinc-300">
                     <button
                       type="button"
                       onClick={() => {

@@ -170,8 +170,8 @@ export function registerOperationalRoutes(
       return res.json(cached);
     }
 
-    const mobileApkPath = path.join(ROOT_DIR, 'public', 'NAIM-CINE.apk');
-    const tvApkPath = path.join(ROOT_DIR, 'public', 'NAIM-CINE-TV.apk');
+    const mobileApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-TV.apk');
+    const tvApkPath = path.join(ROOT_DIR, 'public', 'RIFFAN-TV-TV.apk');
     let mobileBytes = fs.existsSync(mobileApkPath) ? fs.statSync(mobileApkPath).size : 0;
     let tvBytes = fs.existsSync(tvApkPath) ? fs.statSync(tvApkPath).size : 0;
     if (!mobileBytes) {
@@ -203,7 +203,7 @@ export function registerOperationalRoutes(
         versionName: ENV.appVersionName,
         minSupportedVersionCode: 100,
         forceUpdate: false,
-        apkUrl: `${origin}/NAIM-CINE.apk?v=${ENV.appVersionCodeMobile}`,
+        apkUrl: `${origin}/RIFFAN-TV.apk?v=${ENV.appVersionCodeMobile}`,
         sizeBytes: mobileBytes,
         changelog: {
           es: 'Estética Obsidian & Violeta, auto-actualización automática, anime completo en HD y modo Sorpréndeme instantáneo.',
@@ -217,7 +217,7 @@ export function registerOperationalRoutes(
         versionName: ENV.appVersionName,
         minSupportedVersionCode: 100,
         forceUpdate: false,
-        apkUrl: `${origin}/NAIM-CINE-TV.apk?v=${ENV.appVersionCodeTv}`,
+        apkUrl: `${origin}/RIFFAN-TV-TV.apk?v=${ENV.appVersionCodeTv}`,
         sizeBytes: tvBytes,
         changelog: {
           es: 'Nueva interfaz personalizada Google TV 10-foot con mando físico D-Pad + vinculación rápida por código de 4 dígitos.',

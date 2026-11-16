@@ -80,33 +80,30 @@ export const RiffanBrandLogo: React.FC<RiffanBrandLogoProps> = ({
           <defs>
             <linearGradient
               id={brandGradId}
-              x1="136"
-              y1="106"
-              x2="376"
-              y2="406"
+              x1="130"
+              y1="100"
+              x2="390"
+              y2="410"
               gradientUnits="userSpaceOnUse"
             >
               <stop offset="0%" stopColor="#C084FC" />
-              <stop offset="42%" stopColor="#9146FF" />
-              <stop offset="100%" stopColor="#00F593" />
+              <stop offset="45%" stopColor="#8B5CF6" />
+              <stop offset="100%" stopColor="#38BDF8" />
             </linearGradient>
           </defs>
         )}
 
-        {/* Unified R Isotype with Perfectly Centered Enlarged Play Triangle */}
+        {/* Brand New Modern Aerodynamic R Isotype with Integrated Play Chevron */}
         <g id="rtv-r-emblem">
-          {/* Main Upper P-Body with Enlarged Centered Play Counter Cutout */}
           <path
-            fillRule="evenodd"
-            clipRule="evenodd"
-            d="M 136 106 H 290 C 346 106 376 142 376 194 C 376 246 346 282 290 282 H 192 V 406 H 136 Z M 204 152 V 236 L 284 194 Z"
+            d="M 148 106 H 292 C 352 106 384 136 384 188 C 384 234 358 266 312 278 L 390 406 H 324 L 254 290 H 204 V 406 H 148 Z M 204 150 V 242 H 286 C 314 242 328 226 328 196 C 328 166 314 150 286 150 Z"
             fill={isMonochrome ? 'currentColor' : `url(#${brandGradId})`}
           />
-
-          {/* Symmetrical Lower Diagonal Leg with Parallel 56px Stroke & Baseline Alignment */}
-          <path
-            d="M 238 290 H 294 L 376 406 H 320 Z"
-            fill={isMonochrome ? 'currentColor' : `url(#${brandGradId})`}
+          {/* Internal Glowing Play Arrow Accent inside R loop */}
+          <polygon
+            points="228,172 228,220 272,196"
+            fill="#FFFFFF"
+            opacity="0.92"
           />
         </g>
       </svg>

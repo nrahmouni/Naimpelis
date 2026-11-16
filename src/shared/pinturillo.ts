@@ -113,10 +113,12 @@ export const PINTURILLO_WORDS: PinturilloWordEntry[] = [
 ];
 
 const BOT_PROFILES: Array<{ name: string; avatar: string; color: string }> = [
-  { name: 'Bot Picasso', avatar: '🎨', color: '#F59E0B' },
-  { name: 'Bot Dalí', avatar: '🖌️', color: '#EC4899' },
-  { name: 'Bot Frida', avatar: '🌸', color: '#10B981' },
-  { name: 'Bot Monet', avatar: '✨', color: '#38BDF8' },
+  { name: 'Poca-solta', avatar: '🤪', color: '#F59E0B' },
+  { name: 'Machupichu', avatar: '🗿', color: '#EC4899' },
+  { name: 'Botifler', avatar: '🥖', color: '#10B981' },
+  { name: 'Pallús', avatar: '🤡', color: '#38BDF8' },
+  { name: 'Tòtil', avatar: '🥴', color: '#A855F7' },
+  { name: 'Nyicris', avatar: '🤏', color: '#EF4444' },
 ];
 
 const BOT_FILLER_GUESSES = [

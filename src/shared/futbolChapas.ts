@@ -189,7 +189,7 @@ function findNextSeatInTeam(
 
 function makeChapasBot(seatIndex: 0 | 1 | 2 | 3): ChapasPlayerSeat {
   const team: ChapasTeamId = seatIndex <= 1 ? 'A' : 'B';
-  const botNames = ['Bot Leo', 'Bot Pedri', 'Bot Nico', 'Bot Lamine'];
+  const botNames = ['Machupichu', 'Poca-solta', 'Botifler', 'Pallús', 'Tòtil', 'Nyicris'];
   return {
     seatIndex,
     team,
