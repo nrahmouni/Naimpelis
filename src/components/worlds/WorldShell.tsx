@@ -109,15 +109,6 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                   <ArrowLeft className="w-5 h-5" />
                 </button>
 
-                <button
-                  type="button"
-                  onClick={onGoHome}
-                  aria-label="RiffanTV"
-                  className="min-h-12 px-1 rounded-xl flex items-center cursor-pointer active:scale-95 transition-transform shrink-0"
-                >
-                  <NaimBrandLogo size={30} withFrame={false} />
-                </button>
-
                 <h2 className="font-display font-extrabold text-base sm:text-lg text-white tracking-tight truncate pl-1">
                   {title}
                 </h2>

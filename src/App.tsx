@@ -2222,6 +2222,39 @@ export function App() {
     isExtractingRef.current = true;
     setLoadingItemId(epLoadId);
     setExtractionError(null);
+
+    const epCode = `${episode.seasonNumber}x${String(episode.episodeNumber).padStart(2, '0')}`;
+    const optimisticTitle = `${series.title} · ${epCode}${episode.title ? ` · ${episode.title}` : ''}`;
+    const currentSeasonSummary = series.seasons?.find(
+      (s) => s.seasonNumber === episode.seasonNumber
+    );
+
+    // Instant metadata sync & clean old frame/url immediately:
+    setVideoState((prev) => ({
+      ...prev,
+      title: optimisticTitle,
+      seriesMeta: {
+        tmdbId: series.tmdbId,
+        seriesTitle: series.title,
+        season: episode.seasonNumber,
+        episode: episode.episodeNumber,
+        episodeTitle: episode.title,
+        overview: episode.overview,
+        totalEpisodesInSeason:
+          currentSeasonSummary?.episodeCount || series.episodes?.length || 1,
+        totalSeasons: series.seasons?.length || 1,
+        poster: episode.still || series.poster,
+        backdrop: episode.still || series.backdrop,
+      },
+      url: '', // Immediately drop old stream URL so frozen frame doesn't linger
+      mode: 'idle',
+      currentTime: 0,
+      duration: 0,
+      isPlaying: false,
+      poster: episode.still || series.poster || prev.poster,
+      backdrop: episode.still || series.backdrop || prev.backdrop,
+    }));
+
     setExtractionLabel(
       forceSpanish
         ? `${series.title} (${episode.seasonNumber}x${String(episode.episodeNumber).padStart(

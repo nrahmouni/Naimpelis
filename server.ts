@@ -8198,15 +8198,17 @@ app.get('/api/sports/football-board', async (req, res) => {
         let statusLabel = '';
         if (statusState === 'live') {
           if (statusName.includes('HALFTIME')) {
-            statusLabel = 'HT';
+            statusLabel = 'Descanso';
           } else {
             const clk = String(
               ev?.status?.displayClock || ev?.status?.type?.shortDetail || ''
             ).trim();
-            statusLabel = clk || 'EN VIVO';
+            statusLabel = /^(ht|half-time|half time)$/i.test(clk) ? 'Descanso' : (clk || 'EN VIVO');
           }
         } else if (statusState === 'finished') {
-          statusLabel = statusName.includes('PEN') ? 'PEN' : statusName.includes('AET') ? 'PRÓ' : 'FT';
+          statusLabel = statusName.includes('PEN') ? 'Penaltis' : statusName.includes('AET') ? 'Prórroga' : 'Final';
+        } else {
+          statusLabel = 'Por empezar';
         }
 
         const homeTeam = String(
@@ -8222,10 +8224,14 @@ app.get('/api/sports/football-board', async (req, res) => {
           // Use freshest live status/minute/score if FotMob reports in-progress/finished ahead of ESPN
           if (fm.statusState === 'live') {
             statusState = 'live';
-            if (fm.statusLabel) statusLabel = fm.statusLabel;
+            if (fm.statusLabel) {
+              statusLabel = /^(ht|half-time|half time)$/i.test(fm.statusLabel)
+                ? 'Descanso'
+                : fm.statusLabel;
+            }
           } else if (fm.statusState === 'finished' && statusState !== 'finished') {
             statusState = 'finished';
-            statusLabel = fm.statusLabel || 'FT';
+            statusLabel = fm.statusLabel && !/^(ft|full-time)$/i.test(fm.statusLabel) ? fm.statusLabel : 'Final';
           }
         }
 

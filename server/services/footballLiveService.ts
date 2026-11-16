@@ -306,11 +306,17 @@ export async function fetchFotmobDayIndex(dateKeyInput?: string): Promise<Fotmob
 
         let statusLabel = '';
         if (statusState === 'live') {
-          statusLabel = String(
-            st?.liveTime?.short || st?.reason?.short || 'EN VIVO'
-          ).trim();
+          const raw = String(st?.liveTime?.short || st?.reason?.short || 'EN VIVO').trim();
+          if (/^(ht|half-time|half time|half_time|descanso)$/i.test(raw)) {
+            statusLabel = 'Descanso';
+          } else {
+            statusLabel = raw;
+          }
         } else if (statusState === 'finished') {
-          statusLabel = String(st?.reason?.short || 'FT').trim();
+          const raw = String(st?.reason?.short || 'FT').trim();
+          statusLabel = /^(ft|full-time|full time|finished)$/i.test(raw) ? 'Final' : raw;
+        } else {
+          statusLabel = 'Por empezar';
         }
 
         const homeScore =
@@ -1053,14 +1059,16 @@ export async function fetchRealFootballMatchDetails(params: {
     const homeName = String(homeTeamObj.name || params.homeTeam || 'Local').trim();
     const awayName = String(awayTeamObj.name || params.awayTeam || 'Visitante').trim();
 
-    const statusState: 'live' | 'upcoming' | 'finished' =
-      st.finished || st.cancelled ? 'finished' : st.started ? 'live' : 'upcoming';
-    const statusLabel =
-      statusState === 'live'
-        ? String(st?.liveTime?.long || st?.liveTime?.short || st?.reason?.short || 'EN VIVO').trim()
-        : statusState === 'finished'
-        ? String(st?.reason?.short || 'FT').trim()
-        : '';
+    let statusLabel = '';
+    if (statusState === 'live') {
+      const raw = String(st?.liveTime?.long || st?.liveTime?.short || st?.reason?.short || 'EN VIVO').trim();
+      statusLabel = /^(ht|half-time|half time|half_time|descanso)$/i.test(raw) ? 'Descanso' : raw;
+    } else if (statusState === 'finished') {
+      const raw = String(st?.reason?.short || 'FT').trim();
+      statusLabel = /^(ft|full-time|full time|finished)$/i.test(raw) ? 'Final' : raw;
+    } else {
+      statusLabel = 'Por empezar';
+    }
 
     const homeLineup = parseFotmobLineupTeam(
       content?.lineup?.homeTeam,
