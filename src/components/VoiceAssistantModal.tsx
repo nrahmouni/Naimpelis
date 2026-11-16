@@ -296,11 +296,28 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   watchHistoryRef.current = watchHistory;
   const startListeningRef = useRef<() => void>(() => {});
 
+  // Lock background page scroll while voice modal is open ("ventana para él solo")
+  useEffect(() => {
+    if (!isOpen) return;
+    const prevOverflow = document.body.style.overflow;
+    const prevTouchAction = document.body.style.touchAction;
+    document.body.style.overflow = 'hidden';
+    document.body.style.touchAction = 'none';
+    return () => {
+      document.body.style.overflow = prevOverflow;
+      document.body.style.touchAction = prevTouchAction;
+    };
+  }, [isOpen]);
+
+  // Smooth scroll within modal only when a new message turn is added
   useEffect(() => {
     if (chatScrollRef.current) {
-      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+      chatScrollRef.current.scrollTo({
+        top: chatScrollRef.current.scrollHeight,
+        behavior: 'smooth',
+      });
     }
-  }, [messages, interimText, isThinking]);
+  }, [messages.length]);
 
   const stopLiveAudioPlayback = useCallback(() => {
     liveActiveSourcesRef.current.forEach((src) => {
@@ -665,14 +682,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           return;
         }
 
-        if (data.autoPlay && nextItems.length > 0) {
-          void speakText(reply, false);
-          window.setTimeout(() => {
-            triggerCandidatePlay(nextItems[0]);
-          }, 600);
-        } else {
-          void speakText(reply, true);
-        }
+        // Never auto-play media automatically — always offer candidate cards for user to click
+        void speakText(reply, true);
       } catch {
         setIsThinking(false);
         const errMsg = pickLang(lang, {
@@ -712,7 +723,6 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           zh: '当前浏览器不支持录音；请在下方输入消息。',
         })
       );
-      inputRef.current?.focus();
       return;
     }
 
@@ -1119,15 +1129,6 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
 
           if (Array.isArray(msg.toolItems) && msg.toolItems.length > 0) {
             setItems(msg.toolItems);
-            if (msg.autoPlay) {
-              const firstCandidate = msg.toolItems[0];
-              if (livePendingAutoPlayTimerRef.current !== null) {
-                window.clearTimeout(livePendingAutoPlayTimerRef.current);
-              }
-              livePendingAutoPlayTimerRef.current = window.setTimeout(() => {
-                triggerCandidatePlay(firstCandidate);
-              }, 950);
-            }
           }
         } catch {
           // ignore malformed ws payload
@@ -1265,14 +1266,14 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         aria-modal="true"
         aria-labelledby="voice-assistant-title"
         onClick={onClose}
-        className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#0B0B0F]/85 backdrop-blur-md"
+        className="fixed inset-0 z-[120] flex items-center justify-center p-2 sm:p-4 bg-black/80 backdrop-blur-md overflow-hidden select-none"
       >
         <motion.div
-          initial={{ y: 24, opacity: 0, scale: 0.98 }}
+          initial={{ y: 20, opacity: 0, scale: 0.98 }}
           animate={{ y: 0, opacity: 1, scale: 1 }}
-          exit={{ y: 24, opacity: 0, scale: 0.98 }}
+          exit={{ y: 20, opacity: 0, scale: 0.98 }}
           transition={{ type: 'spring', stiffness: 320, damping: 28 }}
-          className="relative w-full sm:max-w-xl max-h-[92dvh] rounded-t-3xl sm:rounded-3xl bg-[#0B0B0F] border border-[#9146FF]/30 shadow-[0_24px_80px_rgba(0,0,0,0.9),0_0_48px_rgba(145,70,255,0.22)] flex flex-col overflow-hidden text-white"
+          className="relative w-full max-w-xl h-[86dvh] max-h-[720px] rounded-3xl bg-[#0B0B0F] border border-[#9146FF]/35 shadow-[0_24px_80px_rgba(0,0,0,0.95),0_0_48px_rgba(145,70,255,0.25)] flex flex-col overflow-hidden text-white overscroll-contain"
           onClick={(e) => e.stopPropagation()}
         >
           {/* Ambient Top Glow */}
@@ -1414,7 +1415,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           </div>
 
           {/* Main Scrollable Area */}
-          <div ref={chatScrollRef} className="relative z-10 flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 no-scrollbar">
+          <div ref={chatScrollRef} className="relative z-10 flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 no-scrollbar overscroll-contain">
             {/* Compact Glowing Orb / Mic Control */}
             <div className="flex flex-col items-center justify-center pt-1">
               <div className="relative flex items-center justify-center">

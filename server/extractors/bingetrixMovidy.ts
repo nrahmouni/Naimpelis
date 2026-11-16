@@ -733,15 +733,30 @@ export async function fetchMovidyPageMetadata(
 }
 
 export function extractMovidyTracksFromHtml(html: string, slugHint = 'movidy'): TrackRecord[] {
+  // Support both <li class="play-url" ...> and <span class="open play-url" ...>
   const trackRegex =
-    /<li[^>]*class="[^"]*play-url[^"]*"[^>]*data-url="([^"]+)"[^>]*>[\s\S]*?<span>([^<]+)<\/span>\s*<\/li>/gi;
+    /<(?:li|span)[^>]*class="[^"]*play-url[^"]*"[^>]*data-url="([^"]+)"[^>]*>([\s\S]*?)<\/(?:li|span)>/gi;
   const rawTracks: TrackRecord[] = [];
   let match: RegExpExecArray | null;
 
   while ((match = trackRegex.exec(html)) !== null) {
     const dataUrl = String(match[1] || '').trim();
-    const rawLangText = String(match[2] || '').trim();
-    if (!dataUrl) continue;
+    const rawInnerHtml = String(match[2] || '').trim();
+    if (!dataUrl || dataUrl.toLowerCase() === 'array') continue;
+
+    // Validate that dataUrl either is http(s) or base64 decodes to http(s)
+    let testUrl = dataUrl;
+    if (!testUrl.startsWith('http')) {
+      try {
+        testUrl = Buffer.from(testUrl, 'base64').toString('utf8').trim();
+      } catch {
+        continue;
+      }
+    }
+    if (!testUrl.startsWith('http')) continue;
+
+    const spanTextMatch = rawInnerHtml.match(/<span>([^<]+)<\/span>/i);
+    const rawLangText = (spanTextMatch?.[1] || rawInnerHtml.replace(/<[^>]+>/g, '')).trim();
 
     let lang: 'ES' | 'LAT' | 'VOSE' = 'ES';
     let label = 'Castellano HD (Movidy)';
@@ -757,7 +772,7 @@ export function extractMovidyTracksFromHtml(html: string, slugHint = 'movidy'): 
       label = 'Subtitulado VOSE · Movidy';
     } else {
       lang = 'ES';
-      label = `${rawLangText} HD · Movidy`;
+      label = `${rawLangText || 'Castellano'} HD · Movidy`;
     }
 
     rawTracks.push({
@@ -790,16 +805,17 @@ export function verifyMovidyMetaMatch(
   if (opts.expectedMediaType === 'tv' && !meta.isTvShow) {
     return { ok: false, exactYear: false, reason: 'movie_not_tv_show' };
   }
+  const isTv = opts.expectedMediaType === 'tv' || meta.isTvShow;
   const candRuntimeMin = parseDurationTextToMinutes(meta.durationText);
   return isMetadataCompatibleForMedia({
     candidateTitle: meta.cleanTitle || undefined,
     targetTitleHints: opts.titleHints,
     candidateYear: meta.year || undefined,
     expectedYear: opts.expectedYear,
-    candidateDirector: meta.director || undefined,
-    expectedDirector: opts.expectedDirector,
-    candidateRuntimeMin: candRuntimeMin || undefined,
-    expectedRuntimeMin: opts.expectedRuntimeMin,
+    candidateDirector: isTv ? undefined : (meta.director || undefined),
+    expectedDirector: isTv ? undefined : opts.expectedDirector,
+    candidateRuntimeMin: isTv ? undefined : (candRuntimeMin || undefined),
+    expectedRuntimeMin: isTv ? undefined : opts.expectedRuntimeMin,
   });
 }
 
@@ -863,6 +879,7 @@ export async function findMovidyUrlByTitle(
     expectedDirector?: string;
     expectedRuntimeMin?: number;
     titleHints?: string[];
+    expectedMediaType?: 'movie' | 'tv';
   }
 ): Promise<string | null> {
   try {
@@ -877,7 +894,7 @@ export async function findMovidyUrlByTitle(
       return null;
     }
 
-    const searchUrl = `${MOVIDY_ORIGIN}/?s=${encodeURIComponent(queryTerm)}`;
+    const searchUrl = `${MOVIDY_ORIGIN}/?s=${encodeURIComponent(queryTerm)}&_=${Date.now()}`;
     const html = await fetchTextWithCurlFallback(
       searchUrl,
       { 'User-Agent': CHROME_UA, Referer: `${MOVIDY_ORIGIN}/` },
@@ -916,14 +933,16 @@ export async function findMovidyUrlByTitle(
     let verifiedAdjacentFallback: string | null = null;
     for (const candidateUrl of exactMatches.slice(0, 6)) {
       const meta = await fetchMovidyPageMetadata(candidateUrl);
-      if (!meta || meta.isTvShow) continue;
+      if (!meta) continue;
+      if (opts?.expectedMediaType === 'movie' && meta.isTvShow) continue;
+      if (opts?.expectedMediaType === 'tv' && !meta.isTvShow) continue;
 
       const verdict = verifyMovidyMetaMatch(meta, {
         titleHints: allHints,
         expectedYear,
         expectedDirector: opts?.expectedDirector,
         expectedRuntimeMin: opts?.expectedRuntimeMin,
-        expectedMediaType: 'movie',
+        expectedMediaType: opts?.expectedMediaType || 'movie',
       });
       if (!verdict.ok) continue;
 
@@ -973,7 +992,6 @@ export async function probeAvailableLanguages(opts: {
   const hasExplicitMovidy = isMovidyVerUrl(normalizedExplicitMovidy);
 
   const movidyPromise = (async (): Promise<TrackRecord[]> => {
-    if (opts.mediaType !== 'movie') return [];
     let mvUrl = hasExplicitMovidy ? normalizedExplicitMovidy : '';
     if (mvUrl && (cleanId || opts.yearHint || opts.directorHint || opts.runtimeMinHint)) {
       const explicitMeta = await fetchMovidyPageMetadata(mvUrl);
@@ -984,7 +1002,7 @@ export async function probeAvailableLanguages(opts: {
           expectedYear: opts.yearHint,
           expectedDirector: opts.directorHint,
           expectedRuntimeMin: opts.runtimeMinHint,
-          expectedMediaType: 'movie',
+          expectedMediaType: opts.mediaType,
         }).ok
       ) {
         mvUrl = '';
@@ -996,6 +1014,7 @@ export async function probeAvailableLanguages(opts: {
           expectedDirector: opts.directorHint,
           expectedRuntimeMin: opts.runtimeMinHint,
           titleHints: hints,
+          expectedMediaType: opts.mediaType,
         });
         if (found) {
           mvUrl = found;
@@ -1006,10 +1025,10 @@ export async function probeAvailableLanguages(opts: {
     if (!mvUrl) return [];
     return extractMovidyPageTracks(mvUrl, {
       expectedYear: opts.yearHint,
-      requireMovieOnly: true,
+      requireMovieOnly: opts.mediaType === 'movie',
       expectedTitleHints: cleanId ? hints : undefined,
-      expectedDirector: opts.directorHint,
-      expectedRuntimeMin: opts.runtimeMinHint,
+      expectedDirector: opts.mediaType === 'movie' ? opts.directorHint : undefined,
+      expectedRuntimeMin: opts.mediaType === 'movie' ? opts.runtimeMinHint : undefined,
     });
   })();
 

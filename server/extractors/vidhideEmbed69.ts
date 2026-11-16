@@ -28,10 +28,98 @@ const gnulaSlugCache = new LruTtlCache<string, string | null>(400, 30 * 60 * 100
 
 let cachedEmbed69AnubisCookie: { cookie: string; expiresAt: number } | null = null;
 
+export async function unpackByseToHls(
+  embedUrl: string
+): Promise<{ rawM3u8: string; proxyUrl: string } | null> {
+  try {
+    const cleanEmbedUrl = embedUrl.split('#')[0].trim();
+    const u = new URL(cleanEmbedUrl);
+    const m = u.pathname.match(/\/e\/([a-zA-Z0-9_-]+)/);
+    const code = m ? m[1] : '';
+    if (!code) return null;
+
+    const apiUrl = `${u.origin}/api/videos/${code}`;
+    const apiRes = await curlGetText(
+      apiUrl,
+      {
+        'User-Agent': CHROME_UA,
+        Referer: cleanEmbedUrl,
+        Accept: 'application/json',
+      },
+      6,
+      true
+    ).catch(() => ({ text: '' }));
+
+    if (!apiRes.text) return null;
+    let json: any = null;
+    try {
+      json = JSON.parse(apiRes.text);
+    } catch {
+      return null;
+    }
+
+    const pb = json?.playback;
+    if (!pb || !Array.isArray(pb.key_parts) || !pb.iv || !pb.payload) {
+      return null;
+    }
+
+    const v = parseInt(String(pb.version || '1').trim(), 10);
+    const idx1 = v - 1;
+    const idx2 = 31 - v - 1;
+    if (idx1 < 0 || idx1 >= pb.key_parts.length || idx2 < 0 || idx2 >= pb.key_parts.length) {
+      return null;
+    }
+
+    const p1 = Buffer.from(pb.key_parts[idx1], 'base64url');
+    const p2 = Buffer.from(pb.key_parts[idx2], 'base64url');
+    const key = Buffer.concat([p1, p2]);
+    if (key.length !== 32) return null;
+
+    const iv = Buffer.from(pb.iv, 'base64url');
+    const payloadBuf = Buffer.from(pb.payload, 'base64url');
+    if (payloadBuf.length <= 16) return null;
+
+    const ciphertext = payloadBuf.subarray(0, payloadBuf.length - 16);
+    const tag = payloadBuf.subarray(payloadBuf.length - 16);
+
+    const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+    decipher.setAuthTag(tag);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    const data = JSON.parse(decrypted.toString('utf8'));
+
+    const sources: any[] = Array.isArray(data?.sources) ? data.sources : [];
+    const bestSource =
+      sources.find((s) => s.label === '1080p' && s.url) ||
+      sources.find((s) => s.mime_type?.includes('mpegurl') && s.url) ||
+      sources.find((s) => s.url) ||
+      null;
+
+    const rawM3u8 = bestSource?.url || data?.playlist || data?.file || '';
+    if (!rawM3u8 || !/^https?:\/\//i.test(rawM3u8)) return null;
+
+    const healthy = await probeHlsSegmentHealth(rawM3u8, u.origin);
+    if (!healthy) return null;
+
+    return {
+      rawM3u8,
+      proxyUrl: buildHlsProxyUrl(rawM3u8, `${u.origin}/`),
+    };
+  } catch (err) {
+    console.warn('unpackByseToHls error:', err);
+    return null;
+  }
+}
+
 export async function unpackVidhideToHls(
   embedUrl: string
 ): Promise<{ rawM3u8: string; proxyUrl: string } | null> {
   try {
+    // 0. Byse (bysevepoin / filemoon fast native HLS AES-256-GCM unpacker)
+    if (/byse|bysevepoin/i.test(embedUrl)) {
+      const byseResult = await unpackByseToHls(embedUrl);
+      if (byseResult) return byseResult;
+    }
+
     // 1. Fast Vidaraa / Vidara JSON Stream Unpacker
     if (/vidaraa?\.[a-z]+/i.test(embedUrl)) {
       const cleanEmbedUrl = embedUrl.split('#')[0];
@@ -443,7 +531,9 @@ export function parseEmbed69OrMoeTracks(html: string, tagId: string): TrackRecor
               const low = dec.toLowerCase();
               if (/1fichier|uptobox|mega\.nz|mediafire/i.test(low)) continue;
 
-              if (/vidaraa?\./i.test(low)) {
+              if (/byse|bysevepoin/i.test(low)) {
+                decodedCandList.push({ url: dec, srv: srv || 'byse', resolverType: 'vidhide_hls', priority: 0 });
+              } else if (/vidaraa?\./i.test(low)) {
                 decodedCandList.push({ url: dec, srv: srv || 'vidara', resolverType: 'vidhide_hls', priority: 1 });
               } else if (/filelions|smoothpre|earnvids|vidhide/i.test(low) && !/morencius/i.test(low)) {
                 decodedCandList.push({ url: dec, srv: srv || 'vidhide', resolverType: 'vidhide_hls', priority: 2 });
@@ -1254,6 +1344,7 @@ export function parseGnulaPlayerPayload(pJson: any): TrackRecord[] {
     const embedBackupTracks: TrackRecord[] = [];
 
     const getVidhideHostPriority = (hostLow: string): number => {
+      if (/byse|bysevepoin/i.test(hostLow)) return 0;
       if (/vidaraa?\.[a-z]+/i.test(hostLow)) return 1;
       if (/vidhide|smoothpre|earnvids/i.test(hostLow)) return 2;
       if (/streamwish|hglink|hlswish|wishembed/i.test(hostLow)) return 3;
@@ -1280,7 +1371,7 @@ export function parseGnulaPlayerPayload(pJson: any): TrackRecord[] {
         const hostLow = rawSrc.toLowerCase();
 
         if (
-          /vidaraa?\.[a-z]+|morencius|vidhide|smoothpre|earnvids|streamwish|filelions|hglink|hlswish|wishembed/i.test(
+          /byse|bysevepoin|vidaraa?\.[a-z]+|morencius|vidhide|smoothpre|earnvids|streamwish|filelions|hglink|hlswish|wishembed/i.test(
             hostLow
           )
         ) {

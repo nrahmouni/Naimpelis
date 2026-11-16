@@ -471,17 +471,18 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
   if (epParse.hasEpisodeRequest && epParse.cleanTitle) {
     const season = epParse.season || 1;
     const episode = epParse.episode || 1;
+    const displayTitle = epParse.cleanTitle.replace(/\b\w/g, (c) => c.toUpperCase());
     return {
       spokenReply:
         lang === 'en'
-          ? `Playing season ${season}, episode ${episode} of ${epParse.cleanTitle}.`
+          ? `Here is season ${season}, episode ${episode} of ${displayTitle}. Tap to play.`
           : lang === 'ca'
-          ? `Posant la temporada ${season}, capítol ${episode} de ${epParse.cleanTitle}.`
+          ? `Aquí tens la temporada ${season}, capítol ${episode} de ${displayTitle}. Prem per reproduir-lo.`
           : lang === 'zh'
-          ? `正在为你播放《${epParse.cleanTitle}》第 ${season} 季第 ${episode} 集。`
-          : `Te pongo el capítulo ${episode} de la temporada ${season} de ${epParse.cleanTitle}.`,
+          ? `这是《${displayTitle}》第 ${season} 季第 ${episode} 集，点击播放。`
+          : `Aquí tienes el capítulo ${episode} de la temporada ${season} de ${displayTitle}. Haz clic para reproducirlo.`,
       intent: 'play_series',
-      autoPlay: true,
+      autoPlay: isWantPlayNow,
       channelKeywords: [],
       categoryHint: '',
       matchKeywords: [],
@@ -606,20 +607,29 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
   }
 
   const wantsSeries = /\b(serie|series|anime|temporada|capitulo|episodio)\b/.test(norm);
+  const isRecommendation =
+    /\b(recomiend[a-z]*|comiend[a-z]*|sugier[a-z]*|sugerencia[a-z]*|que ver|que me recomiendas|consejo|dame algo|ponme algo|que hay de bueno)\b/i.test(norm) ||
+    /\b(mejor|mejores|top|buena|buenas|destacad[ao]s?|puntuad[ao]s?)\b/i.test(norm);
   const genreHit = GENRE_KEYWORD_MAP.find((g) => g.pattern.test(norm));
   const isThisMonth = /\b(este mes|ultimos dias|reciente|recientes|novedad|estreno|estrenos|hoy|semana)\b/.test(norm);
-  const isTopRated = /\b(mejor|mejores|top|buena|buenas|recomend|puntuad)\b/.test(norm);
 
-  if (genreHit || isTopRated || isThisMonth) {
+  if (isRecommendation || genreHit || isThisMonth) {
+    let replyEs = '¡Claro! Aquí te recomiendo algunas de las mejores películas destacadas de nuestro catálogo:';
+    if (genreHit) {
+      replyEs = `¡Claro! Aquí tienes una selección recomendada de ${genreHit.labelEs}:`;
+    } else if (wantsSeries) {
+      replyEs = '¡Claro! Aquí te recomiendo algunas de las series más destacadas:';
+    }
+
     return {
       spokenReply:
         lang === 'en'
-          ? 'Here are the best matches from our catalog.'
+          ? 'Here are top recommendations from our catalog:'
           : lang === 'ca'
-          ? 'Aquí tens les millors opcions del catàleg.'
+          ? 'Aquí tens una selecció recomanada del catàleg:'
           : lang === 'zh'
-          ? '这是目录中为你精选的推荐内容。'
-          : `Aquí tienes ${limit > 1 ? `las ${limit} mejores opciones` : 'la mejor opción'}${genreHit ? ` de ${genreHit.labelEs}` : ''}${isThisMonth ? ' recientes' : ''}.`,
+          ? '这是目录中为你精选的推荐内容：'
+          : replyEs,
       intent: wantsSeries ? 'recommend_series' : 'recommend_movies',
       autoPlay: false,
       channelKeywords: [],
@@ -629,8 +639,8 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
         mediaType: wantsSeries ? 'tv' : 'movie',
         genreId: genreHit ? (wantsSeries ? genreHit.tvId : genreHit.movieId) : undefined,
         timeframe: isThisMonth ? 'this_month' : 'trending',
-        sortBy: isTopRated ? 'top_rated' : 'popular',
-        limit,
+        sortBy: 'top_rated',
+        limit: limitMatch ? limit : 5,
       },
     };
   }
@@ -670,18 +680,19 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
 
   const wantsSpecificMovie = /\b(peli|pelicula|film|movie)\b/.test(norm);
   const effectiveTitle = stripped || query.trim();
+  const displayTitle = effectiveTitle.replace(/\b\w/g, (c) => c.toUpperCase());
 
   return {
     spokenReply:
       lang === 'en'
-        ? `Playing ${effectiveTitle}.`
+        ? `Here is ${displayTitle}. Tap play whenever you are ready.`
         : lang === 'ca'
-        ? `Posant ${effectiveTitle}.`
+        ? `Aquí tens ${displayTitle}. Prem per reproduir quan vulguis.`
         : lang === 'zh'
-        ? `正在为你播放 ${effectiveTitle}。`
-        : `Aquí tienes ${effectiveTitle}.`,
+        ? `这是为你找到的《${displayTitle}》，点击即可播放。`
+        : `Aquí tienes ${displayTitle}. Pulsa reproducir para verla cuando quieras.`,
     intent: wantsSeries ? 'play_series' : 'play_movie',
-    autoPlay: isWantPlayNow,
+    autoPlay: false,
     channelKeywords: [],
     categoryHint: '',
     matchKeywords: [],
@@ -750,7 +761,8 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
      intent: "open_world", action: { type: "surprise_me" }
 
 4. SI PIDE UN CAPÍTULO Y/O TEMPORADA DE UNA SERIE ("ponle el segundo capítulo de la temporada 2 de Juego de Tronos", "pon el 2x03 de Breaking Bad"):
-   - intent: "play_series", autoPlay: true, targetSeason: 2, targetEpisode: 2, tmdbQuery: { mediaType: "tv", limit: 4, titleSearch: "Juego de Tronos" }.
+   - intent: "play_series", autoPlay: false, targetSeason: 2, targetEpisode: 2, tmdbQuery: { mediaType: "tv", limit: 4, titleSearch: "Juego de Tronos" }.
+   - spokenReply: Responde cordialmente informando que le muestras el capítulo exacto para que pulse reproducir cuando quiera.
 
 5. SI PIDE PELÍCULAS O SERIES DE UN DIRECTOR O ACTOR ("dime las películas de Christopher Nolan", "qué películas tiene Leonardo DiCaprio", "dime las pelis de este actor"):
    - intent: "recommend_movies" (o "recommend_series" si pide series), autoPlay: false.
@@ -761,18 +773,20 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
    - intent: "sports_info", autoPlay: false, matchKeywords: ["equipo"], channelKeywords: ["dazn", "laliga", "movistar"].
 
 7. SOLO SI PIDE EXPRESAMENTE UN CANAL DE TV EN DIRECTO ("ponme DAZN LaLiga", "pon La 1", "quiero ver Antena 3"):
-   - intent: "play_channel", autoPlay: true, channelKeywords, categoryHint.
+   - intent: "play_channel", autoPlay: false, channelKeywords, categoryHint.
    - ¡PROHIBIDO elegir play_channel o browse_channels si el usuario pide una película, serie, actor o director!
 
 8. SI PIDE VER UN PARTIDO EN DIRECTO:
-   - intent: "play_match", matchKeywords.
+   - intent: "play_match", autoPlay: false, matchKeywords.
 
-9. SI PIDE RECOMENDACIONES POR GÉNERO O DESCRIPCIÓN ("recomiéndame 3 pelis de terror", "pelis donde el tiempo es dinero"):
-   - Si describe una película concreta por su argumento (p.ej. "la peli donde pagan con tiempo"), identifica el título exacto en titleSearch (p.ej. "In Time") y usa play_movie / recommend_movies.
-   - Si pide género o ranking, usa recommend_movies / recommend_series con genreId / timeframe / sortBy / limit.
+9. SI PIDE RECOMENDACIONES POR GÉNERO O DESCRIPCIÓN ("recomiéndame alguna película", "recomiéndame 3 pelis de terror", "pelis donde el tiempo es dinero"):
+   - Para peticiones de recomendación ("recomiéndame alguna película", "qué puedo ver", "sugiéreme algo"), habla con naturalidad y calidez humana (p.ej. "¡Por supuesto! Aquí tienes una selección de películas muy recomendadas de nuestro catálogo:") y JAMÁS repitas textualmente las palabras del usuario como "Aquí tienes recomiendame...".
+   - Si describe una película concreta por su argumento (p.ej. "la peli donde pagan con tiempo"), identifica el título exacto en titleSearch (p.ej. "In Time") y usa play_movie / recommend_movies con autoPlay: false.
+   - Si pide género o ranking, usa recommend_movies / recommend_series con genreId / timeframe / sortBy / limit y autoPlay: false.
 
 10. SI PIDE REPRODUCIR UNA PELÍCULA O SERIE CONCRETA ("ponle la película In Time", "ponme Interstellar", "quiero ver Deadpool"):
-   - intent: "play_movie" o "play_series", autoPlay: true, channelKeywords: [], categoryHint: "", tmdbQuery: { mediaType: "movie" | "tv", limit: 4, titleSearch: "<Título limpio exacto, p.ej. In Time>" }.`;
+    - intent: "play_movie" o "play_series", autoPlay: false, channelKeywords: [], categoryHint: "", tmdbQuery: { mediaType: "movie" | "tv", limit: 4, titleSearch: "<Título limpio exacto, p.ej. In Time>" }.
+    - REGLA ABSOLUTA: NUNCA pongas autoPlay en true. Muestra siempre las opciones para que el usuario elija y pulse con un clic.`;
 
   const userPrompt = trimmedHistory
     ? `Historial reciente de la conversación:\n${trimmedHistory}\n\nÚltimo mensaje del usuario: "${query}"`
@@ -874,7 +888,7 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
       return {
         spokenReply: parsed.spokenReply || buildFallbackVoicePlan(query, lang).spokenReply,
         intent: cleanIntent,
-        autoPlay: Boolean(parsed.autoPlay) || epFallback.hasEpisodeRequest,
+        autoPlay: false,
         action: parsed.action,
         channelKeywords: isMediaNonChannel
           ? []

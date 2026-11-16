@@ -6556,15 +6556,16 @@ app.get('/api/extract/stream', async (req, res) => {
               }
             }
 
-            if (effectiveMediaType === 'movie' && !effectiveMovidyUrl) {
+            if (!effectiveMovidyUrl) {
               const searchTitlePool = Array.from(
                 new Set([titleHint, esTitle, origTitle].filter(Boolean))
               );
               for (const qTitle of searchTitlePool) {
                 const foundMv = await findMovidyUrlByTitle(qTitle, tmdbVerifiedYear, {
-                  expectedDirector: tmdbDirector || undefined,
-                  expectedRuntimeMin: tmdbRuntimeMin || undefined,
+                  expectedDirector: effectiveMediaType === 'movie' ? (tmdbDirector || undefined) : undefined,
+                  expectedRuntimeMin: effectiveMediaType === 'movie' ? (tmdbRuntimeMin || undefined) : undefined,
                   titleHints: [titleHint, ...tmdbAltTitles].filter(Boolean),
+                  expectedMediaType: effectiveMediaType,
                 });
                 if (foundMv) {
                   effectiveMovidyUrl = foundMv;
@@ -6625,14 +6626,14 @@ app.get('/api/extract/stream', async (req, res) => {
         vidBuzzHlsTracks,
         vestExtracted,
       ] = await Promise.all([
-        effectiveMediaType === 'movie' && effectiveMovidyUrl
+        effectiveMovidyUrl
           ? extractMovidyPageTracks(effectiveMovidyUrl, {
               expectedYear: effectiveYearForExtract,
-              requireMovieOnly: true,
+              requireMovieOnly: effectiveMediaType === 'movie',
               expectedTitleHints:
                 resolvedTmdbId || combinedTitleHints.length > 0 ? combinedTitleHints : undefined,
-              expectedDirector: tmdbDirector || undefined,
-              expectedRuntimeMin: tmdbRuntimeMin || undefined,
+              expectedDirector: effectiveMediaType === 'movie' ? (tmdbDirector || undefined) : undefined,
+              expectedRuntimeMin: effectiveMediaType === 'movie' ? (tmdbRuntimeMin || undefined) : undefined,
             })
           : Promise.resolve([]),
         resolvedTmdbId || combinedTitleHints.length > 0
