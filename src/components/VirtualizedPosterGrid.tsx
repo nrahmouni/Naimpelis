@@ -18,10 +18,7 @@ function findScrollParent(el: HTMLElement | null): HTMLElement | null {
   while (node) {
     const style = window.getComputedStyle(node);
     const overflowY = style.overflowY;
-    if (
-      (overflowY === 'auto' || overflowY === 'scroll') &&
-      node.scrollHeight >= node.clientHeight
-    ) {
+    if (overflowY === 'auto' || overflowY === 'scroll') {
       return node;
     }
     node = node.parentElement;
@@ -135,8 +132,8 @@ export function VirtualizedPosterGrid<T>({
     scrollMargin,
   });
 
-  // Render cleanly without virtualizer gap if small enough (<= 10 items) or before scrollEl attaches
-  if (items.length <= 10 || !scrollEl) {
+  // Render cleanly without virtualizer gap if small enough (<= 80 items) or before scrollEl attaches
+  if (items.length <= 80 || !scrollEl) {
     return (
       <div
         ref={containerRef}

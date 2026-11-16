@@ -1172,12 +1172,11 @@ export function App() {
     }
   }, [lang]);
 
-  // Populate catalog pool eagerly inside rooms & whenever Command Search or Sorpréndeme opens
+  // Populate catalog pool eagerly on startup & whenever rooms/search opens
   useEffect(() => {
-    if (!inRoom && !showCommandSearch && !showSurpriseModal) return;
     if (quickPool.movies.length > 0 && quickPool.series.length > 0) return;
     void loadQuickPool();
-  }, [inRoom, showCommandSearch, showSurpriseModal, quickPool.movies.length, quickPool.series.length, loadQuickPool]);
+  }, [quickPool.movies.length, quickPool.series.length, loadQuickPool]);
 
   // Automatic Cross-Platform Version Control & OTA Sync (Web, Android Mobile APK & Google TV)
   useEffect(() => {

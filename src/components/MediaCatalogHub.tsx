@@ -3908,7 +3908,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </h3>
                   <div className="scroll-snap-x flex gap-3 overflow-x-auto no-scrollbar pb-1">
                     {(isSeriesTab ? seriesList : movies)
-                      .filter((it) => !activeHeroSlide || it.id !== activeHeroSlide.id)
                       .slice(0, 14)
                       .map((item, idx) => (
                         <motion.div
