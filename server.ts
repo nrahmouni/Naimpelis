@@ -33,6 +33,7 @@ import {
   buildHlsProxyUrl,
   buildTsProxyUrl,
   curlGetText,
+  fetchTextWithCurlFallback,
   getPreferredUpstreamUa,
   isChineseIptvStream,
   isDvbHeadendStream,
@@ -51,7 +52,7 @@ import {
   unpackVidhideToHls,
 } from './server/extractors/vidhideEmbed69.ts';
 import {
-  decodeNuploadToHls,
+  MOVIDY_ORIGIN,
   extract2EmbedEnglishTracks,
   extractBingetrixEnglishTracks,
   extractMovidyPageTracks,
@@ -59,8 +60,11 @@ import {
   extractVidsrcBuzzHlsTracks,
   fetchMovidyPageMetadata,
   findMovidyUrlByTitle,
+  isMovidyVerUrl,
+  normalizeMovidyUrl,
   probeAvailableLanguages,
   probeVidsrcBuzzHasContent,
+  resolveMovidyEmbedTrack,
   verifyMovidyMetaMatch,
   type MovidyPageMetadata,
 } from './server/extractors/bingetrixMovidy.ts';
@@ -167,7 +171,7 @@ httpServer.on('upgrade', (req, socket, head) => {
 
 app.use(compression());
 app.use(securityHeadersMiddleware);
-app.use(express.json({ limit: '1mb' }));
+app.use(express.json({ limit: '10mb' }));
 app.use('/api', serviceMeshGatewayMiddleware);
 
 // Serve ES5 UMD Hls.js locally for Samsung Tizen / LG webOS Smart TVs (zero external CDN dependency)
@@ -312,37 +316,25 @@ async function scrapeMovidyCatalog(opts: {
 }): Promise<{ movies: any[]; hasMore: boolean }> {
   try {
     const { category, page, query } = opts;
-    let targetUrl = 'https://movidy.pw/pelis/';
+    let targetUrl = `${MOVIDY_ORIGIN}/pelis/`;
 
     if (query) {
-      targetUrl = `https://movidy.pw/?s=${encodeURIComponent(query)}`;
+      targetUrl = `${MOVIDY_ORIGIN}/?s=${encodeURIComponent(query)}`;
     } else if (MOVIDY_GENRE_SLUGS[category]) {
       const slug = MOVIDY_GENRE_SLUGS[category];
       targetUrl =
         page > 1
-          ? `https://movidy.pw/genero/${slug}/page/${page}`
-          : `https://movidy.pw/genero/${slug}/`;
+          ? `${MOVIDY_ORIGIN}/genero/${slug}/page/${page}`
+          : `${MOVIDY_ORIGIN}/genero/${slug}/`;
     } else {
-      targetUrl = page > 1 ? `https://movidy.pw/pelis/page/${page}` : 'https://movidy.pw/pelis/';
+      targetUrl = page > 1 ? `${MOVIDY_ORIGIN}/pelis/page/${page}` : `${MOVIDY_ORIGIN}/pelis/`;
     }
 
-    let html = '';
-    try {
-      const res = await fetch(targetUrl, {
-        headers: { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-        signal: AbortSignal.timeout(4500),
-      });
-      if (res.ok) {
-        html = await res.text();
-      }
-    } catch {
-      const fb = await curlGetText(
-        targetUrl,
-        { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-        5
-      ).catch(() => ({ text: '' }));
-      html = fb.text;
-    }
+    const html = await fetchTextWithCurlFallback(
+      targetUrl,
+      { 'User-Agent': CHROME_UA, Referer: `${MOVIDY_ORIGIN}/` },
+      4800
+    );
 
     if (!html) return { movies: [], hasMore: false };
 
@@ -356,13 +348,13 @@ async function scrapeMovidyCatalog(opts: {
       const rawTitle = String(m[2] || '').trim();
       const rawPoster = String(m[3] || '').trim();
       if (!rawHref || !rawTitle) continue;
-      const movidyUrl = rawHref.startsWith('http') ? rawHref : `https://movidy.pw${rawHref}`;
+      const movidyUrl = normalizeMovidyUrl(rawHref);
 
       const absPoster = rawPoster.startsWith('//')
         ? `https:${rawPoster}`
         : rawPoster.startsWith('http')
-        ? rawPoster
-        : `https://movidy.pw${rawPoster}`;
+        ? normalizeMovidyUrl(rawPoster)
+        : `${MOVIDY_ORIGIN}${rawPoster.startsWith('/') ? rawPoster : `/${rawPoster}`}`;
       const proxiedPoster = `/api/img-proxy?url=${encodeURIComponent(absPoster)}`;
       const slug =
         movidyUrl
@@ -1338,16 +1330,13 @@ async function resolveMovidyShowToTmdbSeries(rawItem: {
 
   try {
     if (rawItem.verifyShowOnMovidy && rawItem.movidyUrl) {
-      const pageRes = await fetch(rawItem.movidyUrl, {
-        headers: { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-        signal: AbortSignal.timeout(3200),
-      });
-      if (!pageRes.ok) {
-        movidyTvTmdbCache.set(cacheKey, null);
-        return null;
-      }
-      const pageHtml = await pageRes.text();
-      if (!pageHtml.includes('id="eps"')) {
+      const checkUrl = normalizeMovidyUrl(rawItem.movidyUrl);
+      const pageHtml = await fetchTextWithCurlFallback(
+        checkUrl,
+        { 'User-Agent': CHROME_UA, Referer: `${MOVIDY_ORIGIN}/` },
+        3500
+      );
+      if (!pageHtml || !pageHtml.includes('id="eps"')) {
         movidyTvTmdbCache.set(cacheKey, null);
         return null;
       }
@@ -1425,27 +1414,17 @@ async function scrapeMovidySeriesCatalog(opts: {
   try {
     const targetUrl = query
       ? page > 1
-        ? `https://movidy.pw/page/${page}/?s=${encodeURIComponent(query)}`
-        : `https://movidy.pw/?s=${encodeURIComponent(query)}`
+        ? `${MOVIDY_ORIGIN}/page/${page}/?s=${encodeURIComponent(query)}`
+        : `${MOVIDY_ORIGIN}/?s=${encodeURIComponent(query)}`
       : page > 1
-      ? `https://movidy.pw/shows/page/${page}`
-      : 'https://movidy.pw/shows/';
+      ? `${MOVIDY_ORIGIN}/shows/page/${page}`
+      : `${MOVIDY_ORIGIN}/shows/`;
 
-    let html = '';
-    try {
-      const res = await fetch(targetUrl, {
-        headers: { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-        signal: AbortSignal.timeout(4500),
-      });
-      if (res.ok) html = await res.text();
-    } catch {
-      const fb = await curlGetText(
-        targetUrl,
-        { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-        5
-      ).catch(() => ({ text: '' }));
-      html = fb.text;
-    }
+    const html = await fetchTextWithCurlFallback(
+      targetUrl,
+      { 'User-Agent': CHROME_UA, Referer: `${MOVIDY_ORIGIN}/` },
+      4800
+    );
 
     if (!html) return { series: [], hasMore: false };
 
@@ -1466,14 +1445,12 @@ async function scrapeMovidySeriesCatalog(opts: {
       const rawPoster = String(m[3] || '').trim();
       if (!rawHref || !rawTitle) continue;
 
-      const movidyUrl = rawHref.startsWith('http')
-        ? rawHref
-        : `https://movidy.pw${rawHref}`;
+      const movidyUrl = normalizeMovidyUrl(rawHref);
       const absPoster = rawPoster.startsWith('//')
         ? `https:${rawPoster}`
         : rawPoster.startsWith('http')
-        ? rawPoster
-        : `https://movidy.pw${rawPoster}`;
+        ? normalizeMovidyUrl(rawPoster)
+        : `${MOVIDY_ORIGIN}${rawPoster.startsWith('/') ? rawPoster : `/${rawPoster}`}`;
       const proxiedPoster = `/api/img-proxy?url=${encodeURIComponent(absPoster)}`;
 
       rawItems.push({
@@ -6042,21 +6019,34 @@ app.get('/api/extract/stream', async (req, res) => {
       return res.json(formatExtractResponseForClient(req, result));
     }
 
-    // CASE 1B: Direct Movidy base64 track (`nupload.my`)
+    // CASE 1B: Direct Movidy base64/embed track (`nupload.my`)
     if (
       (resolverType === 'movidy_embed' || rawInput.includes('nupload.')) &&
-      !rawInput.includes('movidy.pw/ver/')
+      !isMovidyVerUrl(rawInput)
     ) {
-      const decoded = await decodeNuploadToHls(rawInput);
-      if (decoded) {
+      const resolvedMv = await resolveMovidyEmbedTrack(rawInput);
+      if (resolvedMv?.mode === 'hls') {
         const result: ExtractedStreamResult = {
           success: true,
           mode: 'hls',
-          streamUrl: decoded.proxyUrl,
-          rawStreamUrl: decoded.rawM3u8,
+          streamUrl: resolvedMv.proxyUrl,
+          rawStreamUrl: resolvedMv.rawM3u8,
           requestedLang: preferLang,
           resolvedLang: preferLang,
           expiresAt: Date.now() + 15 * 60 * 1000,
+        };
+        extractionCache.set(cacheKey, result);
+        return res.json(formatExtractResponseForClient(req, result));
+      }
+      if (resolvedMv?.mode === 'embed') {
+        const result: ExtractedStreamResult = {
+          success: true,
+          mode: 'embed',
+          streamUrl: resolvedMv.embedUrl,
+          rawStreamUrl: resolvedMv.embedUrl,
+          requestedLang: preferLang,
+          resolvedLang: preferLang,
+          expiresAt: Date.now() + 20 * 60 * 1000,
         };
         extractionCache.set(cacheKey, result);
         return res.json(formatExtractResponseForClient(req, result));
@@ -6094,9 +6084,15 @@ app.get('/api/extract/stream', async (req, res) => {
     // CASE 1C: Verified Web Embed Player track switch (`web_embed`) -> route HTML embeds via /api/embed-proxy to strip popups/sandbox checks
     if (resolverType === 'web_embed' && rawInput) {
       const fullEmbedUrl = /^https?:\/\//i.test(rawInput) ? rawInput : `https://${rawInput}`;
+      const isCloudflareDirectEmbed =
+        /(?:^|\.)(voe\.sx|voe\.bar|hglink\.to|streamwish\.[a-z]+|ok\.ru|byse\.[a-z]+|filelions\.[a-z]+)/i.test(
+          fullEmbedUrl
+        );
       const isHtmlProxyTarget =
-        /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc|www\.2embed\.cc)/i.test(fullEmbedUrl) ||
-        isSandboxedFrame;
+        /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc|www\.2embed\.cc|vidfast\.[a-z.]+)/i.test(
+          fullEmbedUrl
+        ) ||
+        (isSandboxedFrame && !isCloudflareDirectEmbed);
       const safeEmbedUrl = isHtmlProxyTarget
         ? `/api/embed-proxy?url=${encodeURIComponent(fullEmbedUrl)}`
         : fullEmbedUrl;
@@ -6183,8 +6179,7 @@ app.get('/api/extract/stream', async (req, res) => {
         ? rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed|2embed)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:movie\/)?(tt\d+|\d+)/i) ||
           rawInput.match(/[?&]tmdb=(\d+)/i)
         : null;
-    const isMovidyLink =
-      rawInput.includes('movidy.pw/ver/') || movidyUrlParam.includes('movidy.pw/ver/');
+    const isMovidyLink = isMovidyVerUrl(rawInput) || isMovidyVerUrl(movidyUrlParam);
     const isVestLink = isVestMirrorUrl(rawInput) || isVestMirrorUrl(vestUrlParam);
 
     const isCatalogMediaRequest =
@@ -6248,11 +6243,11 @@ app.get('/api/extract/stream', async (req, res) => {
       }
 
       let hasExplicitMovidyUrl =
-        movidyUrlParam.includes('movidy.pw/ver/') || rawInput.includes('movidy.pw/ver/');
-      let effectiveMovidyUrl = movidyUrlParam.includes('movidy.pw/ver/')
-        ? movidyUrlParam
-        : rawInput.includes('movidy.pw/ver/')
-        ? rawInput
+        isMovidyVerUrl(movidyUrlParam) || isMovidyVerUrl(rawInput);
+      let effectiveMovidyUrl = isMovidyVerUrl(movidyUrlParam)
+        ? normalizeMovidyUrl(movidyUrlParam)
+        : isMovidyVerUrl(rawInput)
+        ? normalizeMovidyUrl(rawInput)
         : '';
 
       const effectiveVestUrl = isVestMirrorUrl(vestUrlParam)
@@ -6624,98 +6619,128 @@ app.get('/api/extract/stream', async (req, res) => {
         return hA - hB;
       });
 
-      // Resolve the first available track that produces a valid proxied HLS stream,
-      // and immediately prune any candidate that fails unpacking so dead tracks never reach the UI
+      // Resolve strictly language-tier by language-tier (`preferLang` first, e.g. ES native + ES web_embed BEFORE falling back to LAT/VOSE/EN)
       let primaryStreamUrl = '';
       let primaryMode: 'hls' | 'direct' | 'embed' = 'hls';
       let resolvedTrack: TrackRecord | null = null;
       const deadTrackIndices = new Set<number>();
 
-      // Pass 1: Prefer native `<video>` HLS / MP4 tracks (`vidhide_hls`, `movidy_embed`, `bingetrix_en`, `embed_sniff`)
-      for (let i = 0; i < orderedTracks.length; i++) {
-        const candidate = orderedTracks[i];
-        if (candidate.resolverType === 'web_embed') {
-          continue;
-        }
-        if (candidate.resolvedStreamUrl) {
-          primaryStreamUrl = candidate.resolvedStreamUrl;
-          primaryMode = candidate.resolverType === 'direct_mp4' ? 'direct' : 'hls';
-          resolvedTrack = candidate;
-          break;
-        }
-        if (candidate.resolverType === 'movidy_embed') {
-          const decoded = await decodeNuploadToHls(candidate.sourceUrl);
-          if (decoded) {
-            orderedTracks[i] = { ...candidate, resolvedStreamUrl: decoded.proxyUrl };
-            primaryStreamUrl = decoded.proxyUrl;
-            resolvedTrack = orderedTracks[i];
-            break;
-          } else {
-            deadTrackIndices.add(i);
-          }
-        } else if (candidate.resolverType === 'vidhide_hls') {
-          const unpacked = await unpackVidhideToHls(candidate.sourceUrl);
-          if (unpacked) {
-            orderedTracks[i] = { ...candidate, resolvedStreamUrl: unpacked.proxyUrl };
-            primaryStreamUrl = unpacked.proxyUrl;
-            resolvedTrack = orderedTracks[i];
-            break;
-          } else {
-            deadTrackIndices.add(i);
-          }
-        } else if (candidate.resolverType === 'embed_sniff') {
-          const sniffed = await sniffStreamWithHeadless(candidate.sourceUrl);
-          if (sniffed) {
-            const proxiedUrl = sniffed.isDirectMp4
-              ? buildTsProxyUrl(sniffed.streamUrl, sniffed.referer)
-              : buildHlsProxyUrl(sniffed.streamUrl, sniffed.referer);
-            orderedTracks[i] = { ...candidate, resolvedStreamUrl: proxiedUrl };
-            primaryStreamUrl = proxiedUrl;
-            primaryMode = sniffed.isDirectMp4 ? 'direct' : 'hls';
-            resolvedTrack = orderedTracks[i];
-            break;
-          } else {
-            deadTrackIndices.add(i);
-          }
-        }
-      }
+      const toProxiedEmbedUrl = (url: string): string => {
+        const isCloudflareDirectEmbed = /(?:^|\.)(voe\.sx|voe\.bar|hglink\.to|streamwish\.[a-z]+|ok\.ru|byse\.[a-z]+|filelions\.[a-z]+)/i.test(
+          url
+        );
+        const shouldProxyHtml =
+          /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc|vidfast\.[a-z.]+)/i.test(url) ||
+          (isSandboxedFrame && !isCloudflareDirectEmbed);
+        return shouldProxyHtml ? `/api/embed-proxy?url=${encodeURIComponent(url)}` : url;
+      };
 
-      // Pass 2: If no native stream resolved yet, check any verified web_embed track (preferring requested language)
-      if (!primaryStreamUrl) {
-        const webIdx =
-          orderedTracks.findIndex(
-            (t, idx) =>
-              !deadTrackIndices.has(idx) &&
-              t.resolverType === 'web_embed' &&
-              String(t.lang || '').toUpperCase() === preferLang
-          ) !== -1
-            ? orderedTracks.findIndex(
-                (t, idx) =>
-                  !deadTrackIndices.has(idx) &&
-                  t.resolverType === 'web_embed' &&
-                  String(t.lang || '').toUpperCase() === preferLang
-              )
-            : orderedTracks.findIndex(
-                (t, idx) => !deadTrackIndices.has(idx) && t.resolverType === 'web_embed'
-              );
-        if (webIdx !== -1) {
-          const webCand = orderedTracks[webIdx];
-          const proxiedWeb =
-            isSandboxedFrame || /(^|\.)(vidsrc\.buzz|videm\.buzz|2embed\.cc|vidfast\.[a-z.]+)/i.test(webCand.sourceUrl)
-              ? `/api/embed-proxy?url=${encodeURIComponent(webCand.sourceUrl)}`
-              : webCand.sourceUrl;
-          orderedTracks[webIdx] = { ...webCand, resolvedStreamUrl: proxiedWeb };
+      const tierScores = Array.from(
+        new Set(orderedTracks.map((t) => getLangScore(t.lang)))
+      ).sort((a, b) => a - b);
+
+      for (const tierScore of tierScores) {
+        let tierEmbedCandidate: { idx: number; track: TrackRecord; url: string } | null = null;
+
+        // Sub-pass A: Try all native HLS/MP4 extractors in this language tier first
+        for (let i = 0; i < orderedTracks.length; i++) {
+          if (getLangScore(orderedTracks[i].lang) !== tierScore) continue;
+          const candidate = orderedTracks[i];
+
+          if (candidate.resolverType === 'web_embed') {
+            if (!tierEmbedCandidate && candidate.sourceUrl) {
+              tierEmbedCandidate = { idx: i, track: candidate, url: candidate.sourceUrl };
+            }
+            continue;
+          }
+
+          if (candidate.resolvedStreamUrl) {
+            primaryStreamUrl = candidate.resolvedStreamUrl;
+            primaryMode = candidate.resolverType === 'direct_mp4' ? 'direct' : 'hls';
+            resolvedTrack = candidate;
+            break;
+          }
+
+          if (candidate.resolverType === 'movidy_embed') {
+            const resolvedMv = await resolveMovidyEmbedTrack(candidate.sourceUrl);
+            if (resolvedMv?.mode === 'hls') {
+              orderedTracks[i] = { ...candidate, resolvedStreamUrl: resolvedMv.proxyUrl };
+              primaryStreamUrl = resolvedMv.proxyUrl;
+              primaryMode = 'hls';
+              resolvedTrack = orderedTracks[i];
+              break;
+            } else if (resolvedMv?.mode === 'embed') {
+              orderedTracks[i] = {
+                ...candidate,
+                resolverType: 'web_embed',
+                sourceUrl: resolvedMv.embedUrl,
+              };
+              if (!tierEmbedCandidate) {
+                tierEmbedCandidate = {
+                  idx: i,
+                  track: orderedTracks[i],
+                  url: resolvedMv.embedUrl,
+                };
+              }
+            } else {
+              deadTrackIndices.add(i);
+            }
+          } else if (candidate.resolverType === 'vidhide_hls') {
+            const unpacked = await unpackVidhideToHls(candidate.sourceUrl);
+            if (unpacked) {
+              orderedTracks[i] = { ...candidate, resolvedStreamUrl: unpacked.proxyUrl };
+              primaryStreamUrl = unpacked.proxyUrl;
+              primaryMode = 'hls';
+              resolvedTrack = orderedTracks[i];
+              break;
+            } else {
+              deadTrackIndices.add(i);
+            }
+          } else if (candidate.resolverType === 'embed_sniff') {
+            const sniffed = await sniffStreamWithHeadless(candidate.sourceUrl);
+            if (sniffed) {
+              const proxiedUrl = sniffed.isDirectMp4
+                ? buildTsProxyUrl(sniffed.streamUrl, sniffed.referer)
+                : buildHlsProxyUrl(sniffed.streamUrl, sniffed.referer);
+              orderedTracks[i] = { ...candidate, resolvedStreamUrl: proxiedUrl };
+              primaryStreamUrl = proxiedUrl;
+              primaryMode = sniffed.isDirectMp4 ? 'direct' : 'hls';
+              resolvedTrack = orderedTracks[i];
+              break;
+            } else {
+              deadTrackIndices.add(i);
+            }
+          }
+        }
+
+        if (primaryStreamUrl) break;
+
+        // Sub-pass B: Exhaust verified iframe web_embed candidates in THIS language tier before dropping to the next language!
+        if (tierEmbedCandidate) {
+          const proxiedWeb = toProxiedEmbedUrl(tierEmbedCandidate.url);
+          orderedTracks[tierEmbedCandidate.idx] = {
+            ...tierEmbedCandidate.track,
+            resolvedStreamUrl: proxiedWeb,
+          };
           primaryStreamUrl = proxiedWeb;
           primaryMode = 'embed';
-          resolvedTrack = orderedTracks[webIdx];
+          resolvedTrack = orderedTracks[tierEmbedCandidate.idx];
+          break;
         }
       }
 
       if (primaryStreamUrl) {
+        const langsWithNativeTracks = new Set(
+          orderedTracks
+            .filter((tr, idx) => !deadTrackIndices.has(idx) && tr.resolverType !== 'web_embed')
+            .map((tr) => String(tr.lang || '').toUpperCase())
+        );
         const validTracks = orderedTracks.filter(
           (tr, idx) =>
             !deadTrackIndices.has(idx) &&
-            (primaryMode === 'embed' || tr.resolverType !== 'web_embed')
+            (primaryMode === 'embed' ||
+              tr.resolverType !== 'web_embed' ||
+              !langsWithNativeTracks.has(String(tr.lang || '').toUpperCase()))
         );
         const resolvedLang = String(resolvedTrack?.lang || preferLang).toUpperCase();
         const resolvedLabel = resolvedTrack?.label || preferLang;

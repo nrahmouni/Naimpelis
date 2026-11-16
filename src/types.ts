@@ -68,7 +68,7 @@ export type {
   PoolSimRuntime,
 };
 
-export type AppLanguage = 'es' | 'ca' | 'en';
+export type AppLanguage = 'es' | 'ca' | 'en' | 'zh';
 export type AppTheme = 'oled' | 'soft-dark' | 'high-contrast' | 'light' | 'dark';
 export type TextDensity = 'comfortable' | 'compact';
 export type RoomRole = 'host' | 'mod' | 'viewer';

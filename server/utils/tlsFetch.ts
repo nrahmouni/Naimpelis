@@ -8,7 +8,7 @@ const tlsRelaxedAgent = new https.Agent({ rejectUnauthorized: false, keepAlive: 
 const STREAMING_TLS_RELAX_PATTERNS = [
   /(\.|^)stmify\.com$/i,
   /(\.|^)footunder\.online$/i,
-  /(\.|^)movidy\.(pw|tv|ws)$/i,
+  /(\.|^)movidy\.(work|pw|tv|ws)$/i,
   /(\.|^)bingetrix\.(sc|to|sx|cc)$/i,
   /(\.|^)vidhide/i,
   /(\.|^)embed69/i,

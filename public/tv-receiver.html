@@ -18,7 +18,7 @@
       body {
         width: 100%;
         height: 100%;
-        background-color: #0b0c12;
+        background-color: #0b0b0f;
         color: #f4f4f6;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         overflow: hidden;
@@ -31,15 +31,15 @@
         font-family: inherit;
       }
 
-      /* 10-Foot Crisp Luminous D-Pad Focus Ring */
+      /* 10-Foot Crisp Luminous RiffanTV Purple D-Pad Focus Ring */
       button:focus,
       input:focus,
       .tv-card:focus,
       .ep-tile-btn:focus {
-        outline: 2.5px solid #ffffff !important;
+        outline: 2.5px solid #bf94ff !important;
         outline-offset: 2px;
         box-shadow:
-          0 0 0 6px rgba(145, 70, 255, 0.78),
+          0 0 0 6px rgba(145, 70, 255, 0.65),
           0 18px 40px rgba(0, 0, 0, 0.88) !important;
       }
 
@@ -242,19 +242,20 @@
         flex-shrink: 0;
       }
       .hub-tab-btn.search-left-btn {
-        background: rgba(255, 255, 255, 0.09);
+        background: rgba(145, 70, 255, 0.18);
+        border: 1px solid rgba(191, 148, 255, 0.35);
         color: #ffffff;
         margin-right: 6px;
         padding: 0 15px;
       }
       .hub-tab-btn.active {
-        background: linear-gradient(180deg, #a15eff 0%, #772ce8 100%);
+        background: #9146ff;
         color: #ffffff;
-        box-shadow: 0 6px 18px rgba(145, 70, 255, 0.42);
+        box-shadow: 0 6px 18px rgba(145, 70, 255, 0.45);
       }
       .hub-tab-btn:focus {
         color: #ffffff;
-        background: rgba(145, 70, 255, 0.48);
+        background: rgba(145, 70, 255, 0.52);
       }
 
       .hub-right-actions {
@@ -482,7 +483,7 @@
       .tv-card:hover {
         -webkit-transform: scale(1.055);
         transform: scale(1.055);
-        border-color: #ffffff;
+        border-color: #9146ff;
         z-index: 5;
       }
       .tv-card-poster-wrap {
@@ -1041,9 +1042,9 @@
         height: 42px;
         padding: 0 18px;
         border-radius: 11px;
-        border: none;
-        background: #ffffff;
-        color: #09090c;
+        border: 1px solid rgba(191, 148, 255, 0.45);
+        background: #9146ff;
+        color: #ffffff;
         font-size: 14px;
         font-weight: 800;
         cursor: pointer;
@@ -1554,9 +1555,10 @@
         </div>
 
         <div class="series-lang-row" id="sm-lang-row">
-          <button type="button" class="series-pill-btn active" data-lang="ES" tabindex="0">Castellano</button>
-          <button type="button" class="series-pill-btn" data-lang="LAT" tabindex="0">Latino</button>
-          <button type="button" class="series-pill-btn" data-lang="VOSE" tabindex="0">VOSE (Sub ES)</button>
+          <button type="button" class="series-pill-btn active" data-lang="ES" tabindex="0">ES</button>
+          <button type="button" class="series-pill-btn" data-lang="LAT" tabindex="0">LAT</button>
+          <button type="button" class="series-pill-btn" data-lang="VOSE" tabindex="0">VOSE</button>
+          <button type="button" class="series-pill-btn" data-lang="EN" tabindex="0">EN</button>
         </div>
 
         <div class="series-season-row" id="sm-seasons-row"></div>
@@ -1880,9 +1882,10 @@
             initialLoading: 'Cargando cartelera, series, anime y canales en directo...',
             smBadge: 'SERIE HD',
             smBack: '✕ Volver',
-            smLangEs: 'Castellano',
-            smLangLat: 'Latino',
-            smLangVose: 'VOSE (Sub ES)',
+            smLangEs: 'ES',
+            smLangLat: 'LAT',
+            smLangVose: 'VOSE',
+            smLangEn: 'EN',
             hostSub: 'Receptor 1080p para Google TV, LG webOS y Samsung',
             connecting: 'Conectando...',
             tvReady: '✓ TV lista esperando móvil',
@@ -2038,9 +2041,10 @@
             initialLoading: 'Carregant cartellera, sèries, anime i canals en directe...',
             smBadge: 'SÈRIE HD',
             smBack: '✕ Tornar',
-            smLangEs: 'Castellà',
-            smLangLat: 'Llatí',
-            smLangVose: 'VOSE (Sub ES)',
+            smLangEs: 'ES',
+            smLangLat: 'LAT',
+            smLangVose: 'VOSE',
+            smLangEn: 'EN',
             hostSub: 'Receptor 1080p per a Google TV, Samsung i LG',
             connecting: 'Connectant...',
             tvReady: '✓ TV llesta esperant mòbil',
@@ -2196,9 +2200,10 @@
             initialLoading: 'Loading releases, series, anime, and live channels...',
             smBadge: 'HD SERIES',
             smBack: '✕ Back',
-            smLangEs: 'Spanish',
-            smLangLat: 'Latin',
-            smLangVose: 'Subtitled',
+            smLangEs: 'ES',
+            smLangLat: 'LAT',
+            smLangVose: 'VOSE',
+            smLangEn: 'EN',
             hostSub: '1080p Receiver for Google TV, Samsung & LG',
             connecting: 'Connecting...',
             tvReady: '✓ TV ready for phone pairing',
@@ -2388,6 +2393,7 @@
             if (dl === 'ES') langBtnEls[j].textContent = tvT('smLangEs');
             else if (dl === 'LAT') langBtnEls[j].textContent = tvT('smLangLat');
             else if (dl === 'VOSE') langBtnEls[j].textContent = tvT('smLangVose');
+            else if (dl === 'EN') langBtnEls[j].textContent = tvT('smLangEn');
           }
 
           setElText('btn-back-to-hub', tvT('backToMenu'));

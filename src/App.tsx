@@ -4479,7 +4479,7 @@ export function App() {
   // ============================================================================
   if (isTvMode) {
     return (
-      <div className="w-full h-full bg-black overflow-hidden">
+      <div className="w-full h-full bg-[#0B0B0F] overflow-hidden">
         <RoomPinPromptModal
           isOpen={pinPromptState.open}
           roomName={pinPromptState.roomName}
@@ -5341,63 +5341,6 @@ export function App() {
               </div>
             </div>
 
-            {/* Docked Room Chat fixed at the bottom filling remaining viewport without page scroll */}
-            {isPlayerActive && !isDockedMini && !isPlayerClosedLocally && inRoom && isFloatingRoomOpen && (
-              <div className="fixed bottom-0 left-0 right-0 z-50 bg-[#0D0E14]/98 backdrop-blur-2xl border-t border-[#9146FF]/50 shadow-[0_-20px_60px_rgba(0,0,0,0.9)] flex flex-col h-[min(480px,calc(100dvh-160px))] animate-slide-up">
-                <div className="w-full h-full flex flex-col overflow-hidden">
-                  {/* Header with Title + Participant Count + Full Sala + Close X */}
-                  <div className="shrink-0 h-11 px-4 bg-[#151622] border-b border-white/[0.08] flex items-center justify-between gap-2 select-none">
-                    <div className="flex items-center gap-2 min-w-0">
-                      <MessageSquare className="w-4 h-4 text-[#BF94FF] shrink-0" />
-                      <span className="text-xs font-bold text-white truncate">
-                        {pickLang(lang, {
-                          es: `Chat de Sala · ${participants.length} en sala`,
-                          ca: `Xat de Sala · ${participants.length} a la sala`,
-                          en: `Room Chat · ${participants.length} in room`,
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setIsFloatingRoomOpen(false);
-                          enterWorld('sala');
-                        }}
-                        className="h-8 px-2.5 rounded-xl bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] hover:text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                        title={pickLang(lang, { es: 'Abrir Sala completa', ca: 'Obrir Sala completa', en: 'Open full room' })}
-                      >
-                        <ArrowUpRight className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">
-                          {pickLang(lang, { es: 'Sala completa', ca: 'Sala completa', en: 'Full room' })}
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setIsFloatingRoomOpen(false);
-                        }}
-                        className="w-8 h-8 rounded-xl bg-white/[0.08] hover:bg-rose-500/35 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
-                        title={pickLang(lang, { es: 'Cerrar chat y volver a la bolita', ca: 'Tancar xat i tornar a la boleta', en: 'Close chat to bubble' })}
-                        aria-label={pickLang(lang, { es: 'Cerrar chat', ca: 'Tancar xat', en: 'Close chat' })}
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Docked PartySidebar */}
-                  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-                    {renderPartySidebar()}
-                  </div>
-                </div>
-              </div>
-            )}
-
             {/* Host Lock Non-Intrusive Toast */}
             {lockNoticeToast && (
               <div className="fixed top-17 left-1/2 -translate-x-1/2 z-[60] px-4 py-2.5 rounded-2xl bg-[#18181B]/95 backdrop-blur-md border border-white/15 text-zinc-100 text-xs font-semibold shadow-2xl flex items-center gap-2 pointer-events-none animate-fade-in">
@@ -6039,15 +5982,10 @@ export function App() {
           </div>
         </div>
 
-        {/* Floating Room Chat Bubble across all worlds except Sala */}
+        {/* Always-available Floating Room Chat Orb + Translucent Right-Side Curtain */}
         <FloatingRoomBubble
           lang={lang}
-          visible={
-            inRoom &&
-            activeWorld !== 'sala' &&
-            (activeWorld !== 'entry' || isFloatingRoomOpen) &&
-            !(isPlayerActive && !isDockedMini && !isPlayerClosedLocally && !isFloatingRoomOpen)
-          }
+          visible={inRoom && activeWorld !== 'sala' && !isTvMode}
           participantsCount={participants.length}
           voiceActive={voiceChat.isJoined}
           unreadCount={unreadChatCount}
@@ -6213,6 +6151,7 @@ export function App() {
             onClose={() => setShowVoiceAssistant(false)}
             lang={lang}
             userName={profile.name}
+            activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
             watchHistory={watchHistory}
             onPlayMovie={(movieItem, preferLang = 'ES') => {
               void handlePlayMovie(movieItem, preferLang);
@@ -6251,6 +6190,45 @@ export function App() {
             }}
             onPlayMatch={(m) => {
               void handlePlaySportsMatch(m, 0);
+            }}
+            onAppAction={(action) => {
+              if (action.type === 'open_world' && action.payload) {
+                const target = action.payload as WorldId;
+                enterWorld(target, {
+                  withPortal:
+                    target === 'cine' ||
+                    target === 'futbol' ||
+                    target === 'tv' ||
+                    target === 'juegos' ||
+                    target === 'sala',
+                });
+              } else if (action.type === 'open_friends') {
+                setFriendsModalOpen(true);
+              } else if (action.type === 'surprise_me') {
+                setAiSearchLaunch((prev) => ({
+                  query: '',
+                  mediaType: 'all',
+                  mode: 'surprise',
+                  seq: (prev?.seq || 0) + 1,
+                }));
+                setShowSurpriseModal(true);
+              } else if (action.type === 'player_control') {
+                const cmd = action.payload;
+                if (cmd === 'play' || cmd === 'pause') {
+                  handleSyncPlayerAction(cmd, { isPlaying: cmd === 'play' });
+                } else if (cmd === 'next_episode') {
+                  handleNextEpisode();
+                } else if (cmd === 'mute' || cmd === 'unmute') {
+                  const vid = document.querySelector('video');
+                  if (vid) vid.muted = cmd === 'mute';
+                } else if (cmd === 'fullscreen') {
+                  if (document.fullscreenElement) {
+                    void document.exitFullscreen?.();
+                  } else {
+                    void document.documentElement.requestFullscreen?.();
+                  }
+                }
+              }
             }}
           />
 

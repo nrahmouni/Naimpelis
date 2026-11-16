@@ -1299,7 +1299,7 @@ export function subscribeUserCloudCollections(
         const inferredMovidy =
           entry.item.movidyUrl ||
           (strippedSlug.startsWith('movidy-')
-            ? `https://movidy.pw/ver/${strippedSlug.replace(/^movidy-/, '')}`
+            ? `https://movidy.work/ver/${strippedSlug.replace(/^movidy-/, '')}`
             : undefined);
         const normalized: WatchHistoryItem = {
           ...entry.item,
@@ -1396,7 +1396,7 @@ export function subscribeUserCloudCollections(
             storedUrl.includes('movidy.')
               ? storedUrl
               : cleanBaseId.startsWith('movidy-')
-              ? `https://movidy.pw/ver/${cleanBaseId.replace(/^movidy-/, '')}`
+              ? `https://movidy.work/ver/${cleanBaseId.replace(/^movidy-/, '')}`
               : undefined;
 
           const bingetrixUrl =

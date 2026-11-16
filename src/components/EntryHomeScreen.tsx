@@ -32,6 +32,8 @@ import { triggerHaptic } from '../utils/haptics';
 import { generateRandomGuestName } from '../utils/storage';
 import { PosterImage } from './ui/PosterImage';
 import { UniversalHomeSearch } from './home/UniversalHomeSearch';
+import { PWAInstallLandingCard } from './PWAInstallPrompt';
+import { FlagBadgeSvg } from './ui/LanguageBadge';
 
 interface EntryHomeScreenProps {
   lang: AppLanguage;
@@ -170,7 +172,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
     return liveOne.title;
   }, [liveMatches]);
 
-  const greetingWord = pickLang(lang, { es: 'Hola', ca: 'Hola', en: 'Hi' });
+  const greetingWord = pickLang(lang, { es: 'Hola', ca: 'Hola', en: 'Hi', zh: '你好' });
 
   const renderSpotlightOverlay = (id: string) => {
     const pos = spotlightPos[id] || { x: 50, y: 50 };
@@ -251,6 +253,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                 es: '¿Qué quieres ver hoy?',
                 ca: 'Què vols veure avui?',
                 en: 'What do you want to watch today?',
+                zh: '今天想看点什么？',
               })}
             </p>
           </div>
@@ -270,49 +273,12 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                   es: 'Asistente Voz',
                   ca: 'Assistent Veu',
                   en: 'Voice AI',
+                  zh: '语音助手',
                 })}
               </span>
             </button>
           )}
         </section>
-
-        {/* LANGUAGE QUICK SELECTOR BAR (ENG, ES, CAT, CHINO) WITH STYLISH FLAGS */}
-        {onChangeLang && (
-          <section className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider shrink-0 mr-1">
-              {pickLang(lang, { es: 'Idioma:', ca: 'Idioma:', en: 'Language:' })}
-            </span>
-            {[
-              { code: 'es' as AppLanguage, label: 'ES', flag: '🇪🇸', title: 'Castellano' },
-              { code: 'ca' as AppLanguage, label: 'CAT', flag: '🏴󠁥󠁳󠁣󠁴󠁿', title: 'Català' },
-              { code: 'en' as AppLanguage, label: 'ENG', flag: '🇬🇧', title: 'English' },
-              { code: 'zh' as AppLanguage, label: '中文', flag: '🇨🇳', title: '中文 (简体)' },
-            ].map((item) => {
-              const isSelected = lang === item.code || (item.code === 'zh' && lang === 'zh');
-              return (
-                <button
-                  key={item.code}
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onChangeLang(item.code);
-                  }}
-                  className={`min-h-9 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
-                    isSelected
-                      ? 'bg-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.4)] border border-[#A78BFA]/50 scale-[1.02]'
-                      : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 border border-white/10 hover:border-white/20'
-                  }`}
-                  title={item.title}
-                >
-                  <span className="text-sm select-none" role="img" aria-label={item.title}>
-                    {item.flag}
-                  </span>
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </section>
-        )}
 
         {/* 2. UNIVERSAL SMART AI SEARCH */}
         <section
@@ -766,7 +732,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             }}
             className="w-full min-h-12 px-4 py-2.5 rounded-2xl bg-[#10121B] hover:bg-[#151826] border border-white/[0.08] hover:border-[#9146FF]/55 flex items-center justify-between gap-3 text-left cursor-pointer transition-all duration-200 group"
           >
-            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-7 h-7 rounded-lg bg-[#9146FF]/18 text-[#D8B4FE] border border-[#9146FF]/35 flex items-center justify-center shrink-0 group-hover:bg-[#9146FF] group-hover:text-white transition-colors">
                 <Sparkles className="w-3.5 h-3.5" />
               </div>
@@ -775,6 +741,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                   es: 'Sorpréndeme',
                   ca: 'Sorprèn-me',
                   en: 'Surprise me',
+                  zh: '随机推荐',
                 })}
               </span>
               <span className="text-xs text-zinc-400 truncate">
@@ -783,6 +750,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                   es: 'Elige algo al azar',
                   ca: "Tria alguna cosa a l'atzar",
                   en: 'Pick something at random',
+                  zh: '随机选一部播放',
                 })}
               </span>
             </div>
@@ -816,6 +784,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                         es: 'Design System & Carteles de Publicidad',
                         ca: 'Design System & Cartells de Publicitat',
                         en: 'Design System & Marketing Posters',
+                        zh: '设计系统与官方宣传海报',
                       })}
                     </span>
                     <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-[#9146FF]/30 text-[#D8B4FE] shrink-0">
@@ -827,6 +796,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       es: 'Descarga logos oficiales y pósteres promocionales de RiffanTV',
                       ca: 'Descarrega logos oficials i cartells promocionals de RiffanTV',
                       en: 'Download official logos and promotional posters of RiffanTV',
+                      zh: '下载 RiffanTV 官方徽标与宣传海报',
                     })}
                   </p>
                 </div>
@@ -835,6 +805,45 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             </motion.button>
           </section>
         )}
+
+        {/* 7. INSTALAR RIFFANTV + SELECTOR DE IDIOMAS (ENG · ES · CAT · CHINO) ALINEADO CON BANDERAS CUSTOM */}
+        <section className="pt-1 space-y-3">
+          <PWAInstallLandingCard lang={lang} alwaysShow />
+
+          {onChangeLang && (
+            <div className="rounded-2xl bg-[#10121C] border border-white/[0.08] p-2.5 sm:p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { code: 'en' as AppLanguage, flag: 'en' as const, label: 'ENG', title: 'English' },
+                  { code: 'es' as AppLanguage, flag: 'es' as const, label: 'ES', title: 'Castellano' },
+                  { code: 'ca' as AppLanguage, flag: 'ca' as const, label: 'CAT', title: 'Català' },
+                  { code: 'zh' as AppLanguage, flag: 'zh' as const, label: 'CHINO', title: '中文 (简体)' },
+                ].map((item) => {
+                  const isSelected = lang === item.code;
+                  return (
+                    <button
+                      key={item.code}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        onChangeLang(item.code);
+                      }}
+                      title={item.title}
+                      className={`min-h-11 px-3 py-2 rounded-xl text-xs font-display font-bold tracking-wide flex items-center justify-center gap-2 transition-all duration-150 cursor-pointer active:scale-[0.97] whitespace-nowrap shrink-0 border ${
+                        isSelected
+                          ? 'bg-[#9146FF] text-white border-[#A970FF]/70 shadow-[0_6px_20px_rgba(145,70,255,0.45)]'
+                          : 'bg-[#0B0B0F] hover:bg-white/[0.06] text-zinc-300 hover:text-white border-white/[0.08] hover:border-white/20'
+                      }`}
+                    >
+                      <FlagBadgeSvg code={item.flag} className="w-5 h-3.5" />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

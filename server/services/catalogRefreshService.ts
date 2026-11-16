@@ -400,14 +400,14 @@ async function refreshMovidySource(): Promise<SourceRefreshMetric> {
   let count = 0;
   try {
     const targets: Array<{ url: string; mediaType: 'movie' | 'tv' }> = [
-      { url: 'https://movidy.pw/pelis/', mediaType: 'movie' },
-      { url: 'https://movidy.pw/shows/', mediaType: 'tv' },
+      { url: 'https://movidy.work/pelis/', mediaType: 'movie' },
+      { url: 'https://movidy.work/shows/', mediaType: 'tv' },
     ];
     const itemRe =
       /<li>\s*<a\s+href="((?:https?:\/\/movidy\.[a-z]+)?\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>\s*<img[^>]+data-src="([^"]+)"/gi;
 
     for (const t of targets) {
-      const html = await fetchHtmlSafe(t.url, 'https://movidy.pw/');
+      const html = await fetchHtmlSafe(t.url, 'https://movidy.work/');
       if (html) {
         let m: RegExpExecArray | null;
         itemRe.lastIndex = 0;
@@ -416,12 +416,14 @@ async function refreshMovidySource(): Promise<SourceRefreshMetric> {
           const rawTitle = String(m[2] || '').trim();
           const rawPoster = String(m[3] || '').trim();
           if (!rawHref || !rawTitle) continue;
-          const movidyUrl = rawHref.startsWith('http') ? rawHref : `https://movidy.pw${rawHref}`;
-          const absPoster = rawPoster.startsWith('//')
+          const movidyUrl = (rawHref.startsWith('http') ? rawHref : `https://movidy.work${rawHref}`)
+            .replace(/^https?:\/\/(?:www\.)?movidy\.(?:pw|tv|ws)\//i, 'https://movidy.work/');
+          const absPoster = (rawPoster.startsWith('//')
             ? `https:${rawPoster}`
             : rawPoster.startsWith('http')
             ? rawPoster
-            : `https://movidy.pw${rawPoster}`;
+            : `https://movidy.work${rawPoster}`)
+            .replace(/^https?:\/\/(?:www\.)?movidy\.(?:pw|tv|ws)\//i, 'https://movidy.work/');
           const slug =
             movidyUrl.split('/ver/')[1]?.replace(/\//g, '').replace(/[^a-zA-Z0-9_-]/g, '') ||
             `${count}`;

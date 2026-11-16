@@ -73,15 +73,17 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
 interface PWAInstallLandingCardProps {
   lang: AppLanguage;
   isDesktop?: boolean;
+  alwaysShow?: boolean;
 }
 
 export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
   lang,
+  alwaysShow = false,
 }) => {
   const { isInstalled, isIOS, isAndroid } = usePWAInstall();
   const [sheetOpen, setSheetOpen] = useState(false);
 
-  if (isInstalled) return null;
+  if (isInstalled && !alwaysShow) return null;
 
   return (
     <>
@@ -92,6 +94,7 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
             es: 'Instalar RiffanTV',
             ca: 'Instal·lar RiffanTV',
             en: 'Install RiffanTV',
+            zh: '安装 RiffanTV',
           })}
         </span>
       </SecondaryButton>
@@ -191,11 +194,13 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
         es: 'Instalar RiffanTV',
         ca: 'Instal·lar RiffanTV',
         en: 'Install RiffanTV',
+        zh: '安装 RiffanTV',
       })}
       subtitle={pickLang(lang, {
         es: 'Elige tu dispositivo para tener la app siempre a mano',
         ca: 'Tria el teu dispositiu per tenir l’app sempre a mà',
         en: 'Choose your device to install the app',
+        zh: '选择您的设备随时快速访问',
       })}
     >
       <div className="space-y-2.5">
@@ -349,6 +354,7 @@ export const OfflineIndicator: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
           es: 'Sin conexión — Reconectando...',
           ca: 'Sense connexió — Reconnectant...',
           en: 'Offline — Reconnecting...',
+          zh: '离线 — 正在重连...',
         })}
       </span>
     </div>

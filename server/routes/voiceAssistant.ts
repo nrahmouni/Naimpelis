@@ -23,7 +23,19 @@ export type VoiceIntent =
   | 'select_ordinal'
   | 'resume_history'
   | 'sports_info'
+  | 'open_world'
+  | 'player_control'
   | 'chat';
+
+export interface VoiceAssistantAction {
+  type: 'open_world' | 'player_control' | 'open_friends' | 'surprise_me';
+  payload?: string;
+}
+
+export interface VoiceChatHistoryTurn {
+  role: 'user' | 'assistant';
+  text: string;
+}
 
 export interface VoiceAssistantCandidateItem {
   kind: 'channel' | 'movie' | 'series' | 'match';
@@ -43,6 +55,7 @@ export interface ParsedVoiceIntent {
   spokenReply: string;
   intent: VoiceIntent;
   autoPlay: boolean;
+  action?: VoiceAssistantAction;
   channelKeywords: string[];
   categoryHint: string;
   matchKeywords: string[];
@@ -261,7 +274,168 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
   const limitMatch = norm.match(/\b([1-9])\s*(pelis|peliculas|series|canales|opciones|resultados|titulos)?\b/);
   const limit = limitMatch ? Math.max(1, Math.min(8, Number(limitMatch[1]))) : 4;
 
-  const isWantPlayNow = /\b(quiero ver|pon|ponme|abre|sintoniza|reproduce|en directo|directo)\b/.test(norm);
+  // Player controls (pause, play, mute, fullscreen, next episode)
+  if (/\b(pausa|pausar|deten|para la peli|para el video|pause|stop playing)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Pausing playback.' : lang === 'ca' ? 'Pausant la reproducció.' : lang === 'zh' ? '正在暂停播放。' : 'Pausando la reproducción.',
+      intent: 'player_control',
+      autoPlay: false,
+      action: { type: 'player_control', payload: 'pause' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (/\b(reanuda|reproducir|dale al play|pon play|continua|resume|unpause)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Resuming playback.' : lang === 'ca' ? 'Reprenent la reproducció.' : lang === 'zh' ? '正在继续播放。' : 'Reanudando la reproducción.',
+      intent: 'player_control',
+      autoPlay: false,
+      action: { type: 'player_control', payload: 'play' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (/\b(silencia|quita el sonido|mutear|sin sonido|mute)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Muting audio.' : lang === 'ca' ? 'Silenciant l’àudio.' : lang === 'zh' ? '已静音。' : 'Silenciando el audio.',
+      intent: 'player_control',
+      autoPlay: false,
+      action: { type: 'player_control', payload: 'mute' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (/\b(activa el sonido|pon el sonido|quita el mute|unmute)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Sound restored.' : lang === 'ca' ? 'So activat.' : lang === 'zh' ? '已恢复声音。' : 'Sonido activado.',
+      intent: 'player_control',
+      autoPlay: false,
+      action: { type: 'player_control', payload: 'unmute' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (/\b(pantalla completa|fullscreen|hazlo grande)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Switching to fullscreen.' : lang === 'ca' ? 'Posant pantalla completa.' : lang === 'zh' ? '正在切换全屏。' : 'Poniendo pantalla completa.',
+      intent: 'player_control',
+      autoPlay: false,
+      action: { type: 'player_control', payload: 'fullscreen' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (/\b(siguiente capitulo|siguiente episodio|proximo episodio|next episode)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Loading the next episode.' : lang === 'ca' ? 'Carregant el següent capítol.' : lang === 'zh' ? '正在加载下一集。' : 'Pasando al siguiente capítulo.',
+      intent: 'player_control',
+      autoPlay: false,
+      action: { type: 'player_control', payload: 'next_episode' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+
+  // World navigation & quick actions
+  if (/\b(sorprendeme|aleatorio|surprise me)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Opening Surprise Me picks for you!' : lang === 'ca' ? 'Obrint Sorprèn-me!' : lang === 'zh' ? '正在为你打开随机推荐！' : '¡Abriendo Sorpréndeme con una recomendación para ti!',
+      intent: 'open_world',
+      autoPlay: false,
+      action: { type: 'surprise_me' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (/\b(invita amigos|invitar amigos|ver amigos|quien esta conectado|lista de amigos)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Opening your friends list.' : lang === 'ca' ? 'Obrint els teus amics.' : lang === 'zh' ? '正在打开好友列表。' : 'Abriendo tu lista de amigos e invitaciones.',
+      intent: 'open_world',
+      autoPlay: false,
+      action: { type: 'open_friends' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  const openWorldTrigger = /\b(abre|abrir|ir a|ve a|llevame a|entra en|entra a|open|go to)\b/.test(norm);
+  if (openWorldTrigger && /\b(cine|peliculas|catalogo)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Opening the Cinema catalog.' : lang === 'ca' ? 'Obrint el Cinema.' : lang === 'zh' ? '正在打开影院目录。' : 'Abriendo la sección de Cine.',
+      intent: 'open_world',
+      autoPlay: false,
+      action: { type: 'open_world', payload: 'cine' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (openWorldTrigger && /\b(futbol|deportes|sports)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Opening Live Sports.' : lang === 'ca' ? 'Obrint Esports en directe.' : lang === 'zh' ? '正在打开体育直播。' : 'Abriendo la sección de Fútbol y Deportes.',
+      intent: 'open_world',
+      autoPlay: false,
+      action: { type: 'open_world', payload: 'futbol' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (openWorldTrigger && /\b(tv en directo|television|canales|tdt)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Opening Live TV channels.' : lang === 'ca' ? 'Obrint TV en directe.' : lang === 'zh' ? '正在打开电视直播频道。' : 'Abriendo TV en Directo.',
+      intent: 'open_world',
+      autoPlay: false,
+      action: { type: 'open_world', payload: 'tv' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (openWorldTrigger && /\b(juegos|parchis|ajedrez|games)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Opening Party Games.' : lang === 'ca' ? 'Obrint Jocs de sala.' : lang === 'zh' ? '正在打开派对游戏。' : 'Abriendo la zona de Juegos.',
+      intent: 'open_world',
+      autoPlay: false,
+      action: { type: 'open_world', payload: 'juegos' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+  if (openWorldTrigger && /\b(sala|watch party|chat)\b/.test(norm)) {
+    return {
+      spokenReply: lang === 'en' ? 'Taking you to the Watch Party room.' : lang === 'ca' ? 'Portant-te a la Sala.' : lang === 'zh' ? '正在前往派对房间。' : 'Entrando a la Sala con amigos.',
+      intent: 'open_world',
+      autoPlay: false,
+      action: { type: 'open_world', payload: 'sala' },
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: { mediaType: 'multi', limit: 1 },
+    };
+  }
+
+  const isWantPlayNow = /\b(quiero ver|pon|ponme|abre|sintoniza|reproduce|en directo|directo|play|watch)\b/.test(norm);
 
   const epParse = parseSeriesSeasonAndEpisode(query);
   if (epParse.hasEpisodeRequest && epParse.cleanTitle) {
@@ -273,6 +447,8 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
           ? `Playing season ${season}, episode ${episode} of ${epParse.cleanTitle}.`
           : lang === 'ca'
           ? `Posant la temporada ${season}, capítol ${episode} de ${epParse.cleanTitle}.`
+          : lang === 'zh'
+          ? `正在为你播放《${epParse.cleanTitle}》第 ${season} 季第 ${episode} 集。`
           : `Te pongo el capítulo ${episode} de la temporada ${season} de ${epParse.cleanTitle}.`,
       intent: 'play_series',
       autoPlay: true,
@@ -315,6 +491,8 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
           ? 'Here is what I found for live TV.'
           : lang === 'ca'
           ? 'Aquí tens el que he trobat en directe.'
+          : lang === 'zh'
+          ? '这是为你找到的直播电视频道。'
           : 'Aquí tienes los canales en directo que encajan con lo que pides.',
       intent: wantsList ? 'browse_channels' : 'play_channel',
       autoPlay: !wantsList,
@@ -337,6 +515,8 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
         ? 'Checking live football matches for you.'
         : lang === 'ca'
         ? 'Buscant els partits de futbol en directe.'
+        : lang === 'zh'
+        ? '正在为你查看足球直播赛事。'
         : 'Te muestro los partidos y canales de fútbol disponibles ahora.',
       intent: isScheduleQuestion ? 'sports_info' : 'play_match',
       autoPlay: false,
@@ -359,6 +539,8 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
           ? 'Here are the best matches from our catalog.'
           : lang === 'ca'
           ? 'Aquí tens les millors opcions del catàleg.'
+          : lang === 'zh'
+          ? '这是目录中为你精选的推荐内容。'
           : `Aquí tienes ${limit > 1 ? `las ${limit} mejores opciones` : 'la mejor opción'}${genreHit ? ` de ${genreHit.labelEs}` : ''}${isThisMonth ? ' recientes' : ''}.`,
       intent: wantsSeries ? 'recommend_series' : 'recommend_movies',
       autoPlay: false,
@@ -375,6 +557,33 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
     };
   }
 
+  // Only treat as title search if explicit media verb/noun is present; otherwise open-domain chat
+  const hasExplicitMediaCommand =
+    isWantPlayNow ||
+    /\b(peli|pelicula|pelis|film|movie|serie|series|anime|busca|buscame|trailer)\b/.test(norm);
+
+  if (!hasExplicitMediaCommand) {
+    return {
+      spokenReply:
+        lang === 'en'
+          ? 'I am here! Tell me what you want to talk about or ask me to play any movie, series, live channel, or football match.'
+          : lang === 'ca'
+          ? 'Aquí em tens! Parlem del que vulguis o demana’m posar qualsevol pel·lícula, sèrie, canal o partit.'
+          : lang === 'zh'
+          ? '我随时都在！我们可以聊任何话题，或者你也可以让我播放电影、剧集、直播频道或足球比赛。'
+          : '¡Aquí estoy! Podemos charlar de lo que quieras o si lo prefieres pídeme una peli, serie, canal en directo o partido.',
+      intent: 'chat',
+      autoPlay: false,
+      channelKeywords: [],
+      categoryHint: '',
+      matchKeywords: [],
+      tmdbQuery: {
+        mediaType: 'multi',
+        limit: 4,
+      },
+    };
+  }
+
   const stripped = norm
     .replace(/^(quiero ver|quiero|ponme|pon|busca|buscame|abre|dame|reproduce|ver|una peli de|pelicula|serie)\s+/g, '')
     .trim();
@@ -385,6 +594,8 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
         ? `Searching for ${stripped || query}.`
         : lang === 'ca'
         ? `Cercant ${stripped || query}.`
+        : lang === 'zh'
+        ? `正在搜索 ${stripped || query}。`
         : `Buscando ${stripped || query} en RiffanTV.`,
     intent: wantsSeries ? 'play_series' : 'play_movie',
     autoPlay: isWantPlayNow && Boolean(stripped),
@@ -402,7 +613,9 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
 async function parseIntentWithGemini(
   query: string,
   userName: string,
-  lang: string
+  lang: string,
+  history: VoiceChatHistoryTurn[] = [],
+  activeMediaTitle = ''
 ): Promise<ParsedVoiceIntent> {
   const ai = getGeminiClient();
   if (!ai) {
@@ -410,59 +623,75 @@ async function parseIntentWithGemini(
   }
 
   const targetLangName =
-    lang === 'ca' ? 'Catalán' : lang === 'en' ? 'Inglés' : 'Español de España';
+    lang === 'ca'
+      ? 'Catalán'
+      : lang === 'en'
+      ? 'Inglés'
+      : lang === 'zh'
+      ? 'Chino mandarín (简体中文)'
+      : 'Español de España';
 
-  const systemInstruction = `Eres el asistente de voz de RiffanTV (plataforma de cine, series, anime, TDT, fútbol mundial en directo Champions/LaLiga/Premier, canales internacionales y watch party).
-El usuario se llama "${userName || 'amigo'}" y ha dicho/escrito: "${query}".
+  const trimmedHistory = history
+    .slice(-10)
+    .map((h) => `${h.role === 'user' ? userName || 'Usuario' : 'RiffanAI'}: ${String(h.text || '').slice(0, 260)}`)
+    .join('\n');
 
-Interpreta su intención y devuelve SOLO JSON estructurado cumpliendo estas reglas estrictas:
+  const systemInstruction = `Eres RiffanAI, el compañero conversacional y asistente de voz inteligente de RiffanTV (cine, series, anime, TV TDT e internacional, fútbol en directo, watch party con amigos y juegos).
+El usuario se llama "${userName || 'amigo'}". Idioma preferido por defecto: ${targetLangName}.
+${activeMediaTitle ? `Contenido reproduciéndose ahora mismo: "${activeMediaTitle}".` : 'No hay contenido reproduciéndose ahora mismo.'}
 
-1. SI PIDE UN CAPÍTULO Y/O TEMPORADA DE UNA SERIE (ej: "quiero ver el capítulo 3 de la primera temporada de Nocturno", "nocturno temp 1 cap 3", "episodio 5 temporada 2 de breaking bad"):
-   - intent: "play_series"
-   - autoPlay: true
-   - targetSeason: número entero de la temporada pedida (ej. 1 para "primera temporada")
-   - targetEpisode: número entero del capítulo pedido (ej. 3 para "capítulo 3")
-   - tmdbQuery.titleSearch: SOLO el título limpio de la serie (ej: "Nocturno"), NUNCA incluyas "capítulo", "temporada", ni "quiero ver".
-   - tmdbQuery.mediaType: "tv"
-   - spokenReply: "Te pongo el capítulo 3 de la temporada 1 de Nocturno." (ajustado al título y números exactos en ${targetLangName}).
+Tu misión doble es:
+A) Mantener una conversación fluida, inteligente, cercana y natural sobre CUALQUIER TEMA que saque el usuario (cultura general, ciencia, cocina, programación, historia, curiosidades, consejos, chistes, debates de cine/fútbol, traducciones o charlar del día a día), recordando el historial reciente de la conversación.
+B) Ejecutar acciones inmediatas sobre RiffanTV cuando el usuario quiera ver algo, navegar o controlar el reproductor.
 
-2. SI PREGUNTA CUÁNDO JUEGA UN EQUIPO O EL HORARIO DE UN PARTIDO (ej: "quiero saber cuándo juega el Barça el siguiente partido", "¿a qué hora juega el Madrid?", "¿cuándo es la Champions?"):
-   - intent: "sports_info"
+DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
+
+1. CONVERSACIÓN GENERAL / PREGUNTAS DE CUALQUIER TEMA (NO es una petición de reproducir ni abrir sección):
+   - Ejemplos: "hola cómo estás", "cuéntame una curiosidad del espacio", "explícame qué es un agujero negro", "dame una receta rápida para cenar", "quién ganó el Mundial 2010", "¿de qué va Interstellar y merece la pena?", "ayúdame a practicar inglés", "¿qué opinas del final de Breaking Bad?", preguntas de seguimiento como "¿y por qué pasa eso?" o "cuéntame más".
+   - intent: "chat"
    - autoPlay: false
-   - matchKeywords: nombres del equipo o competición limpia (ej: ["barca", "barcelona"] o ["real madrid"]).
-   - channelKeywords: ["dazn", "laliga", "movistar"]
-   - spokenReply: Responde directamente y con amabilidad con el partido próximo del equipo y dónde verlo.
+   - spokenReply: Responde de verdad con precisión, calidez, ingenio y claridad en ${targetLangName} (o en el idioma en que te acabe de hablar el usuario si cambia explícitamente). Usa entre 2 y 5 frases naturales y directas para escucharse genial en voz alta, sin listas con asteriscos ni markdown.
 
-3. SI PIDE UN CANAL CONCRETO ("quiero ver dazn la liga", "ponme la 1", "al jazeera", "national geographic", "fox", "bein sports 1", "tv3"):
-   - intent: "play_channel"
-   - autoPlay: true
-   - channelKeywords: palabras clave del canal.
-   - categoryHint: "bein_arabic", "marruecos", "documentales", "usa_tv", "europa_tv", "noticias_intl", "movistar", "dazn", "uk_sports", "china_football", o "".
-
-4. SI PIDE VER UN PARTIDO EN DIRECTO ("ver el partido del madrid", "partido de champions"):
-   - intent: "play_match"
-   - matchKeywords: nombres de equipo/competición.
-
-5. SI PIDE RECOMENDACIONES ("las mejores 3 pelis de terror de este mes", "5 series de ciencia ficción top"):
-   - intent: "recommend_movies" o "recommend_series"
+2. CONTROL DEL REPRODUCTOR (si pide controlar la reproducción actual):
+   - Ejemplos: "pausa", "para el vídeo", "dale al play", "reanuda", "quita el sonido / mute", "pon el sonido", "pantalla completa", "siguiente capítulo / episodio".
+   - intent: "player_control"
    - autoPlay: false
-   - tmdbQuery.mediaType: "movie" o "tv"
-   - tmdbQuery.genreId: ID TMDB estándar (Terror=27, Comedia=35, Acción=28, Ciencia ficción=878, Suspense=53, Drama=18, Animación=16, Romance=10749, Documental=99; para TV: Sci-Fi=10765, Action=10759, Misterio=9648)
-   - tmdbQuery.timeframe: "this_month" | "this_year" | "trending" | "all_time"
-   - tmdbQuery.sortBy: "top_rated" | "popular" | "newest"
-   - tmdbQuery.limit: número exacto pedido (1 a 8).
+   - action: { type: "player_control", payload: "pause" | "play" | "mute" | "unmute" | "fullscreen" | "next_episode" }
 
-6. SI PIDE UNA PELÍCULA O SERIE SIN NÚMERO DE CAPÍTULO ("ponme origen", "ver interstellar"):
-   - intent: "play_movie" o "play_series"
-   - autoPlay: true
-   - tmdbQuery.titleSearch: título limpio.
+3. NAVEGACIÓN / ACCIONES DE LA APP:
+   - "abre el cine / vete a series / fútbol / tv / juegos / sala":
+     intent: "open_world", action: { type: "open_world", payload: "cine" | "futbol" | "tv" | "juegos" | "sala" }
+   - "invitar amigos / ver amigos":
+     intent: "open_world", action: { type: "open_friends" }
+   - "sorpréndeme" (sin género específico):
+     intent: "open_world", action: { type: "surprise_me" }
 
-7. spokenReply: siempre natural, cercana, en ${targetLangName}, tuteando con respeto y resolviendo la duda.`;
+4. SI PIDE UN CAPÍTULO Y/O TEMPORADA DE UNA SERIE ("ponme el capítulo 3 de la temporada 1 de Nocturno", "cap 2 de Arcane"):
+   - intent: "play_series", autoPlay: true, targetSeason, targetEpisode, tmdbQuery: { mediaType: "tv", limit: 4, titleSearch: "<título limpio>" }.
+
+5. SI PREGUNTA CUÁNDO JUEGA UN EQUIPO O HORARIO DE PARTIDO:
+   - intent: "sports_info", autoPlay: false, matchKeywords: ["equipo"], channelKeywords: ["dazn", "laliga", "movistar"].
+
+6. SI PIDE UN CANAL DE TV CONCRETO ("ponme dazn laliga", "la 1", "al jazeera", "sky sports"):
+   - intent: "play_channel", autoPlay: true, channelKeywords, categoryHint.
+
+7. SI PIDE VER UN PARTIDO EN DIRECTO:
+   - intent: "play_match", matchKeywords.
+
+8. SI PIDE RECOMENDACIONES PARA VER ("recomiéndame 3 pelis de terror", "series parecidas a Dark"):
+   - intent: "recommend_movies" o "recommend_series", autoPlay: false, tmdbQuery con genreId/titleSearch/timeframe/sortBy/limit.
+
+9. SI PIDE REPRODUCIR UNA PELÍCULA O SERIE CONCRETA ("ponme Interstellar", "quiero ver Deadpool"):
+   - intent: "play_movie" o "play_series", autoPlay: true, tmdbQuery.titleSearch: título limpio.`;
+
+  const userPrompt = trimmedHistory
+    ? `Historial reciente de la conversación:\n${trimmedHistory}\n\nÚltimo mensaje del usuario: "${query}"`
+    : `Mensaje del usuario: "${query}"`;
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-4-hydrogen',
-      contents: `Petición del usuario: "${query}"`,
+      contents: userPrompt,
       config: {
         systemInstruction,
         thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
@@ -482,10 +711,23 @@ Interpreta su intención y devuelve SOLO JSON estructurado cumpliendo estas regl
                 'recommend_series',
                 'browse_channels',
                 'sports_info',
+                'open_world',
+                'player_control',
                 'chat',
               ],
             },
             autoPlay: { type: Type.BOOLEAN },
+            action: {
+              type: Type.OBJECT,
+              properties: {
+                type: {
+                  type: Type.STRING,
+                  enum: ['open_world', 'player_control', 'open_friends', 'surprise_me'],
+                },
+                payload: { type: Type.STRING },
+              },
+              required: ['type'],
+            },
             channelKeywords: {
               type: Type.ARRAY,
               items: { type: Type.STRING },
@@ -532,6 +774,7 @@ Interpreta su intención y devuelve SOLO JSON estructurado cumpliendo estas regl
         spokenReply: parsed.spokenReply || buildFallbackVoicePlan(query, lang).spokenReply,
         intent: parsed.intent || (epFallback.hasEpisodeRequest ? 'play_series' : 'chat'),
         autoPlay: Boolean(parsed.autoPlay) || epFallback.hasEpisodeRequest,
+        action: parsed.action,
         channelKeywords: Array.isArray(parsed.channelKeywords) ? parsed.channelKeywords : [],
         categoryHint: String(parsed.categoryHint || ''),
         matchKeywords: Array.isArray(parsed.matchKeywords) ? parsed.matchKeywords : [],
@@ -779,9 +1022,11 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
         lang?: unknown;
         previousItems?: unknown;
         watchHistory?: unknown;
+        history?: unknown;
+        activeMediaTitle?: unknown;
       };
 
-      const query = String(body.query || '').trim().slice(0, 280);
+      const query = String(body.query || '').trim().slice(0, 600);
       const userName = String(body.userName || '').trim().slice(0, 40) || 'amigo';
       const lang = String(body.lang || 'es').toLowerCase().slice(0, 2);
       const previousItems = Array.isArray(body.previousItems)
@@ -790,6 +1035,18 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
       const watchHistory = Array.isArray(body.watchHistory)
         ? (body.watchHistory as WatchHistoryItem[])
         : [];
+      const history: VoiceChatHistoryTurn[] = Array.isArray(body.history)
+        ? body.history
+            .filter(
+              (h): h is VoiceChatHistoryTurn =>
+                Boolean(h) &&
+                typeof h === 'object' &&
+                (h.role === 'user' || h.role === 'assistant') &&
+                typeof h.text === 'string'
+            )
+            .slice(-10)
+        : [];
+      const activeMediaTitle = String(body.activeMediaTitle || '').trim().slice(0, 140);
 
       if (!query) {
         return res.json({
@@ -798,10 +1055,12 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
           autoPlay: false,
           spokenReply:
             lang === 'en'
-              ? `Hi, ${userName}, what do you want to watch today?`
+              ? `Hi ${userName}, how can I help you today?`
               : lang === 'ca'
-              ? `Hola, ${userName}, què vols veure avui?`
-              : `Hola, ${userName}, ¿qué quieres ver hoy?`,
+              ? `Hola ${userName}, com et puc ajudar avui?`
+              : lang === 'zh'
+              ? `你好 ${userName}，今天有什么我可以帮你的吗？`
+              : `Hola ${userName}, ¿qué te apetece hacer o hablar hoy?`,
           items: [],
         });
       }
@@ -818,6 +1077,8 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
               ? `Playing ${chosen.title} now.`
               : lang === 'ca'
               ? `Posant ${chosen.title} ara mateix.`
+              : lang === 'zh'
+              ? `正在为你播放 ${chosen.title}。`
               : `Te pongo ${chosen.title} ahora mismo.`,
           items: [chosen],
         });
@@ -849,6 +1110,8 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
               ? `Resuming ${matchedHistoryItem.title}${epStr} right where you left off!`
               : lang === 'ca'
               ? `Reprenem ${matchedHistoryItem.title}${epStr} per on anaves!`
+              : lang === 'zh'
+              ? `正在从你上次看到的地方继续播放 ${matchedHistoryItem.title}！`
               : `¡Retomamos ${matchedHistoryItem.title}${epStr} por donde ibas!`;
 
           return res.json({
@@ -893,6 +1156,8 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
               ? `You don't have recent playback history yet. What would you like to watch?`
               : lang === 'ca'
               ? `Encara no tens historial recent. Què et ve de gust començar a veure?`
+              : lang === 'zh'
+              ? `你还没有最近的观看记录。想看点什么吗？`
               : `Aún no tienes nada en tu historial reciente. Dime qué te apetece ver y te lo pongo al momento.`;
           return res.json({
             success: true,
@@ -964,7 +1229,30 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
         }
       }
 
-      const plan = await parseIntentWithGemini(query, userName, lang);
+      const plan = await parseIntentWithGemini(query, userName, lang, history, activeMediaTitle);
+
+      // Fast path for fluid open-domain conversation & app/player controls
+      if (plan.intent === 'open_world' || plan.intent === 'player_control') {
+        return res.json({
+          success: true,
+          intent: plan.intent,
+          autoPlay: false,
+          action: plan.action,
+          spokenReply: plan.spokenReply,
+          items: [],
+        });
+      }
+
+      if (plan.intent === 'chat') {
+        return res.json({
+          success: true,
+          intent: 'chat',
+          autoPlay: false,
+          spokenReply: plan.spokenReply,
+          items: [],
+        });
+      }
+
       const allChannels = deps.getChannels();
       const items: VoiceAssistantCandidateItem[] = [];
 
@@ -1046,8 +1334,7 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
         plan.intent === 'recommend_movies' ||
         plan.intent === 'recommend_series' ||
         plan.intent === 'play_movie' ||
-        plan.intent === 'play_series' ||
-        (items.length === 0 && plan.intent === 'chat')
+        plan.intent === 'play_series'
       ) {
         const tmdbItems = await resolveTmdbRecommendations(plan.tmdbQuery, lang);
         for (const m of tmdbItems) {
@@ -1089,10 +1376,12 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
       if (items.length === 0 && (!finalReply || finalReply.startsWith('Searching') || finalReply.startsWith('Buscando'))) {
         finalReply =
           lang === 'en'
-            ? `Sorry ${userName}, I could not find anything matching "${query}". Try asking for a channel like DAZN LaLiga, a sports fixture, or a movie genre.`
+            ? `Sorry ${userName}, I could not find anything matching "${query}". Try asking for a channel like DAZN LaLiga, a sports fixture, or ask me anything else.`
             : lang === 'ca'
-            ? `Ho sento ${userName}, no he trobat res per a "${query}". Prova demanant un canal com DAZN LaLiga, un partit o un gènere de cinema.`
-            : `No encontré nada exacto para "${query}", ${userName}. Prueba pidiendo un canal como DAZN LaLiga o pelis de algún género.`;
+            ? `Ho sento ${userName}, no he trobat res per a "${query}". Prova demanant un canal com DAZN LaLiga, un partit o pregunta’m qualsevol cosa.`
+            : lang === 'zh'
+            ? `抱歉 ${userName}，我没有找到匹配“${query}”的内容。你可以试试点播电影、直播频道，或者和我聊任何话题。`
+            : `No encontré nada exacto para "${query}", ${userName}. Prueba pidiendo un canal como DAZN LaLiga, una película o pregúntame lo que quieras.`;
       } else if (shouldAutoPlay && items.length > 0) {
         if (plan.targetEpisode) {
           finalReply = `¡Marchando! Te pongo el capítulo ${plan.targetEpisode} de la temporada ${plan.targetSeason || 1} de ${items[0].title}.`;
@@ -1102,6 +1391,8 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
               ? `Tuning ${items[0].title} right now.`
               : lang === 'ca'
               ? `Posant ${items[0].title} ara mateix.`
+              : lang === 'zh'
+              ? `马上为你播放 ${items[0].title}。`
               : `¡Marchando! Te pongo ${items[0].title}.`;
         }
       }
@@ -1110,6 +1401,7 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
         success: true,
         intent: plan.intent,
         autoPlay: shouldAutoPlay,
+        action: plan.action,
         spokenReply: finalReply,
         items,
       });
@@ -1119,9 +1411,148 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
         success: false,
         intent: 'chat',
         autoPlay: false,
-        spokenReply: 'Vaya, ha fallado la búsqueda por voz. Inténtalo de nuevo.',
+        spokenReply: 'Vaya, ha fallado un momento el asistente de voz. Inténtalo de nuevo.',
         items: [],
       });
+    }
+  });
+
+  // High-accuracy server-side audio transcription via Gemini (works in all browsers & iframes)
+  app.post('/api/ai/transcribe', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        audioBase64?: unknown;
+        mimeType?: unknown;
+        lang?: unknown;
+      };
+      const rawAudio = String(body.audioBase64 || '').trim();
+      if (!rawAudio) {
+        return res.status(400).json({ success: false, transcript: '', error: 'Missing audioBase64' });
+      }
+      const cleanBase64 = rawAudio.replace(/^data:[^;]+;base64,/, '');
+      const mimeType = String(body.mimeType || 'audio/webm').split(';')[0].trim() || 'audio/webm';
+      const lang = String(body.lang || 'es').toLowerCase().slice(0, 2);
+
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.json({ success: false, transcript: '', reason: 'no_api_key' });
+      }
+
+      const hintLang =
+        lang === 'en'
+          ? 'English'
+          : lang === 'ca'
+          ? 'Catalan or Spanish'
+          : lang === 'zh'
+          ? 'Mandarin Chinese'
+          : 'Spanish';
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.5-transcribe',
+        contents: [
+          {
+            role: 'user',
+            parts: [
+              {
+                text: `Transcribe the spoken audio accurately in the language spoken (default hint: ${hintLang}). Return ONLY the plain spoken words with natural punctuation and no quotes, labels, or explanations. If the audio is silent or unintelligible, return an empty string.`,
+              },
+              {
+                inlineData: {
+                  mimeType,
+                  data: cleanBase64,
+                },
+              },
+            ],
+          },
+        ],
+      });
+
+      const transcript = String(response.text || '').trim().replace(/^["'“”]+|["'“”]+$/g, '');
+      return res.json({
+        success: Boolean(transcript),
+        transcript,
+      });
+    } catch (err) {
+      logger.warn({ err }, 'voice_transcribe_error');
+      return res.json({ success: false, transcript: '', reason: 'transcribe_failed' });
+    }
+  });
+
+  // Natural neural Text-to-Speech via Gemini TTS (returns base64 24kHz WAV binary)
+  app.post('/api/ai/tts', async (req: Request, res: Response) => {
+    try {
+      const body = (req.body || {}) as {
+        text?: unknown;
+        lang?: unknown;
+        voiceName?: unknown;
+      };
+      const rawText = String(body.text || '')
+        .replace(/[*_`#>]+/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+        .slice(0, 600);
+      if (!rawText) {
+        return res.status(400).json({ success: false, error: 'Missing text' });
+      }
+      const lang = String(body.lang || 'es').toLowerCase().slice(0, 2);
+      const voiceName = String(
+        body.voiceName ||
+          (lang === 'en' ? 'Kore' : 'Zephyr')
+      ).trim();
+
+      const ai = getGeminiClient();
+      if (!ai) {
+        return res.json({ success: false, reason: 'no_api_key' });
+      }
+
+      const synthesizeWithModel = async (modelId: string) => {
+        const response = await ai.models.generateContent({
+          model: modelId,
+          contents: [
+            {
+              role: 'user',
+              parts: [{ text: rawText }],
+            },
+          ],
+          config: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              voiceConfig: {
+                prebuiltVoiceConfig: {
+                  voiceName,
+                },
+              },
+            },
+          },
+        });
+        const parts = response.candidates?.[0]?.content?.parts || [];
+        const audioPart = parts.find((p) => Boolean(p?.inlineData?.data));
+        return {
+          base64Audio: audioPart?.inlineData?.data || '',
+          mimeType: audioPart?.inlineData?.mimeType || 'audio/wav',
+        };
+      };
+
+      let synthesized = { base64Audio: '', mimeType: 'audio/wav' };
+      try {
+        synthesized = await synthesizeWithModel('gemini-3.8-flash-lite-tts');
+      } catch (firstErr) {
+        logger.debug({ firstErr }, 'tts_primary_model_retry');
+        synthesized = await synthesizeWithModel('gemini-2.5-flash-preview-tts');
+      }
+
+      if (!synthesized.base64Audio) {
+        return res.json({ success: false, reason: 'empty_audio' });
+      }
+
+      return res.json({
+        success: true,
+        audioBase64: synthesized.base64Audio,
+        mimeType: synthesized.mimeType,
+      });
+    } catch (err) {
+      logger.warn({ err }, 'voice_tts_error');
+      return res.json({ success: false, reason: 'tts_failed' });
     }
   });
 }

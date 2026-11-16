@@ -504,7 +504,7 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
       await assertSafeProxyUrl(fullUrl);
       const upstream = await streamingFetch(fullUrl, {
         headers: {
-          Referer: 'https://movidy.pw/',
+          Referer: 'https://movidy.work/',
           'User-Agent': CHROME_UA,
         },
         timeoutMs: 6000,

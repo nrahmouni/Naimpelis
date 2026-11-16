@@ -4252,7 +4252,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     <ArrowLeft className="w-4 h-4" />
                     <span>
                       {streamingProvider !== 'all'
-                        ? activePlatformMeta[lang]
+                        ? pickLang(lang, activePlatformMeta)
                         : pickLang(lang, { es: 'Ver todo', ca: 'Veure tot', en: 'View all' })}
                     </span>
                   </button>
@@ -4573,7 +4573,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
                           }`}
                         >
-                          {cat[lang]}
+                          {pickLang(lang, cat)}
                         </button>
                       );
                     })}
@@ -4948,10 +4948,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* WORLD 3: TV EN DIRECTO (COMPACT CHANNEL ROWS + EPG ON TAP)         */}
       {/* ================================================================== */}
       {(worldMode === 'tv' || (!worldMode && activeSection === 'tdt')) && (() => {
-        const activeCatLabel =
-          ALL_LIVE_CATEGORIES.find((c) => c.id === tdtCategory)?.[lang] ||
-          TDT_NATIONAL_CATEGORIES.find((c) => c.id === tdtCategory)?.[lang] ||
-          pickLang(lang, { es: 'Todos en Vivo', ca: 'Tots en Directe', en: 'All Live TV' });
+        const matchedAllCat = ALL_LIVE_CATEGORIES.find((c) => c.id === tdtCategory);
+        const matchedNatCat = TDT_NATIONAL_CATEGORIES.find((c) => c.id === tdtCategory);
+        const activeCatLabel = matchedAllCat
+          ? pickLang(lang, matchedAllCat)
+          : matchedNatCat
+          ? pickLang(lang, matchedNatCat)
+          : pickLang(lang, { es: 'Todos en Vivo', ca: 'Tots en Directe', en: 'All Live TV' });
 
         const tvFilterCount = (tdtCategory !== 'all' ? 1 : 0) + (epgFilter !== 'all' ? 1 : 0);
 
@@ -5221,10 +5224,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           <span className="text-lg shrink-0">{group.flag}</span>
                           <div className="min-w-0">
                             <h4 className="text-xs font-bold text-white uppercase tracking-wider truncate">
-                              {group.name[lang]}
+                              {pickLang(lang, group.name)}
                             </h4>
                             <p className="text-[11px] text-zinc-400 truncate">
-                              {group.sub[lang]}
+                              {pickLang(lang, group.sub)}
                             </p>
                           </div>
                         </div>
@@ -5265,7 +5268,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                                   : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.09]'
                               }`}
                             >
-                              <span className="truncate">{cat[lang]}</span>
+                              <span className="truncate">{pickLang(lang, cat)}</span>
                               {cat.badge && (
                                 <span
                                   className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${

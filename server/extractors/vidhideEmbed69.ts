@@ -34,7 +34,8 @@ export async function unpackVidhideToHls(
   try {
     // 1. Fast Vidaraa / Vidara JSON Stream Unpacker
     if (/vidaraa?\.[a-z]+/i.test(embedUrl)) {
-      const u = new URL(embedUrl);
+      const cleanEmbedUrl = embedUrl.split('#')[0];
+      const u = new URL(cleanEmbedUrl);
       const segments = u.pathname.split('/').filter(Boolean);
       const filecode = segments[segments.length - 1] || '';
       if (filecode) {
@@ -43,7 +44,7 @@ export async function unpackVidhideToHls(
           'Content-Type': 'application/json',
           Accept: 'application/json, text/plain, */*',
           Origin: u.origin,
-          Referer: embedUrl,
+          Referer: cleanEmbedUrl,
         };
         let apiJson: any = null;
         try {
@@ -51,7 +52,7 @@ export async function unpackVidhideToHls(
             method: 'POST',
             headers: apiHeaders,
             body: JSON.stringify({ filecode, device: 'web', codecs: [] }),
-            timeoutMs: 4800,
+            timeoutMs: 4200,
           });
           if (apiRes.ok) {
             apiJson = await apiRes.json();
@@ -85,6 +86,7 @@ export async function unpackVidhideToHls(
           }
         }
       }
+      return null;
     }
 
     // 2. Standard Vidhide / Smoothpre / Earnvids / Streamwish / 2vcdn Dean Edwards Unpacker
@@ -112,7 +114,9 @@ export async function unpackVidhideToHls(
         4500
       );
     }
-    if (!html) return null;
+    if (!html || /Countries are not allowed|not available in your country/i.test(html)) {
+      return null;
+    }
 
     const unpacked = unpackDeanEdwards(html);
     if (!unpacked) return null;
@@ -414,40 +418,6 @@ export function parseEmbed69OrMoeTracks(html: string, tagId: string): TrackRecor
             const rawLang = String(grp.video_language || 'LAT').toUpperCase();
             const embeds: any[] = Array.isArray(grp.sortedEmbeds) ? grp.sortedEmbeds : [];
 
-            const vidhideEntry = embeds.find(
-              (e) =>
-                String(e?.servername || '').toLowerCase() === 'vidhide' ||
-                String(e?.servername || '').toLowerCase() === 'filelions'
-            );
-
-            let chosenUrl: string | null = null;
-            let chosenResolver: 'vidhide_hls' | 'embed_sniff' = 'vidhide_hls';
-
-            if (vidhideEntry?.link) {
-              const dec = decryptEmbedLink(vidhideEntry.link);
-              if (dec && dec.startsWith('http')) {
-                chosenUrl = dec;
-                chosenResolver = 'vidhide_hls';
-              }
-            }
-
-            if (!chosenUrl) {
-              for (const fbEmbed of embeds) {
-                const srv = String(fbEmbed?.servername || '').toLowerCase();
-                if (!fbEmbed?.link || srv === 'download') continue;
-                const dec = decryptEmbedLink(fbEmbed.link);
-                if (dec && dec.startsWith('http')) {
-                  chosenUrl = dec;
-                  chosenResolver = /morencius|vidhide|smoothpre|earnvids/i.test(dec)
-                    ? 'vidhide_hls'
-                    : 'embed_sniff';
-                  break;
-                }
-              }
-            }
-
-            if (!chosenUrl) continue;
-
             const label =
               rawLang === 'ESP'
                 ? 'Castellano HD'
@@ -456,16 +426,50 @@ export function parseEmbed69OrMoeTracks(html: string, tagId: string): TrackRecor
                 : rawLang === 'SUB' || rawLang === 'VOSE'
                 ? 'Subtitulado VOSE'
                 : `${rawLang} HD`;
-
             const langCode = rawLang === 'ESP' ? 'ES' : rawLang === 'LAT' ? 'LAT' : 'VOSE';
 
-            tracks.push({
-              id: `embed69-${tagId}-${rawLang.toLowerCase()}`,
-              label,
-              lang: langCode,
-              quality: 'HD HLS',
-              sourceUrl: chosenUrl,
-              resolverType: chosenResolver,
+            const decodedCandList: Array<{
+              url: string;
+              srv: string;
+              resolverType: 'vidhide_hls' | 'embed_sniff' | 'web_embed';
+              priority: number;
+            }> = [];
+
+            for (const fbEmbed of embeds) {
+              const srv = String(fbEmbed?.servername || '').toLowerCase();
+              if (!fbEmbed?.link || srv === 'download') continue;
+              const dec = decryptEmbedLink(fbEmbed.link);
+              if (!dec || !dec.startsWith('http')) continue;
+              const low = dec.toLowerCase();
+              if (/1fichier|uptobox|mega\.nz|mediafire/i.test(low)) continue;
+
+              if (/vidaraa?\./i.test(low)) {
+                decodedCandList.push({ url: dec, srv: srv || 'vidara', resolverType: 'vidhide_hls', priority: 1 });
+              } else if (/filelions|smoothpre|earnvids|vidhide/i.test(low) && !/morencius/i.test(low)) {
+                decodedCandList.push({ url: dec, srv: srv || 'vidhide', resolverType: 'vidhide_hls', priority: 2 });
+              } else if (/morencius/i.test(low)) {
+                decodedCandList.push({ url: dec, srv: srv || 'vidhide', resolverType: 'vidhide_hls', priority: 5 });
+              } else if (/streamwish|hglink|hlswish|wishembed/i.test(low) || srv === 'streamwish') {
+                decodedCandList.push({ url: dec, srv: 'streamwish', resolverType: 'web_embed', priority: 3 });
+              } else if (/voe\./i.test(low) || srv === 'voe') {
+                decodedCandList.push({ url: dec, srv: 'voe', resolverType: 'embed_sniff', priority: 4 });
+                decodedCandList.push({ url: dec, srv: 'voe-web', resolverType: 'web_embed', priority: 6 });
+              } else {
+                decodedCandList.push({ url: dec, srv: srv || 'web', resolverType: 'web_embed', priority: 7 });
+              }
+            }
+
+            decodedCandList.sort((a, b) => a.priority - b.priority);
+
+            decodedCandList.forEach((cand, idx) => {
+              tracks.push({
+                id: `embed69-${tagId}-${rawLang.toLowerCase()}-${idx + 1}`,
+                label: cand.resolverType === 'web_embed' ? `${label} (${cand.srv})` : label,
+                lang: langCode,
+                quality: cand.resolverType === 'web_embed' ? 'HD Web' : 'HD HLS',
+                sourceUrl: cand.url,
+                resolverType: cand.resolverType,
+              });
             });
           }
         }
@@ -1305,11 +1309,11 @@ export function parseGnulaPlayerPayload(pJson: any): TrackRecord[] {
       });
     });
 
-    if (nativeTracks.length > 0) {
-      nativeTracks.sort((a, b) => a.hostPriority - b.hostPriority);
-      return nativeTracks.map(({ hostPriority: _hp, ...track }) => track);
-    }
-    return embedBackupTracks;
+    nativeTracks.sort((a, b) => a.hostPriority - b.hostPriority);
+    return [
+      ...nativeTracks.map(({ hostPriority: _hp, ...track }) => track),
+      ...embedBackupTracks,
+    ];
   } catch {
     return [];
   }
@@ -1650,23 +1654,26 @@ export async function extractEmbed69SpanishTracks(opts: {
 
     const nativeCandidates = [
       ...gnulaTracks.filter((t) => t.resolverType === 'vidhide_hls'),
-      ...directTracks,
-      ...skTracks,
-      ...animeTracks,
+      ...directTracks.filter((t) => t.resolverType !== 'web_embed'),
+      ...skTracks.filter((t) => t.resolverType !== 'web_embed'),
+      ...animeTracks.filter((t) => t.resolverType !== 'web_embed'),
       ...gnulaTracks.filter((t) => t.resolverType !== 'vidhide_hls' && t.resolverType !== 'web_embed'),
     ];
-    const orderedCandidates =
-      nativeCandidates.length > 0
-        ? nativeCandidates
-        : gnulaTracks.filter((t) => t.resolverType === 'web_embed');
+    const webEmbedBackups = [
+      ...gnulaTracks.filter((t) => t.resolverType === 'web_embed'),
+      ...directTracks.filter((t) => t.resolverType === 'web_embed'),
+      ...skTracks.filter((t) => t.resolverType === 'web_embed'),
+      ...animeTracks.filter((t) => t.resolverType === 'web_embed'),
+    ];
+    const orderedCandidates = [...nativeCandidates, ...webEmbedBackups];
 
     for (const tr of orderedCandidates) {
       const code = String(tr.lang || '').toUpperCase();
       if (!code) continue;
-      const key = `${code}:${tr.sourceUrl}`;
+      const key = `${code}:${tr.resolverType}:${tr.sourceUrl}`;
       if (seenTrackKeys.has(key)) continue;
       const currentCount = countPerLang[code] || 0;
-      if (currentCount >= 3) continue;
+      if (currentCount >= 6) continue;
       seenTrackKeys.add(key);
       countPerLang[code] = currentCount + 1;
       merged.push(tr);

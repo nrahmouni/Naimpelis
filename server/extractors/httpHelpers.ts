@@ -991,10 +991,10 @@ export async function fetchTextWithCurlFallback(
 }
 
 export async function probeHlsSegmentHealth(rawM3u8Url: string, origin: string): Promise<boolean> {
+  const cleanOrigin = origin.replace(/\/+$/, '');
   const reqHeaders: Record<string, string> = {
     'User-Agent': CHROME_UA,
-    Referer: `${origin}/`,
-    Origin: origin,
+    Referer: `${cleanOrigin}/`,
     Accept: '*/*',
   };
 

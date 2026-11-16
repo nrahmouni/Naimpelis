@@ -4,15 +4,17 @@ export interface LocalizedTextMap {
   es: string;
   ca: string;
   en: string;
+  zh?: string;
 }
 
 /**
- * Type-safe 3-language selector ensuring Spanish (es), Catalan (ca), and English (en)
- * never silently fall back to Spanish when Catalan or English is active.
+ * Type-safe 4-language selector ensuring Spanish (es), Catalan (ca), English (en), and Chinese (zh)
+ * never silently fall back to Spanish when another language is active.
  */
 export function pickLang(lang: AppLanguage, copy: LocalizedTextMap): string {
   if (lang === 'ca') return copy.ca;
   if (lang === 'en') return copy.en;
+  if (lang === 'zh') return copy.zh || copy.en || copy.es;
   return copy.es;
 }
 
@@ -338,5 +340,84 @@ export const UI_COPY: Record<AppLanguage, UiCopyShape> = {
     infoLabel: 'Details',
     trailerPreviewMute: 'Mute preview',
     trailerPreviewUnmute: 'Unmute preview',
+  },
+  zh: {
+    appTagline: 'RiffanTV · 电影、剧集、直播电视、体育赛事与好友同步观影',
+    heroHeadline: '专属于你与好友的私人影院，电影、剧集、直播与体育同步畅享。',
+    heroDescription:
+      '支持中文界面与西语/加泰语/英语 1080p 影视片库，实时体育直播与零延迟同步房间。',
+    nicknameLabel: '房间昵称',
+    nicknamePlaceholder: '输入你的昵称（如 Naim、Alex、小明...）',
+    avatarLabel: '头像形象',
+    accentLabel: '主题色',
+    createRoomBtn: '创建并进入房间',
+    joinRoomLabel: '通过房间码或链接加入',
+    roomCodePlaceholder: '输入房间码或链接（如 a8f2）',
+    joinBtn: '加入',
+    recentRooms: '最近房间',
+    pillarExplore: '探索',
+    pillarCatalog: '影视剧集',
+    pillarAnime: '动漫',
+    pillarLive: '电视直播',
+    pillarMyList: '我的片单',
+    tabMovies: '电影',
+    tabVose: '原声 · 英语',
+    tabSeries: '剧集',
+    tabTdt: '直播电视',
+    tabSports: '体育直播',
+    tabYoutube: 'YouTube',
+    tabDirect: '队列 · 链接',
+    tabChat: '聊天',
+    tabRoom: '房间',
+    tabMyList: '片单',
+    searchMoviesPlaceholder: '搜索电影（西语 / 英语 1080p）...',
+    searchVoPlaceholder: '搜索原声英语 1080p 电影...',
+    searchSeriesPlaceholder: '搜索热门电视剧集...',
+    searchTdtPlaceholder: '搜索电视频道...',
+    searchSportsPlaceholder: '搜索足球比赛、欧冠、F1 或频道...',
+    searchYoutubePlaceholder: '搜索 YouTube 视频、音乐或频道...',
+    unmuteAudio: '点击开启声音',
+    liveNow: '直播中',
+    syncRoom: '同步',
+    invite: '邀请好友',
+    smartTv: '智能电视',
+    leaveRoom: '退出',
+    chatPlaceholder: '在房间发送消息...',
+    send: '发送',
+    participants: '房间好友',
+    hostLabel: '房主',
+    modLabel: '管理员',
+    makeHost: '设为房主',
+    you: '你',
+    copyLink: '复制邀请链接',
+    copied: '已复制',
+    extractingTitle: '正在连接信号…',
+    extractingSub: '正在与房间同步',
+    standbyTitle: '影院房间已准备就绪',
+    standbySub: '选择下方的电影、剧集、直播频道或赛事开始播放。',
+    directTitle: '直链与内置浏览器',
+    directSub: '粘贴 YouTube 链接、视频直链或网页，即刻在房间同步播放。',
+    playNativeBtn: '在播放器中播放',
+    openWebBtn: '打开内置网页',
+    openCloudBtn: '打开内置网页',
+    switchNativeHd: '切换高清播放器',
+    allSports: '全部',
+    soccer: '足球',
+    motor: 'F1 · 赛车',
+    basketball: '篮球',
+    tennis: '网球',
+    notificationsTitle: '通知中心',
+    surpriseMeTitle: '随机推荐',
+    legalTitle: '隐私政策与法律声明',
+    qualityLabel: '画质',
+    qualityAuto: '自动',
+    audioTrackLabel: '音轨语言',
+    audioTrackEmbedded: '内置音频',
+    closeModal: '关闭窗口',
+    watchNow: '立即观看',
+    addToQueue: '加入队列',
+    infoLabel: '详情',
+    trailerPreviewMute: '静音预览',
+    trailerPreviewUnmute: '开启预览声音',
   },
 };

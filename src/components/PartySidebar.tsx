@@ -422,7 +422,11 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   };
 
   return (
-    <aside className="w-full h-full flex flex-col bg-[#0B0D14] border-l border-white/[0.08] select-none overflow-hidden relative">
+    <aside
+      className={`w-full h-full flex flex-col select-none overflow-hidden relative ${
+        worldSalaMode ? 'bg-[#0B0D14] border-l border-white/[0.08]' : 'bg-transparent'
+      }`}
+    >
       {worldSalaMode ? (
         <div className="border-b border-white/[0.08] shrink-0 bg-[#10121C]/95 backdrop-blur-xl z-20">
           <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">

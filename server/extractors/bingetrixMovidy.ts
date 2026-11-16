@@ -14,6 +14,7 @@ import {
   curlGetBuffer,
   curlGetBufferWithStatus,
   curlGetText,
+  fetchTextWithCurlFallback,
   isMetadataCompatibleForMedia,
   normalizeTitleForMatch,
   parseDurationTextToMinutes,
@@ -499,6 +500,55 @@ export async function hasBingetrixEnglishStreamFast(opts: {
   }
 }
 
+export const MOVIDY_ORIGIN = 'https://movidy.work';
+
+export function isMovidyVerUrl(rawUrl: string): boolean {
+  return /movidy\.(?:work|pw|tv|ws)\/ver\//i.test(String(rawUrl || '').trim());
+}
+
+export function normalizeMovidyUrl(rawUrl: string): string {
+  const s = String(rawUrl || '').trim();
+  if (!s) return '';
+  if (s.startsWith('/')) return `${MOVIDY_ORIGIN}${s}`;
+  return s.replace(/^https?:\/\/(?:www\.)?movidy\.(?:pw|tv|ws)\b/i, MOVIDY_ORIGIN);
+}
+
+function buildMovidySlugCandidates(hints: string[], expectedYear?: string): string[] {
+  const slugs = new Set<string>();
+  for (const h of hints) {
+    const clean = String(h || '')
+      .replace(/\s*\([^)]*\)/g, '')
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/&/g, ' y ')
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+    if (clean.length >= 2) {
+      slugs.add(clean);
+      if (expectedYear && /^\d{4}$/.test(expectedYear)) {
+        slugs.add(`${clean}-${expectedYear}`);
+      }
+    }
+  }
+  return Array.from(slugs).slice(0, 6);
+}
+
+function extractNuploadPageIframe(html: string): string | null {
+  const re = /<iframe[^>]+src=["'](https?:\/\/[^"']+)["']/gi;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(html)) !== null) {
+    const cand = String(m[1] || '').trim();
+    if (!cand) continue;
+    // Skip placeholder decoy embed (`/e/123`) and analytics/ad iframes
+    if (/\/e\/123(?:$|[/?#])|googletagmanager|doubleclick|googlesyndication|youtube\.com/i.test(cand)) {
+      continue;
+    }
+    return cand;
+  }
+  return null;
+}
+
 export async function decodeNuploadToHls(
   embedUrlOrB64: string
 ): Promise<{ rawM3u8: string; proxyUrl: string } | null> {
@@ -512,42 +562,97 @@ export async function decodeNuploadToHls(
       embedUrl += '?h=';
     }
 
-    const res = await streamingFetch(embedUrl, {
-      headers: {
-        Referer: 'https://movidy.pw/',
+    const html = await fetchTextWithCurlFallback(
+      embedUrl,
+      {
+        Referer: `${MOVIDY_ORIGIN}/`,
         'User-Agent': CHROME_UA,
       },
-      timeoutMs: 5500,
-    });
-
-    if (!res.ok) return null;
-    const html = await res.text();
+      5500
+    );
+    if (!html) return null;
 
     const forEachMatch = html.match(/([a-zA-Z0-9_]+)\.forEach\([\s\S]{0,200}?-\s*(\d+)\)/);
-    if (!forEachMatch) return null;
+    if (forEachMatch) {
+      const [, arrName, offsetStr] = forEachMatch;
+      const offset = parseInt(offsetStr, 10);
+      const arrRegex = new RegExp(`var\\s+${arrName}\\s*=\\s*(\\[[^\\]]+\\])`);
+      const arrMatch = html.match(arrRegex);
+      const sesMatch = html.match(/var\s+sesz\s*=\s*["']([^"']+)["']/);
 
-    const [, arrName, offsetStr] = forEachMatch;
-    const offset = parseInt(offsetStr, 10);
-    const arrRegex = new RegExp(`var\\s+${arrName}\\s*=\\s*(\\[[^\\]]+\\])`);
-    const arrMatch = html.match(arrRegex);
-    const sesMatch = html.match(/var\s+sesz\s*=\s*["']([^"']+)["']/);
+      if (arrMatch && sesMatch) {
+        const encodedItems: string[] = JSON.parse(arrMatch[1]);
+        const baseStream = encodedItems
+          .map((item) => {
+            const decodedDigits = Buffer.from(item, 'base64').toString('utf8').replace(/\D/g, '');
+            return String.fromCharCode(parseInt(decodedDigits, 10) - offset);
+          })
+          .join('');
 
-    if (!arrMatch || !sesMatch) return null;
+        const rawM3u8 = `${baseStream}?s=${sesMatch[1]}`;
+        const embedOrigin = new URL(embedUrl).origin + '/';
+        return {
+          rawM3u8,
+          proxyUrl: buildHlsProxyUrl(rawM3u8, embedOrigin),
+        };
+      }
+    }
 
-    const encodedItems: string[] = JSON.parse(arrMatch[1]);
-    const baseStream = encodedItems
-      .map((item) => {
-        const decodedDigits = Buffer.from(item, 'base64').toString('utf8').replace(/\D/g, '');
-        return String.fromCharCode(parseInt(decodedDigits, 10) - offset);
-      })
-      .join('');
+    // Fallback: nested vidhide / vidara / streamwish / smoothpre iframe inside nupload.my
+    const nestedIframe = extractNuploadPageIframe(html);
+    if (nestedIframe && /vidaraa?|vidhide|smoothpre|earnvids|streamwish|filelions|hglink|hlswish/i.test(nestedIframe)) {
+      const unpacked = await unpackVidhideToHls(nestedIframe);
+      if (unpacked) return unpacked;
+    }
 
-    const rawM3u8 = `${baseStream}?s=${sesMatch[1]}`;
-    const embedOrigin = new URL(embedUrl).origin + '/';
-    return {
-      rawM3u8,
-      proxyUrl: buildHlsProxyUrl(rawM3u8, embedOrigin),
-    };
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+export async function resolveMovidyEmbedTrack(
+  embedUrlOrB64: string
+): Promise<
+  | { mode: 'hls'; rawM3u8: string; proxyUrl: string }
+  | { mode: 'embed'; embedUrl: string }
+  | null
+> {
+  try {
+    let embedUrl = embedUrlOrB64.trim();
+    if (!embedUrl.startsWith('http')) {
+      embedUrl = Buffer.from(embedUrl, 'base64').toString('utf8').trim();
+    }
+    if (!embedUrl.startsWith('http')) return null;
+
+    const hls = await decodeNuploadToHls(embedUrl);
+    if (hls) {
+      return { mode: 'hls', rawM3u8: hls.rawM3u8, proxyUrl: hls.proxyUrl };
+    }
+
+    const targetWithQuery = embedUrl.includes('?') ? embedUrl : `${embedUrl}?h=`;
+    const html = await fetchTextWithCurlFallback(
+      targetWithQuery,
+      { Referer: `${MOVIDY_ORIGIN}/`, 'User-Agent': CHROME_UA },
+      4500
+    );
+    if (!html) return null;
+
+    const nestedIframe = extractNuploadPageIframe(html);
+    if (!nestedIframe) return null;
+
+    // Quickly check that the nested iframe does not serve a 404 dead page
+    const iframeCheck = await curlGetText(
+      nestedIframe,
+      { Referer: `${new URL(targetWithQuery).origin}/`, 'User-Agent': CHROME_UA },
+      3,
+      true
+    ).catch(() => ({ text: '' }));
+    if (iframeCheck.text && /<title>\s*404|not found<\/title>|file was deleted|no longer available/i.test(iframeCheck.text.slice(0, 1200))) {
+      return null;
+    }
+
+    return { mode: 'embed', embedUrl: nestedIframe };
   } catch {
     return null;
   }
@@ -602,32 +707,20 @@ export async function fetchMovidyPageMetadata(
   movidyVerUrl: string
 ): Promise<MovidyPageMetadata | null> {
   try {
-    const cleanUrl = String(movidyVerUrl || '').trim();
-    if (!cleanUrl.includes('movidy.pw/ver/')) return null;
+    const cleanUrl = normalizeMovidyUrl(movidyVerUrl);
+    if (!isMovidyVerUrl(cleanUrl)) return null;
 
     const cached = movidyPageMetaCache.get(cleanUrl);
     if (cached) return cached;
 
-    let html = '';
-    try {
-      const res = await streamingFetch(cleanUrl, {
-        headers: {
-          'User-Agent': CHROME_UA,
-          Referer: 'https://movidy.pw/pelis/',
-        },
-        timeoutMs: 5000,
-      });
-      if (res.ok) {
-        html = await res.text();
-      }
-    } catch {
-      const fb = await curlGetText(
-        cleanUrl,
-        { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-        5
-      ).catch(() => ({ text: '' }));
-      html = fb.text;
-    }
+    const html = await fetchTextWithCurlFallback(
+      cleanUrl,
+      {
+        'User-Agent': CHROME_UA,
+        Referer: `${MOVIDY_ORIGIN}/pelis/`,
+      },
+      5000
+    );
 
     if (!html) return null;
 
@@ -721,8 +814,8 @@ export async function extractMovidyPageTracks(
   }
 ): Promise<TrackRecord[]> {
   try {
-    const cleanUrl = movidyVerUrl.trim();
-    if (!cleanUrl.includes('movidy.pw/ver/')) return [];
+    const cleanUrl = normalizeMovidyUrl(movidyVerUrl);
+    if (!isMovidyVerUrl(cleanUrl)) return [];
 
     const meta = await fetchMovidyPageMetadata(cleanUrl);
     if (!meta || !meta.html) return [];
@@ -784,38 +877,37 @@ export async function findMovidyUrlByTitle(
       return null;
     }
 
-    const searchUrl = `https://movidy.pw/?s=${encodeURIComponent(queryTerm)}`;
-    let html = '';
-    try {
-      const res = await streamingFetch(searchUrl, {
-        headers: { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-        timeoutMs: 3800,
-      });
-      if (res.ok) html = await res.text();
-    } catch {
-      const fb = await curlGetText(
-        searchUrl,
-        { 'User-Agent': CHROME_UA, Referer: 'https://movidy.pw/' },
-        5
-      ).catch(() => ({ text: '' }));
-      html = fb.text;
-    }
-    if (!html) return null;
-
-    const itemRe =
-      /<li>\s*<a\s+href="((?:https?:\/\/movidy\.[a-z]+)?\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>/gi;
+    const searchUrl = `${MOVIDY_ORIGIN}/?s=${encodeURIComponent(queryTerm)}`;
+    const html = await fetchTextWithCurlFallback(
+      searchUrl,
+      { 'User-Agent': CHROME_UA, Referer: `${MOVIDY_ORIGIN}/` },
+      4500
+    );
 
     const exactMatches: string[] = [];
-    let m: RegExpExecArray | null;
+    if (html) {
+      const itemRe =
+        /<li>\s*<a\s+href="((?:https?:\/\/movidy\.[a-z]+)?\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>/gi;
+      let m: RegExpExecArray | null;
+      while ((m = itemRe.exec(html)) !== null) {
+        const rawHref = String(m[1] || '').trim();
+        const rawSpanTitle = String(m[2] || '').trim();
+        if (!rawHref || !rawSpanTitle) continue;
 
-    while ((m = itemRe.exec(html)) !== null) {
-      const rawHref = String(m[1] || '').trim();
-      const rawSpanTitle = String(m[2] || '').trim();
-      if (!rawHref || !rawSpanTitle) continue;
+        const fullUrl = normalizeMovidyUrl(rawHref);
+        if (fullUrl && areTitlesStrictlyEqual(rawSpanTitle, allHints) && !exactMatches.includes(fullUrl)) {
+          exactMatches.push(fullUrl);
+        }
+      }
+    }
 
-      const fullUrl = rawHref.startsWith('http') ? rawHref : `https://movidy.pw${rawHref}`;
-      if (areTitlesStrictlyEqual(rawSpanTitle, allHints) && !exactMatches.includes(fullUrl)) {
-        exactMatches.push(fullUrl);
+    // Direct slug fallback when WordPress search misses exact titles (e.g. "Interstellar" -> /ver/interstellar/)
+    if (exactMatches.length === 0) {
+      for (const slug of buildMovidySlugCandidates(allHints, expectedYear)) {
+        const directCand = `${MOVIDY_ORIGIN}/ver/${slug}/`;
+        if (!exactMatches.includes(directCand)) {
+          exactMatches.push(directCand);
+        }
       }
     }
 
@@ -877,13 +969,12 @@ export async function probeAvailableLanguages(opts: {
     new Set((opts.titleHints || []).map((t) => String(t || '').trim()).filter(Boolean))
   );
 
-  const hasExplicitMovidy = Boolean(
-    opts.movidyUrl && opts.movidyUrl.includes('movidy.pw/ver/')
-  );
+  const normalizedExplicitMovidy = normalizeMovidyUrl(opts.movidyUrl || '');
+  const hasExplicitMovidy = isMovidyVerUrl(normalizedExplicitMovidy);
 
   const movidyPromise = (async (): Promise<TrackRecord[]> => {
     if (opts.mediaType !== 'movie') return [];
-    let mvUrl = hasExplicitMovidy ? opts.movidyUrl! : '';
+    let mvUrl = hasExplicitMovidy ? normalizedExplicitMovidy : '';
     if (mvUrl && (cleanId || opts.yearHint || opts.directorHint || opts.runtimeMinHint)) {
       const explicitMeta = await fetchMovidyPageMetadata(mvUrl);
       if (

@@ -142,7 +142,7 @@ export function mergeCatalogItemMetadata(
     primary.movidyUrl ||
     secondary?.movidyUrl ||
     (cleanId.startsWith('movidy-')
-      ? `https://movidy.pw/ver/${cleanId.replace(/^movidy-/, '')}`
+      ? `https://movidy.work/ver/${cleanId.replace(/^movidy-/, '')}`
       : undefined);
   const resolvedTmdbId = primary.tmdbId || secondary?.tmdbId;
   const inferredBingetrix =
@@ -537,7 +537,7 @@ export function deduplicateWatchHistory(items: WatchHistoryItem[]): WatchHistory
     const inferredMovidy =
       raw.movidyUrl ||
       (strippedSlug.startsWith('movidy-')
-        ? `https://movidy.pw/ver/${strippedSlug.replace(/^movidy-/, '')}`
+        ? `https://movidy.work/ver/${strippedSlug.replace(/^movidy-/, '')}`
         : undefined);
     const normalized: WatchHistoryItem = {
       ...raw,
@@ -614,7 +614,7 @@ export function addWatchHistoryItem(
     entry.movidyUrl ||
     existing?.movidyUrl ||
     (strippedSlug.startsWith('movidy-')
-      ? `https://movidy.pw/ver/${strippedSlug.replace(/^movidy-/, '')}`
+      ? `https://movidy.work/ver/${strippedSlug.replace(/^movidy-/, '')}`
       : undefined);
 
   const mergedItem: WatchHistoryItem = {

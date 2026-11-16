@@ -6,13 +6,16 @@ import {
   Send,
   Sparkles,
   Tv,
-  Film,
   Trophy,
   Volume2,
   VolumeX,
   X,
   Loader2,
+  Radio,
+  Square,
+  Trash2,
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -22,7 +25,6 @@ import type {
 } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
-import { ChannelLogoBadge } from './ui/ChannelLogoBadge';
 import { PosterImage } from './ui/PosterImage';
 
 export interface VoiceCandidateItem {
@@ -39,16 +41,29 @@ export interface VoiceCandidateItem {
   match?: SportsMatch;
 }
 
+export interface VoiceAssistantAppAction {
+  type: 'open_world' | 'player_control' | 'open_friends' | 'surprise_me';
+  payload?: string;
+}
+
+interface ConversationMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+}
+
 interface VoiceAssistantModalProps {
   isOpen: boolean;
   onClose: () => void;
   lang: AppLanguage;
   userName: string;
+  activeMediaTitle?: string;
   watchHistory?: WatchHistoryItem[];
   onPlayMovie: (movie: CatalogMovie, preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN') => void;
   onPlaySeries: (series: CatalogMovie, targetSeason?: number, targetEpisode?: number) => void;
   onPlayChannel: (channel: SpanishTdtChannel) => void;
   onPlayMatch: (match: SportsMatch) => void;
+  onAppAction?: (action: VoiceAssistantAppAction) => void;
 }
 
 interface SpeechRecognitionAlternativeLike {
@@ -92,24 +107,21 @@ function getSpeechRecognitionCtor(): (new () => SpeechRecognitionLike) | null {
 function resolveSpeechLocale(lang: AppLanguage): string {
   if (lang === 'ca') return 'ca-ES';
   if (lang === 'en') return 'en-US';
+  if (lang === 'zh') return 'zh-CN';
   return 'es-ES';
 }
 
-/**
- * Searches for a natural, expressive virtual assistant voice in the browser,
- * avoiding flat robotic system defaults.
- */
 function findVirtualAssistantVoice(targetLang: AppLanguage): SpeechSynthesisVoice | null {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
   const voices = window.speechSynthesis.getVoices();
   if (!voices || voices.length === 0) return null;
 
-  const prefix = targetLang === 'ca' ? 'ca' : targetLang === 'en' ? 'en' : 'es';
+  const prefix =
+    targetLang === 'ca' ? 'ca' : targetLang === 'en' ? 'en' : targetLang === 'zh' ? 'zh' : 'es';
   const langVoices = voices.filter((v) => v.lang.toLowerCase().startsWith(prefix));
   const pool = langVoices.length > 0 ? langVoices : voices;
 
   const priorityKeywords = [
-    'google español',
     'google',
     'natural',
     'neural',
@@ -118,17 +130,13 @@ function findVirtualAssistantVoice(targetLang: AppLanguage): SpeechSynthesisVoic
     'helena',
     'monica',
     'mónica',
-    'jorge',
-    'alvaro',
-    'alicia',
     'lucia',
     'lucía',
-    'paulina',
+    'alvaro',
+    'jorge',
     'samantha',
-    'karen',
-    'assistant',
-    'virtual',
-    'premium',
+    'xiaoxiao',
+    'tingting',
   ];
 
   for (const kw of priorityKeywords) {
@@ -139,49 +147,110 @@ function findVirtualAssistantVoice(targetLang: AppLanguage): SpeechSynthesisVoic
   return pool[0] || null;
 }
 
+function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = typeof reader.result === 'string' ? reader.result : '';
+      const base64 = result.includes(',') ? result.split(',')[1] : result;
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error || new Error('FileReader failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
 export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   isOpen,
   onClose,
   lang,
   userName,
+  activeMediaTitle = '',
   watchHistory = [],
   onPlayMovie,
   onPlaySeries,
   onPlayChannel,
   onPlayMatch,
+  onAppAction,
 }) => {
-  const cleanName = (userName || '').trim() || pickLang(lang, { es: 'amigo', ca: 'amic', en: 'friend' });
+  const cleanName =
+    (userName || '').trim() || pickLang(lang, { es: 'amigo', ca: 'amic', en: 'friend', zh: '朋友' });
+
   const initialGreeting = useMemo(
     () =>
       pickLang(lang, {
-        es: `Hola, ${cleanName}, ¿qué quieres ver hoy?`,
-        ca: `Hola, ${cleanName}, què vols veure avui?`,
-        en: `Hi, ${cleanName}, what do you want to watch today?`,
+        es: `Hola ${cleanName}. Pídeme cualquier peli, serie, canal, partido o háblame de lo que quieras.`,
+        ca: `Hola ${cleanName}. Demana’m qualsevol pel·lícula, sèrie, canal, partit o parla’m del que vulguis.`,
+        en: `Hi ${cleanName}. Ask me to play movies, series, live channels, matches, or chat with me about anything.`,
+        zh: `你好 ${cleanName}。你可以让我播放电影、剧集、直播频道、足球比赛，或者和我聊任何话题。`,
       }),
     [lang, cleanName]
   );
 
-  const [assistantMessage, setAssistantMessage] = useState(initialGreeting);
+  const [messages, setMessages] = useState<ConversationMessage[]>([
+    { id: 'greeting-init', role: 'assistant', text: initialGreeting },
+  ]);
   const [inputText, setInputText] = useState('');
   const [interimText, setInterimText] = useState('');
   const [isListening, setIsListening] = useState(false);
+  const [isRecordingAudio, setIsRecordingAudio] = useState(false);
   const [isThinking, setIsThinking] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
+  const [handsFree, setHandsFree] = useState(false);
   const [micNotice, setMicNotice] = useState<string | null>(null);
   const [items, setItems] = useState<VoiceCandidateItem[]>([]);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const itemsRef = useRef<VoiceCandidateItem[]>([]);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordAutoStopRef = useRef<number | null>(null);
+  const audioElRef = useRef<HTMLAudioElement | null>(null);
+  const speakAbortRef = useRef<AbortController | null>(null);
+  const handsFreeRef = useRef(handsFree);
+  handsFreeRef.current = handsFree;
+  const isOpenRef = useRef(isOpen);
+  isOpenRef.current = isOpen;
+
+  const itemsRef = useRef<VoiceCandidateItem[]>(items);
   itemsRef.current = items;
+  const messagesRef = useRef<ConversationMessage[]>(messages);
+  messagesRef.current = messages;
   const mutedRef = useRef(voiceMuted);
   mutedRef.current = voiceMuted;
   const inputRef = useRef<HTMLInputElement>(null);
+  const chatScrollRef = useRef<HTMLDivElement>(null);
   const watchHistoryRef = useRef<WatchHistoryItem[]>(watchHistory);
   watchHistoryRef.current = watchHistory;
+  const startListeningRef = useRef<() => void>(() => {});
 
-  const speechSupported = useMemo(() => Boolean(getSpeechRecognitionCtor()), []);
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [messages, interimText, isThinking]);
 
-  const stopSpeechSynthesis = useCallback(() => {
+  const stopSpeechOutput = useCallback(() => {
+    setIsSpeaking(false);
+    if (speakAbortRef.current) {
+      try {
+        speakAbortRef.current.abort();
+      } catch {
+        // ignore
+      }
+      speakAbortRef.current = null;
+    }
+    if (audioElRef.current) {
+      try {
+        audioElRef.current.pause();
+        audioElRef.current.currentTime = 0;
+        audioElRef.current.src = '';
+      } catch {
+        // ignore
+      }
+      audioElRef.current = null;
+    }
     try {
       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
         window.speechSynthesis.cancel();
@@ -191,31 +260,30 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
   }, []);
 
-  const speakText = useCallback(
-    (textToSpeak: string) => {
-      if (mutedRef.current) return;
-      if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
+  const stopMediaRecorderOnly = useCallback((discard = false) => {
+    if (recordAutoStopRef.current !== null) {
+      window.clearTimeout(recordAutoStopRef.current);
+      recordAutoStopRef.current = null;
+    }
+    setIsRecordingAudio(false);
+    const rec = mediaRecorderRef.current;
+    mediaRecorderRef.current = null;
+    if (rec && rec.state !== 'inactive') {
       try {
-        window.speechSynthesis.cancel();
-        const clean = textToSpeak.replace(/[*_#`~[\]()]/g, '').trim();
-        if (!clean) return;
-        const utterance = new SpeechSynthesisUtterance(clean);
-        utterance.lang = resolveSpeechLocale(lang);
-        utterance.rate = 1.02;
-        utterance.pitch = 1.05;
-
-        const bestVoice = findVirtualAssistantVoice(lang);
-        if (bestVoice) {
-          utterance.voice = bestVoice;
+        if (discard) {
+          rec.onstop = null;
+          rec.ondataavailable = null;
         }
-
-        window.speechSynthesis.speak(utterance);
+        rec.stop();
       } catch {
         // ignore
       }
-    },
-    [lang]
-  );
+    }
+    if (discard && mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+  }, []);
 
   const stopListening = useCallback(() => {
     setIsListening(false);
@@ -230,13 +298,120 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       }
       recognitionRef.current = null;
     }
-  }, []);
+    stopMediaRecorderOnly(true);
+  }, [stopMediaRecorderOnly]);
+
+  const speakWithWebSpeechFallback = useCallback(
+    (cleanText: string, onDone?: () => void) => {
+      if (mutedRef.current || typeof window === 'undefined' || !('speechSynthesis' in window)) {
+        setIsSpeaking(false);
+        onDone?.();
+        return;
+      }
+      try {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(cleanText);
+        utterance.lang = resolveSpeechLocale(lang);
+        utterance.rate = 1.03;
+        utterance.pitch = 1.02;
+        const bestVoice = findVirtualAssistantVoice(lang);
+        if (bestVoice) utterance.voice = bestVoice;
+        utterance.onend = () => {
+          setIsSpeaking(false);
+          onDone?.();
+        };
+        utterance.onerror = () => {
+          setIsSpeaking(false);
+          onDone?.();
+        };
+        setIsSpeaking(true);
+        window.speechSynthesis.speak(utterance);
+      } catch {
+        setIsSpeaking(false);
+        onDone?.();
+      }
+    },
+    [lang]
+  );
+
+  const speakText = useCallback(
+    async (textToSpeak: string, allowAutoResume = false) => {
+      if (mutedRef.current) return;
+      const clean = textToSpeak.replace(/[*_#`~>]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (!clean) return;
+
+      stopSpeechOutput();
+      const ctrl = new AbortController();
+      speakAbortRef.current = ctrl;
+      setIsSpeaking(true);
+
+      const handleFinishSpeech = () => {
+        setIsSpeaking(false);
+        if (allowAutoResume && handsFreeRef.current && isOpenRef.current) {
+          window.setTimeout(() => {
+            if (isOpenRef.current && handsFreeRef.current) {
+              startListeningRef.current();
+            }
+          }, 350);
+        }
+      };
+
+      try {
+        const res = await fetch('/api/ai/tts', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: clean, lang }),
+          signal: ctrl.signal,
+        });
+        if (ctrl.signal.aborted) return;
+
+        if (res.ok) {
+          const data = (await res.json()) as {
+            success?: boolean;
+            audioBase64?: string;
+            mimeType?: string;
+          };
+          if (data.success && data.audioBase64 && !mutedRef.current) {
+            const audio = new Audio(
+              `data:${data.mimeType || 'audio/wav'};base64,${data.audioBase64}`
+            );
+            audioElRef.current = audio;
+            audio.onended = () => {
+              audioElRef.current = null;
+              handleFinishSpeech();
+            };
+            audio.onerror = () => {
+              audioElRef.current = null;
+              speakWithWebSpeechFallback(clean, handleFinishSpeech);
+            };
+            await audio.play().catch(() => {
+              audioElRef.current = null;
+              speakWithWebSpeechFallback(clean, handleFinishSpeech);
+            });
+            return;
+          }
+        }
+      } catch {
+        if (ctrl.signal.aborted) {
+          setIsSpeaking(false);
+          return;
+        }
+      }
+
+      if (!ctrl.signal.aborted && !mutedRef.current) {
+        speakWithWebSpeechFallback(clean, handleFinishSpeech);
+      } else {
+        setIsSpeaking(false);
+      }
+    },
+    [lang, speakWithWebSpeechFallback, stopSpeechOutput]
+  );
 
   const triggerCandidatePlay = useCallback(
     (candidate: VoiceCandidateItem) => {
       triggerHaptic('medium');
       stopListening();
-      stopSpeechSynthesis();
+      stopSpeechOutput();
       if (candidate.kind === 'channel' && candidate.channel) {
         onPlayChannel(candidate.channel);
         onClose();
@@ -255,7 +430,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         onClose();
       }
     },
-    [onClose, onPlayChannel, onPlayMatch, onPlayMovie, onPlaySeries, stopListening, stopSpeechSynthesis]
+    [onClose, onPlayChannel, onPlayMatch, onPlayMovie, onPlaySeries, stopListening, stopSpeechOutput]
   );
 
   const submitVoiceQuery = useCallback(
@@ -263,10 +438,22 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       const clean = rawQuery.trim();
       if (!clean) return;
       stopListening();
+      stopSpeechOutput();
       setIsThinking(true);
       setMicNotice(null);
       setInterimText('');
-      setInputText(clean);
+      setInputText('');
+
+      const userTurn: ConversationMessage = {
+        id: `u-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        role: 'user',
+        text: clean,
+      };
+      const priorHistory = messagesRef.current.slice(-10).map((m) => ({
+        role: m.role,
+        text: m.text,
+      }));
+      setMessages((prev) => [...prev, userTurn]);
 
       try {
         const historySlice = watchHistoryRef.current.slice(0, 8).map((h) => ({
@@ -294,12 +481,15 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             lang,
             previousItems: itemsRef.current,
             watchHistory: historySlice,
+            history: priorHistory,
+            activeMediaTitle,
           }),
         });
         const data = (await res.json()) as {
           success?: boolean;
           spokenReply?: string;
           autoPlay?: boolean;
+          action?: VoiceAssistantAppAction;
           items?: VoiceCandidateItem[];
         };
 
@@ -309,20 +499,39 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             es: 'Aquí tienes lo que he encontrado.',
             ca: 'Aquí tens el que he trobat.',
             en: 'Here is what I found.',
+            zh: '这是我为你找到的内容。',
           });
         const nextItems = Array.isArray(data.items) ? data.items : [];
 
-        setAssistantMessage(reply);
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `a-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            role: 'assistant',
+            text: reply,
+          },
+        ]);
         setItems(nextItems);
         setIsThinking(false);
 
+        if (data.action && onAppAction) {
+          void speakText(reply, false);
+          window.setTimeout(() => {
+            onAppAction(data.action!);
+            if (data.action?.type === 'open_world' || data.action?.type === 'surprise_me' || data.action?.type === 'open_friends') {
+              onClose();
+            }
+          }, 550);
+          return;
+        }
+
         if (data.autoPlay && nextItems.length > 0) {
-          speakText(reply);
+          void speakText(reply, false);
           window.setTimeout(() => {
             triggerCandidatePlay(nextItems[0]);
           }, 600);
         } else {
-          speakText(reply);
+          void speakText(reply, true);
         }
       } catch {
         setIsThinking(false);
@@ -330,22 +539,37 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           es: 'No pude conectar con el asistente ahora mismo. Inténtalo de nuevo.',
           ca: 'No he pogut connectar amb l’assistent ara mateix. Torna-ho a provar.',
           en: 'Could not reach the assistant right now. Please try again.',
+          zh: '暂时无法连接语音助手，请稍后再试。',
         });
-        setAssistantMessage(errMsg);
-        speakText(errMsg);
+        setMessages((prev) => [
+          ...prev,
+          { id: `err-${Date.now()}`, role: 'assistant', text: errMsg },
+        ]);
+        void speakText(errMsg, false);
       }
     },
-    [cleanName, lang, speakText, stopListening, triggerCandidatePlay]
+    [
+      activeMediaTitle,
+      cleanName,
+      lang,
+      onAppAction,
+      onClose,
+      speakText,
+      stopListening,
+      stopSpeechOutput,
+      triggerCandidatePlay,
+    ]
   );
 
-  const startListening = useCallback(() => {
-    const Ctor = getSpeechRecognitionCtor();
-    if (!Ctor) {
+  // Universal fallback microphone recorder -> /api/ai/transcribe (works even when Web Speech API is blocked)
+  const startAudioRecorderFallback = useCallback(async () => {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === 'undefined') {
       setMicNotice(
         pickLang(lang, {
-          es: 'Tu navegador no soporta micrófono directo; escribe tu petición abajo.',
-          ca: 'El navegador no suporta micròfon directe; escriu la petició a sota.',
-          en: 'Direct microphone is not supported here; type your request below.',
+          es: 'Tu navegador no permite capturar audio; escribe tu mensaje abajo.',
+          ca: 'El navegador no permet capturar àudio; escriu el missatge a sota.',
+          en: 'Audio capture is not available in this browser; type below.',
+          zh: '当前浏览器不支持录音；请在下方输入消息。',
         })
       );
       inputRef.current?.focus();
@@ -353,7 +577,123 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
 
     stopListening();
-    stopSpeechSynthesis();
+    stopSpeechOutput();
+    setMicNotice(null);
+    setInterimText('');
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaStreamRef.current = stream;
+
+      const mimeCandidate = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find((m) =>
+        MediaRecorder.isTypeSupported(m)
+      );
+      const recorder = mimeCandidate ? new MediaRecorder(stream, { mimeType: mimeCandidate }) : new MediaRecorder(stream);
+      audioChunksRef.current = [];
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (ev) => {
+        if (ev.data && ev.data.size > 0) {
+          audioChunksRef.current.push(ev.data);
+        }
+      };
+
+      recorder.onstop = async () => {
+        const usedMime = recorder.mimeType || 'audio/webm';
+        const chunks = audioChunksRef.current;
+        audioChunksRef.current = [];
+        stream.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
+        setIsRecordingAudio(false);
+        setIsListening(false);
+
+        if (chunks.length === 0) return;
+        const blob = new Blob(chunks, { type: usedMime });
+        if (blob.size < 400) return;
+
+        setIsThinking(true);
+        try {
+          const base64 = await blobToBase64(blob);
+          const res = await fetch('/api/ai/transcribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ audioBase64: base64, mimeType: usedMime, lang }),
+          });
+          const data = (await res.json()) as { success?: boolean; transcript?: string };
+          if (data.success && data.transcript?.trim()) {
+            await submitVoiceQuery(data.transcript.trim());
+            return;
+          }
+          setIsThinking(false);
+          setMicNotice(
+            pickLang(lang, {
+              es: 'No se escuchó voz clara. Pulsa el micro e inténtalo de nuevo.',
+              ca: 'No s’ha sentit veu clara. Prem el micro i torna-ho a provar.',
+              en: 'No clear voice detected. Tap the mic to retry.',
+              zh: '未检测到清晰语音，请点击麦克风重试。',
+            })
+          );
+        } catch {
+          setIsThinking(false);
+          setMicNotice(
+            pickLang(lang, {
+              es: 'Error al transcribir audio. Escribe abajo o reintenta.',
+              ca: 'Error en transcriure l’àudio. Escriu a sota o reintenta.',
+              en: 'Audio transcription error. Type below or retry.',
+              zh: '音频转写失败，请重说或直接打字。',
+            })
+          );
+        }
+      };
+
+      recorder.start();
+      setIsRecordingAudio(true);
+      setIsListening(true);
+      triggerHaptic('light');
+
+      recordAutoStopRef.current = window.setTimeout(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
+          mediaRecorderRef.current.stop();
+        }
+      }, 12000);
+    } catch {
+      setIsRecordingAudio(false);
+      setIsListening(false);
+      setMicNotice(
+        pickLang(lang, {
+          es: 'Permiso de micrófono bloqueado. Permite el micro o escribe abajo.',
+          ca: 'Permís de micròfon bloquejat. Permet el micro o escriu a sota.',
+          en: 'Microphone blocked. Allow mic permission or type below.',
+          zh: '麦克风权限被阻止，请允许权限或在下方输入。',
+        })
+      );
+    }
+  }, [lang, stopListening, stopSpeechOutput, submitVoiceQuery]);
+
+  const stopRecordingAndSend = useCallback(() => {
+    if (recordAutoStopRef.current !== null) {
+      window.clearTimeout(recordAutoStopRef.current);
+      recordAutoStopRef.current = null;
+    }
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state === 'recording') {
+      try {
+        rec.stop();
+      } catch {
+        stopMediaRecorderOnly(true);
+      }
+    }
+  }, [stopMediaRecorderOnly]);
+
+  const startListening = useCallback(() => {
+    const Ctor = getSpeechRecognitionCtor();
+    if (!Ctor) {
+      void startAudioRecorderFallback();
+      return;
+    }
+
+    stopListening();
+    stopSpeechOutput();
     setMicNotice(null);
     setInterimText('');
 
@@ -365,6 +705,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       rec.maxAlternatives = 1;
 
       let finalCaptured = '';
+      let submitted = false;
 
       rec.onresult = (ev) => {
         let interim = '';
@@ -378,7 +719,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         const merged = (finalStr || interim).trim();
         finalCaptured = merged;
         setInterimText(merged);
-        if (finalStr.trim()) {
+        if (finalStr.trim() && !submitted) {
+          submitted = true;
           void submitVoiceQuery(finalStr.trim());
         }
       };
@@ -387,20 +729,27 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         setIsListening(false);
         recognitionRef.current = null;
         const errCode = String(ev?.error || '');
-        if (errCode === 'not-allowed' || errCode === 'service-not-allowed') {
+        if (errCode === 'network' || errCode === 'service-not-allowed' || errCode === 'audio-capture') {
+          // Seamless fallback to MediaRecorder + Gemini transcription
+          void startAudioRecorderFallback();
+          return;
+        }
+        if (errCode === 'not-allowed') {
           setMicNotice(
             pickLang(lang, {
-              es: 'Permiso de micrófono denegado. Puedes escribir lo que quieres ver abajo.',
-              ca: 'Permís de micròfon denegat. Pots escriure què vols veure a sota.',
-              en: 'Microphone permission denied. You can type what you want to watch below.',
+              es: 'Permiso de micrófono denegado. Puedes escribir lo que quieres abajo.',
+              ca: 'Permís de micròfon denegat. Pots escriure a sota.',
+              en: 'Microphone permission denied. You can type below.',
+              zh: '麦克风权限被拒绝，请在下方输入。',
             })
           );
-        } else if (errCode !== 'no-speech') {
+        } else if (errCode !== 'no-speech' && errCode !== 'aborted') {
           setMicNotice(
             pickLang(lang, {
-              es: 'Micrófono inactivo. Pulsa el botón para intentarlo de nuevo o escribe abajo.',
-              ca: 'Micròfon inactiu. Prem el botó per tornar-ho a provar o escriu a sota.',
-              en: 'Mic idle. Tap the button to retry or type below.',
+              es: 'No pude oírte bien. Pulsa el micro para intentarlo o usa el chat de texto.',
+              ca: 'No t’he sentit bé. Prem el micro o escriu a sota.',
+              en: 'Could not hear clearly. Tap mic to retry or type below.',
+              zh: '未能清晰收音，请重试或输入文字。',
             })
           );
         }
@@ -409,7 +758,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       rec.onend = () => {
         setIsListening(false);
         recognitionRef.current = null;
-        if (finalCaptured.trim()) {
+        if (finalCaptured.trim() && !submitted) {
+          submitted = true;
           void submitVoiceQuery(finalCaptured.trim());
         }
       };
@@ -421,332 +771,462 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     } catch {
       setIsListening(false);
       recognitionRef.current = null;
+      void startAudioRecorderFallback();
     }
-  }, [lang, stopListening, stopSpeechSynthesis, submitVoiceQuery]);
+  }, [lang, startAudioRecorderFallback, stopListening, stopSpeechOutput, submitVoiceQuery]);
+
+  startListeningRef.current = startListening;
 
   useEffect(() => {
     if (isOpen) {
-      setAssistantMessage(initialGreeting);
+      setMessages([{ id: 'greeting-init', role: 'assistant', text: initialGreeting }]);
       setInputText('');
       setInterimText('');
       setItems([]);
       setMicNotice(null);
-      speakText(initialGreeting);
-      const timer = window.setTimeout(() => {
-        startListening();
-      }, 350);
       return () => {
-        window.clearTimeout(timer);
         stopListening();
-        stopSpeechSynthesis();
+        stopSpeechOutput();
       };
     } else {
       stopListening();
-      stopSpeechSynthesis();
+      stopSpeechOutput();
     }
-  }, [initialGreeting, isOpen, speakText, startListening, stopListening, stopSpeechSynthesis]);
+  }, [initialGreeting, isOpen, stopListening, stopSpeechOutput]);
+
+  const quickChips = useMemo(() => {
+    const map: Record<AppLanguage, string[]> = {
+      es: [
+        'Quiero ver DAZN LaLiga',
+        'Las mejores 3 pelis de ciencia ficción',
+        '¿Cómo funciona un agujero negro?',
+        'Dame una idea rápida para cenar',
+        '¿Cuándo juega el Barça?',
+        'Abre el Cine',
+      ],
+      ca: [
+        'Vull veure DAZN LaLiga',
+        'Les millors 3 pel·lícules de ciència-ficció',
+        'Com funciona un forat negre?',
+        'Dona’m una idea ràpida per sopar',
+        'Quan juga el Barça?',
+        'Obre el Cinema',
+      ],
+      en: [
+        'Play DAZN LaLiga',
+        'Top 3 sci-fi movies',
+        'How does a black hole work?',
+        'Quick dinner recipe idea',
+        'When does Barcelona play next?',
+        'Open Cinema',
+      ],
+      zh: [
+        '播放 DAZN LaLiga',
+        '推荐3部高分科幻电影',
+        '黑洞是怎么形成的？',
+        '给我推荐个快手晚餐',
+        '巴萨下一场比赛什么时候？',
+        '打开影院',
+      ],
+    };
+    return map[lang] || map.es;
+  }, [lang]);
 
   if (!isOpen) return null;
 
   return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="voice-assistant-title"
-      className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/85 backdrop-blur-md animate-fade-in"
-    >
-      <div
-        className="relative w-full sm:max-w-xl max-h-[92dvh] rounded-t-3xl sm:rounded-3xl bg-[#0B0C12] border border-white/[0.12] shadow-[0_24px_80px_rgba(0,0,0,0.9),0_0_40px_rgba(145,70,255,0.22)] flex flex-col overflow-hidden text-white"
-        onClick={(e) => e.stopPropagation()}
+    <AnimatePresence>
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="voice-assistant-title"
+        onClick={onClose}
+        className="fixed inset-0 z-[120] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-[#0B0B0F]/85 backdrop-blur-md"
       >
-        {/* Ambient Top Glow */}
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-44 rounded-full bg-gradient-to-b from-[#9146FF]/35 via-[#00F0FF]/15 to-transparent blur-3xl"
-        />
+        <motion.div
+          initial={{ y: 24, opacity: 0, scale: 0.98 }}
+          animate={{ y: 0, opacity: 1, scale: 1 }}
+          exit={{ y: 24, opacity: 0, scale: 0.98 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 28 }}
+          className="relative w-full sm:max-w-xl max-h-[92dvh] rounded-t-3xl sm:rounded-3xl bg-[#0B0B0F] border border-[#9146FF]/30 shadow-[0_24px_80px_rgba(0,0,0,0.9),0_0_48px_rgba(145,70,255,0.22)] flex flex-col overflow-hidden text-white"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Ambient Top Glow */}
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-80 h-44 rounded-full bg-gradient-to-b from-[#9146FF]/35 via-[#00F0FF]/12 to-transparent blur-3xl"
+          />
 
-        {/* Header */}
-        <div className="relative z-10 px-5 pt-4 pb-3 flex items-center justify-between border-b border-white/[0.08]">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#9146FF] to-[#00F0FF] p-[1.5px] shadow-[0_0_16px_rgba(145,70,255,0.5)]">
-              <div className="w-full h-full rounded-[14px] bg-[#0F111D] flex items-center justify-center text-[#D8B4FE]">
-                <Sparkles className="w-4 h-4" />
+          {/* Header */}
+          <div className="relative z-10 px-4 sm:px-5 pt-4 pb-3 flex items-center justify-between gap-2 border-b border-white/[0.08]">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#9146FF] to-[#00F0FF] p-[1.5px] shadow-[0_0_16px_rgba(145,70,255,0.45)] shrink-0">
+                <div className="w-full h-full rounded-[14px] bg-[#10121C] flex items-center justify-center text-[#BF94FF]">
+                  <Sparkles className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="min-w-0">
+                <h3 id="voice-assistant-title" className="font-display font-bold text-sm text-white truncate">
+                  {pickLang(lang, {
+                    es: 'RiffanAI · Voz y Conversación',
+                    ca: 'RiffanAI · Veu i Conversa',
+                    en: 'RiffanAI · Voice & Chat',
+                    zh: 'RiffanAI · 智能语音对话',
+                  })}
+                </h3>
+                <p className="text-[11px] text-zinc-400 truncate">
+                  {pickLang(lang, {
+                    es: 'Habla de cualquier tema, pide contenido o controla el reproductor',
+                    ca: 'Parla de qualsevol tema, demana contingut o controla el reproductor',
+                    en: 'Talk about anything, play content, or control the player',
+                    zh: '畅聊任何话题、点播内容或语音控制播放器',
+                  })}
+                </p>
               </div>
             </div>
-            <div>
-              <h3 id="voice-assistant-title" className="font-display font-bold text-sm text-white">
-                {pickLang(lang, {
-                  es: 'Asistente por Voz AI',
-                  ca: 'Assistent per Veu AI',
-                  en: 'AI Voice Assistant',
-                })}
-              </h3>
-              <p className="text-[11px] text-zinc-400">
-                {pickLang(lang, {
-                  es: 'Pide canales, partidos, pelis o series',
-                  ca: 'Demana canals, partits, pel·lis o sèries',
-                  en: 'Ask for channels, matches, movies or shows',
-                })}
-              </p>
-            </div>
-          </div>
 
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={() => {
-                const next = !voiceMuted;
-                setVoiceMuted(next);
-                if (next) stopSpeechSynthesis();
-              }}
-              aria-label={voiceMuted ? 'Activar voz' : 'Silenciar voz'}
-              className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-            >
-              {voiceMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                onClose();
-              }}
-              aria-label="Cerrar asistente"
-              className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] text-zinc-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
-            >
-              <X className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {/* Main Content Area */}
-        <div className="relative z-10 flex-1 overflow-y-auto p-5 space-y-5 no-scrollbar">
-          {/* Glowing Orb / Mic Hero */}
-          <div className="flex flex-col items-center justify-center pt-2">
-            <div className="relative flex items-center justify-center">
-              {isListening && (
-                <>
-                  <span className="absolute w-28 h-28 rounded-full bg-[#9146FF]/30 animate-ping opacity-60" />
-                  <span className="absolute w-36 h-36 rounded-full bg-[#00F0FF]/18 blur-md animate-pulse" />
-                </>
-              )}
-              {isThinking && (
-                <span className="absolute w-28 h-28 rounded-full border-2 border-dashed border-[#BF94FF] animate-spin opacity-80" />
-              )}
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 type="button"
                 onClick={() => {
-                  triggerHaptic('medium');
-                  if (isListening) stopListening();
-                  else startListening();
+                  triggerHaptic('light');
+                  setHandsFree((prev) => !prev);
                 }}
-                aria-label={isListening ? 'Detener micrófono' : 'Iniciar micrófono'}
-                className={`relative z-10 w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer ${
-                  isListening
-                    ? 'bg-gradient-to-tr from-[#9146FF] to-[#00F0FF] text-white shadow-[0_0_36px_rgba(145,70,255,0.7)] scale-105'
-                    : isThinking
-                    ? 'bg-[#181928] text-[#BF94FF] border border-[#9146FF]/50'
-                    : 'bg-[#141624] hover:bg-[#1B1E30] text-zinc-200 border border-white/15 hover:border-[#9146FF]/60 hover:scale-105'
+                title={pickLang(lang, {
+                  es: 'Modo manos libres (escucha tras responder)',
+                  ca: 'Mode mans lliures',
+                  en: 'Hands-free conversation mode',
+                  zh: '免提连续对话模式',
+                })}
+                className={`h-8 px-2.5 rounded-xl text-[11px] font-bold flex items-center gap-1 transition-colors cursor-pointer ${
+                  handsFree
+                    ? 'bg-[#9146FF] text-white shadow-[0_0_14px_rgba(145,70,255,0.45)]'
+                    : 'bg-[#10121C] hover:bg-white/[0.08] text-zinc-300 border border-white/[0.08]'
                 }`}
               >
-                {isThinking ? (
-                  <Loader2 className="w-7 h-7 animate-spin" />
-                ) : isListening ? (
-                  <Mic className="w-7 h-7" />
-                ) : (
-                  <MicOff className="w-7 h-7 text-zinc-400" />
-                )}
+                <Radio className="w-3.5 h-3.5" />
+                <span className="hidden sm:inline">
+                  {pickLang(lang, { es: 'Continuo', ca: 'Continu', en: 'Hands-free', zh: '连续' })}
+                </span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  const next = !voiceMuted;
+                  setVoiceMuted(next);
+                  if (next) stopSpeechOutput();
+                }}
+                aria-label={voiceMuted ? 'Activar voz' : 'Silenciar voz'}
+                className="w-8 h-8 rounded-xl bg-[#10121C] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                {voiceMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4" />}
+              </button>
+
+              {messages.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    stopSpeechOutput();
+                    setMessages([{ id: 'greeting-reset', role: 'assistant', text: initialGreeting }]);
+                    setItems([]);
+                  }}
+                  aria-label={pickLang(lang, { es: 'Limpiar conversación', ca: 'Netejar xat', en: 'Clear chat', zh: '清空对话' })}
+                  className="w-8 h-8 rounded-xl bg-[#10121C] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-400 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onClose();
+                }}
+                aria-label={pickLang(lang, { es: 'Cerrar asistente', ca: 'Tancar', en: 'Close assistant', zh: '关闭' })}
+                className="w-8 h-8 rounded-xl bg-[#10121C] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
-
-            <p className="text-[11px] font-semibold text-zinc-400 tracking-wider uppercase mt-3">
-              {isThinking
-                ? pickLang(lang, { es: 'Interpretando petición...', ca: 'Interpretant petició...', en: 'Thinking...' })
-                : isListening
-                ? pickLang(lang, { es: 'Escuchando... Di lo que quieres ver', ca: 'Escoltant... Digues què vols veure', en: 'Listening... Speak now' })
-                : pickLang(lang, { es: 'Pulsa el micro para hablar', ca: 'Prem el micro per parlar', en: 'Tap mic to speak' })}
-            </p>
           </div>
 
-          {/* Assistant Speech Bubble */}
-          <div className="p-4 rounded-2xl bg-[#141726]/90 border border-white/[0.08] shadow-inner text-center space-y-1.5">
-            <p className="text-sm sm:text-base font-semibold text-zinc-100 leading-snug">
-              “{interimText || assistantMessage}”
-            </p>
+          {/* Main Scrollable Area */}
+          <div ref={chatScrollRef} className="relative z-10 flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 no-scrollbar">
+            {/* Compact Glowing Orb / Mic Control */}
+            <div className="flex flex-col items-center justify-center pt-1">
+              <div className="relative flex items-center justify-center">
+                {isListening && (
+                  <>
+                    <span className="absolute w-24 h-24 rounded-full bg-[#9146FF]/35 animate-ping opacity-65" />
+                    <span className="absolute w-32 h-32 rounded-full bg-[#00F0FF]/18 blur-md animate-pulse" />
+                  </>
+                )}
+                {isSpeaking && !isListening && (
+                  <span className="absolute w-24 h-24 rounded-full border-2 border-[#9146FF]/60 animate-pulse" />
+                )}
+                {isThinking && (
+                  <span className="absolute w-24 h-24 rounded-full border-2 border-dashed border-[#BF94FF] animate-spin opacity-85" />
+                )}
+
+                <motion.button
+                  whileTap={{ scale: 0.94 }}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    if (isRecordingAudio) {
+                      stopRecordingAndSend();
+                    } else if (isListening) {
+                      stopListening();
+                    } else {
+                      startListening();
+                    }
+                  }}
+                  aria-label={
+                    isRecordingAudio
+                      ? 'Enviar audio'
+                      : isListening
+                      ? 'Detener micrófono'
+                      : 'Iniciar micrófono'
+                  }
+                  className={`relative z-10 w-18 h-18 rounded-full flex items-center justify-center transition-all duration-300 cursor-pointer ${
+                    isRecordingAudio
+                      ? 'bg-gradient-to-tr from-rose-500 to-[#9146FF] text-white shadow-[0_0_32px_rgba(244,63,94,0.65)] scale-105'
+                      : isListening
+                      ? 'bg-gradient-to-tr from-[#9146FF] to-[#00F0FF] text-white shadow-[0_0_32px_rgba(145,70,255,0.7)] scale-105'
+                      : isThinking
+                      ? 'bg-[#10121C] text-[#BF94FF] border border-[#9146FF]/50'
+                      : isSpeaking
+                      ? 'bg-[#9146FF] text-white shadow-[0_0_24px_rgba(145,70,255,0.55)]'
+                      : 'bg-[#10121C] hover:bg-[#191B2C] text-zinc-200 border border-white/15 hover:border-[#9146FF]/70'
+                  }`}
+                >
+                  {isThinking ? (
+                    <Loader2 className="w-7 h-7 animate-spin" />
+                  ) : isRecordingAudio ? (
+                    <Square className="w-6 h-6 fill-current" />
+                  ) : isListening ? (
+                    <Mic className="w-7 h-7" />
+                  ) : (
+                    <MicOff className="w-7 h-7 text-zinc-300" />
+                  )}
+                </motion.button>
+              </div>
+
+              <p className="text-[11px] font-semibold text-zinc-400 tracking-wider uppercase mt-2.5 text-center">
+                {isThinking
+                  ? pickLang(lang, { es: 'Pensando respuesta...', ca: 'Pensant resposta...', en: 'Thinking...', zh: '正在思考...' })
+                  : isRecordingAudio
+                  ? pickLang(lang, { es: 'Grabando audio · Pulsa para enviar', ca: 'Gravant · Prem per enviar', en: 'Recording · Tap to send', zh: '正在录音 · 点击发送' })
+                  : isListening
+                  ? pickLang(lang, { es: 'Escuchando... Habla ahora', ca: 'Escoltant... Parla ara', en: 'Listening... Speak now', zh: '正在聆听 · 请说话' })
+                  : isSpeaking
+                  ? pickLang(lang, { es: 'Hablando... Pulsa el micro para interrumpir', ca: 'Parlant... Prem per parlar', en: 'Speaking... Tap mic to interrupt', zh: '正在回复 · 点击麦克风可打断' })
+                  : pickLang(lang, { es: 'Pulsa el micro para hablar', ca: 'Prem el micro per parlar', en: 'Tap mic to talk', zh: '点击麦克风开始说话' })}
+              </p>
+            </div>
+
+            {/* Live Interim Transcript */}
+            {interimText && (
+              <div className="px-3.5 py-2 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/40 text-xs sm:text-sm text-[#E9D5FF] text-center">
+                “{interimText}”
+              </div>
+            )}
+
+            {/* Conversation History Thread */}
+            <div className="space-y-2.5">
+              {messages.map((msg) => (
+                <div
+                  key={msg.id}
+                  className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                >
+                  <div
+                    className={`max-w-[88%] px-3.5 py-2.5 rounded-2xl text-xs sm:text-sm leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'bg-[#9146FF] text-white rounded-br-sm shadow-[0_6px_20px_rgba(145,70,255,0.28)]'
+                        : 'bg-[#10121C] border border-white/[0.08] text-zinc-100 rounded-bl-sm'
+                    }`}
+                  >
+                    {msg.text}
+                  </div>
+                </div>
+              ))}
+            </div>
+
             {micNotice && (
-              <p className="text-xs text-amber-300/90 leading-tight">
+              <p className="text-xs text-amber-300/90 text-center bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2">
                 {micNotice}
               </p>
             )}
-          </div>
 
-          {/* Candidate Items Grid */}
-          {items.length > 0 && (
-            <div className="space-y-2 pt-1">
-              <div className="flex items-center justify-between text-xs text-zinc-400 px-1">
-                <span>
-                  {pickLang(lang, {
-                    es: `Opciones encontradas (${items.length})`,
-                    ca: `Opcions trobades (${items.length})`,
-                    en: `Options found (${items.length})`,
-                  })}
-                  {' · '}
-                  <span className="text-[#BF94FF]">
+            {/* Candidate Items Grid */}
+            {items.length > 0 && (
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between text-xs text-zinc-400 px-1">
+                  <span>
                     {pickLang(lang, {
-                      es: 'Pulsa o di "pon la primera"',
-                      ca: 'Prem o digues "posa la primera"',
-                      en: 'Tap or say "play first"',
+                      es: `Resultados (${items.length})`,
+                      ca: `Resultats (${items.length})`,
+                      en: `Results (${items.length})`,
+                      zh: `找到内容 (${items.length})`,
                     })}
+                    {' · '}
+                    <span className="text-[#BF94FF]">
+                      {pickLang(lang, {
+                        es: 'Pulsa o di "pon la primera"',
+                        ca: 'Prem o digues "posa la primera"',
+                        en: 'Tap or say "play first"',
+                        zh: '点击播放或说“播放第一个”',
+                      })}
+                    </span>
                   </span>
-                </span>
-              </div>
+                </div>
 
-              <div className="space-y-2 max-h-[36dvh] overflow-y-auto pr-1">
-                {items.map((it, idx) => (
-                  <button
-                    key={`${it.kind}-${it.id}-${idx}`}
-                    type="button"
-                    onClick={() => triggerCandidatePlay(it)}
-                    className="w-full p-2.5 rounded-2xl bg-[#10121D] hover:bg-[#161928] border border-white/[0.08] hover:border-[#9146FF]/60 flex items-center gap-3 text-left group transition-all cursor-pointer"
-                  >
-                    <div className="relative w-12 h-16 sm:w-14 sm:h-18 rounded-xl overflow-hidden bg-black/60 shrink-0 border border-white/10 flex items-center justify-center">
-                      {it.kind === 'channel' ? (
-                        <div className="p-2 w-full h-full flex items-center justify-center">
-                          {it.imageUrl ? (
-                            <img
-                              src={it.imageUrl}
-                              alt={it.title}
-                              className="max-h-full max-w-full object-contain filter drop-shadow"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <Tv className="w-5 h-5 text-[#BF94FF]" />
-                          )}
-                        </div>
-                      ) : it.kind === 'match' ? (
-                        <div className="p-1.5 w-full h-full flex items-center justify-center bg-emerald-950/40">
-                          {it.imageUrl ? (
-                            <img
-                              src={it.imageUrl}
-                              alt={it.title}
-                              className="w-8 h-8 object-contain"
-                              referrerPolicy="no-referrer"
-                            />
-                          ) : (
-                            <Trophy className="w-6 h-6 text-emerald-400" />
-                          )}
-                        </div>
-                      ) : (
-                        <PosterImage
-                          src={it.imageUrl || ''}
-                          alt={it.title}
-                          aspect="poster"
-                          fallbackTitle={it.title}
-                          imgClassName="w-full h-full object-cover"
-                        />
-                      )}
+                <div className="space-y-2 max-h-[34dvh] overflow-y-auto pr-1">
+                  {items.map((it, idx) => (
+                    <button
+                      key={`${it.kind}-${it.id}-${idx}`}
+                      type="button"
+                      onClick={() => triggerCandidatePlay(it)}
+                      className="w-full p-2.5 rounded-2xl bg-[#10121C] hover:bg-[#171A29] border border-white/[0.08] hover:border-[#9146FF]/60 flex items-center gap-3 text-left group transition-all cursor-pointer"
+                    >
+                      <div className="relative w-12 h-16 sm:w-14 sm:h-18 rounded-xl overflow-hidden bg-black/60 shrink-0 border border-white/10 flex items-center justify-center">
+                        {it.kind === 'channel' ? (
+                          <div className="p-2 w-full h-full flex items-center justify-center">
+                            {it.imageUrl ? (
+                              <img
+                                src={it.imageUrl}
+                                alt={it.title}
+                                className="max-h-full max-w-full object-contain filter drop-shadow"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <Tv className="w-5 h-5 text-[#BF94FF]" />
+                            )}
+                          </div>
+                        ) : it.kind === 'match' ? (
+                          <div className="p-1.5 w-full h-full flex items-center justify-center bg-emerald-950/40">
+                            {it.imageUrl ? (
+                              <img
+                                src={it.imageUrl}
+                                alt={it.title}
+                                className="w-8 h-8 object-contain"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <Trophy className="w-6 h-6 text-emerald-400" />
+                            )}
+                          </div>
+                        ) : (
+                          <PosterImage
+                            src={it.imageUrl || ''}
+                            alt={it.title}
+                            aspect="poster"
+                            fallbackTitle={it.title}
+                            imgClassName="w-full h-full object-cover"
+                          />
+                        )}
 
-                      {/* Number badge (1, 2, 3...) for easy voice ordinals */}
-                      <span className="absolute top-1 left-1 w-4 h-4 rounded-full bg-[#9146FF] text-[10px] font-bold text-white flex items-center justify-center shadow">
-                        {idx + 1}
-                      </span>
-                    </div>
-
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-1.5">
-                        <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase bg-white/10 text-zinc-300">
-                          {it.badge || it.kind}
+                        <span className="absolute top-1 left-1 w-4 h-4 rounded-full bg-[#9146FF] text-[10px] font-bold text-white flex items-center justify-center shadow">
+                          {idx + 1}
                         </span>
-                        {it.targetSeason && it.targetEpisode && (
-                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase bg-[#9146FF]/30 text-[#D8B4FE]">
-                            T{it.targetSeason}·E{it.targetEpisode}
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase bg-white/10 text-zinc-300">
+                            {it.badge || it.kind}
                           </span>
+                          {it.targetSeason && it.targetEpisode && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold tracking-wider uppercase bg-[#9146FF]/30 text-[#D8B4FE]">
+                              T{it.targetSeason}·E{it.targetEpisode}
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="font-display font-bold text-sm text-white truncate mt-0.5 group-hover:text-[#BF94FF] transition-colors">
+                          {it.title}
+                        </h4>
+                        {it.subtitle && (
+                          <p className="text-xs text-zinc-400 truncate mt-0.5">{it.subtitle}</p>
                         )}
                       </div>
-                      <h4 className="font-display font-bold text-sm text-white truncate mt-0.5 group-hover:text-[#BF94FF] transition-colors">
-                        {it.title}
-                      </h4>
-                      {it.subtitle && (
-                        <p className="text-xs text-zinc-400 truncate mt-0.5">{it.subtitle}</p>
-                      )}
-                    </div>
 
-                    <span className="w-9 h-9 rounded-xl bg-white/[0.06] group-hover:bg-[#9146FF] text-white flex items-center justify-center shrink-0 transition-colors">
-                      <Play className="w-4 h-4 fill-current ml-0.5" />
-                    </span>
-                  </button>
-                ))}
+                      <span className="w-9 h-9 rounded-xl bg-white/[0.06] group-hover:bg-[#9146FF] text-white flex items-center justify-center shrink-0 transition-colors">
+                        <Play className="w-4 h-4 fill-current ml-0.5" />
+                      </span>
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )}
 
-          {/* Quick Voice Chips */}
-          {items.length === 0 && (
-            <div className="space-y-1.5 pt-1">
-              <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider px-1">
-                {pickLang(lang, {
-                  es: 'Ejemplos que puedes pedir:',
-                  ca: 'Exemples que pots demanar:',
-                  en: 'Things you can ask:',
-                })}
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {[
-                  'Quiero ver DAZN LaLiga',
-                  'Las mejores 3 pelis de terror de este mes',
-                  'Ponme National Geographic',
-                  'Canales de Marruecos en directo',
-                  '¿Cuándo juega el Barça el siguiente partido?',
-                  'Capítulo 3 de la primera temporada de Nocturno',
-                  'Quiero ver la última serie que estaba viendo',
-                ].map((chip) => (
-                  <button
-                    key={chip}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      void submitVoiceQuery(chip);
-                    }}
-                    className="px-2.5 py-1 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] hover:border-[#9146FF]/40 text-xs text-zinc-300 hover:text-white transition-all cursor-pointer text-left"
-                  >
-                    {chip}
-                  </button>
-                ))}
+            {/* Quick Voice & Conversation Chips */}
+            {messages.length <= 2 && items.length === 0 && (
+              <div className="space-y-1.5 pt-1">
+                <p className="text-[11px] font-semibold text-zinc-400 uppercase tracking-wider px-1">
+                  {pickLang(lang, {
+                    es: 'Prueba diciendo o tocando:',
+                    ca: 'Prova dient o tocant:',
+                    en: 'Try asking:',
+                    zh: '试试这样问我：',
+                  })}
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {quickChips.map((chip) => (
+                    <button
+                      key={chip}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        void submitVoiceQuery(chip);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-[#10121C] hover:bg-[#9146FF]/20 border border-white/[0.08] hover:border-[#9146FF]/60 text-xs text-zinc-300 hover:text-white transition-all cursor-pointer text-left"
+                    >
+                      {chip}
+                    </button>
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
 
-        {/* Bottom Text Input Fallback */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (inputText.trim()) {
-              void submitVoiceQuery(inputText);
-            }
-          }}
-          className="relative z-10 p-3 bg-[#0A0B10] border-t border-white/[0.08] flex items-center gap-2"
-        >
-          <input
-            ref={inputRef}
-            type="text"
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            placeholder={pickLang(lang, {
-              es: 'Escribe lo que quieres ver o pulsa el micro...',
-              ca: 'Escriu què vols veure o prem el micro...',
-              en: 'Type what you want to watch or tap the mic...',
-            })}
-            className="flex-1 min-h-11 px-3.5 rounded-xl bg-white/[0.05] border border-white/10 focus:border-[#9146FF] text-xs sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
-          />
-          <button
-            type="submit"
-            disabled={!inputText.trim()}
-            className="w-11 h-11 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] disabled:opacity-30 text-white flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+          {/* Bottom Text Input */}
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              if (inputText.trim() && !isThinking) {
+                void submitVoiceQuery(inputText);
+              }
+            }}
+            className="relative z-10 p-3 bg-[#0B0B0F] border-t border-white/[0.08] flex items-center gap-2"
           >
-            <Send className="w-4 h-4" />
-          </button>
-        </form>
-      </div>
-    </div>
+            <input
+              ref={inputRef}
+              type="text"
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              placeholder={pickLang(lang, {
+                es: 'Escribe cualquier pregunta o pide qué ver...',
+                ca: 'Escriu qualsevol pregunta o demana què veure...',
+                en: 'Ask anything or say what you want to watch...',
+                zh: '输入任何问题或想看的内容...',
+              })}
+              className="flex-1 min-h-11 px-3.5 rounded-xl bg-[#10121C] border border-white/10 focus:border-[#9146FF] text-xs sm:text-sm text-white placeholder:text-zinc-500 outline-none transition-colors"
+            />
+            <button
+              type="submit"
+              disabled={!inputText.trim() || isThinking}
+              className="w-11 h-11 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] disabled:opacity-30 text-white flex items-center justify-center shrink-0 transition-colors cursor-pointer"
+            >
+              <Send className="w-4 h-4" />
+            </button>
+          </form>
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
   );
 };

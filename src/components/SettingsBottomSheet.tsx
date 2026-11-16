@@ -218,7 +218,9 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               type="button"
               onClick={() => {
                 triggerHaptic('light');
-                onChangeLang(lang === 'es' ? 'ca' : lang === 'ca' ? 'en' : 'es');
+                onChangeLang(
+                  lang === 'es' ? 'ca' : lang === 'ca' ? 'en' : lang === 'en' ? 'zh' : 'es'
+                );
               }}
               className={`${rowClass} cursor-pointer active:scale-[0.98]`}
             >
@@ -226,15 +228,26 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 <Globe className="w-5 h-5 text-[#BF94FF] shrink-0" />
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">
-                    {pickLang(lang, { es: 'Idioma', ca: 'Idioma', en: 'Language' })}
+                    {pickLang(lang, {
+                      es: 'Idioma',
+                      ca: 'Idioma',
+                      en: 'Language',
+                      zh: '语言',
+                    })}
                   </span>
                   <span className="block text-xs text-zinc-400">
-                    {lang === 'es' ? 'Español' : lang === 'ca' ? 'Català' : 'English'}
+                    {lang === 'es'
+                      ? 'Español'
+                      : lang === 'ca'
+                      ? 'Català'
+                      : lang === 'en'
+                      ? 'English'
+                      : '中文 (CHINO)'}
                   </span>
                 </span>
               </span>
               <span className="text-xs font-bold text-[#BF94FF] uppercase shrink-0">
-                {lang}
+                {lang === 'zh' ? 'CHINO' : lang}
               </span>
             </button>
           </section>
