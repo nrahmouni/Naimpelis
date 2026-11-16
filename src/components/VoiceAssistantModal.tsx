@@ -1241,6 +1241,14 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         'Mamek taddal tafukt?',
         'Ẓer takurt DAZN LaLiga',
       ],
+      rif: [
+        'Ẓer takurt n uḍar DAZN LaLiga',
+        'Isura imezwura n tusna tasengant',
+        'Mamek taddal tafukt?',
+        'Aruy-iyi tabezzart i imnsi',
+        'Melmi ara tazzal Barqa?',
+        'Sker ssinima',
+      ],
     };
     return map[lang] || map.es;
   }, [lang]);
