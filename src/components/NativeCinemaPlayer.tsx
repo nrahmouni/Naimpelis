@@ -30,6 +30,9 @@ import {
   SlidersHorizontal,
   Check,
   MessageSquare,
+  Users,
+  Share2,
+  UserPlus,
   Send,
   Globe,
   AudioLines,
@@ -110,6 +113,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   roomCode,
   roomDisplayName,
   participantCount = 1,
+  participants = [],
   onExitTvMode,
   onOpenSmartTvModal,
   hasConnectedSmartTv = false,
@@ -213,6 +217,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [localLangPopup, setLocalLangPopup] = useState<LanguageNoticePopup | null>(null);
   const langPopupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [floatingChatDraft, setFloatingChatDraft] = useState('');
+  const [floatingChatTab, setFloatingChatTab] = useState<'chat' | 'friends'>('chat');
+  const [floatingCopied, setFloatingCopied] = useState<boolean>(false);
   const [recentIncomingChatBubble, setRecentIncomingChatBubble] = useState<ChatMessage | null>(
     null
   );
@@ -2736,127 +2742,241 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {floatingChatOpen && !isMinimized && !isTvMode && (
           <div
             onClick={(e) => e.stopPropagation()}
-            className="pointer-events-auto absolute inset-y-2 right-2 z-45 w-[86%] max-w-[310px] sm:w-[320px] rounded-2xl bg-[#18181B]/88 backdrop-blur-xl border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
+            className="pointer-events-auto absolute inset-y-2 right-2 z-45 w-[88%] max-w-[320px] sm:w-[330px] rounded-3xl bg-black/40 backdrop-blur-md border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
           >
-            <div className="px-3 py-2 border-b border-white/10 bg-[#0E0E10]/70 flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <MessageSquare className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
-                <span className="font-display font-bold text-xs text-white truncate">
-                  {pickLang(lang, {
-                    es: 'Chat Flotante en Vivo',
-                    ca: 'Xat Flotant en Directe',
-                    en: 'Floating Live Chat',
-                  })}
-                </span>
+            {/* Header with Mode Tabs: Chat & Amigos */}
+            <div className="px-3 py-2 border-b border-white/10 bg-black/40 flex items-center justify-between gap-2 shrink-0">
+              <div className="flex items-center gap-1 bg-white/[0.06] p-0.5 rounded-xl border border-white/[0.08]">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFloatingChatTab('chat');
+                  }}
+                  className={`min-h-[28px] px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    floatingChatTab === 'chat'
+                      ? 'bg-[#9146FF] text-white shadow-sm'
+                      : 'text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  <MessageSquare className="w-3 h-3" />
+                  <span>{t.tabChat}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setFloatingChatTab('friends');
+                  }}
+                  className={`min-h-[28px] px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    floatingChatTab === 'friends'
+                      ? 'bg-[#9146FF] text-white shadow-sm'
+                      : 'text-zinc-300 hover:text-white'
+                  }`}
+                >
+                  <Users className="w-3 h-3" />
+                  <span>{pickLang(lang, { es: 'Amigos', ca: 'Amics', en: 'Friends' })}</span>
+                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-black/40 text-zinc-200 tabular-nums">
+                    {participants.length > 0 ? participants.length : participantCount}
+                  </span>
+                </button>
               </div>
-              <button
-                type="button"
-                onClick={() => onToggleFloatingChat?.()}
-                className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-zinc-200 cursor-pointer"
-                aria-label={pickLang(lang, {
-                  es: 'Cerrar chat flotante',
-                  ca: 'Tancar xat flotant',
-                  en: 'Close floating chat',
-                })}
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onToggleFloatingChat?.()}
+                  title={pickLang(lang, { es: 'Cerrar / Anclar', ca: 'Tancar / Ancorar', en: 'Close / Dock' })}
+                  className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-zinc-200 cursor-pointer transition-colors"
+                  aria-label={pickLang(lang, {
+                    es: 'Cerrar chat flotante',
+                    ca: 'Tancar xat flotant',
+                    en: 'Close floating chat',
+                  })}
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto overscroll-contain p-2.5 space-y-2 min-h-0">
-              {messages.length === 0 ? (
-                <div className="py-6 text-center text-[11px] text-zinc-400">
-                  {pickLang(lang, {
-                    es: 'Comenta la película aquí sin perder de vista el vídeo.',
-                    ca: 'Comenta la pel·lícula aquí sense perdre de vista el vídeo.',
-                    en: 'Chat here without losing sight of the video.',
-                  })}
+            {/* TAB CONTENT */}
+            {floatingChatTab === 'chat' ? (
+              <>
+                <div className="flex-1 overflow-y-auto overscroll-contain p-2.5 space-y-2 min-h-0 custom-scrollbar">
+                  {messages.length === 0 ? (
+                    <div className="py-8 text-center text-[11px] text-zinc-400 space-y-1">
+                      <p className="font-semibold text-zinc-300">
+                        {pickLang(lang, {
+                          es: 'Comenta en vivo sobre el vídeo',
+                          ca: 'Comenta en directe sobre el vídeo',
+                          en: 'Live chat over the stream',
+                        })}
+                      </p>
+                      <p className="text-[10px]">
+                        {pickLang(lang, {
+                          es: 'Tus mensajes flotan sin tapar la pantalla.',
+                          ca: 'Els teus missatges floten sense tapar.',
+                          en: 'Translucent floating live comments.',
+                        })}
+                      </p>
+                    </div>
+                  ) : (
+                    messages.slice(-30).map((msg) => {
+                      if (msg.isSystem) {
+                        return (
+                          <div
+                            key={msg.id}
+                            className="py-1 px-2 rounded-lg bg-white/[0.05] text-[10px] text-zinc-300 text-center"
+                          >
+                            {msg.text}
+                          </div>
+                        );
+                      }
+                      const isMe = msg.senderId === currentUserId;
+                      return (
+                        <div
+                          key={msg.id}
+                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                        >
+                          <span className="text-[10px] font-semibold text-zinc-300 mb-0.5 px-1">
+                            {msg.senderName}
+                          </span>
+                          <div
+                            className={`max-w-[88%] px-2.5 py-1.5 rounded-xl text-xs leading-snug break-words ${
+                              isMe
+                                ? 'bg-[#9146FF] text-white rounded-tr-xs'
+                                : 'bg-[#181A24]/90 text-zinc-100 border border-white/10 rounded-tl-xs'
+                            }`}
+                          >
+                            {msg.text}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={floatingChatEndRef} />
                 </div>
-              ) : (
-                messages.slice(-30).map((msg) => {
-                  if (msg.isSystem) {
-                    return (
-                      <div
-                        key={msg.id}
-                        className="py-1 px-2 rounded-lg bg-white/[0.05] text-[10px] text-zinc-300 text-center"
+
+                {onSendReaction && (
+                  <div className="px-2 py-1 border-t border-white/10 bg-black/40 flex items-center justify-around shrink-0">
+                    {['🔥', '😂', '⚽', '🍿', '👏', '❤️'].map((em) => (
+                      <button
+                        key={em}
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          onSendReaction(em);
+                        }}
+                        className="w-7 h-7 rounded-lg hover:bg-white/15 flex items-center justify-center text-sm cursor-pointer"
                       >
-                        {msg.text}
-                      </div>
-                    );
-                  }
-                  const isMe = msg.senderId === currentUserId;
-                  return (
-                    <div
-                      key={msg.id}
-                      className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
+                        {em}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                {onSendMessage && (
+                  <form
+                    onSubmit={handleFloatingChatSubmit}
+                    className="p-2 border-t border-white/10 bg-black/60 flex items-center gap-1.5 shrink-0"
+                  >
+                    <input
+                      type="text"
+                      value={floatingChatDraft}
+                      onChange={(e) => setFloatingChatDraft(e.target.value)}
+                      placeholder={pickLang(lang, {
+                        es: 'Escribe sin ocultar el vídeo...',
+                        ca: 'Escriu sense amagar el vídeo...',
+                        en: 'Type message...',
+                      })}
+                      maxLength={300}
+                      className="flex-1 min-w-0 h-9 px-3 rounded-xl bg-black/75 border border-white/15 focus:border-[#9146FF] text-base sm:text-xs text-white placeholder:text-zinc-400 outline-none"
+                    />
+                    <button
+                      type="submit"
+                      disabled={!floatingChatDraft.trim()}
+                      className="w-9 h-9 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] disabled:opacity-35 flex items-center justify-center text-white shrink-0 cursor-pointer"
+                      aria-label={pickLang(lang, {
+                        es: 'Enviar mensaje',
+                        ca: 'Enviar missatge',
+                        en: 'Send message',
+                      })}
                     >
-                      <span className="text-[10px] font-semibold text-zinc-300 mb-0.5 px-1">
-                        {msg.senderName}
-                      </span>
-                      <div
-                        className={`max-w-[88%] px-2.5 py-1.5 rounded-xl text-xs leading-snug break-words ${
-                          isMe
-                            ? 'bg-[#9146FF] text-white rounded-tr-xs'
-                            : 'bg-[#26262C] text-zinc-100 border border-white/10 rounded-tl-xs'
-                        }`}
-                      >
-                        {msg.text}
+                      <Send className="w-3.5 h-3.5" />
+                    </button>
+                  </form>
+                )}
+              </>
+            ) : (
+              /* AMIGOS EN SALA TAB */
+              <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0 custom-scrollbar">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                    {pickLang(lang, { es: 'En esta sala', ca: 'A aquesta sala', en: 'In this room' })}
+                  </span>
+                  <span className="inline-flex items-center gap-1 text-[11px] font-mono text-[#00F593]">
+                    <span className="w-1.5 h-1.5 rounded-full bg-[#00F593] animate-pulse" />
+                    {participants.length > 0 ? participants.length : participantCount}{' '}
+                    {pickLang(lang, { es: 'en vivo', ca: 'en directe', en: 'live' })}
+                  </span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {(participants.length > 0 ? participants : [{ id: currentUserId || 'me', name: userName, avatar: '🎬', color: '#9146FF' }]).map((p) => (
+                    <div
+                      key={p.id}
+                      className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/[0.04] border border-white/[0.06]"
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div
+                          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
+                          style={{ backgroundColor: p.color || '#9146FF' }}
+                        >
+                          {p.avatar && p.avatar.length <= 2 ? p.avatar : p.name.slice(0, 1).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold text-white truncate">{p.name}</p>
+                          <p className="text-[10px] text-emerald-400 flex items-center gap-1">
+                            <span className="w-1 h-1 rounded-full bg-emerald-400" />
+                            <span>
+                              {pickLang(lang, { es: 'Viendo vídeo', ca: 'Veient vídeo', en: 'Watching' })}
+                            </span>
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  );
-                })
-              )}
-              <div ref={floatingChatEndRef} />
-            </div>
+                  ))}
+                </div>
 
-            {onSendReaction && (
-              <div className="px-2 py-1 border-t border-white/10 bg-black/40 flex items-center justify-around shrink-0">
-                {['🔥', '😂', '⚽', '🍿', '👏', '❤️'].map((em) => (
+                <div className="pt-2">
                   <button
-                    key={em}
                     type="button"
                     onClick={() => {
                       triggerHaptic('light');
-                      onSendReaction(em);
+                      const shareUrl = `${window.location.origin}?room=${roomCode || ''}`;
+                      if (navigator.clipboard) {
+                        navigator.clipboard.writeText(shareUrl).then(() => {
+                          setFloatingCopied(true);
+                          setTimeout(() => setFloatingCopied(false), 2400);
+                        });
+                      }
                     }}
-                    className="w-7 h-7 rounded-lg hover:bg-white/15 flex items-center justify-center text-sm cursor-pointer"
+                    className="w-full min-h-10 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
                   >
-                    {em}
+                    {floatingCopied ? (
+                      <>
+                        <Check className="w-3.5 h-3.5 text-[#00F593]" />
+                        <span>{pickLang(lang, { es: '¡Enlace copiado!', ca: 'Enllaç copiat!', en: 'Link copied!' })}</span>
+                      </>
+                    ) : (
+                      <>
+                        <UserPlus className="w-3.5 h-3.5" />
+                        <span>{pickLang(lang, { es: 'Invitar amigos a la sala', ca: 'Convidar amics a la sala', en: 'Invite friends to room' })}</span>
+                      </>
+                    )}
                   </button>
-                ))}
+                </div>
               </div>
-            )}
-
-            {onSendMessage && (
-              <form
-                onSubmit={handleFloatingChatSubmit}
-                className="p-2 border-t border-white/10 bg-black/60 flex items-center gap-1.5 shrink-0"
-              >
-                <input
-                  type="text"
-                  value={floatingChatDraft}
-                  onChange={(e) => setFloatingChatDraft(e.target.value)}
-                  placeholder={pickLang(lang, {
-                    es: 'Escribe sin ocultar el vídeo...',
-                    ca: 'Escriu sense amagar el vídeo...',
-                    en: 'Type message...',
-                  })}
-                  maxLength={300}
-                  className="flex-1 min-w-0 h-9 px-3 rounded-xl bg-black/75 border border-white/15 focus:border-white/40 text-base sm:text-xs text-white placeholder:text-zinc-400 outline-none"
-                />
-                <button
-                  type="submit"
-                  disabled={!floatingChatDraft.trim()}
-                  className="w-9 h-9 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] disabled:opacity-35 flex items-center justify-center text-white shrink-0 cursor-pointer"
-                  aria-label={pickLang(lang, {
-                    es: 'Enviar mensaje',
-                    ca: 'Enviar missatge',
-                    en: 'Send message',
-                  })}
-                >
-                  <Send className="w-3.5 h-3.5" />
-                </button>
-              </form>
             )}
           </div>
         )}
@@ -5032,21 +5152,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               )}
             </div>
 
-            {/* Right: Siguiente + Solo Mando (if TV connected) + Cast TV + Chat + Ajustes */}
+            {/* Right: Solo Mando (if TV connected) + Cast TV + Chat + Ajustes */}
             <div className="flex items-center gap-2 shrink-0">
-              {videoState.seriesMeta && onNextEpisode && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('success');
-                    onNextEpisode();
-                  }}
-                  className="min-h-[38px] px-3.5 rounded-2xl bg-[#9146FF] text-white hover:bg-[#772CE8] text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
-                >
-                  <SkipForward className="w-3.5 h-3.5 fill-current" />
-                  <span>{pickLang(lang, { es: 'Siguiente', ca: 'Següent', en: 'Next' })}</span>
-                </button>
-              )}
 
               {hasConnectedSmartTv && (
                 <button
@@ -5174,7 +5281,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     <span>
                       {voiceChat.status === 'requesting'
                         ? pickLang(lang, { es: 'Conectando...', ca: 'Connectant...', en: 'Connecting...' })
-                        : pickLang(lang, { es: 'Llamada', ca: 'Trucada', en: 'Voice' })}
+                        : pickLang(lang, { es: 'Voz', ca: 'Veu', en: 'Voice' })}
                     </span>
                     {voiceChat.voicePeers.length > 0 && (
                       <span className="px-1.5 py-0.5 rounded-md bg-emerald-500/25 text-emerald-200 text-[10px] font-mono tabular-nums">
@@ -5194,12 +5301,16 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   }}
                   className={`min-h-[38px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
                     floatingChatOpen
-                      ? 'bg-[#9146FF] text-white border-[#9146FF]'
+                      ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-sm'
                       : 'bg-[#26262C] hover:bg-white/[0.12] text-zinc-200 border-white/[0.09]'
                   }`}
+                  title={pickLang(lang, { es: 'Sala y chat en vivo', ca: 'Sala i xat en directe', en: 'Room & live chat' })}
                 >
-                  <MessageSquare className="w-3.5 h-3.5 shrink-0" />
-                  <span>{t.tabChat}</span>
+                  <Users className="w-3.5 h-3.5 shrink-0" />
+                  <span>
+                    {pickLang(lang, { es: 'Sala', ca: 'Sala', en: 'Room' })} ·{' '}
+                    {participants.length > 0 ? participants.length : participantCount}
+                  </span>
                 </button>
               )}
 

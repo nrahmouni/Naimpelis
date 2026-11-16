@@ -137,6 +137,9 @@ const LiveMatchCenter = React.lazy(() =>
 const SeriesEpisodesDock = React.lazy(() =>
   import('./components/SeriesEpisodesDock').then((m) => ({ default: m.SeriesEpisodesDock }))
 );
+const SimilarMoviesDock = React.lazy(() =>
+  import('./components/SimilarMoviesDock').then((m) => ({ default: m.SimilarMoviesDock }))
+);
 const TvReceiverPairingScreen = React.lazy(() =>
   import('./components/TvReceiverPairingScreen').then((m) => ({ default: m.TvReceiverPairingScreen }))
 );

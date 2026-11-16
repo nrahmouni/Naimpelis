@@ -596,15 +596,15 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
           </div>
 
           {/* Centered Big Live Scoreboard Row */}
-          <div className="flex items-center justify-center gap-4 sm:gap-8 py-1">
+          <div className="flex items-center justify-center gap-3 sm:gap-6 py-1">
             <div className="flex items-center justify-end gap-2.5 flex-1 min-w-0">
-              <span className="font-display font-bold text-sm sm:text-base text-white truncate text-right">
+              <span className="font-display font-bold text-xs sm:text-sm md:text-base text-white line-clamp-2 leading-tight text-right break-words">
                 {resolvedHomeTeam}
               </span>
               <ClubLogoImg src={resolvedHomeLogo} alt={resolvedHomeTeam} shortCode={homeShort} size="w-8 h-8 sm:w-9 sm:h-9" />
             </div>
 
-            <div className="flex flex-col items-center shrink-0 min-w-[78px]">
+            <div className="flex flex-col items-center shrink-0 min-w-[72px]">
               <div
                 className={`text-xl sm:text-2xl font-mono font-black tabular-nums tracking-tight ${
                   resolvedState === 'live' ? 'text-rose-400' : 'text-white'
@@ -621,7 +621,7 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
 
             <div className="flex items-center justify-start gap-2.5 flex-1 min-w-0">
               <ClubLogoImg src={resolvedAwayLogo} alt={resolvedAwayTeam} shortCode={awayShort} size="w-8 h-8 sm:w-9 sm:h-9" />
-              <span className="font-display font-bold text-sm sm:text-base text-white truncate text-left">
+              <span className="font-display font-bold text-xs sm:text-sm md:text-base text-white line-clamp-2 leading-tight text-left break-words">
                 {resolvedAwayTeam}
               </span>
             </div>

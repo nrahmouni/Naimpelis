@@ -4,6 +4,7 @@ import type {
   CloudBrowserState,
   FloatingReaction,
   LanguageNoticePopup,
+  Participant,
   SecondaryStreamState,
   TvRemoteCommandType,
   VideoState,
@@ -189,6 +190,7 @@ export interface NativeCinemaPlayerProps {
   roomCode?: string;
   roomDisplayName?: string;
   participantCount?: number;
+  participants?: Participant[];
   onExitTvMode?: () => void;
   onOpenSmartTvModal?: () => void;
   hasConnectedSmartTv?: boolean;

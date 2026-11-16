@@ -603,6 +603,42 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               <GameVoiceBar lang={lang} voice={voiceChat} compact />
             </div>
           )}
+
+          {/* Mini Friends / Participants Strip inside Chat */}
+          <div className="mx-3 mt-2 px-3 py-1.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 shrink-0">
+                {pickLang(lang, { es: 'En sala', ca: 'A la sala', en: 'In room' })}:
+              </span>
+              <div className="flex items-center -space-x-1.5 shrink-0">
+                {participants.slice(0, 6).map((p) => (
+                  <div
+                    key={p.id}
+                    title={`${p.name} · ${p.id === currentUser.id ? t.you : pickLang(lang, { es: 'En sala', ca: 'A la sala', en: 'In room' })}`}
+                    className="relative w-6 h-6 rounded-full border-2 border-[#12131C] flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
+                    style={{ backgroundColor: p.color || '#9146FF' }}
+                  >
+                    {p.avatar && p.avatar.length <= 2 ? p.avatar : p.name.slice(0, 1).toUpperCase()}
+                    <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#00F593] border border-[#12131C]" />
+                  </div>
+                ))}
+              </div>
+              {participants.length > 6 && (
+                <span className="text-[10px] text-zinc-400 font-bold tabular-nums">
+                  +{participants.length - 6}
+                </span>
+              )}
+            </div>
+
+            <button
+              type="button"
+              onClick={onOpenFriendsModal || handleShareInvite}
+              className="min-h-[26px] px-2 rounded-lg bg-[#9146FF]/20 hover:bg-[#9146FF]/30 border border-[#9146FF]/40 text-[#D8B4FE] text-[11px] font-bold flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0"
+            >
+              <UserPlus className="w-3 h-3" />
+              <span>{pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}</span>
+            </button>
+          </div>
           {/* Active Poll Banner (if open) */}
           {activePoll && !activePoll.isClosed && (
             <PartyPollCard

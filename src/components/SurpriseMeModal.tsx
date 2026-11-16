@@ -524,7 +524,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
                   onClick={() => setRequestType(tOpt)}
                   className={`h-8 px-3 rounded-xl text-[11px] font-bold flex items-center gap-1 cursor-pointer transition-colors ${
                     requestType === tOpt
-                      ? 'bg-white text-[#090A10]'
+                      ? 'bg-[#9146FF] text-white shadow-sm'
                       : 'bg-white/[0.05] text-zinc-300 hover:text-white border border-white/[0.08]'
                   }`}
                 >

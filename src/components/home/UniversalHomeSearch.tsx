@@ -24,6 +24,7 @@ import type {
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { PosterImage } from '../ui/PosterImage';
+import { LanguageBadge } from '../ui/LanguageBadge';
 
 export type SearchCategoryFilter = 'all' | 'movies' | 'series' | 'sports' | 'tv' | 'games';
 
@@ -822,12 +823,12 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                             <p className="text-xs font-bold text-white truncate group-hover:text-[#D8B4FE]">
                               {movie.title}
                             </p>
-                            <p className="text-[10px] text-zinc-400">
-                              {movie.year || 'HD'}
-                              {movie.languages && movie.languages.length > 0
-                                ? ` · ${movie.languages[0]}`
-                                : ''}
-                            </p>
+                            <div className="flex items-center gap-1.5 text-[10px] text-zinc-400">
+                              <span>{movie.year || 'HD'}</span>
+                              {movie.languages && movie.languages.length > 0 && (
+                                <LanguageBadge code={movie.languages[0]} size="xs" />
+                              )}
+                            </div>
                           </div>
                         </button>
                       ))}

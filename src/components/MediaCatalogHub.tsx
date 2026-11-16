@@ -216,7 +216,7 @@ const STREAMING_PLATFORMS: {
     mark: 'ALL',
     accentBg: 'bg-white/15',
     accentText: 'text-white',
-    activeBorder: 'border-white bg-white text-[#050508]',
+    activeBorder: 'border-[#9146FF] bg-[#9146FF] text-white shadow-[0_6px_22px_rgba(145,70,255,0.35)]',
     cardGlow: 'from-zinc-800/40 to-[#0B0C12]',
     descEs: 'Todas las plataformas unidas',
     descCa: 'Totes les plataformes juntes',
@@ -2854,7 +2854,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             }}
                             className={`min-h-[38px] px-3.5 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
                               active
-                                ? 'bg-white text-[#050508] border-white'
+                                ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_4px_16px_rgba(145,70,255,0.35)]'
                                 : 'bg-white/[0.05] text-zinc-300 border-white/10 hover:bg-white/[0.1]'
                             }`}
                           >
@@ -3167,7 +3167,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                             }}
                             className={`min-h-[32px] px-2.5 sm:px-3 rounded-lg text-xs font-semibold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                               seriesModalLang === opt.code
-                                ? 'bg-white text-[#050508]'
+                                ? 'bg-[#9146FF] text-white shadow-sm'
                                 : 'text-zinc-400 hover:text-white'
                             }`}
                           >
@@ -3327,7 +3327,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           }}
                           className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
                             isActiveSeason
-                              ? 'bg-white text-[#050508] border-white shadow-sm'
+                              ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_4px_16px_rgba(145,70,255,0.35)]'
                               : 'bg-white/[0.05] hover:bg-white/[0.11] text-zinc-200 border-white/[0.1]'
                           }`}
                         >
@@ -3341,7 +3341,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           {s.episodeCount > 0 && (
                             <span
                               className={`text-[11px] font-normal tabular-nums ${
-                                isActiveSeason ? 'text-zinc-700' : 'text-zinc-400'
+                                isActiveSeason ? 'text-purple-200' : 'text-zinc-400'
                               }`}
                             >
                               · {s.episodeCount} cap.
