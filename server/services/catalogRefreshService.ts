@@ -1,7 +1,12 @@
 import { ENV } from '../config/env.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { logger } from '../utils/logger.ts';
-import { CHROME_UA, curlGetText } from '../extractors/httpHelpers.ts';
+import { CHROME_UA, areTitlesStrictlyEqual, curlGetText, generateSpanishTitleHints } from '../extractors/httpHelpers.ts';
+import {
+  resolveActiveGnulaMirrors,
+  scrapeGnulaCatalog,
+} from '../extractors/gnulaHdExtractor.ts';
+import { findMovidyUrlByTitle, fetchMovidyPageMetadata } from '../extractors/bingetrixMovidy.ts';
 import { listVestCatalogEntries } from './vestMirrorService.ts';
 
 export type CatalogSourceTag =
@@ -73,7 +78,7 @@ export interface RefreshCycleSummary {
 }
 
 export function normalizeCatalogQuery(input: string): string {
-  return String(input || '')
+  let cleaned = String(input || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -81,10 +86,60 @@ export function normalizeCatalogQuery(input: string): string {
     .replace(/[^a-z0-9]+/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Common typo corrections (e.g. "sipider" -> "spider", "spyderman" -> "spider man")
+  cleaned = cleaned
+    .replace(/\bsipidr?e?r?\b/g, 'spider')
+    .replace(/\bspyderman\b/g, 'spider man')
+    .replace(/\bspidermon\b/g, 'spider man')
+    .replace(/\binterstelar\b/g, 'interstellar')
+    .replace(/\bavater\b/g, 'avatar')
+    .replace(/\bavangers?\b/g, 'avengers');
+
+  return cleaned.replace(/\s+/g, ' ').trim();
 }
 
 export function normalizeCompactCatalogQuery(input: string): string {
   return normalizeCatalogQuery(input).replace(/\s+/g, '');
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const an = a.length;
+  const bn = b.length;
+  if (an === 0) return bn;
+  if (bn === 0) return an;
+  const matrix: number[][] = [];
+  for (let i = 0; i <= bn; i++) {
+    matrix[i] = [i];
+  }
+  for (let j = 0; j <= an; j++) {
+    matrix[0][j] = j;
+  }
+  for (let i = 1; i <= bn; i++) {
+    for (let j = 1; j <= an; j++) {
+      if (b.charAt(i - 1) === a.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1];
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
+        );
+      }
+    }
+  }
+  return matrix[bn][an];
+}
+
+function doTokensMatchFuzzy(queryToken: string, candToken: string): boolean {
+  if (queryToken === candToken) return true;
+  if (candToken.includes(queryToken) || queryToken.includes(candToken)) return true;
+  if (queryToken.length >= 3 && candToken.length >= 3) {
+    if (Math.abs(queryToken.length - candToken.length) <= 2) {
+      const dist = levenshteinDistance(queryToken, candToken);
+      if (dist <= 2 && dist <= Math.floor(queryToken.length / 2)) return true;
+    }
+  }
+  return false;
 }
 
 /**
@@ -128,8 +183,7 @@ export function scoreTitleRelevance(
     }
 
     const candTokens = nSpace.split(' ').filter(Boolean);
-    if (qTokens.length > 0 && qTokens.every((qt) => candTokens.includes(qt))) {
-      // Bonus if token counts match closely (prevents long anthology subtitles winning)
+    if (qTokens.length > 0 && qTokens.every((qt) => qTokens.length <= candTokens.length && qTokens.every((qt) => candTokens.some((ct) => doTokensMatchFuzzy(qt, ct))))) {
       const closeness = Math.round((qTokens.length / Math.max(1, candTokens.length)) * 80);
       bestTier = Math.max(bestTier, 320 + closeness);
       continue;
@@ -141,10 +195,9 @@ export function scoreTitleRelevance(
     }
 
     if (qTokens.length > 0) {
-      const hits = qTokens.filter((qt) => nSpace.includes(qt)).length;
+      const hits = qTokens.filter((qt) => candTokens.some((ct) => doTokensMatchFuzzy(qt, ct))).length;
       if (hits > 0) {
         const ratio = hits / qTokens.length;
-        // Require >= 50% meaningful token overlap for multi-word queries
         if (qTokens.length === 1 || ratio >= 0.5) {
           bestTier = Math.max(bestTier, Math.round(ratio * 140));
         }
@@ -472,49 +525,56 @@ async function refreshMovidySource(): Promise<SourceRefreshMetric> {
 }
 
 /**
- * Crawl GnulaHD (https://ww3.gnulahd.nu/) & SeriesKao (https://serieskao.top/)
+ * Crawl GnulaHD (https://dominiosgnulahd.com/ -> ww3.gnulahd.nu, gnulahd.click, gnulahd.bid)
+ * & SeriesKao (https://serieskao.top/)
  */
 async function refreshGnulaAndSeriesKao(): Promise<SourceRefreshMetric[]> {
   const out: SourceRefreshMetric[] = [];
 
-  // 1. GnulaHD
+  // 1. GnulaHD across all active mirrors & sections (peliculas, series, anime)
   const gStart = Date.now();
   let gCount = 0;
   try {
-    const gHtml = await fetchHtmlSafe(
-      'https://ww3.gnulahd.nu/?gnm=1',
-      'https://ww3.gnulahd.nu/?gnm=1'
-    );
-    if (gHtml) {
-      const linkRe =
-        /<a[^>]+href="(https?:\/\/ww3\.gnulahd\.nu\/(?:peliculas?|series?)\/[^"]+)"[^>]*>(?:[\s\S]{0,400}?)<(?:img[^>]+(?:data-src|src)="([^"]+)"[^>]*alt="([^"]+)"|h\d[^>]*>([^<]+)<\/h\d>)/gi;
-      let m: RegExpExecArray | null;
-      while ((m = linkRe.exec(gHtml)) !== null && gCount < 30) {
-        const href = String(m[1] || '').trim();
-        const poster = String(m[2] || '').trim();
-        const title = String(m[3] || m[4] || '').trim();
-        if (!href || !title || title.length < 2) continue;
-        const isTv = href.includes('/serie');
-        upsertIndexedEntry({
-          id: `gnula-${normalizeCompactCatalogQuery(title).slice(0, 32)}`,
-          mediaType: isTv ? 'tv' : 'movie',
-          title,
-          originalTitle: title,
-          year: 'HD',
-          rating: '',
-          overview: 'Disponible en streaming HD Español y VOSE vía GnulaHD.',
-          poster: poster ? `/api/img-proxy?url=${encodeURIComponent(poster)}` : '',
-          backdrop: poster ? `/api/img-proxy?url=${encodeURIComponent(poster)}` : '',
-          gnulaUrl: href,
-          languages: ['Castellano', 'Latino', 'VOSE'],
-          sources: ['gnula'],
-          popularity: 18,
-          indexedAt: Date.now(),
-        });
-        gCount += 1;
-      }
+    await resolveActiveGnulaMirrors();
+    const [moviesP1, seriesP1] = await Promise.all([
+      scrapeGnulaCatalog({ mediaType: 'movie', page: 1 }).catch(() => ({ items: [], hasMore: false })),
+      scrapeGnulaCatalog({ mediaType: 'tv', page: 1 }).catch(() => ({ items: [], hasMore: false })),
+    ]);
+    await politeDelay(200);
+    const [moviesP2, animeP1] = await Promise.all([
+      scrapeGnulaCatalog({ mediaType: 'movie', page: 2 }).catch(() => ({ items: [], hasMore: false })),
+      scrapeGnulaCatalog({ mediaType: 'tv', category: 'anime', page: 1 }).catch(() => ({
+        items: [],
+        hasMore: false,
+      })),
+    ]);
+
+    for (const item of [...moviesP1.items, ...moviesP2.items, ...seriesP1.items, ...animeP1.items]) {
+      upsertIndexedEntry({
+        id: item.id,
+        mediaType: item.mediaType,
+        title: item.title,
+        originalTitle: item.originalTitle || item.title,
+        year: item.year || 'HD',
+        rating: item.rating || '',
+        overview: item.overview,
+        poster: item.poster,
+        backdrop: item.backdrop || item.poster,
+        gnulaUrl: item.gnulaUrl,
+        languages: item.languages,
+        sources: ['gnula'],
+        popularity: 21,
+        indexedAt: Date.now(),
+      });
+      gCount += 1;
     }
-    const metric: SourceRefreshMetric = { source: 'gnula', lastRunAt: gStart, itemsIndexed: gCount, ok: true };
+
+    const metric: SourceRefreshMetric = {
+      source: 'gnula',
+      lastRunAt: gStart,
+      itemsIndexed: gCount,
+      ok: gCount > 0,
+    };
     sourceMetrics.set('gnula', metric);
     out.push(metric);
   } catch (err: any) {
@@ -682,18 +742,29 @@ export async function liveOnDemandFallbackSearch(
       });
     }
 
-    const tmdbPayloads = await Promise.all(
-      tmdbUrls.map(async (reqCfg) => {
-        try {
-          const r = await fetch(reqCfg.url, { signal: AbortSignal.timeout(4000) });
-          if (!r.ok) return { rows: [] as any[], reqCfg };
-          const json: any = await r.json();
-          return { rows: Array.isArray(json?.results) ? json.results : [], reqCfg };
-        } catch {
-          return { rows: [] as any[], reqCfg };
-        }
-      })
-    );
+    const [tmdbPayloads, gnulaLive] = await Promise.all([
+      Promise.all(
+        tmdbUrls.map(async (reqCfg) => {
+          try {
+            const r = await fetch(reqCfg.url, { signal: AbortSignal.timeout(4000) });
+            if (!r.ok) return { rows: [] as any[], reqCfg };
+            const json: any = await r.json();
+            return { rows: Array.isArray(json?.results) ? json.results : [], reqCfg };
+          } catch {
+            return { rows: [] as any[], reqCfg };
+          }
+        })
+      ),
+      Promise.race([
+        scrapeGnulaCatalog({ query: cleanQ, mediaType: wantMediaType }).catch(() => ({
+          items: [],
+          hasMore: false,
+        })),
+        new Promise<{ items: any[]; hasMore: boolean }>((r) =>
+          setTimeout(() => r({ items: [], hasMore: false }), 3500)
+        ),
+      ]),
+    ]);
 
     for (const { rows, reqCfg } of tmdbPayloads) {
       for (const row of rows) {
@@ -715,6 +786,74 @@ export async function liveOnDemandFallbackSearch(
       }
     }
 
+    for (const gItem of gnulaLive.items) {
+      const matchingTmdb = discovered.find(
+        (d) =>
+          d.mediaType === gItem.mediaType &&
+          areTitlesStrictlyEqual(gItem.title, [d.title, d.originalTitle, d.altTitle || ''].filter(Boolean)) &&
+          (!/^\d{4}$/.test(gItem.year) || !/^\d{4}$/.test(d.year) || gItem.year === d.year)
+      );
+      if (matchingTmdb) {
+        matchingTmdb.gnulaUrl = matchingTmdb.gnulaUrl || gItem.gnulaUrl;
+        if (!matchingTmdb.sources.includes('gnula')) matchingTmdb.sources.push('gnula');
+        upsertIndexedEntry(matchingTmdb);
+      } else {
+        const gEntry: IndexedCatalogEntry = {
+          id: gItem.id,
+          mediaType: gItem.mediaType,
+          title: gItem.title,
+          originalTitle: gItem.originalTitle,
+          year: gItem.year || 'HD',
+          rating: gItem.rating || '',
+          overview: gItem.overview,
+          poster: gItem.poster,
+          backdrop: gItem.backdrop || gItem.poster,
+          gnulaUrl: gItem.gnulaUrl,
+          languages: gItem.languages,
+          sources: ['gnula'],
+          popularity: 21,
+          indexedAt: Date.now(),
+        };
+        upsertIndexedEntry(gEntry);
+        discovered.push(gEntry);
+      }
+    }
+
+    // Also perform direct Movidy fallback search using query and Spanish title hints
+    try {
+      const hintsToTry = Array.from(new Set([cleanQ, ...generateSpanishTitleHints(cleanQ)]));
+      for (const hint of hintsToTry.slice(0, 3)) {
+        if (!hint || hint.length < 2) continue;
+        const movidyUrl = await findMovidyUrlByTitle(hint, undefined, { titleHints: hintsToTry }).catch(() => null);
+        if (movidyUrl) {
+          const mvMeta = await fetchMovidyPageMetadata(movidyUrl).catch(() => null);
+          if (mvMeta) {
+            const mvEntry: IndexedCatalogEntry = {
+              id: `movidy-ondemand-${normalizeCompactCatalogQuery(mvMeta.cleanTitle || cleanQ)}`,
+              mediaType: mvMeta.isTvShow ? 'tv' : 'movie',
+              title: mvMeta.cleanTitle || cleanQ,
+              originalTitle: mvMeta.cleanTitle || cleanQ,
+              year: mvMeta.year || 'HD',
+              rating: '',
+              overview: mvMeta.overview || 'Disponible en Movidy.',
+              poster: '',
+              backdrop: '',
+              movidyUrl,
+              languages: ['Castellano', 'Latino', 'VOSE'],
+              sources: ['movidy'],
+              popularity: 70,
+              indexedAt: Date.now(),
+            };
+            upsertIndexedEntry(mvEntry);
+            discovered.push(mvEntry);
+            break;
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
     // 2. Include matching entries already discovered across Gnula / Movidy / Vest / SeriesKao
     const fromIndex = searchIndexedCatalog(cleanQ, { mediaType: wantMediaType, limit: 24 });
     const mergedMap = new Map<string, IndexedCatalogEntry>();
@@ -726,6 +865,8 @@ export async function liveOnDemandFallbackSearch(
       } else {
         mergedMap.set(k, {
           ...existing,
+          gnulaUrl: existing.gnulaUrl || item.gnulaUrl,
+          movidyUrl: existing.movidyUrl || item.movidyUrl,
           altTitle:
             item.title !== existing.title ? item.title : existing.altTitle,
           sources: Array.from(new Set([...existing.sources, ...item.sources])),
@@ -800,10 +941,10 @@ export function startCatalogRefreshScheduler(
   }
   if (schedulerTimer) return;
 
-  // Staggered non-blocking warm-up 5s after boot so port 3000 stays instant
+  // Staggered non-blocking warm-up 12s after boot so port 3000 & interactive play stay instant
   initialWarmupTimer = setTimeout(() => {
     void runRefreshCycle();
-  }, 5_000);
+  }, 12_000);
   initialWarmupTimer.unref?.();
 
   schedulerTimer = setInterval(() => {

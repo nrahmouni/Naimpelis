@@ -647,7 +647,15 @@ export function shouldBypassNodeFetch(urlStr: string): boolean {
   try {
     const host = new URL(urlStr).hostname.toLowerCase();
     if (tlsFallbackHostsCache.has(host)) return true;
-    if (host.endsWith('.ibra.lat') || host === 'ibra.lat') return true;
+    if (
+      host.endsWith('.ibra.lat') ||
+      host === 'ibra.lat' ||
+      /(?:^|\.)(movidy\.(?:work|pw|tv|ws)|nupload\.[a-z]+|gnulahd\.(?:nu|click|bid|com)|serieskao\.top|embed69\.org|byse[a-z]*\.[a-z]+|vidaraa?\.[a-z]+|vidhide[a-z]*\.[a-z]+|smoothpre\.[a-z]+|earnvids\.[a-z]+|streamwish\.[a-z]+|hglink\.[a-z]+|filelions\.[a-z]+)$/i.test(
+        host
+      )
+    ) {
+      return true;
+    }
     return false;
   } catch {
     return false;
@@ -979,6 +987,8 @@ export async function fetchTextWithCurlFallback(
       if (res.ok) {
         const txt = await res.text();
         if (txt) return txt;
+      } else if (res.status === 403 || res.status === 429 || res.status === 503) {
+        markHostNeedsCurlFallback(url);
       }
     } catch {
       markHostNeedsCurlFallback(url);
@@ -1172,15 +1182,12 @@ export function isMetadataCompatibleForMedia(opts: {
 
   const expYear = Number(String(opts.expectedYear || '').replace(/\D/g, '')) || 0;
   const candYear = Number(String(opts.candidateYear || '').replace(/\D/g, '')) || 0;
+  const exactYear = candYear > 1900 && expYear > 1900 && candYear === expYear;
   const hasDirPair = Boolean(
     normalizeTitleForMatch(opts.candidateDirector || '') &&
       normalizeTitleForMatch(opts.expectedDirector || '')
   );
   const dirOk = hasDirPair && directorsMatch(opts.candidateDirector, opts.expectedDirector);
-
-  if (hasDirPair && !dirOk) {
-    return { ok: false, exactYear: false, reason: 'director_mismatch' };
-  }
 
   const expRun = Number(opts.expectedRuntimeMin || 0);
   const candRun = Number(opts.candidateRuntimeMin || 0);
@@ -1188,7 +1195,11 @@ export function isMetadataCompatibleForMedia(opts: {
   if (hasRunPair && Math.abs(expRun - candRun) > 25) {
     return { ok: false, exactYear: false, reason: 'runtime_mismatch' };
   }
-  const tightRuntimeOk = hasRunPair && Math.abs(expRun - candRun) <= 3;
+  const tightRuntimeOk = hasRunPair && Math.abs(expRun - candRun) <= 5;
+
+  if (hasDirPair && !dirOk && !exactYear && !tightRuntimeOk) {
+    return { ok: false, exactYear: false, reason: 'director_mismatch' };
+  }
 
   if (expYear > 1900) {
     if (candYear > 1900) {
@@ -1269,4 +1280,34 @@ export function matchesYouTubeFallbackTitle(movieTitle: string, videoTitle: stri
   const videoWords = new Set(normVideo.split(/\s+/).filter(Boolean));
   return requiredTokens.every((tok) => videoWords.has(tok));
 }
+
+export function generateSpanishTitleHints(title: string): string[] {
+  const t = String(title || '');
+  const variants: string[] = [t];
+  const lower = t.toLowerCase();
+
+  const subs: Record<string, string[]> = {
+    'brand new day': ['un nuevo dia', 'un nuevo día'],
+    'no way home': ['sin camino a casa'],
+    'homecoming': ['regreso a casa', 'de regreso a casa'],
+    'far from home': ['lejos de casa'],
+    'across the spider-verse': ['a traves del spider-verso', 'atraves del spiderverso'],
+    'into the spider-verse': ['un nuevo universo', 'dentro del spider-verso'],
+    'multiverse of madness': ['multiverso de la locura'],
+    'love and thunder': ['amor y trueno'],
+    'wakanda forever': ['wakanda por siempre'],
+  };
+
+  for (const [enSub, esSubs] of Object.entries(subs)) {
+    if (lower.includes(enSub)) {
+      const base = t.replace(new RegExp(enSub, 'i'), '').replace(/[:\-\u2013\s]+$/, '').trim();
+      for (const esSub of esSubs) {
+        variants.push(`${base}: ${esSub}`);
+        variants.push(`${base} ${esSub}`);
+      }
+    }
+  }
+  return variants;
+}
+
 

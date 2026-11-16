@@ -171,11 +171,12 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     const mediaType = item.mediaType === 'tv' ? 'tv' : 'movie';
     const idSegment = item.tmdbId || 0;
     const movidyParam = item.movidyUrl ? `&movidyUrl=${encodeURIComponent(item.movidyUrl)}` : '';
+    const gnulaParam = item.gnulaUrl ? `&gnulaUrl=${encodeURIComponent(item.gnulaUrl)}` : '';
     const vestParam = item.vestUrl ? `&vestUrl=${encodeURIComponent(item.vestUrl)}` : '';
     fetch(
       `/api/catalog/details/${mediaType}/${idSegment}?lang=${lang}&title=${encodeURIComponent(
         item.title || ''
-      )}${movidyParam}${vestParam}`
+      )}${movidyParam}${gnulaParam}${vestParam}`
     )
       .then((r) => r.json())
       .then((data) => {
@@ -196,7 +197,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [item?.id, item?.tmdbId, item?.mediaType, item?.title, item?.movidyUrl, item?.vestUrl, lang]);
+  }, [item?.id, item?.tmdbId, item?.mediaType, item?.title, item?.movidyUrl, item?.gnulaUrl, item?.vestUrl, lang]);
 
   const handleForceSpanishSearch = useCallback(async () => {
     if (!item || forcingSpanish) return;
@@ -213,13 +214,14 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     setForceSpanishStatus('idle');
     const idSegment = resolvedId || 0;
     const movidyParam = item.movidyUrl ? `&movidyUrl=${encodeURIComponent(item.movidyUrl)}` : '';
+    const gnulaParam = item.gnulaUrl ? `&gnulaUrl=${encodeURIComponent(item.gnulaUrl)}` : '';
     const vestParam = item.vestUrl ? `&vestUrl=${encodeURIComponent(item.vestUrl)}` : '';
     let latestDetails = details;
     try {
       const res = await fetch(
         `/api/catalog/details/movie/${idSegment}?lang=${lang}&title=${encodeURIComponent(
           item.title || ''
-        )}${movidyParam}${vestParam}&force=1&forceSpanish=1`
+        )}${movidyParam}${gnulaParam}${vestParam}&force=1&forceSpanish=1`
       );
       const data = await res.json().catch(() => null);
       if (data?.success && data?.details) {
@@ -686,7 +688,8 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       subtitle: `${year || 'HD'} · ${selectedAudioLang}`,
                       poster: item.poster || details?.poster,
                       tmdbId: item.tmdbId || details?.tmdbId,
-                      url: item.bingetrixUrl || item.movidyUrl || item.vestUrl,
+                      url: item.bingetrixUrl || item.movidyUrl || item.gnulaUrl || item.vestUrl,
+                      gnulaUrl: item.gnulaUrl,
                       vestUrl: item.vestUrl,
                       preferLang: selectedAudioLang,
                     });

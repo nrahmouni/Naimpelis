@@ -1324,6 +1324,7 @@ export function App() {
       activeHistoryIdRef.current = histId;
 
       const isMovidyRaw = vState.rawSourceUrl?.includes('movidy.');
+      const isGnulaRaw = vState.rawSourceUrl?.includes('gnulahd.');
       const isBingetrixRaw = vState.rawSourceUrl?.includes('bingetrix');
 
       const { list, item } = addWatchHistoryItem({
@@ -1336,6 +1337,7 @@ export function App() {
         backdrop: vState.backdrop || vState.poster || '',
         preferLang: activeTr?.lang === 'EN' ? 'EN' : 'ES',
         movidyUrl: isMovidyRaw ? vState.rawSourceUrl : undefined,
+        gnulaUrl: isGnulaRaw ? vState.rawSourceUrl : undefined,
         bingetrixUrl: isBingetrixRaw ? vState.rawSourceUrl : undefined,
         resumeTimeSec: vState.currentTime > 5 ? Math.floor(vState.currentTime) : undefined,
       });
@@ -2433,8 +2435,9 @@ export function App() {
       const params = new URLSearchParams({
         mediaType: 'movie',
         tmdbId: movie.tmdbId ? String(movie.tmdbId) : '',
-        url: movie.bingetrixUrl || movie.movidyUrl || movie.vestUrl || '',
+        url: movie.bingetrixUrl || movie.movidyUrl || movie.gnulaUrl || movie.vestUrl || '',
         movidyUrl: movie.movidyUrl || '',
+        gnulaUrl: movie.gnulaUrl || '',
         vestUrl: movie.vestUrl || '',
         preferLang,
         title: movie.title,
@@ -2496,7 +2499,7 @@ export function App() {
       const nextState: VideoState = {
         mode: data.mode || 'hls',
         url: data.streamUrl,
-        rawSourceUrl: movie.bingetrixUrl || movie.movidyUrl || movie.vestUrl || movie.id,
+        rawSourceUrl: movie.bingetrixUrl || movie.movidyUrl || movie.gnulaUrl || movie.vestUrl || movie.id,
         title: movie.title,
         subtitle: `${movie.year || 'HD'} · ${activeLabel}`,
         poster: movie.poster,
@@ -2524,6 +2527,7 @@ export function App() {
         preferLang: preferLang as any,
         bingetrixUrl: movie.bingetrixUrl,
         movidyUrl: movie.movidyUrl,
+        gnulaUrl: movie.gnulaUrl,
         vestUrl: movie.vestUrl,
         resumeTimeSec: resumeAtSec,
       });
@@ -2886,6 +2890,7 @@ export function App() {
         backdrop: item.backdrop || item.poster,
         bingetrixUrl: item.bingetrixUrl,
         movidyUrl: item.movidyUrl,
+        gnulaUrl: item.gnulaUrl,
         vestUrl: item.vestUrl,
         languages: [],
       },
@@ -4072,6 +4077,7 @@ export function App() {
           poster: qItem.poster || '',
           backdrop: qItem.poster || '',
           bingetrixUrl: qItem.url,
+          gnulaUrl: qItem.gnulaUrl,
           vestUrl: qItem.vestUrl,
           languages: [],
         },

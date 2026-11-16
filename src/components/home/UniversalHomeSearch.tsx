@@ -487,7 +487,9 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
               }
             }}
             onKeyDown={(e) => {
-              if (e.key === 'Enter' && cleanQuery.length >= 2) {
+              if (e.key === 'Escape') {
+                setQuery('');
+              } else if (e.key === 'Enter' && cleanQuery.length >= 2) {
                 e.preventDefault();
                 if (aiJob.status === 'found' && aiJob.item) {
                   if (aiJob.item.mediaType === 'tv') onPlaySeries(aiJob.item);
@@ -538,49 +540,92 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
         </div>
       </div>
 
-      {/* 2. Results Container & Intelligent Categories */}
+      {/* 2. Large Immersive Search Results Window Overlay */}
       <AnimatePresence>
         {isSearchActive && (
           <motion.div
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.18 }}
-            className="p-3.5 sm:p-5 rounded-3xl bg-[#11131B] border border-white/[0.1] shadow-[0_20px_50px_rgba(0,0,0,0.7)] space-y-4"
+            initial={{ opacity: 0, scale: 0.98, y: 10 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.98, y: 10 }}
+            transition={{ duration: 0.16 }}
+            className="fixed inset-0 z-50 bg-[#0B0D14]/96 backdrop-blur-2xl flex flex-col p-4 sm:p-8 md:p-12 overflow-y-auto"
           >
-            {/* Filter Tabs - STRICT COLOR DISCIPLINE: Vibrant Purple #9146FF, NEVER pure white */}
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
-              {categories.map((cat) => {
-                const isActive = activeCategory === cat.id;
-                return (
+            <div className="max-w-6xl mx-auto w-full space-y-6 my-auto">
+              {/* Header with Search Bar and Close Button */}
+              <div className="flex items-center gap-3">
+                <div className="relative flex-1 flex items-center min-h-[58px] px-4 rounded-2xl bg-[#131622] border border-[#9146FF]/40 shadow-[0_10px_30px_rgba(145,70,255,0.25)]">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#9146FF]/20 text-[#C4A7FF] mr-3 shrink-0">
+                    <Search className="w-4 h-4" />
+                  </div>
+                  <input
+                    type="text"
+                    value={query}
+                    onChange={(e) => {
+                      setQuery(e.target.value);
+                      if (aiJob.status !== 'idle') {
+                        setAiJob({ status: 'idle', progressLabel: '', item: null });
+                      }
+                    }}
+                    placeholder={pickLang(lang, {
+                      es: 'Buscar películas, series, deportes, canales...',
+                      ca: 'Cercar pel·lícules, sèries, esports, canals...',
+                      en: 'Search movies, series, sports, channels...',
+                    })}
+                    className="flex-1 min-w-0 bg-transparent text-base font-semibold text-white placeholder:text-zinc-500 focus:outline-none"
+                    autoFocus
+                  />
+                  {loadingRemote && (
+                    <Loader2 className="w-4 h-4 text-[#9146FF] animate-spin shrink-0 mx-2" />
+                  )}
                   <button
-                    key={cat.id}
                     type="button"
                     onClick={() => {
                       triggerHaptic('light');
-                      setActiveCategory(cat.id);
+                      setQuery('');
+                      lastAutoAiQueryRef.current = '';
+                      setAiJob({ status: 'idle', progressLabel: '', item: null });
                     }}
-                    className={`min-h-[38px] px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-all border ${
-                      isActive
-                        ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_4px_16px_rgba(145,70,255,0.35)]'
-                        : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border-white/[0.08] hover:text-white'
-                    }`}
+                    className="min-h-10 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
                   >
-                    {cat.icon}
-                    <span>{cat.label}</span>
-                    {cat.count !== undefined && cat.count > 0 && (
-                      <span
-                        className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono tabular-nums leading-none ${
-                          isActive ? 'bg-black/35 text-white' : 'bg-white/10 text-zinc-300'
-                        }`}
-                      >
-                        {cat.count}
-                      </span>
-                    )}
+                    <X className="w-4 h-4" />
+                    <span>{pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}</span>
                   </button>
-                );
-              })}
-            </div>
+                </div>
+              </div>
+
+              {/* Filter Tabs */}
+              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                {categories.map((cat) => {
+                  const isActive = activeCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        setActiveCategory(cat.id);
+                      }}
+                      className={`min-h-[42px] px-4 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all border ${
+                        isActive
+                          ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_4px_20px_rgba(145,70,255,0.4)]'
+                          : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border-white/[0.08] hover:text-white'
+                      }`}
+                    >
+                      {cat.icon}
+                      <span>{cat.label}</span>
+                      {cat.count !== undefined && cat.count > 0 && (
+                        <span
+                          className={`px-2 py-0.5 rounded-full text-[10px] font-mono tabular-nums leading-none ${
+                            isActive ? 'bg-black/40 text-white' : 'bg-white/10 text-zinc-300'
+                          }`}
+                        >
+                          {cat.count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
 
             {/* Smart Contextual AI Suggestion Card (if description / plot or no direct exact hits) */}
             {(looksLikeNaturalLanguage || totalHits === 0 || aiJob.status !== 'idle') && (
@@ -947,6 +992,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                   </div>
                 )}
             </div>
+          </div>
           </motion.div>
         )}
       </AnimatePresence>

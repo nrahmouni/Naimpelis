@@ -168,6 +168,7 @@ export function mergeCatalogItemMetadata(
     poster: primary.poster || secondary?.poster || '',
     backdrop: primary.backdrop || secondary?.backdrop || primary.poster || '',
     movidyUrl: inferredMovidy,
+    gnulaUrl: primary.gnulaUrl || secondary?.gnulaUrl,
     vestUrl: primary.vestUrl || secondary?.vestUrl,
     bingetrixUrl: inferredBingetrix,
     languages:
@@ -623,6 +624,7 @@ export function addWatchHistoryItem(
     id: cleanId,
     tmdbId: entry.tmdbId || existing?.tmdbId,
     movidyUrl: inferredMovidy,
+    gnulaUrl: entry.gnulaUrl || existing?.gnulaUrl,
     vestUrl: entry.vestUrl || existing?.vestUrl,
     bingetrixUrl: entry.bingetrixUrl || existing?.bingetrixUrl,
     resumeTimeSec:

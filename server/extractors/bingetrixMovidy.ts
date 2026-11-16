@@ -15,6 +15,7 @@ import {
   curlGetBufferWithStatus,
   curlGetText,
   fetchTextWithCurlFallback,
+  generateSpanishTitleHints,
   isMetadataCompatibleForMedia,
   normalizeTitleForMatch,
   parseDurationTextToMinutes,
@@ -24,6 +25,12 @@ import {
 } from './httpHelpers.ts';
 export { rewriteVidsrcBuzzM3u8 };
 import { extractEmbed69SpanishTracks, unpackVidhideToHls } from './vidhideEmbed69.ts';
+import {
+  extractGnulaHdTracks,
+  findGnulaHdUrlByTitle,
+  isGnulaHdUrl,
+  normalizeGnulaUrl,
+} from './gnulaHdExtractor.ts';
 import { registerVodManifest } from '../routes/proxies.ts';
 
 const wasmModuleCache = new LruTtlCache<string, Promise<WebAssembly.Module>>(16, 60 * 60 * 1000);
@@ -134,7 +141,7 @@ export async function extractBingetrixEnglishTracks(opts: {
     const pCfgMatch = playerHtml.match(/window\.CONFIG\s*=\s*(\{[^;]+\});/);
     if (!pCfgMatch) return [];
     const pCfg = JSON.parse(pCfgMatch[1]);
-    if (!pCfg?.apiToken) return [];
+    if (!pCfg?.apiToken || (pCfg?.turnstile && !String(pCfg.apiToken).trim())) return [];
 
     const baseMetaApi = pCfg.metaApi || cfg.metaApi || '';
     const baseStreamApi = pCfg.api || (baseMetaApi ? `${baseMetaApi}&stream_urls` : '');
@@ -461,7 +468,7 @@ export async function hasBingetrixEnglishStreamFast(opts: {
     const pCfgMatch = playerHtml.match(/window\.CONFIG\s*=\s*(\{[^;]+\});/);
     if (!pCfgMatch) return false;
     const pCfg = JSON.parse(pCfgMatch[1]);
-    if (!pCfg?.apiToken) return false;
+    if (!pCfg?.apiToken || (pCfg?.turnstile && !String(pCfg.apiToken).trim())) return false;
 
     const baseMetaApi = pCfg.metaApi || cfg.metaApi || '';
     const baseStreamApi = pCfg.api || (baseMetaApi ? `${baseMetaApi}&stream_urls` : '');
@@ -500,7 +507,9 @@ export async function hasBingetrixEnglishStreamFast(opts: {
   }
 }
 
-export const MOVIDY_ORIGIN = 'https://movidy.work';
+export const MOVIDY_MIRRORS = ['https://movidy.work', 'https://movidy.pw'];
+export const MOVIDY_ORIGIN = MOVIDY_MIRRORS[0];
+let activeMovidyOrigin = MOVIDY_ORIGIN;
 
 export function isMovidyVerUrl(rawUrl: string): boolean {
   return /movidy\.(?:work|pw|tv|ws)\/ver\//i.test(String(rawUrl || '').trim());
@@ -511,6 +520,41 @@ export function normalizeMovidyUrl(rawUrl: string): string {
   if (!s) return '';
   if (s.startsWith('/')) return `${MOVIDY_ORIGIN}${s}`;
   return s.replace(/^https?:\/\/(?:www\.)?movidy\.(?:pw|tv|ws)\b/i, MOVIDY_ORIGIN);
+}
+
+async function fetchMovidyWithMirrorFailover(
+  relPathOrUrl: string,
+  refererPath = '/',
+  timeoutMs = 4500
+): Promise<string> {
+  let relPath = relPathOrUrl.trim();
+  if (/^https?:\/\//i.test(relPath)) {
+    try {
+      const u = new URL(relPath);
+      relPath = `${u.pathname}${u.search}`;
+    } catch {
+      return '';
+    }
+  } else if (!relPath.startsWith('/')) {
+    relPath = `/${relPath}`;
+  }
+
+  const mirrors = Array.from(new Set([activeMovidyOrigin, ...MOVIDY_MIRRORS]));
+  for (const origin of mirrors) {
+    const html = await fetchTextWithCurlFallback(
+      `${origin}${relPath}`,
+      {
+        'User-Agent': CHROME_UA,
+        Referer: `${origin}${refererPath}`,
+      },
+      timeoutMs
+    ).catch(() => '');
+    if (html && html.length > 200 && !/Access denied|Just a moment\.\.\./i.test(html.slice(0, 300))) {
+      activeMovidyOrigin = origin;
+      return html;
+    }
+  }
+  return '';
 }
 
 function buildMovidySlugCandidates(hints: string[], expectedYear?: string): string[] {
@@ -573,14 +617,19 @@ export async function decodeNuploadToHls(
     if (!html) return null;
 
     const forEachMatch = html.match(/([a-zA-Z0-9_]+)\.forEach\([\s\S]{0,200}?-\s*(\d+)\)/);
-    if (forEachMatch) {
-      const [, arrName, offsetStr] = forEachMatch;
-      const offset = parseInt(offsetStr, 10);
-      const arrRegex = new RegExp(`var\\s+${arrName}\\s*=\\s*(\\[[^\\]]+\\])`);
-      const arrMatch = html.match(arrRegex);
-      const sesMatch = html.match(/var\s+sesz\s*=\s*["']([^"']+)["']/);
+    const offsetMatch = forEachMatch
+      ? forEachMatch
+      : html.match(/\.forEach\([\s\S]{0,200}?-\s*(\d+)\s*\)/);
+    const offset = offsetMatch ? parseInt(offsetMatch[2] || offsetMatch[1], 10) : 0;
 
-      if (arrMatch && sesMatch) {
+    const arrMatch =
+      html.match(/var\s+[a-zA-Z0-9_]+\s*=\s*(\[\s*["'][A-Za-z0-9+/=]{16,}["'][\s\S]*?\])/) ||
+      (forEachMatch ? html.match(new RegExp(`var\\s+${forEachMatch[1]}\\s*=\\s*(\\[[^\\]]+\\])`)) : null) ||
+      html.match(/var\s+[a-zA-Z0-9_]+\s*=\s*(\[[^\]]+\])/);
+    const sesMatch = html.match(/var\s+sesz\s*=\s*["']([^"']+)["']/i);
+
+    if (offset && arrMatch && sesMatch) {
+      try {
         const encodedItems: string[] = JSON.parse(arrMatch[1]);
         const baseStream = encodedItems
           .map((item) => {
@@ -595,6 +644,8 @@ export async function decodeNuploadToHls(
           rawM3u8,
           proxyUrl: buildHlsProxyUrl(rawM3u8, embedOrigin),
         };
+      } catch {
+        // ignore parse error and proceed to fallback
       }
     }
 
@@ -713,14 +764,7 @@ export async function fetchMovidyPageMetadata(
     const cached = movidyPageMetaCache.get(cleanUrl);
     if (cached) return cached;
 
-    const html = await fetchTextWithCurlFallback(
-      cleanUrl,
-      {
-        'User-Agent': CHROME_UA,
-        Referer: `${MOVIDY_ORIGIN}/pelis/`,
-      },
-      5000
-    );
+    const html = await fetchMovidyWithMirrorFailover(cleanUrl, '/pelis/', 5000);
 
     if (!html) return null;
 
@@ -894,17 +938,26 @@ export async function findMovidyUrlByTitle(
       return null;
     }
 
-    const searchUrl = `${MOVIDY_ORIGIN}/?s=${encodeURIComponent(queryTerm)}&_=${Date.now()}`;
-    const html = await fetchTextWithCurlFallback(
-      searchUrl,
-      { 'User-Agent': CHROME_UA, Referer: `${MOVIDY_ORIGIN}/` },
-      4500
+    const searchTerms = Array.from(
+      new Set(
+        [
+          queryTerm,
+          ...(opts?.titleHints || []).map((t) =>
+            String(t || '')
+              .replace(/\s*\([^)]*\)/g, '')
+              .trim()
+          ),
+        ].filter((s) => s && s.length >= 2)
+      )
     );
 
     const exactMatches: string[] = [];
-    if (html) {
-      const itemRe =
-        /<li>\s*<a\s+href="((?:https?:\/\/movidy\.[a-z]+)?\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>/gi;
+    const itemRe =
+      /<li>\s*<a\s+href="((?:https?:\/\/movidy\.[a-z]+)?\/ver\/[^"]+)"[^>]*>\s*<h3\s+class="item-title">\s*<span>([^<]+)<\/span>\s*<\/h3>/gi;
+
+    const collectHits = (html: string, strictOnly: boolean) => {
+      if (!html) return;
+      itemRe.lastIndex = 0;
       let m: RegExpExecArray | null;
       while ((m = itemRe.exec(html)) !== null) {
         const rawHref = String(m[1] || '').trim();
@@ -912,11 +965,49 @@ export async function findMovidyUrlByTitle(
         if (!rawHref || !rawSpanTitle) continue;
 
         const fullUrl = normalizeMovidyUrl(rawHref);
-        if (fullUrl && areTitlesStrictlyEqual(rawSpanTitle, allHints) && !exactMatches.includes(fullUrl)) {
+        if (!fullUrl || exactMatches.includes(fullUrl)) continue;
+        if (!strictOnly || areTitlesStrictlyEqual(rawSpanTitle, allHints)) {
           exactMatches.push(fullUrl);
         }
       }
+    };
+
+    // Query top 4 hints concurrently so non-literal Spanish alt titles match in ~1 round trip
+    const firstHtmls = await Promise.all(
+      searchTerms
+        .slice(0, 4)
+        .map((term) => fetchMovidyWithMirrorFailover(`/?s=${encodeURIComponent(term)}&_=${Date.now()}`, '/', 4200))
+    );
+    for (const html of firstHtmls) {
+      collectHits(html, true);
     }
+
+    // If top 4 hints missed, try remaining localized hints sequentially
+    if (exactMatches.length === 0 && searchTerms.length > 4) {
+      for (const term of searchTerms.slice(4, 7)) {
+        const html = await fetchMovidyWithMirrorFailover(
+          `/?s=${encodeURIComponent(term)}&_=${Date.now()}`,
+          '/',
+          4000
+        );
+        collectHits(html, true);
+        if (exactMatches.length > 0) break;
+      }
+    }
+
+    // Franchise prefix fallback (e.g. "Spider-Man: Brand New Day" -> search "Spider-Man" and filter by exact year)
+    if (exactMatches.length === 0 && expectedYear) {
+      const prefix = queryTerm.split(/[:\-\u2013]/)[0]?.trim();
+      if (prefix && prefix.length >= 3 && prefix !== queryTerm) {
+        const html = await fetchMovidyWithMirrorFailover(
+          `/?s=${encodeURIComponent(prefix)}&_=${Date.now()}`,
+          '/',
+          4200
+        );
+        collectHits(html, false);
+      }
+    }
+    // (collected via collectHits above)
 
     // Direct slug fallback when WordPress search misses exact titles (e.g. "Interstellar" -> /ver/interstellar/)
     if (exactMatches.length === 0) {
@@ -930,9 +1021,16 @@ export async function findMovidyUrlByTitle(
 
     if (exactMatches.length === 0) return null;
 
+    const candidateSlice = exactMatches.slice(0, 4);
+    const inspectedCandidates = await Promise.all(
+      candidateSlice.map(async (candidateUrl) => ({
+        candidateUrl,
+        meta: await fetchMovidyPageMetadata(candidateUrl).catch(() => null),
+      }))
+    );
+
     let verifiedAdjacentFallback: string | null = null;
-    for (const candidateUrl of exactMatches.slice(0, 6)) {
-      const meta = await fetchMovidyPageMetadata(candidateUrl);
+    for (const { candidateUrl, meta } of inspectedCandidates) {
       if (!meta) continue;
       if (opts?.expectedMediaType === 'movie' && meta.isTvShow) continue;
       if (opts?.expectedMediaType === 'tv' && !meta.isTvShow) continue;
@@ -968,6 +1066,7 @@ export async function probeAvailableLanguages(opts: {
   episode?: number;
   titleHints?: string[];
   movidyUrl?: string;
+  gnulaUrl?: string;
   vestUrl?: string;
   yearHint?: string;
   directorHint?: string;
@@ -977,20 +1076,29 @@ export async function probeAvailableLanguages(opts: {
   const cleanId = String(opts.tmdbId || '').replace(/\D/g, '');
   const season = opts.mediaType === 'tv' ? opts.season || 1 : 0;
   const episode = opts.mediaType === 'tv' ? opts.episode || 1 : 0;
-  const cacheKey = `v3|${opts.mediaType}|${cleanId || opts.movidyUrl || opts.vestUrl || ''}|${opts.yearHint || ''}|${season}|${episode}`;
+  const cacheKey = `v4|${opts.mediaType}|${cleanId || opts.movidyUrl || opts.gnulaUrl || opts.vestUrl || ''}|${opts.yearHint || ''}|${season}|${episode}`;
 
   if (!opts.force) {
     const cached = availableLangsCache.get(cacheKey);
     if (cached) return cached;
   }
 
-  const hints = Array.from(
-    new Set((opts.titleHints || []).map((t) => String(t || '').trim()).filter(Boolean))
-  );
+  const rawHints = (opts.titleHints || []).map((t) => String(t || '').trim()).filter(Boolean);
+  const expandedHints: string[] = [];
+  for (const h of rawHints) {
+    expandedHints.push(h);
+    for (const v of generateSpanishTitleHints(h)) {
+      expandedHints.push(v);
+    }
+  }
+  const hints = Array.from(new Set(expandedHints));
 
   const normalizedExplicitMovidy = normalizeMovidyUrl(opts.movidyUrl || '');
   const hasExplicitMovidy = isMovidyVerUrl(normalizedExplicitMovidy);
+  const normalizedExplicitGnula = normalizeGnulaUrl(opts.gnulaUrl || '');
+  const hasExplicitGnula = isGnulaHdUrl(normalizedExplicitGnula);
 
+  // 1. Movidy (Top Priority)
   const movidyPromise = (async (): Promise<TrackRecord[]> => {
     let mvUrl = hasExplicitMovidy ? normalizedExplicitMovidy : '';
     if (mvUrl && (cleanId || opts.yearHint || opts.directorHint || opts.runtimeMinHint)) {
@@ -1008,19 +1116,14 @@ export async function probeAvailableLanguages(opts: {
         mvUrl = '';
       }
     }
-    if (!mvUrl) {
-      for (const h of hints.slice(0, 2)) {
-        const found = await findMovidyUrlByTitle(h, opts.yearHint, {
+    if (!mvUrl && hints.length > 0) {
+      mvUrl =
+        (await findMovidyUrlByTitle(hints[0], opts.yearHint, {
           expectedDirector: opts.directorHint,
           expectedRuntimeMin: opts.runtimeMinHint,
           titleHints: hints,
           expectedMediaType: opts.mediaType,
-        });
-        if (found) {
-          mvUrl = found;
-          break;
-        }
-      }
+        })) || '';
     }
     if (!mvUrl) return [];
     return extractMovidyPageTracks(mvUrl, {
@@ -1032,6 +1135,32 @@ export async function probeAvailableLanguages(opts: {
     });
   })();
 
+  // 2. GnulaHD (Second Priority)
+  const gnulaPromise = (async (): Promise<TrackRecord[]> => {
+    let gnUrl = hasExplicitGnula ? normalizedExplicitGnula : '';
+    if (!gnUrl && hints.length > 0) {
+      gnUrl =
+        (await findGnulaHdUrlByTitle(hints, opts.yearHint, {
+          expectedDirector: opts.directorHint,
+          expectedRuntimeMin: opts.runtimeMinHint,
+          titleHints: hints,
+          expectedMediaType: opts.mediaType,
+        })) || '';
+    }
+    if (!gnUrl) return [];
+    return extractGnulaHdTracks(gnUrl, {
+      expectedYear: opts.yearHint,
+      expectedTitleHints: cleanId ? hints : undefined,
+      expectedDirector: opts.directorHint,
+      expectedRuntimeMin: opts.runtimeMinHint,
+      mediaType: opts.mediaType,
+      season: season || undefined,
+      episode: episode || undefined,
+      skipUnpack: true,
+    });
+  })();
+
+  // 4. Other Spanish sources (Embed69 / SeriesKao / AnimeAV1)
   const embedPromise =
     cleanId || hints.length > 0
       ? extractEmbed69SpanishTracks({
@@ -1045,8 +1174,31 @@ export async function probeAvailableLanguages(opts: {
           directorHint: opts.directorHint,
           runtimeMinHint: opts.runtimeMinHint,
           force: opts.force,
+          skipGnula: true,
         })
       : Promise.resolve([] as TrackRecord[]);
+
+  // 3. Bingetrix & English HLS sources
+  const hasVidRockFast = async (): Promise<boolean> => {
+    if (!cleanId) return false;
+    const apiUrl =
+      opts.mediaType === 'tv'
+        ? `https://vidrock.net/api/tv/${cleanId}/${Math.max(1, season)}/${Math.max(1, episode)}`
+        : `https://vidrock.net/api/movie/${cleanId}`;
+    try {
+      const resp = await streamingFetch(apiUrl, {
+        headers: { 'User-Agent': CHROME_UA, Referer: 'https://vidrock.net/', Accept: 'application/json' },
+        timeoutMs: 2400,
+      }).catch(() => null);
+      if (resp?.ok) {
+        const txt = await resp.text();
+        return /"url"\s*:\s*"/i.test(txt);
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  };
 
   const checkAnyEnglishStream = async (): Promise<boolean> => {
     if (!cleanId && !opts.imdbId) return false;
@@ -1058,9 +1210,17 @@ export async function probeAvailableLanguages(opts: {
         season: season || undefined,
         episode: episode || undefined,
       }),
+      probeVidsrcBuzzHasContent({
+        tmdbId: cleanId || undefined,
+        imdbId: opts.imdbId,
+        mediaType: opts.mediaType,
+        season: season || undefined,
+        episode: episode || undefined,
+      }),
     ];
     if (cleanId) {
       probes.push(
+        hasVidRockFast(),
         hasBingetrixEnglishStreamFast({
           tmdbId: cleanId,
           mediaType: opts.mediaType,
@@ -1093,14 +1253,15 @@ export async function probeAvailableLanguages(opts: {
       new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
     ]);
 
-  const [mvTracks, esTracks, hasEn] = await Promise.all([
-    withProbeTimeout(movidyPromise, 4500, [] as TrackRecord[]),
+  const [mvTracks, gnTracks, esTracks, hasEn] = await Promise.all([
+    withProbeTimeout(movidyPromise, 5500, [] as TrackRecord[]),
+    withProbeTimeout(gnulaPromise, 5500, [] as TrackRecord[]),
     withProbeTimeout(embedPromise, opts.force ? 8500 : 6500, [] as TrackRecord[]),
-    withProbeTimeout(checkAnyEnglishStream(), 4200, false),
+    withProbeTimeout(checkAnyEnglishStream(), 4500, false),
   ]);
   const foundSet = new Set<'ES' | 'LAT' | 'VOSE' | 'EN'>();
 
-  for (const t of [...mvTracks, ...esTracks]) {
+  for (const t of [...mvTracks, ...gnTracks, ...esTracks]) {
     const code = String(t.lang || '').toUpperCase();
     if (code === 'ES' || code === 'LAT' || code === 'VOSE' || code === 'EN') {
       foundSet.add(code);

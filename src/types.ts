@@ -254,6 +254,7 @@ export interface CatalogMovie {
   poster: string;
   backdrop: string;
   movidyUrl?: string;
+  gnulaUrl?: string;
   vestUrl?: string;
   bingetrixUrl?: string;
   languages: string[];
@@ -407,6 +408,7 @@ export interface RoomQueueItem {
   episode?: number;
   youtubeId?: string;
   url?: string;
+  gnulaUrl?: string;
   vestUrl?: string;
   preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN';
   addedBy: string;
@@ -754,6 +756,7 @@ export interface WatchHistoryItem {
   preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
   bingetrixUrl?: string;
   movidyUrl?: string;
+  gnulaUrl?: string;
   vestUrl?: string;
   resumeTimeSec?: number;
   durationSec?: number;
