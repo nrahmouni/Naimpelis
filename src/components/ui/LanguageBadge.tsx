@@ -88,29 +88,21 @@ export const FlagBadgeSvg: React.FC<{ code: FlagCode; className?: string }> = ({
   }
 
   if (code === 'rif') {
-    const crescentMaskId = `rifMoon-${uid}`;
     return (
       <svg viewBox="0 0 24 16" className={baseClass} aria-hidden="true">
-        <defs>
-          <mask id={crescentMaskId}>
-            <rect width="24" height="16" fill="#000000" />
-            <circle cx="9.8" cy="8" r="2.1" fill="#FFFFFF" />
-            <circle cx="10.65" cy="8" r="1.68" fill="#000000" />
-          </mask>
-        </defs>
+        {/* Red field of the Republic of the Rif */}
         <rect width="24" height="16" fill="#C8102E" />
-        <polygon points="12,1.5 21,8 12,14.5 3,8" fill="#FFFFFF" />
-        <rect
-          x="6.5"
-          y="4.5"
-          width="6.5"
-          height="7"
+        {/* Central white rhombus / diamond */}
+        <polygon points="12,1.8 20.2,8 12,14.2 3.8,8" fill="#FFFFFF" />
+        {/* Green crescent moon opening towards fly side (right) */}
+        <path
+          d="M 10.5,5.3 A 2.7,2.7 0 1,0 10.5,10.7 A 2.1,2.1 0 1,1 10.5,5.3 Z"
           fill="#007A3D"
-          mask={`url(#${crescentMaskId})`}
         />
+        {/* Green six-pointed star (hexagram) cradled by the crescent */}
         <g fill="#007A3D">
-          <polygon points="14.4,6.15 16.0,8.93 12.8,8.93" />
-          <polygon points="14.4,9.85 16.0,7.07 12.8,7.07" />
+          <polygon points="12.9,6.5 14.2,8.75 11.6,8.75" />
+          <polygon points="12.9,9.5 14.2,7.25 11.6,7.25" />
         </g>
       </svg>
     );
