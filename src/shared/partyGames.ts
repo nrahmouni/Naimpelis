@@ -78,10 +78,10 @@ export function parchisGlobalSquare(color: PartyColor, progress: number): number
 }
 
 const BOT_PROFILES: Array<{ name: string; avatar: string }> = [
-  { name: 'Bot Nova', avatar: '🤖' },
-  { name: 'Bot Vega', avatar: '🦾' },
-  { name: 'Bot Orion', avatar: '👾' },
-  { name: 'Bot Lyra', avatar: '🎯' },
+  { name: 'Machupichu', avatar: '🦙' },
+  { name: 'Pocasoltes', avatar: '🤪' },
+  { name: 'Capgròs', avatar: '🗿' },
+  { name: 'Tros d’Ase', avatar: '🫏' },
 ];
 
 export function buildFourSeats(

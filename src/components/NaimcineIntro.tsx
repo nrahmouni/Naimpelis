@@ -195,15 +195,10 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
             className="w-[88%] h-[88%] overflow-visible drop-shadow-[0_6px_18px_rgba(0,0,0,0.6)]"
           >
             <defs>
-              <linearGradient id={platId} x1="130" y1="120" x2="410" y2="380" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#FFFFFF" />
-                <stop offset="50%" stopColor="#F1F5F9" />
-                <stop offset="100%" stopColor="#CBD5E1" />
-              </linearGradient>
-              <linearGradient id={bladeId} x1="220" y1="288" x2="358" y2="386" gradientUnits="userSpaceOnUse">
-                <stop offset="0%" stopColor="#C4B5FD" />
-                <stop offset="48%" stopColor="#9146FF" />
-                <stop offset="100%" stopColor="#38BDF8" />
+              <linearGradient id={bladeId} x1="136" y1="106" x2="376" y2="406" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#C084FC" />
+                <stop offset="42%" stopColor="#9146FF" />
+                <stop offset="100%" stopColor="#00F593" />
               </linearGradient>
               <linearGradient id={shimmerId} x1="0%" y1="0%" x2="100%" y2="0%">
                 <stop offset="0%" stopColor="rgba(255,255,255,0)" />
@@ -211,34 +206,34 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
                 <stop offset="100%" stopColor="rgba(255,255,255,0)" />
               </linearGradient>
               <clipPath id={clipRId}>
-                <g transform="matrix(1 0 -0.1405 1 36 0)">
-                  <path d="M 230 290 H 296 L 354 382 H 288 Z" />
+                <g id="rtv-clip-group">
+                  <path d="M 238 290 H 294 L 376 406 H 320 Z" />
                   <path
                     fillRule="evenodd"
                     clipRule="evenodd"
-                    d="M 148 120 H 304 C 362 120 384 152 384 204 C 384 256 358 280 296 280 H 218 L 210 382 H 148 Z M 216 166 V 234 L 286 200 Z"
+                    d="M 136 106 H 290 C 346 106 376 142 376 194 C 376 246 346 282 290 282 H 192 V 406 H 136 Z M 204 152 V 236 L 284 194 Z"
                   />
                 </g>
               </clipPath>
             </defs>
 
-            <g transform="matrix(1 0 -0.1405 1 36 0)">
-              {/* Piece 1: Main White Upper Body with Play Cutout */}
+            <g id="rtv-intro-r">
+              {/* Piece 1: Main Upper Body with Enlarged Centered Play Cutout (Unified Brand Gradient) */}
               <motion.path
                 fillRule="evenodd"
                 clipRule="evenodd"
-                d="M 148 120 H 304 C 362 120 384 152 384 204 C 384 256 358 280 296 280 H 218 L 210 382 H 148 Z M 216 166 V 234 L 286 200 Z"
-                fill={`url(#${platId})`}
-                initial={{ x: -56, y: -40, opacity: 0, scale: 0.84 }}
+                d="M 136 106 H 290 C 346 106 376 142 376 194 C 376 246 346 282 290 282 H 192 V 406 H 136 Z M 204 152 V 236 L 284 194 Z"
+                fill={`url(#${bladeId})`}
+                initial={{ x: -44, y: -34, opacity: 0, scale: 0.88 }}
                 animate={{ x: 0, y: 0, opacity: 1, scale: 1 }}
                 transition={{ type: 'spring', stiffness: 250, damping: 20, mass: 0.9 }}
               />
 
-              {/* Piece 2: Purple/Cyan Diagonal Lower Kicker Blade */}
+              {/* Piece 2: Symmetrical Diagonal Lower Leg (Matching Unified Brand Gradient) */}
               <motion.path
-                d="M 230 290 H 296 L 354 382 H 288 Z"
+                d="M 238 290 H 294 L 376 406 H 320 Z"
                 fill={`url(#${bladeId})`}
-                initial={{ x: 64, y: 54, opacity: 0, scale: 0.78 }}
+                initial={{ x: 48, y: 44, opacity: 0, scale: 0.82 }}
                 animate={{ x: 0, y: 0, opacity: 1, scale: 1 }}
                 transition={{
                   type: 'spring',

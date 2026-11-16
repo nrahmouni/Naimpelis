@@ -37,11 +37,10 @@ export const RiffanBrandLogo: React.FC<RiffanBrandLogoProps> = ({
   const resolvedFrame: 'glass' | 'none' | 'obsidian' =
     frameStyle ?? (withFrame && !isMonochrome ? 'glass' : 'none');
 
-  const platinumGradId = `rtv-plat-${uid}`;
-  const bladeGradId = `rtv-blade-${uid}`;
+  const brandGradId = `rtv-brand-${uid}`;
 
-  // Mathematically centered around the Kinetic Blade R visual center (260, 251)
-  const svgViewBox = resolvedFrame === 'obsidian' ? '0 0 512 512' : '76 67 368 368';
+  // Mathematically centered around the R visual center (256, 256)
+  const svgViewBox = resolvedFrame === 'obsidian' ? '0 0 512 512' : '108 80 296 348';
 
   const frameClasses =
     resolvedFrame === 'glass'
@@ -52,7 +51,7 @@ export const RiffanBrandLogo: React.FC<RiffanBrandLogoProps> = ({
 
   const svgPaddingClass =
     resolvedFrame === 'glass'
-      ? 'p-[15%]'
+      ? 'p-[12%]'
       : resolvedFrame === 'obsidian'
       ? 'p-[4%]'
       : '';
@@ -80,46 +79,34 @@ export const RiffanBrandLogo: React.FC<RiffanBrandLogoProps> = ({
         {!isMonochrome && (
           <defs>
             <linearGradient
-              id={platinumGradId}
-              x1="130"
-              y1="120"
-              x2="410"
-              y2="380"
+              id={brandGradId}
+              x1="136"
+              y1="106"
+              x2="376"
+              y2="406"
               gradientUnits="userSpaceOnUse"
             >
-              <stop offset="0%" stopColor="#FFFFFF" />
-              <stop offset="48%" stopColor="#F1F5F9" />
-              <stop offset="100%" stopColor="#E2E8F0" />
-            </linearGradient>
-            <linearGradient
-              id={bladeGradId}
-              x1="220"
-              y1="288"
-              x2="352"
-              y2="384"
-              gradientUnits="userSpaceOnUse"
-            >
-              <stop offset="0%" stopColor="#C4B5FD" />
-              <stop offset="48%" stopColor="#818CF8" />
-              <stop offset="100%" stopColor="#38BDF8" />
+              <stop offset="0%" stopColor="#C084FC" />
+              <stop offset="42%" stopColor="#9146FF" />
+              <stop offset="100%" stopColor="#00F593" />
             </linearGradient>
           </defs>
         )}
 
-        <g transform="matrix(1 0 -0.1405 1 36 0)">
-          {/* Detached Electric Violet → Cyan Diagonal Kicker Blade */}
-          <path
-            d="M 230 290 H 296 L 354 382 H 288 Z"
-            fill={isMonochrome ? 'currentColor' : `url(#${bladeGradId})`}
-            fillOpacity={isMonochrome ? 0.78 : 1}
-          />
-
-          {/* Continuous Brushed Platinum Upper Arch with Crisp Negative ▶ Play Counter */}
+        {/* Unified R Isotype with Perfectly Centered Enlarged Play Triangle */}
+        <g id="rtv-r-emblem">
+          {/* Main Upper P-Body with Enlarged Centered Play Counter Cutout */}
           <path
             fillRule="evenodd"
             clipRule="evenodd"
-            d="M 148 120 H 304 C 362 120 384 152 384 204 C 384 256 358 280 296 280 H 218 L 210 382 H 148 Z M 216 166 V 234 L 286 200 Z"
-            fill={isMonochrome ? 'currentColor' : `url(#${platinumGradId})`}
+            d="M 136 106 H 290 C 346 106 376 142 376 194 C 376 246 346 282 290 282 H 192 V 406 H 136 Z M 204 152 V 236 L 284 194 Z"
+            fill={isMonochrome ? 'currentColor' : `url(#${brandGradId})`}
+          />
+
+          {/* Symmetrical Lower Diagonal Leg with Parallel 56px Stroke & Baseline Alignment */}
+          <path
+            d="M 238 290 H 294 L 376 406 H 320 Z"
+            fill={isMonochrome ? 'currentColor' : `url(#${brandGradId})`}
           />
         </g>
       </svg>

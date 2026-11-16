@@ -24,6 +24,7 @@ interface FloatingRoomBubbleProps {
   onCloseSheet: () => void;
   onOpenFullSala: () => void;
   dockedInMiniPlayer?: boolean;
+  dockedBelowPlayer?: boolean;
   children: React.ReactNode;
 }
 
@@ -61,6 +62,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
   onOpenSheet,
   onCloseSheet,
   onOpenFullSala,
+  dockedBelowPlayer = false,
   children,
 }) => {
   const [orbPos, setOrbPos] = useState<{ x: number; y: number }>(() => getDefaultOrbPos());
@@ -302,6 +304,8 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
   }, []);
 
   if (!visible || typeof document === 'undefined') return null;
+  // When docked below active player, the chat opens directly under the player in the page flow
+  if (dockedBelowPlayer && isSheetOpen) return null;
 
   const isExpanded =
     typeof window !== 'undefined' &&

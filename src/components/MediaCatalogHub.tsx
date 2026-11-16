@@ -1088,9 +1088,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
 
   // World Mode state (mobile-first Entrada -> Mundos architecture)
-  const [internalCineTab, setInternalCineTab] = useState<'movies' | 'series'>('movies');
-  const effectiveCineTab: 'movies' | 'series' = controlledCineTab === 'platforms' ? 'movies' : (controlledCineTab ?? internalCineTab);
-  const setEffectiveCineTab = (tab: 'movies' | 'series') => {
+  const [internalCineTab, setInternalCineTab] = useState<'movies' | 'series' | 'platforms'>('movies');
+  const effectiveCineTab: 'movies' | 'series' | 'platforms' = controlledCineTab ?? internalCineTab;
+  const setEffectiveCineTab = (tab: 'movies' | 'series' | 'platforms') => {
     setInternalCineTab(tab);
     onCineTabChange?.(tab);
   };
@@ -1109,7 +1109,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     onFutbolTabChange?.(tab);
   };
 
-  const [cineSpecialPortal, setCineSpecialPortal] = useState<'none' | 'catala'>('none');
+  const [cineSpecialPortal, setCineSpecialPortal] = useState<'none' | 'catala' | 'anime'>('none');
   const [cineFiltersOpen, setCineFiltersOpen] = useState(false);
   const [cineAudioOverride, setCineAudioOverride] = useState<'ES' | 'VOSE' | 'EN'>('VOSE');
   const [futbolFiltersOpen, setFutbolFiltersOpen] = useState(false);
@@ -4534,7 +4534,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       {/* ================================================================== */}
       {(worldMode === 'futbol' || (!worldMode && activeSection === 'sports')) && (() => {
         const activeFilterCount =
-          (futbolLangFilter !== 'all' ? 1 : 0) +
           (futbolLeagueFilter ? 1 : 0) +
           (footballLiveBrand !== 'all' ? 1 : 0);
 
@@ -4589,6 +4588,70 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 )}
               </button>
             </div>
+
+            {/* ── LIVE SPORTS CHANNELS SLIDING LOGO CAROUSEL ── */}
+            {footballSectionLiveChannels.length > 0 && (
+              <div className="space-y-2 pt-0.5">
+                <div className="flex items-center justify-between px-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-zinc-300">
+                      {pickLang(lang, {
+                        es: 'Canales en Directo',
+                        ca: 'Canals en Directe',
+                        en: 'Live Sports Channels',
+                      })}
+                    </span>
+                  </div>
+                  <span className="text-[11px] text-zinc-400 font-semibold tabular-nums">
+                    {footballSectionLiveChannels.length} {pickLang(lang, { es: 'señales', ca: 'senyals', en: 'feeds' })}
+                  </span>
+                </div>
+
+                <div className="scroll-snap-x flex gap-2.5 overflow-x-auto pb-2 pt-0.5 no-scrollbar">
+                  {footballSectionLiveChannels.map((ch) => (
+                    <button
+                      key={`carousel-${ch.id}`}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('success');
+                        onPlayTdtChannel(ch, 0);
+                      }}
+                      className="scroll-snap-item group relative w-[136px] sm:w-[152px] shrink-0 p-3 rounded-2xl bg-gradient-to-b from-[#181926]/90 via-[#10111A]/95 to-[#0B0C12] border border-white/[0.09] hover:border-[#9146FF]/70 text-left transition-all duration-200 active:scale-95 cursor-pointer shadow-[0_4px_16px_rgba(0,0,0,0.4)] hover:shadow-[0_8px_24px_rgba(145,70,255,0.25)] flex flex-col justify-between h-[106px] overflow-hidden"
+                    >
+                      <div
+                        className="absolute -top-6 -right-6 w-20 h-20 rounded-full blur-xl opacity-25 group-hover:opacity-40 transition-opacity pointer-events-none"
+                        style={{ backgroundColor: ch.brandTone || '#9146FF' }}
+                      />
+
+                      <div className="relative z-10 flex items-center justify-between gap-1.5">
+                        <div
+                          className="w-10 h-10 rounded-xl flex items-center justify-center border border-white/15 font-display font-extrabold text-[11px] text-white shadow-sm shrink-0"
+                          style={{
+                            background: `linear-gradient(135deg, ${ch.brandTone || '#9146FF'}45 0%, #151622 100%)`,
+                          }}
+                        >
+                          {ch.shortMark || ch.name.slice(0, 3)}
+                        </div>
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-[9px] font-bold text-emerald-300">
+                          <span className="w-1 h-1 rounded-full bg-emerald-400 animate-ping" />
+                          LIVE
+                        </span>
+                      </div>
+
+                      <div className="relative z-10 min-w-0">
+                        <p className="font-display font-bold text-xs text-white truncate group-hover:text-[#D8B4FE] transition-colors leading-tight">
+                          {ch.name}
+                        </p>
+                        <p className="text-[10px] text-zinc-400 truncate mt-0.5">
+                          {ch.network || 'Fútbol TV'}
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {effectiveFutbolTab === 'matches' ? (
               <React.Suspense
@@ -4721,45 +4784,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               title={pickLang(lang, { es: 'Filtros de Fútbol', ca: 'Filtres de Futbol', en: 'Football Filters' })}
             >
               <div className="space-y-5">
-                <div className="space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                    {pickLang(lang, { es: 'Idioma y señales', ca: 'Idioma i senyals', en: 'Language & feeds' })}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFutbolLangFilter('all');
-                        if (footballLiveBrand === 'china_football') {
-                          setFootballLiveBrand('all');
-                        }
-                      }}
-                      className={`min-h-11 px-4 rounded-2xl text-xs font-bold border cursor-pointer ${
-                        futbolLangFilter === 'all' && footballLiveBrand !== 'china_football'
-                          ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                          : 'bg-white/[0.05] border-white/[0.1] text-zinc-200'
-                      }`}
-                    >
-                      {pickLang(lang, { es: 'Todos los idiomas', ca: 'Tots els idiomes', en: 'All languages' })}
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setFutbolLangFilter('ZH');
-                        setFootballLiveBrand('china_football');
-                      }}
-                      className={`min-h-11 px-4 rounded-2xl text-xs font-bold border cursor-pointer ${
-                        futbolLangFilter === 'ZH' || footballLiveBrand === 'china_football'
-                          ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                          : 'bg-white/[0.05] border-white/[0.1] text-zinc-200'
-                      }`}
-                    >
-                      Fútbol China (中文) · 欧冠/西甲/英超
-                    </button>
-                  </div>
-                </div>
-
                 <div className="space-y-2">
                   <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
                     {pickLang(lang, { es: 'Ligas', ca: 'Lligues', en: 'Leagues' })}

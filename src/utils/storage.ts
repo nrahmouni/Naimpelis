@@ -23,11 +23,18 @@ const WATCH_HISTORY_KEY = 'naimcine_watch_history_v1';
 const GUEST_POPUP_DISMISSED_KEY = 'naimcine_guest_popup_dismissed_v1';
 
 const RANDOM_GUEST_PREFIXES = [
-  'Espectador_VIP',
-  'Cineasta_Pro',
-  'Invitado_Neon',
-  'Butaca_Oro',
-  'NaimSquad',
+  'Machupichu',
+  'Pocasoltes',
+  'Capgros',
+  'Trosdase',
+  'Bajanap',
+  'Capdecometa',
+  'Torrapipes',
+  'Capdesuro',
+  'Capsigrany',
+  'Pocavergonya',
+  'Xafaxarcos',
+  'Babau',
 ];
 
 export function generateRandomGuestName(): string {

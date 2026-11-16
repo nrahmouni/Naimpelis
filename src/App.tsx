@@ -8,6 +8,10 @@ import {
   ListVideo,
   RefreshCw,
   Download,
+  LogOut,
+  ArrowUpRight,
+  MessageSquare,
+  X,
 } from 'lucide-react';
 import {
   checkRemoteAppVersion,
@@ -4690,6 +4694,148 @@ export function App() {
         )
       ));
 
+  const renderPartySidebar = useCallback(
+    () => (
+      <React.Suspense fallback={null}>
+        <PartySidebar
+          roomId={roomId}
+          currentUser={currentUser}
+          hostId={hostId}
+          participants={participants}
+          messages={messages}
+          lang={lang}
+          effectiveView={effectiveView}
+          onToggleViewMode={toggleViewMode}
+          authUser={authUser}
+          authLoading={authLoading}
+          onSignIn={handleGoogleSignIn}
+          onSignOut={handleGoogleSignOut}
+          hostOnlyControl={hostOnlyControl}
+          onToggleHostLock={handleToggleHostLock}
+          roomName={roomName}
+          onRenameRoom={handleRenameRoom}
+          hasPin={roomHasPin}
+          currentHostPin={currentHostPin}
+          onSetRoomPin={handleSetRoomPin}
+          isCurrentRoomPermanent={isCurrentRoomPermanent}
+          onTogglePermanentRoom={handleTogglePermanentRoom}
+          onClaimTvCode={handleClaimTvCode}
+          tvClaimStatus={tvClaimStatus}
+          isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
+          onRemoteTogglePlay={handleRemoteTogglePlay}
+          onRemoteSeekDelta={handleRemoteSeekDelta}
+          onSendTvRemoteCommand={handleSendTvRemoteCommand}
+          onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
+          activePoll={activePoll}
+          roomQueue={roomQueue}
+          onPlayQueueItem={handlePlayQueueItem}
+          onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+          onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
+          onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
+          onRestoreQueueItem={(item) => socketService.addToQueue(item)}
+          onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
+          onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
+          pinnedMessage={pinnedMessage}
+          onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
+          onUnpinMessage={() => socketService.unpinChatMessage()}
+          typingUsers={typingUsers}
+          onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
+          activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
+          activeMediaPoster={
+            videoState.mode !== 'idle'
+              ? videoState.poster || videoState.backdrop || ''
+              : ''
+          }
+          activeMediaIsLive={videoState.mode !== 'idle' && Boolean(videoState.isLive)}
+          currentVideoTimeSec={
+            videoState.mode !== 'idle' && !videoState.isLive
+              ? livePlaybackSec || videoState.currentTime || 0
+              : 0
+          }
+          onSeekToTimestamp={
+            videoState.mode !== 'idle' && !videoState.isLive
+              ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
+              : undefined
+          }
+          onPlayCustomUrl={handlePlayCustomUrl}
+          onOpenCloudBrowser={handleOpenCloudBrowser}
+          onStartPollFromQueue={handleStartPollFromQueue}
+          onVotePoll={handleVotePoll}
+          onClosePoll={handleClosePoll}
+          initialView="chat"
+          openQueueTrigger={openQueueTrigger}
+          savedFriends={savedFriends}
+          onlineUsers={onlineUsers}
+          onOpenFriendsModal={() => setFriendsModalOpen(true)}
+          onAddFriend={handleAddFriend}
+          onSendDirectRoomInvite={handleSendDirectRoomInvite}
+          inviteSentFeedback={inviteSentFeedback}
+          onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
+          onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
+          onTransferHost={(newId) => socketService.transferHost(newId)}
+          onUpdateProfile={handleUpdateProfile}
+          onCreateNewRoom={handleCreateFreshRoom}
+          onSwitchRoom={(targetCode) => handleSwitchActiveRoom(targetCode)}
+          onLeaveRoom={handleLeaveRoom}
+          voiceChat={voiceChat}
+        />
+      </React.Suspense>
+    ),
+    [
+      roomId,
+      currentUser,
+      hostId,
+      participants,
+      messages,
+      lang,
+      effectiveView,
+      toggleViewMode,
+      authUser,
+      authLoading,
+      handleGoogleSignIn,
+      handleGoogleSignOut,
+      hostOnlyControl,
+      handleToggleHostLock,
+      roomName,
+      handleRenameRoom,
+      roomHasPin,
+      currentHostPin,
+      handleSetRoomPin,
+      isCurrentRoomPermanent,
+      handleTogglePermanentRoom,
+      handleClaimTvCode,
+      tvClaimStatus,
+      videoState,
+      handleRemoteTogglePlay,
+      handleRemoteSeekDelta,
+      handleSendTvRemoteCommand,
+      handleSwitchThisDeviceToTvLobby,
+      activePoll,
+      roomQueue,
+      handlePlayQueueItem,
+      pinnedMessage,
+      typingUsers,
+      livePlaybackSec,
+      handleSyncPlayerAction,
+      handlePlayCustomUrl,
+      handleOpenCloudBrowser,
+      handleStartPollFromQueue,
+      handleVotePoll,
+      handleClosePoll,
+      openQueueTrigger,
+      savedFriends,
+      onlineUsers,
+      handleAddFriend,
+      handleSendDirectRoomInvite,
+      inviteSentFeedback,
+      handleUpdateProfile,
+      handleCreateFreshRoom,
+      handleSwitchActiveRoom,
+      handleLeaveRoom,
+      voiceChat,
+    ]
+  );
+
   // ============================================================================
   // RENDER 3: UNIFIED WORKSPACE (DESKTOP, ANDROID MOBILE APK & GOOGLE TV APK)
   // ============================================================================
@@ -4967,36 +5113,68 @@ export function App() {
               </span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setAvatarMenuOpen(true);
-              }}
-              aria-label={pickLang(lang, {
-                es: 'Menú de perfil',
-                ca: 'Menú de perfil',
-                en: 'Profile menu',
-              })}
-              className="relative w-10 h-10 rounded-2xl border border-white/15 flex items-center justify-center text-sm font-bold text-white cursor-pointer active:scale-95 transition-transform shrink-0 overflow-visible"
-              style={{ backgroundColor: profile.color || '#9146FF' }}
-            >
-              {authUser?.photoURL ? (
-                <img
-                  src={authUser.photoURL}
-                  alt={profile.name}
-                  className="w-full h-full object-cover rounded-2xl"
-                />
-              ) : (
-                <span>{getMonogramInitials(profile.name)}</span>
+            <div className="flex items-center gap-2">
+              {inRoom && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    handleLeaveRoom();
+                  }}
+                  className="min-h-10 px-3 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 hover:text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-sm"
+                  title={pickLang(lang, {
+                    es: `Salir de la sala (${roomName || roomId.toUpperCase()})`,
+                    ca: `Sortir de la sala (${roomName || roomId.toUpperCase()})`,
+                    en: `Leave room (${roomName || roomId.toUpperCase()})`,
+                  })}
+                  aria-label={pickLang(lang, {
+                    es: 'Salir de la sala',
+                    ca: 'Sortir de la sala',
+                    en: 'Leave room',
+                  })}
+                >
+                  <LogOut className="w-3.5 h-3.5 text-rose-400" />
+                  <span className="hidden xs:inline">
+                    {pickLang(lang, {
+                      es: 'Salir Sala',
+                      ca: 'Sortir Sala',
+                      en: 'Leave Room',
+                    })}
+                  </span>
+                </button>
               )}
-              {unreadNotificationsCount > 0 && (
-                <span
-                  aria-hidden="true"
-                  className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-[#EB0400] ring-2 ring-[#0B0B0E]"
-                />
-              )}
-            </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setAvatarMenuOpen(true);
+                }}
+                aria-label={pickLang(lang, {
+                  es: 'Menú de perfil',
+                  ca: 'Menú de perfil',
+                  en: 'Profile menu',
+                })}
+                className="relative w-10 h-10 rounded-2xl border border-white/15 flex items-center justify-center text-sm font-bold text-white cursor-pointer active:scale-95 transition-transform shrink-0 overflow-visible"
+                style={{ backgroundColor: profile.color || '#9146FF' }}
+              >
+                {authUser?.photoURL ? (
+                  <img
+                    src={authUser.photoURL}
+                    alt={profile.name}
+                    className="w-full h-full object-cover rounded-2xl"
+                  />
+                ) : (
+                  <span>{getMonogramInitials(profile.name)}</span>
+                )}
+                {unreadNotificationsCount > 0 && (
+                  <span
+                    aria-hidden="true"
+                    className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-[#EB0400] ring-2 ring-[#0B0B0E]"
+                  />
+                )}
+              </button>
+            </div>
           </header>
         )}
 
@@ -5180,6 +5358,63 @@ export function App() {
                 )}
               </div>
             </div>
+
+            {/* Docked Room Chat right below player when playing a movie or channel */}
+            {isPlayerActive && !isDockedMini && !isPlayerClosedLocally && inRoom && isFloatingRoomOpen && (
+              <div className="w-full max-w-6xl mx-auto px-3 sm:px-5 pt-2 pb-2 animate-fade-in">
+                <div className="w-full h-[460px] sm:h-[520px] rounded-2xl bg-[#0D0E14]/95 backdrop-blur-xl border border-[#9146FF]/35 shadow-2xl flex flex-col overflow-hidden">
+                  {/* Header with Title + Participant Count + Full Sala + Close X */}
+                  <div className="shrink-0 h-11 px-4 bg-[#151622] border-b border-white/[0.08] flex items-center justify-between gap-2 select-none">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <MessageSquare className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                      <span className="text-xs font-bold text-white truncate">
+                        {pickLang(lang, {
+                          es: `Chat de Sala · ${participants.length} en sala`,
+                          ca: `Xat de Sala · ${participants.length} a la sala`,
+                          en: `Room Chat · ${participants.length} in room`,
+                        })}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setIsFloatingRoomOpen(false);
+                          enterWorld('sala');
+                        }}
+                        className="h-8 px-2.5 rounded-xl bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] hover:text-white text-xs font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        title={pickLang(lang, { es: 'Abrir Sala completa', ca: 'Obrir Sala completa', en: 'Open full room' })}
+                      >
+                        <ArrowUpRight className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">
+                          {pickLang(lang, { es: 'Sala completa', ca: 'Sala completa', en: 'Full room' })}
+                        </span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setIsFloatingRoomOpen(false);
+                        }}
+                        className="w-8 h-8 rounded-xl bg-white/[0.08] hover:bg-rose-500/35 text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+                        title={pickLang(lang, { es: 'Cerrar chat y volver a la bolita', ca: 'Tancar xat i tornar a la boleta', en: 'Close chat to bubble' })}
+                        aria-label={pickLang(lang, { es: 'Cerrar chat', ca: 'Tancar xat', en: 'Close chat' })}
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Docked PartySidebar */}
+                  <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                    {renderPartySidebar()}
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Host Lock Non-Intrusive Toast */}
             {lockNoticeToast && (
@@ -5817,6 +6052,7 @@ export function App() {
           voiceActive={voiceChat.isJoined}
           unreadCount={unreadChatCount}
           isSheetOpen={isFloatingRoomOpen}
+          dockedBelowPlayer={isPlayerActive && !isDockedMini && !isPlayerClosedLocally}
           onOpenSheet={() => {
             setIsFloatingRoomOpen(true);
             setUnreadChatCount(0);
@@ -5824,90 +6060,7 @@ export function App() {
           onCloseSheet={() => setIsFloatingRoomOpen(false)}
           onOpenFullSala={() => enterWorld('sala')}
         >
-          <React.Suspense fallback={null}>
-            <PartySidebar
-              roomId={roomId}
-              currentUser={currentUser}
-              hostId={hostId}
-              participants={participants}
-              messages={messages}
-              lang={lang}
-              effectiveView={effectiveView}
-              onToggleViewMode={toggleViewMode}
-              authUser={authUser}
-              authLoading={authLoading}
-              onSignIn={handleGoogleSignIn}
-              onSignOut={handleGoogleSignOut}
-              hostOnlyControl={hostOnlyControl}
-              onToggleHostLock={handleToggleHostLock}
-              roomName={roomName}
-              onRenameRoom={handleRenameRoom}
-              hasPin={roomHasPin}
-              currentHostPin={currentHostPin}
-              onSetRoomPin={handleSetRoomPin}
-              isCurrentRoomPermanent={isCurrentRoomPermanent}
-              onTogglePermanentRoom={handleTogglePermanentRoom}
-              onClaimTvCode={handleClaimTvCode}
-              tvClaimStatus={tvClaimStatus}
-              isRoomPlaying={videoState.mode !== 'idle' && videoState.isPlaying}
-              onRemoteTogglePlay={handleRemoteTogglePlay}
-              onRemoteSeekDelta={handleRemoteSeekDelta}
-              onSendTvRemoteCommand={handleSendTvRemoteCommand}
-              onSwitchThisDeviceToTvLobby={handleSwitchThisDeviceToTvLobby}
-              activePoll={activePoll}
-              roomQueue={roomQueue}
-              onPlayQueueItem={handlePlayQueueItem}
-              onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
-              onPromoteQueueItem={(id) => socketService.promoteQueueItem(id)}
-              onReorderQueueItem={(id, dir) => socketService.reorderQueueItem(id, dir)}
-              onRestoreQueueItem={(item) => socketService.addToQueue(item)}
-              onVoteQueueItem={(id) => socketService.voteQueueItem(id, currentUser.id)}
-              onSetParticipantRole={(uid, role) => socketService.setParticipantRole(uid, role)}
-              pinnedMessage={pinnedMessage}
-              onPinMessage={(msgId) => socketService.pinChatMessage(msgId)}
-              onUnpinMessage={() => socketService.unpinChatMessage()}
-              typingUsers={typingUsers}
-              onTypingChange={(isTyping) => socketService.sendTypingState(currentUser, isTyping)}
-              activeMediaTitle={videoState.mode !== 'idle' ? videoState.title : ''}
-              activeMediaPoster={
-                videoState.mode !== 'idle'
-                  ? videoState.poster || videoState.backdrop || ''
-                  : ''
-              }
-              activeMediaIsLive={videoState.mode !== 'idle' && Boolean(videoState.isLive)}
-              currentVideoTimeSec={
-                videoState.mode !== 'idle' && !videoState.isLive
-                  ? livePlaybackSec || videoState.currentTime || 0
-                  : 0
-              }
-              onSeekToTimestamp={
-                videoState.mode !== 'idle' && !videoState.isLive
-                  ? (sec) => handleSyncPlayerAction('seek', { currentTime: sec })
-                  : undefined
-              }
-              onPlayCustomUrl={handlePlayCustomUrl}
-              onOpenCloudBrowser={handleOpenCloudBrowser}
-              onStartPollFromQueue={handleStartPollFromQueue}
-              onVotePoll={handleVotePoll}
-              onClosePoll={handleClosePoll}
-              initialView="chat"
-              openQueueTrigger={openQueueTrigger}
-              savedFriends={savedFriends}
-              onlineUsers={onlineUsers}
-              onOpenFriendsModal={() => setFriendsModalOpen(true)}
-              onAddFriend={handleAddFriend}
-              onSendDirectRoomInvite={handleSendDirectRoomInvite}
-              inviteSentFeedback={inviteSentFeedback}
-              onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
-              onSendReaction={(em) => socketService.sendReaction(currentUser, em)}
-              onTransferHost={(newId) => socketService.transferHost(newId)}
-              onUpdateProfile={handleUpdateProfile}
-              onCreateNewRoom={handleCreateFreshRoom}
-              onSwitchRoom={(targetCode) => handleSwitchActiveRoom(targetCode)}
-              onLeaveRoom={handleLeaveRoom}
-              voiceChat={voiceChat}
-            />
-          </React.Suspense>
+          {renderPartySidebar()}
         </FloatingRoomBubble>
         {/* Service Worker / Cross-Platform Version Update Toast */}
         {(swUpdate || nativeApkUpdate || deferredAppUpdateVersion) && (

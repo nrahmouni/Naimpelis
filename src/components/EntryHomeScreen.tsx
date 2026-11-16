@@ -195,6 +195,151 @@ const JuegosNeonSparkles: React.FC = () => {
   );
 };
 
+/** CINE: Semi-transparent drifting movie posters montage in card background */
+const CinePosterDrift: React.FC<{ movies?: CatalogMovie[] }> = ({ movies = [] }) => {
+  const displayMovies = (movies.length > 0 ? movies.slice(0, 8) : []).filter(
+    (m) => m.poster || m.backdrop
+  );
+  if (displayMovies.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-18 group-hover:opacity-30 transition-opacity">
+      <motion.div
+        animate={{ x: [0, -280] }}
+        transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
+        className="flex items-center gap-2.5 absolute top-1/2 -translate-y-1/2 left-0 will-change-transform"
+      >
+        {[...displayMovies, ...displayMovies].map((m, idx) => (
+          <div
+            key={`${m.id}-${idx}`}
+            className="w-12 h-18 sm:w-14 sm:h-20 rounded-xl overflow-hidden shrink-0 border border-white/10 bg-black/40 shadow-sm"
+          >
+            <img
+              src={m.poster || m.backdrop}
+              alt=""
+              className="w-full h-full object-cover grayscale-[25%] contrast-125"
+              loading="lazy"
+            />
+          </div>
+        ))}
+      </motion.div>
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#141520]/40 to-transparent" />
+    </div>
+  );
+};
+
+/** TV EN DIRECTO: Semi-transparent drifting Spanish TV channel logos montage in background */
+const TvChannelDrift: React.FC<{ channels?: SpanishTdtChannel[] }> = ({ channels = [] }) => {
+  const displayChannels = (channels.length > 0 ? channels.slice(0, 8) : []).filter(
+    (ch) => ch.shortMark || ch.name
+  );
+  if (displayChannels.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-18 group-hover:opacity-32 transition-opacity">
+      <motion.div
+        animate={{ x: [0, -260] }}
+        transition={{ duration: 18, repeat: Infinity, ease: 'linear' }}
+        className="flex items-center gap-2 absolute top-1/2 -translate-y-1/2 left-0 will-change-transform"
+      >
+        {[...displayChannels, ...displayChannels].map((ch, idx) => (
+          <div
+            key={`${ch.id}-${idx}`}
+            className="w-11 h-11 sm:w-12 sm:h-12 rounded-xl flex items-center justify-center font-display font-extrabold text-[10px] text-white shrink-0 border border-white/15 shadow-sm"
+            style={{
+              background: `linear-gradient(135deg, ${ch.brandTone || '#38BDF8'}40 0%, #111827 100%)`,
+            }}
+          >
+            {ch.shortMark || ch.name.slice(0, 3)}
+          </div>
+        ))}
+      </motion.div>
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#0F1E33]/40 to-transparent" />
+    </div>
+  );
+};
+
+/** FÚTBOL: Semi-transparent drifting football crests and live match badges */
+const FutbolBadgeDrift: React.FC<{ matches?: SportsMatch[] }> = ({ matches = [] }) => {
+  const displayTeams = matches.slice(0, 6).flatMap((m) => [
+    {
+      name: m.matchMeta?.homeShort || m.matchMeta?.homeTeam?.slice(0, 4) || m.title.split('vs')[0]?.trim().slice(0, 4) || 'LCL',
+      logo: m.matchMeta?.homeLogo || '',
+    },
+    {
+      name: m.matchMeta?.awayShort || m.matchMeta?.awayTeam?.slice(0, 4) || m.title.split('vs')[1]?.trim().slice(0, 4) || 'VIS',
+      logo: m.matchMeta?.awayLogo || '',
+    },
+  ]);
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-18 group-hover:opacity-30 transition-opacity">
+      <motion.div
+        animate={{ x: [0, -240] }}
+        transition={{ duration: 17, repeat: Infinity, ease: 'linear' }}
+        className="flex items-center gap-2.5 absolute top-1/2 -translate-y-1/2 left-0 will-change-transform"
+      >
+        {(displayTeams.length > 0
+          ? [...displayTeams, ...displayTeams]
+          : [
+              { name: 'RMA', logo: '' },
+              { name: 'FCB', logo: '' },
+              { name: 'ATM', logo: '' },
+              { name: 'LIV', logo: '' },
+              { name: 'MCI', logo: '' },
+              { name: 'BAY', logo: '' },
+              { name: 'PSG', logo: '' },
+              { name: 'INT', logo: '' },
+            ]
+        ).map((t, idx) => (
+          <div
+            key={`${t.name}-${idx}`}
+            className="w-11 h-11 sm:w-12 sm:h-12 rounded-full flex items-center justify-center font-display font-extrabold text-[11px] text-emerald-200 shrink-0 border border-emerald-400/25 bg-emerald-950/60 shadow-sm"
+          >
+            {t.logo ? (
+              <img src={t.logo} alt="" className="w-7 h-7 object-contain" />
+            ) : (
+              <span>{t.name}</span>
+            )}
+          </div>
+        ))}
+      </motion.div>
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#0B231B]/40 to-transparent" />
+    </div>
+  );
+};
+
+/** JUEGOS: Semi-transparent drifting badges for the 4 multiplayer games */
+const JuegosCardsDrift: React.FC = () => {
+  const games = [
+    { title: 'Parchís', badge: '🎲 4P' },
+    { title: 'UNO', badge: '🃏 Wild' },
+    { title: 'Pool 8-Ball', badge: '🎱 8-Ball' },
+    { title: 'Ajedrez', badge: '♟️ 1v1' },
+  ];
+
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden opacity-20 group-hover:opacity-35 transition-opacity">
+      <motion.div
+        animate={{ x: [0, -260] }}
+        transition={{ duration: 16, repeat: Infinity, ease: 'linear' }}
+        className="flex items-center gap-2.5 absolute top-1/2 -translate-y-1/2 left-0 will-change-transform"
+      >
+        {[...games, ...games, ...games].map((g, idx) => (
+          <div
+            key={`${g.title}-${idx}`}
+            className="px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 font-bold text-xs text-white shrink-0 border border-white/15 bg-white/[0.06] backdrop-blur-sm shadow-sm"
+          >
+            <span className="text-sm">{g.badge.split(' ')[0]}</span>
+            <span className="text-[11px] tracking-tight">{g.title}</span>
+          </div>
+        ))}
+      </motion.div>
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#251033]/40 to-transparent" />
+    </div>
+  );
+};
+
 /** SALA CON AMIGOS: Animated audio waveform bars next to social icon */
 const SalaVoiceWaves: React.FC = () => {
   return (
@@ -562,6 +707,12 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                     background: `radial-gradient(220px circle at ${pos.x}% ${pos.y}%, rgba(255,255,255,0.08), transparent 70%)`,
                   }}
                 />
+
+                {/* Ambient Category Thematic Background Drifts */}
+                {world.id === 'cine' && <CinePosterDrift movies={movies} />}
+                {world.id === 'tv' && <TvChannelDrift channels={tdtChannels} />}
+                {world.id === 'futbol' && <FutbolBadgeDrift matches={liveMatches} />}
+                {world.id === 'juegos' && <JuegosCardsDrift />}
 
                 {/* Ambient Category Micro-Animations */}
                 {world.id === 'cine' && <CineDustMotes />}

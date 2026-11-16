@@ -42,6 +42,7 @@ import {
   MicOff,
   PhoneCall,
   PhoneOff,
+  PictureInPicture2,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -4488,6 +4489,26 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       </div>
                     )}
                   </div>
+                )}
+
+                {canUseNativePiPOrCast && (
+                  <button
+                    type="button"
+                    onClick={handleTogglePiP}
+                    className={`min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[42px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
+                      isInPiP
+                        ? 'bg-[#9146FF]/30 text-[#BF94FF] border border-[#9146FF]/50'
+                        : 'hover:bg-white/12 text-white'
+                    }`}
+                    title={pickLang(lang, {
+                      es: 'Pantalla en imagen (PiP)',
+                      ca: 'Pantalla en imatge (PiP)',
+                      en: 'Picture-in-Picture (PiP)',
+                    })}
+                    aria-label="Picture-in-Picture"
+                  >
+                    <PictureInPicture2 className="w-4 h-4 text-sky-400" />
+                  </button>
                 )}
 
                 <button
