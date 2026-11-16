@@ -1,7 +1,8 @@
-import React, { useEffect, useId, useRef, useState } from 'react';
+import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import { motion } from 'motion/react';
 import { Volume2 } from 'lucide-react';
 import { playRiffanIntroSound, triggerHaptic } from '../utils/haptics';
-import { RiffanBrandLogo } from './NaimBrandLogo';
 import { pickLang } from '../utils/i18n';
 import type { AppLanguage } from '../types';
 
@@ -12,38 +13,62 @@ interface NaimcineIntroProps {
   lang?: AppLanguage;
 }
 
-interface OpticalMote {
-  x: number;
-  y: number;
-  z: number;
-  vx: number;
-  vy: number;
-  size: number;
-  hue: 'violet' | 'indigo' | 'platinum';
-  phase: number;
-}
+const INTRO_DURATION_MS = 2450;
+const WORD_LEFT = ['R', 'i', 'f', 'f', 'a', 'n'];
+const WORD_RIGHT = ['T', 'V'];
 
-const INTRO_DURATION_MS = 2350;
+const letterVariants = {
+  hidden: {
+    opacity: 0,
+    y: 18,
+    filter: 'blur(8px)',
+    scale: 1.15,
+  },
+  visible: {
+    opacity: 1,
+    y: 0,
+    filter: 'blur(0px)',
+    scale: 1,
+    transition: {
+      type: 'spring' as const,
+      stiffness: 260,
+      damping: 22,
+      mass: 0.75,
+    },
+  },
+};
 
-/**
- * RiffanTV (RTV) "Optic Sweep" Studio Intro (2.35s, 60fps Canvas + GPU CSS):
- * - Act 1 (0.0s–0.45s): Three architectural light shafts (R · T · V) ignite across Obsidian space.
- * - Act 2 (0.45s–0.95s): Prismatic violet/indigo horizon streak, acoustic ring & 3D RTV monolith lockup.
- * - Act 3 (0.95s–2.35s): Specular 14° glass glint sweep across the RTV monolith & RiffanTV wordmark reveal.
- */
 export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
   onComplete,
   withSound = false,
   subtitle,
   lang = 'es',
 }) => {
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
-  const rawId = useId();
-  const grainFilterId = `rtv-film-grain-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
-  const [soundActive, setSoundActive] = useState<boolean>(false);
+  const rawId = useId().replace(/[^a-zA-Z0-9_-]/g, '');
+  const platId = `rtv-plat-${rawId}`;
+  const bladeId = `rtv-blade-${rawId}`;
+  const shimmerId = `rtv-shimmer-${rawId}`;
+  const clipRId = `rtv-clip-r-${rawId}`;
+
+  const [soundActive, setSoundActive] = useState(false);
+
+  const particles = useMemo(
+    () =>
+      Array.from({ length: 18 }, (_, idx) => ({
+        id: idx,
+        left: `${8 + ((idx * 19) % 84)}%`,
+        top: `${10 + ((idx * 23) % 80)}%`,
+        size: idx % 3 === 0 ? 3 : 2,
+        delay: (idx % 6) * 0.14,
+        dx: idx % 2 === 0 ? 18 : -18,
+        dy: -24 - (idx % 4) * 12,
+        hue: idx % 3 === 0 ? '#A78BFA' : idx % 3 === 1 ? '#38BDF8' : '#F4F5F8',
+      })),
+    []
+  );
 
   useEffect(() => {
     if (withSound) {
@@ -52,217 +77,12 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
       triggerHaptic('success');
     }
 
-    const timer = setTimeout(() => {
+    const timer = window.setTimeout(() => {
       onCompleteRef.current();
     }, INTRO_DURATION_MS);
 
-    return () => clearTimeout(timer);
+    return () => window.clearTimeout(timer);
   }, [withSound]);
-
-  useEffect(() => {
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    if (!ctx) return;
-
-    const prefersReduced =
-      typeof window !== 'undefined' &&
-      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-    let width = 0;
-    let height = 0;
-    let dpr = 1;
-
-    const resize = () => {
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      width = window.innerWidth;
-      height = window.innerHeight;
-      canvas.width = Math.floor(width * dpr);
-      canvas.height = Math.floor(height * dpr);
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
-    resize();
-    window.addEventListener('resize', resize);
-
-    const moteCount = prefersReduced ? 12 : 56;
-    const motes: OpticalMote[] = Array.from({ length: moteCount }, (_, i) => ({
-      x: (Math.random() - 0.5) * 1.5,
-      y: (Math.random() - 0.5) * 1.3,
-      z: 0.25 + Math.random() * 1.5,
-      vx: (Math.random() - 0.5) * 0.00026,
-      vy: -0.00018 - Math.random() * 0.00032,
-      size: 0.8 + Math.random() * 2.2,
-      hue: i % 5 === 0 ? 'indigo' : i % 3 === 0 ? 'violet' : 'platinum',
-      phase: Math.random() * Math.PI * 2,
-    }));
-
-    const startTime = performance.now();
-    let rafId = 0;
-
-    const renderFrame = (now: number) => {
-      const elapsed = now - startTime;
-      const p = Math.min(1, elapsed / INTRO_DURATION_MS);
-
-      const cx = width * 0.5;
-      const cy = height * 0.455;
-      const minDim = Math.min(width, height);
-
-      // 1. Cinema Obsidian Optical Void (#05060A)
-      ctx.globalCompositeOperation = 'source-over';
-      ctx.fillStyle = '#05060A';
-      ctx.fillRect(0, 0, width, height);
-
-      const ignition = Math.min(1, elapsed / 320);
-      const converge = elapsed < 140 ? 0 : Math.min(1, (elapsed - 140) / 420);
-      const impact = elapsed < 440 ? 0 : Math.min(1, (elapsed - 440) / 260);
-      const warpOut = p < 0.8 ? 0 : Math.pow((p - 0.8) / 0.2, 2.0);
-      const masterFade = p > 0.88 ? Math.max(0, 1 - (p - 0.88) / 0.12) : 1;
-
-      ctx.globalCompositeOperation = 'lighter';
-
-      // 2. Central Optical Prism Spotlight
-      const spotAlpha = (0.08 + 0.16 * ignition) * masterFade * (1 - warpOut * 0.35);
-      if (spotAlpha > 0.005) {
-        const spot = ctx.createRadialGradient(cx, cy - minDim * 0.06, 0, cx, cy, minDim * 0.65);
-        spot.addColorStop(0, `rgba(192, 132, 252, ${spotAlpha * 1.15})`);
-        spot.addColorStop(0.32, `rgba(139, 92, 246, ${spotAlpha * 0.78})`);
-        spot.addColorStop(0.68, `rgba(99, 102, 241, ${spotAlpha * 0.28})`);
-        spot.addColorStop(1, 'rgba(0, 0, 0, 0)');
-        ctx.fillStyle = spot;
-        ctx.fillRect(0, 0, width, height);
-      }
-
-      // 3. Three Architectural Light Shafts (R · T · V Convergence) with 14° optical tilt
-      const spread = (1 - Math.pow(converge, 0.72)) * minDim * 0.28 + warpOut * minDim * 0.36;
-      const shafts = [
-        { offset: -spread, w: 3.4, h: 0.76, color: '244, 245, 248', alpha: 0.42 },
-        { offset: 0, w: 5.2, h: 0.92, color: '139, 92, 246', alpha: 0.68 },
-        { offset: spread, w: 3.4, h: 0.76, color: '99, 102, 241', alpha: 0.46 },
-      ];
-
-      ctx.save();
-      ctx.translate(cx, cy);
-      ctx.rotate(0.244); // ~14° signature RiffanTV optical cut angle
-      shafts.forEach((s, idx) => {
-        const sway = Math.sin(elapsed * 0.0028 + idx * 1.2) * 3;
-        const sx = s.offset + sway;
-        const sh = height * s.h * (0.35 + 0.65 * ignition);
-        const sw = s.w * (1 + warpOut * 4.5);
-        const sGrad = ctx.createLinearGradient(sx, -sh * 0.5, sx, sh * 0.5);
-        sGrad.addColorStop(0, `rgba(${s.color}, 0)`);
-        sGrad.addColorStop(0.5, `rgba(${s.color}, ${s.alpha * ignition * (1 - impact * 0.35) * masterFade})`);
-        sGrad.addColorStop(1, `rgba(${s.color}, 0)`);
-        ctx.fillStyle = sGrad;
-        ctx.fillRect(sx - sw * 0.5, -sh * 0.5, sw, sh);
-      });
-      ctx.restore();
-
-      // 4. Dual Acoustic Shockwave Pulse Rings (+0.52s)
-      if (elapsed > 500 && elapsed < 1850) {
-        const sw = (elapsed - 500) / 1350;
-        const easeSw = 1 - Math.pow(1 - sw, 3);
-        const ringR = minDim * (0.09 + easeSw * 0.64);
-        const ringAlpha = (1 - sw) * 0.42 * masterFade;
-        ctx.strokeStyle = `rgba(167, 139, 250, ${ringAlpha})`;
-        ctx.lineWidth = Math.max(1, (1 - sw) * 3.0);
-        ctx.beginPath();
-        ctx.arc(cx, cy, ringR, 0, Math.PI * 2);
-        ctx.stroke();
-      }
-
-      // 5. Horizontal Anamorphic Broadcast Streak
-      const flarePeak =
-        elapsed < 540
-          ? elapsed / 540
-          : Math.max(0.22, 1 - (elapsed - 540) / 1200) + warpOut * 0.5;
-      const flareAlpha = Math.min(1, flarePeak) * masterFade;
-      if (flareAlpha > 0.01) {
-        const streakW = Math.min(width * 0.9, 920) * (0.35 + 0.65 * ignition);
-        const streakGrad = ctx.createLinearGradient(cx - streakW * 0.5, cy, cx + streakW * 0.5, cy);
-        streakGrad.addColorStop(0, 'rgba(99, 102, 241, 0)');
-        streakGrad.addColorStop(0.25, `rgba(139, 92, 246, ${0.22 * flareAlpha})`);
-        streakGrad.addColorStop(0.46, `rgba(192, 132, 252, ${0.58 * flareAlpha})`);
-        streakGrad.addColorStop(0.5, `rgba(255, 255, 255, ${0.88 * flareAlpha})`);
-        streakGrad.addColorStop(0.54, `rgba(192, 132, 252, ${0.58 * flareAlpha})`);
-        streakGrad.addColorStop(0.75, `rgba(99, 102, 241, ${0.22 * flareAlpha})`);
-        streakGrad.addColorStop(1, 'rgba(99, 102, 241, 0)');
-
-        ctx.fillStyle = streakGrad;
-        ctx.fillRect(cx - streakW * 0.5, cy - 1.2, streakW, 2.4);
-      }
-
-      // 6. 3D Optical Dust & Ambient Bokeh
-      motes.forEach((m) => {
-        m.x += m.vx;
-        m.y += m.vy;
-        if (warpOut > 0) {
-          m.z = Math.max(0.08, m.z - warpOut * 0.04);
-        }
-        if (m.y < -0.75) m.y = 0.75;
-
-        const scale = 1 / m.z;
-        const sx = cx + m.x * minDim * scale;
-        const sy = cy + m.y * minDim * scale;
-        if (sx < -30 || sx > width + 30 || sy < -30 || sy > height + 30) return;
-
-        const dist = Math.hypot((sx - cx) / (width * 0.5), (sy - cy) / (height * 0.5));
-        const falloff = Math.max(0.14, 1 - dist * 0.85);
-        const twinkle = 0.6 + 0.4 * Math.sin(elapsed * 0.0045 + m.phase);
-        const radius = Math.min(13, m.size * scale);
-        const isBokeh = radius > 3.2;
-        const baseAlpha = ignition * falloff * twinkle * (isBokeh ? 0.16 : 0.52) * masterFade;
-
-        const rgb =
-          m.hue === 'violet'
-            ? '167, 139, 250'
-            : m.hue === 'indigo'
-            ? '99, 102, 241'
-            : '244, 245, 248';
-
-        if (isBokeh) {
-          const bGrad = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius);
-          bGrad.addColorStop(0, `rgba(${rgb}, ${baseAlpha * 0.55})`);
-          bGrad.addColorStop(0.75, `rgba(${rgb}, ${baseAlpha})`);
-          bGrad.addColorStop(1, `rgba(${rgb}, 0)`);
-          ctx.fillStyle = bGrad;
-          ctx.beginPath();
-          ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-          ctx.fill();
-        } else {
-          ctx.fillStyle = `rgba(${rgb}, ${baseAlpha})`;
-          ctx.beginPath();
-          ctx.arc(sx, sy, radius, 0, Math.PI * 2);
-          ctx.fill();
-        }
-      });
-
-      // 7. Theater Optical Vignette
-      ctx.globalCompositeOperation = 'source-over';
-      const vig = ctx.createRadialGradient(
-        cx,
-        cy,
-        minDim * 0.25,
-        cx,
-        cy,
-        Math.max(width, height) * 0.78
-      );
-      vig.addColorStop(0, 'rgba(0, 0, 0, 0)');
-      vig.addColorStop(1, 'rgba(5, 6, 10, 0.84)');
-      ctx.fillStyle = vig;
-      ctx.fillRect(0, 0, width, height);
-
-      if (!prefersReduced && elapsed < INTRO_DURATION_MS + 100) {
-        rafId = requestAnimationFrame(renderFrame);
-      }
-    };
-
-    rafId = requestAnimationFrame(renderFrame);
-
-    return () => {
-      cancelAnimationFrame(rafId);
-      window.removeEventListener('resize', resize);
-    };
-  }, []);
 
   const handleManualSoundTrigger = () => {
     const ok = playRiffanIntroSound();
@@ -270,92 +90,262 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
     triggerHaptic('medium');
   };
 
-  return (
+  const wordmarkContainerVariants = {
+    hidden: { letterSpacing: '0.28em' },
+    visible: {
+      letterSpacing: '0.07em',
+      transition: {
+        letterSpacing: { delay: 0.42, duration: 0.72, ease: [0.22, 1, 0.36, 1] as const },
+        staggerChildren: 0.045,
+        delayChildren: 0.44,
+      },
+    },
+  };
+
+  const resolvedSubtitle =
+    subtitle ||
+    pickLang(lang, {
+      es: 'ENTRANDO A SALA...',
+      ca: 'ENTRANT A LA SALA...',
+      en: 'ENTERING ROOM...',
+    });
+
+  const content = (
     <div
       onClick={handleManualSoundTrigger}
-      className="fixed inset-0 z-[100] bg-[#05060A] flex flex-col items-center justify-center overflow-hidden select-none animate-rtv-intro-fade"
+      className="fixed inset-0 w-screen h-[100dvh] z-[9999] bg-[#050508] opacity-100 flex flex-col items-center justify-center overflow-hidden select-none"
       role="dialog"
+      aria-modal="true"
       aria-label="RiffanTV Studio Intro"
     >
-      {/* Real-Time 60fps Optical Beams & Anamorphic Prism Canvas */}
-      <canvas
-        ref={canvasRef}
-        aria-hidden="true"
-        className="absolute inset-0 w-full h-full pointer-events-none"
-      />
-
-      {/* 35mm Film Grain Physical Texture Layer */}
-      <svg
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 w-full h-full opacity-[0.045] mix-blend-overlay"
-      >
-        <filter id={grainFilterId}>
-          <feTurbulence
-            type="fractalNoise"
-            baseFrequency="0.78"
-            numOctaves="3"
-            stitchTiles="stitch"
-          />
-        </filter>
-        <rect width="100%" height="100%" filter={`url(#${grainFilterId})`} />
-      </svg>
-
-      {/* 2.39:1 CinemaScope Matte Framing Bars */}
+      {/* Full-viewport atmospheric radial backdrop (opaque #050508 edge-to-edge from frame 0) */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute top-0 inset-x-0 h-[6.5vh] sm:h-[8.5vh] bg-black/95 border-b border-white/[0.06] z-10 animate-rtv-scope-top"
+        className="pointer-events-none absolute inset-0 w-full h-full"
+        style={{
+          background:
+            'radial-gradient(ellipse 85% 65% at 50% 45%, rgba(145, 70, 255, 0.22) 0%, rgba(56, 189, 248, 0.08) 38%, rgba(5, 5, 8, 1) 76%)',
+        }}
       />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-0 inset-x-0 h-[6.5vh] sm:h-[8.5vh] bg-black/95 border-t border-white/[0.06] z-10 animate-rtv-scope-bottom"
-      />
 
-      {/* 3D Architectural RTV Monolith & Wordmark Lockup */}
-      <div
-        className="relative z-20 flex flex-col items-center px-6"
-        style={{ perspective: '1200px' }}
-      >
-        <div className="relative animate-rtv-monolith">
-          <div
-            aria-hidden="true"
-            className="absolute -inset-7 rounded-[44px] bg-radial from-[#8B5CF6]/50 via-[#6366F1]/18 to-transparent blur-2xl pointer-events-none"
+      {/* Ambient GPU-composited floating motes across 100% viewport */}
+      <div aria-hidden="true" className="pointer-events-none absolute inset-0 w-full h-full overflow-hidden">
+        {particles.map((pt) => (
+          <motion.span
+            key={pt.id}
+            initial={{ opacity: 0, x: 0, y: 0, scale: 0.6 }}
+            animate={{
+              opacity: [0, 0.75, 0],
+              x: [0, pt.dx],
+              y: [0, pt.dy],
+              scale: [0.6, 1.2, 0.7],
+            }}
+            transition={{
+              duration: 1.9,
+              delay: pt.delay,
+              ease: 'easeOut',
+            }}
+            style={{
+              left: pt.left,
+              top: pt.top,
+              width: pt.size,
+              height: pt.size,
+              backgroundColor: pt.hue,
+              boxShadow: `0 0 10px ${pt.hue}`,
+            }}
+            className="absolute rounded-full will-change-transform"
           />
-
-          <div className="relative rounded-[36px] shadow-[0_30px_90px_rgba(0,0,0,0.95),0_0_80px_rgba(139,92,246,0.42)] overflow-hidden">
-            <RiffanBrandLogo size={160} frameStyle="obsidian" animated />
-
-            {/* Specular 14° Glass Glint Sweep */}
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute inset-y-0 -left-1/3 w-2/3 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-rtv-glint"
-            />
-          </div>
-        </div>
-
-        <div className="mt-7 sm:mt-8 text-center animate-rtv-wordmark">
-          <div className="font-display font-extrabold text-4xl sm:text-5xl md:text-6xl tracking-[0.14em] pl-[0.14em] leading-none flex items-baseline justify-center">
-            <span className="text-[#F4F5F8]">Riffan</span>
-            <span className="text-[#A78BFA] ml-1.5">TV</span>
-          </div>
-
-          <div
-            aria-hidden="true"
-            className="mx-auto mt-3.5 h-[1px] w-44 sm:w-64 bg-gradient-to-r from-transparent via-[#8B5CF6]/75 to-transparent animate-rtv-divider"
-          />
-
-          <p className="mt-3 text-[11px] sm:text-xs uppercase tracking-[0.26em] text-zinc-300/90 font-medium">
-            {subtitle ||
-              pickLang(lang, {
-                es: 'RTV Broadcast · Cine · Directos · Sala Sincronizada',
-                ca: 'RTV Broadcast · Cinema · Directes · Sala Sincronitzada',
-                en: 'RTV Broadcast · Cinema · Live TV · Real-Time Sync',
-              })}
-          </p>
-        </div>
+        ))}
       </div>
 
-      {/* Bottom Controls Inside CinemaScope Bar */}
-      <div className="absolute bottom-3 sm:bottom-4 inset-x-5 sm:inset-x-8 z-30 flex items-center justify-between gap-3">
+      {/* Central Isotype + Wordmark Stage */}
+      <div className="relative z-10 flex flex-col items-center px-6 text-center">
+        {/* Expanding optical ring on piece lock-in */}
+        <motion.div
+          aria-hidden="true"
+          initial={{ scale: 0.5, opacity: 0 }}
+          animate={{ scale: [0.5, 1.9], opacity: [0.55, 0] }}
+          transition={{ delay: 0.36, duration: 0.95, ease: 'easeOut' }}
+          className="absolute top-12 w-36 h-36 rounded-full border border-[#9146FF]/60 pointer-events-none will-change-transform"
+        />
+
+        {/* Obsidian Isotype Card */}
+        <motion.div
+          initial={{ scale: 0.88, opacity: 0.92 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ type: 'spring', stiffness: 220, damping: 22 }}
+          className="relative w-36 h-36 sm:w-44 sm:h-44 rounded-[34px] bg-gradient-to-br from-[#141726] via-[#090B12] to-[#030306] border border-white/15 shadow-[0_28px_80px_rgba(0,0,0,0.95),0_0_72px_rgba(145,70,255,0.42)] flex items-center justify-center overflow-hidden will-change-transform"
+        >
+          {/* Subtle animated glass border highlight sweep */}
+          <motion.div
+            aria-hidden="true"
+            initial={{ x: '-140%', skewX: -22, opacity: 0 }}
+            animate={{ x: '220%', skewX: -22, opacity: [0, 0.65, 0] }}
+            transition={{ delay: 0.5, duration: 0.85, ease: [0.22, 1, 0.36, 1] }}
+            className="pointer-events-none absolute inset-y-0 w-1/2 bg-gradient-to-r from-transparent via-white/25 to-transparent will-change-transform"
+          />
+
+          {/* Vector SVG Kinetic Blade R with Split Piece Spring Assembly & Interior Shimmer */}
+          <svg
+            viewBox="0 0 512 512"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            role="img"
+            aria-label="RiffanTV R Isotipo"
+            className="w-[88%] h-[88%] overflow-visible drop-shadow-[0_6px_18px_rgba(0,0,0,0.6)]"
+          >
+            <defs>
+              <linearGradient id={platId} x1="130" y1="120" x2="410" y2="380" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#FFFFFF" />
+                <stop offset="50%" stopColor="#F1F5F9" />
+                <stop offset="100%" stopColor="#CBD5E1" />
+              </linearGradient>
+              <linearGradient id={bladeId} x1="220" y1="288" x2="358" y2="386" gradientUnits="userSpaceOnUse">
+                <stop offset="0%" stopColor="#C4B5FD" />
+                <stop offset="48%" stopColor="#9146FF" />
+                <stop offset="100%" stopColor="#38BDF8" />
+              </linearGradient>
+              <linearGradient id={shimmerId} x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="rgba(255,255,255,0)" />
+                <stop offset="50%" stopColor="rgba(255,255,255,0.92)" />
+                <stop offset="100%" stopColor="rgba(255,255,255,0)" />
+              </linearGradient>
+              <clipPath id={clipRId}>
+                <g transform="matrix(1 0 -0.1405 1 36 0)">
+                  <path d="M 230 290 H 296 L 354 382 H 288 Z" />
+                  <path
+                    fillRule="evenodd"
+                    clipRule="evenodd"
+                    d="M 148 120 H 304 C 362 120 384 152 384 204 C 384 256 358 280 296 280 H 218 L 210 382 H 148 Z M 216 166 V 234 L 286 200 Z"
+                  />
+                </g>
+              </clipPath>
+            </defs>
+
+            <g transform="matrix(1 0 -0.1405 1 36 0)">
+              {/* Piece 1: Main White Upper Body with Play Cutout */}
+              <motion.path
+                fillRule="evenodd"
+                clipRule="evenodd"
+                d="M 148 120 H 304 C 362 120 384 152 384 204 C 384 256 358 280 296 280 H 218 L 210 382 H 148 Z M 216 166 V 234 L 286 200 Z"
+                fill={`url(#${platId})`}
+                initial={{ x: -56, y: -40, opacity: 0, scale: 0.84 }}
+                animate={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+                transition={{ type: 'spring', stiffness: 250, damping: 20, mass: 0.9 }}
+              />
+
+              {/* Piece 2: Purple/Cyan Diagonal Lower Kicker Blade */}
+              <motion.path
+                d="M 230 290 H 296 L 354 382 H 288 Z"
+                fill={`url(#${bladeId})`}
+                initial={{ x: 64, y: 54, opacity: 0, scale: 0.78 }}
+                animate={{ x: 0, y: 0, opacity: 1, scale: 1 }}
+                transition={{
+                  type: 'spring',
+                  stiffness: 260,
+                  damping: 19,
+                  mass: 0.85,
+                  delay: 0.14,
+                }}
+              />
+            </g>
+
+            {/* Interior Shimmer Sweep clipped directly inside the assembled R paths */}
+            <g clipPath={`url(#${clipRId})`}>
+              <motion.rect
+                y="70"
+                width="140"
+                height="380"
+                rx="16"
+                fill={`url(#${shimmerId})`}
+                transform="rotate(20 256 256)"
+                initial={{ x: 20, opacity: 0 }}
+                animate={{ x: 460, opacity: [0, 0.9, 0] }}
+                transition={{ delay: 0.48, duration: 0.72, ease: [0.22, 1, 0.36, 1] }}
+              />
+            </g>
+          </svg>
+        </motion.div>
+
+        {/* Kinetic Letter-by-Letter "Riffan TV" Wordmark */}
+        <motion.div
+          variants={wordmarkContainerVariants}
+          initial="hidden"
+          animate="visible"
+          className="mt-7 sm:mt-8 font-display font-black text-4xl sm:text-5xl md:text-6xl leading-none flex items-baseline justify-center"
+        >
+          <span className="inline-flex items-baseline">
+            {WORD_LEFT.map((char, idx) => (
+              <motion.span
+                key={`l-${idx}`}
+                variants={letterVariants}
+                className="inline-block text-[#F4F5F8] will-change-transform"
+              >
+                {char}
+              </motion.span>
+            ))}
+          </span>
+
+          <span className="inline-flex items-baseline ml-2">
+            {WORD_RIGHT.map((char, idx) => (
+              <motion.span
+                key={`r-${idx}`}
+                variants={letterVariants}
+                animate={{
+                  opacity: 1,
+                  y: 0,
+                  filter: 'blur(0px)',
+                  scale: 1,
+                  textShadow: [
+                    '0 0 0px rgba(145,70,255,0)',
+                    '0 0 28px rgba(167,139,250,0.95), 0 0 54px rgba(145,70,255,0.75)',
+                    '0 0 14px rgba(167,139,250,0.55)',
+                  ],
+                }}
+                transition={{
+                  opacity: { delay: 0.44 + (WORD_LEFT.length + idx) * 0.045, duration: 0.35 },
+                  y: { type: 'spring', stiffness: 260, damping: 22, delay: 0.44 + (WORD_LEFT.length + idx) * 0.045 },
+                  filter: { delay: 0.44 + (WORD_LEFT.length + idx) * 0.045, duration: 0.35 },
+                  scale: { type: 'spring', stiffness: 260, damping: 22, delay: 0.44 + (WORD_LEFT.length + idx) * 0.045 },
+                  textShadow: { delay: 0.92, duration: 0.95, ease: 'easeInOut' },
+                }}
+                className="inline-block text-[#A78BFA] will-change-transform"
+              >
+                {char}
+              </motion.span>
+            ))}
+          </span>
+        </motion.div>
+
+        {/* Optical Accent Line */}
+        <motion.div
+          aria-hidden="true"
+          initial={{ scaleX: 0, opacity: 0 }}
+          animate={{ scaleX: 1, opacity: 1 }}
+          transition={{ delay: 0.85, duration: 0.48, ease: [0.22, 1, 0.36, 1] }}
+          className="mx-auto mt-4 h-[1.5px] w-44 sm:w-64 origin-center bg-gradient-to-r from-transparent via-[#9146FF] to-transparent will-change-transform"
+        />
+
+        {/* Subtitle ("ENTRANDO A SALA...") */}
+        <motion.p
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 1.05, duration: 0.4, ease: 'easeOut' }}
+          className="mt-3 text-[11px] sm:text-xs uppercase tracking-[0.26em] text-zinc-300 font-semibold"
+        >
+          {resolvedSubtitle}
+        </motion.p>
+      </div>
+
+      {/* Bottom Controls with mobile safe-area inset compliance */}
+      <div
+        className="fixed bottom-0 inset-x-0 z-20 flex items-center justify-between gap-3 px-5 sm:px-8 pointer-events-none"
+        style={{
+          paddingBottom: 'max(1.1rem, env(safe-area-inset-bottom))',
+          paddingLeft: 'max(1.25rem, env(safe-area-inset-left))',
+          paddingRight: 'max(1.25rem, env(safe-area-inset-right))',
+        }}
+      >
         {!soundActive ? (
           <button
             type="button"
@@ -363,7 +353,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
               e.stopPropagation();
               handleManualSoundTrigger();
             }}
-            className="min-h-[38px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-[11px] font-medium text-zinc-300 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+            className="pointer-events-auto min-h-[38px] px-3.5 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/12 text-[11px] font-medium text-zinc-300 flex items-center gap-1.5 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
           >
             <Volume2 className="w-3.5 h-3.5 text-[#A78BFA]" />
             <span>
@@ -384,7 +374,7 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
             e.stopPropagation();
             onComplete();
           }}
-          className="min-h-[38px] px-4 rounded-xl bg-white/[0.07] hover:bg-white/[0.14] border border-white/12 text-xs font-medium text-zinc-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
+          className="pointer-events-auto min-h-[38px] px-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/14 text-xs font-semibold text-zinc-200 transition-colors whitespace-nowrap shrink-0 cursor-pointer"
         >
           {pickLang(lang, {
             es: 'Saltar intro',
@@ -395,6 +385,11 @@ export const NaimcineIntro: React.FC<NaimcineIntroProps> = ({
       </div>
     </div>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(content, document.body);
+  }
+  return content;
 };
 
 export const RiffanIntro = NaimcineIntro;

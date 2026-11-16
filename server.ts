@@ -278,6 +278,7 @@ const MOVIE_GENRE_MAP: Record<string, number> = {
   horror: 27,
   comedy: 35,
   animation: 16,
+  anime: 16,
   thriller: 53,
   adventure: 12,
   drama: 18,
@@ -294,6 +295,7 @@ const MOVIDY_GENRE_SLUGS: Record<string, string> = {
   horror: 'terror',
   comedy: 'comedia',
   animation: 'animacion',
+  anime: 'animacion',
   thriller: 'suspense',
   adventure: 'aventura',
   drama: 'drama',
@@ -834,6 +836,8 @@ async function fetchTmdbMovieCatalog(opts: {
     endpoint = `https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   } else if (category === 'now_playing') {
     endpoint = `https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
+  } else if (category === 'anime') {
+    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=popularity.desc&vote_count.gte=30&primary_release_date.lte=${todayIso}&with_genres=16&with_original_language=ja&page=${page}&include_adult=false`;
   } else if (MOVIE_GENRE_MAP[category]) {
     endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=popularity.desc&vote_count.gte=45&primary_release_date.lte=${todayIso}&with_genres=${MOVIE_GENRE_MAP[category]}&page=${page}&include_adult=false`;
   } else {
@@ -1303,6 +1307,7 @@ const SERIES_GENRE_MAP: Record<string, number> = {
   crime: 80,
   comedy: 35,
   animation: 16,
+  anime: 16,
   mystery: 9648,
 };
 
@@ -1618,6 +1623,8 @@ app.get('/api/catalog/series', async (req, res) => {
       endpoint = `https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
     } else if (category === 'top_rated') {
       endpoint = `https://api.themoviedb.org/3/tv/top_rated?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
+    } else if (category === 'anime') {
+      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&sort_by=popularity.desc&vote_count.gte=30&first_air_date.lte=${todayIso}&with_genres=16&with_origin_country=JP&page=${page}&include_adult=false`;
     } else if (SERIES_GENRE_MAP[category]) {
       endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&sort_by=popularity.desc&without_genres=10767,10763&with_genres=${SERIES_GENRE_MAP[category]}&page=${page}`;
     } else {
@@ -2561,6 +2568,11 @@ let cachedLiveAgendaFeeds: {
   streamXhdFootball: any[];
   ts: number;
 } | null = null;
+let inFlightLiveAgendaPromise: Promise<{
+  rojaMatches: any[];
+  streamXhdFootball: any[];
+}> | null = null;
+let rojaAgendaCooldownUntil = 0;
 
 async function fetchLiveSportsAgendaFeeds(): Promise<{
   rojaMatches: any[];
@@ -2569,108 +2581,135 @@ async function fetchLiveSportsAgendaFeeds(): Promise<{
   if (cachedLiveAgendaFeeds && Date.now() - cachedLiveAgendaFeeds.ts < 90 * 1000) {
     return cachedLiveAgendaFeeds;
   }
+  if (inFlightLiveAgendaPromise) {
+    return inFlightLiveAgendaPromise;
+  }
 
-  const liveGrouped = new Map<string, any>();
-  const streamXhdFootball: any[] = [];
+  inFlightLiveAgendaPromise = (async () => {
+    const liveGrouped = new Map<string, any>();
+    const streamXhdFootball: any[] = [];
 
-  await Promise.all([
-    // Feed A: StreamXHD structured live events (`eventos.json` — exact teams, logos, and live servers)
-    (async () => {
-      for (const domain of ['https://streamxhd.sbs', 'https://streamxhd.st']) {
-        try {
-          const evRes = await fetch(`${domain}/eventos.json`, {
-            headers: { 'User-Agent': CHROME_UA },
-            signal: AbortSignal.timeout(4000),
-          });
-          if (!evRes.ok) continue;
-          const evJson: any = await evRes.json();
-          for (const sp of evJson?.sports || []) {
-            const sportId = String(sp?.id || '').toLowerCase();
-            const mappedSport: 'soccer' | 'motor' | 'basketball' | 'tennis' | 'other' =
-              sportId === 'football' || sportId === 'soccer'
-                ? 'soccer'
-                : sportId === 'basketball'
-                ? 'basketball'
-                : sportId === 'tennis'
-                ? 'tennis'
-                : sportId === 'motorsport' || sportId === 'f1'
-                ? 'motor'
-                : detectSportKind(String(sp?.name || ''));
+    await Promise.all([
+      // Feed A: StreamXHD structured live events (`eventos.json` — exact teams, logos, and live servers)
+      (async () => {
+        for (const domain of ['https://streamxhd.sbs', 'https://streamxhd.st']) {
+          try {
+            const evRes = await fetch(`${domain}/eventos.json`, {
+              headers: { 'User-Agent': CHROME_UA },
+              signal: AbortSignal.timeout(4500),
+            });
+            if (!evRes.ok) continue;
+            const evJson: any = await evRes.json();
+            for (const sp of evJson?.sports || []) {
+              const sportId = String(sp?.id || '').toLowerCase();
+              const mappedSport: 'soccer' | 'motor' | 'basketball' | 'tennis' | 'other' =
+                sportId === 'football' || sportId === 'soccer'
+                  ? 'soccer'
+                  : sportId === 'basketball'
+                  ? 'basketball'
+                  : sportId === 'tennis'
+                  ? 'tennis'
+                  : sportId === 'motorsport' || sportId === 'f1'
+                  ? 'motor'
+                  : detectSportKind(String(sp?.name || ''));
 
-            for (const lg of sp?.leagues || []) {
-              const leagueName = String(lg?.name || 'En Directo').trim();
-              for (const ev of lg?.events || []) {
-                const servers: any[] = Array.isArray(ev?.servers) ? ev.servers : [];
-                const validTracks: TrackRecord[] = [];
-                for (const srv of servers) {
-                  const srvUrl = String(srv?.url || '').trim();
-                  if (!srvUrl.startsWith('http')) continue;
-                  if (validTracks.some((t) => t.sourceUrl === srvUrl)) continue;
-                  validTracks.push({
-                    id: `sxhd-${validTracks.length + 1}`,
-                    label: String(srv?.name || `Señal ${validTracks.length + 1}`).trim(),
-                    lang: 'LIVE',
-                    quality: '1080p',
-                    sourceUrl: srvUrl,
-                    resolverType: 'sports_channel',
-                  });
-                }
-                if (validTracks.length === 0) continue;
+              for (const lg of sp?.leagues || []) {
+                const leagueName = String(lg?.name || 'En Directo').trim();
+                for (const ev of lg?.events || []) {
+                  const servers: any[] = Array.isArray(ev?.servers) ? ev.servers : [];
+                  const validTracks: TrackRecord[] = [];
+                  for (const srv of servers) {
+                    const srvUrl = String(srv?.url || '').trim();
+                    if (!srvUrl.startsWith('http')) continue;
+                    if (validTracks.some((t) => t.sourceUrl === srvUrl)) continue;
+                    validTracks.push({
+                      id: `sxhd-${validTracks.length + 1}`,
+                      label: String(srv?.name || `Señal ${validTracks.length + 1}`).trim(),
+                      lang: 'LIVE',
+                      quality: '1080p',
+                      sourceUrl: srvUrl,
+                      resolverType: 'sports_channel',
+                    });
+                  }
+                  if (validTracks.length === 0) continue;
 
-                const homeTeam = String(ev?.homeTeam || '').trim();
-                const awayTeam = String(ev?.awayTeam || '').trim();
-                const matchTitle =
-                  homeTeam && awayTeam
-                    ? `${homeTeam} vs ${awayTeam}`
-                    : String(ev?.title || 'Evento en Vivo').trim();
-                const rawTime = String(ev?.time || '').trim();
-                const timeMatch = rawTime.match(/(\d{1,2}:\d{2})/);
-                const timeStr = timeMatch ? timeMatch[1] : 'EN VIVO';
+                  const homeTeam = String(ev?.homeTeam || '').trim();
+                  const awayTeam = String(ev?.awayTeam || '').trim();
+                  const matchTitle =
+                    homeTeam && awayTeam
+                      ? `${homeTeam} vs ${awayTeam}`
+                      : String(ev?.title || 'Evento en Vivo').trim();
+                  const rawTime = String(ev?.time || '').trim();
+                  const timeMatch = rawTime.match(/(\d{1,2}:\d{2})/);
+                  const timeStr = timeMatch ? timeMatch[1] : 'EN VIVO';
 
-                const key = `sxhd-${leagueName}-${timeStr}-${matchTitle}`;
-                liveGrouped.set(key, {
-                  id: `live-${crypto.createHash('sha1').update(key).digest('base64url').slice(0, 16)}`,
-                  title: matchTitle,
-                  homeTeam,
-                  awayTeam,
-                  competition: leagueName,
-                  sport: mappedSport,
-                  time: timeStr,
-                  isLive: true,
-                  is247Channel: false,
-                  channels: validTracks,
-                });
-
-                if (mappedSport === 'soccer' && homeTeam && awayTeam) {
-                  streamXhdFootball.push({
+                  const key = `sxhd-${leagueName}-${timeStr}-${matchTitle}`;
+                  liveGrouped.set(key, {
+                    id: `live-${crypto.createHash('sha1').update(key).digest('base64url').slice(0, 16)}`,
+                    title: matchTitle,
                     homeTeam,
                     awayTeam,
-                    homeLogo: String(ev?.homeLogo || '').trim() || undefined,
-                    awayLogo: String(ev?.awayLogo || '').trim() || undefined,
-                    leagueName,
-                    code: String(ev?.code || '').trim(),
-                    rawTime,
-                    timeStr,
+                    competition: leagueName,
+                    sport: mappedSport,
+                    time: timeStr,
+                    isLive: true,
+                    is247Channel: false,
                     channels: validTracks,
                   });
+
+                  if (mappedSport === 'soccer' && homeTeam && awayTeam) {
+                    streamXhdFootball.push({
+                      homeTeam,
+                      awayTeam,
+                      homeLogo: String(ev?.homeLogo || '').trim() || undefined,
+                      awayLogo: String(ev?.awayLogo || '').trim() || undefined,
+                      leagueName,
+                      code: String(ev?.code || '').trim(),
+                      rawTime,
+                      timeStr,
+                      channels: validTracks,
+                    });
+                  }
                 }
               }
             }
+            break;
+          } catch {
+            // try backup domain
           }
-          break;
-        } catch {
-          // try backup domain
         }
-      }
-    })(),
+      })(),
 
-    // Feed B: RojaDirecta real-time agenda
-    (async () => {
-      try {
-        const agendaHtml = await fetch('https://www.rojadirectv.live/', {
-          headers: { 'User-Agent': CHROME_UA },
-          signal: AbortSignal.timeout(4500),
-        }).then((r) => (r.ok ? r.text() : ''));
+      // Feed B: RojaDirecta real-time agenda (best-effort with mirror fallback + cooldown)
+      (async () => {
+        if (Date.now() < rojaAgendaCooldownUntil) return;
+
+        let agendaHtml = '';
+        for (const mirrorUrl of [
+          'https://www.rojadirectv.live/',
+          'https://rojadirectv.live/',
+        ]) {
+          try {
+            const resp = await fetch(mirrorUrl, {
+              headers: { 'User-Agent': CHROME_UA },
+              signal: AbortSignal.timeout(5500),
+            });
+            if (resp.ok) {
+              const html = await resp.text();
+              if (html && html.includes('btn-canal')) {
+                agendaHtml = html;
+                break;
+              }
+            }
+          } catch {
+            // mirror timed out or blocked; try next mirror silently
+          }
+        }
+
+        if (!agendaHtml) {
+          rojaAgendaCooldownUntil = Date.now() + 5 * 60 * 1000;
+          return;
+        }
 
         const rowRegex =
           /<tr>\s*<td><span class="t">([^<]+)<\/span><\/td>[\s\S]*?<td align="left">([\s\S]*?)<\/td>\s*<\/tr>/gi;
@@ -2725,21 +2764,29 @@ async function fetchLiveSportsAgendaFeeds(): Promise<{
             }
           }
         }
-      } catch (err) {
-        console.warn('RojaDirecta live scrape warning:', err);
-      }
-    })(),
-  ]);
+      })(),
+    ]);
 
-  const rojaMatches = Array.from(liveGrouped.values()).filter(
-    (ev) => Array.isArray(ev.channels) && ev.channels.length > 0
-  );
-  cachedLiveAgendaFeeds = {
-    rojaMatches,
-    streamXhdFootball,
-    ts: Date.now(),
-  };
-  return cachedLiveAgendaFeeds;
+    const rojaMatches = Array.from(liveGrouped.values()).filter(
+      (ev) => Array.isArray(ev.channels) && ev.channels.length > 0
+    );
+    cachedLiveAgendaFeeds = {
+      rojaMatches:
+        rojaMatches.length > 0
+          ? rojaMatches
+          : cachedLiveAgendaFeeds?.rojaMatches || [],
+      streamXhdFootball:
+        streamXhdFootball.length > 0
+          ? streamXhdFootball
+          : cachedLiveAgendaFeeds?.streamXhdFootball || [],
+      ts: Date.now(),
+    };
+    return cachedLiveAgendaFeeds;
+  })().finally(() => {
+    inFlightLiveAgendaPromise = null;
+  });
+
+  return inFlightLiveAgendaPromise;
 }
 
 app.get('/api/catalog/sports', async (_req, res) => {
@@ -5254,13 +5301,52 @@ const EPG_CHANNEL_MAPPING: Record<string, { xmltv: string[]; tdtJson: string[] }
   'tdt-boing': { xmltv: ['Boing'], tdtJson: ['Boing.TV'] },
   'tdt-canalsur': { xmltv: ['Canal Sur HD', 'Canal Sur Andalucía'], tdtJson: ['CanalSurA.TV'] },
   'tdt-3cat': { xmltv: ['TV3', 'TV3 Catalunya'], tdtJson: ['TV3.TV'] },
-  'tdt-etb1': { xmltv: ['etb1'], tdtJson: ['ETB1.TV'] },
-  'tdt-etb2': { xmltv: ['etb2'], tdtJson: ['ETB2.TV'] },
+  'tdt-etb1': { xmltv: ['etb1', 'etb1 euskera'], tdtJson: ['ETB1.TV'] },
+  'tdt-etb2': { xmltv: ['etb2', 'etb2 euskera'], tdtJson: ['ETB2.TV'] },
   'tdt-tvcanaria': { xmltv: ['TV Canaria', 'Atlántico TV'], tdtJson: ['TVCanaria.TV'] },
   'cat-sx3': { xmltv: ['SX3', 'SX3 Catalunya'], tdtJson: ['SX3.TV'] },
+  'cat-sx3-live': { xmltv: ['SX3', 'SX3 Catalunya'], tdtJson: ['SX3.TV'] },
   'cat-tv3': { xmltv: ['TV3', 'TV3 Catalunya'], tdtJson: ['TV3.TV'] },
+  'cat-tv3-live': { xmltv: ['TV3', 'TV3 Catalunya'], tdtJson: ['TV3.TV'] },
+  'cat-esport3-live': { xmltv: ['Esport 3', 'Esport3 Catalunya'], tdtJson: ['Esport3.TV'] },
   'cat-324': { xmltv: ['3CatInfo', '3CatInfo Catalunya'], tdtJson: ['324.TV'] },
+  'cat-324-live': { xmltv: ['3CatInfo', '3CatInfo Catalunya'], tdtJson: ['324.TV'] },
   'cat-c33': { xmltv: ['El 33 Catalunya'], tdtJson: ['C33.TV'] },
+  'tnt-vivo': { xmltv: ['Warner TV HD', 'Warner TV'], tdtJson: [] },
+  'tnt-sports': { xmltv: ['UK | TNT Sports 1', 'UK | TNT Sports 2'], tdtJson: [] },
+  'dsports-1': { xmltv: ['DSPORTS'], tdtJson: [] },
+  'dsports-2': { xmltv: ['DSPORTS 2'], tdtJson: [] },
+  'dsports-plus': { xmltv: ['DSPORTS+'], tdtJson: [] },
+  'dsports-motor': { xmltv: ['DSPORTS Motor'], tdtJson: [] },
+  'dsports-fight': { xmltv: ['DSPORTS Fight'], tdtJson: [] },
+  'espn-1': { xmltv: ['ESPN', 'ESPN Argentina', 'ESPN International'], tdtJson: [] },
+  'espn-2': { xmltv: ['ESPN 2', 'ESPN 2 Argentina'], tdtJson: [] },
+  'espn-3': { xmltv: ['ESPN 3', 'ESPN 3 Argentina'], tdtJson: [] },
+  'espn-4': { xmltv: ['ESPN 4'], tdtJson: [] },
+  'espn-5': { xmltv: ['ESPN Deportes', 'ESPN International'], tdtJson: [] },
+  'espn-6': { xmltv: ['ESPN International'], tdtJson: [] },
+  'bein-es-n': { xmltv: ['beIN SPORTS en español'], tdtJson: [] },
+  'bein-xtra-hd': { xmltv: ['beIN SPORTS XTRA ñ'], tdtJson: [] },
+  'bein-1': { xmltv: ['FR · beIN SPORTS 1'], tdtJson: [] },
+  'bein-2': { xmltv: ['FR · beIN SPORTS 2'], tdtJson: [] },
+  'bein-3': { xmltv: ['FR · beIN SPORTS 3'], tdtJson: [] },
+  'bein-4': { xmltv: ['FR · beIN SPORTS MAX 4'], tdtJson: [] },
+  'bein-5': { xmltv: ['FR · beIN SPORTS MAX 5'], tdtJson: [] },
+  'bein-6': { xmltv: ['FR · beIN SPORTS MAX 6'], tdtJson: [] },
+  'bein-7': { xmltv: ['FR · beIN SPORTS MAX 7'], tdtJson: [] },
+  'uk-sky-premier': { xmltv: ['UK | Sky Sports Premier League'], tdtJson: [] },
+  'uk-sky-f1': { xmltv: ['UK | Sky Sports F1'], tdtJson: [] },
+  'uk-sky-action': { xmltv: ['UK | Sky Sports NFL', 'UK | Sky Sports Mix', 'UK | Sky Sports Tennis'], tdtJson: [] },
+  'uk-sky-sports-1': { xmltv: ['UK | Sky Sports Main Event', 'UK | Sky Sports Football'], tdtJson: [] },
+  'uk-sky-sports-2': { xmltv: ['UK | Sky Sports Mix', 'UK | Sky Sports Cricket', 'UK | Sky Sports Golf'], tdtJson: [] },
+  'uk-eurosport-1': { xmltv: ['Eurosport 1 HD'], tdtJson: [] },
+  'uk-eurosport-2': { xmltv: ['Eurosport 2'], tdtJson: [] },
+  'uk-redbull': { xmltv: ['Red Bull TV (DAZN)', 'Red Bull TV'], tdtJson: [] },
+  'uk-fifa-plus': { xmltv: ['FIFA+'], tdtJson: [] },
+  'uk-fifa-women': { xmltv: ['FIFA+'], tdtJson: [] },
+  'uk-bellator-mma': { xmltv: ['MMA TV', 'FightSports'], tdtJson: [] },
+  'uk-dazn-combat': { xmltv: ['FightSports', 'Fight Box HD'], tdtJson: [] },
+  'uk-sky-racing': { xmltv: ['UK | Sky Sports Racing'], tdtJson: [] },
 };
 
 const madridTimeFormatter = new Intl.DateTimeFormat('es-ES', {
@@ -5537,7 +5623,7 @@ app.get('/api/epg/live', async (_req, res) => {
 
       const upcomingSlice = events
         .filter((e) => e.stopMs > now)
-        .slice(0, 8)
+        .slice(0, 18)
         .map((e) => ({
           title: e.title,
           subtitle: e.subtitle,

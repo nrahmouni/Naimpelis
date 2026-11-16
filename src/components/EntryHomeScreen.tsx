@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useRef, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useMemo, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Film,
   Trophy,
@@ -12,7 +12,6 @@ import {
   Play,
   ChevronRight,
   Clock,
-  Clapperboard,
 } from 'lucide-react';
 import type { AppLanguage, WatchHistoryItem } from '../types';
 import type { PrimaryWorldId } from '../store/useAppStore';
@@ -246,20 +245,8 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(displayName);
 
-  // Cinema Portal Transition state
-  const [isEnteringCinema, setIsEnteringCinema] = useState(false);
-  const cinemaPortalTimeoutRef = useRef<number | null>(null);
-
   // Radial Spotlight hover coordinates per card
   const [spotlightPos, setSpotlightPos] = useState<Record<string, { x: number; y: number }>>({});
-
-  useEffect(() => {
-    return () => {
-      if (cinemaPortalTimeoutRef.current) {
-        window.clearTimeout(cinemaPortalTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const handleSaveName = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -282,16 +269,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
   const handleCardClick = (worldId: PrimaryWorldId) => {
     triggerHaptic('medium');
-    if (worldId === 'cine') {
-      // Execute 750ms Cinema Portal Transition
-      setIsEnteringCinema(true);
-      cinemaPortalTimeoutRef.current = window.setTimeout(() => {
-        setIsEnteringCinema(false);
-        onSelectWorld('cine');
-      }, 750);
-    } else {
-      onSelectWorld(worldId);
-    }
+    onSelectWorld(worldId);
   };
 
   const orderedWorlds = useMemo(() => {
@@ -375,99 +353,9 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   return (
     <div className="relative w-full overflow-x-hidden">
       {/* ==================================================================== */}
-      {/* CINEMA PORTAL TRANSITION OVERLAY                                      */}
-      {/* ==================================================================== */}
-      <AnimatePresence>
-        {isEnteringCinema && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-            className="fixed inset-0 z-50 bg-[#0B0B0F] flex flex-col items-center justify-center overflow-hidden"
-          >
-            {/* Volumetric Projector Light Cone radiating from top */}
-            <motion.div
-              initial={{ opacity: 0, scaleY: 0 }}
-              animate={{ opacity: 0.75, scaleY: 1 }}
-              transition={{ duration: 0.45, ease: 'easeOut' }}
-              style={{ originY: 0 }}
-              className="absolute top-0 w-full h-[85vh] bg-gradient-to-b from-white/35 via-[#9146FF]/25 to-transparent blur-md pointer-events-none"
-            />
-
-            {/* Floating Projector Dust Particles */}
-            <div className="absolute inset-0 pointer-events-none">
-              {Array.from({ length: 12 }).map((_, i) => (
-                <motion.div
-                  key={i}
-                  initial={{
-                    y: 40 + (i % 5) * 40,
-                    x: (i - 6) * 35,
-                    opacity: 0,
-                    scale: 0.8,
-                  }}
-                  animate={{
-                    y: -100 - i * 15,
-                    x: (i - 6) * 35 + (i % 2 === 0 ? 25 : -25),
-                    opacity: [0, 0.9, 0],
-                    scale: [0.8, 1.2, 0.6],
-                  }}
-                  transition={{
-                    duration: 0.75,
-                    ease: 'easeOut',
-                  }}
-                  className="absolute top-1/2 left-1/2 w-1.5 h-1.5 rounded-full bg-amber-200 shadow-[0_0_10px_#FDE68A]"
-                />
-              ))}
-            </div>
-
-            {/* Glowing Center Cine Badge */}
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0, y: 16 }}
-              animate={{ scale: 1, opacity: 1, y: 0 }}
-              transition={{ duration: 0.35, ease: 'backOut' }}
-              className="relative z-10 flex flex-col items-center gap-3"
-            >
-              <div className="w-20 h-20 rounded-3xl bg-[#9146FF] text-white flex items-center justify-center shadow-[0_0_50px_rgba(145,70,255,0.7)] border border-white/30">
-                <Clapperboard className="w-10 h-10 animate-pulse" />
-              </div>
-
-              <motion.h2
-                initial={{ opacity: 0, y: 8 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.15, duration: 0.25 }}
-                className="font-display font-black text-2xl text-white tracking-tight"
-              >
-                {pickLang(lang, {
-                  es: 'Entrando al Cine...',
-                  ca: 'Entrant al Cinema...',
-                  en: 'Entering Cinema...',
-                })}
-              </motion.h2>
-              <p className="text-xs text-zinc-400 font-medium">
-                {pickLang(lang, {
-                  es: 'Preparando la gran pantalla',
-                  ca: 'Preparant la gran pantalla',
-                  en: 'Setting up the big screen',
-                })}
-              </p>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
-
-      {/* ==================================================================== */}
       {/* MAIN HOME VIEW CONTAINER                                             */}
       {/* ==================================================================== */}
-      <motion.div
-        animate={
-          isEnteringCinema
-            ? { scale: 0.94, opacity: 0, filter: 'blur(6px)' }
-            : { scale: 1, opacity: 1, filter: 'blur(0px)' }
-        }
-        transition={{ duration: 0.3 }}
-        className="w-full max-w-4xl mx-auto px-4 pt-2 pb-24 space-y-5 @container"
-      >
+      <div className="w-full max-w-4xl mx-auto px-4 pt-2 pb-24 space-y-5 @container">
         {/* 1. PERSONALIZED GREETING */}
         <section className="space-y-1">
           {editingName ? (
@@ -771,7 +659,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             </div>
           </motion.button>
         </section>
-      </motion.div>
+      </div>
     </div>
   );
 };

@@ -489,9 +489,9 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                   tvAuthToken: '',
                 });
               }}
-              className="min-h-[58px] px-8 rounded-2xl bg-white text-[#0E0E10] hover:bg-zinc-200 font-display font-bold text-base sm:text-lg flex items-center gap-3 cursor-pointer shadow-[0_12px_36px_rgba(255,255,255,0.18)] active:scale-95 transition-all"
+              className="min-h-[58px] px-8 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] text-white font-display font-bold text-base sm:text-lg flex items-center gap-3 cursor-pointer shadow-[0_12px_36px_rgba(145,70,255,0.4)] active:scale-95 transition-all"
             >
-              <Tv className="w-5 h-5 text-[#9146FF]" />
+              <Tv className="w-5 h-5 text-white" />
               <span>
                 {pickLang(lang, {
                   es: `Reconectar a ${lastSavedRoom.roomName} (Pulsa OK)`,
@@ -547,11 +547,11 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
               <button
                 type="button"
                 onClick={toggleTvBrowserFullscreen}
-                className="min-h-[52px] px-5 rounded-2xl bg-white text-[#0E0E10] hover:bg-zinc-200 text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors"
+                className="min-h-[52px] px-5 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/15 text-white text-sm font-bold flex items-center gap-2 cursor-pointer transition-colors"
               >
                 {isFullscreen ? (
                   <>
-                    <Minimize className="w-4 h-4" />
+                    <Minimize className="w-4 h-4 text-[#BF94FF]" />
                     <span>
                       {pickLang(lang, {
                         es: 'Salir Pantalla Completa',
@@ -562,7 +562,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                   </>
                 ) : (
                   <>
-                    <Maximize className="w-4 h-4 text-[#9146FF]" />
+                    <Maximize className="w-4 h-4 text-[#BF94FF]" />
                     <span>
                       {pickLang(lang, {
                         es: 'Pantalla Completa TV',
@@ -623,7 +623,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
                 <button
                   type="submit"
                   disabled={!directRoomDraft.trim()}
-                  className="h-11 px-4 rounded-xl bg-white text-[#0E0E10] hover:bg-zinc-200 disabled:opacity-35 text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                  className="h-11 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white disabled:opacity-35 text-xs font-bold flex items-center gap-1.5 shrink-0 cursor-pointer disabled:cursor-not-allowed transition-colors"
                 >
                   <span>
                     {pickLang(lang, { es: 'Entrar', ca: 'Entrar', en: 'Join' })}

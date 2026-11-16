@@ -117,7 +117,7 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   activeWorld: 'entry',
   lastUsedWorld: loadLastUsedWorld(),
   cineTab: 'movies',
-  cineCastellano: true,
+  cineCastellano: false,
   futbolTab: 'matches',
   isFloatingRoomOpen: false,
   showDesignSystem:

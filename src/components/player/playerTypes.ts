@@ -4,7 +4,9 @@ import type {
   CloudBrowserState,
   FloatingReaction,
   LanguageNoticePopup,
+  OnlineAppUser,
   Participant,
+  SavedFriend,
   SecondaryStreamState,
   TvRemoteCommandType,
   VideoState,
@@ -206,4 +208,12 @@ export interface NativeCinemaPlayerProps {
   compactVideoForMobileKeyboard?: boolean;
   onOpenInCloudBrowser?: (url: string) => void;
   voiceChat?: GameVoiceChatState;
+  savedFriends?: SavedFriend[];
+  onlineUsers?: OnlineAppUser[];
+  onOpenFriendsModal?: () => void;
+  onSendDirectRoomInvite?: (friend: {
+    friendId: string;
+    name: string;
+    friendCode?: string;
+  }) => void;
 }

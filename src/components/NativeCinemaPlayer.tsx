@@ -129,6 +129,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   compactVideoForMobileKeyboard = false,
   onOpenInCloudBrowser,
   voiceChat,
+  savedFriends = [],
+  onlineUsers = [],
+  onOpenFriendsModal,
+  onSendDirectRoomInvite,
 }) => {
   const { subtitleStyle, setSubtitleStyle, syncOffsetMs, setSyncOffsetMs } = useAppStore();
   const t = UI_COPY[lang];
@@ -213,17 +217,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [inlineRetryUrl, setInlineRetryUrl] = useState<string>('');
   const [inlineRetryNonce, setInlineRetryNonce] = useState<number>(0);
 
-  // Local Language Popup State & Floating Chat State
+  // Local Language Popup State & Incoming Chat Toast State
   const [localLangPopup, setLocalLangPopup] = useState<LanguageNoticePopup | null>(null);
   const langPopupTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [floatingChatDraft, setFloatingChatDraft] = useState('');
-  const [floatingChatTab, setFloatingChatTab] = useState<'chat' | 'friends'>('chat');
-  const [floatingCopied, setFloatingCopied] = useState<boolean>(false);
   const [recentIncomingChatBubble, setRecentIncomingChatBubble] = useState<ChatMessage | null>(
     null
   );
   const lastSeenMsgIdRef = useRef<string>('');
-  const floatingChatEndRef = useRef<HTMLDivElement | null>(null);
 
   // Cinema Pro Engine: Ambilight, Vocal Boost (Web Audio Compressor), Playback Speed & Subtitles
   const [showProMenu, setShowProMenu] = useState<boolean>(false);
@@ -608,7 +608,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     []
   );
 
-  // Show incoming chat bubble on video when floatingChatOpen is false
+  // Show brief incoming chat pill over video when bottom floating window is closed
   useEffect(() => {
     if (!messages || messages.length === 0) return;
     const latest = messages[messages.length - 1];
@@ -627,11 +627,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   useEffect(() => {
     if (floatingChatOpen) {
       setRecentIncomingChatBubble(null);
-      setTimeout(() => {
-        floatingChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 60);
     }
-  }, [floatingChatOpen, messages.length]);
+  }, [floatingChatOpen]);
 
   useEffect(() => {
     showControlsRef.current = showControls;
@@ -2530,15 +2527,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     onSelectTrack(matchingIdx, currentTime);
   };
 
-  const handleFloatingChatSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const clean = floatingChatDraft.trim();
-    if (!clean || !onSendMessage) return;
-    triggerHaptic('light');
-    onSendMessage(clean);
-    setFloatingChatDraft('');
-  };
-
   return (
     <section
       className={`w-full ${
@@ -2717,7 +2705,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           </div>
         )}
 
-        {/* Incoming Live Chat Message Pill (Bottom-Left over Video when Floating Chat is closed) */}
+        {/* Incoming Live Chat Message Pill (Bottom-Left over Video when Floating Chat Orb is closed) */}
         {recentIncomingChatBubble && !floatingChatOpen && !isMinimized && !isCompressed && !isTvMode && (
           <button
             type="button"
@@ -2736,249 +2724,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               <span className="text-white truncate">{recentIncomingChatBubble.text}</span>
             </div>
           </button>
-        )}
-
-        {/* FLOATING LIVE CHAT OVERLAY DRAWER ON VIDEO (`Chat Flotante`) */}
-        {floatingChatOpen && !isMinimized && !isTvMode && (
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="pointer-events-auto absolute inset-y-2 right-2 z-45 w-[88%] max-w-[320px] sm:w-[330px] rounded-3xl bg-black/40 backdrop-blur-md border border-white/15 shadow-[0_24px_70px_rgba(0,0,0,0.95)] flex flex-col overflow-hidden"
-          >
-            {/* Header with Mode Tabs: Chat & Amigos */}
-            <div className="px-3 py-2 border-b border-white/10 bg-black/40 flex items-center justify-between gap-2 shrink-0">
-              <div className="flex items-center gap-1 bg-white/[0.06] p-0.5 rounded-xl border border-white/[0.08]">
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFloatingChatTab('chat');
-                  }}
-                  className={`min-h-[28px] px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    floatingChatTab === 'chat'
-                      ? 'bg-[#9146FF] text-white shadow-sm'
-                      : 'text-zinc-300 hover:text-white'
-                  }`}
-                >
-                  <MessageSquare className="w-3 h-3" />
-                  <span>{t.tabChat}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setFloatingChatTab('friends');
-                  }}
-                  className={`min-h-[28px] px-2.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
-                    floatingChatTab === 'friends'
-                      ? 'bg-[#9146FF] text-white shadow-sm'
-                      : 'text-zinc-300 hover:text-white'
-                  }`}
-                >
-                  <Users className="w-3 h-3" />
-                  <span>{pickLang(lang, { es: 'Amigos', ca: 'Amics', en: 'Friends' })}</span>
-                  <span className="px-1.5 py-0.2 rounded-full text-[10px] font-mono bg-black/40 text-zinc-200 tabular-nums">
-                    {participants.length > 0 ? participants.length : participantCount}
-                  </span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={() => onToggleFloatingChat?.()}
-                  title={pickLang(lang, { es: 'Cerrar / Anclar', ca: 'Tancar / Ancorar', en: 'Close / Dock' })}
-                  className="w-7 h-7 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-zinc-200 cursor-pointer transition-colors"
-                  aria-label={pickLang(lang, {
-                    es: 'Cerrar chat flotante',
-                    ca: 'Tancar xat flotant',
-                    en: 'Close floating chat',
-                  })}
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            </div>
-
-            {/* TAB CONTENT */}
-            {floatingChatTab === 'chat' ? (
-              <>
-                <div className="flex-1 overflow-y-auto overscroll-contain p-2.5 space-y-2 min-h-0 custom-scrollbar">
-                  {messages.length === 0 ? (
-                    <div className="py-8 text-center text-[11px] text-zinc-400 space-y-1">
-                      <p className="font-semibold text-zinc-300">
-                        {pickLang(lang, {
-                          es: 'Comenta en vivo sobre el vídeo',
-                          ca: 'Comenta en directe sobre el vídeo',
-                          en: 'Live chat over the stream',
-                        })}
-                      </p>
-                      <p className="text-[10px]">
-                        {pickLang(lang, {
-                          es: 'Tus mensajes flotan sin tapar la pantalla.',
-                          ca: 'Els teus missatges floten sense tapar.',
-                          en: 'Translucent floating live comments.',
-                        })}
-                      </p>
-                    </div>
-                  ) : (
-                    messages.slice(-30).map((msg) => {
-                      if (msg.isSystem) {
-                        return (
-                          <div
-                            key={msg.id}
-                            className="py-1 px-2 rounded-lg bg-white/[0.05] text-[10px] text-zinc-300 text-center"
-                          >
-                            {msg.text}
-                          </div>
-                        );
-                      }
-                      const isMe = msg.senderId === currentUserId;
-                      return (
-                        <div
-                          key={msg.id}
-                          className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}
-                        >
-                          <span className="text-[10px] font-semibold text-zinc-300 mb-0.5 px-1">
-                            {msg.senderName}
-                          </span>
-                          <div
-                            className={`max-w-[88%] px-2.5 py-1.5 rounded-xl text-xs leading-snug break-words ${
-                              isMe
-                                ? 'bg-[#9146FF] text-white rounded-tr-xs'
-                                : 'bg-[#181A24]/90 text-zinc-100 border border-white/10 rounded-tl-xs'
-                            }`}
-                          >
-                            {msg.text}
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                  <div ref={floatingChatEndRef} />
-                </div>
-
-                {onSendReaction && (
-                  <div className="px-2 py-1 border-t border-white/10 bg-black/40 flex items-center justify-around shrink-0">
-                    {['🔥', '😂', '⚽', '🍿', '👏', '❤️'].map((em) => (
-                      <button
-                        key={em}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          onSendReaction(em);
-                        }}
-                        className="w-7 h-7 rounded-lg hover:bg-white/15 flex items-center justify-center text-sm cursor-pointer"
-                      >
-                        {em}
-                      </button>
-                    ))}
-                  </div>
-                )}
-
-                {onSendMessage && (
-                  <form
-                    onSubmit={handleFloatingChatSubmit}
-                    className="p-2 border-t border-white/10 bg-black/60 flex items-center gap-1.5 shrink-0"
-                  >
-                    <input
-                      type="text"
-                      value={floatingChatDraft}
-                      onChange={(e) => setFloatingChatDraft(e.target.value)}
-                      placeholder={pickLang(lang, {
-                        es: 'Escribe sin ocultar el vídeo...',
-                        ca: 'Escriu sense amagar el vídeo...',
-                        en: 'Type message...',
-                      })}
-                      maxLength={300}
-                      className="flex-1 min-w-0 h-9 px-3 rounded-xl bg-black/75 border border-white/15 focus:border-[#9146FF] text-base sm:text-xs text-white placeholder:text-zinc-400 outline-none"
-                    />
-                    <button
-                      type="submit"
-                      disabled={!floatingChatDraft.trim()}
-                      className="w-9 h-9 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] disabled:opacity-35 flex items-center justify-center text-white shrink-0 cursor-pointer"
-                      aria-label={pickLang(lang, {
-                        es: 'Enviar mensaje',
-                        ca: 'Enviar missatge',
-                        en: 'Send message',
-                      })}
-                    >
-                      <Send className="w-3.5 h-3.5" />
-                    </button>
-                  </form>
-                )}
-              </>
-            ) : (
-              /* AMIGOS EN SALA TAB */
-              <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0 custom-scrollbar">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-                    {pickLang(lang, { es: 'En esta sala', ca: 'A aquesta sala', en: 'In this room' })}
-                  </span>
-                  <span className="inline-flex items-center gap-1 text-[11px] font-mono text-[#00F593]">
-                    <span className="w-1.5 h-1.5 rounded-full bg-[#00F593] animate-pulse" />
-                    {participants.length > 0 ? participants.length : participantCount}{' '}
-                    {pickLang(lang, { es: 'en vivo', ca: 'en directe', en: 'live' })}
-                  </span>
-                </div>
-
-                <div className="space-y-1.5">
-                  {(participants.length > 0 ? participants : [{ id: currentUserId || 'me', name: userName, avatar: '🎬', color: '#9146FF' }]).map((p) => (
-                    <div
-                      key={p.id}
-                      className="flex items-center justify-between gap-2 p-2 rounded-xl bg-white/[0.04] border border-white/[0.06]"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div
-                          className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-                          style={{ backgroundColor: p.color || '#9146FF' }}
-                        >
-                          {p.avatar && p.avatar.length <= 2 ? p.avatar : p.name.slice(0, 1).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-white truncate">{p.name}</p>
-                          <p className="text-[10px] text-emerald-400 flex items-center gap-1">
-                            <span className="w-1 h-1 rounded-full bg-emerald-400" />
-                            <span>
-                              {pickLang(lang, { es: 'Viendo vídeo', ca: 'Veient vídeo', en: 'Watching' })}
-                            </span>
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="pt-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      const shareUrl = `${window.location.origin}?room=${roomCode || ''}`;
-                      if (navigator.clipboard) {
-                        navigator.clipboard.writeText(shareUrl).then(() => {
-                          setFloatingCopied(true);
-                          setTimeout(() => setFloatingCopied(false), 2400);
-                        });
-                      }
-                    }}
-                    className="w-full min-h-10 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-md active:scale-95 transition-all"
-                  >
-                    {floatingCopied ? (
-                      <>
-                        <Check className="w-3.5 h-3.5 text-[#00F593]" />
-                        <span>{pickLang(lang, { es: '¡Enlace copiado!', ca: 'Enllaç copiat!', en: 'Link copied!' })}</span>
-                      </>
-                    ) : (
-                      <>
-                        <UserPlus className="w-3.5 h-3.5" />
-                        <span>{pickLang(lang, { es: 'Invitar amigos a la sala', ca: 'Convidar amics a la sala', en: 'Invite friends to room' })}</span>
-                      </>
-                    )}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
         )}
 
         {/* Active Chromecast or Phone Battery-Saver Remote Overlay */}
@@ -3175,28 +2920,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     </button>
                   )}
                 </div>
-              )}
-
-              {/* 2b. Floating Chat Toggle (Fullscreen only — windowed uses below-video strip) */}
-              {!isTvMode && (isFullscreen || isHorizontalFullscreen) && onToggleFloatingChat && (
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    triggerHaptic('light');
-                    onToggleFloatingChat();
-                  }}
-                  title="Chat Flotante sobre el vídeo"
-                  aria-label="Chat Flotante"
-                  className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
-                    floatingChatOpen
-                      ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_8px_20px_rgba(145,70,255,0.35)]'
-                      : 'bg-[#141418]/75 hover:bg-[#141418]/95 border-white/15 text-zinc-100'
-                  }`}
-                >
-                  <MessageSquare className="w-4 h-4 shrink-0" />
-                  <span className="hidden sm:inline">Chat</span>
-                </button>
               )}
 
               {/* 3. Ajustes de Reproducción (Fullscreen only — windowed uses below-video strip) */}
@@ -5043,10 +4766,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 <div className="flex items-center gap-1 bg-[#26262C]/80 p-1 rounded-2xl border border-white/[0.08]">
                   {(
                     [
-                      { code: 'ES', short: '🇪🇸 ES', title: 'Castellano' },
-                      { code: 'LAT', short: '🇲🇽 LAT', title: 'Latino' },
-                      { code: 'VOSE', short: '💬 VOSE', title: 'VOSE' },
-                      { code: 'EN', short: '🇬🇧 EN', title: 'English' },
+                      { code: 'ES', short: 'ES', title: 'Castellano' },
+                      { code: 'LAT', short: 'LAT', title: 'Latino' },
+                      { code: 'VOSE', short: 'VOSE', title: 'VOSE' },
+                      { code: 'EN', short: 'EN', title: 'English' },
                     ] as const
                   )
                     .filter((langBtn) =>
@@ -5290,28 +5013,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     )}
                   </button>
                 )
-              )}
-
-              {onToggleFloatingChat && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    onToggleFloatingChat();
-                  }}
-                  className={`min-h-[38px] px-3.5 rounded-2xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border ${
-                    floatingChatOpen
-                      ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-sm'
-                      : 'bg-[#26262C] hover:bg-white/[0.12] text-zinc-200 border-white/[0.09]'
-                  }`}
-                  title={pickLang(lang, { es: 'Sala y chat en vivo', ca: 'Sala i xat en directe', en: 'Room & live chat' })}
-                >
-                  <Users className="w-3.5 h-3.5 shrink-0" />
-                  <span>
-                    {pickLang(lang, { es: 'Sala', ca: 'Sala', en: 'Room' })} ·{' '}
-                    {participants.length > 0 ? participants.length : participantCount}
-                  </span>
-                </button>
               )}
 
               <button

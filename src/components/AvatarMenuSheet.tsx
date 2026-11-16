@@ -162,7 +162,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
       <div className="space-y-3 pb-2">
         <div className="flex items-center gap-3 px-2 pb-2 border-b border-white/[0.06]">
           <div
-            className="w-12 h-12 rounded-2xl flex items-center justify-center text-xl font-bold text-white shrink-0 border border-white/15"
+            className="w-12 h-12 rounded-2xl flex items-center justify-center text-base font-bold text-white shrink-0 border border-white/15"
             style={{ backgroundColor: color || '#9146FF' }}
           >
             {authUser?.photoURL ? (
@@ -172,7 +172,12 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
                 className="w-full h-full object-cover rounded-2xl"
               />
             ) : (
-              avatar || (displayName || 'U').slice(0, 1).toUpperCase()
+              (() => {
+                const words = (displayName || 'U').trim().split(/\s+/).filter(Boolean);
+                return words.length >= 2
+                  ? `${words[0][0]}${words[1][0]}`.toUpperCase()
+                  : (displayName || 'U').trim().slice(0, 2).toUpperCase();
+              })()
             )}
           </div>
           <div className="min-w-0 flex-1">

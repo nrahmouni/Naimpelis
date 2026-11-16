@@ -57,43 +57,43 @@ const AUDIO_LANGUAGE_OPTIONS: {
 }[] = [
   {
     code: 'ES',
-    flag: '🇪🇸',
-    labelEs: 'Castellano',
-    labelCa: 'Castellà',
-    labelEn: 'Spanish (Spain)',
-    subEs: 'Audio España HD',
-    subCa: 'Àudio Espanya HD',
+    flag: '',
+    labelEs: 'ES',
+    labelCa: 'ES',
+    labelEn: 'ES',
+    subEs: 'Castellano HD',
+    subCa: 'Castellà HD',
     subEn: 'Castilian HD',
   },
   {
     code: 'LAT',
-    flag: '🇲🇽',
-    labelEs: 'Español Latino',
-    labelCa: 'Espanyol Llatí',
-    labelEn: 'Latin Spanish',
-    subEs: 'Audio Latino HD',
-    subCa: 'Àudio Llatí HD',
+    flag: '',
+    labelEs: 'LAT',
+    labelCa: 'LAT',
+    labelEn: 'LAT',
+    subEs: 'Latino HD',
+    subCa: 'Llatí HD',
     subEn: 'LatAm HD',
   },
   {
     code: 'VOSE',
-    flag: '💬',
-    labelEs: 'Subtitulado (VOSE)',
-    labelCa: 'Subtitulat (VOSE)',
-    labelEn: 'Subtitled (VOSE)',
-    subEs: 'V.O. + Subtítulos ES',
-    subCa: 'V.O. + Subtítols',
-    subEn: 'Original + Subs',
+    flag: '',
+    labelEs: 'VOSE',
+    labelCa: 'VOSE',
+    labelEn: 'VOSE',
+    subEs: 'Subtitulado ES',
+    subCa: 'Subtitulat',
+    subEn: 'Subtitled',
   },
   {
     code: 'EN',
-    flag: '🇬🇧',
-    labelEs: 'Inglés Original',
-    labelCa: 'Anglès Original',
-    labelEn: 'Original English',
-    subEs: 'Audio V.O. 1080p',
-    subCa: 'Àudio V.O. 1080p',
-    subEn: 'Original 1080p',
+    flag: '',
+    labelEs: 'EN',
+    labelCa: 'EN',
+    labelEn: 'EN',
+    subEs: 'Original HD',
+    subCa: 'Original HD',
+    subEn: 'Original HD',
   },
 ];
 
@@ -577,7 +577,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                               : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
                           }`}
                         >
-                          <span className="text-lg shrink-0">{opt.flag}</span>
+                          {opt.flag && <span className="text-lg shrink-0">{opt.flag}</span>}
                           <div className="min-w-0 flex-1">
                             <div
                               className={`text-xs font-bold truncate ${

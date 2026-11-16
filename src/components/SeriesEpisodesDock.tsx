@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronDown, ChevronUp, Loader2, Play, SkipForward, Tv } from 'lucide-react';
+import { ChevronDown, ChevronUp, Loader2, Play, Tv } from 'lucide-react';
 import type {
   ActiveSeriesContext,
   AppLanguage,
@@ -112,18 +112,26 @@ export const SeriesEpisodesDock: React.FC<SeriesEpisodesDockProps> = ({
       className="rounded-2xl bg-[#111218]/95 border border-white/[0.08] overflow-hidden shadow-[0_12px_32px_rgba(0,0,0,0.45)]"
     >
       {/* Compact Header Row */}
-      <div className="px-3.5 py-2.5 flex items-center justify-between gap-2 border-b border-white/[0.06]">
+      <div className="px-3.5 py-2.5 flex flex-wrap items-center justify-between gap-2 border-b border-white/[0.06]">
         <div className="flex items-center gap-2 min-w-0">
           <Tv className="w-4 h-4 text-[#BF94FF] shrink-0" />
           <div className="min-w-0 flex items-center gap-2">
-            <h3 className="font-display font-bold text-xs sm:text-sm text-white truncate">
+            <h3 className="font-display font-bold text-xs sm:text-sm text-white whitespace-nowrap">
               {pickLang(lang, {
-                es: 'Capítulos siguientes',
-                ca: 'Capítols següents',
-                en: 'Up Next · Episodes',
+                es: 'Capítulos',
+                ca: 'Capítols',
+                en: 'Episodes',
               })}
+              <span className="hidden sm:inline">
+                {' '}
+                {pickLang(lang, {
+                  es: 'siguientes',
+                  ca: 'següents',
+                  en: 'up next',
+                })}
+              </span>
             </h3>
-            <span className="text-[11px] font-mono tabular-nums text-zinc-400 shrink-0">
+            <span className="text-[11px] font-mono tabular-nums px-2 py-0.5 rounded-lg bg-[#9146FF]/20 border border-[#9146FF]/35 text-[#E9D5FF] shrink-0">
               {seriesMeta.season}x{String(seriesMeta.episode).padStart(2, '0')}
             </span>
           </div>
@@ -155,24 +163,6 @@ export const SeriesEpisodesDock: React.FC<SeriesEpisodesDockProps> = ({
                 </option>
               ))}
             </select>
-          )}
-
-          {nextEpisodeInSeason && seriesDetails && (
-            <button
-              type="button"
-              disabled={Boolean(loadingItemId)}
-              onClick={() => {
-                triggerHaptic('success');
-                onSelectEpisode(seriesDetails, nextEpisodeInSeason, preferLang);
-              }}
-              className="min-h-8 px-3 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
-            >
-              <SkipForward className="w-3.5 h-3.5 fill-current shrink-0" />
-              <span>
-                {nextEpisodeInSeason.seasonNumber}x
-                {String(nextEpisodeInSeason.episodeNumber).padStart(2, '0')}
-              </span>
-            </button>
           )}
 
           <button
@@ -279,10 +269,10 @@ export const SeriesEpisodesDock: React.FC<SeriesEpisodesDockProps> = ({
                       </span>
 
                       <span
-                        className={`absolute bottom-1.5 right-2 w-7 h-7 rounded-full flex items-center justify-center shadow-md ${
+                        className={`absolute bottom-1.5 right-2 w-7 h-7 rounded-full flex items-center justify-center shadow-md transition-colors ${
                           isCurrent
                             ? 'bg-[#9146FF] text-white'
-                            : 'bg-white/90 text-[#050507]'
+                            : 'bg-[#191B26]/90 border border-white/25 text-white group-hover:bg-[#9146FF] group-hover:border-[#9146FF]'
                         }`}
                       >
                         {isLoadingThis ? (

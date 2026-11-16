@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { motion } from 'motion/react';
 import {
   Search,
   Film,
@@ -95,6 +96,12 @@ import { MediaDetailsModal } from './MediaDetailsModal';
 import { LatestReleasesSection } from './LatestReleasesSection';
 import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
 import type { PartyOnlineAction } from './PartyGamesStage';
+import {
+  ChannelLogoBadge,
+  getChannelRegionMeta,
+  getCategoryRegion,
+  type TvRegionId,
+} from './ui/ChannelLogoBadge';
 import stadiumBackdrop from '../assets/images/sports_stadium_backdrop_1794353709543.webp';
 import f1Backdrop from '../assets/images/motorsport_f1_backdrop_1794353709150.webp';
 
@@ -302,9 +309,9 @@ const STREAMING_PLATFORMS: {
     ca: 'Apple TV+',
     en: 'Apple TV+',
     mark: 'tv+',
-    accentBg: 'bg-zinc-100',
-    accentText: 'text-[#050508]',
-    activeBorder: 'border-zinc-300 bg-white/15 text-white',
+    accentBg: 'bg-[#9146FF]',
+    accentText: 'text-white',
+    activeBorder: 'border-[#9146FF] bg-[#9146FF]/20 text-white',
     cardGlow: 'from-zinc-400/18 via-[#12131A] to-[#0A0B10]',
     descEs: 'Cine y series originales Apple',
     descCa: 'Cinema i sèries originals Apple',
@@ -326,11 +333,91 @@ const STREAMING_PLATFORMS: {
   },
 ];
 
+export interface TvFilterGroup {
+  region: TvRegionId;
+  flag: string;
+  name: { es: string; ca: string; en: string };
+  sub: { es: string; ca: string; en: string };
+  categories: {
+    id: 'all' | 'tdt_all' | TdtCategory;
+    es: string;
+    ca: string;
+    en: string;
+    badge?: string;
+  }[];
+}
+
+export const TV_FILTER_GROUPS: TvFilterGroup[] = [
+  {
+    region: 'es',
+    flag: '🇪🇸',
+    name: { es: 'España', ca: 'Espanya', en: 'Spain' },
+    sub: {
+      es: 'TDT Nacional, Movistar Plus+ y DAZN',
+      ca: 'TDT Nacional, Movistar Plus+ i DAZN',
+      en: 'National DTT, Movistar+ & DAZN',
+    },
+    categories: [
+      { id: 'tdt_all', es: 'Toda la TDT España', ca: 'Tota la TDT Espanya', en: 'All Spain DTT', badge: 'TDT' },
+      { id: 'generalistas', es: 'Generalistas (La 1 · A3 · T5 · Sexta)', ca: 'Generalistes (La 1 · A3 · T5 · Sexta)', en: 'Main Channels (1–6)', badge: '1-6' },
+      { id: 'movistar', es: 'Movistar Plus+', ca: 'Movistar Plus+', en: 'Movistar Plus+', badge: 'M+' },
+      { id: 'dazn', es: 'DAZN España', ca: 'DAZN Espanya', en: 'DAZN Spain', badge: 'DAZN' },
+      { id: 'cine_series', es: 'Cine y Series', ca: 'Cinema i Sèries', en: 'Movies & Series' },
+      { id: 'entretenimiento', es: 'Entretenimiento', ca: 'Entreteniment', en: 'Entertainment' },
+      { id: 'noticias_deportes', es: '24h y Deportes', ca: '24h i Esports', en: 'News & Sports' },
+      { id: 'infantil_autonomicas', es: 'Infantil y Autonómicas', ca: 'Infantil i Autonòmiques', en: 'Kids & Regional' },
+    ],
+  },
+  {
+    region: 'latam',
+    flag: '🌎',
+    name: { es: 'Latam e Internacional', ca: 'Latam i Internacional', en: 'LatAm & International' },
+    sub: {
+      es: 'En Español (Sudamérica & Caribe)',
+      ca: 'En Espanyol (Sud-amèrica & Carib)',
+      en: 'Spanish audio (ESPN, DSports, beIN)',
+    },
+    categories: [
+      { id: 'espn', es: 'ESPN (1–7)', ca: 'ESPN (1–7)', en: 'ESPN (1–7)', badge: 'ESPN' },
+      { id: 'dsports', es: 'DSports (DirecTV)', ca: 'DSports (DirecTV)', en: 'DSports (DirecTV)', badge: 'DSP' },
+      { id: 'beinsports', es: 'beIN SPORTS', ca: 'beIN SPORTS', en: 'beIN SPORTS', badge: 'beIN' },
+      { id: 'tnt_space', es: 'TNT y Space', ca: 'TNT i Space', en: 'TNT & Space', badge: 'TNT' },
+    ],
+  },
+  {
+    region: 'uk',
+    flag: '🇬🇧',
+    name: { es: 'Reino Unido / USA (EN)', ca: 'Regne Unit / EUA (EN)', en: 'UK / USA (English)' },
+    sub: {
+      es: 'Audio original en inglés (Sky Sports, Eurosport)',
+      ca: 'Àudio original en anglès (Sky Sports, Eurosport)',
+      en: 'Original English audio (Sky Sports, Eurosport)',
+    },
+    categories: [
+      { id: 'uk_sports', es: 'UK Sports (Sky Sports & Eurosport)', ca: 'UK Sports (Sky Sports & Eurosport)', en: 'UK Sports (Sky Sports & Eurosport)', badge: 'EN' },
+    ],
+  },
+  {
+    region: 'cn',
+    flag: '🇨🇳',
+    name: { es: 'China (中文)', ca: 'Xina (中文)', en: 'China (中文)' },
+    sub: {
+      es: 'Fútbol y deportes en chino (CCTV5, Guangdong)',
+      ca: 'Futbol i esports en xinès (CCTV5, Guangdong)',
+      en: 'Sports in Chinese (CCTV5, Guangdong)',
+    },
+    categories: [
+      { id: 'china_football', es: 'Fútbol China (CCTV5 · CCTV5+ · GD)', ca: 'Futbol Xina (CCTV5 · CCTV5+ · GD)', en: 'China Sports (CCTV5 & GD)', badge: '中文' },
+    ],
+  },
+];
+
 const MOVIE_CATEGORIES = [
   { id: 'trending', es: 'Tendencias', ca: 'Tendències', en: 'Trending' },
   { id: 'popular', es: 'Populares', ca: 'Populars', en: 'Popular' },
   { id: 'top_rated', es: 'Mejor Valoradas', ca: 'Més Ben Valorades', en: 'Top Rated' },
   { id: 'now_playing', es: 'Estrenos Recientes', ca: 'Estrenes Recents', en: 'New Releases' },
+  { id: 'anime', es: 'Anime', ca: 'Anime', en: 'Anime' },
   { id: 'action', es: 'Acción', ca: 'Acció', en: 'Action' },
   { id: 'scifi', es: 'Sci-Fi', ca: 'Ciència-ficció', en: 'Sci-Fi' },
   { id: 'horror', es: 'Terror', ca: 'Terror', en: 'Horror' },
@@ -345,12 +432,13 @@ const SERIES_CATEGORIES = [
   { id: 'trending', es: 'Tendencias TV', ca: 'Tendències TV', en: 'Trending TV' },
   { id: 'popular', es: 'Populares', ca: 'Populars', en: 'Popular' },
   { id: 'top_rated', es: 'Mejor Valoradas', ca: 'Més Ben Valorades', en: 'Top Rated' },
+  { id: 'anime', es: 'Anime', ca: 'Anime', en: 'Anime' },
   { id: 'scifi', es: 'Sci-Fi y Fantasía', ca: 'Ciència-ficció i Fantasia', en: 'Sci-Fi & Fantasy' },
   { id: 'action', es: 'Acción y Aventura', ca: 'Acció i Aventura', en: 'Action & Adventure' },
   { id: 'drama', es: 'Drama', ca: 'Drama', en: 'Drama' },
   { id: 'crime', es: 'Crimen', ca: 'Crim', en: 'Crime' },
   { id: 'comedy', es: 'Comedia', ca: 'Comèdia', en: 'Comedy' },
-  { id: 'animation', es: 'Animación y Anime', ca: 'Animació i Anime', en: 'Animation & Anime' },
+  { id: 'animation', es: 'Animación', ca: 'Animació', en: 'Animation' },
   { id: 'mystery', es: 'Misterio', ca: 'Misteri', en: 'Mystery' },
 ] as const;
 
@@ -375,9 +463,9 @@ const ANIME_PLATFORMS: {
     ca: "Tot l'Anime",
     en: 'All Anime',
     mark: 'ANIME',
-    accentBg: 'bg-white/15',
+    accentBg: 'bg-[#9146FF]/25',
     accentText: 'text-white',
-    activeBorder: 'border-white bg-white/[0.14] text-white shadow-[0_8px_24px_rgba(255,255,255,0.12)]',
+    activeBorder: 'border-[#9146FF] bg-[#9146FF]/25 text-white shadow-[0_8px_24px_rgba(145,70,255,0.28)]',
     cardGlow: 'from-orange-500/18 via-[#141019] to-[#0B0C12]',
     descEs: 'Todas las webs de anime unidas',
     descCa: "Tots els portals d'anime junts",
@@ -957,6 +1045,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [tdtChannels, setTdtChannels] = useState<SpanishTdtChannel[]>([]);
   const [loadingTdt, setLoadingTdt] = useState(false);
   const [tdtCategory, setTdtCategory] = useState<'all' | 'tdt_all' | TdtCategory>('all');
+  const [tvRegion, setTvRegion] = useState<TvRegionId>('all');
   const [tdtSearch, setTdtSearch] = useState('');
   const [epgMap, setEpgMap] = useState<Record<string, ChannelLiveEpg>>({});
   const [epgMadridClock, setEpgMadridClock] = useState<string>('');
@@ -999,14 +1088,14 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [confirmClearHistory, setConfirmClearHistory] = useState(false);
 
   // World Mode state (mobile-first Entrada -> Mundos architecture)
-  const [internalCineTab, setInternalCineTab] = useState<'movies' | 'series' | 'platforms'>('movies');
-  const effectiveCineTab = controlledCineTab ?? internalCineTab;
-  const setEffectiveCineTab = (tab: 'movies' | 'series' | 'platforms') => {
+  const [internalCineTab, setInternalCineTab] = useState<'movies' | 'series'>('movies');
+  const effectiveCineTab: 'movies' | 'series' = controlledCineTab === 'platforms' ? 'movies' : (controlledCineTab ?? internalCineTab);
+  const setEffectiveCineTab = (tab: 'movies' | 'series') => {
     setInternalCineTab(tab);
     onCineTabChange?.(tab);
   };
 
-  const [internalCineCastellano, setInternalCineCastellano] = useState(true);
+  const [internalCineCastellano, setInternalCineCastellano] = useState(false);
   const effectiveCineCastellano = controlledCineCastellano ?? internalCineCastellano;
   const setEffectiveCineCastellano = (enabled: boolean) => {
     setInternalCineCastellano(enabled);
@@ -1020,9 +1109,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     onFutbolTabChange?.(tab);
   };
 
-  const [cineSpecialPortal, setCineSpecialPortal] = useState<'none' | 'anime' | 'catala'>('none');
+  const [cineSpecialPortal, setCineSpecialPortal] = useState<'none' | 'catala'>('none');
   const [cineFiltersOpen, setCineFiltersOpen] = useState(false);
-  const [cineAudioOverride, setCineAudioOverride] = useState<'ES' | 'VOSE' | 'EN'>('ES');
+  const [cineAudioOverride, setCineAudioOverride] = useState<'ES' | 'VOSE' | 'EN'>('VOSE');
   const [futbolFiltersOpen, setFutbolFiltersOpen] = useState(false);
   const [futbolLangFilter, setFutbolLangFilter] = useState<'all' | 'ZH'>('all');
   const [futbolLeagueFilter, setFutbolLeagueFilter] = useState<string>('');
@@ -2234,6 +2323,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   }, [tdtChannels, footballLiveBrand, sportsSearch]);
 
   const filteredTdtChannels = tdtChannels.filter((ch) => {
+    if (tvRegion !== 'all') {
+      const reg = getChannelRegionMeta(ch);
+      if (reg.region !== tvRegion) return false;
+    }
+
     if (tdtCategory === 'tdt_all') {
       if (
         ch.category === 'movistar' ||
@@ -2559,7 +2653,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         ? `${pickLang(lang, { es: 'Serie', ca: 'Sèrie', en: 'Series' })} · ${hItem.season}x${String(hItem.episode).padStart(2, '0')}`
                         : `${pickLang(lang, { es: 'Película', ca: 'Pel·lícula', en: 'Movie' })} · ${hItem.year || 'HD'}`}
                     </span>
-                    <span className="w-7 h-7 rounded-full bg-white text-[#050507] flex items-center justify-center shadow-md shrink-0">
+                    <span className="w-7 h-7 rounded-full bg-[#9146FF] text-white flex items-center justify-center shadow-[0_4px_12px_rgba(145,70,255,0.45)] shrink-0">
                       {isLoadingThis ? (
                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       ) : (
@@ -2571,7 +2665,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   {hasResume && (
                     <div className="absolute bottom-0 inset-x-0 h-1 bg-white/20">
                       <div
-                        className="h-full bg-white"
+                        className="h-full bg-[#9146FF]"
                         style={{ width: `${progressPct}%` }}
                       />
                     </div>
@@ -3145,17 +3239,17 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         selectedSeries.availableLanguages.length > 0
                           ? (
                               [
-                                { code: 'ES', label: 'Castellano' },
-                                { code: 'LAT', label: 'Latino' },
+                                { code: 'ES', label: 'ES' },
+                                { code: 'LAT', label: 'LAT' },
                                 { code: 'VOSE', label: 'VOSE' },
-                                { code: 'EN', label: 'Inglés' },
+                                { code: 'EN', label: 'EN' },
                               ] as const
                             ).filter((opt) =>
                               selectedSeries.availableLanguages!.includes(opt.code)
                             )
                           : ([
-                              { code: 'ES', label: 'Español' },
-                              { code: 'EN', label: 'VO · Inglés' },
+                              { code: 'ES', label: 'ES' },
+                              { code: 'EN', label: 'EN' },
                             ] as const)
                         ).map((opt) => (
                           <button
@@ -3842,7 +3936,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 options={[
                   { id: 'movies', label: pickLang(lang, { es: 'Películas', ca: 'Pel·lícules', en: 'Movies' }) },
                   { id: 'series', label: pickLang(lang, { es: 'Series', ca: 'Sèries', en: 'Series' }) },
-                  { id: 'platforms', label: pickLang(lang, { es: 'Plataformas', ca: 'Plataformes', en: 'Platforms' }) },
                 ]}
               />
 
@@ -3868,7 +3961,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                       : 'bg-white/[0.05] border-white/[0.1] text-zinc-300 hover:text-white'
                   }`}
                 >
-                  {pickLang(lang, { es: 'Castellano', ca: 'Castellà', en: 'Spanish' })}
+                  ES
                 </button>
 
                 <button
@@ -4006,73 +4099,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     </div>
                   )}
               </div>
-            ) : cineSpecialPortal === 'anime' ? (
-              /* ANIME SPECIAL PORTAL (VIA FILTROS OR PLATAFORMAS) */
-              <div className="space-y-4">
-                <div className="flex items-center justify-between gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setCineSpecialPortal('none')}
-                    className="min-h-11 px-3.5 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>{pickLang(lang, { es: 'Volver a Cine', ca: 'Tornar a Cine', en: 'Back to Cinema' })}</span>
-                  </button>
-                  <span className="text-sm font-display font-bold text-white">
-                    {activeAnimePortalMeta[lang]}
-                  </span>
-                </div>
-
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                  {ANIME_PLATFORMS.map((ap) => (
-                    <button
-                      key={ap.id}
-                      type="button"
-                      onClick={() => {
-                        if (ap.externalUrl) {
-                          onOpenCloudBrowser(ap.externalUrl);
-                          return;
-                        }
-                        setAnimePortal(ap.id);
-                        setAnimePage(1);
-                      }}
-                      className={`min-h-11 px-3.5 rounded-2xl text-xs font-bold border whitespace-nowrap shrink-0 cursor-pointer ${
-                        animePortal === ap.id
-                          ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                          : 'bg-white/[0.05] border-white/[0.09] text-zinc-200'
-                      }`}
-                    >
-                      {ap[lang]}
-                    </button>
-                  ))}
-                </div>
-
-                {loadingAnime ? (
-                  <div className="py-10 flex justify-center">
-                    <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
-                  </div>
-                ) : (
-                  <VirtualizedPosterGrid
-                    items={animeItems.length > 0 ? animeItems : MASTERPIECE_ANIME_PRESETS.map((p) => ({
-                      id: `anime-${p.tmdbId}`,
-                      tmdbId: p.tmdbId,
-                      mediaType: 'tv' as const,
-                      title: p.title,
-                      year: 'ANIME',
-                      rating: p.rating,
-                      overview: p.subtitle,
-                      poster: p.poster,
-                      backdrop: p.backdrop,
-                      languages: ['ES', 'VOSE'],
-                    }))}
-                    variant="poster"
-                    getKey={(item) => item.id}
-                    renderItem={(item) => renderPosterTile(item, animeMediaKind === 'movies' ? 'movie' : 'tv')}
-                  />
-                )}
-              </div>
             ) : cineSpecialPortal === 'catala' ? (
-              /* CATALÀ ANIME PORTAL (VIA FILTROS OR PLATAFORMAS) */
+              /* CATALÀ ANIME PORTAL */
               <div className="space-y-4">
                 <div className="flex items-center justify-between gap-2">
                   <button
@@ -4099,6 +4127,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     getKey={(item) => item.id}
                     renderItem={(item) => (
                       <button
+                        key={item.id}
                         type="button"
                         onClick={() => {
                           triggerHaptic('light');
@@ -4125,77 +4154,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   />
                 )}
               </div>
-            ) : isPlatformsTab && streamingProvider === 'all' ? (
-              /* PLATAFORMAS GRID */
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {STREAMING_PLATFORMS.filter((p) => p.id !== 'all').map((plat) => (
-                  <button
-                    key={plat.id}
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setStreamingProvider(plat.id);
-                      setMoviePage(1);
-                      setSeriesPage(1);
-                    }}
-                    className={`group rounded-3xl p-4 bg-gradient-to-br ${plat.cardGlow} border border-white/[0.1] hover:border-[#9146FF]/70 text-left flex flex-col justify-between gap-4 min-h-[124px] cursor-pointer active:scale-[0.97] transition-all`}
-                  >
-                    <span
-                      className={`w-11 h-11 rounded-2xl ${plat.accentBg} ${plat.accentText} font-display font-extrabold text-xs flex items-center justify-center shadow-md`}
-                    >
-                      {plat.mark}
-                    </span>
-                    <div>
-                      <h3 className="font-display font-bold text-sm text-white">
-                        {plat[lang]}
-                      </h3>
-                      <p className="text-[11px] text-zinc-400 line-clamp-1 mt-0.5">
-                        {lang === 'ca' ? plat.descCa : lang === 'en' ? plat.descEn : plat.descEs}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setCineSpecialPortal('anime');
-                  }}
-                  className="rounded-3xl p-4 bg-gradient-to-br from-[#9146FF]/22 to-[#0A0B10] border border-[#9146FF]/35 hover:border-[#9146FF] text-left flex flex-col justify-between gap-4 min-h-[124px] cursor-pointer active:scale-[0.97] transition-all"
-                >
-                  <span className="w-11 h-11 rounded-2xl bg-[#9146FF] text-white font-display font-extrabold text-xs flex items-center justify-center">
-                    ANIME
-                  </span>
-                  <div>
-                    <h3 className="font-display font-bold text-sm text-white">Anime Hub</h3>
-                    <p className="text-[11px] text-zinc-400 line-clamp-1 mt-0.5">
-                      Crunchyroll · AnimeBox · Más
-                    </p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('light');
-                    setCineSpecialPortal('catala');
-                  }}
-                  className="rounded-3xl p-4 bg-gradient-to-br from-rose-500/20 to-[#0A0B10] border border-white/[0.1] hover:border-[#9146FF] text-left flex flex-col justify-between gap-4 min-h-[124px] cursor-pointer active:scale-[0.97] transition-all"
-                >
-                  <span className="w-11 h-11 rounded-2xl bg-rose-600 text-white font-display font-extrabold text-xs flex items-center justify-center">
-                    CAT
-                  </span>
-                  <div>
-                    <h3 className="font-display font-bold text-sm text-white">Anime Català</h3>
-                    <p className="text-[11px] text-zinc-400 line-clamp-1 mt-0.5">
-                      Clàssics i Shonen en català
-                    </p>
-                  </div>
-                </button>
-              </div>
-            ) : streamingProvider !== 'all' ||
-              (isMoviesTab && movieCategory !== 'trending') ||
+            ) : (isMoviesTab && movieCategory !== 'trending') ||
               (isSeriesTab && seriesCategory !== 'trending') ? (
               /* FILTERED PLATFORM / GENRE CATALOG GRID */
               <div className="space-y-4">
@@ -4253,9 +4212,17 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               </div>
             ) : (
               /* DEFAULT CINE VIEW: LOW HERO (<40% dvh) + HORIZONTAL POSTER ROWS + PLATFORM STRIP */
-              <div className="space-y-6">
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ duration: 0.2 }}
+                className="space-y-6"
+              >
                 {activeHeroSlide && (
-                  <div
+                  <motion.div
+                    initial={{ opacity: 0, y: 12, scale: 0.985 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
                     onTouchStart={(e) => {
                       heroTouchStartXRef.current = e.touches[0]?.clientX ?? null;
                     }}
@@ -4363,78 +4330,71 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         )}
                       </div>
                     </div>
-                  </div>
+                  </motion.div>
                 )}
 
                 {/* ROW 1: TENDENCIAS */}
-                <section className="space-y-2.5">
+                <motion.section
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, delay: 0.06 }}
+                  className="space-y-2.5"
+                >
                   <h3 className="font-display font-bold text-base sm:text-lg text-white">
                     {pickLang(lang, { es: 'Tendencias', ca: 'Tendències', en: 'Trending' })}
                   </h3>
                   <div className="scroll-snap-x flex gap-3 overflow-x-auto no-scrollbar pb-1">
-                    {(isSeriesTab ? seriesList : movies).slice(0, 14).map((item) => (
-                      <div key={item.id} className="scroll-snap-item w-[132px] sm:w-[152px] shrink-0">
+                    {(isSeriesTab ? seriesList : movies).slice(0, 14).map((item, idx) => (
+                      <motion.div
+                        key={item.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.22, delay: Math.min(idx * 0.03, 0.25) }}
+                        className="scroll-snap-item w-[132px] sm:w-[152px] shrink-0"
+                      >
                         {renderPosterTile(item, isSeriesTab ? 'tv' : 'movie')}
-                      </div>
+                      </motion.div>
                     ))}
                   </div>
-                </section>
+                </motion.section>
 
                 {/* ROW 2: ESTRENOS RECIENTES */}
-                <LatestReleasesSection
-                  lang={lang}
-                  mediaTypeFilter={isSeriesTab ? 'tv' : 'movie'}
-                  onSelectMovie={(m) => openPosterItem({ ...m, mediaType: 'movie' })}
-                  onSelectSeries={(s, sn) =>
-                    s.tmdbId ? openSeriesDetails(s.tmdbId, sn, s) : openPosterItem({ ...s, mediaType: 'tv' })
-                  }
-                />
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, delay: 0.12 }}
+                >
+                  <LatestReleasesSection
+                    lang={lang}
+                    mediaTypeFilter={isSeriesTab ? 'tv' : 'movie'}
+                    onSelectMovie={(m) => openPosterItem({ ...m, mediaType: 'movie' })}
+                    onSelectSeries={(s, sn) =>
+                      s.tmdbId ? openSeriesDetails(s.tmdbId, sn, s) : openPosterItem({ ...s, mediaType: 'tv' })
+                    }
+                  />
+                </motion.div>
 
                 {/* ROW 3: PARA TI / DESCUBRIR */}
-                <React.Suspense fallback={null}>
-                  <ExpandedDiscoverySection
-                    lang={lang}
-                    filterState={{
-                      mediaType: isSeriesTab ? 'tv' : 'movie',
-                      genreId: homeGenreId,
-                      provider: homeProvider,
-                      sortBy: homeSortBy,
-                    }}
-                    onGenresLoaded={setDiscoveryGenres}
-                    onSelectItem={(item) => openPosterItem(item)}
-                  />
-                </React.Suspense>
-
-                {/* COMPACT PLATFORM ICONS STRIP */}
-                <section className="space-y-2.5">
-                  <h3 className="font-display font-bold text-base sm:text-lg text-white">
-                    {pickLang(lang, { es: 'Plataformas', ca: 'Plataformes', en: 'Platforms' })}
-                  </h3>
-                  <div className="flex items-center gap-2.5 overflow-x-auto no-scrollbar pb-1">
-                    {STREAMING_PLATFORMS.filter((p) => p.id !== 'all').map((plat) => (
-                      <button
-                        key={plat.id}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          setEffectiveCineTab('platforms');
-                          setStreamingProvider(plat.id);
-                        }}
-                        className="min-h-12 px-3.5 py-2 rounded-2xl bg-white/[0.04] hover:bg-white/[0.1] border border-white/[0.08] flex items-center gap-2.5 shrink-0 cursor-pointer active:scale-95 transition-all"
-                      >
-                        <span
-                          className={`w-7 h-7 rounded-xl ${plat.accentBg} ${plat.accentText} font-display font-extrabold text-[10px] flex items-center justify-center shrink-0`}
-                        >
-                          {plat.mark}
-                        </span>
-                        <span className="text-xs font-bold text-zinc-100 whitespace-nowrap">
-                          {plat[lang]}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              </div>
+                <motion.div
+                  initial={{ opacity: 0, y: 12 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.25, delay: 0.18 }}
+                >
+                  <React.Suspense fallback={null}>
+                    <ExpandedDiscoverySection
+                      lang={lang}
+                      filterState={{
+                        mediaType: isSeriesTab ? 'tv' : 'movie',
+                        genreId: homeGenreId,
+                        provider: homeProvider,
+                        sortBy: homeSortBy,
+                      }}
+                      onGenresLoaded={setDiscoveryGenres}
+                      onSelectItem={(item) => openPosterItem(item)}
+                    />
+                  </React.Suspense>
+                </motion.div>
+              </motion.div>
             )}
 
             {/* CINE FILTERS BOTTOM SHEET */}
@@ -4448,17 +4408,18 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 {/* Language Group (Single Active Value) */}
                 <div className="space-y-2">
                   <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                    {pickLang(lang, { es: 'Idioma', ca: 'Idioma', en: 'Language' })}
+                    {pickLang(lang, { es: 'Audio / Idioma', ca: 'Àudio / Idioma', en: 'Audio / Language' })}
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {(
-                      [
-                        { id: 'ES', label: 'Castellano' },
-                        { id: 'VOSE', label: 'VOSE' },
-                        { id: 'EN', label: 'Inglés (VO)' },
-                      ] as const
-                    ).map((opt) => {
-                      const active = effectiveCineCastellano ? opt.id === 'ES' : cineAudioOverride === opt.id;
+                    {[
+                      { id: 'VOSE' as const, label: pickLang(lang, { es: 'Original / VOSE (Por defecto)', ca: 'Original / VOSE', en: 'Original / VOSE' }) },
+                      { id: 'ES' as const, label: 'Castellano (ES)' },
+                      { id: 'EN' as const, label: 'English (EN)' },
+                    ].map((opt) => {
+                      const active =
+                        opt.id === 'ES'
+                          ? effectiveCineCastellano
+                          : !effectiveCineCastellano && cineAudioOverride === opt.id;
                       return (
                         <button
                           key={opt.id}
@@ -4475,10 +4436,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               setSeriesLangMode(opt.id);
                             }
                           }}
-                          className={`min-h-11 px-4 rounded-2xl text-xs font-bold border cursor-pointer ${
+                          className={`min-h-11 px-4 rounded-2xl text-xs font-bold border cursor-pointer transition-all ${
                             active
-                              ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                              : 'bg-white/[0.05] border-white/[0.1] text-zinc-200'
+                              ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
+                              : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
                           }`}
                         >
                           {opt.label}
@@ -4497,7 +4458,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           : 'bg-white/[0.05] border-white/[0.1] text-zinc-200'
                       }`}
                     >
-                      Català (Anime)
+                      Català
                     </button>
                   </div>
                 </div>
@@ -4505,7 +4466,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 {/* Genre / Category Group */}
                 <div className="space-y-2">
                   <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                    {pickLang(lang, { es: 'Categoría', ca: 'Categoria', en: 'Category' })}
+                    {pickLang(lang, { es: 'Género / Categoría', ca: 'Gènere / Categoria', en: 'Genre / Category' })}
                   </p>
                   <div className="flex flex-wrap gap-2">
                     {(isSeriesTab ? SERIES_CATEGORIES : MOVIE_CATEGORIES).map((cat) => {
@@ -4525,10 +4486,10 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                               setMoviePage(1);
                             }
                           }}
-                          className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border cursor-pointer ${
+                          className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border cursor-pointer transition-all ${
                             active
-                              ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                              : 'bg-white/[0.05] border-white/[0.1] text-zinc-200'
+                              ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
+                              : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
                           }`}
                         >
                           {cat[lang]}
@@ -4538,36 +4499,13 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </div>
                 </div>
 
-                {/* Portals */}
-                <div className="space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                    {pickLang(lang, { es: 'Especiales', ca: 'Especials', en: 'Specials' })}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setCineSpecialPortal('anime');
-                        setCineFiltersOpen(false);
-                      }}
-                      className={`min-h-11 px-4 rounded-2xl text-xs font-bold border cursor-pointer ${
-                        cineSpecialPortal === 'anime'
-                          ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                          : 'bg-white/[0.05] border-white/[0.1] text-zinc-200'
-                      }`}
-                    >
-                      Anime Hub (Crunchyroll · AnimeBox)
-                    </button>
-                  </div>
-                </div>
-
                 <div className="flex items-center gap-2 pt-2">
                   <button
                     type="button"
                     onClick={() => {
-                      setEffectiveCineCastellano(true);
-                      setCineAudioOverride('ES');
-                      setSeriesLangMode('ES');
+                      setEffectiveCineCastellano(false);
+                      setCineAudioOverride('VOSE');
+                      setSeriesLangMode('VOSE');
                       setStreamingProvider('all');
                       setMovieCategory('trending');
                       setSeriesCategory('trending');
@@ -4961,7 +4899,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 }}
                 className={`min-h-11 px-3.5 rounded-2xl border text-xs font-bold inline-flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all ${
                   tvFilterCount > 0
-                    ? 'bg-[#9146FF]/22 border-[#9146FF] text-white'
+                    ? 'bg-[#9146FF]/22 border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.25)]'
                     : 'bg-white/[0.05] border-white/[0.1] text-zinc-100 hover:bg-white/[0.1]'
                 }`}
               >
@@ -4973,6 +4911,42 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </span>
                 )}
               </button>
+            </div>
+
+            {/* QUICK REGION FILTER STRIP */}
+            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
+              {[
+                { id: 'all' as const, flag: '🌐', label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
+                { id: 'es' as const, flag: '🇪🇸', label: 'España' },
+                { id: 'latam' as const, flag: '🌎', label: 'Latam / ES' },
+                { id: 'uk' as const, flag: '🇬🇧', label: 'UK (EN)' },
+                { id: 'cn' as const, flag: '🇨🇳', label: 'China (中文)' },
+              ].map((reg) => {
+                const active = tvRegion === reg.id && (reg.id === 'all' ? tdtCategory === 'all' : true);
+                return (
+                  <button
+                    key={reg.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setTvRegion(reg.id);
+                      if (reg.id === 'all') {
+                        setTdtCategory('all');
+                      } else if (tdtCategory !== 'all' && getCategoryRegion(tdtCategory) !== reg.id) {
+                        setTdtCategory('all');
+                      }
+                    }}
+                    className={`min-h-9 px-3 rounded-xl text-xs font-bold border whitespace-nowrap shrink-0 flex items-center gap-1.5 cursor-pointer transition-all ${
+                      active
+                        ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
+                        : 'bg-white/[0.05] border-white/[0.08] text-zinc-300 hover:bg-white/[0.1]'
+                    }`}
+                  >
+                    <span>{reg.flag}</span>
+                    <span>{reg.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* FAVORITE CHANNELS AT TOP IF ANY */}
@@ -5033,14 +5007,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                         }}
                         className="flex-1 min-w-0 flex items-center gap-3 text-left cursor-pointer"
                       >
-                        <div
-                          className="w-12 h-12 rounded-2xl shrink-0 flex items-center justify-center border border-white/15 font-display font-extrabold text-xs text-white"
-                          style={{
-                            background: `linear-gradient(145deg, ${ch.brandTone}38 0%, #090A10 100%)`,
-                          }}
-                        >
-                          {ch.shortMark}
-                        </div>
+                        <ChannelLogoBadge channel={ch} size="md" showLangTag />
 
                         <div className="min-w-0 flex-1 space-y-1">
                           <div className="font-display font-bold text-sm text-white truncate">
@@ -5105,57 +5072,144 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               </div>
             )}
 
-            {/* TV FILTERS BOTTOM SHEET (STRICT 1 ACTIVE VALUE PER GROUP) */}
+            {/* TV FILTERS BOTTOM SHEET (ORGANIZED BY COUNTRY & LANGUAGE) */}
             <BottomSheet
               isOpen={tvFiltersOpen}
               onClose={() => setTvFiltersOpen(false)}
               lang={lang}
-              title={pickLang(lang, { es: 'Filtros de TV', ca: 'Filtres de TV', en: 'TV Filters' })}
+              title={pickLang(lang, { es: 'Filtros de TV y Canales', ca: 'Filtres de TV i Canals', en: 'TV & Channel Filters' })}
             >
-              <div className="space-y-5">
-                <div className="space-y-2">
-                  <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                    {pickLang(lang, { es: 'Categoría', ca: 'Categoria', en: 'Category' })}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {[
-                      ...ALL_LIVE_CATEGORIES,
-                      ...TDT_NATIONAL_CATEGORIES.filter((tc) => tc.id !== 'tdt_all' && tc.id !== 'generalistas'),
-                    ].map((cat) => (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setTdtCategory(cat.id)}
-                        className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border cursor-pointer ${
-                          tdtCategory === cat.id
-                            ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                            : 'bg-white/[0.05] border-white/[0.1] text-zinc-200'
-                        }`}
-                      >
-                        {cat[lang]}
-                      </button>
-                    ))}
-                  </div>
+              <div className="space-y-6 max-h-[75vh] overflow-y-auto no-scrollbar pb-4">
+                {/* GLOBAL ALL CHANNELS BUTTON */}
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setTvRegion('all');
+                      setTdtCategory('all');
+                    }}
+                    className={`w-full min-h-11 px-4 rounded-2xl text-xs font-bold border flex items-center justify-between cursor-pointer transition-all ${
+                      tvRegion === 'all' && tdtCategory === 'all'
+                        ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_18px_rgba(145,70,255,0.35)]'
+                        : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.1]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span className="text-base">🌐</span>
+                      <span>
+                        {pickLang(lang, {
+                          es: 'Todos los Canales en Vivo',
+                          ca: 'Tots els Canals en Directe',
+                          en: 'All Live Channels',
+                        })}
+                      </span>
+                    </span>
+                    <span className="text-[11px] opacity-80 tabular-nums font-semibold">
+                      {tdtChannels.length} {pickLang(lang, { es: 'canales', ca: 'canals', en: 'channels' })}
+                    </span>
+                  </button>
                 </div>
 
-                <div className="space-y-2">
+                {/* COUNTRY / REGION GROUPS */}
+                {TV_FILTER_GROUPS.map((group) => {
+                  const isCurrentRegion = tvRegion === group.region;
+                  return (
+                    <div
+                      key={group.region}
+                      className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-3"
+                    >
+                      <div className="flex items-center justify-between gap-2 border-b border-white/[0.06] pb-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="text-lg shrink-0">{group.flag}</span>
+                          <div className="min-w-0">
+                            <h4 className="text-xs font-bold text-white uppercase tracking-wider truncate">
+                              {group.name[lang]}
+                            </h4>
+                            <p className="text-[11px] text-zinc-400 truncate">
+                              {group.sub[lang]}
+                            </p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setTvRegion(group.region);
+                            setTdtCategory('all');
+                          }}
+                          className={`text-[11px] px-2.5 py-1 rounded-lg font-bold border transition-all ${
+                            isCurrentRegion && tdtCategory === 'all'
+                              ? 'bg-[#9146FF] border-[#9146FF] text-white'
+                              : 'bg-white/[0.06] border-white/[0.08] text-zinc-300 hover:text-white'
+                          }`}
+                        >
+                          {pickLang(lang, { es: 'Ver todo', ca: 'Veure tot', en: 'View all' })}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {group.categories.map((cat) => {
+                          const isCatActive =
+                            tdtCategory === cat.id ||
+                            (cat.id === 'all' && tvRegion === group.region && tdtCategory === 'all');
+                          return (
+                            <button
+                              key={cat.id}
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                setTvRegion(group.region);
+                                setTdtCategory(cat.id);
+                              }}
+                              className={`min-h-11 px-3 rounded-xl text-xs font-semibold border flex items-center justify-between gap-2 text-left cursor-pointer transition-all ${
+                                isCatActive
+                                  ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
+                                  : 'bg-white/[0.04] border-white/[0.08] text-zinc-200 hover:bg-white/[0.09]'
+                              }`}
+                            >
+                              <span className="truncate">{cat[lang]}</span>
+                              {cat.badge && (
+                                <span
+                                  className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                    isCatActive
+                                      ? 'bg-white/20 text-white'
+                                      : 'bg-white/[0.08] text-zinc-400'
+                                  }`}
+                                >
+                                  {cat.badge}
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {/* EMISIÓN ACTUAL */}
+                <div className="space-y-2 pt-1">
                   <p className="text-xs font-bold uppercase tracking-wider text-zinc-400">
-                    {pickLang(lang, { es: 'Emisión actual', ca: 'Emissió actual', en: 'On air now' })}
+                    {pickLang(lang, { es: 'Emisión actual (EPG en Vivo)', ca: 'Emissió actual (EPG en directe)', en: 'On air now (Live EPG)' })}
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-3 gap-2">
                     {[
                       { id: 'all' as const, label: pickLang(lang, { es: 'Todo', ca: 'Tot', en: 'All' }) },
-                      { id: 'sports_now' as const, label: pickLang(lang, { es: 'Deporte ahora', ca: 'Esport ara', en: 'Sports now' }) },
-                      { id: 'cinema_now' as const, label: pickLang(lang, { es: 'Cine y Series', ca: 'Cinema i Sèries', en: 'Movies & Series' }) },
+                      { id: 'sports_now' as const, label: pickLang(lang, { es: '⚽ Deporte', ca: '⚽ Esport', en: '⚽ Sports' }) },
+                      { id: 'cinema_now' as const, label: pickLang(lang, { es: '🎬 Cine / Series', ca: '🎬 Cinema / Sèries', en: '🎬 Movies / Series' }) },
                     ].map((ef) => (
                       <button
                         key={ef.id}
                         type="button"
-                        onClick={() => setEpgFilter(ef.id)}
-                        className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border cursor-pointer ${
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setEpgFilter(ef.id);
+                        }}
+                        className={`min-h-11 px-2.5 rounded-xl text-xs font-semibold border cursor-pointer text-center truncate ${
                           epgFilter === ef.id
-                            ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                            : 'bg-white/[0.05] border-white/[0.1] text-zinc-200'
+                            ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.3)]'
+                            : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.08]'
                         }`}
                       >
                         {ef.label}
@@ -5164,21 +5218,27 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 pt-2">
+                {/* ACTIONS */}
+                <div className="flex items-center gap-2 pt-3">
                   <button
                     type="button"
                     onClick={() => {
+                      triggerHaptic('light');
+                      setTvRegion('all');
                       setTdtCategory('all');
                       setEpgFilter('all');
                     }}
                     className="flex-1 min-h-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] text-xs font-bold text-white cursor-pointer"
                   >
-                    {pickLang(lang, { es: 'Limpiar', ca: 'Netejar', en: 'Reset' })}
+                    {pickLang(lang, { es: 'Limpiar filtros', ca: 'Netejar filtres', en: 'Reset filters' })}
                   </button>
                   <button
                     type="button"
-                    onClick={() => setTvFiltersOpen(false)}
-                    className="flex-1 min-h-12 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white cursor-pointer"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setTvFiltersOpen(false);
+                    }}
+                    className="flex-1 min-h-12 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white cursor-pointer shadow-[0_4px_20px_rgba(145,70,255,0.4)]"
                   >
                     {pickLang(lang, { es: 'Aplicar', ca: 'Aplicar', en: 'Apply' })}
                   </button>

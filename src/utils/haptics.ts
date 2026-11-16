@@ -279,3 +279,95 @@ export function playNaimcineIntroSound(): boolean {
 }
 
 export const playRiffanIntroSound = playNaimcineIntroSound;
+
+export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos') {
+  try {
+    const ctx = getAudioContext();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
+    const now = ctx.currentTime + 0.01;
+    const master = ctx.createGain();
+    master.gain.setValueAtTime(0.24, now);
+    master.connect(ctx.destination);
+
+    if (portal === 'cine') {
+      // Warm optical anamorphic shimmer chord (D3 + A3 + F#4)
+      [146.83, 220, 369.99].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = idx === 0 ? 'triangle' : 'sine';
+        osc.frequency.setValueAtTime(freq * 0.99, now);
+        osc.frequency.exponentialRampToValueAtTime(freq, now + 0.16);
+        g.gain.setValueAtTime(0.001, now);
+        g.gain.linearRampToValueAtTime(0.14 / (idx + 1), now + 0.08);
+        g.gain.exponentialRampToValueAtTime(0.0008, now + 0.52);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(now);
+        osc.stop(now + 0.55);
+      });
+    } else if (portal === 'futbol') {
+      // Crisp broadcast stadium two-tone swell (G2 sub + D4 crisp chime)
+      const sub = ctx.createOscillator();
+      const subGain = ctx.createGain();
+      sub.type = 'sine';
+      sub.frequency.setValueAtTime(98, now);
+      sub.frequency.exponentialRampToValueAtTime(55, now + 0.28);
+      subGain.gain.setValueAtTime(0.001, now);
+      subGain.gain.linearRampToValueAtTime(0.22, now + 0.04);
+      subGain.gain.exponentialRampToValueAtTime(0.0008, now + 0.42);
+      sub.connect(subGain);
+      subGain.connect(master);
+      sub.start(now);
+      sub.stop(now + 0.45);
+
+      [293.66, 440].forEach((f, idx) => {
+        const chime = ctx.createOscillator();
+        const cg = ctx.createGain();
+        chime.type = 'triangle';
+        chime.frequency.setValueAtTime(f, now + idx * 0.07);
+        cg.gain.setValueAtTime(0.001, now + idx * 0.07);
+        cg.gain.linearRampToValueAtTime(0.09, now + idx * 0.07 + 0.03);
+        cg.gain.exponentialRampToValueAtTime(0.0008, now + idx * 0.07 + 0.36);
+        chime.connect(cg);
+        cg.connect(master);
+        chime.start(now + idx * 0.07);
+        chime.stop(now + idx * 0.07 + 0.38);
+      });
+    } else if (portal === 'tv') {
+      // Crisp TV station carrier lock-in + broadcast ident triad (B3 -> F#4 -> B4)
+      [246.94, 369.99, 493.88].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = idx === 0 ? 'sine' : 'triangle';
+        const at = now + idx * 0.055;
+        osc.frequency.setValueAtTime(freq, at);
+        g.gain.setValueAtTime(0.001, at);
+        g.gain.linearRampToValueAtTime(0.11 / (idx === 2 ? 1.2 : 1), at + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.34);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.36);
+      });
+    } else {
+      // Snappy arcade triad lock-in (C5 -> E5 -> G5)
+      [523.25, 659.25, 783.99].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        const at = now + idx * 0.065;
+        osc.frequency.setValueAtTime(freq, at);
+        g.gain.setValueAtTime(0.001, at);
+        g.gain.linearRampToValueAtTime(0.11, at + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.24);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.26);
+      });
+    }
+  } catch {}
+}

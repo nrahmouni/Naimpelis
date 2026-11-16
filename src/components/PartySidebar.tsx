@@ -121,7 +121,7 @@ interface PartySidebarProps {
   onStartPollFromQueue: () => void;
   onVotePoll: (pollId: string, optionId: string) => void;
   onClosePoll: (pollId: string) => void;
-  initialView?: 'chat' | 'queue' | 'room';
+  initialView?: 'chat' | 'friends' | 'queue' | 'room';
   openQueueTrigger?: number;
   hideInternalTabs?: boolean;
   isKeyboardOpen?: boolean;
@@ -249,7 +249,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const selfMember = participants.find((p) => p.id === currentUser.id);
   const isCoHost = !isHost && (currentUser.role === 'mod' || selfMember?.role === 'mod');
   const canManageMedia = isHost || isCoHost;
-  const [activeTab, setActiveTab] = useState<'chat' | 'queue' | 'room'>(initialView);
+  const [activeTab, setActiveTab] = useState<'chat' | 'friends' | 'queue' | 'room'>(initialView);
   const [undoRemovedItem, setUndoRemovedItem] = useState<RoomQueueItem | null>(null);
   const undoTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [inputText, setInputText] = useState('');
@@ -424,63 +424,92 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   return (
     <aside className="w-full h-full flex flex-col bg-[#18181B] border-l border-white/[0.08] select-none overflow-hidden relative">
       {worldSalaMode ? (
-        <div className="px-3.5 py-2.5 border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0 bg-[#141418]/95 backdrop-blur-xl z-20">
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 min-w-0">
-              <h3 className="font-display font-bold text-sm sm:text-base text-white truncate">
-                {roomName}
-              </h3>
-              {hasPin && <KeyRound className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />}
+        <div className="border-b border-white/[0.08] shrink-0 bg-[#141418]/95 backdrop-blur-xl z-20">
+          <div className="px-3.5 py-2.5 flex items-center justify-between gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 min-w-0">
+                <h3 className="font-display font-bold text-sm sm:text-base text-white truncate">
+                  {roomName}
+                </h3>
+                {hasPin && <KeyRound className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />}
+              </div>
+              <div className="flex items-center gap-1.5 text-xs text-[#00F593] font-semibold mt-0.5">
+                <span className="w-2 h-2 rounded-full bg-[#00F593] shrink-0" />
+                <span className="tabular-nums">
+                  {participants.length}{' '}
+                  {pickLang(lang, {
+                    es: participants.length === 1 ? 'conectado' : 'conectados',
+                    ca: participants.length === 1 ? 'connectat' : 'connectats',
+                    en: participants.length === 1 ? 'connected' : 'connected',
+                  })}
+                </span>
+              </div>
             </div>
-            <div className="flex items-center gap-1.5 text-xs text-[#00F593] font-semibold mt-0.5">
-              <span className="w-2 h-2 rounded-full bg-[#00F593] shrink-0" />
-              <span className="tabular-nums">
-                {participants.length}{' '}
-                {pickLang(lang, {
-                  es: participants.length === 1 ? 'conectado' : 'conectados',
-                  ca: participants.length === 1 ? 'connectat' : 'connectats',
-                  en: participants.length === 1 ? 'connected' : 'connected',
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  void handleShareInvite();
+                }}
+                className="min-h-10 px-3.5 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-[0_4px_14px_rgba(145,70,255,0.35)]"
+              >
+                {copiedLink ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>{t.copied}</span>
+                  </>
+                ) : (
+                  <>
+                    <Share2 className="w-4 h-4" />
+                    <span>{pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}</span>
+                  </>
+                )}
+              </button>
+
+              <IconButton
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setShowSalaOptionsSheet(true);
+                }}
+                aria-label={pickLang(lang, {
+                  es: 'Más opciones de sala',
+                  ca: 'Més opcions de sala',
+                  en: 'More room options',
                 })}
-              </span>
+              >
+                <MoreHorizontal className="w-5 h-5" />
+              </IconButton>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                void handleShareInvite();
-              }}
-              className="min-h-11 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-[0_4px_14px_rgba(145,70,255,0.35)]"
-            >
-              {copiedLink ? (
-                <>
-                  <Check className="w-4 h-4" />
-                  <span>{t.copied}</span>
-                </>
-              ) : (
-                <>
-                  <Share2 className="w-4 h-4" />
-                  <span>{pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}</span>
-                </>
-              )}
-            </button>
-
-            <IconButton
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                setShowSalaOptionsSheet(true);
-              }}
-              aria-label={pickLang(lang, {
-                es: 'Más opciones de sala',
-                ca: 'Més opcions de sala',
-                en: 'More room options',
-              })}
-            >
-              <MoreHorizontal className="w-5 h-5" />
-            </IconButton>
+          <div className="px-3.5 pb-2">
+            <SegmentedControl
+              compact
+              value={activeTab === 'room' ? 'friends' : activeTab}
+              onChange={(val) => setActiveTab(val)}
+              options={[
+                {
+                  id: 'chat',
+                  label: t.tabChat,
+                  icon: <MessageSquare className="w-3 h-3 shrink-0" />,
+                },
+                {
+                  id: 'friends',
+                  label: pickLang(lang, { es: 'Amigos', ca: 'Amics', en: 'Friends' }),
+                  icon: <Users className="w-3 h-3 shrink-0" />,
+                  badge: savedFriends.length > 0 ? savedFriends.length : participants.length,
+                },
+                {
+                  id: 'queue',
+                  label: pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' }),
+                  icon: <ListVideo className="w-3 h-3 shrink-0" />,
+                  badge: roomQueue.length,
+                },
+              ]}
+            />
           </div>
         </div>
       ) : (!hideInternalTabs || showMenusButton) && (
@@ -507,6 +536,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               <span className="text-[11px] font-semibold text-zinc-400 truncate pl-0.5">
                 {activeTab === 'chat'
                   ? t.tabChat
+                  : activeTab === 'friends'
+                  ? pickLang(lang, { es: 'Amigos', ca: 'Amics', en: 'Friends' })
                   : activeTab === 'queue'
                   ? pickLang(lang, { es: 'Cola', ca: 'Cua', en: 'Queue' })
                   : t.tabRoom}
@@ -515,7 +546,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
           </div>
 
           {!hideInternalTabs && (
-          <div className="flex items-center gap-1 shrink-0 ml-auto">
+          <div className="flex items-center gap-1 shrink-0 ml-auto overflow-x-auto no-scrollbar">
             <SegmentedControl
               compact
               value={activeTab}
@@ -525,6 +556,12 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   id: 'chat',
                   label: t.tabChat,
                   icon: <MessageSquare className="w-3 h-3 shrink-0" />,
+                },
+                {
+                  id: 'friends',
+                  label: pickLang(lang, { es: 'Amigos', ca: 'Amics', en: 'Friends' }),
+                  icon: <UserPlus className="w-3 h-3 shrink-0" />,
+                  badge: savedFriends.length > 0 ? savedFriends.length : undefined,
                 },
                 {
                   id: 'queue',
@@ -618,7 +655,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                     className="relative w-6 h-6 rounded-full border-2 border-[#12131C] flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
                     style={{ backgroundColor: p.color || '#9146FF' }}
                   >
-                    {p.avatar && p.avatar.length <= 2 ? p.avatar : p.name.slice(0, 1).toUpperCase()}
+                    {p.avatar === '📺' ? '📺' : getInitials(p.name)}
                     <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#00F593] border border-[#12131C]" />
                   </div>
                 ))}
@@ -1060,6 +1097,238 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       )}
 
       {/* ==================================================================== */}
+      {/* TAB 2B: AMIGOS EN SALA Y CONECTADOS                                  */}
+      {/* ==================================================================== */}
+      {activeTab === 'friends' && (
+        <div className="flex-1 overflow-y-auto px-3 sm:px-4 py-4 space-y-5 custom-scrollbar">
+          {inviteSentFeedback && (
+            <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-400/35 text-emerald-200 text-xs font-semibold flex items-center gap-2">
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+              <span>{inviteSentFeedback}</span>
+            </div>
+          )}
+
+          {/* Participants in current room */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                {pickLang(lang, {
+                  es: `Conectados en sala (${participants.length})`,
+                  ca: `Connectats a la sala (${participants.length})`,
+                  en: `In room now (${participants.length})`,
+                })}
+              </span>
+              <span className="text-xs text-[#00F593] font-semibold flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-[#00F593] animate-pulse" />
+                {pickLang(lang, { es: 'En vivo', ca: 'En directe', en: 'Live' })}
+              </span>
+            </div>
+
+            <div className="space-y-2">
+              {participants.map((p) => {
+                const isSelf = p.id === currentUser.id;
+                const isTvDevice = p.name.includes('(TV)') || p.avatar === '📺';
+                const pCode = deriveFriendCode(p.id);
+                const alreadyFriend = savedFriends.some(
+                  (f) => f.friendId === p.id || f.friendCode === pCode
+                );
+                return (
+                  <div
+                    key={p.id}
+                    className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div
+                        className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold text-white border border-white/15 shrink-0"
+                        style={{ backgroundColor: p.color || '#9146FF' }}
+                      >
+                        {isTvDevice ? '📺' : getInitials(p.name)}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="text-sm font-bold text-white truncate">
+                          {p.name} {isSelf ? `(${t.you})` : ''}
+                        </p>
+                        <p className="text-[11px] text-emerald-400 truncate">
+                          {activeMediaTitle
+                            ? isRoomPlaying
+                              ? `▶ ${activeMediaTitle}`
+                              : `⏸ ${activeMediaTitle}`
+                            : pickLang(lang, {
+                                es: 'En línea en la sala',
+                                ca: 'En línia a la sala',
+                                en: 'Online in room',
+                              })}
+                        </p>
+                      </div>
+                    </div>
+
+                    {!isSelf && !isTvDevice && onAddFriend && (
+                      alreadyFriend ? (
+                        <span className="px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-400/30 text-emerald-300 text-xs font-bold flex items-center gap-1 shrink-0">
+                          <Check className="w-3.5 h-3.5" />
+                          <span>{pickLang(lang, { es: 'Amigo', ca: 'Amic', en: 'Friend' })}</span>
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onAddFriend({
+                              friendId: p.id,
+                              name: p.name,
+                              avatar: p.avatar,
+                              color: p.color,
+                              friendCode: pCode,
+                            })
+                          }
+                          className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                          <span>{pickLang(lang, { es: 'Añadir', ca: 'Afegir', en: 'Add' })}</span>
+                        </button>
+                      )
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Saved Friends */}
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-xs font-bold uppercase tracking-wider text-zinc-400">
+                {pickLang(lang, {
+                  es: `Mis Amigos (${savedFriends.length})`,
+                  ca: `Els meus Amics (${savedFriends.length})`,
+                  en: `My Friends (${savedFriends.length})`,
+                })}
+              </span>
+              {onOpenFriendsModal && (
+                <button
+                  type="button"
+                  onClick={onOpenFriendsModal}
+                  className="text-xs font-semibold text-[#BF94FF] hover:underline flex items-center gap-1 cursor-pointer"
+                >
+                  <UserPlus className="w-3.5 h-3.5" />
+                  <span>{pickLang(lang, { es: 'Añadir amigo', ca: 'Afegir amic', en: 'Add friend' })}</span>
+                </button>
+              )}
+            </div>
+
+            {savedFriends.length === 0 ? (
+              <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-3">
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  {pickLang(lang, {
+                    es: 'Añade amigos por su código o comparte tu sala con 1 toque para ver juntos en tiempo real.',
+                    ca: 'Afegeix amics pel seu codi o comparteix la sala amb 1 toc per veure junts en temps real.',
+                    en: 'Add friends by code or share your room in 1 tap to watch together live.',
+                  })}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {onOpenFriendsModal && (
+                    <PrimaryButton onClick={onOpenFriendsModal} className="flex-1">
+                      <UserPlus className="w-4 h-4 shrink-0" />
+                      <span>{pickLang(lang, { es: 'Añadir por código', ca: 'Afegir per codi', en: 'Add by code' })}</span>
+                    </PrimaryButton>
+                  )}
+                  <SecondaryButton onClick={handleShareInvite} className="flex-1">
+                    <Share2 className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                    <span>{copiedLink ? t.copied : pickLang(lang, { es: 'Copiar enlace', ca: 'Copiar enllaç', en: 'Copy link' })}</span>
+                  </SecondaryButton>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {savedFriends.map((friend) => {
+                  const inCurrentRoom = participants.some(
+                    (p) =>
+                      p.id === friend.friendId ||
+                      deriveFriendCode(p.id) === friend.friendCode
+                  );
+                  const liveStatus = onlineUsers.find(
+                    (u) =>
+                      u.userId === friend.friendId ||
+                      u.friendCode === friend.friendCode
+                  );
+                  const isOnline = Boolean(liveStatus) || inCurrentRoom;
+
+                  return (
+                    <div
+                      key={friend.friendId}
+                      className="flex items-center justify-between p-3 rounded-2xl bg-white/[0.03] border border-white/[0.06] gap-2"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="relative shrink-0">
+                          <div
+                            className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold text-white border border-white/15"
+                            style={{ backgroundColor: friend.color || '#9146FF' }}
+                          >
+                            {getInitials(friend.name)}
+                          </div>
+                          <span
+                            className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#18181B] ${
+                              isOnline ? 'bg-emerald-400' : 'bg-zinc-600'
+                            }`}
+                          />
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-sm font-bold text-white truncate">{friend.name}</div>
+                          <div className="text-xs truncate mt-0.5">
+                            {inCurrentRoom ? (
+                              <span className="text-emerald-400 font-semibold">
+                                {pickLang(lang, {
+                                  es: 'Ya está en tu sala',
+                                  ca: 'Ja és a la teva sala',
+                                  en: 'Already in your room',
+                                })}
+                              </span>
+                            ) : isOnline ? (
+                              <span className="text-emerald-400 font-medium">
+                                {pickLang(lang, {
+                                  es: 'En línea en la app',
+                                  ca: "En línia a l'app",
+                                  en: 'Online in app',
+                                })}
+                              </span>
+                            ) : (
+                              <span className="text-zinc-500">
+                                {pickLang(lang, {
+                                  es: `Desconectado · #${friend.friendCode}`,
+                                  ca: `Desconnectat · #${friend.friendCode}`,
+                                  en: `Offline · #${friend.friendCode}`,
+                                })}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {!inCurrentRoom && onSendDirectRoomInvite && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onSendDirectRoomInvite({
+                              friendId: friend.friendId,
+                              name: friend.name,
+                              friendCode: friend.friendCode,
+                            })
+                          }
+                          className="min-h-9 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shrink-0"
+                        >
+                          <Send className="w-3.5 h-3.5" />
+                          <span>{pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}</span>
+                        </button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ==================================================================== */}
       {/* TAB 3: ROOM & PARTICIPANTS (Clean View + Bottom Sheets for Tools)    */}
       {/* ==================================================================== */}
       {activeTab === 'room' && (
@@ -1250,10 +1519,10 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <div
-                        className="w-11 h-11 rounded-full flex items-center justify-center text-base font-bold text-white border border-white/15 shrink-0"
+                        className="w-11 h-11 rounded-2xl flex items-center justify-center text-sm font-bold text-white border border-white/15 shrink-0"
                         style={{ backgroundColor: p.color || '#9146FF' }}
                       >
-                        {p.avatar && p.avatar.length <= 2 ? p.avatar : getInitials(p.name)}
+                        {isTvDevice ? '📺' : getInitials(p.name)}
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -1480,12 +1749,10 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="relative shrink-0">
                           <div
-                            className="w-10 h-10 rounded-full flex items-center justify-center text-xs font-bold text-white border border-white/15"
+                            className="w-10 h-10 rounded-2xl flex items-center justify-center text-xs font-bold text-white border border-white/15"
                             style={{ backgroundColor: friend.color || '#9146FF' }}
                           >
-                            {friend.avatar && friend.avatar.length <= 2
-                              ? friend.avatar
-                              : getInitials(friend.name)}
+                            {getInitials(friend.name)}
                           </div>
                           <span
                             className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-[#18181B] ${

@@ -388,6 +388,45 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     return nlPatterns.some((rgx) => rgx.test(cleanQuery));
   }, [cleanQuery]);
 
+  // Auto-trigger AI search once per distinct query when no local hits or descriptive natural-language prompt
+  const lastAutoAiQueryRef = useRef<string>('');
+  useEffect(() => {
+    if (
+      cleanQuery.length < 3 ||
+      loadingRemote ||
+      aiJob.status !== 'idle' ||
+      matchedSports.length > 0 ||
+      matchedTdt.length > 0 ||
+      matchedGames.length > 0
+    ) {
+      return;
+    }
+    const shouldAutoSearchAi = totalHits === 0 || (looksLikeNaturalLanguage && matchedMovies.length === 0 && matchedSeries.length === 0);
+    if (!shouldAutoSearchAi) return;
+    const normalizedKey = normQuery;
+    if (lastAutoAiQueryRef.current === normalizedKey) return;
+
+    const timer = window.setTimeout(() => {
+      lastAutoAiQueryRef.current = normalizedKey;
+      void triggerAiWebSearch(cleanQuery);
+    }, 650);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    cleanQuery,
+    normQuery,
+    loadingRemote,
+    aiJob.status,
+    totalHits,
+    looksLikeNaturalLanguage,
+    matchedMovies.length,
+    matchedSeries.length,
+    matchedSports.length,
+    matchedTdt.length,
+    matchedGames.length,
+    triggerAiWebSearch,
+  ]);
+
   const categories: { id: SearchCategoryFilter; label: string; count?: number; icon: React.ReactNode }[] = [
     {
       id: 'all',
@@ -446,6 +485,18 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 setAiJob({ status: 'idle', progressLabel: '', item: null });
               }
             }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && cleanQuery.length >= 2) {
+                e.preventDefault();
+                if (aiJob.status === 'found' && aiJob.item) {
+                  if (aiJob.item.mediaType === 'tv') onPlaySeries(aiJob.item);
+                  else onPlayMovie(aiJob.item);
+                } else if (aiJob.status === 'idle' && (totalHits === 0 || looksLikeNaturalLanguage)) {
+                  lastAutoAiQueryRef.current = normQuery;
+                  void triggerAiWebSearch(cleanQuery);
+                }
+              }
+            }}
             placeholder={pickLang(lang, {
               es: 'Busca películas, series, fútbol, TV, juegos o describe qué ver...',
               ca: 'Cerca pel·lícules, sèries, futbol, TV o descriu què veure...',
@@ -464,6 +515,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 onClick={() => {
                   triggerHaptic('light');
                   setQuery('');
+                  lastAutoAiQueryRef.current = '';
                   setAiJob({ status: 'idle', progressLabel: '', item: null });
                   inputRef.current?.focus();
                 }}

@@ -104,7 +104,7 @@ import {
   upsertCloudWatchHistory,
 } from './services/userCloudSync';
 import { socketService } from './services/socket';
-import { playCinemaSound, triggerHaptic } from './utils/haptics';
+import { playCinemaSound, playWorldPortalSound, triggerHaptic } from './utils/haptics';
 import {
   buildShortInviteUrl,
   generateShortRoomCode,
@@ -120,6 +120,10 @@ import {
 } from './components/FriendsInviteModal';
 import type { ProfileHubTab } from './components/UserProfileHubModal';
 import { EntryHomeScreen } from './components/EntryHomeScreen';
+import {
+  WorldPortalTransition,
+  type WorldPortalKind,
+} from './components/home/WorldPortalTransition';
 import { WorldShell } from './components/worlds/WorldShell';
 import { AvatarMenuSheet } from './components/AvatarMenuSheet';
 import { SettingsBottomSheet } from './components/SettingsBottomSheet';
@@ -140,6 +144,13 @@ const SeriesEpisodesDock = React.lazy(() =>
 const SimilarMoviesDock = React.lazy(() =>
   import('./components/SimilarMoviesDock').then((m) => ({ default: m.SimilarMoviesDock }))
 );
+const ChannelGuideDock = React.lazy(() =>
+  import('./components/ChannelGuideDock').then((m) => ({ default: m.ChannelGuideDock }))
+);
+const MoviePlaybackDock = React.lazy(() =>
+  import('./components/MoviePlaybackDock').then((m) => ({ default: m.MoviePlaybackDock }))
+);
+import type { ActiveMovieContext } from './components/MoviePlaybackDock';
 const TvReceiverPairingScreen = React.lazy(() =>
   import('./components/TvReceiverPairingScreen').then((m) => ({ default: m.TvReceiverPairingScreen }))
 );
@@ -180,7 +191,7 @@ import { useNotificationStore } from './store/useNotificationStore';
 import { useCloudSyncSubscriptions } from './hooks/useCloudSyncSubscriptions';
 import { useTvRemoteBridge } from './hooks/useTvRemoteBridge';
 import { useGameVoiceChat } from './hooks/useGameVoiceChat';
-import { useLiveScoresQuery } from './hooks/useCatalogQueries';
+import { useLiveScoresQuery, useFootballBoardQuery } from './hooks/useCatalogQueries';
 import { runWithViewTransition } from './lib/viewTransition';
 import { isGoogleTvEnvironment } from './utils/tvSpatialNav';
 import { GameMatchInviteModal } from './components/games/GameMatchInviteModal';
@@ -487,6 +498,7 @@ export function App() {
   const [activeMatchDetails, setActiveMatchDetails] = useState<FootballMatchDetails | null>(null);
   const [loadingActiveMatchDetails, setLoadingActiveMatchDetails] = useState<boolean>(false);
   const [showLiveMatchDock, setShowLiveMatchDock] = useState<boolean>(true);
+  const [activeMovieContext, setActiveMovieContext] = useState<ActiveMovieContext | null>(null);
   const langNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const showLanguageNotice = useCallback(
@@ -658,38 +670,48 @@ export function App() {
 
   const { data: liveScores = [] } = useLiveScoresQuery(inRoom && !isTvMode);
   const liveMatchesCount = liveScores.filter((m) => m.isLive).length;
+  const { data: homeFootballMatches = [] } = useFootballBoardQuery(
+    inRoom && !isTvMode && activeWorld === 'entry'
+  );
 
-  const enterWorld = useCallback(
+  const [activePortalTransition, setActivePortalTransition] =
+    useState<WorldPortalKind | null>(null);
+  const portalTimersRef = useRef<number[]>([]);
+
+  const clearPortalTimers = useCallback(() => {
+    portalTimersRef.current.forEach((t) => window.clearTimeout(t));
+    portalTimersRef.current = [];
+  }, []);
+
+  useEffect(() => () => clearPortalTimers(), [clearPortalTimers]);
+
+  const applyWorldChange = useCallback(
     (nextWorld: WorldId) => {
-      setWorldSearchQuery('');
-      setShowWatchlistOnly(false);
-      runWithViewTransition(() => {
-        setActiveWorld(nextWorld);
-        if (nextWorld === 'cine') {
-          setCatalogSection('movies');
-          setMobileTab('movies');
-        } else if (nextWorld === 'futbol') {
-          setCatalogSection('sports');
-          setMobileTab('sports');
-        } else if (nextWorld === 'tv') {
-          setCatalogSection('tdt');
-          setMobileTab('tdt');
-        } else if (nextWorld === 'youtube') {
-          setCatalogSection('youtube');
-          setMobileTab('youtube');
-        } else if (nextWorld === 'juegos') {
-          setCatalogSection('games');
-          setMobileTab('games');
-        } else if (nextWorld === 'sala') {
-          setMobileTab('room');
-          setUnreadChatCount(0);
-        } else {
-          setCatalogSection('home');
-          setMobileTab('home');
-        }
-      });
-      mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
-      catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      setActiveWorld(nextWorld);
+      if (nextWorld === 'cine') {
+        setCatalogSection('movies');
+        setMobileTab('movies');
+      } else if (nextWorld === 'futbol') {
+        setCatalogSection('sports');
+        setMobileTab('sports');
+      } else if (nextWorld === 'tv') {
+        setCatalogSection('tdt');
+        setMobileTab('tdt');
+      } else if (nextWorld === 'youtube') {
+        setCatalogSection('youtube');
+        setMobileTab('youtube');
+      } else if (nextWorld === 'juegos') {
+        setCatalogSection('games');
+        setMobileTab('games');
+      } else if (nextWorld === 'sala') {
+        setMobileTab('room');
+        setUnreadChatCount(0);
+      } else {
+        setCatalogSection('home');
+        setMobileTab('home');
+      }
+      mainScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+      catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     },
     [setActiveWorld]
   );
@@ -699,10 +721,45 @@ export function App() {
       void import('./components/FootballMatchboard');
     } else if (world === 'juegos') {
       void import('./components/GamesHubSection');
-    } else if (world === 'cine') {
+    } else if (world === 'cine' || world === 'tv') {
       void import('./components/ExpandedDiscoverySection');
     }
   }, []);
+
+  const enterWorld = useCallback(
+    (nextWorld: WorldId, opts?: { withPortal?: boolean }) => {
+      setWorldSearchQuery('');
+      setShowWatchlistOnly(false);
+      clearPortalTimers();
+
+      if (
+        opts?.withPortal &&
+        !reducedMotion &&
+        (nextWorld === 'cine' ||
+          nextWorld === 'futbol' ||
+          nextWorld === 'tv' ||
+          nextWorld === 'juegos')
+      ) {
+        preloadWorld(nextWorld);
+        playWorldPortalSound(nextWorld);
+        setActivePortalTransition(nextWorld);
+        const swapTimer = window.setTimeout(() => {
+          applyWorldChange(nextWorld);
+        }, 410);
+        const exitTimer = window.setTimeout(() => {
+          setActivePortalTransition(null);
+        }, 760);
+        portalTimersRef.current = [swapTimer, exitTimer];
+        return;
+      }
+
+      setActivePortalTransition(null);
+      runWithViewTransition(() => {
+        applyWorldChange(nextWorld);
+      });
+    },
+    [applyWorldChange, clearPortalTimers, preloadWorld, reducedMotion]
+  );
 
   useEffect(() => {
     setIncomingGameInvite(null);
@@ -1818,6 +1875,7 @@ export function App() {
     setSecondaryStream(null);
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
+    setActiveMovieContext(null);
     if (videoState.mode === 'cloud') {
       socketService.stopCloudBrowser();
     }
@@ -1848,6 +1906,7 @@ export function App() {
     setSecondaryStream(null);
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
+    setActiveMovieContext(null);
     const idleNext: VideoState = {
       ...INITIAL_VIDEO_STATE,
       lastUpdated: Date.now(),
@@ -2063,6 +2122,15 @@ export function App() {
 
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
+    setActiveMovieContext({
+      tmdbId: movie.tmdbId,
+      title: movie.title,
+      year: movie.year,
+      poster: movie.poster,
+      backdrop: movie.backdrop,
+      overview: movie.overview,
+      preferLang,
+    });
     scrollDesktopToPlayer();
     setIsExtracting(true);
     isExtractingRef.current = true;
@@ -2220,6 +2288,7 @@ export function App() {
 
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
+    setActiveMovieContext(null);
     scrollDesktopToPlayer();
     setIsExtracting(true);
     isExtractingRef.current = true;
@@ -2737,6 +2806,7 @@ export function App() {
     const { reqSeq, signal } = extraction;
 
     if (failedIndices.size === 0) {
+      setActiveMovieContext(null);
       const parsedTeams = (() => {
         if (match.matchMeta) {
           return { ...match.matchMeta, competition: match.competition };
@@ -2878,6 +2948,7 @@ export function App() {
     const { reqSeq, signal } = extraction;
 
     if (allowSameChannelBackup) {
+      setActiveMovieContext(null);
       const progParts = (liveProgramHint || '')
         .replace(/\s+·\s+.*$/, '')
         .split(/\s+(?:vs\.?|v)\s+/i);
@@ -3131,6 +3202,7 @@ export function App() {
     beginMediaExtraction();
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
+    setActiveMovieContext(null);
     isExtractingRef.current = false;
     setIsExtracting(false);
     setLoadingItemId(null);
@@ -3171,6 +3243,7 @@ export function App() {
 
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
+    setActiveMovieContext(null);
     scrollDesktopToPlayer();
     setExtractionError(null);
     activeHistoryIdRef.current = null;
@@ -4585,6 +4658,38 @@ export function App() {
     !isDockedMini &&
     !isMobileKeyboardOpen;
 
+  const hideBrowseBelowPlayer =
+    isPlayerActive &&
+    !isDockedMini &&
+    !isAutoImmersiveLandscape &&
+    activeWorld !== 'sala' &&
+    activeWorld !== 'juegos';
+  const isMoviePlaybackDockVisible =
+    videoState.mode !== 'idle' &&
+    !isPlayerClosedLocally &&
+    !isPlayerMinimized &&
+    !isAutoImmersiveLandscape &&
+    !activeSportsMatch &&
+    !videoState.seriesMeta &&
+    !videoState.isLive &&
+    videoState.mode !== 'youtube' &&
+    Boolean(activeMovieContext || videoState.title);
+
+  const isChannelGuideDockVisible =
+    videoState.mode !== 'idle' &&
+    !isPlayerClosedLocally &&
+    !isPlayerMinimized &&
+    !isAutoImmersiveLandscape &&
+    !activeSportsMatch &&
+    !videoState.seriesMeta &&
+    videoState.mode !== 'youtube' &&
+    (Boolean(videoState.isLive) ||
+      Boolean(
+        videoState.tracks?.some(
+          (t) => t.resolverType === 'tdt_hls' || t.resolverType === 'sports_channel'
+        )
+      ));
+
   // ============================================================================
   // RENDER 3: UNIFIED WORKSPACE (DESKTOP, ANDROID MOBILE APK & GOOGLE TV APK)
   // ============================================================================
@@ -5020,6 +5125,11 @@ export function App() {
                     roomCode={roomId}
                     roomDisplayName={roomName || `Sala ${roomId.toUpperCase()}`}
                     participantCount={participants.length}
+                    participants={participants}
+                    savedFriends={savedFriends}
+                    onlineUsers={onlineUsers}
+                    onOpenFriendsModal={() => setFriendsModalOpen(true)}
+                    onSendDirectRoomInvite={handleSendDirectRoomInvite}
                     messages={messages}
                     currentUserId={currentUser.id}
                     onSendMessage={(txt) => socketService.sendChatMessage(currentUser, txt)}
@@ -5031,8 +5141,11 @@ export function App() {
                       }
                       socketService.startCloudBrowser(targetUrl, profile.name);
                     }}
-                    floatingChatOpen={floatingChatOpen}
-                    onToggleFloatingChat={() => setFloatingChatOpen((v) => !v)}
+                    floatingChatOpen={isFloatingRoomOpen}
+                    onToggleFloatingChat={() => {
+                      setIsFloatingRoomOpen(true);
+                      setUnreadChatCount(0);
+                    }}
                     voiceChat={voiceChat}
                     compactVideoForMobileKeyboard={
                       !isDesktopLayout && isMobileKeyboardOpen && activeWorld === 'sala'
@@ -5109,10 +5222,13 @@ export function App() {
               !isPlayerClosedLocally &&
               !isPlayerMinimized &&
               !isAutoImmersiveLandscape &&
-              (activeSportsMatch || videoState.seriesMeta)) ||
+              (activeSportsMatch ||
+                videoState.seriesMeta ||
+                isMoviePlaybackDockVisible ||
+                isChannelGuideDockVisible)) ||
               (isPlayerClosedLocally && videoState.mode !== 'idle') ||
               (extractionError && !isPlayerActive)) && (
-              <div className="w-full max-w-6xl mx-auto px-3 sm:px-5 pt-3 space-y-3 shrink-0">
+              <div className="w-full max-w-6xl mx-auto px-3 sm:px-5 pt-3 pb-24 sm:pb-6 space-y-3 shrink-0">
                 {videoState.mode !== 'idle' &&
                   !isPlayerClosedLocally &&
                   !isPlayerMinimized &&
@@ -5136,6 +5252,9 @@ export function App() {
                           statusState={activeSportsMatch.statusState}
                           statusLabel={activeSportsMatch.statusLabel}
                           competition={activeSportsMatch.competition}
+                          tracks={videoState.tracks}
+                          activeTrackIndex={videoState.activeTrackIndex}
+                          onSelectTrack={(idx) => handleSelectTrack(idx, 0)}
                           onRefresh={() => refreshActiveMatchDetails(true)}
                           onCloseDock={() => setShowLiveMatchDock(false)}
                         />
@@ -5188,6 +5307,51 @@ export function App() {
                       />
                     </React.Suspense>
                   )}
+
+                {isMoviePlaybackDockVisible && (
+                  <React.Suspense fallback={null}>
+                    <MoviePlaybackDock
+                      movie={
+                        activeMovieContext || {
+                          title: videoState.title,
+                          poster: videoState.poster,
+                          backdrop: videoState.backdrop,
+                        }
+                      }
+                      lang={lang}
+                      preferLang={(() => {
+                        const rawLang = String(
+                          videoState.tracks[videoState.activeTrackIndex]?.lang ||
+                            activeMovieContext?.preferLang ||
+                            'ES'
+                        ).toUpperCase();
+                        return rawLang === 'LAT' || rawLang === 'VOSE' || rawLang === 'EN'
+                          ? rawLang
+                          : 'ES';
+                      })()}
+                      loadingItemId={loadingItemId}
+                      onSelectMovie={(movieItem, pLang) => {
+                        void handlePlayMovie(movieItem, pLang);
+                      }}
+                    />
+                  </React.Suspense>
+                )}
+
+                {isChannelGuideDockVisible && (
+                  <React.Suspense fallback={null}>
+                    <ChannelGuideDock
+                      lang={lang}
+                      activeChannelTitle={videoState.title}
+                      activeChannelSubtitle={videoState.subtitle}
+                      activeRawSourceUrl={videoState.rawSourceUrl}
+                      channels={quickPool.tdt}
+                      loadingItemId={loadingItemId}
+                      onSelectChannel={(ch, progHint) => {
+                        void handlePlayTdtChannel(ch, 0, progHint);
+                      }}
+                    />
+                  </React.Suspense>
+                )}
 
                 {isPlayerClosedLocally && videoState.mode !== 'idle' && (
                   <div className="p-3.5 rounded-2xl bg-[#18181B] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
@@ -5255,7 +5419,7 @@ export function App() {
             )}
 
             {/* WORLD ROUTER */}
-            {activeWorld === 'entry' ? (
+            {hideBrowseBelowPlayer ? null : activeWorld === 'entry' ? (
               <div ref={catalogScrollRef} className="flex-1 min-h-0">
                 <EntryHomeScreen
                   lang={lang}
@@ -5281,11 +5445,64 @@ export function App() {
                     }));
                     setShowSurpriseModal(true);
                   }}
-                  onSelectWorld={(world) => enterWorld(world)}
+                  onSelectWorld={(world) =>
+                    enterWorld(world, {
+                      withPortal:
+                        world === 'cine' ||
+                        world === 'futbol' ||
+                        world === 'tv' ||
+                        world === 'juegos',
+                    })
+                  }
                   onPreloadWorld={preloadWorld}
                   lastUsedWorld={lastUsedWorld}
                   liveMatchesCount={liveMatchesCount}
                   roomParticipantsCount={participants.length}
+                  movies={quickPool.movies}
+                  series={quickPool.series}
+                  tdtChannels={quickPool.tdt}
+                  liveMatches={homeFootballMatches}
+                  onPlayMovie={(movieItem) => {
+                    void handlePlayMovie(movieItem, cineCastellano ? 'ES' : 'VOSE');
+                  }}
+                  onPlaySeries={async (seriesItem) => {
+                    if (seriesItem.tmdbId) {
+                      try {
+                        const seasonNum = seriesItem.seasonNumber || 1;
+                        const res = await fetch(
+                          `/api/catalog/tv/${seriesItem.tmdbId}?season=${seasonNum}&lang=${lang}`
+                        );
+                        const data = await res.json();
+                        if (data?.details?.episodes?.length > 0) {
+                          await handlePlaySeriesEpisode(
+                            data.details as TvSeriesDetails,
+                            data.details.episodes[0] as TvEpisodeItem,
+                            cineCastellano ? 'ES' : 'VOSE'
+                          );
+                          return;
+                        }
+                      } catch {
+                        // fallback to Cine catalog
+                      }
+                    }
+                    enterWorld('cine');
+                  }}
+                  onPlayChannel={(ch) => {
+                    void handlePlayTdtChannel(ch, 0);
+                  }}
+                  onPlayMatch={(matchItem) => {
+                    void handlePlaySportsMatch(matchItem, 0);
+                  }}
+                  onSelectGame={(gid) => {
+                    const mappedGame = (
+                      gid === 'billar' ? 'pool' : gid
+                    ) as RoomGameInviteType;
+                    enterWorld('juegos');
+                    setForcedOpenGame({
+                      gameType: mappedGame,
+                      seq: Date.now(),
+                    });
+                  }}
                 />
               </div>
             ) : activeWorld === 'sala' ? (
@@ -5595,9 +5812,10 @@ export function App() {
         {/* Floating Room Chat Bubble across all worlds except Sala */}
         <FloatingRoomBubble
           lang={lang}
-          visible={inRoom && activeWorld !== 'sala' && !isAutoImmersiveLandscape}
+          visible={inRoom && activeWorld !== 'sala'}
           participantsCount={participants.length}
           voiceActive={voiceChat.isJoined}
+          unreadCount={unreadChatCount}
           isSheetOpen={isFloatingRoomOpen}
           onOpenSheet={() => {
             setIsFloatingRoomOpen(true);
@@ -5673,7 +5891,6 @@ export function App() {
               onVotePoll={handleVotePoll}
               onClosePoll={handleClosePoll}
               initialView="chat"
-              hideInternalTabs
               openQueueTrigger={openQueueTrigger}
               savedFriends={savedFriends}
               onlineUsers={onlineUsers}
@@ -5845,6 +6062,7 @@ export function App() {
           />
         </React.Suspense>
 
+        <WorldPortalTransition portal={activePortalTransition} lang={lang} />
         <GameMatchInviteModal
           invite={incomingGameInvite}
           lang={lang}

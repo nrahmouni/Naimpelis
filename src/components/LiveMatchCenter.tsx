@@ -6,6 +6,7 @@ import {
   Clock,
   Loader2,
   MapPin,
+  Radio,
   RefreshCw,
   Shield,
   Target,
@@ -21,6 +22,7 @@ import type {
   FootballMatchLineupTeam,
   FootballMatchShotItem,
   FootballMatchStatItem,
+  StreamTrack,
 } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
@@ -48,6 +50,9 @@ interface LiveMatchCenterProps {
   onRefresh?: () => void;
   onCloseDock?: () => void;
   defaultTab?: MatchCenterTab;
+  tracks?: StreamTrack[];
+  activeTrackIndex?: number;
+  onSelectTrack?: (index: number) => void;
 }
 
 function getRatingBadgeClasses(ratingStr?: string): string {
@@ -412,6 +417,9 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
   onRefresh,
   onCloseDock,
   defaultTab = 'lineups',
+  tracks,
+  activeTrackIndex,
+  onSelectTrack,
 }) => {
   const [activeTab, setActiveTab] = useState<MatchCenterTab>(defaultTab);
   const [lineupMetric, setLineupMetric] = useState<LineupMetric>('rating');
@@ -626,6 +634,49 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               </span>
             </div>
           </div>
+
+          {/* Live Broadcast Channel / Signal Switcher */}
+          {tracks && tracks.length > 0 && onSelectTrack && (
+            <div className="pt-2 border-t border-white/[0.06] space-y-1.5">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+                <Radio className="w-3.5 h-3.5 text-[#BF94FF]" />
+                <span>
+                  {pickLang(lang, {
+                    es: 'Canales de emisión disponibles',
+                    ca: 'Canals d’emissió disponibles',
+                    en: 'Available Broadcast Channels',
+                  })}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
+                {tracks.map((tr, idx) => {
+                  const isActiveSignal = idx === (activeTrackIndex ?? 0);
+                  return (
+                    <button
+                      key={tr.id || idx}
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('light');
+                        onSelectTrack(idx);
+                      }}
+                      className={`min-h-9 px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all border flex items-center gap-1.5 ${
+                        isActiveSignal
+                          ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.35)]'
+                          : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.09] text-zinc-300 hover:text-white'
+                      }`}
+                    >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          isActiveSignal ? 'bg-[#00F593]' : 'bg-zinc-500'
+                        }`}
+                      />
+                      <span>{tr.label || `Canal ${idx + 1}`}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
