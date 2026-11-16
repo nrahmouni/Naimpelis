@@ -24,6 +24,7 @@ import { serviceMeshGatewayMiddleware } from './server/gateway/serviceMesh.ts';
 import { registerOperationalRoutes } from './server/routes/health.ts';
 import { registerExpandedCatalogRoutes } from './server/routes/expandedCatalog.ts';
 import { registerProxyRoutes } from './server/routes/proxies.ts';
+import { registerVoiceAssistantRoutes } from './server/routes/voiceAssistant.ts';
 import { createRoomHub } from './server/ws/roomHub.ts';
 import {
   CHROME_UA,
@@ -37,12 +38,14 @@ import {
   isDvbHeadendStream,
   markHostNeedsCurlFallback,
   matchesYouTubeFallbackTitle,
+  maybeSignEasyBroadcastUrl,
   normalizeTitleForMatch,
   resolveKnownUpstreamReferer,
   shouldBypassNodeFetch,
   type ExtractedStreamResult,
   type TrackRecord,
 } from './server/extractors/httpHelpers.ts';
+import { INTERNATIONAL_TV_CHANNELS } from './server/data/internationalChannels.ts';
 import {
   extractEmbed69SpanishTracks,
   unpackVidhideToHls,
@@ -2827,6 +2830,12 @@ interface SpanishTdtChannelDef {
     | 'uk_sports'
     | 'china_football'
     | 'beinsports'
+    | 'bein_arabic'
+    | 'marruecos'
+    | 'documentales'
+    | 'usa_tv'
+    | 'europa_tv'
+    | 'noticias_intl'
     | 'espn'
     | 'dsports'
     | 'tnt_space'
@@ -5236,6 +5245,7 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
       },
     ],
   },
+  ...INTERNATIONAL_TV_CHANNELS,
 ];
 
 app.get('/api/catalog/tdt', (_req, res) => {
@@ -5246,6 +5256,27 @@ app.get('/api/catalog/tdt', (_req, res) => {
       logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
     })),
   });
+});
+
+registerVoiceAssistantRoutes(app, {
+  getChannels: () =>
+    channelHealthMonitor.prioritizeChannels(SPANISH_TDT_CHANNELS).map((ch) => ({
+      ...ch,
+      logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
+    })),
+  resolveLogoUrl: resolveOfficialChannelLogoUrl,
+  getSportsMatches: async () => {
+    if (cachedSportsSchedule && cachedSportsSchedule.matches.length > 0) {
+      return cachedSportsSchedule.matches;
+    }
+    const permanent = getPermanent247SportsMatches();
+    try {
+      const { rojaMatches } = await fetchLiveSportsAgendaFeeds();
+      return [...permanent, ...rojaMatches];
+    } catch {
+      return permanent;
+    }
+  },
 });
 
 // ============================================================================
@@ -5892,8 +5923,8 @@ app.get('/api/extract/stream', async (req, res) => {
     // CASE 0: Live Spanish TDT Channel (`tdt_hls`) -> Stateless per-segment Progressive H.264 IDR + AAC via /api/hls-proxy
     // (100% stateless across multi-instance Cloud Run deployments — never expires or drops across load-balanced containers!)
     if (resolverType === 'tdt_hls' && rawInput) {
-
-      const cleanCheckUrl = rawInput.replace(/[?&]profile=(hd|fast)\b/gi, '');
+      const strippedCheckUrl = rawInput.replace(/[?&]profile=(hd|fast)\b/gi, '');
+      const cleanCheckUrl = await maybeSignEasyBroadcastUrl(strippedCheckUrl);
       const knownReferer = resolveKnownUpstreamReferer(cleanCheckUrl);
       const isCnStream = isChineseIptvStream(cleanCheckUrl);
       const checkHeaders: Record<string, string> = {
@@ -10522,6 +10553,12 @@ const IPTV_GROUP_TITLES: Record<string, string> = {
   uk_sports: 'Deportes UK · Sky & Eurosport (EN)',
   china_football: 'Fútbol · China (中文 欧冠/西甲/英超)',
   beinsports: 'Fútbol · beIN SPORTS',
+  bein_arabic: 'Fútbol · beIN SPORTS (العربية)',
+  marruecos: 'TV Marruecos (المغرب · SNRT & 2M)',
+  documentales: 'Documentales y Ciencia (Nat Geo & Discovery)',
+  usa_tv: 'TV Estados Unidos (FOX · NBC · CNN)',
+  europa_tv: 'TV Europa (BBC · Euronews · DW · France 24)',
+  noticias_intl: 'Noticias Internacionales (Al Jazeera · Al Arabiya)',
   espn: 'Fútbol · ESPN 1-7',
   dsports: 'Fútbol · DSports',
   tnt_space: 'Deportes · TNT y Space',
@@ -11039,7 +11076,9 @@ app.get('/api/iptv/live/:channelId', async (req, res) => {
         /\.m3u8(\?|$)/i.test(sourceUrl);
 
       if (isDirectHls) {
-        const cleanUrl = sourceUrl.replace(/[?&]profile=(hd|fast)\b/gi, '');
+        const cleanUrl = await maybeSignEasyBroadcastUrl(
+          sourceUrl.replace(/[?&]profile=(hd|fast)\b/gi, '')
+        );
         const referer =
           resolveKnownUpstreamReferer(cleanUrl, track.referer) || new URL(cleanUrl).origin + '/';
         const forceAac = forceAacOverride;

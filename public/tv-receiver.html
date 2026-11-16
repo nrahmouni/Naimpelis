@@ -18,7 +18,7 @@
       body {
         width: 100%;
         height: 100%;
-        background-color: #09090c;
+        background-color: #0b0c12;
         color: #f4f4f6;
         font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         overflow: hidden;
@@ -544,14 +544,15 @@
 
       /* Sleek Network-Branded Broadcast Cards for Live TV & Sports */
       .tv-card.channel-card {
-        width: 246px;
-        background: #131318;
+        width: 248px;
+        background: #10121c;
+        border-color: rgba(255, 255, 255, 0.11);
       }
       .tv-channel-stage {
         position: relative;
         width: 100%;
-        height: 122px;
-        padding: 12px 14px;
+        height: 128px;
+        padding: 11px 13px;
         display: -webkit-flex;
         display: flex;
         -webkit-flex-direction: column;
@@ -570,20 +571,26 @@
       }
       .tv-channel-dial {
         font-family: 'Courier New', Courier, monospace;
-        font-size: 12px;
+        font-size: 11px;
         font-weight: 800;
-        color: rgba(255, 255, 255, 0.88);
+        color: rgba(255, 255, 255, 0.92);
         letter-spacing: 0.06em;
+        padding: 2px 7px;
+        border-radius: 7px;
+        background: rgba(8, 10, 16, 0.48);
       }
       .tv-channel-live {
         display: -webkit-inline-flex;
         display: inline-flex;
         -webkit-align-items: center;
         align-items: center;
-        font-size: 11px;
+        font-size: 10px;
         font-weight: 800;
         color: #ffffff;
         letter-spacing: 0.05em;
+        padding: 2px 7px;
+        border-radius: 7px;
+        background: rgba(8, 10, 16, 0.48);
       }
       .tv-live-dot {
         width: 7px;
@@ -593,8 +600,32 @@
         box-shadow: 0 0 8px #ff3b30;
         margin-right: 5px;
       }
+      .tv-channel-logo-stage {
+        height: 68px;
+        width: 100%;
+        border-radius: 11px;
+        background: rgba(8, 10, 16, 0.56);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+        padding: 8px 14px;
+        overflow: hidden;
+      }
+      .tv-channel-logo-img {
+        max-width: 100%;
+        max-height: 50px;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        display: block;
+        filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.6));
+      }
       .tv-channel-mark {
-        font-size: 26px;
+        font-size: 22px;
         font-weight: 900;
         letter-spacing: 0.02em;
         color: #ffffff;
@@ -613,7 +644,7 @@
       }
       .tv-channel-epg-fill {
         height: 100%;
-        background: #a970ff;
+        background: #9146ff;
       }
       .tv-channel-epg-now {
         font-size: 12px;
@@ -622,6 +653,68 @@
         white-space: nowrap;
         overflow: hidden;
         text-overflow: ellipsis;
+      }
+
+      /* Player HUD Channel Logo Pill & Voice Modal */
+      .hud-logo-wrap {
+        display: none;
+        width: 58px;
+        height: 38px;
+        border-radius: 10px;
+        background: rgba(16, 18, 28, 0.88);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        padding: 4px 8px;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: center;
+        justify-content: center;
+        -webkit-flex-shrink: 0;
+        flex-shrink: 0;
+      }
+      .hud-logo-img {
+        max-width: 100%;
+        max-height: 28px;
+        object-fit: contain;
+      }
+      #tv-voice-modal {
+        display: none;
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(7, 8, 13, 0.94);
+        z-index: 45;
+        padding: 28px 48px;
+        overflow-y: auto;
+      }
+      .voice-modal-card {
+        max-width: 1060px;
+        margin: 0 auto;
+        border-radius: 22px;
+        background: #10121c;
+        border: 1px solid rgba(145, 70, 255, 0.42);
+        padding: 24px 28px;
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.92), 0 0 60px rgba(145, 70, 255, 0.18);
+      }
+      .voice-modal-head {
+        display: -webkit-flex;
+        display: flex;
+        -webkit-align-items: center;
+        align-items: center;
+        -webkit-justify-content: space-between;
+        justify-content: space-between;
+        margin-bottom: 16px;
+      }
+      .voice-reply-banner {
+        padding: 16px 20px;
+        border-radius: 16px;
+        background: rgba(145, 70, 255, 0.14);
+        border: 1px solid rgba(191, 148, 255, 0.35);
+        font-size: 19px;
+        font-weight: 800;
+        color: #ffffff;
+        margin-bottom: 16px;
       }
 
       /* TV Search View */
@@ -1421,6 +1514,7 @@
         </div>
 
         <div class="hub-right-actions">
+          <button type="button" id="btn-hub-voice" class="tv-btn-primary" style="height:40px;padding:0 14px;font-size:13px;" tabindex="0" aria-label="Asistente por Voz">🎤 Voz AI</button>
           <button type="button" id="btn-hub-lang" class="tv-btn" tabindex="0" aria-label="Idioma">🌐 ES</button>
           <button type="button" id="btn-go-pairing" class="pair-pill-btn" tabindex="0">
             <span id="hub-pair-label">📺 Móvil · </span><strong id="hub-pair-code">••••</strong>
@@ -1467,6 +1561,36 @@
 
         <div class="series-season-row" id="sm-seasons-row"></div>
         <div class="series-episodes-grid" id="sm-episodes-grid"></div>
+      </div>
+    </div>
+
+    <!-- =================================================================== -->
+    <!-- GOOGLE TV VOICE ASSISTANT MODAL (10-FOOT D-PAD + MIC)               -->
+    <!-- =================================================================== -->
+    <div id="tv-voice-modal">
+      <div class="voice-modal-card">
+        <div class="voice-modal-head">
+          <div>
+            <div class="eyebrow" style="margin-bottom:4px;">ASISTENTE POR VOZ AI · RIFFANTV</div>
+            <h2 style="font-size:24px;font-weight:800;color:#ffffff;">Dime qué quieres ver hoy</h2>
+          </div>
+          <div style="display:-webkit-flex;display:flex;-webkit-align-items:center;align-items:center;">
+            <button type="button" id="btn-tv-voice-mic" class="tv-btn-primary" style="margin-right:10px;" tabindex="0">🎤 Hablar</button>
+            <button type="button" id="btn-close-voice-modal" class="tv-btn" tabindex="0">✕ Volver</button>
+          </div>
+        </div>
+        <div class="voice-reply-banner" id="tv-voice-reply">¡Holaa! ¿Qué quieres ver hoy?</div>
+        <form id="tv-voice-form" class="tv-search-row">
+          <input type="text" id="tv-voice-input" class="tv-search-input" placeholder="Ej: Quiero ver DAZN LaLiga / Las mejores 3 pelis de terror de este mes" tabindex="0" />
+          <button type="submit" class="tv-btn-primary" tabindex="0">Enviar</button>
+        </form>
+        <div class="tv-chips-row" style="margin-bottom:14px;">
+          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Quiero ver DAZN LaLiga" tabindex="0">Quiero ver DAZN LaLiga</button>
+          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Las mejores 3 pelis de terror de este mes" tabindex="0">Mejores 3 pelis terror este mes</button>
+          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Ponme National Geographic" tabindex="0">National Geographic</button>
+          <button type="button" class="tv-chip-btn tv-voice-chip" data-vq="Canales de Marruecos" tabindex="0">Canales de Marruecos</button>
+        </div>
+        <div class="tv-grid" id="tv-voice-results"></div>
       </div>
     </div>
 
@@ -1626,6 +1750,9 @@
           <button type="button" id="btn-hud-exit" class="tv-btn" tabindex="0">
             ← Volver
           </button>
+          <div class="hud-logo-wrap" id="hud-logo-wrap">
+            <img id="hud-logo-img" class="hud-logo-img" src="/icon.svg" alt="" referrerpolicy="no-referrer" />
+          </div>
           <div style="min-width: 0;">
             <div class="hud-meta-title" id="hud-title">RiffanTV Google TV</div>
             <div class="hud-meta-sub" id="hud-sub">Reproducción HD</div>
@@ -1820,7 +1947,7 @@
             searching: 'Buscando en todo el catálogo...',
             searchResultsFor: 'Resultados para',
             secLiveTitle: 'TV & Deportes en Directo',
-            secLiveSub: 'TDT España, Movistar+, DAZN y Sky Sports UK',
+            secLiveSub: 'TDT, beIN العربية, Marruecos, National Geographic, FOX, Al Jazeera y más',
             secReleasesTitle: 'Últimos Estrenos en Cine',
             secReleasesSub: 'Cartelera reciente lista en HD',
             secSeasonsTitle: 'Nuevas Temporadas de Series',
@@ -1830,12 +1957,19 @@
             secAnimeTitle: 'Anime en HD',
             secAnimeSub: 'Jujutsu Kaisen, Solo Leveling, DBZ, AOT',
             filterAll: 'Todos',
-            filterEsTdt: 'TDT España',
-            filterEsSports: 'Fútbol & Motor ES',
-            filterUkSports: 'UK Sports (Sky / Eurosport)',
-            filterIntlSports: 'ESPN & Internacional',
-            filterCine: 'Cine & Series',
-            filterKidsReg: 'Autonómicas & Infantil',
+            filterEsTdt: '🇪🇸 TDT España',
+            filterEsSports: '⚽ Fútbol & Motor ES',
+            filterBeinAr: '🇶🇦 beIN العربية',
+            filterMarruecos: '🇲🇦 Marruecos',
+            filterDocs: '🌍 Documentales & NatGeo',
+            filterUsa: '🇺🇸 EE.UU. FOX / CNN',
+            filterEuropa: '🇪🇺 Europa',
+            filterNoticias: '📰 Al Jazeera & Noticias',
+            filterUkSports: '🇬🇧 UK Sports',
+            filterChina: '🇨🇳 Fútbol China',
+            filterIntlSports: '🌎 Latam Sports',
+            filterCine: '🎬 Cine & Series',
+            filterKidsReg: '👶 Infantil & Auton.',
             liveGridTitle: 'Canales en Directo 24/7',
             liveGridSubSuffix: ' canales · Pulsa OK para ver, ↑/↓ en vídeo para zapping',
             releasesAllSub: 'Todos los estrenos recientes',
@@ -1971,7 +2105,7 @@
             searching: 'Cercant a tot el catàleg...',
             searchResultsFor: 'Resultats per a',
             secLiveTitle: 'TV & Esports en Directe',
-            secLiveSub: 'TDT, 3Cat, Movistar+, DAZN i Sky Sports UK',
+            secLiveSub: 'TDT, 3Cat, beIN العربية, Marroc, Nat Geo, FOX, Al Jazeera i més',
             secReleasesTitle: 'Últimes Estrenes de Cinema',
             secReleasesSub: 'Cartellera recent llesta en HD',
             secSeasonsTitle: 'Noves Temporades de Sèries',
@@ -1981,12 +2115,19 @@
             secAnimeTitle: 'Anime en HD',
             secAnimeSub: 'Jujutsu Kaisen, Solo Leveling, DBZ, AOT',
             filterAll: 'Tots',
-            filterEsTdt: 'TDT Espanya',
-            filterEsSports: 'Futbol & Motor ES',
-            filterUkSports: 'UK Sports (Sky / Eurosport)',
-            filterIntlSports: 'ESPN & Internacional',
-            filterCine: 'Cinema & Sèries',
-            filterKidsReg: 'Autonòmiques & Infantil',
+            filterEsTdt: '🇪🇸 TDT Espanya',
+            filterEsSports: '⚽ Futbol & Motor ES',
+            filterBeinAr: '🇶🇦 beIN العربية',
+            filterMarruecos: '🇲🇦 Marroc',
+            filterDocs: '🌍 Documentals & NatGeo',
+            filterUsa: '🇺🇸 EUA FOX / CNN',
+            filterEuropa: '🇪🇺 Europa',
+            filterNoticias: '📰 Al Jazeera & Notícies',
+            filterUkSports: '🇬🇧 UK Sports',
+            filterChina: '🇨🇳 Futbol Xina',
+            filterIntlSports: '🌎 Latam Sports',
+            filterCine: '🎬 Cinema & Sèries',
+            filterKidsReg: '👶 Infantil & Auton.',
             liveGridTitle: 'Canals en Directe 24/7',
             liveGridSubSuffix: ' canals · Prem OK per veure, ↑/↓ al vídeo per fer zàping',
             releasesAllSub: 'Totes les estrenes recents',
@@ -2122,7 +2263,7 @@
             searching: 'Searching catalog...',
             searchResultsFor: 'Results for',
             secLiveTitle: 'Live TV & Sports',
-            secLiveSub: 'Spanish DTT, Movistar+, DAZN & Sky Sports UK',
+            secLiveSub: 'Spanish DTT, beIN Arabic, Morocco, Nat Geo, FOX, Al Jazeera & more',
             secReleasesTitle: 'Latest Cinema Releases',
             secReleasesSub: 'Recent releases ready in HD',
             secSeasonsTitle: 'New Series Seasons',
@@ -2132,12 +2273,19 @@
             secAnimeTitle: 'Anime in HD',
             secAnimeSub: 'Jujutsu Kaisen, Solo Leveling, DBZ, AOT',
             filterAll: 'All',
-            filterEsTdt: 'Spain DTT',
-            filterEsSports: 'Football & Motor ES',
-            filterUkSports: 'UK Sports (Sky / Eurosport)',
-            filterIntlSports: 'ESPN & International',
-            filterCine: 'Movies & Series',
-            filterKidsReg: 'Regional & Kids',
+            filterEsTdt: '🇪🇸 Spain DTT',
+            filterEsSports: '⚽ Football & Motor ES',
+            filterBeinAr: '🇶🇦 beIN Arabic',
+            filterMarruecos: '🇲🇦 Morocco',
+            filterDocs: '🌍 Documentaries & NatGeo',
+            filterUsa: '🇺🇸 USA FOX / CNN',
+            filterEuropa: '🇪🇺 Europe',
+            filterNoticias: '📰 Al Jazeera & News',
+            filterUkSports: '🇬🇧 UK Sports',
+            filterChina: '🇨🇳 China Football',
+            filterIntlSports: '🌎 Latam Sports',
+            filterCine: '🎬 Movies & Series',
+            filterKidsReg: '👶 Regional & Kids',
             liveGridTitle: '24/7 Live Channels',
             liveGridSubSuffix: ' channels · Press OK to watch, ↑/↓ in player to zap',
             releasesAllSub: 'All recent releases',
@@ -2354,6 +2502,9 @@
         var dockTimeDur = document.getElementById('dock-time-dur');
         var dockProgressFill = document.getElementById('dock-progress-fill');
         var seriesModal = document.getElementById('tv-series-modal');
+        var voiceModal = document.getElementById('tv-voice-modal');
+        var hudLogoWrap = document.getElementById('hud-logo-wrap');
+        var hudLogoImg = document.getElementById('hud-logo-img');
         var otaBanner = document.getElementById('ota-update-banner');
         var otaText = document.getElementById('ota-update-text');
         var btnOtaInstall = document.getElementById('btn-ota-install');
@@ -3078,6 +3229,15 @@
 
           hudTitle.textContent = vs.title || 'RiffanTV';
           hudSub.textContent = vs.subtitle || (isPaired ? 'Sala ' + currentRoomId.toUpperCase() + ' · 1080p' : 'Google TV HD');
+          if (hudLogoWrap && hudLogoImg) {
+            var chLogo = vs.logoUrl || (activeLiveChannel && activeLiveChannel.logoUrl) || '';
+            if (chLogo) {
+              hudLogoImg.src = chLogo;
+              hudLogoWrap.style.display = 'flex';
+            } else {
+              hudLogoWrap.style.display = 'none';
+            }
+          }
           syncPlayerDockMode(isLive);
 
           if (nextMode === 'idle' || !nextUrl) {
@@ -3226,8 +3386,11 @@
             var hls = new window.Hls({
               enableWorker: !isSmartTvUa,
               lowLatencyMode: false,
-              backBufferLength: 30,
-              maxBufferLength: 35,
+              startPosition: isLive ? -1 : targetSec,
+              liveSyncDurationCount: 3,
+              liveMaxLatencyDurationCount: 6,
+              backBufferLength: isLive ? 14 : 30,
+              maxBufferLength: isLive ? 24 : 35,
               manifestLoadingTimeOut: 9000,
               fragLoadingTimeOut: 14000,
               fragLoadingMaxRetry: 3
@@ -3882,7 +4045,14 @@
           if (id === 'tdt-lasexta') return 'linear-gradient(145deg, #059669 0%, #092119 100%)';
           if (cat === 'movistar') return 'linear-gradient(145deg, #0369a1 0%, #0c1424 100%)';
           if (cat === 'dazn') return 'linear-gradient(145deg, #334155 0%, #0c0d10 100%)';
+          if (cat === 'bein_arabic') return 'linear-gradient(145deg, #5b21b6 0%, #140b24 100%)';
+          if (cat === 'marruecos') return 'linear-gradient(145deg, #b91c1c 0%, #142b1d 100%)';
+          if (cat === 'documentales') return 'linear-gradient(145deg, #ca8a04 0%, #1c1406 100%)';
+          if (cat === 'usa_tv') return 'linear-gradient(145deg, #1d4ed8 0%, #180d22 100%)';
+          if (cat === 'europa_tv') return 'linear-gradient(145deg, #0f766e 0%, #0c1726 100%)';
+          if (cat === 'noticias_intl') return 'linear-gradient(145deg, #d97706 0%, #1c130a 100%)';
           if (cat === 'uk_sports') return 'linear-gradient(145deg, #1d4ed8 0%, #3b0a24 100%)';
+          if (cat === 'china_football') return 'linear-gradient(145deg, #be123c 0%, #1f0a12 100%)';
           if (cat === 'espn' || cat === 'dsports' || cat === 'beinsports') return 'linear-gradient(145deg, #991b1b 0%, #160a0d 100%)';
           if (cat === 'cine_series' || cat === 'tnt_space') return 'linear-gradient(145deg, #6d28d9 0%, #160e26 100%)';
           if (cat === 'infantil_autonomicas') return 'linear-gradient(145deg, #0f766e 0%, #0e1d20 100%)';
@@ -3898,7 +4068,14 @@
             var cat = c.category || '';
             if (filterKey === 'es_tdt' && (cat === 'generalistas' || cat === 'noticias_deportes' || cat === 'entretenimiento')) out.push(c);
             else if (filterKey === 'es_sports' && (cat === 'movistar' || cat === 'dazn')) out.push(c);
+            else if (filterKey === 'bein_arabic' && cat === 'bein_arabic') out.push(c);
+            else if (filterKey === 'marruecos' && cat === 'marruecos') out.push(c);
+            else if (filterKey === 'documentales' && cat === 'documentales') out.push(c);
+            else if (filterKey === 'usa_tv' && cat === 'usa_tv') out.push(c);
+            else if (filterKey === 'europa_tv' && cat === 'europa_tv') out.push(c);
+            else if (filterKey === 'noticias_intl' && cat === 'noticias_intl') out.push(c);
             else if (filterKey === 'uk_sports' && cat === 'uk_sports') out.push(c);
+            else if (filterKey === 'china_football' && cat === 'china_football') out.push(c);
             else if (filterKey === 'intl_sports' && (cat === 'espn' || cat === 'dsports' || cat === 'beinsports' || cat === 'tnt_space')) out.push(c);
             else if (filterKey === 'cine' && cat === 'cine_series') out.push(c);
             else if (filterKey === 'kids_reg' && cat === 'infantil_autonomicas') out.push(c);
@@ -3921,6 +4098,9 @@
             var chEpg = catalogData.epg ? catalogData.epg[item.id] : null;
             var nowTitle = chEpg && chEpg.now ? chEpg.now.title : (item.network || tvT('broadcast247'));
             var pct = chEpg && typeof chEpg.progressPct === 'number' ? Math.max(6, Math.min(100, chEpg.progressPct)) : 35;
+            var logoHtml = item.logoUrl
+              ? '<img class="tv-channel-logo-img" src="' + escapeHtml(item.logoUrl) + '" alt="' + escapeHtml(item.name || 'TV') + '" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display=\'none\';if(this.nextSibling)this.nextSibling.style.display=\'block\';" /><div class="tv-channel-mark" style="display:none;">' + escapeHtml(item.shortMark || item.name || 'TV') + '</div>'
+              : '<div class="tv-channel-mark">' + escapeHtml(item.shortMark || item.name || 'TV') + '</div>';
 
             btn.innerHTML =
               '<div class="tv-channel-stage" style="background:' + grad + ';">' +
@@ -3928,7 +4108,7 @@
               '<span class="tv-channel-dial">' + escapeHtml(dialText) + '</span>' +
               '<span class="tv-channel-live"><span class="tv-live-dot"></span>' + escapeHtml(tvT('liveBadge')) + '</span>' +
               '</div>' +
-              '<div class="tv-channel-mark">' + escapeHtml(item.shortMark || item.name || 'TV') + '</div>' +
+              '<div class="tv-channel-logo-stage">' + logoHtml + '</div>' +
               '</div>' +
               '<div class="tv-card-body">' +
               '<div class="tv-card-title">' + escapeHtml(item.name) + '</div>' +
@@ -4094,14 +4274,14 @@
               '<button type="submit" class="tv-btn-primary" tabindex="0">' + escapeHtml(tvT('searchSubmit')) + '</button>' +
               '</form>' +
               '<div class="tv-chips-row">' +
+              '<button type="button" class="tv-chip-btn" data-q="DAZN LaLiga" tabindex="0">DAZN LaLiga</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="beIN SPORTS 1" tabindex="0">beIN SPORTS 1</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="National Geographic" tabindex="0">National Geographic</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="Al Jazeera" tabindex="0">Al Jazeera</button>' +
+              '<button type="button" class="tv-chip-btn" data-q="LiveNOW from FOX" tabindex="0">FOX USA</button>' +
               '<button type="button" class="tv-chip-btn" data-q="Sky Sports" tabindex="0">Sky Sports UK</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="DAZN" tabindex="0">DAZN</button>' +
               '<button type="button" class="tv-chip-btn" data-q="La 1" tabindex="0">La 1 HD</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="Jujutsu Kaisen" tabindex="0">Jujutsu Kaisen</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="From" tabindex="0">From</button>' +
               '<button type="button" class="tv-chip-btn" data-q="Solo Leveling" tabindex="0">Solo Leveling</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="Dragon Ball" tabindex="0">Dragon Ball</button>' +
-              '<button type="button" class="tv-chip-btn" data-q="One Piece" tabindex="0">One Piece</button>' +
               '</div>';
             hubDynamicContent.appendChild(panel);
 
@@ -4173,7 +4353,14 @@
               { key: 'all', label: tvT('filterAll') + ' (' + catalogData.tdt.length + ')' },
               { key: 'es_tdt', label: tvT('filterEsTdt') },
               { key: 'es_sports', label: tvT('filterEsSports') },
+              { key: 'bein_arabic', label: tvT('filterBeinAr') },
+              { key: 'marruecos', label: tvT('filterMarruecos') },
+              { key: 'documentales', label: tvT('filterDocs') },
+              { key: 'usa_tv', label: tvT('filterUsa') },
+              { key: 'europa_tv', label: tvT('filterEuropa') },
+              { key: 'noticias_intl', label: tvT('filterNoticias') },
               { key: 'uk_sports', label: tvT('filterUkSports') },
+              { key: 'china_football', label: tvT('filterChina') },
               { key: 'intl_sports', label: tvT('filterIntlSports') },
               { key: 'cine', label: tvT('filterCine') },
               { key: 'kids_reg', label: tvT('filterKidsReg') }
@@ -4282,6 +4469,7 @@
         // ROW-AWARE SPATIAL 10-FOOT D-PAD NAVIGATION ENGINE
         // ===================================================================
         function getFocusableRoot() {
+          if (voiceModal && voiceModal.style.display === 'block') return voiceModal;
           if (seriesModal && seriesModal.style.display === 'block') return seriesModal;
           if (fsPromptBanner && fsPromptBanner.style.display === 'block') return fsPromptBanner;
           if (activeScreen === 'player') return playerScreen;
@@ -4458,6 +4646,152 @@
             setTimeout(function () { lastHubFocusedEl.focus(); }, 30);
           }
         };
+
+        // ===================================================================
+        // GOOGLE TV VOICE ASSISTANT (ES5 + SPEECH SYNTHESIS + GEMINI API)
+        // ===================================================================
+        var tvVoicePrevItems = [];
+        var tvVoiceReplyEl = document.getElementById('tv-voice-reply');
+        var tvVoiceInputEl = document.getElementById('tv-voice-input');
+        var tvVoiceResultsEl = document.getElementById('tv-voice-results');
+        var tvVoiceBtn = document.getElementById('btn-hub-voice');
+        var tvVoiceMicBtn = document.getElementById('btn-tv-voice-mic');
+
+        function speakTvText(txt) {
+          try {
+            if (window.speechSynthesis && window.SpeechSynthesisUtterance) {
+              window.speechSynthesis.cancel();
+              var u = new window.SpeechSynthesisUtterance(txt);
+              u.lang = activeTvLang === 'ca' ? 'ca-ES' : (activeTvLang === 'en' ? 'en-US' : 'es-ES');
+              window.speechSynthesis.speak(u);
+            }
+          } catch (e) {}
+        }
+
+        function playTvVoiceCandidate(item) {
+          if (!item) return;
+          if (voiceModal) voiceModal.style.display = 'none';
+          unlockAudio();
+          if (item.kind === 'channel' && item.channel) {
+            playTdtChannelOnTv(item.channel, 0);
+          } else if (item.kind === 'series' && item.media) {
+            openSeriesModalOnTv(item.media);
+          } else if (item.media) {
+            playMovieOnTv(item.media);
+          }
+        }
+
+        function submitTvVoiceQuery(qStr) {
+          var cleanQ = String(qStr || '').replace(/^\s+|\s+$/g, '');
+          if (!cleanQ) return;
+          if (tvVoiceReplyEl) tvVoiceReplyEl.textContent = '⏳ Buscando "' + cleanQ + '"...';
+          xhrJson(
+            'POST',
+            '/api/ai/voice-assistant',
+            { query: cleanQ, userName: 'Google TV', lang: activeTvLang, previousItems: tvVoicePrevItems },
+            function (err, data) {
+              if (err || !data) {
+                if (tvVoiceReplyEl) tvVoiceReplyEl.textContent = 'No pude conectar con el asistente.';
+                return;
+              }
+              var replyTxt = data.spokenReply || 'Aquí tienes las opciones.';
+              if (tvVoiceReplyEl) tvVoiceReplyEl.textContent = replyTxt;
+              speakTvText(replyTxt);
+              var list = Array.isArray(data.items) ? data.items : [];
+              tvVoicePrevItems = list;
+              if (data.autoPlay && list.length > 0) {
+                setTimeout(function () { playTvVoiceCandidate(list[0]); }, 450);
+                return;
+              }
+              if (tvVoiceResultsEl) {
+                tvVoiceResultsEl.innerHTML = '';
+                for (var vi = 0; vi < list.length; vi++) {
+                  (function (vItem) {
+                    var cardEl = vItem.kind === 'channel' && vItem.channel
+                      ? buildCardButton(vItem.channel, 'tdt')
+                      : buildCardButton(vItem.media || { title: vItem.title, poster: vItem.imageUrl, mediaType: vItem.kind === 'series' ? 'tv' : 'movie' }, 'media');
+                    cardEl.onclick = function () { playTvVoiceCandidate(vItem); };
+                    tvVoiceResultsEl.appendChild(cardEl);
+                  })(list[vi]);
+                }
+                setTimeout(function () {
+                  var firstRes = tvVoiceResultsEl.querySelector('.tv-card');
+                  if (firstRes && firstRes.focus) firstRes.focus();
+                }, 40);
+              }
+            }
+          );
+        }
+
+        function startTvVoiceRecognition() {
+          var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+          if (!SR) {
+            if (tvVoiceInputEl && tvVoiceInputEl.focus) tvVoiceInputEl.focus();
+            showToast('Escribe tu petición o elige una sugerencia');
+            return;
+          }
+          try {
+            var rec = new SR();
+            rec.lang = activeTvLang === 'ca' ? 'ca-ES' : (activeTvLang === 'en' ? 'en-US' : 'es-ES');
+            rec.interimResults = false;
+            if (tvVoiceMicBtn) tvVoiceMicBtn.textContent = '🎙 Escuchando...';
+            rec.onresult = function (ev) {
+              if (ev.results && ev.results[0] && ev.results[0][0]) {
+                var heard = ev.results[0][0].transcript;
+                if (tvVoiceInputEl) tvVoiceInputEl.value = heard;
+                submitTvVoiceQuery(heard);
+              }
+            };
+            rec.onend = function () {
+              if (tvVoiceMicBtn) tvVoiceMicBtn.textContent = '🎤 Hablar';
+            };
+            rec.onerror = function () {
+              if (tvVoiceMicBtn) tvVoiceMicBtn.textContent = '🎤 Hablar';
+            };
+            rec.start();
+          } catch (e) {}
+        }
+
+        if (tvVoiceBtn) {
+          tvVoiceBtn.onclick = function () {
+            lastHubFocusedEl = tvVoiceBtn;
+            if (voiceModal) voiceModal.style.display = 'block';
+            if (tvVoiceResultsEl) tvVoiceResultsEl.innerHTML = '';
+            tvVoicePrevItems = [];
+            var greet = '¡Holaa! ¿Qué quieres ver hoy?';
+            if (tvVoiceReplyEl) tvVoiceReplyEl.textContent = greet;
+            speakTvText(greet);
+            setTimeout(function () {
+              if (tvVoiceMicBtn && tvVoiceMicBtn.focus) tvVoiceMicBtn.focus();
+            }, 40);
+          };
+        }
+        var btnCloseVoice = document.getElementById('btn-close-voice-modal');
+        if (btnCloseVoice) {
+          btnCloseVoice.onclick = function () {
+            if (voiceModal) voiceModal.style.display = 'none';
+            if (lastHubFocusedEl && lastHubFocusedEl.focus) lastHubFocusedEl.focus();
+          };
+        }
+        if (tvVoiceMicBtn) tvVoiceMicBtn.onclick = startTvVoiceRecognition;
+        var tvVoiceFormEl = document.getElementById('tv-voice-form');
+        if (tvVoiceFormEl) {
+          tvVoiceFormEl.onsubmit = function (ev) {
+            if (ev && ev.preventDefault) ev.preventDefault();
+            if (tvVoiceInputEl) submitTvVoiceQuery(tvVoiceInputEl.value);
+            return false;
+          };
+        }
+        var vChips = document.querySelectorAll('.tv-voice-chip');
+        for (var vc = 0; vc < vChips.length; vc++) {
+          (function (vcEl) {
+            vcEl.onclick = function () {
+              var q = vcEl.getAttribute('data-vq');
+              if (tvVoiceInputEl) tvVoiceInputEl.value = q;
+              submitTvVoiceQuery(q);
+            };
+          })(vChips[vc]);
+        }
         document.getElementById('btn-go-pairing').onclick = function () {
           lastHubFocusedEl = document.getElementById('btn-go-pairing');
           switchTvScreen('pairing');
@@ -4671,6 +5005,12 @@
 
           // Back / Escape / Tizen Return (10009) / LG webOS Back (461) & Stop (413) / Android Back (4)
           if (code === 27 || code === 8 || code === 4 || code === 10009 || code === 461 || code === 413) {
+            if (voiceModal && voiceModal.style.display === 'block') {
+              if (e.preventDefault) e.preventDefault();
+              voiceModal.style.display = 'none';
+              if (lastHubFocusedEl && lastHubFocusedEl.focus) lastHubFocusedEl.focus();
+              return;
+            }
             if (seriesModal && seriesModal.style.display === 'block') {
               if (e.preventDefault) e.preventDefault();
               seriesModal.style.display = 'none';

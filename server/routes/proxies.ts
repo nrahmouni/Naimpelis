@@ -992,6 +992,23 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
       }
 
       const effectiveReferer = referer || new URL(baseUrl).origin + '/';
+      let easyBroadcastTokenQs = '';
+      try {
+        const parsedBase = new URL(baseUrl);
+        if (
+          /(\.|^)easybroadcast\.io$/i.test(parsedBase.hostname) &&
+          parsedBase.searchParams.has('token')
+        ) {
+          easyBroadcastTokenQs = parsedBase.search;
+        }
+      } catch {
+        // ignore
+      }
+      const appendEasyBroadcastToken = (raw: string): string => {
+        if (!easyBroadcastTokenQs || /[?&]token=/i.test(raw)) return raw;
+        return `${raw}${raw.includes('?') ? '&' : '?'}${easyBroadcastTokenQs.replace(/^\?/, '')}`;
+      };
+
       const lines = manifestText.split(/\r?\n/);
       let nextLineIsVariantPlaylist = false;
       const discoveredTsUrls: string[] = [];
@@ -1009,10 +1026,11 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
               try {
                 const absUri = new URL(uriVal, baseUrl).href;
                 const unwrapped = unwrapRelaySegmentUrl(absUri, effectiveReferer);
-                if (trimmed.startsWith('#EXT-X-MEDIA') || unwrapped.url.includes('.m3u8')) {
-                  return `URI="${buildHlsProxyUrl(unwrapped.url, unwrapped.referer, forceAac, originPrefix)}"`;
+                const resolvedUri = appendEasyBroadcastToken(unwrapped.url);
+                if (trimmed.startsWith('#EXT-X-MEDIA') || resolvedUri.includes('.m3u8')) {
+                  return `URI="${buildHlsProxyUrl(resolvedUri, unwrapped.referer, forceAac, originPrefix)}"`;
                 }
-                return `URI="${buildTsProxyUrl(unwrapped.url, unwrapped.referer, forceAac, originPrefix)}"`;
+                return `URI="${buildTsProxyUrl(resolvedUri, unwrapped.referer, forceAac, originPrefix)}"`;
               } catch {
                 return _match;
               }
@@ -1024,19 +1042,20 @@ export function registerProxyRoutes(app: express.Express, deps: RegisterProxyRou
         try {
           const absUrl = new URL(trimmed, baseUrl).href;
           const unwrapped = unwrapRelaySegmentUrl(absUrl, effectiveReferer);
+          const resolvedUrl = appendEasyBroadcastToken(unwrapped.url);
           const isPlaylist =
             nextLineIsVariantPlaylist ||
-            (/\.m3u8(\?|$)/i.test(unwrapped.url) && !/relay\.videm\.buzz\/seg/i.test(absUrl)) ||
-            unwrapped.url.includes('stream_tv=');
+            (/\.m3u8(\?|$)/i.test(resolvedUrl) && !/relay\.videm\.buzz\/seg/i.test(absUrl)) ||
+            resolvedUrl.includes('stream_tv=');
           nextLineIsVariantPlaylist = false;
 
           if (!isPlaylist && forceAac) {
-            discoveredTsUrls.push(unwrapped.url);
+            discoveredTsUrls.push(resolvedUrl);
           }
 
           return isPlaylist
-            ? buildHlsProxyUrl(unwrapped.url, unwrapped.referer, forceAac, originPrefix)
-            : buildTsProxyUrl(unwrapped.url, unwrapped.referer, forceAac, originPrefix);
+            ? buildHlsProxyUrl(resolvedUrl, unwrapped.referer, forceAac, originPrefix)
+            : buildTsProxyUrl(resolvedUrl, unwrapped.referer, forceAac, originPrefix);
         } catch {
           nextLineIsVariantPlaylist = false;
           return line;

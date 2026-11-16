@@ -14,6 +14,10 @@ import {
   getChineseFootballMatchTracks,
   getChineseFootballMultiplexCard,
 } from '../server/extractors/chineseSports.ts';
+import {
+  CATALAN_FUNNY_RANDOM_NAMES,
+  generateRandomGuestName,
+} from '../src/utils/storage.ts';
 
 describe('Embed sanitizer, ad blocking & VidsrcBuzz HLS unwrapping', () => {
   it('detects all click-hijack and scam ad domains including aclib/tagivi/lahochat', () => {
@@ -189,5 +193,20 @@ describe('Chinese Football (中文) IPTV stream detection & channel definitions'
     expect(uclTracks.every((t) => t.lang === 'ZH' && t.resolverType === 'tdt_hls')).toBe(true);
     expect(laligaTracks.every((t) => t.lang === 'ZH' && t.resolverType === 'tdt_hls')).toBe(true);
     expect(eplTracks.every((t) => t.lang === 'ZH' && t.resolverType === 'tdt_hls')).toBe(true);
+  });
+});
+
+describe('Catalan funny random guest names', () => {
+  it('provides classic funny Catalan insults and picks non-repeating names', () => {
+    expect(CATALAN_FUNNY_RANDOM_NAMES).toContain('Capsigrany');
+    expect(CATALAN_FUNNY_RANDOM_NAMES).toContain('Pocasoltes');
+    expect(CATALAN_FUNNY_RANDOM_NAMES).toContain('Carallot');
+    expect(CATALAN_FUNNY_RANDOM_NAMES.length).toBeGreaterThanOrEqual(20);
+
+    for (let i = 0; i < 30; i += 1) {
+      const picked = generateRandomGuestName('Capsigrany');
+      expect(picked).not.toBe('Capsigrany');
+      expect(CATALAN_FUNNY_RANDOM_NAMES).toContain(picked);
+    }
   });
 });

@@ -525,6 +525,46 @@ export function rewriteVidsrcBuzzM3u8(
   };
 }
 
+const easyBroadcastTokenCache = new LruTtlCache<string, string>(60, 25_000);
+
+export async function maybeSignEasyBroadcastUrl(rawUrl: string): Promise<string> {
+  const clean = String(rawUrl || '').trim();
+  if (!/^https:\/\/cdn\.live\.easybroadcast\.io\/abr_corp\/73_/i.test(clean)) {
+    return clean;
+  }
+  if (/[?&]token=/i.test(clean)) return clean;
+
+  const baseUrl = clean.split('?')[0];
+  const cachedQs = easyBroadcastTokenCache.get(baseUrl);
+  if (cachedQs) {
+    return `${baseUrl}?${cachedQs}`;
+  }
+
+  try {
+    const tokenRes = await streamingFetch(
+      `https://token.easybroadcast.io/all?url=${encodeURIComponent(baseUrl)}`,
+      {
+        headers: {
+          'User-Agent': CHROME_UA,
+          Origin: 'https://snrt.player.easybroadcast.io',
+          Referer: 'https://snrt.player.easybroadcast.io/',
+        },
+        timeoutMs: 4500,
+      }
+    );
+    if (tokenRes.ok) {
+      const qs = (await tokenRes.text()).trim().replace(/^\?/, '');
+      if (qs && qs.includes('token=')) {
+        easyBroadcastTokenCache.set(baseUrl, qs);
+        return `${baseUrl}?${qs}`;
+      }
+    }
+  } catch {
+    // fallback to unsigned URL if token service fails momentarily
+  }
+  return clean;
+}
+
 export function resolveKnownUpstreamReferer(urlStr: string, explicitReferer?: string): string {
   const cleanExplicit = String(explicitReferer || '').trim();
   if (/^https?:\/\//i.test(cleanExplicit)) return cleanExplicit;
@@ -532,6 +572,11 @@ export function resolveKnownUpstreamReferer(urlStr: string, explicitReferer?: st
     const u = new URL(urlStr);
     if (/(\.|^)stmify\.com$/i.test(u.hostname)) return 'https://stmify.com/';
     if (/(\.|^)footunder\.online$/i.test(u.hostname)) return 'https://footunder.online/';
+    if (/(\.|^)easybroadcast\.io$/i.test(u.hostname)) return 'https://snrt.player.easybroadcast.io/';
+    if (/(\.|^)akamaized\.net$/i.test(u.hostname) && /\/2m_monde\//i.test(u.pathname)) {
+      return 'http://www.radio2m.ma/';
+    }
+    if (/(\.|^)usnlive\.com$/i.test(u.hostname)) return 'https://usnewson.com/';
   } catch {
     // ignore
   }

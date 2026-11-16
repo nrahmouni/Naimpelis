@@ -476,7 +476,7 @@ Respond strictly in JSON matching the schema.`,
     config: {
       systemInstruction:
         'You are a cinema metadata specialist for a streaming catalog. Always return accurate real movie/TV series titles (both Spanish localized title and exact original title) plus concise search variations.',
-      thinkingConfig: { thinkingLevel: ThinkingLevel.MINIMAL },
+      thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,

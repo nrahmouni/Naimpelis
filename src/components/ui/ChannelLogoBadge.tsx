@@ -1,12 +1,12 @@
 import React from 'react';
 import type { SpanishTdtChannel, TdtCategory } from '../../types';
 
-export type TvRegionId = 'all' | 'es' | 'latam' | 'uk' | 'cn';
+export type TvRegionId = 'all' | 'es' | 'latam' | 'ar' | 'ma' | 'docs' | 'us' | 'eu' | 'uk' | 'cn';
 
 export interface ChannelRegionMeta {
   region: Exclude<TvRegionId, 'all'>;
   flag: string;
-  langTag: 'ES' | 'CAT' | 'EN' | '中文';
+  langTag: 'ES' | 'CAT' | 'EN' | 'AR' | 'FR' | 'DE' | 'IT' | 'PT' | '中文';
   countryEs: string;
   countryCa: string;
   countryEn: string;
@@ -21,6 +21,88 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
       countryEs: 'China · 中文',
       countryCa: 'Xina · 中文',
       countryEn: 'China · 中文',
+    };
+  }
+  if (ch.category === 'marruecos' || ch.id.startsWith('ma-')) {
+    const isFr = ch.id === 'ma-medi1-afrique';
+    return {
+      region: 'ma',
+      flag: '🇲🇦',
+      langTag: isFr ? 'FR' : 'AR',
+      countryEs: 'Marruecos · المغرب',
+      countryCa: 'Marroc · المغرب',
+      countryEn: 'Morocco · المغرب',
+    };
+  }
+  if (ch.category === 'bein_arabic' || ch.id.startsWith('bein-ar-') || ch.id.startsWith('ar-')) {
+    return {
+      region: 'ar',
+      flag: '🇶🇦',
+      langTag: 'AR',
+      countryEs: 'beIN Árabe & MENA · العربية',
+      countryCa: 'beIN Àrab i MENA · العربية',
+      countryEn: 'beIN Arabic & MENA · العربية',
+    };
+  }
+  if (ch.category === 'noticias_intl' || ch.id.startsWith('news-')) {
+    const isEn = ch.id === 'news-aj-en' || ch.id === 'news-alarabiya-en' || ch.id === 'news-cnbc-eu';
+    return {
+      region: 'ar',
+      flag: isEn ? '🌍' : '🇶🇦',
+      langTag: isEn ? 'EN' : 'AR',
+      countryEs: 'Noticias Mundiales (Al Jazeera / MENA)',
+      countryCa: 'Notícies Mundials (Al Jazeera / MENA)',
+      countryEn: 'World News (Al Jazeera / MENA)',
+    };
+  }
+  if (ch.category === 'documentales' || ch.id.startsWith('doc-')) {
+    const isEs =
+      ch.id === 'doc-natgeo-latam' ||
+      ch.id === 'doc-natgeo-mx' ||
+      ch.id === 'doc-lovenature-es' ||
+      ch.id === 'doc-pluto-naturaleza';
+    const isAr = ch.id === 'doc-natgeo-ad';
+    return {
+      region: 'docs',
+      flag: '🌍',
+      langTag: isEs ? 'ES' : isAr ? 'AR' : 'EN',
+      countryEs: 'Documentales & Ciencia (Nat Geo / Discovery)',
+      countryCa: 'Documentals i Ciència (Nat Geo / Discovery)',
+      countryEn: 'Documentaries & Science (Nat Geo / Discovery)',
+    };
+  }
+  if (ch.category === 'usa_tv' || ch.id.startsWith('us-')) {
+    const isEs = ch.id === 'us-cnn-es';
+    return {
+      region: 'us',
+      flag: '🇺🇸',
+      langTag: isEs ? 'ES' : 'EN',
+      countryEs: 'Estados Unidos · FOX / NBC / CNN',
+      countryCa: 'Estats Units · FOX / NBC / CNN',
+      countryEn: 'United States · FOX / NBC / CNN',
+    };
+  }
+  if (ch.category === 'europa_tv' || ch.id.startsWith('eu-')) {
+    const langTag: ChannelRegionMeta['langTag'] = ch.id.endsWith('-es')
+      ? 'ES'
+      : ch.id.endsWith('-ar')
+        ? 'AR'
+        : ch.id.includes('france24-fr') || ch.id.endsWith('-fr') || ch.id === 'eu-bfmtv' || ch.id === 'eu-tv5monde'
+          ? 'FR'
+          : ch.id === 'eu-tagesschau24' || ch.id === 'eu-daserste'
+            ? 'DE'
+            : ch.id.startsWith('eu-rai')
+              ? 'IT'
+              : ch.id.startsWith('eu-rtp')
+                ? 'PT'
+                : 'EN';
+    return {
+      region: 'eu',
+      flag: '🇪🇺',
+      langTag,
+      countryEs: 'Europa · BBC / Euronews / DW / France 24',
+      countryCa: 'Europa · BBC / Euronews / DW / France 24',
+      countryEn: 'Europe · BBC / Euronews / DW / France 24',
     };
   }
   if (ch.category === 'uk_sports' || ch.id.startsWith('uk-')) {
@@ -69,6 +151,11 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
 
 export function getCategoryRegion(category: 'all' | 'tdt_all' | TdtCategory): TvRegionId {
   if (category === 'china_football') return 'cn';
+  if (category === 'marruecos') return 'ma';
+  if (category === 'bein_arabic' || category === 'noticias_intl') return 'ar';
+  if (category === 'documentales') return 'docs';
+  if (category === 'usa_tv') return 'us';
+  if (category === 'europa_tv') return 'eu';
   if (category === 'uk_sports') return 'uk';
   if (
     category === 'espn' ||
@@ -737,6 +824,77 @@ const RenderChannelArtwork: React.FC<{
           fontFamily="system-ui, sans-serif"
         >
           {shortMark.slice(0, 6)}
+        </text>
+      </svg>
+    );
+  }
+
+  // 22. beIN SPORTS Arabic
+  if (id.startsWith('bein-ar-')) {
+    return (
+      <svg viewBox="0 0 64 64" className="w-full h-full">
+        <rect width="64" height="64" rx="16" fill="#4C1D95" />
+        <rect x="6" y="10" width="52" height="18" rx="6" fill="#7C3AED" />
+        <text x="32" y="23" textAnchor="middle" fill="#FFFFFF" fontSize="11" fontWeight="900" fontFamily="system-ui, sans-serif">
+          beIN
+        </text>
+        <text x="32" y="48" textAnchor="middle" fill="#E9D5FF" fontSize="13" fontWeight="900" fontFamily="system-ui, sans-serif">
+          {shortMark}
+        </text>
+      </svg>
+    );
+  }
+
+  // 23. National Geographic Yellow Border Crest
+  if (id.startsWith('doc-natgeo')) {
+    return (
+      <svg viewBox="0 0 64 64" className="w-full h-full">
+        <rect width="64" height="64" rx="16" fill="#0A0A0D" />
+        <rect x="13" y="12" width="14" height="20" fill="none" stroke="#FACC15" strokeWidth="4" />
+        <text x="41" y="27" textAnchor="middle" fill="#FFFFFF" fontSize="10" fontWeight="900" fontFamily="system-ui, sans-serif">
+          NAT GEO
+        </text>
+        <text x="32" y="49" textAnchor="middle" fill="#FDE047" fontSize="9.5" fontWeight="800" fontFamily="system-ui, sans-serif">
+          {shortMark}
+        </text>
+      </svg>
+    );
+  }
+
+  // 24. Morocco SNRT / 2M / Medi1
+  if (id.startsWith('ma-')) {
+    return (
+      <svg viewBox="0 0 64 64" className="w-full h-full">
+        <rect width="64" height="64" rx="16" fill="#7F1D1D" />
+        <polygon points="32,10 34.5,17 42,17 36,21 38,28 32,24 26,28 28,21 22,17 29.5,17" fill="none" stroke="#16A34A" strokeWidth="2.2" />
+        <text x="32" y="49" textAnchor="middle" fill="#FFFFFF" fontSize="12" fontWeight="900" fontFamily="system-ui, sans-serif">
+          {shortMark.slice(0, 6)}
+        </text>
+      </svg>
+    );
+  }
+
+  // 25. Al Jazeera & International News
+  if (id.startsWith('news-aj')) {
+    return (
+      <svg viewBox="0 0 64 64" className="w-full h-full">
+        <rect width="64" height="64" rx="16" fill="#1E1406" />
+        <circle cx="32" cy="24" r="11" fill="#F59E0B" opacity="0.9" />
+        <text x="32" y="50" textAnchor="middle" fill="#FEF3C7" fontSize="11" fontWeight="900" fontFamily="system-ui, sans-serif">
+          {shortMark}
+        </text>
+      </svg>
+    );
+  }
+
+  // 26. FOX USA
+  if (id.startsWith('us-fox')) {
+    return (
+      <svg viewBox="0 0 64 64" className="w-full h-full">
+        <rect width="64" height="64" rx="16" fill="#0B1B3B" />
+        <rect x="6" y="16" width="52" height="32" rx="8" fill="#1D4ED8" />
+        <text x="32" y="38" textAnchor="middle" fill="#FFFFFF" fontSize="14" fontWeight="900" fontFamily="system-ui, sans-serif">
+          {shortMark}
         </text>
       </svg>
     );

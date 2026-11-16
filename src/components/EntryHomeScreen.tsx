@@ -16,6 +16,8 @@ import {
   Dices,
   Spade,
   CircleDot,
+  Mic,
+  Palette,
 } from 'lucide-react';
 import type {
   AppLanguage,
@@ -27,6 +29,7 @@ import type {
 import type { PrimaryWorldId } from '../store/useAppStore';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
+import { generateRandomGuestName } from '../utils/storage';
 import { PosterImage } from './ui/PosterImage';
 import { UniversalHomeSearch } from './home/UniversalHomeSearch';
 
@@ -49,10 +52,13 @@ interface EntryHomeScreenProps {
   tdtChannels?: SpanishTdtChannel[];
   liveMatches?: SportsMatch[];
   onPlayMovie?: (movie: CatalogMovie) => void;
-  onPlaySeries?: (series: CatalogMovie) => void;
+  onPlaySeries?: (series: CatalogMovie, targetSeason?: number, targetEpisode?: number) => void;
   onPlayChannel?: (channel: SpanishTdtChannel) => void;
   onPlayMatch?: (match: SportsMatch) => void;
   onSelectGame?: (gameId: string) => void;
+  onOpenVoiceAssistant?: () => void;
+  onOpenDesignSystem?: () => void;
+  onChangeLang?: (lang: AppLanguage) => void;
 }
 
 /** Subtle animated audio waveform bars strictly inside the Sala badge */
@@ -97,6 +103,9 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   onPlayChannel = () => {},
   onPlayMatch = () => {},
   onSelectGame = () => {},
+  onOpenVoiceAssistant,
+  onOpenDesignSystem,
+  onChangeLang,
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(displayName);
@@ -108,6 +117,11 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
     if (cleaned.length >= 2) {
       triggerHaptic('light');
       onUpdateDisplayName(cleaned);
+    } else if (cleaned.length === 0) {
+      triggerHaptic('light');
+      const fallbackNick = generateRandomGuestName(displayName);
+      setNameDraft(fallbackNick);
+      onUpdateDisplayName(fallbackNick);
     } else {
       setNameDraft(displayName);
     }
@@ -240,7 +254,65 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               })}
             </p>
           </div>
+
+          {onOpenVoiceAssistant && (
+            <button
+              type="button"
+              onClick={() => {
+                triggerHaptic('medium');
+                onOpenVoiceAssistant();
+              }}
+              className="min-h-11 px-3.5 sm:px-4 rounded-2xl bg-gradient-to-r from-[#9146FF] to-[#6D28D9] hover:from-[#A970FF] hover:to-[#7C2AE8] border border-white/20 text-white text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 shrink-0 cursor-pointer active:scale-95 transition-all shadow-[0_10px_28px_rgba(145,70,255,0.4)]"
+            >
+              <Mic className="w-4 h-4 shrink-0" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Asistente Voz',
+                  ca: 'Assistent Veu',
+                  en: 'Voice AI',
+                })}
+              </span>
+            </button>
+          )}
         </section>
+
+        {/* LANGUAGE QUICK SELECTOR BAR (ENG, ES, CAT, CHINO) WITH STYLISH FLAGS */}
+        {onChangeLang && (
+          <section className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+            <span className="text-[11px] font-bold text-zinc-400 uppercase tracking-wider shrink-0 mr-1">
+              {pickLang(lang, { es: 'Idioma:', ca: 'Idioma:', en: 'Language:' })}
+            </span>
+            {[
+              { code: 'es' as AppLanguage, label: 'ES', flag: '🇪🇸', title: 'Castellano' },
+              { code: 'ca' as AppLanguage, label: 'CAT', flag: '🏴󠁥󠁳󠁣󠁴󠁿', title: 'Català' },
+              { code: 'en' as AppLanguage, label: 'ENG', flag: '🇬🇧', title: 'English' },
+              { code: 'zh' as AppLanguage, label: '中文', flag: '🇨🇳', title: '中文 (简体)' },
+            ].map((item) => {
+              const isSelected = lang === item.code || (item.code === 'zh' && lang === 'zh');
+              return (
+                <button
+                  key={item.code}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onChangeLang(item.code);
+                  }}
+                  className={`min-h-9 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shrink-0 ${
+                    isSelected
+                      ? 'bg-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.4)] border border-[#A78BFA]/50 scale-[1.02]'
+                      : 'bg-white/[0.04] hover:bg-white/[0.08] text-zinc-300 border border-white/10 hover:border-white/20'
+                  }`}
+                  title={item.title}
+                >
+                  <span className="text-sm select-none" role="img" aria-label={item.title}>
+                    {item.flag}
+                  </span>
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </section>
+        )}
 
         {/* 2. UNIVERSAL SMART AI SEARCH */}
         <section
@@ -717,6 +789,52 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             <ChevronRight className="w-4 h-4 text-[#BF94FF] group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
           </motion.button>
         </section>
+
+        {/* 6. DESIGN SYSTEM & MEDIA KIT / CARTELES DE PUBLICIDAD (BOTTOM ENTRY) */}
+        {onOpenDesignSystem && (
+          <section className="pt-1">
+            <motion.button
+              type="button"
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.2, delay: 0.22 }}
+              whileTap={{ scale: 0.985 }}
+              onClick={() => {
+                triggerHaptic('light');
+                onOpenDesignSystem();
+              }}
+              className="w-full p-4 rounded-3xl bg-gradient-to-br from-[#151726] via-[#10121C] to-[#0D0E17] hover:from-[#1C1F33] hover:to-[#131522] border border-[#9146FF]/35 hover:border-[#9146FF]/70 flex items-center justify-between gap-3 text-left cursor-pointer transition-all duration-200 group shadow-[0_10px_28px_rgba(0,0,0,0.4)]"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/20 border border-[#9146FF]/40 text-[#D8B4FE] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-[0_0_16px_rgba(145,70,255,0.3)]">
+                  <Palette className="w-5 h-5 text-[#BF94FF]" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-display font-bold text-sm sm:text-base text-white truncate">
+                      {pickLang(lang, {
+                        es: 'Design System & Carteles de Publicidad',
+                        ca: 'Design System & Cartells de Publicitat',
+                        en: 'Design System & Marketing Posters',
+                      })}
+                    </span>
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-[#9146FF]/30 text-[#D8B4FE] shrink-0">
+                      ES · EN · 中文
+                    </span>
+                  </div>
+                  <p className="text-xs text-zinc-400 truncate mt-0.5">
+                    {pickLang(lang, {
+                      es: 'Descarga logos oficiales y pósteres promocionales de RiffanTV',
+                      ca: 'Descarrega logos oficials i cartells promocionals de RiffanTV',
+                      en: 'Download official logos and promotional posters of RiffanTV',
+                    })}
+                  </p>
+                </div>
+              </div>
+              <ChevronRight className="w-5 h-5 text-[#BF94FF] group-hover:text-white group-hover:translate-x-1 transition-all shrink-0" />
+            </motion.button>
+          </section>
+        )}
       </div>
     </div>
   );

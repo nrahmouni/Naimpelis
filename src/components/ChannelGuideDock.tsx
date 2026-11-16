@@ -46,6 +46,11 @@ type GuideViewTab = 'channel' | 'all';
 const REGION_FILTER_TABS: { id: TvRegionId; label: { es: string; ca: string; en: string } }[] = [
   { id: 'all', label: { es: 'Todos', ca: 'Tots', en: 'All' } },
   { id: 'es', label: { es: '🇪🇸 España', ca: '🇪🇸 Espanya', en: '🇪🇸 Spain' } },
+  { id: 'ar', label: { es: '🇶🇦 beIN العربية', ca: '🇶🇦 beIN العربية', en: '🇶🇦 beIN Arabic' } },
+  { id: 'ma', label: { es: '🇲🇦 Marruecos', ca: '🇲🇦 Marroc', en: '🇲🇦 Morocco' } },
+  { id: 'docs', label: { es: '🌍 Documentales', ca: '🌍 Documentals', en: '🌍 Docs' } },
+  { id: 'us', label: { es: '🇺🇸 EE.UU.', ca: '🇺🇸 EUA', en: '🇺🇸 USA' } },
+  { id: 'eu', label: { es: '🇪🇺 Europa', ca: '🇪🇺 Europa', en: '🇪🇺 Europe' } },
   { id: 'latam', label: { es: '🌎 Latam / ES', ca: '🌎 Latam / ES', en: '🌎 Latam / ES' } },
   { id: 'uk', label: { es: '🇬🇧 UK (EN)', ca: '🇬🇧 UK (EN)', en: '🇬🇧 UK (EN)' } },
   { id: 'cn', label: { es: '🇨🇳 China (中文)', ca: '🇨🇳 Xina (中文)', en: '🇨🇳 China (中文)' } },
@@ -54,6 +59,12 @@ const REGION_FILTER_TABS: { id: TvRegionId; label: { es: string; ca: string; en:
 const CATEGORY_FILTER_ORDER: { id: 'all' | TdtCategory; label: { es: string; ca: string; en: string } }[] = [
   { id: 'all', label: { es: 'Todos', ca: 'Tots', en: 'All' } },
   { id: 'generalistas', label: { es: 'Generalistas', ca: 'Generalistes', en: 'Main TV' } },
+  { id: 'bein_arabic', label: { es: 'beIN العربية', ca: 'beIN العربية', en: 'beIN Arabic' } },
+  { id: 'marruecos', label: { es: 'Marruecos', ca: 'Marroc', en: 'Morocco' } },
+  { id: 'documentales', label: { es: 'Documentales', ca: 'Documentals', en: 'Docs' } },
+  { id: 'usa_tv', label: { es: 'EE.UU.', ca: 'EUA', en: 'USA' } },
+  { id: 'europa_tv', label: { es: 'Europa', ca: 'Europa', en: 'Europe' } },
+  { id: 'noticias_intl', label: { es: 'Al Jazeera / MENA', ca: 'Al Jazeera / MENA', en: 'Al Jazeera / MENA' } },
   { id: 'cine_series', label: { es: 'Cine y Series', ca: 'Cinema i Sèries', en: 'Movies & Series' } },
   { id: 'entretenimiento', label: { es: 'Entretenimiento', ca: 'Entreteniment', en: 'Entertainment' } },
   { id: 'noticias_deportes', label: { es: 'Noticias y Deporte', ca: 'Notícies i Esports', en: 'News & Sports' } },
@@ -61,8 +72,9 @@ const CATEGORY_FILTER_ORDER: { id: 'all' | TdtCategory; label: { es: string; ca:
   { id: 'dazn', label: { es: 'DAZN', ca: 'DAZN', en: 'DAZN' } },
   { id: 'espn', label: { es: 'ESPN', ca: 'ESPN', en: 'ESPN' } },
   { id: 'dsports', label: { es: 'DSports', ca: 'DSports', en: 'DSports' } },
-  { id: 'beinsports', label: { es: 'beIN', ca: 'beIN', en: 'beIN' } },
+  { id: 'beinsports', label: { es: 'beIN ES', ca: 'beIN ES', en: 'beIN ES' } },
   { id: 'uk_sports', label: { es: 'UK Sports', ca: 'UK Sports', en: 'UK Sports' } },
+  { id: 'china_football', label: { es: 'China 中文', ca: 'Xina 中文', en: 'China 中文' } },
   { id: 'infantil_autonomicas', label: { es: 'Infantil / Auton.', ca: 'Infantil / Auton.', en: 'Kids / Regional' } },
 ];
 

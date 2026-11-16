@@ -176,6 +176,9 @@ const CommandSearchModal = React.lazy(() =>
 const SurpriseMeModal = React.lazy(() =>
   import('./components/SurpriseMeModal').then((m) => ({ default: m.SurpriseMeModal }))
 );
+const VoiceAssistantModal = React.lazy(() =>
+  import('./components/VoiceAssistantModal').then((m) => ({ default: m.VoiceAssistantModal }))
+);
 const LegalPrivacyModal = React.lazy(() =>
   import('./components/LegalPrivacyModal').then((m) => ({ default: m.LegalPrivacyModal }))
 );
@@ -324,6 +327,7 @@ export function App() {
   const [showIntro, setShowIntro] = useState<boolean>(false);
   const [introWithSound, setIntroWithSound] = useState<boolean>(false);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState<boolean>(false);
+  const [showVoiceAssistant, setShowVoiceAssistant] = useState<boolean>(false);
   const [quickPool, setQuickPool] = useState<{
     movies: CatalogMovie[];
     series: CatalogMovie[];
@@ -1929,10 +1933,11 @@ export function App() {
     customName?: string
   ) => {
     manualLobbyStayRef.current = false;
-    const customizedProfile: StoredProfile = { ...nextProfile, isCustomized: true };
-    saveStoredProfile(customizedProfile, true);
-    setProfile(customizedProfile);
-    updateCloudUserProfile(customizedProfile).catch(() => {});
+    const isCustom = nextProfile.isCustomized !== false;
+    const finalProfile: StoredProfile = { ...nextProfile, isCustomized: isCustom };
+    saveStoredProfile(finalProfile, isCustom);
+    setProfile(finalProfile);
+    updateCloudUserProfile(finalProfile).catch(() => {});
     setShowGuestPopup(false);
     setIsPlayerMinimized(false);
     setIsPlayerClosedLocally(false);
@@ -4851,6 +4856,34 @@ export function App() {
               : undefined
           }
           activeMediaIsLive={videoState.mode !== 'idle' && Boolean(videoState.isLive)}
+          activeSportsMatch={
+            activeSportsMatch
+              ? {
+                  homeTeam: activeSportsMatch.homeTeam,
+                  awayTeam: activeSportsMatch.awayTeam,
+                  homeLogo: activeSportsMatch.homeLogo,
+                  awayLogo: activeSportsMatch.awayLogo,
+                  competition: activeSportsMatch.competition,
+                  score:
+                    activeSportsMatch.homeScore !== undefined &&
+                    activeSportsMatch.awayScore !== undefined
+                      ? `${activeSportsMatch.homeScore} - ${activeSportsMatch.awayScore}`
+                      : undefined,
+                }
+              : null
+          }
+          activeMovie={
+            activeMovieContext
+              ? {
+                  title: activeMovieContext.title,
+                  year: activeMovieContext.year,
+                  poster: activeMovieContext.poster,
+                  rating: '8.0',
+                  season: videoState.seriesMeta?.season,
+                  episode: videoState.seriesMeta?.episode,
+                }
+              : null
+          }
           currentUser={currentUser}
           participants={participants}
           savedFriends={savedFriends}
@@ -5650,18 +5683,24 @@ export function App() {
                   onPlayMovie={(movieItem) => {
                     void handlePlayMovie(movieItem, cineCastellano ? 'ES' : 'VOSE');
                   }}
-                  onPlaySeries={async (seriesItem) => {
+                  onPlaySeries={async (seriesItem, targetSeason, targetEpisode) => {
                     if (seriesItem.tmdbId) {
                       try {
-                        const seasonNum = seriesItem.seasonNumber || 1;
+                        const seasonNum = targetSeason || seriesItem.seasonNumber || 1;
                         const res = await fetch(
                           `/api/catalog/tv/${seriesItem.tmdbId}?season=${seasonNum}&lang=${lang}`
                         );
                         const data = await res.json();
-                        if (data?.details?.episodes?.length > 0) {
+                        const episodes = (data?.details?.episodes || []) as TvEpisodeItem[];
+                        if (episodes.length > 0) {
+                          const episodeNum = targetEpisode || seriesItem.episodeNumber || 1;
+                          const targetEp =
+                            episodes.find((ep) => ep.episodeNumber === episodeNum) ||
+                            episodes[episodeNum - 1] ||
+                            episodes[0];
                           await handlePlaySeriesEpisode(
                             data.details as TvSeriesDetails,
-                            data.details.episodes[0] as TvEpisodeItem,
+                            targetEp,
                             cineCastellano ? 'ES' : 'VOSE'
                           );
                           return;
@@ -5672,6 +5711,8 @@ export function App() {
                     }
                     enterWorld('cine');
                   }}
+                  onOpenDesignSystem={() => setShowDesignSystem(true)}
+                  onChangeLang={setLang}
                   onPlayChannel={(ch) => {
                     void handlePlayTdtChannel(ch, 0);
                   }}
@@ -5688,6 +5729,7 @@ export function App() {
                     });
                     enterWorld('juegos', { withPortal: true });
                   }}
+                  onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
                 />
               </div>
             ) : activeWorld === 'sala' ? (
@@ -5701,6 +5743,7 @@ export function App() {
                 lang={lang}
                 onBack={() => enterWorld('entry')}
                 onGoHome={() => enterWorld('entry')}
+                onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
                 fullHeight
               >
                 <PartySidebar
@@ -5795,6 +5838,7 @@ export function App() {
                 lang={lang}
                 onBack={() => enterWorld('entry')}
                 onGoHome={() => enterWorld('entry')}
+                onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
                 fullHeight
               >
                 <div className="flex-1 min-h-0 overflow-y-auto px-3 sm:px-5 py-3 pb-24">
@@ -5875,6 +5919,7 @@ export function App() {
                 lang={lang}
                 onBack={() => enterWorld('entry')}
                 onGoHome={() => enterWorld('entry')}
+                onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
                 searchValue={worldSearchQuery}
                 onSearchChange={setWorldSearchQuery}
                 searchPlaceholder={
@@ -6138,28 +6183,74 @@ export function App() {
             onRetryLoad={() => {
               void loadQuickPool();
             }}
-            onPlayItem={async (item) => {
-              if (item.mediaType === 'tv' && item.tmdbId) {
+              onPlayItem={async (item) => {
+                if (item.mediaType === 'tv' && item.tmdbId) {
+                  setCatalogSection('series');
+                  try {
+                    const seasonNum = item.seasonNumber || 1;
+                    const res = await fetch(
+                      `/api/catalog/tv/${item.tmdbId}?season=${seasonNum}&lang=${lang}`
+                    );
+                    const data = await res.json();
+                    if (data?.details?.episodes?.length > 0) {
+                      await handlePlaySeriesEpisode(
+                        data.details as TvSeriesDetails,
+                        data.details.episodes[0] as TvEpisodeItem,
+                        'ES'
+                      );
+                    }
+                  } catch {
+                    // keep series tab focused
+                  }
+                } else {
+                  await handlePlayMovie(item, 'ES');
+                }
+              }}
+            />
+
+          <VoiceAssistantModal
+            isOpen={showVoiceAssistant}
+            onClose={() => setShowVoiceAssistant(false)}
+            lang={lang}
+            userName={profile.name}
+            watchHistory={watchHistory}
+            onPlayMovie={(movieItem, preferLang = 'ES') => {
+              void handlePlayMovie(movieItem, preferLang);
+            }}
+            onPlaySeries={async (seriesItem, targetSeason, targetEpisode) => {
+              if (seriesItem.tmdbId) {
                 setCatalogSection('series');
                 try {
-                  const seasonNum = item.seasonNumber || 1;
+                  const seasonNum = targetSeason || seriesItem.seasonNumber || 1;
                   const res = await fetch(
-                    `/api/catalog/tv/${item.tmdbId}?season=${seasonNum}&lang=${lang}`
+                    `/api/catalog/tv/${seriesItem.tmdbId}?season=${seasonNum}&lang=${lang}`
                   );
                   const data = await res.json();
-                  if (data?.details?.episodes?.length > 0) {
+                  const episodes = (data?.details?.episodes || []) as TvEpisodeItem[];
+                  if (episodes.length > 0) {
+                    const episodeNum = targetEpisode || seriesItem.episodeNumber || 1;
+                    const targetEp =
+                      episodes.find((ep) => ep.episodeNumber === episodeNum) ||
+                      episodes[episodeNum - 1] ||
+                      episodes[0];
                     await handlePlaySeriesEpisode(
                       data.details as TvSeriesDetails,
-                      data.details.episodes[0] as TvEpisodeItem,
-                      'ES'
+                      targetEp,
+                      cineCastellano ? 'ES' : 'VOSE'
                     );
+                    return;
                   }
                 } catch {
-                  // keep series tab focused
+                  // fallback below
                 }
-              } else {
-                await handlePlayMovie(item, 'ES');
               }
+              enterWorld('cine');
+            }}
+            onPlayChannel={(ch) => {
+              void handlePlayTdtChannel(ch, 0);
+            }}
+            onPlayMatch={(m) => {
+              void handlePlaySportsMatch(m, 0);
             }}
           />
 

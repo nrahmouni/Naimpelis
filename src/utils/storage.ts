@@ -22,25 +22,46 @@ const FAVORITE_CHANNELS_KEY = 'naimcine_fav_channels_v1';
 const WATCH_HISTORY_KEY = 'naimcine_watch_history_v1';
 const GUEST_POPUP_DISMISSED_KEY = 'naimcine_guest_popup_dismissed_v1';
 
-const RANDOM_GUEST_PREFIXES = [
-  'Machupichu',
-  'Pocasoltes',
-  'Capgros',
-  'Trosdase',
-  'Bajanap',
-  'Capdecometa',
-  'Torrapipes',
-  'Capdesuro',
+export const CATALAN_FUNNY_RANDOM_NAMES = [
   'Capsigrany',
-  'Pocavergonya',
-  'Xafaxarcos',
+  'Pocasoltes',
+  'Carallot',
+  'Tros de quòniam',
+  'Cap de suro',
+  'Baliga-balaga',
+  'Estaquirot',
+  'Sòmines',
+  'Tòtil',
   'Babau',
-];
+  'Beneit',
+  'Pàmfil',
+  'Pallús',
+  'Talòs',
+  'Capgròs',
+  'Pocavergonya',
+  'Torrapipes',
+  'Xafaxarcos',
+  'Gambrús',
+  'Gamarús',
+  'Bleda',
+  'Dropo',
+  'Ximple',
+  'Nyicris',
+  'Malfainer',
+  'Llampat',
+  'Botifler',
+  'Pelacanyes',
+  "Tros d'ase",
+  'Bajanap',
+] as const;
 
-export function generateRandomGuestName(): string {
-  const prefix =
-    RANDOM_GUEST_PREFIXES[Math.floor(Math.random() * RANDOM_GUEST_PREFIXES.length)];
-  return `${prefix}_${Math.floor(Math.random() * 89 + 10)}`;
+export function generateRandomGuestName(excludeName?: string): string {
+  const cleanExclude = String(excludeName || '').trim().toLowerCase();
+  const pool = cleanExclude
+    ? CATALAN_FUNNY_RANDOM_NAMES.filter((n) => n.toLowerCase() !== cleanExclude)
+    : CATALAN_FUNNY_RANDOM_NAMES;
+  const source = pool.length > 0 ? pool : CATALAN_FUNNY_RANDOM_NAMES;
+  return source[Math.floor(Math.random() * source.length)];
 }
 
 export function sanitizeItemKey(raw: string): string {

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Search, X } from 'lucide-react';
+import { ArrowLeft, Mic, Search, X } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import type { WorldId } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
@@ -18,6 +18,7 @@ interface WorldShellProps {
   onSearchChange?: (val: string) => void;
   searchPlaceholder?: string;
   headerActions?: React.ReactNode;
+  onOpenVoiceAssistant?: () => void;
   fullHeight?: boolean;
   children: React.ReactNode;
 }
@@ -32,6 +33,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
   onSearchChange,
   searchPlaceholder,
   headerActions,
+  onOpenVoiceAssistant,
   fullHeight = false,
   children,
 }) => {
@@ -124,6 +126,20 @@ export const WorldShell: React.FC<WorldShellProps> = ({
 
               <div className="flex items-center gap-1.5 shrink-0">
                 {headerActions}
+                {onOpenVoiceAssistant && (
+                  <button
+                    type="button"
+                    onClick={onOpenVoiceAssistant}
+                    aria-label={pickLang(lang, {
+                      es: 'Asistente por Voz',
+                      ca: 'Assistent per Veu',
+                      en: 'Voice Assistant',
+                    })}
+                    className="min-w-11 min-h-11 rounded-2xl bg-[#9146FF]/20 hover:bg-[#9146FF]/35 border border-[#9146FF]/45 flex items-center justify-center text-[#D4BBFF] hover:text-white cursor-pointer active:scale-95 transition-all"
+                  >
+                    <Mic className="w-4.5 h-4.5" />
+                  </button>
+                )}
                 {onSearchChange && (
                   <button
                     type="button"

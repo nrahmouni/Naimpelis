@@ -11,7 +11,11 @@ import {
 } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { pickLang } from '../utils/i18n';
-import { RecentRoomEntry, StoredProfile } from '../utils/storage';
+import {
+  generateRandomGuestName,
+  RecentRoomEntry,
+  StoredProfile,
+} from '../utils/storage';
 import { triggerHaptic } from '../utils/haptics';
 import {
   extractRoomCodeFromInput,
@@ -29,15 +33,6 @@ import {
 } from './ui/DesignSystem';
 import { useAppStore } from '../store/useAppStore';
 import { PWAInstallLandingCard } from './PWAInstallPrompt';
-
-const RANDOM_NAMES = [
-  'Naim',
-  'Cineasta',
-  'SalaVIP',
-  'NocheDeCine',
-  'ButacaCentral',
-  'Premier',
-];
 
 interface LobbyScreenProps {
   initialProfile: StoredProfile;
@@ -75,26 +70,33 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 }) => {
   const isDesktop = effectiveView === 'desktop';
   const [name, setName] = useState(
-    authUser?.displayName?.trim() || initialProfile.name
+    authUser?.displayName?.trim() ||
+      (initialProfile.isCustomized ? initialProfile.name : '')
   );
   const [roomCode, setRoomCode] = useState('');
-  const [nameError, setNameError] = useState(false);
   const [showSettingsSheet, setShowSettingsSheet] = useState(false);
   const [showJoinSheet, setShowJoinSheet] = useState(false);
   const authNotice = useAppStore((s) => s.authNotice);
 
   useEffect(() => {
-    setName(authUser?.displayName?.trim() || initialProfile.name);
-  }, [authUser?.displayName, initialProfile.id, initialProfile.name]);
+    setName(
+      authUser?.displayName?.trim() ||
+        (initialProfile.isCustomized ? initialProfile.name : '')
+    );
+  }, [authUser?.displayName, initialProfile.id, initialProfile.isCustomized, initialProfile.name]);
 
-  const buildProfile = (): StoredProfile | null => {
+  const buildProfile = (): StoredProfile => {
     const trimmed = name.trim();
     if (!trimmed) {
-      setNameError(true);
-      triggerHaptic('warning');
-      return null;
+      const randomCatalanName = generateRandomGuestName(initialProfile.name);
+      return {
+        id: initialProfile.id,
+        name: randomCatalanName.slice(0, 24),
+        avatar: initialProfile.avatar || '🎬',
+        color: initialProfile.color || '#9146FF',
+        isCustomized: false,
+      };
     }
-    setNameError(false);
     return {
       id: initialProfile.id,
       name: trimmed.slice(0, 24),
@@ -106,7 +108,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
   const handleEnterApp = () => {
     const profile = buildProfile();
-    if (!profile) return;
     triggerHaptic('success');
     const code = generateShortRoomCode(4);
     const defaultRoomTitle = pickLang(lang, {
@@ -120,7 +121,6 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   const handleJoinByCode = (e: React.FormEvent) => {
     e.preventDefault();
     const profile = buildProfile();
-    if (!profile) return;
     const cleanCode = extractRoomCodeFromInput(roomCode);
     if (!cleanCode) return;
     triggerHaptic('success');
@@ -130,9 +130,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
   const handleRandomName = () => {
     triggerHaptic('light');
-    const pick = RANDOM_NAMES[Math.floor(Math.random() * RANDOM_NAMES.length)];
-    setName(`${pick}_${Math.floor(Math.random() * 90 + 10)}`);
-    setNameError(false);
+    setName(generateRandomGuestName(name));
   };
 
   const formatRoomChipName = (roomName: string) => {
@@ -275,16 +273,13 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     aria-hidden="true"
                     className="w-12 h-12 rounded-2xl bg-[#9146FF]/20 border border-[#9146FF]/35 flex items-center justify-center font-display font-bold text-sm text-white shrink-0"
                   >
-                    {getMonogramInitials(name)}
+                    {getMonogramInitials(name || initialProfile.name)}
                   </div>
                   <input
                     id="access-nickname"
                     type="text"
                     value={name}
-                    onChange={(e) => {
-                      setName(e.target.value);
-                      if (nameError) setNameError(false);
-                    }}
+                    onChange={(e) => setName(e.target.value)}
                     onKeyDown={(e) => {
                       if (e.key === 'Enter') {
                         e.preventDefault();
@@ -292,16 +287,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       }
                     }}
                     placeholder={pickLang(lang, {
-                      es: 'Escribe tu nombre',
-                      ca: 'Escriu el teu nom',
-                      en: 'Enter your name',
+                      es: 'Tu nombre (vacío = mote catalán)',
+                      ca: 'El teu nom (buit = malnom català)',
+                      en: 'Your name (blank = random Catalan nick)',
                     })}
                     maxLength={24}
-                    className={`flex-1 min-w-0 min-h-12 px-4 rounded-2xl bg-white/[0.05] border ${
-                      nameError
-                        ? 'border-[#EB0400]'
-                        : 'border-white/[0.1] focus:border-[#9146FF]'
-                    } text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition-colors`}
+                    className="flex-1 min-w-0 min-h-12 px-4 rounded-2xl bg-white/[0.05] border border-white/[0.1] focus:border-[#9146FF] text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition-colors"
                   />
                   <IconButton
                     type="button"

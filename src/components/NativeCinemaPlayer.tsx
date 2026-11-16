@@ -329,9 +329,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [ambilightEnabled, setAmbilightEnabled] = useState<boolean>(() => {
     try {
       const stored = localStorage.getItem('naim_ambilight_v1');
-      return stored !== null ? stored === 'true' : true;
+      if (stored !== null) return stored === 'true';
+      return typeof window !== 'undefined' ? window.innerWidth >= 1024 : false;
     } catch {
-      return true;
+      return false;
     }
   });
   const [vocalBoostEnabled, setVocalBoostEnabled] = useState<boolean>(() => {
@@ -967,6 +968,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
   // ============================================================================
   // CINEMA PRO 1: REAL-TIME AMBILIGHT HALO SAMPLER (ZERO REACT RE-RENDERS)
+  // Restricted to Cinema/TV/Fullscreen desktop views so mobile hardware video
+  // decoders never stall on GPU-to-CPU canvas frame readbacks during sports.
   // ============================================================================
   useEffect(() => {
     const stageEl = stageWrapperRef.current;
@@ -975,7 +978,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     const shouldGlow =
       ambilightEnabled &&
       !isMinimized &&
-      !isTvMode &&
+      !isCompressed &&
+      (isCinemaMode || isTvMode || isStageFullscreen) &&
       localPlaying &&
       (videoState.mode === 'hls' || videoState.mode === 'direct');
 
@@ -985,8 +989,8 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     }
 
     const canvas = document.createElement('canvas');
-    canvas.width = 12;
-    canvas.height = 8;
+    canvas.width = 6;
+    canvas.height = 4;
     const ctx = canvas.getContext('2d', { willReadFrequently: true });
     if (!ctx) return;
 
@@ -994,17 +998,17 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       const video = videoRef.current;
       if (!video || video.paused || video.readyState < 2 || !stageWrapperRef.current) return;
       try {
-        ctx.drawImage(video, 0, 0, 12, 8);
-        const data = ctx.getImageData(0, 0, 12, 8).data;
+        ctx.drawImage(video, 0, 0, 6, 4);
+        const data = ctx.getImageData(0, 0, 6, 4).data;
         let rL = 0, gL = 0, bL = 0, nL = 0;
         let rR = 0, gR = 0, bR = 0, nR = 0;
-        for (let y = 0; y < 8; y++) {
-          for (let x = 0; x < 12; x++) {
-            const idx = (y * 12 + x) * 4;
+        for (let y = 0; y < 4; y++) {
+          for (let x = 0; x < 6; x++) {
+            const idx = (y * 6 + x) * 4;
             const r = data[idx];
             const g = data[idx + 1];
             const b = data[idx + 2];
-            if (x < 6) {
+            if (x < 3) {
               rL += r; gL += g; bL += b; nL++;
             } else {
               rR += r; gR += g; bR += b; nR++;
@@ -1014,22 +1018,22 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         const boost = (v: number) => Math.min(255, Math.max(24, Math.round(v * 1.22)));
         const leftRgb = `${boost(rL / nL)}, ${boost(gL / nL)}, ${boost(bL / nL)}`;
         const rightRgb = `${boost(rR / nR)}, ${boost(gR / nR)}, ${boost(bR / nR)}`;
-        const alpha = isCinemaMode ? 0.62 : 0.42;
-        stageWrapperRef.current.style.boxShadow = `-28px 0 85px -10px rgba(${leftRgb}, ${alpha}), 28px 0 85px -10px rgba(${rightRgb}, ${alpha}), 0 18px 95px -12px rgba(${leftRgb}, ${alpha * 0.8})`;
+        const alpha = isCinemaMode ? 0.56 : 0.38;
+        stageWrapperRef.current.style.boxShadow = `-24px 0 70px -12px rgba(${leftRgb}, ${alpha}), 24px 0 70px -12px rgba(${rightRgb}, ${alpha})`;
       } catch {
         // ignore if frame unavailable
       }
     };
 
     sampleFrame();
-    const timer = setInterval(sampleFrame, 240);
+    const timer = setInterval(sampleFrame, 750);
     return () => {
       clearInterval(timer);
       if (stageWrapperRef.current) {
         stageWrapperRef.current.style.boxShadow = '';
       }
     };
-  }, [ambilightEnabled, isMinimized, isTvMode, localPlaying, videoState.mode, isCinemaMode]);
+  }, [ambilightEnabled, isMinimized, isCompressed, isTvMode, isStageFullscreen, localPlaying, videoState.mode, isCinemaMode]);
 
   // ============================================================================
   // CINEMA PRO 2: WEB AUDIO VOCAL BOOST / NIGHT COMPRESSOR
@@ -1681,19 +1685,21 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: false,
-        startPosition: targetResumeSec > 3 ? targetResumeSec : videoState.isLive ? 0 : -1,
-        liveSyncDurationCount: 4,
-        liveMaxLatencyDurationCount: 14,
+        startPosition: targetResumeSec > 3 ? targetResumeSec : -1,
+        liveSyncDurationCount: 3,
+        liveMaxLatencyDurationCount: 10,
         maxLiveSyncPlaybackRate: 1,
-        backBufferLength: 30,
-        maxBufferLength: 60,
-        maxMaxBufferLength: 120,
-        maxBufferHole: 2.5,
-        maxFragLookUpTolerance: 0.5,
-        highBufferWatchdogPeriod: 1,
-        nudgeOffset: 0.35,
-        nudgeMaxRetry: 20,
-        abrEwmaDefaultEstimate: 2_200_000,
+        backBufferLength: 20,
+        maxBufferLength: 35,
+        maxMaxBufferLength: 75,
+        maxBufferHole: 0.5,
+        maxFragLookUpTolerance: 0.25,
+        highBufferWatchdogPeriod: 2,
+        nudgeOffset: 0.1,
+        nudgeMaxRetry: 10,
+        stretchShortVideoTrack: true,
+        maxAudioFramesDrift: 4,
+        abrEwmaDefaultEstimate: 3_500_000,
         manifestLoadingTimeOut: 20000,
         manifestLoadingMaxRetry: 8,
         manifestLoadingRetryDelay: 1000,
@@ -2679,7 +2685,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               }
             : undefined
         }
-        className={`relative w-full bg-black overflow-hidden select-none transition-all duration-300 ${
+        className={`relative w-full bg-black overflow-hidden select-none transition-[height] duration-200 ${
           isTvMode || isStageFullscreen
             ? 'h-full'
             : compactVideoForMobileKeyboard
@@ -3384,9 +3390,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             onTimeUpdate={(e) => {
               const ct = e.currentTarget.currentTime;
               const dur = e.currentTarget.duration || 0;
-              setCurrentTime(ct);
+              latestCurrentTimeRef.current = ct;
               if (!e.currentTarget.paused) {
                 clearBufferingIndicator();
+              }
+              if (!videoState.isLive && (showControlsRef.current || activeSubId !== 'off' || Math.abs(ct - currentTime) >= 1)) {
+                setCurrentTime(ct);
               }
               if (
                 onProgressUpdate &&
@@ -3404,22 +3413,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             onWaiting={() => {
               const vNow = videoRef.current;
               const waitAtTime = vNow ? vNow.currentTime : 0;
-
-              // Immediately jump any tiny MSE segment-boundary micro-gap (< 2.5s) if future data is already buffered!
-              if (vNow && !vNow.paused && vNow.buffered.length > 0) {
-                for (let i = 0; i < vNow.buffered.length; i++) {
-                  const bStart = vNow.buffered.start(i);
-                  const bEnd = vNow.buffered.end(i);
-                  if (bStart > waitAtTime && bStart - waitAtTime <= 2.5 && bEnd - bStart >= 0.4) {
-                    try {
-                      vNow.currentTime = bStart + 0.06;
-                      return;
-                    } catch {
-                      // ignore
-                    }
-                  }
-                }
-              }
 
               if (bufferingDelayTimerRef.current) {
                 clearTimeout(bufferingDelayTimerRef.current);
@@ -3517,7 +3510,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 : tvAspectMode === 'fill'
                 ? 'object-fill'
                 : 'object-contain'
-            } bg-black cursor-pointer`}
+            } bg-black cursor-pointer [transform:translateZ(0)]`}
           />
 
           {/* Direct HTTP Video Bridge for W3C RemotePlayback & AirPlay 2 (non-zero 2x2px dimensions so browser never disables video decoding track!) */}

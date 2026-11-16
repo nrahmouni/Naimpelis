@@ -189,6 +189,12 @@ const TDT_NATIONAL_CATEGORIES: {
 
 const ALL_LIVE_CATEGORIES: { id: 'all' | 'tdt_all' | TdtCategory; es: string; ca: string; en: string }[] = [
   { id: 'all', es: 'Todos en Vivo', ca: 'Tots en Directe', en: 'All Live TV' },
+  { id: 'bein_arabic', es: 'beIN SPORTS (العربية)', ca: 'beIN SPORTS (العربية)', en: 'beIN SPORTS (Arabic)' },
+  { id: 'marruecos', es: 'Marruecos (المغرب)', ca: 'Marroc (المغرب)', en: 'Morocco TV' },
+  { id: 'documentales', es: 'Nat Geo y Documentales', ca: 'Nat Geo i Documentals', en: 'Nat Geo & Docs' },
+  { id: 'usa_tv', es: 'EE.UU. (FOX / CNN)', ca: 'EUA (FOX / CNN)', en: 'USA (FOX / CNN)' },
+  { id: 'europa_tv', es: 'Europa (BBC / Euronews)', ca: 'Europa (BBC / Euronews)', en: 'Europe (BBC / Euronews)' },
+  { id: 'noticias_intl', es: 'Al Jazeera y Noticias', ca: 'Al Jazeera i Notícies', en: 'Al Jazeera & News' },
   { id: 'china_football', es: 'Fútbol China (中文)', ca: 'Futbol Xina (中文)', en: 'China Football (中文)' },
   { id: 'uk_sports', es: 'UK Sports (EN)', ca: 'UK Sports (EN)', en: 'UK Sports (EN)' },
   { id: 'beinsports', es: 'beIN SPORTS', ca: 'beIN SPORTS', en: 'beIN SPORTS' },
@@ -369,6 +375,72 @@ export const TV_FILTER_GROUPS: TvFilterGroup[] = [
     ],
   },
   {
+    region: 'ar',
+    flag: '🇶🇦',
+    name: { es: 'beIN Árabe y Noticias MENA', ca: 'beIN Àrab i Notícies MENA', en: 'beIN Arabic & MENA News' },
+    sub: {
+      es: 'beIN SPORTS 1–9 العربية · Al Jazeera · Al Arabiya · Sky News',
+      ca: 'beIN SPORTS 1–9 العربية · Al Jazeera · Al Arabiya · Sky News',
+      en: 'beIN SPORTS 1–9 Arabic · Al Jazeera · Al Arabiya · Sky News',
+    },
+    categories: [
+      { id: 'bein_arabic', es: 'beIN SPORTS (العربية 1–9)', ca: 'beIN SPORTS (العربية 1–9)', en: 'beIN SPORTS (Arabic 1–9)', badge: 'AR' },
+      { id: 'noticias_intl', es: 'Al Jazeera · Al Arabiya · Noticias', ca: 'Al Jazeera · Al Arabiya · Notícies', en: 'Al Jazeera · Al Arabiya · News', badge: '24h' },
+    ],
+  },
+  {
+    region: 'ma',
+    flag: '🇲🇦',
+    name: { es: 'Marruecos (المغرب)', ca: 'Marroc (المغرب)', en: 'Morocco (المغرب)' },
+    sub: {
+      es: 'Al Aoula, Arryadia, 2M Maroc, Medi 1 TV y SNRT en directo',
+      ca: 'Al Aoula, Arryadia, 2M Maroc, Medi 1 TV i SNRT en directe',
+      en: 'Al Aoula, Arryadia, 2M Maroc, Medi 1 TV & SNRT Live',
+    },
+    categories: [
+      { id: 'marruecos', es: 'Canales de Marruecos (SNRT · 2M · Medi 1)', ca: 'Canals del Marroc (SNRT · 2M · Medi 1)', en: 'Morocco Channels (SNRT · 2M · Medi 1)', badge: 'MA' },
+    ],
+  },
+  {
+    region: 'docs',
+    flag: '🌍',
+    name: { es: 'Documentales y Ciencia', ca: 'Documentals i Ciència', en: 'Documentaries & Science' },
+    sub: {
+      es: 'National Geographic, Nat Geo Wild, Discovery, History y Naturaleza',
+      ca: 'National Geographic, Nat Geo Wild, Discovery, History i Natura',
+      en: 'National Geographic, Nat Geo Wild, Discovery, History & Nature',
+    },
+    categories: [
+      { id: 'documentales', es: 'National Geographic · Discovery · History', ca: 'National Geographic · Discovery · History', en: 'National Geographic · Discovery · History', badge: 'DOC' },
+    ],
+  },
+  {
+    region: 'us',
+    flag: '🇺🇸',
+    name: { es: 'Estados Unidos (USA)', ca: 'Estats Units (EUA)', en: 'United States (USA)' },
+    sub: {
+      es: 'FOX, FOX News, FOX Sports 1, CNN, ABC, CBS, NBC y Bloomberg',
+      ca: 'FOX, FOX News, FOX Sports 1, CNN, ABC, CBS, NBC i Bloomberg',
+      en: 'FOX, FOX News, FOX Sports 1, CNN, ABC, CBS, NBC & Bloomberg',
+    },
+    categories: [
+      { id: 'usa_tv', es: 'Canales EE.UU. (FOX · CNN · NBC · ABC)', ca: 'Canals EUA (FOX · CNN · NBC · ABC)', en: 'US TV (FOX · CNN · NBC · ABC)', badge: 'US' },
+    ],
+  },
+  {
+    region: 'eu',
+    flag: '🇪🇺',
+    name: { es: 'Europa', ca: 'Europa', en: 'Europe' },
+    sub: {
+      es: 'BBC News, Euronews, France 24, DW, BFM TV, ARD, RAI y RTP',
+      ca: 'BBC News, Euronews, France 24, DW, BFM TV, ARD, RAI i RTP',
+      en: 'BBC News, Euronews, France 24, DW, BFM TV, ARD, RAI & RTP',
+    },
+    categories: [
+      { id: 'europa_tv', es: 'Canales Europeos (BBC · Euronews · RAI · DW)', ca: 'Canals Europeus (BBC · Euronews · RAI · DW)', en: 'European Channels (BBC · Euronews · RAI · DW)', badge: 'EU' },
+    ],
+  },
+  {
     region: 'latam',
     flag: '🌎',
     name: { es: 'Latam e Internacional', ca: 'Latam i Internacional', en: 'LatAm & International' },
@@ -387,7 +459,7 @@ export const TV_FILTER_GROUPS: TvFilterGroup[] = [
   {
     region: 'uk',
     flag: '🇬🇧',
-    name: { es: 'Reino Unido / USA (EN)', ca: 'Regne Unit / EUA (EN)', en: 'UK / USA (English)' },
+    name: { es: 'Reino Unido (EN)', ca: 'Regne Unit (EN)', en: 'United Kingdom (English)' },
     sub: {
       es: 'Audio original en inglés (Sky Sports, Eurosport)',
       ca: 'Àudio original en anglès (Sky Sports, Eurosport)',
@@ -1062,6 +1134,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   >('soccer');
   const [footballLiveBrand, setFootballLiveBrand] = useState<
     | 'all'
+    | 'bein_arabic'
     | 'china_football'
     | 'uk_sports'
     | 'beinsports'
@@ -2283,6 +2356,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   const footballSectionLiveChannels = React.useMemo(() => {
     const allowedCats = new Set([
+      'bein_arabic',
       'china_football',
       'uk_sports',
       'beinsports',
@@ -2293,7 +2367,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       'dazn',
     ]);
     return tdtChannels.filter((ch) => {
-      if (!allowedCats.has(ch.category)) return false;
+      const isExtraSportCh = ch.id === 'ma-arryadia' || ch.id === 'us-fox-sports1';
+      if (!allowedCats.has(ch.category) && !isExtraSportCh) return false;
       if (
         ch.category === 'movistar' &&
         (ch.id === 'mplus-estrenos' || ch.id === 'mplus-accion' || ch.id === 'mplus-series')
@@ -2311,7 +2386,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           norm(ch.network).includes(q);
         // Only filter the channel strip by sportsSearch if user typed a channel name; otherwise keep strip visible
         if (
-          /cctv|china|chino|zh|guangdong|fengyun|xinshijue|tianjin|sky|uk|premier|eurosport|mutv|talksport|fifa|bein|arab|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
+          /cctv|china|chino|zh|guangdong|fengyun|xinshijue|tianjin|sky|uk|premier|eurosport|mutv|talksport|fifa|bein|arab|arabe|arryadia|maroc|marruecos|fox|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
             q
           )
         ) {
@@ -2335,6 +2410,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         ch.category === 'uk_sports' ||
         ch.category === 'china_football' ||
         ch.category === 'beinsports' ||
+        ch.category === 'bein_arabic' ||
+        ch.category === 'marruecos' ||
+        ch.category === 'documentales' ||
+        ch.category === 'usa_tv' ||
+        ch.category === 'europa_tv' ||
+        ch.category === 'noticias_intl' ||
         ch.category === 'espn' ||
         ch.category === 'dsports' ||
         ch.category === 'tnt_space'
@@ -4806,7 +4887,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   <div className="flex flex-wrap gap-2">
                     {[
                       { id: 'all' as const, label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
-                      { id: 'china_football' as const, label: 'China (中文 · 欧冠/西甲/英超)' },
+                      { id: 'bein_arabic' as const, label: '🇶🇦 beIN SPORTS (العربية)' },
+                      { id: 'china_football' as const, label: '🇨🇳 China (中文 · 欧冠/西甲/英超)' },
                       { id: 'movistar' as const, label: 'Movistar+' },
                       { id: 'dazn' as const, label: 'DAZN' },
                       { id: 'uk_sports' as const, label: 'UK Sports (EN)' },
@@ -4928,6 +5010,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               {[
                 { id: 'all' as const, flag: '🌐', label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
                 { id: 'es' as const, flag: '🇪🇸', label: 'España' },
+                { id: 'ar' as const, flag: '🇶🇦', label: 'beIN العربية & MENA' },
+                { id: 'ma' as const, flag: '🇲🇦', label: 'Marruecos' },
+                { id: 'docs' as const, flag: '🌍', label: 'Documentales' },
+                { id: 'us' as const, flag: '🇺🇸', label: 'EE.UU.' },
+                { id: 'eu' as const, flag: '🇪🇺', label: 'Europa' },
                 { id: 'latam' as const, flag: '🌎', label: 'Latam / ES' },
                 { id: 'uk' as const, flag: '🇬🇧', label: 'UK (EN)' },
                 { id: 'cn' as const, flag: '🇨🇳', label: 'China (中文)' },

@@ -205,6 +205,7 @@ export interface CatalogMovie {
   tmdbId?: number;
   mediaType?: 'movie' | 'tv';
   seasonNumber?: number;
+  episodeNumber?: number;
   title: string;
   originalTitle?: string;
   year: string;
@@ -592,6 +593,12 @@ export type TdtCategory =
   | 'uk_sports'
   | 'china_football'
   | 'beinsports'
+  | 'bein_arabic'
+  | 'marruecos'
+  | 'documentales'
+  | 'usa_tv'
+  | 'europa_tv'
+  | 'noticias_intl'
   | 'espn'
   | 'dsports'
   | 'tnt_space'

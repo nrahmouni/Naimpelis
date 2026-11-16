@@ -39,7 +39,16 @@ export function isGoogleTvEnvironment(): boolean {
   if (window.__NAIM_GOOGLE_TV__) return true;
   try {
     const params = new URLSearchParams(window.location.search);
-    if (params.get('googletv') === '1') return true;
+    if (
+      params.get('googletv') === '1' ||
+      params.get('platform')?.toLowerCase() === 'googletv'
+    ) {
+      window.sessionStorage?.setItem('naim_google_tv_env', '1');
+      return true;
+    }
+    if (window.sessionStorage?.getItem('naim_google_tv_env') === '1') {
+      return true;
+    }
   } catch {
     // ignore
   }
