@@ -31,6 +31,9 @@ import {
   Copy,
   Plus,
   LogIn,
+  PhoneCall,
+  PhoneOff,
+  Loader2,
 } from 'lucide-react';
 import {
   ChatMessage,
@@ -49,6 +52,8 @@ import { UI_COPY, pickLang } from '../utils/i18n';
 import {
   buildLocalizedInviteMessage,
   buildWhatsAppShareUrl,
+  copyTextSafely,
+  shareOrCopyInvite,
 } from '../utils/inviteShare';
 import { buildShortInviteUrl } from '../utils/shortLink';
 import { deriveFriendCode } from '../utils/storage';
@@ -66,7 +71,7 @@ import {
 import { PartyPollCard } from './party/PartyPollCard';
 import { PartyQueuePanel } from './party/PartyQueuePanel';
 import { PartyModerationSheets } from './party/PartyModerationSheets';
-import { GameVoiceBar } from './games/GameVoiceBar';
+import { GameVoiceBar, VoiceWaveBars } from './games/GameVoiceBar';
 
 interface PartySidebarProps {
   roomId: string;
@@ -277,6 +282,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const [showRoomSettingsSheet, setShowRoomSettingsSheet] = useState(false);
   const [showTvRemoteSheet, setShowTvRemoteSheet] = useState(false);
   const [showQrInviteSheet, setShowQrInviteSheet] = useState(false);
+  const [showQuickInviteSheet, setShowQuickInviteSheet] = useState(false);
 
   const chatListRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
@@ -359,35 +365,42 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   });
 
   const handleShareInvite = async () => {
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        await navigator.share({
-          title: activeMediaTitle ? `${activeMediaTitle} — RiffanTV` : `${roomName} — RiffanTV`,
-          text: localizedInviteText,
-          url: inviteUrl,
-        });
-        return;
-      } catch {
-        // Fallback to clipboard
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(`${localizedInviteText}\n${inviteUrl}`);
+    triggerHaptic('light');
+    const result = await shareOrCopyInvite({
+      title: activeMediaTitle ? `${activeMediaTitle} — RiffanTV` : `${roomName} — RiffanTV`,
+      text: localizedInviteText,
+      url: inviteUrl,
+    });
+    if (result === 'copied') {
       setCopiedLink(true);
       setTimeout(() => setCopiedLink(false), 2500);
-    } catch {
-      // ignore
+    }
+  };
+
+  const handleCopyInviteLinkOnly = async () => {
+    triggerHaptic('success');
+    const ok = await copyTextSafely(`${localizedInviteText}\n${inviteUrl}`);
+    if (ok) {
+      setCopiedLink(true);
+      setTimeout(() => setCopiedLink(false), 2500);
     }
   };
 
   const handleCopyRoomCode = async () => {
     triggerHaptic('light');
-    try {
-      await navigator.clipboard.writeText(roomId);
+    const ok = await copyTextSafely(roomId);
+    if (ok) {
       setCopiedCode(true);
       setTimeout(() => setCopiedCode(false), 2200);
-    } catch {
-      // ignore
+    }
+  };
+
+  const handleOpenInviteAction = () => {
+    triggerHaptic('light');
+    if (onOpenFriendsModal) {
+      onOpenFriendsModal();
+    } else {
+      setShowQuickInviteSheet(true);
     }
   };
 
@@ -499,10 +512,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
             <div className="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  void handleShareInvite();
-                }}
+                onClick={handleOpenInviteAction}
                 className="min-h-10 px-3.5 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-[0_4px_14px_rgba(145,70,255,0.35)]"
               >
                 {copiedLink ? (
@@ -512,7 +522,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
                   </>
                 ) : (
                   <>
-                    <Share2 className="w-4 h-4" />
+                    <UserPlus className="w-4 h-4" />
                     <span>{pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}</span>
                   </>
                 )}
@@ -634,7 +644,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               {effectiveView === 'desktop' && (
                 <button
                   type="button"
-                  onClick={onOpenFriendsModal || handleShareInvite}
+                  onClick={handleOpenInviteAction}
                   title={
                     onOpenFriendsModal
                       ? pickLang(lang, {
@@ -668,46 +678,182 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
       {/* ==================================================================== */}
       {activeTab === 'chat' && (
         <div className="flex-1 flex flex-col min-h-0 relative">
-          {voiceChat && (voiceChat.isJoined || voiceChat.voicePeers.length > 0) && (
+          {voiceChat &&
+            (voiceChat.isJoined ||
+              voiceChat.voicePeers.length > 0 ||
+              Boolean(voiceChat.errorMessage) ||
+              voiceChat.audioPlaybackBlocked) && (
             <div className="px-3 pt-2 shrink-0">
               <GameVoiceBar lang={lang} voice={voiceChat} compact />
             </div>
           )}
 
-          {/* Mini Friends / Participants Strip inside Chat */}
-          <div className="mx-3 mt-2 px-3 py-1.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-2 shrink-0">
-            <div className="flex items-center gap-1.5 min-w-0 overflow-x-auto no-scrollbar">
+          {/* Mini Friends / Participants + Call & Invite Strip inside Chat */}
+          <div className="mx-3 mt-2 px-2.5 py-1.5 rounded-2xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-between gap-2 shrink-0">
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 overflow-x-auto no-scrollbar">
               <span className="text-[10px] font-bold uppercase tracking-wider text-zinc-400 shrink-0">
                 {pickLang(lang, { es: 'En sala', ca: 'A la sala', en: 'In room' })}:
               </span>
               <div className="flex items-center -space-x-1.5 shrink-0">
-                {participants.slice(0, 6).map((p) => (
-                  <div
-                    key={p.id}
-                    title={`${p.name} · ${p.id === currentUser.id ? t.you : pickLang(lang, { es: 'En sala', ca: 'A la sala', en: 'In room' })}`}
-                    className="relative w-6 h-6 rounded-full border-2 border-[#12131C] flex items-center justify-center text-[10px] font-bold text-white shadow-sm"
-                    style={{ backgroundColor: p.color || '#9146FF' }}
-                  >
-                    {p.avatar === '📺' ? '📺' : getInitials(p.name)}
-                    <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#00F593] border border-[#12131C]" />
-                  </div>
-                ))}
+                {participants.slice(0, 5).map((p) => {
+                  const inVoice = Boolean(
+                    voiceChat?.voicePeers.some((vp) => vp.userId === p.id)
+                  );
+                  const isSpeaking = Boolean(
+                    voiceChat?.speakingUserIds.includes(p.id) ||
+                      (voiceChat?.audioLevels?.[p.id] ?? 0) > 0.06
+                  );
+                  return (
+                    <div
+                      key={p.id}
+                      title={`${p.name} · ${p.id === currentUser.id ? t.you : pickLang(lang, { es: 'En sala', ca: 'A la sala', en: 'In room' })}`}
+                      className={`relative w-6 h-6 rounded-full border-2 flex items-center justify-center text-[10px] font-bold text-white shadow-sm ${
+                        isSpeaking
+                          ? 'border-emerald-400 ring-2 ring-emerald-400/50'
+                          : inVoice
+                          ? 'border-emerald-400/80'
+                          : 'border-[#12131C]'
+                      }`}
+                      style={{ backgroundColor: p.color || '#9146FF' }}
+                    >
+                      {p.avatar === '📺' ? '📺' : getInitials(p.name)}
+                      <span
+                        className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-[#12131C] ${
+                          inVoice ? 'bg-emerald-400 animate-pulse' : 'bg-[#00F593]'
+                        }`}
+                      />
+                    </div>
+                  );
+                })}
               </div>
-              {participants.length > 6 && (
-                <span className="text-[10px] text-zinc-400 font-bold tabular-nums">
-                  +{participants.length - 6}
+              {participants.length > 5 && (
+                <span className="text-[10px] text-zinc-400 font-bold tabular-nums shrink-0">
+                  +{participants.length - 5}
                 </span>
               )}
             </div>
 
-            <button
-              type="button"
-              onClick={onOpenFriendsModal || handleShareInvite}
-              className="min-h-[26px] px-2 rounded-lg bg-[#9146FF]/20 hover:bg-[#9146FF]/30 border border-[#9146FF]/40 text-[#D8B4FE] text-[11px] font-bold flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0"
-            >
-              <UserPlus className="w-3 h-3" />
-              <span>{pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}</span>
-            </button>
+            <div className="flex items-center gap-1.5 shrink-0">
+              {voiceChat && (
+                voiceChat.isJoined ? (
+                  <>
+                    <button
+                      type="button"
+                      aria-pressed={voiceChat.isMuted}
+                      onClick={() => {
+                        triggerHaptic('light');
+                        voiceChat.toggleMute();
+                      }}
+                      title={
+                        voiceChat.isMuted
+                          ? pickLang(lang, { es: 'Activar micrófono', ca: 'Activar micròfon', en: 'Unmute microphone' })
+                          : pickLang(lang, { es: 'Silenciar micrófono', ca: 'Silenciar micròfon', en: 'Mute microphone' })
+                      }
+                      aria-label={
+                        voiceChat.isMuted
+                          ? pickLang(lang, { es: 'Activar micrófono', ca: 'Activar micròfon', en: 'Unmute microphone' })
+                          : pickLang(lang, { es: 'Silenciar micrófono', ca: 'Silenciar micròfon', en: 'Mute microphone' })
+                      }
+                      className={`min-h-[26px] px-2 rounded-lg border text-[11px] font-bold flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0 ${
+                        voiceChat.isMuted
+                          ? 'bg-rose-500/20 hover:bg-rose-500/30 border-rose-400/45 text-rose-200'
+                          : voiceChat.localAudioLevel > 0.06 || voiceChat.speakingUserIds.length > 0
+                          ? 'bg-emerald-500/25 hover:bg-emerald-500/35 border-emerald-400/60 text-emerald-100 shadow-[0_0_10px_rgba(16,185,129,0.25)]'
+                          : 'bg-emerald-500/18 hover:bg-emerald-500/28 border-emerald-400/40 text-emerald-200'
+                      }`}
+                    >
+                      {voiceChat.isMuted ? (
+                        <>
+                          <MicOff className="w-3 h-3 shrink-0" />
+                          <span>{pickLang(lang, { es: 'Silenc.', ca: 'Silenc.', en: 'Muted' })}</span>
+                        </>
+                      ) : (
+                        <>
+                          <Mic className="w-3 h-3 shrink-0" />
+                          <VoiceWaveBars
+                            active={voiceChat.localAudioLevel > 0.06 || voiceChat.speakingUserIds.length > 0}
+                            level={voiceChat.localAudioLevel}
+                            size="sm"
+                          />
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        triggerHaptic('medium');
+                        voiceChat.leaveVoice();
+                      }}
+                      title={pickLang(lang, { es: 'Colgar llamada', ca: 'Penjar trucada', en: 'End call' })}
+                      aria-label={pickLang(lang, { es: 'Colgar llamada', ca: 'Penjar trucada', en: 'End call' })}
+                      className="min-h-[26px] px-2 rounded-lg bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/45 text-rose-200 text-[11px] font-bold flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0"
+                    >
+                      <PhoneOff className="w-3 h-3 shrink-0" />
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={voiceChat.status === 'requesting'}
+                    onClick={() => {
+                      triggerHaptic('medium');
+                      void voiceChat.joinVoice();
+                    }}
+                    title={
+                      voiceChat.voicePeers.length > 0
+                        ? pickLang(lang, {
+                            es: 'Unirse a la llamada de voz de la sala',
+                            ca: 'Unir-se a la trucada de veu de la sala',
+                            en: 'Join room voice call',
+                          })
+                        : pickLang(lang, {
+                            es: 'Iniciar llamada de voz con la sala',
+                            ca: 'Iniciar trucada de veu amb la sala',
+                            en: 'Start room voice call',
+                          })
+                    }
+                    aria-label={pickLang(lang, { es: 'Llamar', ca: 'Trucar', en: 'Call' })}
+                    className={`min-h-[26px] px-2 rounded-lg border text-[11px] font-bold flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0 disabled:opacity-60 ${
+                      voiceChat.voicePeers.length > 0
+                        ? 'bg-emerald-500/20 hover:bg-emerald-500/30 border-emerald-400/45 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.2)]'
+                        : 'bg-emerald-500/15 hover:bg-emerald-500/25 border-emerald-400/35 text-emerald-200'
+                    }`}
+                  >
+                    {voiceChat.status === 'requesting' ? (
+                      <Loader2 className="w-3 h-3 animate-spin shrink-0" />
+                    ) : (
+                      <PhoneCall
+                        className={`w-3 h-3 shrink-0 ${
+                          voiceChat.voicePeers.length > 0 ? 'animate-pulse text-emerald-300' : ''
+                        }`}
+                      />
+                    )}
+                    <span>
+                      {voiceChat.status === 'requesting'
+                        ? pickLang(lang, { es: 'Conectando...', ca: 'Connectant...', en: 'Joining...' })
+                        : voiceChat.voicePeers.length > 0
+                        ? pickLang(lang, {
+                            es: `Unirse (${voiceChat.voicePeers.length})`,
+                            ca: `Unir-se (${voiceChat.voicePeers.length})`,
+                            en: `Join (${voiceChat.voicePeers.length})`,
+                          })
+                        : pickLang(lang, { es: 'Llamar', ca: 'Trucar', en: 'Call' })}
+                    </span>
+                  </button>
+                )
+              )}
+
+              <button
+                type="button"
+                onClick={handleOpenInviteAction}
+                aria-label={pickLang(lang, { es: 'Invitar a la sala', ca: 'Convidar a la sala', en: 'Invite to room' })}
+                className="min-h-[26px] px-2 rounded-lg bg-[#9146FF]/20 hover:bg-[#9146FF]/35 border border-[#9146FF]/40 text-[#D8B4FE] text-[11px] font-bold flex items-center gap-1 cursor-pointer active:scale-95 transition-all shrink-0"
+              >
+                <UserPlus className="w-3 h-3 shrink-0" />
+                <span>{pickLang(lang, { es: 'Invitar', ca: 'Convidar', en: 'Invite' })}</span>
+              </button>
+            </div>
           </div>
           {/* Active Poll Banner (if open) */}
           {activePoll && !activePoll.isClosed && (
@@ -2262,6 +2408,105 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               </span>
             </button>
           </div>
+        </div>
+      </BottomSheet>
+
+      {/* BUILT-IN FALLBACK INVITE SHEET (if rendered without external FriendsInviteModal) */}
+      <BottomSheet
+        isOpen={showQuickInviteSheet}
+        onClose={() => setShowQuickInviteSheet(false)}
+        lang={lang}
+        title={pickLang(lang, {
+          es: 'Invitar a la Sala',
+          ca: 'Convidar a la Sala',
+          en: 'Invite to Room',
+        })}
+        subtitle={roomName}
+        icon={<UserPlus className="w-5 h-5" />}
+      >
+        <div className="space-y-4">
+          <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-3">
+            <div className="min-w-0">
+              <span className="text-xs text-zinc-400 block">
+                {pickLang(lang, { es: 'Código de sala', ca: 'Codi de sala', en: 'Room code' })}
+              </span>
+              <span className="font-mono text-base font-bold text-white tracking-wider">
+                {roomId}
+              </span>
+            </div>
+            <SecondaryButton onClick={handleCopyRoomCode}>
+              {copiedCode ? (
+                <>
+                  <Check className="w-4 h-4 text-[#00F593]" />
+                  <span>{t.copied}</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 text-[#BF94FF]" />
+                  <span>{pickLang(lang, { es: 'Copiar código', ca: 'Copiar codi', en: 'Copy code' })}</span>
+                </>
+              )}
+            </SecondaryButton>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-black/35 border border-white/[0.08] space-y-2">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-zinc-400">
+              {pickLang(lang, { es: 'Enlace directo', ca: 'Enllaç directe', en: 'Direct link' })}
+            </span>
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                readOnly
+                value={inviteUrl}
+                onFocus={(e) => e.currentTarget.select()}
+                className="flex-1 min-h-10 px-3 rounded-xl bg-black/50 border border-white/10 text-xs font-mono text-zinc-200 outline-none"
+              />
+              <SecondaryButton onClick={handleCopyInviteLinkOnly}>
+                {copiedLink ? (
+                  <>
+                    <Check className="w-4 h-4 text-[#00F593]" />
+                    <span>{t.copied}</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-4 h-4 text-[#BF94FF]" />
+                    <span>{pickLang(lang, { es: 'Copiar', ca: 'Copiar', en: 'Copy' })}</span>
+                  </>
+                )}
+              </SecondaryButton>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <PrimaryButton onClick={handleShareInvite} fullWidth>
+              {copiedLink ? <Check className="w-4 h-4" /> : <Share2 className="w-4 h-4" />}
+              <span>
+                {copiedLink
+                  ? t.copied
+                  : pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
+              </span>
+            </PrimaryButton>
+            <a
+              href={whatsappShareUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="min-h-11 px-3 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-colors"
+            >
+              <MessageCircle className="w-4 h-4 shrink-0" />
+              <span>WhatsApp</span>
+            </a>
+          </div>
+
+          <SecondaryButton
+            fullWidth
+            onClick={() => {
+              setShowQuickInviteSheet(false);
+              setShowQrInviteSheet(true);
+            }}
+          >
+            <QrCode className="w-4 h-4 text-[#BF94FF]" />
+            <span>{pickLang(lang, { es: 'Ver código QR', ca: 'Veure codi QR', en: 'Show QR code' })}</span>
+          </SecondaryButton>
         </div>
       </BottomSheet>
     </aside>

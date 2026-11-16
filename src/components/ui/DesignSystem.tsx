@@ -1,4 +1,5 @@
 import React, { useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
   X,
@@ -191,7 +192,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   const titleId = useId();
   useFocusTrap(isOpen, onClose, sheetRef);
 
-  return (
+  const content = (
     <AnimatePresence>
       {isOpen && (
         <motion.div
@@ -199,7 +200,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
-          className="fixed inset-0 z-[190] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 overflow-x-hidden"
+          className="fixed inset-0 z-[235] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 overflow-x-hidden"
           onClick={onClose}
         >
           <motion.div
@@ -263,6 +264,11 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
       )}
     </AnimatePresence>
   );
+
+  if (typeof document !== 'undefined') {
+    return createPortal(content, document.body);
+  }
+  return content;
 };
 
 // ============================================================================

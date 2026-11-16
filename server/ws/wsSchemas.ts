@@ -238,9 +238,38 @@ export const wsPoolSyncChecksumSchema = z.object({
 
 export const wsGameInviteRespondSchema = z.object({
   roomId: roomIdSchema,
-  gameType: z.enum(['pool', 'chapas', 'parchis', 'uno', 'pinturillo', 'chess', 'checkers', 'connect4']),
+  gameType: z.enum([
+    'pool',
+    'chapas',
+    'headsoccer',
+    'poker',
+    'blackjack',
+    'parchis',
+    'uno',
+    'pinturillo',
+    'chess',
+    'checkers',
+    'connect4',
+  ]),
   inviteId: z.string().max(128).optional(),
   response: z.enum(['accepted', 'declined']),
+});
+
+export const wsGameSwitchSchema = z.object({
+  roomId: roomIdSchema,
+  targetGame: z.enum([
+    'pool',
+    'chapas',
+    'headsoccer',
+    'poker',
+    'blackjack',
+    'parchis',
+    'uno',
+    'pinturillo',
+    'chess',
+    'checkers',
+    'connect4',
+  ]),
 });
 
 export const wsChapasRoomSchema = z.object({
@@ -282,6 +311,88 @@ export const wsChapasShootSchema = z.union([
   }),
 ]);
 
+export const wsHeadSoccerRoomSchema = z.object({
+  roomId: roomIdSchema,
+});
+
+export const wsHeadSoccerJoinSeatSchema = z.object({
+  roomId: roomIdSchema,
+  seatIndex: z.union([z.literal(0), z.literal(1), z.literal('spectate')]),
+});
+
+export const wsHeadSoccerSelectSkinSchema = z.object({
+  roomId: roomIdSchema,
+  skinId: z.enum(['striker', 'maestro', 'furia', 'astro', 'titan', 'ninja']),
+});
+
+export const wsHeadSoccerInputSchema = z.object({
+  roomId: roomIdSchema,
+  side: z.union([z.literal(0), z.literal(1)]),
+  input: z.object({
+    left: z.boolean(),
+    right: z.boolean(),
+    jump: z.boolean(),
+    kick: z.boolean(),
+  }),
+});
+
+export const wsHeadSoccerSyncStateSchema = z.object({
+  roomId: roomIdSchema,
+  sim: z.object({
+    tick: z.number(),
+    phase: z.enum(['playing', 'goal', 'finished']),
+    timeLeftSec: z.number(),
+    isGoldenGoal: z.boolean(),
+    goalPauseTimer: z.number(),
+    goalBannerSide: z.union([z.literal(0), z.literal(1), z.null()]),
+    winnerSide: z.union([z.literal(0), z.literal(1), z.null()]),
+    scores: z.tuple([z.number(), z.number()]),
+    players: z.array(z.any()).length(2),
+    ball: z.any(),
+  }),
+});
+
+export const wsPokerStartSchema = z.object({
+  roomId: roomIdSchema,
+  botsEnabled: z.boolean().optional(),
+});
+
+export const wsPokerJoinSeatSchema = z.object({
+  roomId: roomIdSchema,
+  seatIndex: z.union([z.number().int().min(0).max(5), z.literal('spectate')]).optional(),
+});
+
+export const wsPokerToggleBotsSchema = z.object({
+  roomId: roomIdSchema,
+  botsEnabled: z.boolean(),
+});
+
+export const wsPokerActionSchema = z.object({
+  roomId: roomIdSchema,
+  action: z.enum(['fold', 'check', 'call', 'raise', 'all_in']),
+  raiseTo: z.number().min(0).max(1_000_000).optional(),
+});
+
+export const wsBlackjackJoinSeatSchema = z.object({
+  roomId: roomIdSchema,
+  seatIndex: z.union([z.number().int().min(0).max(3), z.literal('spectate')]).optional(),
+});
+
+export const wsBlackjackBetSchema = z.object({
+  roomId: roomIdSchema,
+  op: z.union([
+    z.object({ kind: z.literal('add'), amount: z.number().int().min(1).max(100_000) }),
+    z.object({ kind: z.literal('clear') }),
+    z.object({ kind: z.literal('rebet') }),
+    z.object({ kind: z.literal('rebuy') }),
+  ]),
+});
+
+export const wsBlackjackActionSchema = z.object({
+  roomId: roomIdSchema,
+  action: z.enum(['hit', 'stand', 'double', 'split']),
+});
+
 export const wsEnvelopeSchema = z.object({
   type: z.string().trim().min(1).max(48),
   payload: z.record(z.string(), z.any()).optional().default({}),
@@ -300,6 +411,7 @@ const WS_EVENT_LIMITS: Record<string, { max: number; windowMs: number }> = {
   GAME_MOVE: { max: 30, windowMs: 5_000 },
   PARTY_GAME_ACTION: { max: 30, windowMs: 5_000 },
   GAME_INVITE_RESPOND: { max: 20, windowMs: 5_000 },
+  GAME_SWITCH: { max: 15, windowMs: 5_000 },
   TYPING_STATE: { max: 20, windowMs: 5_000 },
   VOICE_JOIN: { max: 12, windowMs: 10_000 },
   VOICE_LEAVE: { max: 12, windowMs: 10_000 },
@@ -312,7 +424,12 @@ const WS_EVENT_LIMITS: Record<string, { max: number; windowMs: number }> = {
   POOL_CALL_POCKET: { max: 20, windowMs: 5_000 },
   POOL_SYNC_CHECKSUM: { max: 20, windowMs: 5_000 },
   CHAPAS_SHOOT: { max: 15, windowMs: 5_000 },
-  __GLOBAL__: { max: 240, windowMs: 10_000 },
+  HEADSOCCER_INPUT: { max: 180, windowMs: 5_000 },
+  HEADSOCCER_SYNC_STATE: { max: 180, windowMs: 5_000 },
+  POKER_ACTION: { max: 25, windowMs: 5_000 },
+  BLACKJACK_BET: { max: 40, windowMs: 5_000 },
+  BLACKJACK_ACTION: { max: 25, windowMs: 5_000 },
+  __GLOBAL__: { max: 420, windowMs: 10_000 },
 };
 
 export class WsRateLimiter {

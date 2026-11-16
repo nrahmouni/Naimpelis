@@ -21,6 +21,7 @@ import {
 import { triggerApkDownload } from './utils/apkDownload';
 import {
   AppLanguage,
+  BlackjackGameState,
   BoardGameState,
   CatalaEpisodeItem,
   CatalaSeriesDetails,
@@ -32,6 +33,9 @@ import {
   FloatingReaction,
   FootballMatchDetails,
   FutbolChapasState,
+  HeadSoccerInput,
+  HeadSoccerOnlineState,
+  HeadSoccerSimulation,
   IncomingFriendAddedNotice,
   IncomingRoomInvite,
   LanguageNoticePopup,
@@ -40,6 +44,7 @@ import {
   PartyGameState,
   PinturilloGameState,
   PlaybackEngineMode,
+  PokerGameState,
   PollProposalItem,
   RestoredRoomBlueprint,
   RoomPollState,
@@ -312,6 +317,9 @@ export function App() {
     const allowed: RoomGameInviteType[] = [
       'pool',
       'chapas',
+      'headsoccer',
+      'poker',
+      'blackjack',
       'parchis',
       'uno',
       'pinturillo',
@@ -490,6 +498,18 @@ export function App() {
   const [pinturilloState, setPinturilloState] = useState<PinturilloGameState | null>(null);
   const [poolGameState, setPoolGameState] = useState<Pool8BallState | null>(null);
   const [chapasGameState, setChapasGameState] = useState<FutbolChapasState | null>(null);
+  const [headSoccerGameState, setHeadSoccerGameState] = useState<HeadSoccerOnlineState | null>(null);
+  const [headSoccerSyncSnapshot, setHeadSoccerSyncSnapshot] = useState<{
+    seq: number;
+    sim: HeadSoccerSimulation;
+  } | null>(null);
+  const [headSoccerPeerInput, setHeadSoccerPeerInput] = useState<{
+    side: 0 | 1;
+    input: HeadSoccerInput;
+    seq: number;
+  } | null>(null);
+  const [pokerGameState, setPokerGameState] = useState<PokerGameState | null>(null);
+  const [blackjackGameState, setBlackjackGameState] = useState<BlackjackGameState | null>(null);
   const [matchResponses, setMatchResponses] = useState<RoomMatchResponsesState | null>(null);
   const [gameMoveError, setGameMoveError] = useState<string | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
@@ -1645,6 +1665,9 @@ export function App() {
         setPinturilloState(payload.pinturilloState || null);
         setPoolGameState(payload.poolGameState || null);
         setChapasGameState(payload.chapasState || null);
+        setHeadSoccerGameState(payload.headSoccerState || null);
+        setPokerGameState(payload.pokerGameState || null);
+        setBlackjackGameState(payload.blackjackState || null);
         setMatchResponses(payload.matchResponses || null);
         setGameMoveError(null);
         setParticipants(payload.participants || []);
@@ -1973,6 +1996,69 @@ export function App() {
         }
       } else if (type === 'CHAPAS_SHOT_BROADCAST') {
         setChapasGameState((payload.authoritativeState as FutbolChapasState | null) || null);
+      } else if (type === 'HEADSOCCER_STATE_UPDATED') {
+        const nextHs = (payload.headSoccerState as HeadSoccerOnlineState | null) || null;
+        setHeadSoccerGameState(nextHs);
+        if (!nextHs) {
+          setIncomingGameInvite((prev) => (prev && prev.gameType === 'headsoccer' ? null : prev));
+        }
+      } else if (type === 'HEADSOCCER_INPUT_RELAY') {
+        if (payload.input && (payload.side === 0 || payload.side === 1)) {
+          setHeadSoccerPeerInput({
+            side: payload.side,
+            input: payload.input,
+            seq: Number(payload.seq) || Date.now(),
+          });
+        }
+      } else if (type === 'HEADSOCCER_SYNC_BROADCAST') {
+        if (payload.sim) {
+          setHeadSoccerSyncSnapshot({
+            seq: Number(payload.seq) || Date.now(),
+            sim: payload.sim,
+          });
+        }
+      } else if (type === 'POKER_STATE_UPDATED') {
+        const nextPoker = (payload.pokerGameState as PokerGameState | null) || null;
+        setPokerGameState(nextPoker);
+        if (!nextPoker) {
+          setIncomingGameInvite((prev) => (prev && prev.gameType === 'poker' ? null : prev));
+        }
+      } else if (type === 'BLACKJACK_STATE_UPDATED') {
+        const nextBj = (payload.blackjackState as BlackjackGameState | null) || null;
+        setBlackjackGameState(nextBj);
+        if (!nextBj) {
+          setIncomingGameInvite((prev) => (prev && prev.gameType === 'blackjack' ? null : prev));
+        }
+      } else if (type === 'GAME_SWITCHED') {
+        const rs = payload.roomState;
+        if (rs) {
+          setRoomGameState(rs.gameState ?? null);
+          setPartyGameState(rs.partyGameState ?? null);
+          setPinturilloState(rs.pinturilloState ?? null);
+          setPoolGameState(rs.poolGameState ?? null);
+          setChapasGameState(rs.chapasState ?? null);
+          setHeadSoccerGameState(rs.headSoccerState ?? null);
+          setPokerGameState(rs.pokerGameState ?? null);
+          setBlackjackGameState(rs.blackjackState ?? null);
+          setMatchResponses(rs.matchResponses ?? null);
+        }
+        setIncomingGameInvite(null);
+        if (payload.message) {
+          setMessages((prev) => [...prev.slice(-149), payload.message!]);
+          if (mobileTabRef.current !== 'chat') {
+            setUnreadChatCount((c) => c + 1);
+          }
+        }
+        if (
+          payload.targetGame &&
+          (activeHubGameRef.current !== null ||
+            (Array.isArray(payload.seatedUserIds) && payload.seatedUserIds.includes(profile.id)))
+        ) {
+          setForcedOpenGame({
+            gameType: payload.targetGame,
+            seq: Date.now(),
+          });
+        }
       } else if (type === 'GAME_INVITE_STATUS_UPDATED') {
         setMatchResponses(payload.matchResponses || null);
       } else if (type === 'GAME_MATCH_INVITE') {
@@ -6063,9 +6149,10 @@ export function App() {
                 onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
                 fullHeight
               >
-                <div className="flex-1 min-h-0 flex flex-col overflow-hidden px-2 sm:px-4 py-2 pb-24">
+                <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   <GamesHubSection
                     lang={lang}
+                    roomId={roomId}
                     currentUser={currentUser}
                     participants={participants}
                     roomBoardGame={roomGameState}
@@ -6073,6 +6160,11 @@ export function App() {
                     roomPinturilloGame={pinturilloState}
                     roomPoolGame={poolGameState}
                     roomChapasGame={chapasGameState}
+                    roomHeadSoccerGame={headSoccerGameState}
+                    headSoccerSyncSnapshot={headSoccerSyncSnapshot}
+                    headSoccerPeerInput={headSoccerPeerInput}
+                    roomPokerGame={pokerGameState}
+                    roomBlackjackGame={blackjackGameState}
                     matchResponses={matchResponses}
                     gameMoveError={gameMoveError}
                     isHost={isHostUser}
@@ -6081,6 +6173,7 @@ export function App() {
                     onSelectedGameChange={(game) => {
                       activeHubGameRef.current = game;
                     }}
+                    onSwitchRoomGame={(targetGame) => socketService.switchRoomGame(targetGame)}
                     onStartRoomBoardGame={(gt, solo, clockMin) =>
                       socketService.startBoardGame(gt, solo, clockMin)
                     }
@@ -6123,6 +6216,28 @@ export function App() {
                     onChapasForfeit={() => socketService.forfeitChapasGame()}
                     onChapasRematch={() => socketService.rematchChapasGame()}
                     onCloseRoomChapas={() => socketService.closeChapasGame()}
+                    onStartRoomHeadSoccer={() => socketService.startHeadSoccerGame()}
+                    onHeadSoccerJoinSeat={(seat) => socketService.joinHeadSoccerSeat(seat)}
+                    onHeadSoccerSelectSkin={(skinId) => socketService.selectHeadSoccerSkin(skinId)}
+                    onHeadSoccerStartMatch={() => socketService.startHeadSoccerMatch()}
+                    onHeadSoccerInput={(side, input) => socketService.sendHeadSoccerInput(side, input)}
+                    onHeadSoccerSyncState={(sim) => socketService.sendHeadSoccerSyncState(sim)}
+                    onHeadSoccerRematch={() => socketService.rematchHeadSoccerGame()}
+                    onCloseRoomHeadSoccer={() => socketService.closeHeadSoccerGame()}
+                    onStartRoomPoker={(botsEnabled) => socketService.startPokerGame(botsEnabled)}
+                    onPokerJoinSeat={(seat) => socketService.joinPokerSeat(seat)}
+                    onPokerToggleBots={(botsEnabled) => socketService.togglePokerBots(botsEnabled)}
+                    onPokerStartMatch={() => socketService.startPokerMatch()}
+                    onPokerAction={(action, raiseTo) => socketService.sendPokerAction(action, raiseTo)}
+                    onPokerRebuy={() => socketService.rebuyPokerChips()}
+                    onCloseRoomPoker={() => socketService.closePokerGame()}
+                    onStartRoomBlackjack={() => socketService.startBlackjackGame()}
+                    onBlackjackJoinSeat={(seat) => socketService.joinBlackjackSeat(seat)}
+                    onBlackjackBet={(op) => socketService.placeBlackjackBet(op)}
+                    onBlackjackDeal={() => socketService.dealBlackjack()}
+                    onBlackjackAction={(action) => socketService.sendBlackjackAction(action)}
+                    onBlackjackNewRound={() => socketService.newBlackjackRound()}
+                    onCloseRoomBlackjack={() => socketService.closeBlackjackGame()}
                   />
                 </div>
               </WorldShell>

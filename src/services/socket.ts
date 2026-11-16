@@ -1,4 +1,5 @@
 import {
+  BlackjackGameState,
   BoardClockMinutes,
   BoardCoord,
   BoardGameState,
@@ -10,6 +11,10 @@ import {
   ChatMessage,
   ChessPromotionPiece,
   FutbolChapasState,
+  HeadSoccerInput,
+  HeadSoccerOnlineState,
+  HeadSoccerSimulation,
+  HeadSoccerSkinId,
   OnlineAppUser,
   Participant,
   PartyColor,
@@ -17,6 +22,8 @@ import {
   PartyGameType,
   PinturilloGameState,
   PinturilloStroke,
+  PokerActionType,
+  PokerGameState,
   PollProposalItem,
   Pool8BallState,
   PoolBallState,
@@ -63,6 +70,13 @@ export interface SocketPayload {
   stroke?: PinturilloStroke;
   poolGameState?: Pool8BallState | null;
   chapasState?: FutbolChapasState | null;
+  headSoccerState?: HeadSoccerOnlineState | null;
+  pokerGameState?: PokerGameState | null;
+  blackjackState?: BlackjackGameState | null;
+  side?: 0 | 1;
+  input?: HeadSoccerInput;
+  sim?: HeadSoccerSimulation;
+  seq?: number;
   preShotState?: FutbolChapasState | null;
   matchResponses?: RoomMatchResponsesState | null;
   authoritativeState?: Pool8BallState | FutbolChapasState | null;
@@ -118,6 +132,21 @@ export interface SocketPayload {
     sdpMid?: string | null;
     sdpMLineIndex?: number | null;
     usernameFragment?: string | null;
+  };
+  targetGame?: RoomGameInviteType;
+  switchedByUserId?: string;
+  switchedByName?: string;
+  seatedUserIds?: string[];
+  roomState?: {
+    gameState?: BoardGameState | null;
+    partyGameState?: PartyGameState | null;
+    pinturilloState?: PinturilloGameState | null;
+    poolGameState?: Pool8BallState | null;
+    chapasState?: FutbolChapasState | null;
+    headSoccerState?: HeadSoccerOnlineState | null;
+    pokerGameState?: PokerGameState | null;
+    blackjackState?: BlackjackGameState | null;
+    matchResponses?: RoomMatchResponsesState | null;
   };
   [key: string]: unknown;
 }
@@ -940,6 +969,121 @@ class SocketService {
   closeChapasGame() {
     if (!this.roomId) return;
     this.send('CHAPAS_CLOSE', { roomId: this.roomId });
+  }
+
+  startHeadSoccerGame() {
+    if (!this.roomId) return;
+    this.send('HEADSOCCER_START', { roomId: this.roomId });
+  }
+
+  joinHeadSoccerSeat(seatIndex: 0 | 1 | 'spectate') {
+    if (!this.roomId) return;
+    this.send('HEADSOCCER_JOIN_SEAT', { roomId: this.roomId, seatIndex });
+  }
+
+  selectHeadSoccerSkin(skinId: HeadSoccerSkinId) {
+    if (!this.roomId) return;
+    this.send('HEADSOCCER_SELECT_SKIN', { roomId: this.roomId, skinId });
+  }
+
+  startHeadSoccerMatch() {
+    if (!this.roomId) return;
+    this.send('HEADSOCCER_START_MATCH', { roomId: this.roomId });
+  }
+
+  sendHeadSoccerInput(side: 0 | 1, input: HeadSoccerInput) {
+    if (!this.roomId) return;
+    this.sendRaw('HEADSOCCER_INPUT', { roomId: this.roomId, side, input });
+  }
+
+  sendHeadSoccerSyncState(sim: HeadSoccerSimulation) {
+    if (!this.roomId) return;
+    this.sendRaw('HEADSOCCER_SYNC_STATE', { roomId: this.roomId, sim });
+  }
+
+  rematchHeadSoccerGame() {
+    if (!this.roomId) return;
+    this.send('HEADSOCCER_REMATCH', { roomId: this.roomId });
+  }
+
+  closeHeadSoccerGame() {
+    if (!this.roomId) return;
+    this.send('HEADSOCCER_CLOSE', { roomId: this.roomId });
+  }
+
+  startPokerGame(botsEnabled = true) {
+    if (!this.roomId) return;
+    this.send('POKER_START', { roomId: this.roomId, botsEnabled });
+  }
+
+  joinPokerSeat(seatIndex?: number | 'spectate') {
+    if (!this.roomId) return;
+    this.send('POKER_JOIN_SEAT', { roomId: this.roomId, seatIndex });
+  }
+
+  togglePokerBots(botsEnabled: boolean) {
+    if (!this.roomId) return;
+    this.send('POKER_TOGGLE_BOTS', { roomId: this.roomId, botsEnabled });
+  }
+
+  startPokerMatch() {
+    if (!this.roomId) return;
+    this.send('POKER_START_MATCH', { roomId: this.roomId });
+  }
+
+  sendPokerAction(action: PokerActionType, raiseTo?: number) {
+    if (!this.roomId) return;
+    this.send('POKER_ACTION', { roomId: this.roomId, action, raiseTo });
+  }
+
+  rebuyPokerChips() {
+    if (!this.roomId) return;
+    this.send('POKER_REBUY', { roomId: this.roomId });
+  }
+
+  closePokerGame() {
+    if (!this.roomId) return;
+    this.send('POKER_CLOSE', { roomId: this.roomId });
+  }
+
+  startBlackjackGame() {
+    if (!this.roomId) return;
+    this.send('BLACKJACK_START', { roomId: this.roomId });
+  }
+
+  joinBlackjackSeat(seatIndex?: number | 'spectate') {
+    if (!this.roomId) return;
+    this.send('BLACKJACK_JOIN_SEAT', { roomId: this.roomId, seatIndex });
+  }
+
+  placeBlackjackBet(op: { kind: 'add'; amount: number } | { kind: 'clear' } | { kind: 'rebet' } | { kind: 'rebuy' }) {
+    if (!this.roomId) return;
+    this.send('BLACKJACK_BET', { roomId: this.roomId, op });
+  }
+
+  dealBlackjack() {
+    if (!this.roomId) return;
+    this.send('BLACKJACK_DEAL', { roomId: this.roomId });
+  }
+
+  sendBlackjackAction(action: 'hit' | 'stand' | 'double' | 'split') {
+    if (!this.roomId) return;
+    this.send('BLACKJACK_ACTION', { roomId: this.roomId, action });
+  }
+
+  newBlackjackRound() {
+    if (!this.roomId) return;
+    this.send('BLACKJACK_NEW_ROUND', { roomId: this.roomId });
+  }
+
+  closeBlackjackGame() {
+    if (!this.roomId) return;
+    this.send('BLACKJACK_CLOSE', { roomId: this.roomId });
+  }
+
+  switchRoomGame(targetGame: RoomGameInviteType) {
+    if (!this.roomId) return;
+    this.send('GAME_SWITCH', { roomId: this.roomId, targetGame });
   }
 }
 

@@ -34,6 +34,36 @@ const GAME_INVITE_META: Record<RoomGameInviteType, GameInviteMeta> = {
       en: '1v1 / 2v2 Stadium · First to 3 goals',
     },
   },
+  headsoccer: {
+    emoji: '🥅',
+    accent: '#38BDF8',
+    title: { es: 'Fútbol Cabezones', ca: 'Futbol Capgrossos', en: 'Head Soccer' },
+    subtitle: {
+      es: 'Estadio arcade 1v1 · 60s de acción',
+      ca: 'Estadi arcade 1v1 · 60s d’acció',
+      en: '1v1 arcade stadium · 60s action',
+    },
+  },
+  poker: {
+    emoji: '♠️',
+    accent: '#A855F7',
+    title: { es: 'Póker Texas Hold’em', ca: 'Pòquer Texas Hold’em', en: 'Texas Hold’em Poker' },
+    subtitle: {
+      es: 'Mesa No-Limit con ciegas y botes en sala',
+      ca: 'Taula No-Limit amb cegues i pots en sala',
+      en: 'No-Limit table with blinds & pots',
+    },
+  },
+  blackjack: {
+    emoji: '🃏',
+    accent: '#10B981',
+    title: { es: 'Blackjack 21', ca: 'Blackjack 21', en: 'Blackjack 21' },
+    subtitle: {
+      es: 'Mesa de casino contra el crupier · Paga 3:2',
+      ca: 'Taula de casino contra el crupier · Paga 3:2',
+      en: 'Casino table vs Dealer · Pays 3:2',
+    },
+  },
   parchis: {
     emoji: '🎲',
     accent: '#F59E0B',

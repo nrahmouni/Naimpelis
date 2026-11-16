@@ -25,6 +25,7 @@ import { verifyFirebaseIdToken } from '../services/firebaseAuthVerify.ts';
 import {
   wsEnvelopeSchema,
   wsGameInviteRespondSchema,
+  wsGameSwitchSchema,
   wsGameMoveSchema,
   wsJoinRoomSchema,
   wsPartyGameActionSchema,
@@ -47,6 +48,18 @@ import {
   wsChapasShootSchema,
   wsChapasToggleBotsSchema,
   wsChapasUpdateTeamSchema,
+  wsHeadSoccerRoomSchema,
+  wsHeadSoccerJoinSeatSchema,
+  wsHeadSoccerSelectSkinSchema,
+  wsHeadSoccerInputSchema,
+  wsHeadSoccerSyncStateSchema,
+  wsPokerStartSchema,
+  wsPokerJoinSeatSchema,
+  wsPokerToggleBotsSchema,
+  wsPokerActionSchema,
+  wsBlackjackJoinSeatSchema,
+  wsBlackjackBetSchema,
+  wsBlackjackActionSchema,
   wsQueueReorderSchema,
   WsRateLimiter,
   wsRegisterPresenceSchema,
@@ -56,6 +69,10 @@ import {
   wsVoiceSignalSchema,
   wsVoiceStateSchema,
 } from './wsSchemas.ts';
+import {
+  buildSwitchedRoomGameStates,
+  collectSeatedHumansFromRoom,
+} from './gameSwitchHelper.ts';
 import {
   isDistributedStoreEnabled,
   loadDistributedKey,
@@ -138,6 +155,33 @@ import {
   updateChapasTeamFlag,
   type FutbolChapasState,
 } from '../../src/shared/futbolChapas.ts';
+import {
+  createInitialHeadSoccerOnlineState,
+  joinHeadSoccerSeat,
+  selectHeadSoccerSkin,
+  startHeadSoccerMatch,
+  type HeadSoccerOnlineState,
+} from '../../src/shared/headSoccer.ts';
+import {
+  applyPokerAction,
+  choosePokerBotAction,
+  createInitialPokerState,
+  joinPokerSeat,
+  redactPokerStateForUser,
+  startNextPokerHand,
+  type PokerGameState,
+  type PokerSeat,
+} from '../../src/shared/texasHoldem.ts';
+import {
+  applyBlackjackAction,
+  createInitialBlackjackState,
+  dealBlackjackRound,
+  joinBlackjackSeat,
+  placeBlackjackBet,
+  prepareNewBlackjackBettingRound,
+  redactBlackjackState,
+  type BlackjackGameState,
+} from '../../src/shared/blackjack.ts';
 import type {
   RoomGameInvite,
   RoomGameInviteType,
@@ -268,6 +312,9 @@ export interface RoomRecord {
   pinturilloState?: PinturilloGameState | null;
   poolGameState?: Pool8BallState | null;
   chapasState?: FutbolChapasState | null;
+  headSoccerState?: HeadSoccerOnlineState | null;
+  pokerGameState?: PokerGameState | null;
+  blackjackState?: BlackjackGameState | null;
   matchResponses?: RoomMatchResponsesState | null;
   createdAt: number;
 }
@@ -310,6 +357,8 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
   const poolTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const poolDisconnectTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const chapasTurnTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const pokerBotTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  const headSoccerSeqByRoom = new Map<string, number>();
   const roomVoicePeers = new Map<string, Map<string, VoicePeerState>>();
 
   const tvPairingSessions = new LruTtlCache<string, TvPairingSession>(400, 15 * 60 * 1000);
@@ -451,6 +500,9 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
       gameState: null,
       partyGameState: null,
       chapasState: null,
+      headSoccerState: null,
+      pokerGameState: null,
+      blackjackState: null,
       matchResponses: null,
       pinnedMessage: null,
       videoState: {
@@ -531,10 +583,85 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
     return {
       ...safeRoom,
       pinturilloState: redactPinturilloForUser(room.pinturilloState ?? null, viewerUserId),
+      pokerGameState: redactPokerStateForUser(room.pokerGameState ?? null, viewerUserId),
+      blackjackState: redactBlackjackState(room.blackjackState ?? null),
       hasPin: Boolean(pinCode),
       voicePeers: getVoicePeersForRoom(room.id),
       videoState: computeAuthoritativeVideoState(room),
     };
+  }
+
+  function broadcastPokerState(room: RoomRecord, message?: RoomChatMessageRecord | null) {
+    clients.forEach((meta, clientWs) => {
+      if (meta.roomId === room.id && clientWs.readyState === WebSocket.OPEN) {
+        clientWs.send(
+          JSON.stringify({
+            type: 'POKER_STATE_UPDATED',
+            payload: {
+              pokerGameState: redactPokerStateForUser(room.pokerGameState ?? null, meta.userId || ''),
+              message: message ?? null,
+            },
+          })
+        );
+      }
+    });
+  }
+
+  function broadcastBlackjackState(room: RoomRecord, message?: RoomChatMessageRecord | null) {
+    broadcastToRoom(room.id, {
+      type: 'BLACKJACK_STATE_UPDATED',
+      payload: {
+        blackjackState: redactBlackjackState(room.blackjackState ?? null),
+        message: message ?? null,
+      },
+    });
+  }
+
+  function stopPokerBotTimer(roomId: string) {
+    const t = pokerBotTimers.get(roomId);
+    if (t) {
+      clearTimeout(t);
+      pokerBotTimers.delete(roomId);
+    }
+  }
+
+  function schedulePokerBotTimer(room: RoomRecord) {
+    stopPokerBotTimer(room.id);
+    const ps = room.pokerGameState;
+    if (!ps || ps.status !== 'playing') return;
+    const activeSeat = ps.seats[ps.turnSeat];
+    if (!activeSeat || !activeSeat.isBot) return;
+
+    const expectedUpdatedAt = ps.updatedAt;
+    const expectedSeat = ps.turnSeat;
+
+    const timer = setTimeout(() => {
+      pokerBotTimers.delete(room.id);
+      const latestRoom = rooms.get(room.id);
+      const curr = latestRoom?.pokerGameState;
+      if (
+        !latestRoom ||
+        !curr ||
+        curr.status !== 'playing' ||
+        curr.turnSeat !== expectedSeat ||
+        curr.updatedAt !== expectedUpdatedAt
+      ) {
+        return;
+      }
+      if (latestRoom.participants.length === 0) return;
+      const actor = curr.seats[curr.turnSeat];
+      if (!actor || !actor.isBot) return;
+
+      const move = choosePokerBotAction(curr);
+      const res = applyPokerAction(curr, actor.userId, move.action, move.raiseTo);
+      if (!res.ok) return;
+      latestRoom.pokerGameState = res.state;
+      schedulePersistRoom(latestRoom.id);
+      broadcastPokerState(latestRoom);
+      schedulePokerBotTimer(latestRoom);
+    }, 900);
+    timer.unref?.();
+    pokerBotTimers.set(room.id, timer);
   }
 
   function broadcastPinturilloState(room: RoomRecord, message?: RoomChatMessageRecord | null) {
@@ -3883,7 +4010,589 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
           return;
         }
 
-        // Unified Invite Response (Accepted / Declined) & Auto-Ready Handling Across All 8 Games
+        // Fútbol Cabezones (Head Soccer 1v1 Stadium + AI Bot)
+        if (type === 'HEADSOCCER_START') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room) return;
+          const hostUser = senderMeta?.userId
+            ? {
+                id: senderMeta.userId,
+                name: senderMeta.userName || 'Jugador 1',
+                avatar: senderMeta.userAvatar || '⚽',
+                color: senderMeta.userColor || '#9146FF',
+              }
+            : undefined;
+          room.headSoccerState = createInitialHeadSoccerOnlineState(hostUser);
+          headSoccerSeqByRoom.set(room.id, 0);
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'HEADSOCCER_STATE_UPDATED',
+            payload: { headSoccerState: room.headSoccerState },
+          });
+          maybeBroadcastHostGameInvite(room, ws, senderMeta, 'headsoccer');
+          return;
+        }
+
+        if (type === 'HEADSOCCER_JOIN_SEAT') {
+          const valid = wsHeadSoccerJoinSeatSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.headSoccerState || !senderMeta?.userId) return;
+          const res = joinHeadSoccerSeat(
+            room.headSoccerState,
+            {
+              id: senderMeta.userId,
+              name: senderMeta.userName || 'Jugador',
+              avatar: senderMeta.userAvatar || '⚽',
+              color: senderMeta.userColor || '#9146FF',
+            },
+            valid.data.seatIndex
+          );
+          if (!res.ok) return;
+          room.headSoccerState = res.state;
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'HEADSOCCER_STATE_UPDATED',
+            payload: { headSoccerState: room.headSoccerState },
+          });
+          return;
+        }
+
+        if (type === 'HEADSOCCER_SELECT_SKIN') {
+          const valid = wsHeadSoccerSelectSkinSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.headSoccerState || !senderMeta?.userId) return;
+          room.headSoccerState = selectHeadSoccerSkin(
+            room.headSoccerState,
+            senderMeta.userId,
+            valid.data.skinId
+          );
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'HEADSOCCER_STATE_UPDATED',
+            payload: { headSoccerState: room.headSoccerState },
+          });
+          return;
+        }
+
+        if (type === 'HEADSOCCER_START_MATCH') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.headSoccerState || !senderMeta?.userId) return;
+          const isAllowed =
+            room.hostId === senderMeta.userId ||
+            room.creatorId === senderMeta.userId ||
+            room.headSoccerState.players[0]?.userId === senderMeta.userId;
+          if (!isAllowed) return;
+          const res = startHeadSoccerMatch(room.headSoccerState);
+          if (!res.ok) return;
+          room.headSoccerState = res.state;
+          headSoccerSeqByRoom.set(room.id, 0);
+          clearMatchResponses(room, 'headsoccer');
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'HEADSOCCER_STATE_UPDATED',
+            payload: { headSoccerState: room.headSoccerState },
+          });
+          return;
+        }
+
+        if (type === 'HEADSOCCER_INPUT') {
+          const valid = wsHeadSoccerInputSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.headSoccerState || !senderMeta?.userId) return;
+          if (room.headSoccerState.players[valid.data.side]?.userId !== senderMeta.userId) return;
+          const nextSeq = (headSoccerSeqByRoom.get(room.id) || 0) + 1;
+          headSoccerSeqByRoom.set(room.id, nextSeq);
+          broadcastToRoom(
+            room.id,
+            {
+              type: 'HEADSOCCER_INPUT_RELAY',
+              payload: {
+                side: valid.data.side,
+                input: valid.data.input,
+                seq: nextSeq,
+              },
+            },
+            ws
+          );
+          return;
+        }
+
+        if (type === 'HEADSOCCER_SYNC_STATE') {
+          const valid = wsHeadSoccerSyncStateSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.headSoccerState || !senderMeta?.userId) return;
+          const isAuthority =
+            room.headSoccerState.players[0]?.userId === senderMeta.userId ||
+            room.hostId === senderMeta.userId ||
+            room.creatorId === senderMeta.userId;
+          if (!isAuthority) return;
+
+          const nextSeq = (headSoccerSeqByRoom.get(room.id) || 0) + 1;
+          headSoccerSeqByRoom.set(room.id, nextSeq);
+          const sim = valid.data.sim;
+          const didFinish = sim.phase === 'finished';
+          room.headSoccerState = {
+            ...room.headSoccerState,
+            scores: sim.scores,
+            timeLeftSec: sim.timeLeftSec,
+            isGoldenGoal: sim.isGoldenGoal,
+            winnerSeat: sim.winnerSide,
+            status: didFinish ? 'finished' : 'playing',
+            updatedAt: Date.now(),
+          };
+          broadcastToRoom(
+            room.id,
+            {
+              type: 'HEADSOCCER_SYNC_BROADCAST',
+              payload: { seq: nextSeq, sim },
+            },
+            ws
+          );
+          if (didFinish) {
+            schedulePersistRoom(room.id);
+            broadcastToRoom(room.id, {
+              type: 'HEADSOCCER_STATE_UPDATED',
+              payload: { headSoccerState: room.headSoccerState },
+            });
+          }
+          return;
+        }
+
+        if (type === 'HEADSOCCER_REMATCH') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room || !room.headSoccerState) return;
+          const res = startHeadSoccerMatch(room.headSoccerState);
+          if (!res.ok) return;
+          room.headSoccerState = res.state;
+          headSoccerSeqByRoom.set(room.id, 0);
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'HEADSOCCER_STATE_UPDATED',
+            payload: { headSoccerState: room.headSoccerState },
+          });
+          return;
+        }
+
+        if (type === 'HEADSOCCER_CLOSE') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room) return;
+          room.headSoccerState = null;
+          clearMatchResponses(room, 'headsoccer');
+          schedulePersistRoom(room.id);
+          broadcastToRoom(room.id, {
+            type: 'HEADSOCCER_STATE_UPDATED',
+            payload: { headSoccerState: null },
+          });
+          return;
+        }
+
+        // Texas Hold'em Poker (No-Limit Multiplayer + Bots)
+        if (type === 'POKER_START') {
+          const valid = wsPokerStartSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room) return;
+          stopPokerBotTimer(room.id);
+          const starter = senderMeta?.userId
+            ? [
+                {
+                  id: senderMeta.userId,
+                  name: senderMeta.userName || 'Jugador',
+                  avatar: senderMeta.userAvatar || '🃏',
+                  color: senderMeta.userColor || '#9146FF',
+                },
+              ]
+            : [];
+          room.pokerGameState = createInitialPokerState(starter, {
+            fillWithBots: valid.data.botsEnabled ?? true,
+            autoStart: false,
+          });
+          schedulePersistRoom(room.id);
+          broadcastPokerState(room);
+          maybeBroadcastHostGameInvite(room, ws, senderMeta, 'poker');
+          return;
+        }
+
+        if (type === 'POKER_JOIN_SEAT') {
+          const valid = wsPokerJoinSeatSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pokerGameState || !senderMeta?.userId) return;
+          const res = joinPokerSeat(
+            room.pokerGameState,
+            {
+              id: senderMeta.userId,
+              name: senderMeta.userName || 'Jugador',
+              avatar: senderMeta.userAvatar || '🃏',
+              color: senderMeta.userColor || '#9146FF',
+            },
+            valid.data.seatIndex
+          );
+          if (!res.ok) return;
+          room.pokerGameState = res.state;
+          schedulePersistRoom(room.id);
+          broadcastPokerState(room);
+          return;
+        }
+
+        if (type === 'POKER_TOGGLE_BOTS') {
+          const valid = wsPokerToggleBotsSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pokerGameState || !senderMeta?.userId) return;
+          if (room.pokerGameState.status === 'playing') return;
+          const isAllowed =
+            room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId;
+          if (!isAllowed) return;
+
+          const humans = room.pokerGameState.seats
+            .filter((s): s is PokerSeat => Boolean(s && !s.isBot))
+            .map((s) => ({ id: s.userId, name: s.name, avatar: s.avatar, color: s.color }));
+          room.pokerGameState = createInitialPokerState(humans, {
+            fillWithBots: valid.data.botsEnabled,
+            autoStart: false,
+          });
+          schedulePersistRoom(room.id);
+          broadcastPokerState(room);
+          return;
+        }
+
+        if (type === 'POKER_START_MATCH') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room || !room.pokerGameState) return;
+          const res = startNextPokerHand(room.pokerGameState);
+          if (!res.ok) {
+            ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+            return;
+          }
+          room.pokerGameState = res.state;
+          clearMatchResponses(room, 'poker');
+          schedulePersistRoom(room.id);
+          broadcastPokerState(room);
+          schedulePokerBotTimer(room);
+          return;
+        }
+
+        if (type === 'POKER_ACTION') {
+          const valid = wsPokerActionSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pokerGameState || !senderMeta?.userId) return;
+          const res = applyPokerAction(
+            room.pokerGameState,
+            senderMeta.userId,
+            valid.data.action,
+            valid.data.raiseTo
+          );
+          if (!res.ok) {
+            ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+            return;
+          }
+          room.pokerGameState = res.state;
+          schedulePersistRoom(room.id);
+          broadcastPokerState(room);
+          schedulePokerBotTimer(room);
+          return;
+        }
+
+        if (type === 'POKER_REBUY') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.pokerGameState || !senderMeta?.userId) return;
+          if (room.pokerGameState.status === 'playing') return;
+          const nextSeats = room.pokerGameState.seats.map((s) =>
+            s && s.userId === senderMeta.userId && s.chips < 100
+              ? { ...s, chips: 1000 }
+              : s
+          );
+          room.pokerGameState = {
+            ...room.pokerGameState,
+            seats: nextSeats,
+            updatedAt: Date.now(),
+          };
+          schedulePersistRoom(room.id);
+          broadcastPokerState(room);
+          return;
+        }
+
+        if (type === 'POKER_CLOSE') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room) return;
+          stopPokerBotTimer(room.id);
+          room.pokerGameState = null;
+          clearMatchResponses(room, 'poker');
+          schedulePersistRoom(room.id);
+          broadcastPokerState(room);
+          return;
+        }
+
+        // Blackjack 21 (Casino vs Dealer + Multi-Seat)
+        if (type === 'BLACKJACK_START') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room) return;
+          const hostUser = senderMeta?.userId
+            ? {
+                id: senderMeta.userId,
+                name: senderMeta.userName || 'Jugador',
+                avatar: senderMeta.userAvatar || '🎰',
+                color: senderMeta.userColor || '#10B981',
+              }
+            : undefined;
+          room.blackjackState = createInitialBlackjackState(hostUser);
+          schedulePersistRoom(room.id);
+          broadcastBlackjackState(room);
+          maybeBroadcastHostGameInvite(room, ws, senderMeta, 'blackjack');
+          return;
+        }
+
+        if (type === 'BLACKJACK_JOIN_SEAT') {
+          const valid = wsBlackjackJoinSeatSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.blackjackState || !senderMeta?.userId) return;
+          const res = joinBlackjackSeat(
+            room.blackjackState,
+            {
+              id: senderMeta.userId,
+              name: senderMeta.userName || 'Jugador',
+              avatar: senderMeta.userAvatar || '🎰',
+              color: senderMeta.userColor || '#10B981',
+            },
+            valid.data.seatIndex
+          );
+          if (!res.ok) return;
+          room.blackjackState = res.state;
+          schedulePersistRoom(room.id);
+          broadcastBlackjackState(room);
+          return;
+        }
+
+        if (type === 'BLACKJACK_BET') {
+          const valid = wsBlackjackBetSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.blackjackState || !senderMeta?.userId) return;
+          const res = placeBlackjackBet(room.blackjackState, senderMeta.userId, valid.data.op);
+          if (!res.ok) return;
+          room.blackjackState = res.state;
+          schedulePersistRoom(room.id);
+          broadcastBlackjackState(room);
+          return;
+        }
+
+        if (type === 'BLACKJACK_DEAL') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room || !room.blackjackState) return;
+          const res = dealBlackjackRound(room.blackjackState);
+          if (!res.ok) {
+            ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+            return;
+          }
+          room.blackjackState = res.state;
+          clearMatchResponses(room, 'blackjack');
+          schedulePersistRoom(room.id);
+          broadcastBlackjackState(room);
+          return;
+        }
+
+        if (type === 'BLACKJACK_ACTION') {
+          const valid = wsBlackjackActionSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !room.blackjackState || !senderMeta?.userId) return;
+          const res = applyBlackjackAction(
+            room.blackjackState,
+            senderMeta.userId,
+            valid.data.action
+          );
+          if (!res.ok) {
+            ws.send(JSON.stringify({ type: 'GAME_MOVE_REJECTED', payload: { error: res.error } }));
+            return;
+          }
+          room.blackjackState = res.state;
+          schedulePersistRoom(room.id);
+          broadcastBlackjackState(room);
+          return;
+        }
+
+        if (type === 'BLACKJACK_NEW_ROUND') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room || !room.blackjackState) return;
+          room.blackjackState = prepareNewBlackjackBettingRound(room.blackjackState);
+          schedulePersistRoom(room.id);
+          broadcastBlackjackState(room);
+          return;
+        }
+
+        if (type === 'BLACKJACK_CLOSE') {
+          const valid = wsHeadSoccerRoomSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          if (!room) return;
+          room.blackjackState = null;
+          clearMatchResponses(room, 'blackjack');
+          schedulePersistRoom(room.id);
+          broadcastBlackjackState(room);
+          return;
+        }
+
+        // Seamless In-Game Switcher preserving seated human players
+        if (type === 'GAME_SWITCH') {
+          const valid = wsGameSwitchSchema.safeParse(payload);
+          if (!valid.success) return;
+          const room = rooms.get(valid.data.roomId.toLowerCase());
+          const senderMeta = clients.get(ws);
+          if (!room || !senderMeta?.userId) return;
+
+          const fallbackActor = {
+            id: senderMeta.userId,
+            name: senderMeta.userName || 'Jugador',
+            avatar: senderMeta.userAvatar || '🎮',
+            color: senderMeta.userColor || '#9146FF',
+          };
+
+          const preservedHumans = collectSeatedHumansFromRoom(room, fallbackActor);
+          const seatedUserIds = preservedHumans.map((h) => h.id);
+          const isHostOrCreator =
+            room.hostId === senderMeta.userId || room.creatorId === senderMeta.userId;
+          const isSeatedPlayer = seatedUserIds.includes(senderMeta.userId);
+          if (!isHostOrCreator && !isSeatedPlayer) return;
+
+          // Cancel any running timers from the outgoing game
+          const existingBoardTimer = boardTurnTimers.get(room.id);
+          if (existingBoardTimer) {
+            clearTimeout(existingBoardTimer);
+            boardTurnTimers.delete(room.id);
+          }
+          const existingPartyTimer = partyBotTimers.get(room.id);
+          if (existingPartyTimer) {
+            clearTimeout(existingPartyTimer);
+            partyBotTimers.delete(room.id);
+          }
+          stopPinturilloTimer(room.id);
+          stopPoolTurnTimer(room.id);
+          stopChapasTimer(room.id);
+          stopPokerBotTimer(room.id);
+          headSoccerSeqByRoom.delete(room.id);
+          clearMatchResponses(room);
+
+          const nextStates = buildSwitchedRoomGameStates(valid.data.targetGame, preservedHumans);
+          room.gameState = nextStates.gameState;
+          room.partyGameState = nextStates.partyGameState;
+          room.pinturilloState = nextStates.pinturilloState;
+          room.poolGameState = nextStates.poolGameState;
+          room.chapasState = nextStates.chapasState;
+          room.headSoccerState = nextStates.headSoccerState;
+          room.pokerGameState = nextStates.pokerGameState;
+          room.blackjackState = nextStates.blackjackState;
+
+          const gameTitleMap: Record<RoomGameInviteType, string> = {
+            pool: 'Billar Bola 8',
+            chapas: 'Fútbol Chapas',
+            headsoccer: 'Fútbol Cabezones',
+            poker: 'Póker Hold’em',
+            blackjack: 'Blackjack 21',
+            parchis: 'Parchís',
+            uno: 'UNO',
+            pinturillo: 'Pinturillo',
+            chess: 'Ajedrez',
+            checkers: 'Damas',
+            connect4: 'Conecta 4',
+          };
+
+          const sysMsg: RoomChatMessageRecord = {
+            id: `game-switch-${Date.now()}`,
+            senderId: 'system',
+            senderName: 'RiffanTV',
+            senderAvatar: '🎮',
+            senderColor: '#9146FF',
+            text: `${senderMeta.userName || 'Un jugador'} cambió el juego a ${gameTitleMap[valid.data.targetGame]} (${preservedHumans.length} ${preservedHumans.length === 1 ? 'jugador' : 'jugadores'}).`,
+            timestamp: Date.now(),
+            isSystem: true,
+          };
+          room.messages.push(sysMsg);
+          if (room.messages.length > 150) room.messages = room.messages.slice(-150);
+          schedulePersistRoom(room.id);
+
+          clients.forEach((meta, clientWs) => {
+            if (meta.roomId === room.id && clientWs.readyState === WebSocket.OPEN) {
+              const viewerId = meta.userId || '';
+              clientWs.send(
+                JSON.stringify({
+                  type: 'GAME_SWITCHED',
+                  payload: {
+                    targetGame: valid.data.targetGame,
+                    switchedByUserId: senderMeta.userId,
+                    switchedByName: senderMeta.userName || 'Jugador',
+                    seatedUserIds,
+                    roomState: {
+                      gameState: room.gameState,
+                      partyGameState: room.partyGameState,
+                      pinturilloState: redactPinturilloForUser(room.pinturilloState ?? null, viewerId),
+                      poolGameState: room.poolGameState,
+                      chapasState: room.chapasState,
+                      headSoccerState: room.headSoccerState,
+                      pokerGameState: redactPokerStateForUser(room.pokerGameState ?? null, viewerId),
+                      blackjackState: redactBlackjackState(room.blackjackState ?? null),
+                      matchResponses: room.matchResponses ?? null,
+                    },
+                    message: sysMsg,
+                  },
+                })
+              );
+            }
+          });
+
+          if (room.gameState?.status === 'playing') scheduleBoardTurnTimer(room);
+          if (room.partyGameState?.status === 'playing') schedulePartyBotTurnIfNeeded(room);
+          if (room.pinturilloState && room.pinturilloState.status !== 'waiting') {
+            schedulePinturilloLifecycle(room);
+          }
+          if (room.poolGameState?.status === 'playing') schedulePoolTurnTimer(room);
+          if (room.chapasState?.status === 'playing') scheduleChapasTurnTimer(room);
+          if (room.pokerGameState?.status === 'playing') schedulePokerBotTimer(room);
+          return;
+        }
+
+        // Unified Invite Response (Accepted / Declined) & Auto-Ready Handling Across All Games
         if (type === 'GAME_INVITE_RESPOND') {
           const valid = wsGameInviteRespondSchema.safeParse(payload);
           if (!valid.success) return;
@@ -3963,6 +4672,57 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
                   type: 'CHAPAS_STATE_UPDATED',
                   payload: { chapasState: room.chapasState },
                 });
+              }
+            } else if (
+              valid.data.gameType === 'headsoccer' &&
+              room.headSoccerState?.status === 'waiting'
+            ) {
+              const joined = joinHeadSoccerSeat(
+                room.headSoccerState,
+                {
+                  id: senderMeta.userId,
+                  name: senderMeta.userName || 'Jugador',
+                  avatar: senderMeta.userAvatar || '⚽',
+                  color: senderMeta.userColor || '#38BDF8',
+                },
+                1
+              );
+              if (joined.ok) {
+                room.headSoccerState = joined.state;
+                broadcastToRoom(room.id, {
+                  type: 'HEADSOCCER_STATE_UPDATED',
+                  payload: { headSoccerState: room.headSoccerState },
+                });
+              }
+            } else if (
+              valid.data.gameType === 'poker' &&
+              room.pokerGameState &&
+              room.pokerGameState.status !== 'playing'
+            ) {
+              const joined = joinPokerSeat(room.pokerGameState, {
+                id: senderMeta.userId,
+                name: senderMeta.userName || 'Jugador',
+                avatar: senderMeta.userAvatar || '🃏',
+                color: senderMeta.userColor || '#9146FF',
+              });
+              if (joined.ok) {
+                room.pokerGameState = joined.state;
+                broadcastPokerState(room);
+              }
+            } else if (
+              valid.data.gameType === 'blackjack' &&
+              room.blackjackState &&
+              room.blackjackState.phase === 'betting'
+            ) {
+              const joined = joinBlackjackSeat(room.blackjackState, {
+                id: senderMeta.userId,
+                name: senderMeta.userName || 'Jugador',
+                avatar: senderMeta.userAvatar || '🎰',
+                color: senderMeta.userColor || '#10B981',
+              });
+              if (joined.ok) {
+                room.blackjackState = joined.state;
+                broadcastBlackjackState(room);
               }
             }
           }
@@ -4252,6 +5012,7 @@ export function createRoomHub(app: express.Express, wss: WebSocketServer) {
         stopPinturilloTimer(meta.roomId);
         stopPoolTurnTimer(meta.roomId);
         stopChapasTimer(meta.roomId);
+        stopPokerBotTimer(meta.roomId);
         await stopCloudSession(meta.roomId);
         return;
       }

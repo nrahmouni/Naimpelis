@@ -465,8 +465,8 @@ interface MediaCatalogHubProps {
   gameMoveError?: string | null;
   isHost?: boolean;
   voiceChat?: GameVoiceChatState;
-  requestedGameOpen?: { gameType: 'pool' | 'chapas' | 'parchis' | 'uno' | 'pinturillo' | 'chess' | 'checkers' | 'connect4'; seq: number } | null;
-  onSelectedGameChange?: (game: 'pool' | 'chapas' | 'parchis' | 'uno' | 'pinturillo' | 'chess' | 'checkers' | 'connect4' | null) => void;
+  requestedGameOpen?: { gameType: 'pool' | 'chapas' | 'headsoccer' | 'poker' | 'blackjack' | 'parchis' | 'uno' | 'pinturillo' | 'chess' | 'checkers' | 'connect4'; seq: number } | null;
+  onSelectedGameChange?: (game: 'pool' | 'chapas' | 'headsoccer' | 'poker' | 'blackjack' | 'parchis' | 'uno' | 'pinturillo' | 'chess' | 'checkers' | 'connect4' | null) => void;
   onStartRoomBoardGame?: (
     gt: BoardGameType,
     soloLocal?: boolean,

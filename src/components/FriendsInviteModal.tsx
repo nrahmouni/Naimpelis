@@ -30,6 +30,8 @@ import { pickLang } from '../utils/i18n';
 import {
   buildLocalizedInviteMessage,
   buildWhatsAppShareUrl,
+  copyTextSafely,
+  shareOrCopyInvite,
 } from '../utils/inviteShare';
 import { BottomSheet, PrimaryButton, SecondaryButton } from './ui/DesignSystem';
 
@@ -111,6 +113,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
   const [manualCodeInput, setManualCodeInput] = useState('');
   const [copiedMyCode, setCopiedMyCode] = useState(false);
   const [copiedRoomLink, setCopiedRoomLink] = useState(false);
+  const [copiedRoomId, setCopiedRoomId] = useState(false);
   const [invitedIds, setInvitedIds] = useState<Record<string, boolean>>({});
 
   const myFriendCode = deriveFriendCode(currentUser.id);
@@ -184,12 +187,28 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
 
   const handleCopyMyCode = async () => {
     triggerHaptic('success');
-    try {
-      await navigator.clipboard.writeText(`#${myFriendCode}`);
+    const ok = await copyTextSafely(`#${myFriendCode}`);
+    if (ok) {
       setCopiedMyCode(true);
       setTimeout(() => setCopiedMyCode(false), 2000);
-    } catch {
-      // ignore
+    }
+  };
+
+  const handleCopyRoomCode = async () => {
+    triggerHaptic('success');
+    const ok = await copyTextSafely(roomId);
+    if (ok) {
+      setCopiedRoomId(true);
+      setTimeout(() => setCopiedRoomId(false), 2000);
+    }
+  };
+
+  const handleCopyInviteLinkOnly = async () => {
+    triggerHaptic('success');
+    const ok = await copyTextSafely(`${localizedInviteText}\n${inviteUrl}`);
+    if (ok) {
+      setCopiedRoomLink(true);
+      setTimeout(() => setCopiedRoomLink(false), 2200);
     }
   };
 
@@ -220,24 +239,14 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
 
   const handleShareOrCopyLink = async () => {
     triggerHaptic('success');
-    if (typeof navigator !== 'undefined' && navigator.share) {
-      try {
-        await navigator.share({
-          title: activeMediaTitle ? `${activeMediaTitle} — RiffanTV` : `${roomName} — RiffanTV`,
-          text: localizedInviteText,
-          url: inviteUrl,
-        });
-        return;
-      } catch {
-        // fallback to clipboard
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(`${localizedInviteText}\n${inviteUrl}`);
+    const res = await shareOrCopyInvite({
+      title: activeMediaTitle ? `${activeMediaTitle} — RiffanTV` : `${roomName} — RiffanTV`,
+      text: localizedInviteText,
+      url: inviteUrl,
+    });
+    if (res === 'copied') {
       setCopiedRoomLink(true);
       setTimeout(() => setCopiedRoomLink(false), 2200);
-    } catch {
-      // ignore
     }
   };
 
@@ -320,7 +329,77 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
           </div>
         )}
 
-        {/* 1. My code + Copy at top */}
+        {/* 0. Quick Room Link + Copy + WhatsApp Invite Bar right at the top */}
+        <div className="p-3.5 rounded-2xl bg-[#9146FF]/10 border border-[#9146FF]/30 space-y-2.5">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#D8B4FE] block">
+                {pickLang(lang, {
+                  es: 'Invitar con enlace de sala',
+                  ca: 'Convidar amb enllaç de sala',
+                  en: 'Invite via room link',
+                })}
+              </span>
+              <span className="text-xs font-mono text-zinc-300 truncate block">
+                {roomName} · #{roomId}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={handleCopyRoomCode}
+              className="min-h-8 px-2.5 rounded-xl bg-black/40 hover:bg-black/60 border border-white/10 text-[11px] font-mono font-bold text-white flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
+            >
+              {copiedRoomId ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{pickLang(lang, { es: 'Copiado', ca: 'Copiat', en: 'Copied' })}</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5 text-[#BF94FF]" />
+                  <span>{roomId}</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={handleCopyInviteLinkOnly}
+              className={`min-h-11 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all border ${
+                copiedRoomLink
+                  ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
+                  : 'bg-[#9146FF] hover:bg-[#7C2AE8] border-[#9146FF] text-white'
+              }`}
+            >
+              {copiedRoomLink ? (
+                <>
+                  <Check className="w-4 h-4 shrink-0" />
+                  <span>{pickLang(lang, { es: 'Enlace copiado', ca: 'Enllaç copiat', en: 'Link copied' })}</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-4 h-4 shrink-0" />
+                  <span>{pickLang(lang, { es: 'Copiar enlace', ca: 'Copiar enllaç', en: 'Copy link' })}</span>
+                </>
+              )}
+            </button>
+
+            <a
+              href={whatsAppShareHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={() => triggerHaptic('light')}
+              className="min-h-11 px-3 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
+            >
+              <span>WhatsApp</span>
+              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+            </a>
+          </div>
+        </div>
+
+        {/* 1. My code + Copy */}
         <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-3">
           <div className="min-w-0">
             <span className="text-xs text-zinc-400 block">

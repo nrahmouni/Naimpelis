@@ -100,3 +100,64 @@ export function buildWhatsAppShareUrl(params: RoomShareMessageParams): string {
   const fullText = `${message}\n${params.inviteUrl}`;
   return `https://wa.me/?text=${encodeURIComponent(fullText)}`;
 }
+
+/**
+ * Reliable clipboard copy helper that works even inside iframes or WebViews
+ * where navigator.clipboard.writeText may be blocked by Permissions-Policy.
+ */
+export async function copyTextSafely(text: string): Promise<boolean> {
+  if (!text) return false;
+  if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // Fallback below
+    }
+  }
+  if (typeof document === 'undefined') return false;
+  try {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-9999px';
+    ta.style.left = '-9999px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    ta.setSelectionRange(0, text.length);
+    const copied = document.execCommand('copy');
+    document.body.removeChild(ta);
+    return copied;
+  } catch {
+    return false;
+  }
+}
+
+export async function shareOrCopyInvite(params: {
+  title: string;
+  text: string;
+  url: string;
+}): Promise<'shared' | 'copied' | 'failed'> {
+  const { title, text, url } = params;
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    try {
+      await navigator.share({ title, text, url });
+      return 'shared';
+    } catch (err: unknown) {
+      const name =
+        err && typeof err === 'object' && 'name' in err
+          ? String((err as { name?: string }).name)
+          : '';
+      // If user explicitly dismissed the native share sheet, don't overwrite clipboard unexpectedly,
+      // unless share itself isn't permitted (NotAllowedError / TypeError).
+      if (name === 'AbortError') {
+        return 'shared';
+      }
+    }
+  }
+  const copied = await copyTextSafely(`${text}\n${url}`);
+  return copied ? 'copied' : 'failed';
+}

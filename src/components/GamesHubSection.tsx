@@ -4,6 +4,7 @@ import {
   ArrowLeft,
   Bot,
   Check,
+  ChevronDown,
   ChevronRight,
   Crown,
   Dices,
@@ -16,10 +17,13 @@ import {
   PhoneOff,
   Play,
   Share2,
+  Shuffle,
   Users,
+  X,
 } from 'lucide-react';
 import type {
   AppLanguage,
+  BlackjackGameState,
   BoardClockMinutes,
   BoardCoord,
   BoardGameState,
@@ -30,9 +34,15 @@ import type {
   ChapasTeamId,
   ChessPromotionPiece,
   FutbolChapasState,
+  HeadSoccerInput,
+  HeadSoccerOnlineState,
+  HeadSoccerSimulation,
+  HeadSoccerSkinId,
   Participant,
   PinturilloGameState,
   PinturilloStroke,
+  PokerActionType,
+  PokerGameState,
   Pool8BallState,
   PoolDifficulty,
   PoolPocketId,
@@ -60,6 +70,9 @@ import { PartyGamesStage, type PartyOnlineAction } from './PartyGamesStage';
 import { PinturilloStage } from './PinturilloStage';
 import { Pool8BallStage } from './Pool8BallStage';
 import { FutbolChapasStage } from './FutbolChapasStage';
+import { HeadSoccerStage } from './HeadSoccerStage';
+import { PokerHoldemStage } from './PokerHoldemStage';
+import { BlackjackStage } from './BlackjackStage';
 import {
   GameFloatingReactionToast,
   GameMuteButton,
@@ -78,6 +91,9 @@ type UnifiedGameId =
   | 'pinturillo'
   | 'pool'
   | 'chapas'
+  | 'headsoccer'
+  | 'poker'
+  | 'blackjack'
   | 'chess'
   | 'checkers'
   | 'connect4';
@@ -92,12 +108,18 @@ interface GamesHubSectionProps {
   roomPinturilloGame?: PinturilloGameState | null;
   roomPoolGame?: Pool8BallState | null;
   roomChapasGame?: FutbolChapasState | null;
+  roomHeadSoccerGame?: HeadSoccerOnlineState | null;
+  headSoccerSyncSnapshot?: { seq: number; sim: HeadSoccerSimulation } | null;
+  headSoccerPeerInput?: { side: 0 | 1; input: HeadSoccerInput; seq: number } | null;
+  roomPokerGame?: PokerGameState | null;
+  roomBlackjackGame?: BlackjackGameState | null;
   matchResponses?: RoomMatchResponsesState | null;
   gameMoveError?: string | null;
   isHost?: boolean;
   voiceChat?: GameVoiceChatState;
   requestedGameOpen?: { gameType: UnifiedGameId; seq: number } | null;
   onSelectedGameChange?: (game: UnifiedGameId | null) => void;
+  onSwitchRoomGame?: (game: UnifiedGameId) => void;
   onStartRoomBoardGame?: (gt: BoardGameType, soloLocal?: boolean, clockMinutes?: BoardClockMinutes) => void;
   onJoinBoardSeat?: (side: 'w' | 'b' | 'spectate') => void;
   onStartBoardMatch?: () => void;
@@ -139,6 +161,28 @@ interface GamesHubSectionProps {
   onChapasForfeit?: () => void;
   onChapasRematch?: () => void;
   onCloseRoomChapas?: () => void;
+  onStartRoomHeadSoccer?: () => void;
+  onHeadSoccerJoinSeat?: (seatIndex: 0 | 1 | 'spectate') => void;
+  onHeadSoccerSelectSkin?: (skinId: HeadSoccerSkinId) => void;
+  onHeadSoccerStartMatch?: () => void;
+  onHeadSoccerInput?: (side: 0 | 1, input: HeadSoccerInput) => void;
+  onHeadSoccerSyncState?: (sim: HeadSoccerSimulation) => void;
+  onHeadSoccerRematch?: () => void;
+  onCloseRoomHeadSoccer?: () => void;
+  onStartRoomPoker?: (botsEnabled?: boolean) => void;
+  onPokerJoinSeat?: (seatIndex?: number | 'spectate') => void;
+  onPokerToggleBots?: (botsEnabled: boolean) => void;
+  onPokerStartMatch?: () => void;
+  onPokerAction?: (action: PokerActionType, raiseTo?: number) => void;
+  onPokerRebuy?: () => void;
+  onCloseRoomPoker?: () => void;
+  onStartRoomBlackjack?: () => void;
+  onBlackjackJoinSeat?: (seatIndex?: number | 'spectate') => void;
+  onBlackjackBet?: (op: { kind: 'add'; amount: number } | { kind: 'clear' } | { kind: 'rebet' } | { kind: 'rebuy' }) => void;
+  onBlackjackDeal?: () => void;
+  onBlackjackAction?: (action: 'hit' | 'stand' | 'double' | 'split') => void;
+  onBlackjackNewRound?: () => void;
+  onCloseRoomBlackjack?: () => void;
 }
 
 const PARTY_COLOR_HEX: Record<PartyColor, { hex: string; short: string }> = {
@@ -166,12 +210,18 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   roomPinturilloGame = null,
   roomPoolGame = null,
   roomChapasGame = null,
+  roomHeadSoccerGame = null,
+  headSoccerSyncSnapshot = null,
+  headSoccerPeerInput = null,
+  roomPokerGame = null,
+  roomBlackjackGame = null,
   matchResponses = null,
   gameMoveError = null,
   isHost = false,
   voiceChat,
   requestedGameOpen = null,
   onSelectedGameChange,
+  onSwitchRoomGame,
   onStartRoomBoardGame,
   onJoinBoardSeat,
   onStartBoardMatch,
@@ -210,8 +260,31 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   onChapasForfeit,
   onChapasRematch,
   onCloseRoomChapas,
+  onStartRoomHeadSoccer,
+  onHeadSoccerJoinSeat,
+  onHeadSoccerSelectSkin,
+  onHeadSoccerStartMatch,
+  onHeadSoccerInput,
+  onHeadSoccerSyncState,
+  onHeadSoccerRematch,
+  onCloseRoomHeadSoccer,
+  onStartRoomPoker,
+  onPokerJoinSeat,
+  onPokerToggleBots,
+  onPokerStartMatch,
+  onPokerAction,
+  onPokerRebuy,
+  onCloseRoomPoker,
+  onStartRoomBlackjack,
+  onBlackjackJoinSeat,
+  onBlackjackBet,
+  onBlackjackDeal,
+  onBlackjackAction,
+  onBlackjackNewRound,
+  onCloseRoomBlackjack,
 }) => {
   const [selectedGame, setSelectedGame] = useState<UnifiedGameId | null>(null);
+  const [showGameSwitcher, setShowGameSwitcher] = useState(false);
   const [hubMode, setHubMode] = useState<'offline' | 'online'>('online');
   const [activeCategory, setActiveCategory] = useState<'all' | 'arcade' | 'party' | 'board'>('all');
   const [localBoardGame, setLocalBoardGame] = useState<BoardGameState | null>(null);
@@ -266,11 +339,31 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
     setSelectedGame(requestedGameOpen.gameType);
   }, [requestedGameOpen]);
 
-  // Exit non-host guest cleanly if the currently viewed online game closes or switches to another game
+  // Close switcher dropdown when game changes or Escape is pressed
+  useEffect(() => {
+    setShowGameSwitcher(false);
+  }, [selectedGame]);
+
+  useEffect(() => {
+    if (!showGameSwitcher || typeof window === 'undefined') return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setShowGameSwitcher(false);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showGameSwitcher]);
+
+  // Keep players synchronized seamlessly when room switches games or closes
   const prevRoomGameKeyRef = React.useRef<UnifiedGameId | null>(null);
   useEffect(() => {
     const incomingType: UnifiedGameId | null = roomChapasGame
       ? 'chapas'
+      : roomHeadSoccerGame
+      ? 'headsoccer'
+      : roomPokerGame
+      ? 'poker'
+      : roomBlackjackGame
+      ? 'blackjack'
       : roomPoolGame
       ? 'pool'
       : roomPinturilloGame
@@ -282,14 +375,20 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       : null;
 
     const prevType = prevRoomGameKeyRef.current;
-    if (!isHost && hubMode === 'online' && selectedGame) {
-      if ((prevType && !incomingType) || (incomingType && incomingType !== selectedGame)) {
+    if (hubMode === 'online' && selectedGame && incomingType !== prevType) {
+      if (incomingType && incomingType !== selectedGame) {
+        setLocalMoveErr(null);
+        setSelectedGame(incomingType);
+      } else if (!isHost && prevType && !incomingType) {
         setSelectedGame(null);
       }
     }
     prevRoomGameKeyRef.current = incomingType;
   }, [
     roomChapasGame,
+    roomHeadSoccerGame,
+    roomPokerGame,
+    roomBlackjackGame,
     roomPoolGame,
     roomPinturilloGame,
     roomPartyGame,
@@ -386,6 +485,18 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       if (!roomChapasGame) {
         onStartRoomChapas?.();
       }
+    } else if (gt === 'headsoccer') {
+      if (!roomHeadSoccerGame) {
+        onStartRoomHeadSoccer?.();
+      }
+    } else if (gt === 'poker') {
+      if (!roomPokerGame) {
+        onStartRoomPoker?.(true);
+      }
+    } else if (gt === 'blackjack') {
+      if (!roomBlackjackGame) {
+        onStartRoomBlackjack?.();
+      }
     } else if (gt === 'pinturillo') {
       if (!roomPinturilloGame) {
         onStartRoomPinturillo?.();
@@ -414,6 +525,18 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       } else if (selectedGame === 'chapas') {
         if (isHost && roomChapasGame) {
           onCloseRoomChapas?.();
+        }
+      } else if (selectedGame === 'headsoccer') {
+        if (isHost && roomHeadSoccerGame) {
+          onCloseRoomHeadSoccer?.();
+        }
+      } else if (selectedGame === 'poker') {
+        if (isHost && roomPokerGame) {
+          onCloseRoomPoker?.();
+        }
+      } else if (selectedGame === 'blackjack') {
+        if (isHost && roomBlackjackGame) {
+          onCloseRoomBlackjack?.();
         }
       } else if (selectedGame === 'pinturillo') {
         if (isHost && roomPinturilloGame) {
@@ -449,6 +572,18 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       if (selectedGame === 'chapas') {
         if (!roomChapasGame) {
           onStartRoomChapas?.();
+        }
+      } else if (selectedGame === 'headsoccer') {
+        if (!roomHeadSoccerGame) {
+          onStartRoomHeadSoccer?.();
+        }
+      } else if (selectedGame === 'poker') {
+        if (!roomPokerGame) {
+          onStartRoomPoker?.(true);
+        }
+      } else if (selectedGame === 'blackjack') {
+        if (!roomBlackjackGame) {
+          onStartRoomBlackjack?.();
         }
       } else if (selectedGame === 'pinturillo') {
         if (!roomPinturilloGame) {
@@ -487,8 +622,11 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
     const isPinturillo = selectedGame === 'pinturillo';
     const isPool = selectedGame === 'pool';
     const isChapas = selectedGame === 'chapas';
+    const isHeadSoccer = selectedGame === 'headsoccer';
+    const isPoker = selectedGame === 'poker';
+    const isBlackjack = selectedGame === 'blackjack';
     const activeBoardState =
-      !isParty && !isPinturillo && !isPool && !isChapas
+      !isParty && !isPinturillo && !isPool && !isChapas && !isHeadSoccer && !isPoker && !isBlackjack
         ? hubMode === 'offline'
           ? localBoardGame
           : roomBoardGame?.gameType === selectedGame
@@ -502,6 +640,9 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       pinturillo: '🎨 Pinturillo',
       pool: pickLang(lang, { es: '🎱 Billar Bola 8', ca: '🎱 Billar Bola 8', en: '🎱 8-Ball Pool' }),
       chapas: pickLang(lang, { es: '⚽ Fútbol Chapas', ca: '⚽ Futbol Xapes', en: '⚽ Soccer Caps' }),
+      headsoccer: pickLang(lang, { es: '🥅 Fútbol Cabezones', ca: '🥅 Futbol Capgrossos', en: '🥅 Head Soccer' }),
+      poker: pickLang(lang, { es: '♠️ Póker Hold’em', ca: '♠️ Pòquer Hold’em', en: '♠️ Texas Hold’em' }),
+      blackjack: '🃏 Blackjack 21',
       chess: pickLang(lang, { es: '♟️ Ajedrez', ca: '♟️ Escacs', en: '♟️ Chess' }),
       checkers: pickLang(lang, { es: '🔴 Damas', ca: '🔴 Dames', en: '🔴 Checkers' }),
       connect4: pickLang(lang, { es: '🟡 Conecta 4', ca: '🟡 Connecta 4', en: '🟡 Connect 4' }),
@@ -634,10 +775,97 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       pinturillo: { color: '#EC4899', label: 'Pinturillo' },
       pool: { color: '#10B981', label: 'Billar' },
       chapas: { color: '#84CC16', label: 'Fútbol Chapas' },
+      headsoccer: { color: '#38BDF8', label: 'Cabezones' },
+      poker: { color: '#A855F7', label: 'Póker' },
+      blackjack: { color: '#10B981', label: 'Blackjack' },
       chess: { color: '#9146FF', label: 'Ajedrez' },
       checkers: { color: '#F43F5E', label: 'Damas' },
       connect4: { color: '#3B82F6', label: 'Conecta 4' },
     };
+
+    const switcherOptions: Array<{
+      id: UnifiedGameId;
+      label: string;
+      subtitle: string;
+      color: string;
+    }> = [
+      { id: 'headsoccer', label: titleMap.headsoccer, subtitle: '1v1 · 60s', color: GAME_SIGNATURES.headsoccer.color },
+      { id: 'pool', label: titleMap.pool, subtitle: '1v1 · Bola 8', color: GAME_SIGNATURES.pool.color },
+      { id: 'chapas', label: titleMap.chapas, subtitle: '1v1 / 2v2', color: GAME_SIGNATURES.chapas.color },
+      { id: 'poker', label: titleMap.poker, subtitle: '2–6 jug.', color: GAME_SIGNATURES.poker.color },
+      { id: 'blackjack', label: titleMap.blackjack, subtitle: '21 Casino', color: GAME_SIGNATURES.blackjack.color },
+      { id: 'uno', label: titleMap.uno, subtitle: '2–4 jug.', color: GAME_SIGNATURES.uno.color },
+      { id: 'parchis', label: titleMap.parchis, subtitle: '2–4 jug.', color: GAME_SIGNATURES.parchis.color },
+      { id: 'pinturillo', label: titleMap.pinturillo, subtitle: 'Dibuja', color: GAME_SIGNATURES.pinturillo.color },
+      { id: 'chess', label: titleMap.chess, subtitle: '1v1 Tablero', color: GAME_SIGNATURES.chess.color },
+      { id: 'checkers', label: titleMap.checkers, subtitle: '1v1 Tablero', color: GAME_SIGNATURES.checkers.color },
+      { id: 'connect4', label: titleMap.connect4, subtitle: '1v1 Tablero', color: GAME_SIGNATURES.connect4.color },
+    ];
+
+    const getActiveSeatedPlayers = (): Array<{ id: string; name: string; avatar: string }> => {
+      if (hubMode === 'offline') {
+        return [
+          { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar || '🎮' },
+          { id: 'bot-ia', name: 'Bot IA', avatar: '🤖' },
+        ];
+      }
+      const list: Array<{ id: string; name: string; avatar: string }> = [];
+      const seen = new Set<string>();
+      const push = (id?: string | null, name?: string, avatar?: string, isBot?: boolean) => {
+        if (!id || isBot || id.startsWith('bot-') || seen.has(id)) return;
+        seen.add(id);
+        list.push({ id, name: name || 'Jugador', avatar: avatar || '🎮' });
+      };
+      if (selectedGame === 'pool' && roomPoolGame) {
+        roomPoolGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
+      } else if (selectedGame === 'chapas' && roomChapasGame) {
+        roomChapasGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
+      } else if (selectedGame === 'headsoccer' && roomHeadSoccerGame) {
+        roomHeadSoccerGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
+      } else if (selectedGame === 'poker' && roomPokerGame) {
+        roomPokerGame.seats.forEach((s) => s && push(s.userId, s.name, s.avatar, s.isBot));
+      } else if (selectedGame === 'blackjack' && roomBlackjackGame) {
+        roomBlackjackGame.seats.forEach((s) => s && push(s.userId, s.name, s.avatar, false));
+      } else if (selectedGame === 'pinturillo' && roomPinturilloGame) {
+        roomPinturilloGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
+      } else if (isParty && roomPartyGame) {
+        roomPartyGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
+      } else if (activeBoardState) {
+        [activeBoardState.players.w, activeBoardState.players.b].forEach(
+          (p) => p && push(p.userId, p.name, p.avatar, p.isBot)
+        );
+      }
+      if (list.length === 0) {
+        push(currentUser.id, currentUser.name, currentUser.avatar, false);
+      }
+      return list;
+    };
+
+    const handleSwitchGameInPlace = (targetId: UnifiedGameId) => {
+      triggerHaptic('medium');
+      setShowGameSwitcher(false);
+      if (targetId === selectedGame) return;
+      setLocalMoveErr(null);
+
+      if (hubMode === 'offline') {
+        setSelectedGame(targetId);
+        if (isBoardGameId(targetId)) {
+          setLocalBoardGame(makeOfflineBoardState(targetId, 'w'));
+        } else {
+          setLocalBoardGame(null);
+        }
+        return;
+      }
+
+      setSelectedGame(targetId);
+      if (onSwitchRoomGame) {
+        onSwitchRoomGame(targetId);
+      } else {
+        openGameCard(targetId);
+      }
+    };
+
+    const activeSeatedPlayers = showGameSwitcher ? getActiveSeatedPlayers() : [];
 
     return (
       <div
@@ -645,7 +873,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         className="fixed inset-0 z-[185] h-[100dvh] w-full max-w-[100vw] bg-[#070B14] nc-tabletop-slate overflow-hidden flex flex-col pt-safe pb-safe"
       >
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-1.5 sm:p-3 max-w-5xl w-full mx-auto gap-1.5">
-          {/* Unified Ultra-Clean Glassmorphism Bar: ← Juegos | Title with Glow | Online/IA Pill | Mute | Voz */}
+          {/* Unified Ultra-Clean Glassmorphism Bar: ← Juegos | Switcher Title | Online/IA Pill | Mute | Voz */}
           <div
             className="flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-2xl nc-arcade-glass border border-white/[0.12] shrink-0 min-w-0"
             style={{
@@ -664,17 +892,41 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
               </span>
             </button>
 
-            <div className="flex items-center gap-2 min-w-0 flex-1 px-1">
-              <span
-                className="w-2.5 h-2.5 rounded-full shrink-0 animate-pulse"
-                style={{
-                  backgroundColor: GAME_SIGNATURES[selectedGame].color,
-                  boxShadow: `0 0 10px ${GAME_SIGNATURES[selectedGame].color}`,
+            <div className="flex items-center gap-1.5 min-w-0 flex-1 px-0.5">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setShowGameSwitcher((v) => !v);
                 }}
-              />
-              <h2 className="text-xs sm:text-sm font-extrabold text-white truncate tracking-tight">
-                {titleMap[selectedGame]}
-              </h2>
+                aria-expanded={showGameSwitcher}
+                aria-label={pickLang(lang, {
+                  es: 'Cambiar de juego sin salir',
+                  ca: 'Canviar de joc sense sortir',
+                  en: 'Switch game without leaving',
+                })}
+                className="flex items-center gap-1.5 min-w-0 max-w-full px-2 py-1 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.12] cursor-pointer active:scale-[0.98] transition-all"
+              >
+                <span
+                  className="w-2 h-2 rounded-full shrink-0 animate-pulse"
+                  style={{
+                    backgroundColor: GAME_SIGNATURES[selectedGame].color,
+                    boxShadow: `0 0 10px ${GAME_SIGNATURES[selectedGame].color}`,
+                  }}
+                />
+                <span className="text-xs sm:text-sm font-extrabold text-white truncate tracking-tight">
+                  {titleMap[selectedGame]}
+                </span>
+                <span className="hidden md:inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-white/[0.08] text-[10px] font-bold text-zinc-300 shrink-0">
+                  <Shuffle className="w-2.5 h-2.5" />
+                  {pickLang(lang, { es: 'Cambiar', ca: 'Canviar', en: 'Switch' })}
+                </span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-zinc-300 shrink-0 transition-transform duration-200 ${
+                    showGameSwitcher ? 'rotate-180 text-[#D8B4FE]' : ''
+                  }`}
+                />
+              </button>
               {isPool && hubMode === 'online' && roomPoolGame && (
                 <span className="text-[10px] font-bold text-emerald-300 truncate hidden sm:inline">
                   · {poolGroupShort}
@@ -782,6 +1034,9 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             matchResponses.gameType === selectedGame &&
             matchResponses.responses.length > 0 &&
             ((selectedGame === 'chapas' && roomChapasGame?.status === 'waiting') ||
+              (selectedGame === 'headsoccer' && roomHeadSoccerGame?.status === 'waiting') ||
+              (selectedGame === 'poker' && roomPokerGame?.status === 'waiting') ||
+              (selectedGame === 'blackjack' && roomBlackjackGame?.phase === 'betting') ||
               (selectedGame === 'pool' && roomPoolGame?.status === 'waiting') ||
               (selectedGame === 'pinturillo' && roomPinturilloGame?.status === 'waiting') ||
               (isParty && roomPartyGame?.gameType === selectedGame && roomPartyGame.status === 'waiting') ||
@@ -815,8 +1070,65 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             )}
 
           {/* Single Game Stage */}
-          <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-            {isChapas ? (
+          <div className="flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar">
+            {isHeadSoccer ? (
+              <HeadSoccerStage
+                key={`headsoccer-${hubMode}`}
+                lang={lang}
+                currentUser={currentUser}
+                participants={participants}
+                headSoccerState={hubMode === 'offline' ? null : roomHeadSoccerGame}
+                latestSyncSnapshot={headSoccerSyncSnapshot}
+                remotePeerInput={headSoccerPeerInput}
+                isOffline={hubMode === 'offline'}
+                isHost={isHost}
+                voiceChat={voiceChat}
+                mutedOverride={muted}
+                onStartOnline={() => onStartRoomHeadSoccer?.()}
+                onJoinSeatOnline={onHeadSoccerJoinSeat}
+                onSelectSkinOnline={onHeadSoccerSelectSkin}
+                onStartMatchOnline={onHeadSoccerStartMatch}
+                onSendInputOnline={onHeadSoccerInput}
+                onSendSyncStateOnline={onHeadSoccerSyncState}
+                onRematchOnline={onHeadSoccerRematch}
+              />
+            ) : isPoker ? (
+              <PokerHoldemStage
+                key={`poker-${hubMode}`}
+                lang={lang}
+                currentUser={currentUser}
+                participants={participants}
+                pokerState={hubMode === 'offline' ? null : roomPokerGame}
+                isOffline={hubMode === 'offline'}
+                isHost={isHost}
+                voiceChat={voiceChat}
+                mutedOverride={muted}
+                onStartOnline={onStartRoomPoker}
+                onJoinSeatOnline={onPokerJoinSeat}
+                onToggleBotsOnline={onPokerToggleBots}
+                onStartMatchOnline={onPokerStartMatch}
+                onActionOnline={onPokerAction}
+                onRebuyOnline={onPokerRebuy}
+              />
+            ) : isBlackjack ? (
+              <BlackjackStage
+                key={`blackjack-${hubMode}`}
+                lang={lang}
+                currentUser={currentUser}
+                participants={participants}
+                blackjackState={hubMode === 'offline' ? null : roomBlackjackGame}
+                isOffline={hubMode === 'offline'}
+                isHost={isHost}
+                voiceChat={voiceChat}
+                mutedOverride={muted}
+                onStartOnline={() => onStartRoomBlackjack?.()}
+                onJoinSeatOnline={onBlackjackJoinSeat}
+                onBetOnline={onBlackjackBet}
+                onDealOnline={onBlackjackDeal}
+                onActionOnline={onBlackjackAction}
+                onNewRoundOnline={onBlackjackNewRound}
+              />
+            ) : isChapas ? (
               <FutbolChapasStage
                 key={`chapas-${hubMode}`}
                 lang={lang}
@@ -966,6 +1278,115 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             )}
           </div>
         </div>
+
+        {/* In-Game Switcher Modal (switches game seamlessly preserving seated players) */}
+        {showGameSwitcher && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={pickLang(lang, {
+              es: 'Cambiar de juego sin salir',
+              ca: 'Canviar de joc sense sortir',
+              en: 'Switch game without leaving',
+            })}
+            className="fixed inset-0 z-[195] bg-black/70 backdrop-blur-md flex items-end sm:items-center justify-center p-2.5 sm:p-4 animate-fade-in"
+            onClick={() => setShowGameSwitcher(false)}
+          >
+            <div
+              className="w-full max-w-lg rounded-3xl bg-[#10121E]/95 border border-white/[0.14] shadow-[0_24px_60px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[84dvh]"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <Shuffle className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                    <h3 className="font-display font-extrabold text-sm sm:text-base text-white truncate">
+                      {pickLang(lang, {
+                        es: 'Cambiar de juego',
+                        ca: 'Canviar de joc',
+                        en: 'Switch game',
+                      })}
+                    </h3>
+                  </div>
+                  <p className="text-[11px] text-zinc-400 mt-0.5">
+                    {pickLang(lang, {
+                      es: 'Cambia al instante sin salir · Se mantienen los jugadores en mesa',
+                      ca: 'Canvia a l’instant sense sortir · Es mantenen els jugadors a taula',
+                      en: 'Switch instantly without exiting · Seated players stay together',
+                    })}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowGameSwitcher(false)}
+                  aria-label={pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}
+                  className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] border border-white/[0.1] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer shrink-0"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              {/* Seated players strip */}
+              {activeSeatedPlayers.length > 0 && (
+                <div className="px-4 py-2 bg-white/[0.03] border-b border-white/[0.06] flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 whitespace-nowrap shrink-0">
+                    {pickLang(lang, {
+                      es: 'En mesa:',
+                      ca: 'A taula:',
+                      en: 'Seated:',
+                    })}
+                  </span>
+                  {activeSeatedPlayers.map((p) => (
+                    <span
+                      key={p.id}
+                      className="px-2 py-0.5 rounded-lg bg-white/[0.07] border border-white/[0.1] text-[11px] font-semibold text-zinc-100 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                    >
+                      <span>{p.avatar}</span>
+                      <span className="max-w-[96px] truncate">{p.name}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Games Grid */}
+              <div className="p-3 overflow-y-auto custom-scrollbar grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {switcherOptions.map((opt) => {
+                  const isCurrent = opt.id === selectedGame;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => handleSwitchGameInPlace(opt.id)}
+                      className={`p-2.5 rounded-2xl border text-left flex flex-col gap-1 cursor-pointer active:scale-[0.97] transition-all ${
+                        isCurrent
+                          ? 'bg-[#9146FF]/20 border-[#9146FF] shadow-[0_0_16px_rgba(145,70,255,0.28)]'
+                          : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.09] hover:border-white/25'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: opt.color }}
+                        />
+                        {isCurrent && (
+                          <span className="px-1.5 py-0.5 rounded bg-[#9146FF] text-[9px] font-black uppercase text-white">
+                            {pickLang(lang, { es: 'Actual', ca: 'Actual', en: 'Playing' })}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-xs font-extrabold text-white truncate">
+                        {opt.label}
+                      </span>
+                      <span className="text-[10px] text-zinc-400 truncate">
+                        {opt.subtitle}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }
@@ -977,6 +1398,9 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
     if (gt === 'pool') return Boolean(roomPoolGame);
     if (gt === 'pinturillo') return Boolean(roomPinturilloGame);
     if (gt === 'chapas') return Boolean(roomChapasGame);
+    if (gt === 'headsoccer') return Boolean(roomHeadSoccerGame);
+    if (gt === 'poker') return Boolean(roomPokerGame);
+    if (gt === 'blackjack') return Boolean(roomBlackjackGame);
     if (isPartyGame(gt)) return roomPartyGame?.gameType === gt;
     return roomBoardGame?.gameType === gt;
   };
@@ -993,6 +1417,83 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   }
 
   const gameCatalog: GameCatalogCard[] = [
+    {
+      id: 'headsoccer',
+      category: 'arcade',
+      title: pickLang(lang, { es: 'Fútbol Cabezones', ca: 'Futbol Capgrossos', en: 'Head Soccer' }),
+      meta: pickLang(lang, { es: 'Estadio 1v1 · 60s · IA', ca: 'Estadi 1v1 · 60s · IA', en: '1v1 Stadium · 60s · AI' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-sky-400/65',
+      stageBg: 'from-[#0D1E3A] via-[#10263A] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+          <div className="absolute inset-x-0 bottom-0 h-5 bg-emerald-700/80 border-t border-white/30" />
+          <div className="relative z-10 flex items-end gap-3 pb-2">
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-amber-200 to-amber-500 border-2 border-zinc-950 flex items-center justify-center shadow-lg">
+              <div className="w-full h-2 bg-[#9146FF] -mt-3" />
+            </div>
+            <span className="w-6 h-6 rounded-full bg-white border-2 border-zinc-900 shadow-md mb-1 flex items-center justify-center text-[10px]">
+              ⚽
+            </span>
+            <div className="w-10 h-10 rounded-full bg-gradient-to-br from-rose-200 to-rose-400 border-2 border-zinc-950 flex items-center justify-center shadow-lg">
+              <div className="w-full h-2 bg-rose-600 -mt-3" />
+            </div>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'poker',
+      category: 'party',
+      title: pickLang(lang, { es: 'Póker Hold’em', ca: 'Pòquer Hold’em', en: 'Texas Hold’em' }),
+      meta: pickLang(lang, { es: 'No-Limit · 2–6 jug. · Bots', ca: 'No-Limit · 2–6 jug. · Bots', en: 'No-Limit · 2–6 pl. · Bots' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-purple-400/65',
+      stageBg: 'from-[#2A1348] via-[#190B2E] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+          <div className="flex items-center -space-x-2">
+            <div className="w-10 h-14 rounded-lg bg-white border border-zinc-300 shadow-lg -rotate-12 p-1 flex flex-col justify-between text-zinc-950 font-black text-[10px]">
+              <span>A♠</span>
+              <span className="self-center text-base leading-none">♠</span>
+            </div>
+            <div className="w-10 h-14 rounded-lg bg-white border border-amber-300 shadow-xl rotate-12 p-1 flex flex-col justify-between text-rose-600 font-black text-[10px]">
+              <span>K♥</span>
+              <span className="self-center text-base leading-none">♥</span>
+            </div>
+          </div>
+          <span className="absolute bottom-2 right-3 w-6 h-6 rounded-full bg-amber-400 border-2 border-dashed border-zinc-900 text-[9px] font-black text-zinc-950 flex items-center justify-center shadow-md">
+            $
+          </span>
+        </div>
+      ),
+    },
+    {
+      id: 'blackjack',
+      category: 'party',
+      title: 'Blackjack 21',
+      meta: pickLang(lang, { es: 'Casino vs Crupier · 3:2', ca: 'Casino vs Crupier · 3:2', en: 'Casino vs Dealer · 3:2' }),
+      supportsOffline: true,
+      accentBorder: 'hover:border-emerald-400/65',
+      stageBg: 'from-[#0D3829] via-[#08241B] to-[#0B0D14]',
+      renderStage: () => (
+        <div className="relative w-full h-full flex items-center justify-center overflow-hidden">
+          <div className="flex items-center -space-x-2">
+            <div className="w-10 h-14 rounded-lg bg-white border border-zinc-300 shadow-lg -rotate-6 p-1 flex flex-col justify-between text-zinc-950 font-black text-[10px]">
+              <span>A♠</span>
+              <span className="self-center text-base leading-none">♠</span>
+            </div>
+            <div className="w-10 h-14 rounded-lg bg-white border border-emerald-300 shadow-xl rotate-6 p-1 flex flex-col justify-between text-rose-600 font-black text-[10px]">
+              <span>J♦</span>
+              <span className="self-center text-base leading-none">♦</span>
+            </div>
+          </div>
+          <span className="absolute bottom-2 left-3 px-1.5 py-0.5 rounded-md bg-emerald-400 text-zinc-950 text-[10px] font-black shadow">
+            21
+          </span>
+        </div>
+      ),
+    },
     {
       id: 'pool',
       category: 'arcade',
@@ -1225,7 +1726,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   );
 
   return (
-    <div className="w-full max-w-5xl mx-auto flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar smooth-scroll-area px-2 sm:px-3 py-2 space-y-4">
+    <div className="w-full max-w-5xl mx-auto flex-1 min-h-0 overflow-y-auto custom-scrollbar smooth-scroll-area px-2.5 sm:px-4 pt-2 pb-5 space-y-3.5">
       {/* 1. COMPACT ARCADE HEADER & MODE SWITCHER */}
       <div className="flex flex-wrap items-center justify-between gap-3 pt-0.5">
         <div className="min-w-0">
@@ -1380,7 +1881,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       )}
 
       {/* 4. ILLUSTRATED GAME CARDS GRID */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pb-10">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4 pb-3">
         {filteredGames.map((game) => {
           const live = isLiveGame(game.id);
           return (

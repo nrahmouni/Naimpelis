@@ -69,6 +69,7 @@ export interface ParsedVoiceIntent {
     limit: number;
     titleSearch?: string;
     personSearch?: string;
+    personRole?: 'director' | 'actor' | 'any';
   };
 }
 
@@ -90,6 +91,9 @@ interface TmdbDiscoverResult {
   release_date?: string;
   first_air_date?: string;
   vote_average?: number;
+  vote_count?: number;
+  popularity?: number;
+  genre_ids?: number[];
   media_type?: 'movie' | 'tv' | 'person';
 }
 
@@ -193,8 +197,15 @@ const WORD_TO_NUMBER: Record<string, number> = {
   '10': 10,
 };
 
-const NUM_WORDS_REGEX =
-  '0-9]{1,3}|primera|primer|primero|uno|segunda|segundo|dos|tercera|tercer|tercero|tres|cuarta|cuarto|cuatro|quinta|quinto|cinco|sexta|sexto|seis|septima|septimo|siete|octava|octavo|ocho|novena|noveno|nueve|decima|decimo|diez';
+const NUM_WORDS_PATTERN =
+  '\\d{1,3}|primera|primer|primero|uno|una|segunda|segundo|dos|tercera|tercer|tercero|tres|cuarta|cuarto|cuatro|quinta|quinto|cinco|sexta|sexto|seis|septima|septimo|siete|octava|octavo|ocho|novena|noveno|nueve|decima|decimo|diez';
+
+function parseNumToken(raw: string): number | undefined {
+  const clean = raw.trim().toLowerCase();
+  if (/^\d+$/.test(clean)) return Number(clean);
+  if (clean === 'una') return 1;
+  return WORD_TO_NUMBER[clean];
+}
 
 export function parseSeriesSeasonAndEpisode(rawQuery: string): {
   season?: number;
@@ -207,51 +218,65 @@ export function parseSeriesSeasonAndEpisode(rawQuery: string): {
   let episode: number | undefined;
   let hasEpisodeRequest = false;
 
-  const epMatch1 = norm.match(
-    new RegExp(`\\b(?:el\\s+)?(?:capitulo|cap|episodio|ep)\\s+([${NUM_WORDS_REGEX})\\b`, 'i')
-  );
-  const epMatch2 = norm.match(
-    new RegExp(`\\b(?:el\\s+)?([${NUM_WORDS_REGEX})\\s+(?:capitulo|cap|episodio|ep)\\b`, 'i')
-  );
-
-  if (epMatch1) {
-    const rawVal = epMatch1[1].toLowerCase();
-    episode = /^\d+$/.test(rawVal) ? Number(rawVal) : WORD_TO_NUMBER[rawVal];
-    if (episode) hasEpisodeRequest = true;
-  } else if (epMatch2) {
-    const rawVal = epMatch2[1].toLowerCase();
-    episode = /^\d+$/.test(rawVal) ? Number(rawVal) : WORD_TO_NUMBER[rawVal];
+  // Compact SxxExx or 2x02 / t2e2 notation
+  const compactMatch = norm.match(/\b(?:s|t)?(\d{1,2})\s*[xe]\s*(\d{1,3})\b/i);
+  if (compactMatch) {
+    season = Number(compactMatch[1]);
+    episode = Number(compactMatch[2]);
     if (episode) hasEpisodeRequest = true;
   }
 
-  const seasonMatch1 = norm.match(
-    new RegExp(`\\b([${NUM_WORDS_REGEX})\\s+temporada\\b`, 'i')
+  const epWord = '(?:capitulo|cap|episodio|ep|episode)';
+  const epMatch1 = norm.match(
+    new RegExp(`\\b(?:el\\s+)?${epWord}\\s+(?:numero\\s+)?(${NUM_WORDS_PATTERN})\\b`, 'i')
   );
-  const seasonMatch2 = norm.match(
-    new RegExp(`\\b(?:la\\s+)?(?:temporada|temp|t)\\s+([${NUM_WORDS_REGEX})\\b`, 'i')
+  const epMatch2 = norm.match(
+    new RegExp(`\\b(?:el\\s+)?(${NUM_WORDS_PATTERN})\\s+${epWord}\\b`, 'i')
   );
 
-  if (seasonMatch1) {
-    const rawVal = seasonMatch1[1].toLowerCase();
-    season = /^\d+$/.test(rawVal) ? Number(rawVal) : WORD_TO_NUMBER[rawVal];
-  } else if (seasonMatch2) {
-    const rawVal = seasonMatch2[1].toLowerCase();
-    season = /^\d+$/.test(rawVal) ? Number(rawVal) : WORD_TO_NUMBER[rawVal];
+  if (!episode && epMatch1) {
+    episode = parseNumToken(epMatch1[1]);
+    if (episode) hasEpisodeRequest = true;
+  } else if (!episode && epMatch2) {
+    episode = parseNumToken(epMatch2[1]);
+    if (episode) hasEpisodeRequest = true;
+  }
+
+  const seasonWord = '(?:temporada|temp|t|season)';
+  const seasonMatch1 = norm.match(
+    new RegExp(`\\b(${NUM_WORDS_PATTERN})\\s+${seasonWord}\\b`, 'i')
+  );
+  const seasonMatch2 = norm.match(
+    new RegExp(`\\b(?:la\\s+)?${seasonWord}\\s+(?:numero\\s+)?(${NUM_WORDS_PATTERN})\\b`, 'i')
+  );
+
+  if (!season && seasonMatch1) {
+    season = parseNumToken(seasonMatch1[1]);
+  } else if (!season && seasonMatch2) {
+    season = parseNumToken(seasonMatch2[1]);
   }
 
   if (episode && !season) {
     season = 1;
   }
 
-  const cleaned = norm
-    .replace(/^(?:quiero ver|quiero|ponme|ponle|pon|ponnos|abre|reproduce|ver|busca|buscame)\s+/g, '')
-    .replace(new RegExp(`\\b(?:el\\s+)?(?:capitulo|cap|episodio|ep)\\s+([${NUM_WORDS_REGEX})\\b`, 'gi'), '')
-    .replace(new RegExp(`\\b(?:el\\s+)?([${NUM_WORDS_REGEX})\\s+(?:capitulo|cap|episodio|ep)\\b`, 'gi'), '')
-    .replace(new RegExp(`\\b(?:la\\s+)?(?:temporada|temp|t)\\s+([${NUM_WORDS_REGEX})\\b`, 'gi'), '')
-    .replace(new RegExp(`\\b([${NUM_WORDS_REGEX})\\s+temporada\\b`, 'gi'), '')
-    .replace(/\b(?:de la|de el|del|de|la|el|serie|episodio|capitulo)\b/gi, ' ')
+  let cleaned = norm
+    .replace(/^(?:quiero ver|quiero|ponme|ponle|pon|ponnos|abre|reproduce|ver|busca|buscame|dame)\s+/g, '')
+    .replace(/\b(?:s|t)?\d{1,2}\s*[xe]\s*\d{1,3}\b/gi, ' ')
+    .replace(new RegExp(`\\b(?:el\\s+)?${epWord}\\s+(?:numero\\s+)?(?:${NUM_WORDS_PATTERN})\\b`, 'gi'), ' ')
+    .replace(new RegExp(`\\b(?:el\\s+)?(?:${NUM_WORDS_PATTERN})\\s+${epWord}\\b`, 'gi'), ' ')
+    .replace(new RegExp(`\\b(?:la\\s+)?${seasonWord}\\s+(?:numero\\s+)?(?:${NUM_WORDS_PATTERN})\\b`, 'gi'), ' ')
+    .replace(new RegExp(`\\b(?:${NUM_WORDS_PATTERN})\\s+${seasonWord}\\b`, 'gi'), ' ')
     .replace(/\s+/g, ' ')
     .trim();
+
+  // Strip only leading/trailing connector words (preserving internal "de" e.g. "juego de tronos")
+  for (let i = 0; i < 4; i += 1) {
+    cleaned = cleaned
+      .replace(/^(?:de la serie|de la|de el|del|de|la serie|el|la|en)\s+/i, '')
+      .replace(/\s+(?:de la serie|de la|de el|del|de|en)$/i, '')
+      .trim();
+  }
 
   return {
     season,
@@ -439,7 +464,8 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
     };
   }
 
-  const isWantPlayNow = /\b(quiero ver|pon|ponme|abre|sintoniza|reproduce|en directo|directo|play|watch)\b/.test(norm);
+  const isWantPlayNow = /\b(quiero ver|ponme|ponle|pon|ponnos|abre|sintoniza|reproduce|en directo|play|watch)\b/.test(norm);
+  const mentionsMovieOrSeries = /\b(peli|pelicula|peliculas|pelis|film|movie|movies|serie|series|anime|temporada|capitulo|cap|episodio|director|dirigid[ao]s?|actor|actriz|protagonizad[ao]s?|filmografia)\b/.test(norm);
 
   const epParse = parseSeriesSeasonAndEpisode(query);
   if (epParse.hasEpisodeRequest && epParse.cleanTitle) {
@@ -469,25 +495,73 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
     };
   }
 
-  const channelHints = [
+  // Director / Actor filmography requests must be checked BEFORE channels or generic genre hints
+  const directorTrigger = /\b(director|directora|dirigid[ao]s?\s+por|ha dirigido)\b/.test(norm);
+  const actorTrigger = /\b(actor|actriz|protagonizad[ao]s?\s+por|actua|sale|aparece)\b/.test(norm);
+  const personMatch =
+    norm.match(/\b(?:dime|muestrame|ensename|busca|cuales son|ver|ponme|quiero ver)?\s*(?:las\s+|todas las\s+)?(?:peliculas|pelis|obras|filmografia|series)\s+(?:del director|de la directora|dirigidas?\s+por|protagonizadas?\s+por|del actor|de la actriz|de|del|con)\s+([a-zA-Z0-9\s]+)/i) ||
+    norm.match(/\b(?:que|cuales)\s+(?:peliculas|pelis)\s+(?:ha hecho|ha dirigido|hizo|dirigio|tiene)\s+([a-zA-Z0-9\s]+)/i);
+
+  if (personMatch && !/\b(terror|miedo|accion|comedia|ciencia ficcion|drama|suspense|thriller|animacion|romance|documental|este mes|este ano)\b/i.test(personMatch[1])) {
+    const rawPerson = personMatch[1]
+      .replace(/\b(?:peliculas|pelis|series|que|ha|hecho|dirigido|protagonizado|y|me|aparezcan|salgan|por favor|directo|cine)\b/gi, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    if (rawPerson.length >= 2) {
+      const personRole: 'director' | 'actor' | 'any' = directorTrigger
+        ? 'director'
+        : actorTrigger
+        ? 'actor'
+        : 'any';
+      return {
+        spokenReply:
+          lang === 'en'
+            ? `Here are the top movies for ${rawPerson}:`
+            : lang === 'ca'
+            ? `Aquí tens les pel·lícules més destacades de ${rawPerson}:`
+            : lang === 'zh'
+            ? `这是为你找到的 ${rawPerson} 代表作品：`
+            : `Aquí tienes las películas más destacadas de ${rawPerson}:`,
+        intent: 'recommend_movies',
+        autoPlay: false,
+        channelKeywords: [],
+        categoryHint: '',
+        matchKeywords: [],
+        tmdbQuery: {
+          mediaType: 'movie',
+          limit: 8,
+          personSearch: rawPerson,
+          personRole,
+        },
+      };
+    }
+  }
+
+  // Only match TV channels when user did NOT ask for movies/series/actors/directors, using strict word boundaries
+  const strictChannelHints = [
     'dazn', 'laliga', 'la liga', 'movistar', 'espn', 'bein', 'sky sports',
     'tnt sports', 'eurovision', 'eurosport', 'nat geo', 'national geographic',
-    'discovery', 'history', 'animal planet', 'al jazeera', 'cnn', 'fox',
+    'discovery', 'history channel', 'animal planet', 'al jazeera', 'cnn', 'fox news', 'fox sports',
     'bbc', 'euronews', 'bloomberg', '2m', 'al aoula', 'arriadia', 'marruecos',
     'la 1', 'la 2', 'antena 3', 'cuatro', 'telecinco', 'la sexta', 'tv3', '3cat',
-    'cctv', 'migu', 'tdt', 'futbol',
+    'cctv', 'migu', 'tdt', 'telediario', 'canal',
   ];
-  const matchedChannelHints = channelHints.filter((k) => norm.includes(k));
+  const matchedChannelHints = !mentionsMovieOrSeries
+    ? strictChannelHints.filter((k) => {
+        const escaped = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return new RegExp(`(?:^|\\s)${escaped}(?:$|\\s)`, 'i').test(norm);
+      })
+    : [];
 
   let categoryHint = '';
-  if (/marruecos|marroqui|2m|al aoula|arriadia/.test(norm)) categoryHint = 'marruecos';
-  else if (/bein|arabe|arabic/.test(norm)) categoryHint = 'bein_arabic';
-  else if (/documental|national geographic|nat geo|discovery|history|animal planet/.test(norm)) categoryHint = 'documentales';
-  else if (/noticia|al jazeera|cnn|bbc|euronews|bloomberg|dw|france 24/.test(norm)) categoryHint = 'noticias_intl';
-  else if (/usa|eeuu|estados unidos|fox|nbc|abc|cbs/.test(norm)) categoryHint = 'usa_tv';
-  else if (/europa|rai|rtp|arte|tv5/.test(norm)) categoryHint = 'europa_tv';
+  if (!mentionsMovieOrSeries) {
+    if (/\b(marruecos|marroqui|2m|al aoula|arriadia)\b/.test(norm)) categoryHint = 'marruecos';
+    else if (/\b(bein|arabe|arabic)\b/.test(norm)) categoryHint = 'bein_arabic';
+    else if (/\b(national geographic|nat geo|discovery|animal planet)\b/.test(norm)) categoryHint = 'documentales';
+    else if (/\b(noticias|al jazeera|cnn|bbc|euronews|bloomberg|france 24)\b/.test(norm)) categoryHint = 'noticias_intl';
+  }
 
-  if (matchedChannelHints.length > 0 || categoryHint) {
+  if (!mentionsMovieOrSeries && (matchedChannelHints.length > 0 || categoryHint)) {
     const wantsList = !isWantPlayNow || /\b(canales|todos|lista|opciones|cuales)\b/.test(norm);
     return {
       spokenReply:
@@ -511,7 +585,7 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
   }
 
   const isScheduleQuestion = /\b(cuando|a que hora|que dia|proximo|siguiente|horario|calendario)\b/.test(norm);
-  if (/\b(partido|champions|premier|madrid|barca|barcelona|atletico|sevilla|betis|arsenal|city|liverpool)\b/.test(norm)) {
+  if (!mentionsMovieOrSeries && /\b(partido|champions|premier|real madrid|barca|barcelona|atletico|sevilla|betis|arsenal|manchester city|liverpool|futbol)\b/.test(norm)) {
     return {
       spokenReply: isScheduleQuestion
         ? 'Buscando el horario y canal del próximo partido en la agenda deportiva.'
@@ -529,38 +603,6 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
       matchKeywords: norm.split(' ').filter((w) => w.length >= 3 && !/cuando|juega|partido|siguiente|proximo|quiero|saber/.test(w)),
       tmdbQuery: { mediaType: 'multi', limit },
     };
-  }
-
-  const personMatch =
-    norm.match(/\b(?:peliculas|pelis|obras|filmografia|series)\s+(?:de|del|dirigidas?\s+por|con)\s+([a-zA-Z\u00C0-\u017F\s]+)/i) ||
-    norm.match(/\b(?:dime|muestrame|ensename|busca|cuales son)\s+(?:las\s+)?(?:peliculas|pelis)\s+(?:de|del|con)\s+([a-zA-Z\u00C0-\u017F\s]+)/i);
-
-  if (personMatch) {
-    const rawPerson = personMatch[1]
-      .replace(/\b(?:peliculas|pelis|series|que|ha|hecho|dirigido|protagonizado|y|que|me|aparezcan|por favor)\b/gi, '')
-      .trim();
-    if (rawPerson.length >= 2) {
-      return {
-        spokenReply:
-          lang === 'en'
-            ? `Here are the top titles for ${rawPerson}:`
-            : lang === 'ca'
-            ? `Aquí tens les pel·lícules més destacades de ${rawPerson}:`
-            : lang === 'zh'
-            ? `这是为你找到的 ${rawPerson} 代表作品：`
-            : `Aquí tienes las películas más destacadas de ${rawPerson}:`,
-        intent: 'recommend_movies',
-        autoPlay: false,
-        channelKeywords: [],
-        categoryHint: '',
-        matchKeywords: [],
-        tmdbQuery: {
-          mediaType: 'movie',
-          limit: 6,
-          personSearch: rawPerson,
-        },
-      };
-    }
   }
 
   const wantsSeries = /\b(serie|series|anime|temporada|capitulo|episodio)\b/.test(norm);
@@ -621,27 +663,32 @@ export function buildFallbackVoicePlan(query: string, lang: string): ParsedVoice
   }
 
   const stripped = norm
-    .replace(/^(quiero ver|quiero|ponme|ponle|pon|ponnos|busca|buscame|abre|dame|reproduce|ver|una peli de|una pelicula de|pelicula|peli|serie)\s+/g, '')
+    .replace(/^(?:quiero ver|quiero|ponme|ponle|pon|ponnos|busca|buscame|abre|dame|reproduce|ver)\s+/g, '')
+    .replace(/^(?:una\s+)?(?:pelicula|peli|serie|la pelicula|la peli|la serie|el film|movie|film)\s+(?:llamada\s+|titulada\s+|de\s+)?/g, '')
+    .replace(/^(?:la\s+|el\s+)(?=(?:pelicula|peli|serie))/g, '')
     .trim();
+
+  const wantsSpecificMovie = /\b(peli|pelicula|film|movie)\b/.test(norm);
+  const effectiveTitle = stripped || query.trim();
 
   return {
     spokenReply:
       lang === 'en'
-        ? `Here is ${stripped || query} ready to play.`
+        ? `Playing ${effectiveTitle}.`
         : lang === 'ca'
-        ? `Aquí tens ${stripped || query} a punt per reproduir.`
+        ? `Posant ${effectiveTitle}.`
         : lang === 'zh'
-        ? `已为你准备好 ${stripped || query}。`
-        : `Aquí tienes ${stripped || query} listo para reproducir.`,
+        ? `正在为你播放 ${effectiveTitle}。`
+        : `Aquí tienes ${effectiveTitle}.`,
     intent: wantsSeries ? 'play_series' : 'play_movie',
-    autoPlay: false,
+    autoPlay: isWantPlayNow,
     channelKeywords: [],
     categoryHint: '',
     matchKeywords: [],
     tmdbQuery: {
-      mediaType: wantsSeries ? 'tv' : 'multi',
+      mediaType: wantsSeries ? 'tv' : wantsSpecificMovie ? 'movie' : 'multi',
       limit: 5,
-      titleSearch: stripped || query.trim(),
+      titleSearch: effectiveTitle,
     },
   };
 }
@@ -702,23 +749,30 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
    - "sorpréndeme" (sin género específico):
      intent: "open_world", action: { type: "surprise_me" }
 
-4. SI PIDE UN CAPÍTULO Y/O TEMPORADA DE UNA SERIE ("ponme el capítulo 3 de la temporada 1 de Nocturno", "cap 2 de Arcane"):
-   - intent: "play_series", autoPlay: true, targetSeason, targetEpisode, tmdbQuery: { mediaType: "tv", limit: 4, titleSearch: "<título limpio>" }.
+4. SI PIDE UN CAPÍTULO Y/O TEMPORADA DE UNA SERIE ("ponle el segundo capítulo de la temporada 2 de Juego de Tronos", "pon el 2x03 de Breaking Bad"):
+   - intent: "play_series", autoPlay: true, targetSeason: 2, targetEpisode: 2, tmdbQuery: { mediaType: "tv", limit: 4, titleSearch: "Juego de Tronos" }.
 
-5. SI PREGUNTA CUÁNDO JUEGA UN EQUIPO O HORARIO DE PARTIDO:
+5. SI PIDE PELÍCULAS O SERIES DE UN DIRECTOR O ACTOR ("dime las películas de Christopher Nolan", "qué películas tiene Leonardo DiCaprio", "dime las pelis de este actor"):
+   - intent: "recommend_movies" (o "recommend_series" si pide series), autoPlay: false.
+   - tmdbQuery: { mediaType: "movie", limit: 8, personSearch: "<Nombre exacto de la persona>", personRole: "director" | "actor" | "any" }.
+   - spokenReply: Breve introducción natural enumerando brevemente 2 o 3 títulos suyos icónicos mientras mostramos la lista visual lista para reproducir.
+
+6. SI PREGUNTA CUÁNDO JUEGA UN EQUIPO O HORARIO DE PARTIDO:
    - intent: "sports_info", autoPlay: false, matchKeywords: ["equipo"], channelKeywords: ["dazn", "laliga", "movistar"].
 
-6. SI PIDE UN CANAL DE TV CONCRETO ("ponme dazn laliga", "la 1", "al jazeera", "sky sports"):
+7. SOLO SI PIDE EXPRESAMENTE UN CANAL DE TV EN DIRECTO ("ponme DAZN LaLiga", "pon La 1", "quiero ver Antena 3"):
    - intent: "play_channel", autoPlay: true, channelKeywords, categoryHint.
+   - ¡PROHIBIDO elegir play_channel o browse_channels si el usuario pide una película, serie, actor o director!
 
-7. SI PIDE VER UN PARTIDO EN DIRECTO:
+8. SI PIDE VER UN PARTIDO EN DIRECTO:
    - intent: "play_match", matchKeywords.
 
-8. SI PIDE RECOMENDACIONES PARA VER ("recomiéndame 3 pelis de terror", "series parecidas a Dark"):
-   - intent: "recommend_movies" o "recommend_series", autoPlay: false, tmdbQuery con genreId/titleSearch/timeframe/sortBy/limit.
+9. SI PIDE RECOMENDACIONES POR GÉNERO O DESCRIPCIÓN ("recomiéndame 3 pelis de terror", "pelis donde el tiempo es dinero"):
+   - Si describe una película concreta por su argumento (p.ej. "la peli donde pagan con tiempo"), identifica el título exacto en titleSearch (p.ej. "In Time") y usa play_movie / recommend_movies.
+   - Si pide género o ranking, usa recommend_movies / recommend_series con genreId / timeframe / sortBy / limit.
 
-9. SI PIDE REPRODUCIR UNA PELÍCULA O SERIE CONCRETA ("ponme Interstellar", "quiero ver Deadpool"):
-   - intent: "play_movie" o "play_series", autoPlay: true, tmdbQuery.titleSearch: título limpio.`;
+10. SI PIDE REPRODUCIR UNA PELÍCULA O SERIE CONCRETA ("ponle la película In Time", "ponme Interstellar", "quiero ver Deadpool"):
+   - intent: "play_movie" o "play_series", autoPlay: true, channelKeywords: [], categoryHint: "", tmdbQuery: { mediaType: "movie" | "tv", limit: 4, titleSearch: "<Título limpio exacto, p.ej. In Time>" }.`;
 
   const userPrompt = trimmedHistory
     ? `Historial reciente de la conversación:\n${trimmedHistory}\n\nÚltimo mensaje del usuario: "${query}"`
@@ -790,6 +844,8 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
                 },
                 limit: { type: Type.INTEGER },
                 titleSearch: { type: Type.STRING },
+                personSearch: { type: Type.STRING },
+                personRole: { type: Type.STRING, enum: ['director', 'actor', 'any'] },
               },
               required: ['mediaType', 'limit'],
             },
@@ -805,14 +861,27 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
       const epFallback = parseSeriesSeasonAndEpisode(query);
       const targetSeason = parsed.targetSeason || (epFallback.hasEpisodeRequest ? epFallback.season : undefined);
       const targetEpisode = parsed.targetEpisode || (epFallback.hasEpisodeRequest ? epFallback.episode : undefined);
+      const cleanIntent =
+        epFallback.hasEpisodeRequest && parsed.intent === 'chat'
+          ? 'play_series'
+          : parsed.intent || (epFallback.hasEpisodeRequest ? 'play_series' : 'chat');
+      const isMediaNonChannel =
+        cleanIntent === 'play_movie' ||
+        cleanIntent === 'play_series' ||
+        cleanIntent === 'recommend_movies' ||
+        cleanIntent === 'recommend_series';
 
       return {
         spokenReply: parsed.spokenReply || buildFallbackVoicePlan(query, lang).spokenReply,
-        intent: parsed.intent || (epFallback.hasEpisodeRequest ? 'play_series' : 'chat'),
+        intent: cleanIntent,
         autoPlay: Boolean(parsed.autoPlay) || epFallback.hasEpisodeRequest,
         action: parsed.action,
-        channelKeywords: Array.isArray(parsed.channelKeywords) ? parsed.channelKeywords : [],
-        categoryHint: String(parsed.categoryHint || ''),
+        channelKeywords: isMediaNonChannel
+          ? []
+          : Array.isArray(parsed.channelKeywords)
+          ? parsed.channelKeywords
+          : [],
+        categoryHint: isMediaNonChannel ? '' : String(parsed.categoryHint || ''),
         matchKeywords: Array.isArray(parsed.matchKeywords) ? parsed.matchKeywords : [],
         targetSeason,
         targetEpisode,
@@ -821,8 +890,10 @@ DEVUELVE SIEMPRE SOLO JSON ESTRUCTURADO según las reglas:
           genreId: parsed.tmdbQuery?.genreId,
           timeframe: parsed.tmdbQuery?.timeframe || 'trending',
           sortBy: parsed.tmdbQuery?.sortBy || 'popular',
-          limit: Math.max(1, Math.min(8, Number(parsed.tmdbQuery?.limit) || 4)),
+          limit: Math.max(1, Math.min(8, Number(parsed.tmdbQuery?.limit) || (parsed.tmdbQuery?.personSearch ? 8 : 4))),
           titleSearch: parsed.tmdbQuery?.titleSearch || epFallback.cleanTitle || '',
+          personSearch: parsed.tmdbQuery?.personSearch ? String(parsed.tmdbQuery.personSearch).trim() : undefined,
+          personRole: parsed.tmdbQuery?.personRole || 'any',
         },
       };
     }
@@ -847,8 +918,9 @@ export function matchChannelsByKeywords(
   const scored: Array<{ ch: SpanishTdtChannel & { logoUrl?: string }; score: number }> = [];
 
   for (const ch of channels) {
-    const haystack = normalizeSearchStr(
-      `${ch.name} ${ch.shortMark || ''} ${ch.network || ''} ${ch.category || ''} ${ch.description || ''}`
+    const chNameNorm = normalizeSearchStr(ch.name);
+    const chMetaHaystack = normalizeSearchStr(
+      `${ch.name} ${ch.shortMark || ''} ${ch.network || ''} ${ch.category || ''}`
     );
     let score = 0;
 
@@ -860,10 +932,12 @@ export function matchChannelsByKeywords(
     }
 
     for (const kw of normKeywords) {
-      if (normalizeSearchStr(ch.name) === kw) {
-        score += 50;
-      } else if (haystack.includes(kw)) {
-        score += 15;
+      if (chNameNorm === kw) {
+        score += 65;
+      } else if (new RegExp(`(?:^|\\s)${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s)`).test(chNameNorm)) {
+        score += 42;
+      } else if (new RegExp(`(?:^|\\s)${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?:$|\\s)`).test(chMetaHaystack)) {
+        score += 22;
       }
     }
 
@@ -906,6 +980,188 @@ function formatDateYmd(d: Date): string {
   return `${yyyy}-${mm}-${dd}`;
 }
 
+function scoreTmdbTitleCandidate(r: TmdbDiscoverResult, cleanSearch: string): number {
+  const target = normalizeSearchStr(cleanSearch);
+  const loc = normalizeSearchStr(r.title || r.name || '');
+  const orig = normalizeSearchStr(r.original_title || r.original_name || '');
+  let score = 0;
+
+  if (loc === target || orig === target) score += 500;
+  else if (loc.startsWith(target) || orig.startsWith(target)) score += 220;
+  else if (loc.includes(target) || orig.includes(target)) score += 130;
+  else {
+    const tokens = target.split(' ').filter((w) => w.length >= 2);
+    const hay = `${loc} ${orig}`;
+    const hits = tokens.filter((t) => hay.includes(t)).length;
+    if (tokens.length > 0) score += (hits / tokens.length) * 110;
+  }
+
+  const votes = Number(r.vote_count || 0);
+  const pop = Number(r.popularity || 0);
+  const avg = Number(r.vote_average || 0);
+  score += Math.min(200, pop * 1.4) + Math.min(120, Math.log10(Math.max(1, votes)) * 35);
+  if (votes >= 50) score += avg * 2.5;
+  return score;
+}
+
+export async function searchTmdbPersonCredits(params: {
+  personName: string;
+  role?: 'director' | 'actor' | 'any';
+  mediaType?: 'movie' | 'tv' | 'multi';
+  lang?: string;
+  limit?: number;
+}): Promise<CatalogMovie[]> {
+  const cleanPerson = params.personName.trim();
+  if (cleanPerson.length < 2) return [];
+  const tmdbLang = resolveTmdbLanguageTag(params.lang || 'es');
+  const limit = Math.max(1, Math.min(10, params.limit || 8));
+
+  const [esPersonRes, enPersonRes] = await Promise.all([
+    fetchTmdbJson<{
+      results?: Array<{ id: number; name: string; popularity?: number; known_for_department?: string }>;
+    }>('/search/person', { query: cleanPerson, language: tmdbLang, page: 1 }).catch(() => null),
+    tmdbLang === 'en-US'
+      ? Promise.resolve(null)
+      : fetchTmdbJson<{
+          results?: Array<{ id: number; name: string; popularity?: number; known_for_department?: string }>;
+        }>('/search/person', { query: cleanPerson, language: 'en-US', page: 1 }).catch(() => null),
+  ]);
+
+  const combinedPeople = [...(esPersonRes?.results || []), ...(enPersonRes?.results || [])];
+  if (combinedPeople.length === 0) return [];
+
+  const targetNorm = normalizeSearchStr(cleanPerson);
+  combinedPeople.sort((a, b) => {
+    const aExact = normalizeSearchStr(a.name) === targetNorm ? 1000 : 0;
+    const bExact = normalizeSearchStr(b.name) === targetNorm ? 1000 : 0;
+    return bExact + (b.popularity || 0) - (aExact + (a.popularity || 0));
+  });
+
+  const person = combinedPeople[0];
+  if (!person?.id) return [];
+
+  const creditEndpoint =
+    params.mediaType === 'tv' ? `/person/${person.id}/tv_credits` : `/person/${person.id}/movie_credits`;
+  const creditsRes = await fetchTmdbJson<{
+    cast?: Array<TmdbDiscoverResult & { character?: string }>;
+    crew?: Array<TmdbDiscoverResult & { job?: string; department?: string }>;
+  }>(creditEndpoint, { language: tmdbLang }).catch(() => null);
+
+  const directed = (creditsRes?.crew || []).filter(
+    (c) => c.job === 'Director' || (params.mediaType === 'tv' && c.department === 'Directing')
+  );
+  const starred = (creditsRes?.cast || []).filter(
+    (c) => !/^(self|himself|herself|archive footage)/i.test(String(c.character || ''))
+  );
+
+  let rawPool: TmdbDiscoverResult[] = [];
+  if (params.role === 'director') {
+    rawPool = directed.length > 0 ? directed : starred;
+  } else if (params.role === 'actor') {
+    rawPool = starred.length > 0 ? starred : directed;
+  } else if (person.known_for_department === 'Directing' && directed.length >= 2) {
+    rawPool = directed;
+  } else {
+    rawPool = starred.length >= 3 ? starred : [...directed, ...starred];
+  }
+
+  const dedup = new Map<number, TmdbDiscoverResult>();
+  for (const item of rawPool) {
+    if (!item?.id || (!item.poster_path && !item.backdrop_path)) continue;
+    // Exclude minor documentaries unless few titles exist
+    const existing = dedup.get(item.id);
+    if (!existing || (item.popularity || 0) > (existing.popularity || 0)) {
+      dedup.set(item.id, item);
+    }
+  }
+
+  const allUnique = Array.from(dedup.values());
+  const nonDoc = allUnique.filter((m) => !(m.genre_ids || []).includes(99) || (m.vote_count || 0) >= 200);
+  const poolToSort = nonDoc.length >= Math.min(4, limit) ? nonDoc : allUnique;
+
+  const rankItem = (m: TmdbDiscoverResult) => {
+    const votes = Number(m.vote_count || 0);
+    const pop = Number(m.popularity || 0);
+    const avg = Number(m.vote_average || 0);
+    const voteBonus = Math.log10(Math.max(1, votes)) * 22;
+    const lowVotePenalty = votes < 15 ? -35 : 0;
+    return pop * 2.0 + voteBonus + avg * 1.8 + lowVotePenalty;
+  };
+
+  poolToSort.sort((a, b) => rankItem(b) - rankItem(a));
+
+  const fallbackType: 'movie' | 'tv' = params.mediaType === 'tv' ? 'tv' : 'movie';
+  return poolToSort.slice(0, limit).map((r) => toCatalogMovieItem(r, fallbackType));
+}
+
+export async function searchTmdbTitlesRanked(params: {
+  titleSearch: string;
+  mediaType?: 'movie' | 'tv' | 'multi';
+  lang?: string;
+  limit?: number;
+}): Promise<CatalogMovie[]> {
+  const cleanSearch = params.titleSearch.trim();
+  if (cleanSearch.length < 2) return [];
+
+  const tmdbLang = resolveTmdbLanguageTag(params.lang || 'es');
+  const limit = Math.max(1, Math.min(8, params.limit || 5));
+  const searchEndpoint =
+    params.mediaType === 'tv'
+      ? '/search/tv'
+      : params.mediaType === 'movie'
+      ? '/search/movie'
+      : '/search/multi';
+
+  const [primaryRes, enRes] = await Promise.all([
+    fetchTmdbJson<{ results?: TmdbDiscoverResult[] }>(searchEndpoint, {
+      query: cleanSearch,
+      language: tmdbLang,
+      include_adult: false,
+      page: 1,
+    }).catch(() => null),
+    tmdbLang === 'en-US'
+      ? Promise.resolve(null)
+      : fetchTmdbJson<{ results?: TmdbDiscoverResult[] }>(searchEndpoint, {
+          query: cleanSearch,
+          language: 'en-US',
+          include_adult: false,
+          page: 1,
+        }).catch(() => null),
+  ]);
+
+  const byKey = new Map<string, { raw: TmdbDiscoverResult; score: number }>();
+  const ingest = (list?: TmdbDiscoverResult[], preferPrimary = false) => {
+    for (const r of list || []) {
+      if (!r?.id || r.media_type === 'person' || (!r.poster_path && !r.backdrop_path)) continue;
+      const mType = r.media_type || (params.mediaType === 'tv' ? 'tv' : 'movie');
+      const key = `${mType}:${r.id}`;
+      const score = scoreTmdbTitleCandidate(r, cleanSearch) + (preferPrimary ? 15 : 0);
+      const prev = byKey.get(key);
+      if (!prev || score > prev.score) {
+        byKey.set(key, { raw: r, score });
+      }
+    }
+  };
+
+  ingest(primaryRes?.results, true);
+  ingest(enRes?.results, false);
+
+  if (byKey.size === 0 && searchEndpoint !== '/search/multi') {
+    const multiRes = await fetchTmdbJson<{ results?: TmdbDiscoverResult[] }>('/search/multi', {
+      query: cleanSearch,
+      language: tmdbLang,
+      include_adult: false,
+      page: 1,
+    }).catch(() => null);
+    ingest(multiRes?.results, true);
+  }
+
+  const ranked = Array.from(byKey.values()).sort((a, b) => b.score - a.score);
+  return ranked
+    .slice(0, limit)
+    .map((entry) => toCatalogMovieItem(entry.raw, params.mediaType === 'tv' ? 'tv' : 'movie'));
+}
+
 async function resolveTmdbRecommendations(
   tq: ParsedVoiceIntent['tmdbQuery'],
   lang: string
@@ -914,76 +1170,27 @@ async function resolveTmdbRecommendations(
   const limit = Math.max(1, Math.min(8, tq.limit || 4));
 
   if (tq.personSearch && tq.personSearch.trim().length >= 2) {
-    const cleanPerson = tq.personSearch.trim();
-    const personRes = await fetchTmdbJson<{ results?: Array<{ id: number; name: string }> }>(
-      '/search/person',
-      { query: cleanPerson, language: tmdbLang, page: 1 }
-    ).catch(() => null);
-
-    const person = personRes?.results?.[0];
-    if (person?.id) {
-      const creditsRes = await fetchTmdbJson<{
-        cast?: TmdbDiscoverResult[];
-        crew?: Array<TmdbDiscoverResult & { job?: string; department?: string }>;
-      }>(`/person/${person.id}/movie_credits`, { language: tmdbLang }).catch(() => null);
-
-      const directed = (creditsRes?.crew || []).filter(
-        (c) => c.job === 'Director' || c.department === 'Directing'
-      );
-      const starred = creditsRes?.cast || [];
-      const pool = directed.length >= 2 ? directed : starred.length > 0 ? starred : directed;
-
-      const sorted = pool
-        .filter((m) => Boolean(m.poster_path || m.backdrop_path))
-        .sort(
-          (a, b) =>
-            Number(b.vote_average || 0) * (b.vote_average ? 1 : 0) -
-            Number(a.vote_average || 0) * (a.vote_average ? 1 : 0)
-        )
-        .slice(0, limit);
-
-      if (sorted.length > 0) {
-        return sorted.map((r) => toCatalogMovieItem(r, 'movie'));
-      }
+    const personCredits = await searchTmdbPersonCredits({
+      personName: tq.personSearch,
+      role: tq.personRole || 'any',
+      mediaType: tq.mediaType,
+      lang,
+      limit,
+    });
+    if (personCredits.length > 0) {
+      return personCredits;
     }
   }
 
   if (tq.titleSearch && tq.titleSearch.trim().length >= 2) {
-    const cleanSearch = tq.titleSearch.trim();
-    const searchEndpoint =
-      tq.mediaType === 'tv'
-        ? '/search/tv'
-        : tq.mediaType === 'movie'
-        ? '/search/movie'
-        : '/search/multi';
-
-    const searchRes = await fetchTmdbJson<{ results?: TmdbDiscoverResult[] }>(searchEndpoint, {
-      query: cleanSearch,
-      language: tmdbLang,
-      include_adult: false,
-      page: 1,
+    const rankedMatches = await searchTmdbTitlesRanked({
+      titleSearch: tq.titleSearch,
+      mediaType: tq.mediaType,
+      lang,
+      limit,
     });
-
-    let results = (searchRes?.results || []).filter(
-      (r) => r.media_type !== 'person' && Boolean(r.poster_path || r.backdrop_path)
-    );
-
-    if (results.length === 0 && searchEndpoint !== '/search/multi') {
-      const multiRes = await fetchTmdbJson<{ results?: TmdbDiscoverResult[] }>('/search/multi', {
-        query: cleanSearch,
-        language: tmdbLang,
-        include_adult: false,
-        page: 1,
-      });
-      results = (multiRes?.results || []).filter(
-        (r) => r.media_type !== 'person' && Boolean(r.poster_path || r.backdrop_path)
-      );
-    }
-
-    if (results.length > 0) {
-      return results
-        .slice(0, limit)
-        .map((r) => toCatalogMovieItem(r, tq.mediaType === 'tv' ? 'tv' : 'movie'));
+    if (rankedMatches.length > 0) {
+      return rankedMatches;
     }
   }
 
@@ -1347,7 +1554,7 @@ export function registerVoiceAssistantRoutes(app: Express, deps: RegisterVoiceAs
           plan.intent !== 'play_series' &&
           plan.intent !== 'recommend_movies' &&
           plan.intent !== 'recommend_series' &&
-          !plan.tmdbQuery?.title &&
+          !plan.tmdbQuery?.titleSearch &&
           !plan.tmdbQuery?.personSearch &&
           (plan.channelKeywords.length > 0 || Boolean(plan.categoryHint)))
       ) {

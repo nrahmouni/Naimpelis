@@ -9,8 +9,12 @@ import {
 } from '@google/genai';
 import { WebSocketServer, WebSocket } from 'ws';
 import type { SpanishTdtChannel, SportsMatch } from '../../src/types.ts';
-import { buildTmdbImageUrl, fetchTmdbJson, resolveTmdbLanguageTag } from '../services/tmdbService.ts';
-import { matchChannelsByKeywords, parseSeriesSeasonAndEpisode } from './voiceAssistant.ts';
+import {
+  matchChannelsByKeywords,
+  parseSeriesSeasonAndEpisode,
+  searchTmdbPersonCredits,
+  searchTmdbTitlesRanked,
+} from './voiceAssistant.ts';
 import { logger } from '../utils/logger.ts';
 
 export interface GeminiLiveDeps {
@@ -22,21 +26,21 @@ const LIVE_TOOL_DECLARATIONS: FunctionDeclaration[] = [
   {
     name: 'play_or_search_media',
     description:
-      'Busca o reproduce una película, serie, episodio concreto, canal de TV en directo o partido de fútbol en RiffanTV.',
+      'Busca o reproduce una película, serie, episodio concreto, canal de TV en directo o partido de fútbol en RiffanTV. IMPORTANTE: si piden una película, usa kind="movie"; si piden serie o capítulo, usa kind="series"; usa kind="channel" ÚNICAMENTE para canales de TV/TDT explícitos (ej. DAZN, La 1, CNN).',
     parameters: {
       type: Type.OBJECT,
       properties: {
         kind: {
           type: Type.STRING,
-          description: 'Tipo: movie | series | channel | match',
+          description: 'Tipo estricto: movie | series | channel | match',
         },
         query: {
           type: Type.STRING,
-          description: 'Título limpio de película/serie, nombre de canal (ej. La 1, DAZN) o equipo',
+          description: 'Título limpio de película/serie (sin "ponle la película"), nombre exacto de canal o equipo',
         },
         autoPlay: {
           type: Type.BOOLEAN,
-          description: 'true si el usuario pide reproducirlo directamente, false si solo pide recomendaciones o lista',
+          description: 'true si el usuario pide ponerlo/reproducirlo directamente, false si solo pide opciones o recomendaciones',
         },
         season: {
           type: Type.INTEGER,
@@ -48,6 +52,29 @@ const LIVE_TOOL_DECLARATIONS: FunctionDeclaration[] = [
         },
       },
       required: ['kind', 'query'],
+    },
+  },
+  {
+    name: 'search_movies_by_person',
+    description:
+      'Busca las películas o series más famosas de un director o actor/actriz para mostrarlas en pantalla al usuario.',
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        personName: {
+          type: Type.STRING,
+          description: 'Nombre del director o actor/actriz (ej. Christopher Nolan, Leonardo DiCaprio)',
+        },
+        role: {
+          type: Type.STRING,
+          description: 'Rol: director | actor | any',
+        },
+        mediaType: {
+          type: Type.STRING,
+          description: 'Tipo: movie | tv',
+        },
+      },
+      required: ['personName'],
     },
   },
   {
@@ -164,6 +191,37 @@ export function setupGeminiLiveWebSocket(
           return { ok: true, opened: section };
         }
 
+        if (name === 'search_movies_by_person') {
+          const personName = String(args.personName || '').trim();
+          const roleRaw = String(args.role || 'any');
+          const role = roleRaw === 'director' || roleRaw === 'actor' ? roleRaw : 'any';
+          const mediaType = args.mediaType === 'tv' ? 'tv' : 'movie';
+          const catalogItems = await searchTmdbPersonCredits({
+            personName,
+            role,
+            mediaType,
+            lang,
+            limit: 8,
+          });
+          const items = catalogItems.map((m) => ({
+            kind: m.mediaType === 'tv' ? 'series' : 'movie',
+            id: m.id,
+            title: m.title,
+            subtitle: `${m.mediaType === 'tv' ? 'Serie' : 'Película'} · ${m.year || 'HD'} · ★ ${m.rating || '7.5'}`,
+            imageUrl: m.poster || m.backdrop || '',
+            badge: m.mediaType === 'tv' ? 'SERIE' : 'CINE',
+            media: m,
+          }));
+          sendJson(clientWs, {
+            toolItems: items,
+            autoPlay: false,
+          });
+          return {
+            found: items.length,
+            titles: items.map((i) => `${i.title} (${i.media?.year || ''})`),
+          };
+        }
+
         if (name === 'play_or_search_media') {
           const kind = String(args.kind || 'movie');
           const query = String(args.query || '').trim();
@@ -233,61 +291,30 @@ export function setupGeminiLiveWebSocket(
             };
           }
 
-          const tmdbLang = resolveTmdbLanguageTag(lang);
           const isSeries = kind === 'series' || Boolean(season || episode);
-          const endpoint = isSeries ? '/search/tv' : '/search/multi';
           const searchTitle = parsedEp.cleanTitle || query;
-          const tmdbRes = await fetchTmdbJson<{
-            results?: Array<{
-              id: number;
-              title?: string;
-              name?: string;
-              poster_path?: string | null;
-              backdrop_path?: string | null;
-              release_date?: string;
-              first_air_date?: string;
-              vote_average?: number;
-              overview?: string;
-              media_type?: 'movie' | 'tv' | 'person';
-            }>;
-          }>(endpoint, {
-            query: searchTitle,
-            language: tmdbLang,
-            include_adult: false,
-            page: 1,
+          const rankedCatalog = await searchTmdbTitlesRanked({
+            titleSearch: searchTitle,
+            mediaType: isSeries ? 'tv' : 'movie',
+            lang,
+            limit: 4,
           });
 
-          const results = (tmdbRes?.results || [])
-            .filter((r) => r.media_type !== 'person' && Boolean(r.poster_path || r.backdrop_path))
-            .slice(0, 4);
-
-          const items = results.map((r) => {
-            const isTv = (r.media_type || (isSeries ? 'tv' : 'movie')) === 'tv';
-            const title = (r.title || r.name || 'Sin título').trim();
-            const poster = buildTmdbImageUrl(r.poster_path, 'w500') || '';
-            const backdrop = buildTmdbImageUrl(r.backdrop_path, 'w780') || '';
-            const year = (r.release_date || r.first_air_date || '').slice(0, 4);
-            const rating = r.vote_average ? r.vote_average.toFixed(1) : '7.4';
+          const items = rankedCatalog.map((m) => {
+            const isTv = m.mediaType === 'tv';
+            const epLabel =
+              season && episode ? `Temporada ${season} · Capítulo ${episode}` : isTv ? 'Serie' : 'Película';
             return {
               kind: isTv ? 'series' : 'movie',
-              id: `tmdb-${isTv ? 'tv' : 'movie'}-${r.id}`,
-              title,
-              subtitle: year ? `${year} · ★ ${rating}` : `★ ${rating}`,
-              imageUrl: poster || backdrop,
+              id: m.id,
+              title: m.title,
+              subtitle: `${epLabel} · ${m.year || 'HD'} · ★ ${m.rating || '7.4'}`,
+              imageUrl: m.poster || m.backdrop,
               badge: isTv ? 'SERIE' : 'CINE',
               targetSeason: season,
               targetEpisode: episode,
               media: {
-                id: `tmdb-${isTv ? 'tv' : 'movie'}-${r.id}`,
-                tmdbId: r.id,
-                title,
-                year,
-                rating,
-                overview: r.overview || '',
-                poster,
-                backdrop,
-                languages: ['ES', 'LAT', 'VOSE', 'EN'],
-                mediaType: isTv ? 'tv' : 'movie',
+                ...m,
                 targetSeason: season,
                 targetEpisode: episode,
               },
@@ -323,10 +350,15 @@ export function setupGeminiLiveWebSocket(
           inputAudioTranscription: {},
           outputAudioTranscription: {},
           tools: [{ functionDeclarations: LIVE_TOOL_DECLARATIONS }],
-          systemInstruction: `Eres RiffanAI, el compañero de voz natural de RiffanTV (cine, series, anime, canales en directo, fútbol, watch party y juegos).
+          systemInstruction: `Eres RiffanAI, el compañero de voz natural e inteligente de RiffanTV (cine, series, anime, canales en directo, fútbol, watch party y juegos).
 Hablas con ${userName}. Responde siempre con naturalidad, calidez y fluidez conversacional en ${langLabel} (o el idioma en que hable el usuario), sin sonar robótico ni usar listas con markdown.
 ${activeMedia ? `En la sala se está reproduciendo ahora: "${activeMedia}".` : ''}
-Cuando te pidan poner una película, serie, capítulo, canal o partido, o abrir una sección, llama a tus herramientas al instante y confirma brevemente en voz natural.`,
+Reglas clave de herramientas:
+1. Puedes mantener conversación libre sobre cualquier tema (ciencia, cine, dudas, vida diaria, humor) sin llamar herramientas si no piden contenido.
+2. Si piden poner o buscar una película (p.ej. "ponle la película In Time"), usa play_or_search_media con kind="movie", query limpio ("In Time") y autoPlay=true. NUNCA uses kind="channel" para películas o series.
+3. Si piden un episodio concreto de una serie (p.ej. "ponle el segundo capítulo de la temporada 2 de Juego de Tronos"), usa play_or_search_media con kind="series", query="Juego de Tronos", season=2, episode=2 y autoPlay=true.
+4. Si piden películas o series de un director o actor (p.ej. "dime las películas de Christopher Nolan" o "películas de Leonardo DiCaprio"), llama a search_movies_by_person para que aparezcan sus fichas en pantalla mientras las comentas.
+5. Usa kind="channel" solo cuando pidan un canal de TV explícito (La 1, DAZN, etc.).`,
         },
         callbacks: {
           onopen: () => {

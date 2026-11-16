@@ -36,8 +36,37 @@ import type {
   ChapasTeamId,
   FutbolChapasState,
 } from './shared/futbolChapas';
+import type {
+  HeadSoccerInput,
+  HeadSoccerOnlineState,
+  HeadSoccerSeat,
+  HeadSoccerSimulation,
+  HeadSoccerSkinId,
+} from './shared/headSoccer';
+import type {
+  EvaluatedPokerHand,
+  PokerActionType,
+  PokerCard,
+  PokerGameState,
+  PokerSeat,
+  PokerStreet,
+} from './shared/texasHoldem';
+import type {
+  BjCard,
+  BjHandOutcome,
+  BlackjackGameState,
+  BlackjackHandScore,
+  BlackjackPlayerHand,
+  BlackjackSeat,
+} from './shared/blackjack';
 
 export type {
+  BjCard,
+  BjHandOutcome,
+  BlackjackGameState,
+  BlackjackHandScore,
+  BlackjackPlayerHand,
+  BlackjackSeat,
   BoardClockMinutes,
   BoardCoord,
   BoardGameState,
@@ -50,7 +79,13 @@ export type {
   ChapasShotInput,
   ChapasTeamId,
   ChessPromotionPiece,
+  EvaluatedPokerHand,
   FutbolChapasState,
+  HeadSoccerInput,
+  HeadSoccerOnlineState,
+  HeadSoccerSeat,
+  HeadSoccerSimulation,
+  HeadSoccerSkinId,
   LegalBoardMove,
   ParchisGameState,
   PartyColor,
@@ -58,6 +93,11 @@ export type {
   PartyGameType,
   PinturilloGameState,
   PinturilloStroke,
+  PokerActionType,
+  PokerCard,
+  PokerGameState,
+  PokerSeat,
+  PokerStreet,
   Pool8BallState,
   PoolBallGroup,
   PoolBallState,
@@ -815,6 +855,9 @@ export interface RoomData {
   pinturilloState?: PinturilloGameState | null;
   poolGameState?: Pool8BallState | null;
   chapasState?: FutbolChapasState | null;
+  headSoccerState?: HeadSoccerOnlineState | null;
+  pokerGameState?: PokerGameState | null;
+  blackjackState?: BlackjackGameState | null;
   matchResponses?: import('./shared/protocol').RoomMatchResponsesState | null;
   videoState: VideoState;
   queue?: RoomQueueItem[];

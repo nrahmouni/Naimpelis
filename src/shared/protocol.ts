@@ -39,8 +39,29 @@ import type {
   ChapasTeamId,
   FutbolChapasState,
 } from './futbolChapas';
+import type {
+  HeadSoccerInput,
+  HeadSoccerOnlineState,
+  HeadSoccerSeat,
+  HeadSoccerSimulation,
+  HeadSoccerSkinId,
+} from './headSoccer';
+import type {
+  PokerActionType,
+  PokerCard,
+  PokerGameState,
+  PokerSeat,
+} from './texasHoldem';
+import type {
+  BjCard,
+  BlackjackGameState,
+  BlackjackSeat,
+} from './blackjack';
 
 export type {
+  BjCard,
+  BlackjackGameState,
+  BlackjackSeat,
   BoardClockMinutes,
   BoardCoord,
   BoardGameState,
@@ -53,12 +74,21 @@ export type {
   ChapasTeamId,
   ChessPromotionPiece,
   FutbolChapasState,
+  HeadSoccerInput,
+  HeadSoccerOnlineState,
+  HeadSoccerSeat,
+  HeadSoccerSimulation,
+  HeadSoccerSkinId,
   ParchisGameState,
   PartyColor,
   PartyGameState,
   PartyGameType,
   PinturilloGameState,
   PinturilloStroke,
+  PokerActionType,
+  PokerCard,
+  PokerGameState,
+  PokerSeat,
   Pool8BallState,
   PoolBallGroup,
   PoolBallState,
@@ -151,6 +181,9 @@ export interface VoiceSignalPayload {
 export type RoomGameInviteType =
   | 'pool'
   | 'chapas'
+  | 'headsoccer'
+  | 'poker'
+  | 'blackjack'
   | 'parchis'
   | 'uno'
   | 'pinturillo'
@@ -206,6 +239,9 @@ export interface RoomStatePayload {
   pinturilloState?: PinturilloGameState | null;
   poolGameState?: Pool8BallState | null;
   chapasState?: FutbolChapasState | null;
+  headSoccerState?: HeadSoccerOnlineState | null;
+  pokerGameState?: PokerGameState | null;
+  blackjackState?: BlackjackGameState | null;
   matchResponses?: RoomMatchResponsesState | null;
   createdAt: number;
   serverTime?: number;
@@ -539,12 +575,110 @@ export type ClientWsMessage =
       payload: { roomId: string };
     }
   | {
+      type: 'HEADSOCCER_START';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'HEADSOCCER_JOIN_SEAT';
+      payload: { roomId: string; seatIndex: 0 | 1 | 'spectate' };
+    }
+  | {
+      type: 'HEADSOCCER_SELECT_SKIN';
+      payload: { roomId: string; skinId: HeadSoccerSkinId };
+    }
+  | {
+      type: 'HEADSOCCER_START_MATCH';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'HEADSOCCER_INPUT';
+      payload: { roomId: string; side: 0 | 1; input: HeadSoccerInput };
+    }
+  | {
+      type: 'HEADSOCCER_SYNC_STATE';
+      payload: { roomId: string; sim: HeadSoccerSimulation };
+    }
+  | {
+      type: 'HEADSOCCER_REMATCH';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'HEADSOCCER_CLOSE';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'POKER_START';
+      payload: { roomId: string; botsEnabled?: boolean };
+    }
+  | {
+      type: 'POKER_JOIN_SEAT';
+      payload: { roomId: string; seatIndex?: number | 'spectate' };
+    }
+  | {
+      type: 'POKER_TOGGLE_BOTS';
+      payload: { roomId: string; botsEnabled: boolean };
+    }
+  | {
+      type: 'POKER_START_MATCH';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'POKER_ACTION';
+      payload: { roomId: string; action: PokerActionType; raiseTo?: number };
+    }
+  | {
+      type: 'POKER_REBUY';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'POKER_CLOSE';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'BLACKJACK_START';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'BLACKJACK_JOIN_SEAT';
+      payload: { roomId: string; seatIndex?: number | 'spectate' };
+    }
+  | {
+      type: 'BLACKJACK_BET';
+      payload: {
+        roomId: string;
+        op: { kind: 'add'; amount: number } | { kind: 'clear' } | { kind: 'rebet' } | { kind: 'rebuy' };
+      };
+    }
+  | {
+      type: 'BLACKJACK_DEAL';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'BLACKJACK_ACTION';
+      payload: { roomId: string; action: 'hit' | 'stand' | 'double' | 'split' };
+    }
+  | {
+      type: 'BLACKJACK_NEW_ROUND';
+      payload: { roomId: string };
+    }
+  | {
+      type: 'BLACKJACK_CLOSE';
+      payload: { roomId: string };
+    }
+  | {
       type: 'GAME_INVITE_RESPOND';
       payload: {
         roomId: string;
         gameType: RoomGameInviteType;
         inviteId?: string;
         response: 'accepted' | 'declined';
+      };
+    }
+  | {
+      type: 'GAME_SWITCH';
+      payload: {
+        roomId: string;
+        targetGame: RoomGameInviteType;
       };
     };
 
@@ -683,6 +817,64 @@ export type ServerWsMessage =
         };
         preShotState: FutbolChapasState;
         authoritativeState: FutbolChapasState;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'HEADSOCCER_STATE_UPDATED';
+      payload: {
+        headSoccerState: HeadSoccerOnlineState | null;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'HEADSOCCER_INPUT_RELAY';
+      payload: {
+        side: 0 | 1;
+        input: HeadSoccerInput;
+        seq: number;
+      };
+    }
+  | {
+      type: 'HEADSOCCER_SYNC_BROADCAST';
+      payload: {
+        seq: number;
+        sim: HeadSoccerSimulation;
+      };
+    }
+  | {
+      type: 'POKER_STATE_UPDATED';
+      payload: {
+        pokerGameState: PokerGameState | null;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'BLACKJACK_STATE_UPDATED';
+      payload: {
+        blackjackState: BlackjackGameState | null;
+        message?: RoomChatMessage | null;
+      };
+    }
+  | {
+      type: 'GAME_SWITCHED';
+      payload: {
+        targetGame: RoomGameInviteType;
+        switchedByUserId: string;
+        switchedByName: string;
+        seatedUserIds: string[];
+        roomState: Pick<
+          RoomStatePayload,
+          | 'gameState'
+          | 'partyGameState'
+          | 'pinturilloState'
+          | 'poolGameState'
+          | 'chapasState'
+          | 'headSoccerState'
+          | 'pokerGameState'
+          | 'blackjackState'
+          | 'matchResponses'
+        >;
         message?: RoomChatMessage | null;
       };
     };
