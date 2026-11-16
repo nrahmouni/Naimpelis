@@ -51,7 +51,6 @@ export const DISCOVERY_PROVIDERS = [
   { id: 'apple', es: 'Apple TV+', ca: 'Apple TV+', en: 'Apple TV+' },
   { id: 'movistar', es: 'Movistar+', ca: 'Movistar+', en: 'Movistar+' },
   { id: 'filmin', es: 'Filmin', ca: 'Filmin', en: 'Filmin' },
-  { id: 'crunchyroll', es: 'Crunchyroll', ca: 'Crunchyroll', en: 'Crunchyroll' },
   { id: 'skyshowtime', es: 'SkyShowtime', ca: 'SkyShowtime', en: 'SkyShowtime' },
 ] as const;
 

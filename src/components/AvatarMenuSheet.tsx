@@ -9,6 +9,7 @@ import {
   Youtube,
   Settings,
   ChevronRight,
+  LogOut,
 } from 'lucide-react';
 import type { User as FirebaseUser } from 'firebase/auth';
 import type { AppLanguage } from '../types';
@@ -34,6 +35,10 @@ interface AvatarMenuSheetProps {
   onOpenSmartTv: () => void;
   onOpenYouTube: () => void;
   onOpenSettings: () => void;
+  inRoom?: boolean;
+  roomName?: string;
+  onLeaveRoom?: () => void;
+  onSignOut?: () => void | Promise<void>;
 }
 
 export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
@@ -54,6 +59,10 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
   onOpenSmartTv,
   onOpenYouTube,
   onOpenSettings,
+  inRoom = false,
+  roomName,
+  onLeaveRoom,
+  onSignOut,
 }) => {
   const runAction = (fn: () => void) => {
     triggerHaptic('light');
@@ -214,6 +223,45 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
             );
           })}
         </nav>
+
+        {((inRoom && onLeaveRoom) || (authUser && onSignOut)) && (
+          <div className="pt-2 border-t border-white/[0.07] space-y-1.5">
+            {inRoom && onLeaveRoom && (
+              <button
+                type="button"
+                onClick={() => runAction(onLeaveRoom)}
+                className="w-full min-h-11 px-3.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span className="text-sm font-semibold text-rose-200 truncate">
+                    {pickLang(lang, {
+                      es: `Salir de la sala${roomName ? ` (${roomName})` : ''}`,
+                      ca: `Sortir de la sala${roomName ? ` (${roomName})` : ''}`,
+                      en: `Leave room${roomName ? ` (${roomName})` : ''}`,
+                    })}
+                  </span>
+                </span>
+              </button>
+            )}
+            {authUser && onSignOut && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onClose();
+                  void onSignOut();
+                }}
+                className="w-full min-h-11 px-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
+              >
+                <LogOut className="w-4 h-4 text-zinc-400 shrink-0" />
+                <span className="text-sm font-semibold text-zinc-300 truncate">
+                  {pickLang(lang, { es: 'Cerrar sesión', ca: 'Tancar sessió', en: 'Sign out' })}
+                </span>
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </BottomSheet>
   );

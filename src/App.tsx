@@ -8,10 +8,10 @@ import {
   ListVideo,
   RefreshCw,
   Download,
-  LogOut,
   ArrowUpRight,
   MessageSquare,
   X,
+  Loader2,
 } from 'lucide-react';
 import {
   checkRemoteAppVersion,
@@ -303,6 +303,28 @@ export function App() {
   const [isAdsPageOpen, setIsAdsPageOpen] = useState<boolean>(
     Boolean(initialRoute.isAdsPage)
   );
+  const normalizeDeepLinkGameType = (raw?: string): RoomGameInviteType | null => {
+    if (!raw) return null;
+    const trimmed = raw.trim().toLowerCase();
+    const mapped = trimmed === 'billar' ? 'pool' : trimmed;
+    const allowed: RoomGameInviteType[] = [
+      'pool',
+      'chapas',
+      'parchis',
+      'uno',
+      'pinturillo',
+      'chess',
+      'checkers',
+      'connect4',
+    ];
+    return allowed.includes(mapped as RoomGameInviteType)
+      ? (mapped as RoomGameInviteType)
+      : null;
+  };
+  const initialDeepLinkGame =
+    !initialRoute.isTvMode && !initialRoute.isTvPairLobby && !initialRoute.isAdsPage
+      ? normalizeDeepLinkGameType(initialRoute.gameType)
+      : null;
   const [tvAuthToken, setTvAuthToken] = useState<string>('');
 
   // Permanent Cloud Rooms & Private 4-Digit Room PIN State
@@ -480,8 +502,12 @@ export function App() {
   const [cloudState, setCloudState] = useState<CloudBrowserState | null>(null);
 
   // Navigation & Extraction State
-  const [catalogSection, setCatalogSection] = useState<CatalogSection>('home');
-  const [mobileTab, setMobileTab] = useState<MobileNavTab>('home');
+  const [catalogSection, setCatalogSection] = useState<CatalogSection>(() =>
+    effectiveInitialRoom && initialDeepLinkGame ? 'games' : 'home'
+  );
+  const [mobileTab, setMobileTab] = useState<MobileNavTab>(() =>
+    effectiveInitialRoom && initialDeepLinkGame ? 'games' : 'home'
+  );
   const [openQueueTrigger, setOpenQueueTrigger] = useState<number>(0);
   const [queueAddedNotice, setQueueAddedNotice] = useState<string | null>(null);
   const [unreadChatCount, setUnreadChatCount] = useState<number>(0);
@@ -588,7 +614,11 @@ export function App() {
   const [forcedOpenGame, setForcedOpenGame] = useState<{
     gameType: RoomGameInviteType;
     seq: number;
-  } | null>(null);
+  } | null>(() =>
+    effectiveInitialRoom && initialDeepLinkGame
+      ? { gameType: initialDeepLinkGame, seq: Date.now() }
+      : null
+  );
   const activeHubGameRef = useRef<RoomGameInviteType | null>(null);
   const catalogSectionRef = useRef<CatalogSection>(catalogSection);
   catalogSectionRef.current = catalogSection;
@@ -609,8 +639,46 @@ export function App() {
   isExtractingRef.current = isExtracting;
   const extractionReqSeqRef = useRef<number>(0);
   const extractionAbortRef = useRef<AbortController | null>(null);
+  const activeSportsMatchRef = useRef(activeSportsMatch);
+  activeSportsMatchRef.current = activeSportsMatch;
+  const activeMatchDetailsRef = useRef(activeMatchDetails);
+  activeMatchDetailsRef.current = activeMatchDetails;
+  const activeMovieContextRef = useRef(activeMovieContext);
+  activeMovieContextRef.current = activeMovieContext;
+  const isPlayerClosedLocallyRef = useRef(isPlayerClosedLocally);
+  isPlayerClosedLocallyRef.current = isPlayerClosedLocally;
+  const isPlayerMinimizedRef = useRef(isPlayerMinimized);
+  isPlayerMinimizedRef.current = isPlayerMinimized;
+
+  const preExtractionSnapshotRef = useRef<{
+    videoState: VideoState;
+    activeSportsMatch: (NonNullable<SportsMatch['matchMeta']> & { competition?: string }) | null;
+    activeMatchDetails: FootballMatchDetails | null;
+    activeMovieContext: ActiveMovieContext | null;
+    isPlayerClosedLocally: boolean;
+    isPlayerMinimized: boolean;
+    isCinemaMode: boolean;
+  } | null>(null);
+
+  const clearExtractionSnapshot = useCallback(() => {
+    preExtractionSnapshotRef.current = null;
+  }, []);
 
   const beginMediaExtraction = useCallback(() => {
+    if (!isExtractingRef.current && !preExtractionSnapshotRef.current) {
+      preExtractionSnapshotRef.current = {
+        videoState: videoStateRef.current,
+        activeSportsMatch: activeSportsMatchRef.current,
+        activeMatchDetails: activeMatchDetailsRef.current,
+        activeMovieContext: activeMovieContextRef.current,
+        isPlayerClosedLocally: isPlayerClosedLocallyRef.current,
+        isPlayerMinimized: isPlayerMinimizedRef.current,
+        isCinemaMode: isCinemaModeRef.current,
+      };
+    }
+    if (isPlayerClosedLocallyRef.current) {
+      setIsPlayerClosedLocally(false);
+    }
     if (extractionAbortRef.current) {
       try {
         extractionAbortRef.current.abort();
@@ -623,6 +691,43 @@ export function App() {
     const reqSeq = ++extractionReqSeqRef.current;
     return { reqSeq, signal: ctrl.signal };
   }, []);
+
+  const handleCancelMediaExtraction = useCallback(() => {
+    if (extractionAbortRef.current) {
+      try {
+        extractionAbortRef.current.abort();
+      } catch {
+        // ignore
+      }
+      extractionAbortRef.current = null;
+    }
+    extractionReqSeqRef.current += 1;
+    isExtractingRef.current = false;
+    setIsExtracting(false);
+    setLoadingItemId(null);
+    setExtractionError(null);
+    setExtractionLabel('');
+
+    const snap = preExtractionSnapshotRef.current;
+    preExtractionSnapshotRef.current = null;
+    if (snap) {
+      videoStateUrlRef.current = snap.videoState.url;
+      setVideoState(snap.videoState);
+      setActiveSportsMatch(snap.activeSportsMatch);
+      setActiveMatchDetails(snap.activeMatchDetails);
+      setActiveMovieContext(snap.activeMovieContext);
+      setIsPlayerClosedLocally(snap.isPlayerClosedLocally);
+      setIsPlayerMinimized(snap.isPlayerMinimized);
+      setCinemaModePersist(snap.isCinemaMode);
+    }
+    triggerHaptic('light');
+  }, [setCinemaModePersist]);
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.lang =
+      lang === 'zh' ? 'zh-CN' : lang === 'ca' ? 'ca' : lang === 'en' ? 'en' : 'es';
+  }, [lang]);
 
   const rememberSessionPin = useCallback((targetCode: string, pinCode: string) => {
     const cleanCode = targetCode.trim().toLowerCase();
@@ -723,6 +828,24 @@ export function App() {
     },
     [setActiveWorld]
   );
+
+  useEffect(() => {
+    if (!effectiveInitialRoom || !initialDeepLinkGame) return;
+    applyWorldChange('juegos');
+    if (typeof window !== 'undefined') {
+      try {
+        const url = new URL(window.location.href);
+        if (url.searchParams.has('game')) {
+          url.searchParams.delete('game');
+          window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+        }
+      } catch {
+        // ignore URL cleanup error
+      }
+    }
+    // Run once on initial deep-link boot only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const preloadWorld = useCallback((world: PrimaryWorldId) => {
     if (world === 'futbol') {
@@ -1881,6 +2004,7 @@ export function App() {
 
   const handleClosePlayer = () => {
     triggerHaptic('light');
+    clearExtractionSnapshot();
     setIsPlayerMinimized(false);
     setCinemaModePersist(false);
     setSecondaryStream(null);
@@ -1911,6 +2035,7 @@ export function App() {
       return;
     }
     triggerHaptic('medium');
+    clearExtractionSnapshot();
     setIsPlayerMinimized(false);
     setIsPlayerClosedLocally(false);
     setCinemaModePersist(false);
@@ -1942,16 +2067,39 @@ export function App() {
     setIsPlayerMinimized(false);
     setIsPlayerClosedLocally(false);
     setSecondaryStream(null);
-    if (typeof window !== 'undefined' && window.location.pathname === '/') {
-      window.history.pushState(
-        { naimInRoom: true },
-        '',
-        `/${encodeURIComponent(targetRoomId)}`
-      );
+    const deepLinkGame =
+      typeof window !== 'undefined'
+        ? normalizeDeepLinkGameType(parseRoomFromWindow().gameType)
+        : null;
+    if (typeof window !== 'undefined') {
+      if (window.location.pathname === '/') {
+        window.history.pushState(
+          { naimInRoom: true },
+          '',
+          `/${encodeURIComponent(targetRoomId)}`
+        );
+      } else if (deepLinkGame) {
+        try {
+          const url = new URL(window.location.href);
+          if (url.searchParams.has('game')) {
+            url.searchParams.delete('game');
+            window.history.replaceState({}, '', `${url.pathname}${url.search}${url.hash}`);
+          }
+        } catch {
+          // ignore
+        }
+      }
     }
-    setCatalogSection('home');
-    setMobileTab('home');
-    setActiveWorld('entry');
+    if (deepLinkGame) {
+      setCatalogSection('games');
+      setMobileTab('games');
+      setActiveWorld('juegos');
+      setForcedOpenGame({ gameType: deepLinkGame, seq: Date.now() });
+    } else {
+      setCatalogSection('home');
+      setMobileTab('home');
+      setActiveWorld('entry');
+    }
     setWorldSearchQuery('');
     setAvatarMenuOpen(false);
     setRoomId(targetRoomId);
@@ -1963,6 +2111,7 @@ export function App() {
 
   const handleSwitchActiveRoom = (targetRoomId: string, customName?: string) => {
     manualLobbyStayRef.current = false;
+    clearExtractionSnapshot();
     setIsTvPairLobby(false);
     setIsTvMode(false);
     setTvAuthToken('');
@@ -2003,6 +2152,7 @@ export function App() {
 
   const handleLeaveRoom = () => {
     triggerHaptic('light');
+    clearExtractionSnapshot();
     manualLobbyStayRef.current = true;
     socketService.disconnect();
     setInRoom(false);
@@ -2099,7 +2249,7 @@ export function App() {
   // ============================================================================
   const handlePlayMovie = async (
     movie: CatalogMovie,
-    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN',
+    preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT',
     startOrOpts?: number | { startAtSec?: number; forceSpanish?: boolean }
   ) => {
     if (!canChangeMedia) {
@@ -2112,8 +2262,9 @@ export function App() {
       typeof startOrOpts === 'object' && startOrOpts !== null
         ? Boolean(startOrOpts.forceSpanish)
         : false;
-    const langFullLabelMap: Record<'ES' | 'LAT' | 'VOSE' | 'EN', string> = {
+    const langFullLabelMap: Record<'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT', string> = {
       ES: 'Castellano (España)',
+      CAT: 'Català',
       LAT: 'Español Latino',
       VOSE: 'Subtitulado (VOSE)',
       EN: 'Inglés Original (EN)',
@@ -2134,6 +2285,7 @@ export function App() {
 
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
+    setVideoState((prev) => (prev.seriesMeta ? { ...prev, seriesMeta: undefined } : prev));
     setActiveMovieContext({
       tmdbId: movie.tmdbId,
       title: movie.title,
@@ -2187,6 +2339,7 @@ export function App() {
       }
 
       if (data.mode === 'cloud') {
+        clearExtractionSnapshot();
         socketService.startCloudBrowser(data.streamUrl, profile.name);
         return;
       }
@@ -2256,6 +2409,7 @@ export function App() {
       setWatchHistory(list);
       upsertCloudWatchHistory(item).catch(() => {});
 
+      clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
@@ -2533,6 +2687,7 @@ export function App() {
           return;
         }
         if (data.mode === 'cloud') {
+          clearExtractionSnapshot();
           socketService.startCloudBrowser(data.streamUrl, profile.name);
           return;
         }
@@ -2580,6 +2735,7 @@ export function App() {
         setWatchHistory(list);
         upsertCloudWatchHistory(updatedHist).catch(() => {});
 
+        clearExtractionSnapshot();
         videoStateUrlRef.current = nextState.url;
         setVideoState(nextState);
         socketService.syncVideoState('change_url', nextState, profile.name);
@@ -2700,7 +2856,9 @@ export function App() {
         ? rawActiveLang
         : 'ES';
 
+    const { reqSeq, signal } = beginMediaExtraction();
     setIsExtracting(true);
+    isExtractingRef.current = true;
     setExtractionError(null);
     setExtractionLabel(
       `${meta.seriesTitle} (${targetSeason}x${String(targetEp).padStart(
@@ -2719,8 +2877,9 @@ export function App() {
         title: meta.seriesTitle,
         ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
       const data = await res.json();
+      if (reqSeq !== extractionReqSeqRef.current) return;
       if (!res.ok || !data?.success || !data?.streamUrl) {
         setExtractionError(
           delta > 0
@@ -2779,18 +2938,23 @@ export function App() {
       setWatchHistory(list);
       upsertCloudWatchHistory(item).catch(() => {});
 
+      clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
-    } catch {
+    } catch (err: unknown) {
+      if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;
       setExtractionError(
         delta > 0
           ? 'Error al cargar el siguiente episodio.'
           : 'Error al cargar el capítulo anterior.'
       );
     } finally {
-      setIsExtracting(false);
+      if (reqSeq === extractionReqSeqRef.current) {
+        isExtractingRef.current = false;
+        setIsExtracting(false);
+      }
     }
   };
 
@@ -2819,6 +2983,7 @@ export function App() {
 
     if (failedIndices.size === 0) {
       setActiveMovieContext(null);
+      setVideoState((prev) => (prev.seriesMeta ? { ...prev, seriesMeta: undefined } : prev));
       const parsedTeams = (() => {
         if (match.matchMeta) {
           return { ...match.matchMeta, competition: match.competition };
@@ -2898,6 +3063,7 @@ export function App() {
           setExtractionError('Señal temporalmente fuera de servicio.');
           return;
         }
+        clearExtractionSnapshot();
         socketService.startCloudBrowser(data.streamUrl, profile.name);
         return;
       }
@@ -2926,6 +3092,7 @@ export function App() {
         updatedBy: profile.name,
       };
 
+      clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
@@ -2961,6 +3128,7 @@ export function App() {
 
     if (allowSameChannelBackup) {
       setActiveMovieContext(null);
+      setVideoState((prev) => (prev.seriesMeta ? { ...prev, seriesMeta: undefined } : prev));
       const progParts = (liveProgramHint || '')
         .replace(/\s+·\s+.*$/, '')
         .split(/\s+(?:vs\.?|v)\s+/i);
@@ -3072,6 +3240,7 @@ export function App() {
         updatedBy: profile.name,
       };
 
+      clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
@@ -3108,6 +3277,8 @@ export function App() {
     const favParts = (favCh.title || '')
       .replace(/\s+·\s+.*$/, '')
       .split(/\s+(?:vs\.?|v)\s+/i);
+    setActiveMovieContext(null);
+    setVideoState((prev) => (prev.seriesMeta ? { ...prev, seriesMeta: undefined } : prev));
     if (
       favCh.sport === 'soccer' &&
       favParts.length === 2 &&
@@ -3156,11 +3327,13 @@ export function App() {
           );
           return;
         }
+        clearExtractionSnapshot();
         socketService.startCloudBrowser(favCh.channelUrl, profile.name);
         return;
       }
 
       if (data.mode === 'cloud') {
+        clearExtractionSnapshot();
         socketService.startCloudBrowser(data.streamUrl, profile.name);
         return;
       }
@@ -3190,6 +3363,7 @@ export function App() {
         updatedBy: profile.name,
       };
 
+      clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
@@ -3212,6 +3386,7 @@ export function App() {
       return;
     }
     beginMediaExtraction();
+    clearExtractionSnapshot();
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
     setActiveMovieContext(null);
@@ -3278,6 +3453,7 @@ export function App() {
           return;
         }
         if (data.mode === 'cloud') {
+          clearExtractionSnapshot();
           socketService.startCloudBrowser(data.streamUrl, profile.name);
           return;
         }
@@ -3292,13 +3468,23 @@ export function App() {
           currentTime: 0,
           isPlaying: true,
           isLive: false,
-          tracks: data.tracks || [],
+          tracks: (data.tracks || []).map((t: StreamTrack) => ({ ...t, lang: 'CAT' })),
           activeTrackIndex: 0,
           seriesMeta: undefined,
           lastUpdated: Date.now(),
           updatedBy: profile.name,
         };
+        clearExtractionSnapshot();
         videoStateUrlRef.current = nextState.url;
+        setActiveMovieContext({
+          title: series.title,
+          poster: series.poster,
+          backdrop: series.backdrop || series.poster,
+          year: series.year,
+          overview: series.overview,
+          tmdbId: series.tmdbId,
+          preferLang: 'CAT',
+        });
         setVideoState(nextState);
         socketService.syncVideoState('change_url', nextState, profile.name);
         playCinemaSound('play');
@@ -3317,6 +3503,7 @@ export function App() {
 
     if (episode.sourceType === 'youtube' && (episode.youtubeVideoId || episode.streamUrl)) {
       beginMediaExtraction();
+      clearExtractionSnapshot();
       isExtractingRef.current = false;
       setIsExtracting(false);
       setLoadingItemId(null);
@@ -3334,12 +3521,12 @@ export function App() {
         isLive: false,
         tracks:
           Array.isArray(episode.tracks) && episode.tracks.length > 0
-            ? episode.tracks
+            ? episode.tracks.map((t) => ({ ...t, lang: 'CAT' }))
             : [
                 {
                   id: `cat-yt-${episode.id}`,
                   label: 'Arxiu Català · YouTube HD',
-                  lang: 'ES',
+                  lang: 'CAT',
                   quality: 'HD',
                   sourceUrl: ytId,
                   resolverType: 'youtube',
@@ -3352,6 +3539,15 @@ export function App() {
         updatedBy: profile.name,
       };
       videoStateUrlRef.current = nextState.url;
+      setActiveMovieContext({
+        title: series.title,
+        poster: series.poster,
+        backdrop: series.backdrop || series.poster,
+        year: series.year,
+        overview: series.overview,
+        tmdbId: series.tmdbId,
+        preferLang: 'CAT',
+      });
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
       playCinemaSound('play');
@@ -3364,18 +3560,19 @@ export function App() {
     }
 
     beginMediaExtraction();
+    clearExtractionSnapshot();
     isExtractingRef.current = false;
     setIsExtracting(false);
     setLoadingItemId(null);
 
     const tracks: StreamTrack[] =
       Array.isArray(episode.tracks) && episode.tracks.length > 0
-        ? episode.tracks
+        ? episode.tracks.map((t) => ({ ...t, lang: 'CAT' }))
         : [
             {
               id: `cat-direct-${episode.id}`,
               label: 'Català HD · Directe',
-              lang: 'ES',
+              lang: 'CAT',
               quality: 'HD',
               sourceUrl: episode.streamUrl,
               resolverType: 'direct_mp4',
@@ -3402,6 +3599,15 @@ export function App() {
     };
 
     videoStateUrlRef.current = nextState.url;
+    setActiveMovieContext({
+      title: series.title,
+      poster: series.poster,
+      backdrop: series.backdrop || series.poster,
+      year: series.year,
+      overview: series.overview,
+      tmdbId: series.tmdbId,
+      preferLang: 'CAT',
+    });
     setVideoState(nextState);
     socketService.syncVideoState('change_url', nextState, profile.name);
     playCinemaSound('play');
@@ -3435,6 +3641,7 @@ export function App() {
 
     if (targetTrack.resolvedStreamUrl) {
       beginMediaExtraction();
+      clearExtractionSnapshot();
       isExtractingRef.current = false;
       setIsExtracting(false);
       const nextMode = resolveTrackPlaybackMode(targetTrack, videoState.mode);
@@ -3566,6 +3773,7 @@ export function App() {
         updatedBy: profile.name,
       };
 
+      clearExtractionSnapshot();
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       socketService.syncVideoState('change_url', nextState, profile.name);
@@ -3599,10 +3807,13 @@ export function App() {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
       return;
     }
+    const { reqSeq, signal } = beginMediaExtraction();
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
+    setActiveMovieContext(null);
     scrollDesktopToPlayer();
     setIsExtracting(true);
+    isExtractingRef.current = true;
     setLoadingItemId('custom-url');
     setExtractionError(null);
     setExtractionLabel('Analizando enlace y extrayendo flujo limpio...');
@@ -3612,11 +3823,13 @@ export function App() {
         url: rawUrl,
         ...(isNestedSandboxFrame ? { sandboxed: '1' } : {}),
       });
-      const res = await fetch(`/api/extract/stream?${params.toString()}`);
+      const res = await fetch(`/api/extract/stream?${params.toString()}`, { signal });
       const data = await res.json();
+      if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (res.ok && data?.success && data?.streamUrl) {
         if (data.mode === 'cloud') {
+          clearExtractionSnapshot();
           socketService.startCloudBrowser(data.streamUrl, profile.name);
           return;
         }
@@ -3648,17 +3861,25 @@ export function App() {
           lastUpdated: Date.now(),
           updatedBy: profile.name,
         };
+        clearExtractionSnapshot();
+        videoStateUrlRef.current = nextState.url;
         setVideoState(nextState);
         socketService.syncVideoState('change_url', nextState, profile.name);
         playCinemaSound('play');
       } else {
+        clearExtractionSnapshot();
         socketService.startCloudBrowser(rawUrl, profile.name);
       }
-    } catch {
+    } catch (err: unknown) {
+      if (isAbortError(err) || reqSeq !== extractionReqSeqRef.current) return;
+      clearExtractionSnapshot();
       socketService.startCloudBrowser(rawUrl, profile.name);
     } finally {
-      setIsExtracting(false);
-      setLoadingItemId(null);
+      if (reqSeq === extractionReqSeqRef.current) {
+        isExtractingRef.current = false;
+        setIsExtracting(false);
+        setLoadingItemId(null);
+      }
     }
   };
 
@@ -4497,6 +4718,7 @@ export function App() {
             isExtracting={isExtracting}
             extractionLabel={extractionLabel}
             extractionError={extractionError}
+            onCancelExtraction={handleCancelMediaExtraction}
             languageNotice={languageNotice}
             onDismissLanguageNotice={() => setLanguageNotice(null)}
             cloudFrame={cloudFrame}
@@ -4671,7 +4893,7 @@ export function App() {
     !isMobileKeyboardOpen;
 
   const hideBrowseBelowPlayer =
-    isPlayerActive &&
+    isPlayingMediaReady &&
     !isDockedMini &&
     !isAutoImmersiveLandscape &&
     activeWorld !== 'sala' &&
@@ -4695,7 +4917,6 @@ export function App() {
     !isPlayerMinimized &&
     !isAutoImmersiveLandscape &&
     !activeSportsMatch &&
-    !videoState.seriesMeta &&
     videoState.mode !== 'youtube' &&
     (Boolean(videoState.isLive) ||
       Boolean(
@@ -4705,7 +4926,13 @@ export function App() {
       ));
 
   const renderPartySidebar = () => (
-      <React.Suspense fallback={null}>
+      <React.Suspense
+        fallback={
+          <div className="flex-1 flex items-center justify-center p-6 text-zinc-400">
+            <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
+          </div>
+        }
+      >
         <PartySidebar
           roomId={roomId}
           currentUser={currentUser}
@@ -5032,6 +5259,10 @@ export function App() {
             onOpenSmartTv={() => setSmartTvModalOpen(true)}
             onOpenYouTube={() => enterWorld('youtube')}
             onOpenSettings={() => setSettingsSheetOpen(true)}
+            inRoom={inRoom}
+            roomName={roomName}
+            onLeaveRoom={handleLeaveRoom}
+            onSignOut={handleGoogleSignOut}
           />
 
           <SettingsBottomSheet
@@ -5094,36 +5325,6 @@ export function App() {
             </button>
 
             <div className="flex items-center gap-2">
-              {inRoom && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    triggerHaptic('medium');
-                    handleLeaveRoom();
-                  }}
-                  className="min-h-10 px-3 rounded-2xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/35 text-rose-300 hover:text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all shadow-sm"
-                  title={pickLang(lang, {
-                    es: `Salir de la sala (${roomName || roomId.toUpperCase()})`,
-                    ca: `Sortir de la sala (${roomName || roomId.toUpperCase()})`,
-                    en: `Leave room (${roomName || roomId.toUpperCase()})`,
-                  })}
-                  aria-label={pickLang(lang, {
-                    es: 'Salir de la sala',
-                    ca: 'Sortir de la sala',
-                    en: 'Leave room',
-                  })}
-                >
-                  <LogOut className="w-3.5 h-3.5 text-rose-400" />
-                  <span className="hidden xs:inline">
-                    {pickLang(lang, {
-                      es: 'Salir Sala',
-                      ca: 'Sortir Sala',
-                      en: 'Leave Room',
-                    })}
-                  </span>
-                </button>
-              )}
-
               <button
                 type="button"
                 onClick={() => {
@@ -5277,6 +5478,7 @@ export function App() {
                       }
                     }}
                     onClosePlayer={handleClosePlayer}
+                    onCancelExtraction={handleCancelMediaExtraction}
                     onOpenSmartTvModal={() => setSmartTvModalOpen(true)}
                     hasConnectedSmartTv={hasConnectedSmartTv}
                     onSendTvRemoteCommand={handleSendTvRemoteCommand}
@@ -5447,7 +5649,8 @@ export function App() {
                   !isPlayerClosedLocally &&
                   !isPlayerMinimized &&
                   !isAutoImmersiveLandscape &&
-                  videoState.seriesMeta && (
+                  videoState.seriesMeta &&
+                  !videoState.isLive && (
                     <React.Suspense fallback={null}>
                       <SeriesEpisodesDock
                         seriesMeta={videoState.seriesMeta}
@@ -5480,14 +5683,37 @@ export function App() {
                       }
                       lang={lang}
                       preferLang={(() => {
-                        const rawLang = String(
-                          videoState.tracks[videoState.activeTrackIndex]?.lang ||
-                            activeMovieContext?.preferLang ||
-                            'ES'
-                        ).toUpperCase();
-                        return rawLang === 'LAT' || rawLang === 'VOSE' || rawLang === 'EN'
-                          ? rawLang
-                          : 'ES';
+                        const tr = videoState.tracks[videoState.activeTrackIndex];
+                        const trLang = String(tr?.lang || activeMovieContext?.preferLang || '').toUpperCase();
+                        const trLabel = String(tr?.label || '').toLowerCase();
+                        const sub = String(videoState.subtitle || '').toLowerCase();
+                        const title = String(videoState.title || '').toLowerCase();
+
+                        if (trLang === 'CAT' || trLang === 'CA' || trLang.includes('CATAL') || trLang.includes('VALENCI')) return 'CAT';
+                        if (
+                          trLabel.includes('català') ||
+                          trLabel.includes('catala') ||
+                          trLabel.includes('[cat]') ||
+                          trLabel.includes('(cat)') ||
+                          sub.includes('català') ||
+                          sub.includes('catala') ||
+                          sub.includes('[cat]') ||
+                          sub.includes('(cat)') ||
+                          title.includes('català') ||
+                          title.includes('catala') ||
+                          title.includes('[cat]') ||
+                          title.includes('(cat)') ||
+                          sub.includes('3cat') ||
+                          sub.includes('sx3') ||
+                          sub.includes('3xl') ||
+                          sub.includes('k3')
+                        ) {
+                          return 'CAT';
+                        }
+                        if (trLang === 'LAT' || trLang.includes('LATIN') || trLabel.includes('latino') || trLabel.includes('latina')) return 'LAT';
+                        if (trLang === 'VOSE' || trLang.includes('SUB') || trLabel.includes('vose') || trLabel.includes('subtitul')) return 'VOSE';
+                        if (trLang === 'EN' || trLang.includes('ENG') || trLabel.includes('english') || trLabel.includes('inglés') || trLabel.includes('ingles')) return 'EN';
+                        return 'ES';
                       })()}
                       loadingItemId={loadingItemId}
                       onSelectMovie={(movieItem, pLang) => {

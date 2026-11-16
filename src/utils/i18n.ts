@@ -1,4 +1,5 @@
 import type { AppLanguage } from '../types';
+import { lookupZhTranslation } from './zhTranslations';
 
 export interface LocalizedTextMap {
   es: string;
@@ -14,7 +15,12 @@ export interface LocalizedTextMap {
 export function pickLang(lang: AppLanguage, copy: LocalizedTextMap): string {
   if (lang === 'ca') return copy.ca;
   if (lang === 'en') return copy.en;
-  if (lang === 'zh') return copy.zh || copy.en || copy.es;
+  if (lang === 'zh') {
+    if (copy.zh) return copy.zh;
+    const translated = lookupZhTranslation(copy.en, copy.es);
+    if (translated) return translated;
+    return copy.en || copy.es;
+  }
   return copy.es;
 }
 

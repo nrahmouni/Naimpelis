@@ -36,6 +36,7 @@ export function parseRoomFromWindow(): {
   isTvMode: boolean;
   isTvPairLobby: boolean;
   isAdsPage?: boolean;
+  gameType?: string;
 } {
   if (typeof window === 'undefined') {
     return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: false };
@@ -43,6 +44,8 @@ export function parseRoomFromWindow(): {
 
   const params = new URLSearchParams(window.location.search);
   const isTvMode = params.get('tv') === '1';
+  const rawGame = params.get('game')?.trim().toLowerCase() || '';
+  const gameType = /^[a-z0-9_-]{2,24}$/.test(rawGame) ? rawGame : undefined;
 
   const segments = window.location.pathname
     .split('/')
@@ -55,7 +58,7 @@ export function parseRoomFromWindow(): {
       (decodeURIComponent(segments[0]).toLowerCase() === 'ads' ||
         decodeURIComponent(segments[0]).toLowerCase() === 'naimcine-ads'))
   ) {
-    return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: true };
+    return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: true, gameType };
   }
 
   if (
@@ -67,7 +70,7 @@ export function parseRoomFromWindow(): {
 
   const queryRoom = params.get('room')?.trim().toLowerCase();
   if (queryRoom && /^[a-z0-9-_]{2,32}$/.test(queryRoom)) {
-    return { roomId: queryRoom, isTvMode, isTvPairLobby: false, isAdsPage: false };
+    return { roomId: queryRoom, isTvMode, isTvPairLobby: false, isAdsPage: false, gameType };
   }
 
   if (segments.length === 1) {
@@ -77,16 +80,16 @@ export function parseRoomFromWindow(): {
       !RESERVED_PATH_SEGMENTS.has(candidate) &&
       /^[a-z0-9-_]{2,32}$/.test(candidate)
     ) {
-      return { roomId: candidate, isTvMode, isTvPairLobby: false, isAdsPage: false };
+      return { roomId: candidate, isTvMode, isTvPairLobby: false, isAdsPage: false, gameType };
     }
   } else if (segments.length === 2 && (segments[0] === 's' || segments[0] === 'r')) {
     const candidate = decodeURIComponent(segments[1]).toLowerCase();
     if (!candidate.includes('.') && /^[a-z0-9-_]{2,32}$/.test(candidate)) {
-      return { roomId: candidate, isTvMode, isTvPairLobby: false, isAdsPage: false };
+      return { roomId: candidate, isTvMode, isTvPairLobby: false, isAdsPage: false, gameType };
     }
   }
 
-  return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: false };
+  return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: false, gameType };
 }
 
 /**
@@ -129,6 +132,16 @@ export function buildShortInviteUrl(roomId: string, tvMode = false): string {
   const cleanId = encodeURIComponent(roomId.trim().toLowerCase());
   const base = `${window.location.origin}/${cleanId}`;
   return tvMode ? `${base}?tv=1` : base;
+}
+
+/**
+ * Builds a direct invite link that opens the guest straight into the chosen game.
+ */
+export function buildGameInviteUrl(roomId: string, gameType: string): string {
+  if (typeof window === 'undefined') return '';
+  const cleanId = encodeURIComponent(roomId.trim().toLowerCase());
+  const cleanGame = encodeURIComponent(gameType.trim().toLowerCase());
+  return `${window.location.origin}/${cleanId}?game=${cleanGame}`;
 }
 
 const PUBLIC_PRODUCTION_DOMAIN =

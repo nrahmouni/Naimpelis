@@ -3,10 +3,10 @@ import type { User } from 'firebase/auth';
 import {
   Cloud,
   Download,
-  Globe,
   LogIn,
   LogOut,
   Monitor,
+  Palette,
   Settings,
   Smartphone,
   Tv,
@@ -41,13 +41,14 @@ interface SettingsBottomSheetProps {
   roomId?: string;
   onClaimTvCode?: (code: string) => void | Promise<void>;
   onLeaveRoom?: () => void;
+  onOpenDesignSystem?: () => void;
 }
 
 export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   isOpen,
   onClose,
   lang,
-  onChangeLang,
+  onChangeLang: _onChangeLang,
   effectiveView,
   onToggleViewMode,
   authUser,
@@ -60,6 +61,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   roomId,
   onClaimTvCode,
   onLeaveRoom,
+  onOpenDesignSystem,
 }) => {
   const { isIOS, isAndroid } = usePWAInstall();
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
@@ -212,43 +214,6 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 </span>
               </span>
               <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('light');
-                onChangeLang(
-                  lang === 'es' ? 'ca' : lang === 'ca' ? 'en' : lang === 'en' ? 'zh' : 'es'
-                );
-              }}
-              className={`${rowClass} cursor-pointer active:scale-[0.98]`}
-            >
-              <span className="flex items-center gap-3 min-w-0">
-                <Globe className="w-5 h-5 text-[#BF94FF] shrink-0" />
-                <span className="min-w-0">
-                  <span className="block text-sm font-bold text-white">
-                    {pickLang(lang, {
-                      es: 'Idioma',
-                      ca: 'Idioma',
-                      en: 'Language',
-                      zh: '语言',
-                    })}
-                  </span>
-                  <span className="block text-xs text-zinc-400">
-                    {lang === 'es'
-                      ? 'Español'
-                      : lang === 'ca'
-                      ? 'Català'
-                      : lang === 'en'
-                      ? 'English'
-                      : '中文 (CHINO)'}
-                  </span>
-                </span>
-              </span>
-              <span className="text-xs font-bold text-[#BF94FF] uppercase shrink-0">
-                {lang === 'zh' ? 'CHINO' : lang}
-              </span>
             </button>
           </section>
 
@@ -431,6 +396,39 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               </span>
               <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
+
+            {onOpenDesignSystem && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onClose();
+                  onOpenDesignSystem();
+                }}
+                className={`${rowClass} cursor-pointer active:scale-[0.98]`}
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <Palette className="w-5 h-5 text-zinc-400 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-zinc-200">
+                      {pickLang(lang, {
+                        es: 'Acerca de · Design System',
+                        ca: 'Quant a · Design System',
+                        en: 'About · Design System',
+                      })}
+                    </span>
+                    <span className="block text-xs text-zinc-400">
+                      {pickLang(lang, {
+                        es: 'Identidad visual, logos y recursos',
+                        ca: 'Identitat visual, logos i recursos',
+                        en: 'Visual identity, logos & assets',
+                      })}
+                    </span>
+                  </span>
+                </span>
+                <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+              </button>
+            )}
           </section>
 
           {/* Cerrar sesión */}

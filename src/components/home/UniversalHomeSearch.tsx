@@ -499,9 +499,9 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
               }
             }}
             placeholder={pickLang(lang, {
-              es: 'Busca películas, series, fútbol, TV o describe qué ver...',
-              ca: 'Cerca pel·lícules, sèries, futbol, TV o descriu què veure...',
-              en: 'Search movies, series, football, live TV or describe...',
+              es: 'Buscar películas, series, canales...',
+              ca: 'Cercar pel·lícules, sèries, canals...',
+              en: 'Search movies, series, channels...',
             })}
             className="flex-1 min-w-0 bg-transparent text-sm sm:text-[15px] font-medium text-white placeholder:text-zinc-500 focus:outline-none"
           />

@@ -22,6 +22,7 @@ import {
   generateShortRoomCode,
 } from '../utils/shortLink';
 import { NaimBrandLogo } from './NaimBrandLogo';
+import { FlagBadgeSvg } from './ui/LanguageBadge';
 import { EffectiveViewMode, getMonogramInitials } from './MobileViewportGuard';
 import { SettingsBottomSheet } from './SettingsBottomSheet';
 import {
@@ -400,6 +401,38 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               </div>
             </div>
           </motion.section>
+
+          {/* Compact single-row unified language selector exclusively on access screen */}
+          <div className="rounded-2xl bg-[#10121C]/85 border border-white/[0.08] p-1.5 grid grid-cols-4 gap-1.5">
+            {[
+              { code: 'en' as AppLanguage, flag: 'en' as const, label: 'EN', title: 'English' },
+              { code: 'es' as AppLanguage, flag: 'es' as const, label: 'ES', title: 'Español' },
+              { code: 'ca' as AppLanguage, flag: 'ca' as const, label: 'CA', title: 'Català' },
+              { code: 'zh' as AppLanguage, flag: 'zh' as const, label: 'ZH', title: '中文' },
+            ].map((item) => {
+              const isSelected = lang === item.code;
+              return (
+                <button
+                  key={item.code}
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    onChangeLang(item.code);
+                  }}
+                  title={item.title}
+                  aria-label={item.title}
+                  className={`min-h-10 px-2 rounded-xl text-xs font-display font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] whitespace-nowrap border ${
+                    isSelected
+                      ? 'bg-[#9146FF] text-white border-[#A970FF]/70 shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                      : 'bg-transparent hover:bg-white/[0.06] text-zinc-400 hover:text-white border-transparent'
+                  }`}
+                >
+                  <FlagBadgeSvg code={item.flag} className="w-4 h-3" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
         </main>
 
         {/* Unirme con código sheet */}

@@ -219,6 +219,8 @@ export interface CatalogMovie {
   languages: string[];
   platform?: string;
   providerId?: StreamingProviderId;
+  genres?: string[];
+  seasonsCount?: number;
   addedAt?: number;
 }
 
@@ -322,6 +324,7 @@ export interface CatalaEpisodeItem {
 
 export interface CatalaSeriesDetails {
   id: string;
+  tmdbId?: number;
   title: string;
   originalTitle?: string;
   eraTag: string;
@@ -707,7 +710,7 @@ export interface WatchHistoryItem {
   season?: number;
   episode?: number;
   episodeTitle?: string;
-  preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN';
+  preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
   bingetrixUrl?: string;
   movidyUrl?: string;
   vestUrl?: string;

@@ -17,7 +17,6 @@ import {
   Spade,
   CircleDot,
   Mic,
-  Palette,
 } from 'lucide-react';
 import type {
   AppLanguage,
@@ -33,7 +32,6 @@ import { generateRandomGuestName } from '../utils/storage';
 import { PosterImage } from './ui/PosterImage';
 import { UniversalHomeSearch } from './home/UniversalHomeSearch';
 import { PWAInstallLandingCard } from './PWAInstallPrompt';
-import { FlagBadgeSvg } from './ui/LanguageBadge';
 
 interface EntryHomeScreenProps {
   lang: AppLanguage;
@@ -107,7 +105,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   onSelectGame = () => {},
   onOpenVoiceAssistant,
   onOpenDesignSystem,
-  onChangeLang,
+  onChangeLang: _onChangeLang,
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(displayName);
@@ -143,14 +141,14 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   };
 
   const heroPosters = useMemo(
-    () => movies.filter((m) => Boolean(m.poster)).slice(0, 3),
+    () => movies.filter((m) => Boolean(m.poster)).slice(0, 4),
     [movies]
   );
 
   const featuredChannels = useMemo(
     () =>
       tdtChannels.length > 0
-        ? tdtChannels.slice(0, 3).map((ch) => ({
+        ? tdtChannels.slice(0, 6).map((ch) => ({
             id: ch.id,
             mark: ch.shortMark || ch.name.slice(0, 3),
             tone: ch.brandTone || '#38BDF8',
@@ -159,6 +157,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             { id: 'la1', mark: '1', tone: '#0284C7' },
             { id: 'a3', mark: 'A3', tone: '#EA580C' },
             { id: 't5', mark: '5', tone: '#2563EB' },
+            { id: 'mov', mark: 'M+', tone: '#10B981' },
           ],
     [tdtChannels]
   );
@@ -166,11 +165,26 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   const featuredLiveMatch = useMemo(() => {
     const liveOne = liveMatches.find((m) => m.isLive) || liveMatches[0];
     if (!liveOne) return null;
-    if (liveOne.matchMeta?.homeShort && liveOne.matchMeta?.awayShort) {
-      return `${liveOne.matchMeta.homeShort} · ${liveOne.matchMeta.awayShort}`;
+    const meta = liveOne.matchMeta;
+    if (meta?.homeShort && meta?.awayShort) {
+      const hasScore =
+        meta.homeScore !== undefined &&
+        meta.awayScore !== undefined &&
+        /^\d+$/.test(String(meta.homeScore).trim()) &&
+        /^\d+$/.test(String(meta.awayScore).trim());
+      if (liveOne.isLive && hasScore) {
+        return `${meta.homeShort} ${meta.homeScore} - ${meta.awayScore} ${meta.awayShort} · ${pickLang(
+          lang,
+          { es: 'En vivo', ca: 'En directe', en: 'Live' }
+        )}`;
+      }
+      const statusSuffix = liveOne.isLive
+        ? pickLang(lang, { es: 'En vivo', ca: 'En directe', en: 'Live' })
+        : liveOne.time || pickLang(lang, { es: 'Hoy', ca: 'Avui', en: 'Today' });
+      return `${meta.homeShort} vs ${meta.awayShort} · ${statusSuffix}`;
     }
-    return liveOne.title;
-  }, [liveMatches]);
+    return liveOne.time ? `${liveOne.title} · ${liveOne.time}` : liveOne.title;
+  }, [liveMatches, lang]);
 
   const greetingWord = pickLang(lang, { es: 'Hola', ca: 'Hola', en: 'Hi', zh: '你好' });
 
@@ -265,17 +279,20 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                 triggerHaptic('medium');
                 onOpenVoiceAssistant();
               }}
-              className="min-h-11 px-3.5 sm:px-4 rounded-2xl bg-gradient-to-r from-[#9146FF] to-[#6D28D9] hover:from-[#A970FF] hover:to-[#7C2AE8] border border-white/20 text-white text-xs sm:text-sm font-extrabold inline-flex items-center gap-2 shrink-0 cursor-pointer active:scale-95 transition-all shadow-[0_10px_28px_rgba(145,70,255,0.4)]"
+              aria-label={pickLang(lang, {
+                es: 'Asistente de voz Gemini Live',
+                ca: 'Assistent de veu Gemini Live',
+                en: 'Gemini Live Voice Assistant',
+                zh: '语音助手',
+              })}
+              title={pickLang(lang, {
+                es: 'Asistente de voz',
+                ca: 'Assistent de veu',
+                en: 'Voice assistant',
+              })}
+              className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#9146FF] to-[#6D28D9] hover:from-[#A970FF] hover:to-[#7C2AE8] border border-white/20 text-white flex items-center justify-center shrink-0 cursor-pointer active:scale-95 transition-all shadow-[0_8px_22px_rgba(145,70,255,0.38)]"
             >
-              <Mic className="w-4 h-4 shrink-0" />
-              <span>
-                {pickLang(lang, {
-                  es: 'Asistente Voz',
-                  ca: 'Assistent Veu',
-                  en: 'Voice AI',
-                  zh: '语音助手',
-                })}
-              </span>
+              <Mic className="w-5 h-5" />
             </button>
           )}
         </section>
@@ -335,12 +352,19 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               {watchHistory.slice(0, 10).map((item) => {
                 const pct =
                   item.durationSec && item.durationSec > 0 && item.resumeTimeSec
-                    ? Math.min(96, Math.max(6, Math.round((item.resumeTimeSec / item.durationSec) * 100)))
-                    : 18;
+                    ? Math.min(96, Math.max(8, Math.round((item.resumeTimeSec / item.durationSec) * 100)))
+                    : 24;
                 const epBadge =
                   item.mediaType === 'tv' && item.season && item.episode
                     ? `T${item.season}·E${item.episode}`
                     : null;
+                const cleanedSubtitle = item.subtitle
+                  ? epBadge
+                    ? item.subtitle
+                        .replace(/^(?:\d+\s*x\s*\d+|T\d+\s*[·:\-]?\s*E\d+)\s*(?:[·\-:|]\s*)?/i, '')
+                        .trim() || item.subtitle
+                    : item.subtitle
+                  : '';
 
                 return (
                   <button
@@ -367,21 +391,21 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                         </span>
                       </span>
                       {epBadge && (
-                        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/75 text-[10px] font-bold text-white tabular-nums">
+                        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/80 text-[10px] font-bold text-white tabular-nums">
                           {epBadge}
                         </span>
                       )}
-                      <div className="absolute inset-x-0 bottom-0 h-[3px] bg-white/15">
-                        <div className="h-full bg-[#9146FF]" style={{ width: `${pct}%` }} />
+                      <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-white/20">
+                        <div className="h-full bg-[#9146FF] shadow-[0_0_8px_rgba(145,70,255,0.75)]" style={{ width: `${pct}%` }} />
                       </div>
                     </div>
                     <div className="p-2.5">
                       <p className="text-xs font-semibold text-white leading-snug line-clamp-1">
                         {item.title}
                       </p>
-                      {item.subtitle && (
+                      {cleanedSubtitle && (
                         <p className="text-[11px] text-zinc-400 truncate mt-0.5">
-                          {item.subtitle}
+                          {cleanedSubtitle}
                         </p>
                       )}
                     </div>
@@ -415,23 +439,23 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               className="absolute -bottom-16 right-8 w-56 h-56 rounded-full bg-[#9146FF]/18 blur-3xl pointer-events-none group-hover:bg-[#9146FF]/28 transition-colors duration-300"
             />
 
-            {/* Right-anchored editorial poster showcase — masked smoothly so text never collides */}
+            {/* Right-anchored bright fanned poster showcase */}
             <div
               aria-hidden="true"
-              className="absolute right-0 top-0 bottom-0 w-[44%] sm:w-[46%] pointer-events-none overflow-hidden select-none"
+              className="absolute right-0 top-0 bottom-0 w-[46%] sm:w-[48%] pointer-events-none overflow-hidden select-none"
             >
               {heroPosters.length > 0 ? (
-                <div className="relative w-full h-full flex items-end justify-end pr-2.5 sm:pr-4 pb-1">
-                  {heroPosters.map((m, idx) => {
+                <div className="relative w-full h-full flex items-end justify-end pr-2 sm:pr-4 pb-1">
+                  {heroPosters.slice(0, 3).map((m, idx) => {
                     const offsets = [
-                      'right-16 sm:right-24 -bottom-4 -rotate-6 opacity-55 scale-90',
-                      'right-8 sm:right-12 -bottom-2 rotate-2 opacity-80 scale-95 z-[1]',
-                      'right-0 sm:right-1 -bottom-3 rotate-6 opacity-95 z-[2]',
+                      'right-16 sm:right-24 bottom-0 -rotate-8 opacity-80 scale-90',
+                      'right-8 sm:right-12 bottom-1 rotate-2 opacity-95 scale-95 z-[1]',
+                      'right-1 sm:right-2 -bottom-0.5 rotate-8 opacity-100 z-[2]',
                     ];
                     return (
                       <div
                         key={m.id || idx}
-                        className={`absolute w-16 h-24 sm:w-22 sm:h-32 rounded-xl overflow-hidden border border-white/15 bg-[#181A28] shadow-2xl transition-transform duration-300 group-hover:-translate-y-1 ${
+                        className={`absolute w-[70px] h-[102px] sm:w-[92px] sm:h-[132px] rounded-xl overflow-hidden border border-white/25 bg-[#181A28] shadow-[0_14px_30px_rgba(0,0,0,0.65)] transition-transform duration-300 group-hover:-translate-y-1.5 ${
                           offsets[idx] || offsets[0]
                         }`}
                       >
@@ -439,7 +463,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                           src={m.poster}
                           alt=""
                           referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover"
+                          className="w-full h-full object-cover brightness-110 contrast-105"
                           loading="lazy"
                         />
                       </div>
@@ -447,14 +471,13 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                   })}
                 </div>
               ) : (
-                <div className="relative w-full h-full flex items-end justify-end pr-4 pb-2 opacity-40">
-                  <div className="w-20 h-28 rounded-xl border border-white/10 bg-gradient-to-br from-[#9146FF]/20 to-transparent -rotate-6 translate-x-4" />
-                  <div className="w-20 h-28 rounded-xl border border-white/15 bg-gradient-to-br from-white/[0.06] to-transparent rotate-6" />
+                <div className="relative w-full h-full flex items-end justify-end pr-4 pb-2 opacity-55">
+                  <div className="w-20 h-28 rounded-xl border border-white/15 bg-gradient-to-br from-[#9146FF]/25 to-transparent -rotate-6 translate-x-4" />
+                  <div className="w-20 h-28 rounded-xl border border-white/20 bg-gradient-to-br from-white/[0.1] to-transparent rotate-6" />
                 </div>
               )}
-              {/* Smooth left-to-right obsidian fade ensuring razor-sharp text boundary */}
-              <div className="absolute inset-0 bg-gradient-to-r from-[#10121C] via-[#10121C]/45 to-transparent" />
-              <div className="absolute inset-x-0 bottom-0 h-8 bg-gradient-to-t from-[#10121C] to-transparent" />
+              {/* Smooth left-side text protection without darkening posters */}
+              <div className="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#10121C] via-[#10121C]/55 to-transparent" />
             </div>
 
             {/* Clean Left Text Zone */}
@@ -471,15 +494,15 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               )}
             </div>
 
-            <div className="relative z-10 max-w-[60%] sm:max-w-[56%] space-y-1 mt-4">
+            <div className="relative z-10 max-w-[58%] sm:max-w-[54%] space-y-1 mt-4">
               <h2 className="font-display font-bold text-lg sm:text-2xl text-white tracking-tight leading-tight">
                 {pickLang(lang, { es: 'Cine y Series', ca: 'Cine i Sèries', en: 'Movies & Series' })}
               </h2>
               <p className="text-xs sm:text-[13px] text-zinc-400 leading-snug line-clamp-2">
                 {pickLang(lang, {
-                  es: 'Películas, series y plataformas',
-                  ca: 'Pel·lícules, sèries i plataformes',
-                  en: 'Movies, series & streaming platforms',
+                  es: 'Películas, series y anime en 4K',
+                  ca: 'Pel·lícules, sèries i anime en 4K',
+                  en: 'Movies, series & anime in 4K',
                 })}
               </p>
               <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#C4A7FF] group-hover:text-white transition-colors">
@@ -579,6 +602,21 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               aria-hidden="true"
               className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-sky-500/12 blur-2xl pointer-events-none"
             />
+            {/* Translucent drifting channel badges strip in TV Bento background */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute -right-4 bottom-2 flex items-center gap-1.5 opacity-[0.14] group-hover:opacity-[0.24] transition-opacity duration-300"
+            >
+              {featuredChannels.map((ch) => (
+                <span
+                  key={`bg-${ch.id}`}
+                  className="px-2 py-1 rounded-lg border border-white/25 text-[10px] font-black text-white"
+                  style={{ backgroundColor: ch.tone }}
+                >
+                  {ch.mark}
+                </span>
+              ))}
+            </div>
 
             <div className="relative z-10 flex items-center justify-between gap-2">
               <div className="w-9 h-9 rounded-xl bg-sky-500/12 border border-sky-400/25 flex items-center justify-center text-sky-400 shrink-0 group-hover:scale-105 transition-transform">
@@ -587,7 +625,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
               {/* Clean mini channel medallions strictly tucked in top-right header */}
               <div className="flex items-center -space-x-1.5" aria-hidden="true">
-                {featuredChannels.map((ch) => (
+                {featuredChannels.slice(0, 3).map((ch) => (
                   <span
                     key={ch.id}
                     className="w-6 h-6 rounded-full border border-[#10121B] flex items-center justify-center text-[9px] font-display font-bold text-white shadow-sm"
@@ -632,6 +670,15 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               aria-hidden="true"
               className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-fuchsia-500/12 blur-2xl pointer-events-none"
             />
+            {/* Subtle translucent drifting tabletop motif */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute right-2 bottom-2 flex items-center gap-2 opacity-[0.1] group-hover:opacity-[0.2] group-hover:scale-105 transition-all duration-300 text-fuchsia-300"
+            >
+              <CircleDot className="w-7 h-7 -rotate-12" />
+              <Dices className="w-8 h-8 rotate-12" />
+              <Spade className="w-6 h-6 -rotate-6" />
+            </div>
 
             <div className="relative z-10 flex items-center justify-between gap-2">
               <div className="w-9 h-9 rounded-xl bg-fuchsia-500/12 border border-fuchsia-400/25 flex items-center justify-center text-fuchsia-400 shrink-0 group-hover:scale-105 transition-transform">
@@ -758,90 +805,27 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           </motion.button>
         </section>
 
-        {/* 6. DESIGN SYSTEM & MEDIA KIT / CARTELES DE PUBLICIDAD (BOTTOM ENTRY) */}
-        {onOpenDesignSystem && (
-          <section className="pt-1">
-            <motion.button
-              type="button"
-              initial={{ opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.2, delay: 0.22 }}
-              whileTap={{ scale: 0.985 }}
-              onClick={() => {
-                triggerHaptic('light');
-                onOpenDesignSystem();
-              }}
-              className="w-full p-4 rounded-3xl bg-gradient-to-br from-[#151726] via-[#10121C] to-[#0D0E17] hover:from-[#1C1F33] hover:to-[#131522] border border-[#9146FF]/35 hover:border-[#9146FF]/70 flex items-center justify-between gap-3 text-left cursor-pointer transition-all duration-200 group shadow-[0_10px_28px_rgba(0,0,0,0.4)]"
-            >
-              <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-[#9146FF]/20 border border-[#9146FF]/40 text-[#D8B4FE] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform shadow-[0_0_16px_rgba(145,70,255,0.3)]">
-                  <Palette className="w-5 h-5 text-[#BF94FF]" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="font-display font-bold text-sm sm:text-base text-white truncate">
-                      {pickLang(lang, {
-                        es: 'Design System & Carteles de Publicidad',
-                        ca: 'Design System & Cartells de Publicitat',
-                        en: 'Design System & Marketing Posters',
-                        zh: '设计系统与官方宣传海报',
-                      })}
-                    </span>
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider bg-[#9146FF]/30 text-[#D8B4FE] shrink-0">
-                      ES · EN · 中文
-                    </span>
-                  </div>
-                  <p className="text-xs text-zinc-400 truncate mt-0.5">
-                    {pickLang(lang, {
-                      es: 'Descarga logos oficiales y pósteres promocionales de RiffanTV',
-                      ca: 'Descarrega logos oficials i cartells promocionals de RiffanTV',
-                      en: 'Download official logos and promotional posters of RiffanTV',
-                      zh: '下载 RiffanTV 官方徽标与宣传海报',
-                    })}
-                  </p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-[#BF94FF] group-hover:text-white group-hover:translate-x-1 transition-all shrink-0" />
-            </motion.button>
-          </section>
-        )}
-
-        {/* 7. INSTALAR RIFFANTV + SELECTOR DE IDIOMAS (ENG · ES · CAT · CHINO) ALINEADO CON BANDERAS CUSTOM */}
+        {/* 6. INSTALAR RIFFANTV + QUIET FOOTER LINK */}
         <section className="pt-1 space-y-3">
           <PWAInstallLandingCard lang={lang} alwaysShow />
 
-          {onChangeLang && (
-            <div className="rounded-2xl bg-[#10121C] border border-white/[0.08] p-2.5 sm:p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { code: 'en' as AppLanguage, flag: 'en' as const, label: 'ENG', title: 'English' },
-                  { code: 'es' as AppLanguage, flag: 'es' as const, label: 'ES', title: 'Castellano' },
-                  { code: 'ca' as AppLanguage, flag: 'ca' as const, label: 'CAT', title: 'Català' },
-                  { code: 'zh' as AppLanguage, flag: 'zh' as const, label: 'CHINO', title: '中文 (简体)' },
-                ].map((item) => {
-                  const isSelected = lang === item.code;
-                  return (
-                    <button
-                      key={item.code}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        onChangeLang(item.code);
-                      }}
-                      title={item.title}
-                      className={`min-h-11 px-3 py-2 rounded-xl text-xs font-display font-bold tracking-wide flex items-center justify-center gap-2 transition-all duration-150 cursor-pointer active:scale-[0.97] whitespace-nowrap shrink-0 border ${
-                        isSelected
-                          ? 'bg-[#9146FF] text-white border-[#A970FF]/70 shadow-[0_6px_20px_rgba(145,70,255,0.45)]'
-                          : 'bg-[#0B0B0F] hover:bg-white/[0.06] text-zinc-300 hover:text-white border-white/[0.08] hover:border-white/20'
-                      }`}
-                    >
-                      <FlagBadgeSvg code={item.flag} className="w-5 h-3.5" />
-                      <span>{item.label}</span>
-                    </button>
-                  );
+          {onOpenDesignSystem && (
+            <footer className="flex items-center justify-center pt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onOpenDesignSystem();
+                }}
+                className="px-3 py-1.5 rounded-lg text-[11px] font-medium text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
+              >
+                {pickLang(lang, {
+                  es: 'Acerca de RiffanTV · Identidad y recursos de marca',
+                  ca: 'Quant a RiffanTV · Identitat i recursos de marca',
+                  en: 'About RiffanTV · Brand identity & media kit',
                 })}
-              </div>
-            </div>
+              </button>
+            </footer>
           )}
         </section>
       </div>

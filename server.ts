@@ -25,6 +25,12 @@ import { registerOperationalRoutes } from './server/routes/health.ts';
 import { registerExpandedCatalogRoutes } from './server/routes/expandedCatalog.ts';
 import { registerProxyRoutes } from './server/routes/proxies.ts';
 import { registerVoiceAssistantRoutes } from './server/routes/voiceAssistant.ts';
+import { setupGeminiLiveWebSocket } from './server/routes/geminiLive.ts';
+import {
+  applySyncedStreamsToChannels,
+  getIptvSyncMeta,
+  refreshLiveIptvRegistry,
+} from './server/services/iptvPlaylistService.ts';
 import { createRoomHub } from './server/ws/roomHub.ts';
 import {
   CHROME_UA,
@@ -160,12 +166,16 @@ const wss = new WebSocketServer({
   },
 });
 
+let geminiLiveBridge: ReturnType<typeof setupGeminiLiveWebSocket> | null = null;
+
 httpServer.on('upgrade', (req, socket, head) => {
   const pathname = (req.url || '').split('?')[0];
   if (pathname === '/ws') {
     wss.handleUpgrade(req, socket, head, (ws) => {
       wss.emit('connection', ws, req);
     });
+  } else if (pathname === '/ws/gemini-live' && geminiLiveBridge) {
+    geminiLiveBridge.handleUpgrade(req, socket, head);
   }
 });
 
@@ -755,19 +765,92 @@ function rankTmdbSearchResultsForQuery(items: any[], rawQuery: string, isTv = fa
   return [...items].sort((a, b) => scoreItem(b) - scoreItem(a));
 }
 
+const TMDB_GENRE_LABEL_ES: Record<number, string> = {
+  28: 'Acción',
+  12: 'Aventura',
+  16: 'Animación',
+  35: 'Comedia',
+  80: 'Crimen',
+  99: 'Documental',
+  18: 'Drama',
+  10751: 'Familia',
+  14: 'Fantasía',
+  36: 'Historia',
+  27: 'Terror',
+  10402: 'Música',
+  9648: 'Misterio',
+  10749: 'Romance',
+  878: 'Sci-Fi',
+  53: 'Thriller',
+  10752: 'Bélica',
+  37: 'Western',
+  10759: 'Acción',
+  10765: 'Sci-Fi',
+};
+
+const TMDB_GENRE_LABEL_EN: Record<number, string> = {
+  28: 'Action',
+  12: 'Adventure',
+  16: 'Animation',
+  35: 'Comedy',
+  80: 'Crime',
+  99: 'Documentary',
+  18: 'Drama',
+  10751: 'Family',
+  14: 'Fantasy',
+  36: 'History',
+  27: 'Horror',
+  10402: 'Music',
+  9648: 'Mystery',
+  10749: 'Romance',
+  878: 'Sci-Fi',
+  53: 'Thriller',
+  10752: 'War',
+  37: 'Western',
+  10759: 'Action',
+  10765: 'Sci-Fi',
+};
+
+function mapTmdbGenreLabels(item: any, lang: 'es-ES' | 'en-US'): string[] {
+  const dict = lang === 'en-US' ? TMDB_GENRE_LABEL_EN : TMDB_GENRE_LABEL_ES;
+  if (Array.isArray(item?.genres) && item.genres.length > 0) {
+    return item.genres
+      .map((g: any) => dict[Number(g?.id)] || g?.name)
+      .filter(Boolean)
+      .slice(0, 2);
+  }
+  const ids: number[] = Array.isArray(item?.genre_ids) ? item.genre_ids : [];
+  const isJa = String(item?.original_language || '').toLowerCase() === 'ja';
+  const labels: string[] = [];
+  if (ids.includes(16) && isJa) {
+    labels.push('Anime');
+  }
+  for (const id of ids) {
+    const label = dict[Number(id)];
+    if (label && !labels.includes(label)) {
+      if (label === 'Animación' && labels.includes('Anime')) continue;
+      if (label === 'Animation' && labels.includes('Anime')) continue;
+      labels.push(label);
+    }
+    if (labels.length >= 2) break;
+  }
+  return labels.slice(0, 2);
+}
+
 async function fetchTmdbMovieCatalog(opts: {
   lang: 'es-ES' | 'en-US';
   category: string;
+  sort?: string;
   page: number;
   query: string;
   provider?: string;
 }) {
-  const { lang, category, page } = opts;
+  const { lang, category, sort = '', page } = opts;
   const { provider, query } = resolveEffectiveProviderAndQuery(opts.provider || 'all', opts.query);
   const provCfg = STREAMING_PROVIDER_MAP[provider];
   const isAnime = ANIME_PROVIDER_IDS.has(provider);
 
-  const cacheKey = `v6|${lang}|${provider}|${category}|${page}|${query}`;
+  const cacheKey = `v7|${lang}|${provider}|${category}|${sort}|${page}|${query}`;
   const cached = movieCatalogCache.get(cacheKey);
   if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
     return cached;
@@ -826,16 +909,30 @@ async function fetchTmdbMovieCatalog(opts: {
     )}&with_watch_monetization_types=${encodeURIComponent(
       'flatrate|ads|free'
     )}&sort_by=${sortBy}&vote_count.gte=${minVotes}&primary_release_date.lte=${todayIso}${genreParam}${companyParam}&page=${page}&include_adult=false`;
-  } else if (category === 'popular') {
-    endpoint = `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
-  } else if (category === 'top_rated') {
-    endpoint = `https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
-  } else if (category === 'now_playing') {
-    endpoint = `https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   } else if (category === 'anime') {
-    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=popularity.desc&vote_count.gte=30&primary_release_date.lte=${todayIso}&with_genres=16&with_original_language=ja&page=${page}&include_adult=false`;
+    const discoverSort =
+      sort === 'top_rated'
+        ? 'vote_average.desc'
+        : sort === 'now_playing'
+        ? 'primary_release_date.desc'
+        : 'popularity.desc';
+    const minVotes = sort === 'top_rated' ? 160 : 30;
+    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&primary_release_date.lte=${todayIso}&with_genres=16&with_original_language=ja&page=${page}&include_adult=false`;
   } else if (MOVIE_GENRE_MAP[category]) {
-    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=popularity.desc&vote_count.gte=45&primary_release_date.lte=${todayIso}&with_genres=${MOVIE_GENRE_MAP[category]}&page=${page}&include_adult=false`;
+    const discoverSort =
+      sort === 'top_rated'
+        ? 'vote_average.desc'
+        : sort === 'now_playing'
+        ? 'primary_release_date.desc'
+        : 'popularity.desc';
+    const minVotes = sort === 'top_rated' ? 220 : 45;
+    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&primary_release_date.lte=${todayIso}&with_genres=${MOVIE_GENRE_MAP[category]}&page=${page}&include_adult=false`;
+  } else if (category === 'popular' || (!category && sort === 'popular')) {
+    endpoint = `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
+  } else if (category === 'top_rated' || (!category && sort === 'top_rated')) {
+    endpoint = `https://api.themoviedb.org/3/movie/top_rated?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
+  } else if (category === 'now_playing' || (!category && sort === 'now_playing')) {
+    endpoint = `https://api.themoviedb.org/3/movie/now_playing?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   } else {
     endpoint = `https://api.themoviedb.org/3/trending/movie/week?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   }
@@ -983,6 +1080,7 @@ async function fetchTmdbMovieCatalog(opts: {
         : ['Castellano', 'Latino', 'EN'],
       platform: provCfg?.label,
       providerId: provCfg ? provider : undefined,
+      genres: mapTmdbGenreLabels(m, lang),
     }));
 
   const payload = {
@@ -1000,9 +1098,10 @@ app.get('/api/catalog/movies', async (req, res) => {
     const rawProvider = String(req.query.provider || 'all').toLowerCase().trim();
     const { provider, query } = resolveEffectiveProviderAndQuery(rawProvider, rawQuery);
     const category = String(req.query.category || 'trending').toLowerCase();
+    const sort = String(req.query.sort || '').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const mergedCacheKey = `merged-es-v9|${provider}|${category}|${page}|${query}`;
+    const mergedCacheKey = `merged-es-v10|${provider}|${category}|${sort}|${page}|${query}`;
     const cachedMerged = movieCatalogCache.get(mergedCacheKey);
     if (cachedMerged && Date.now() - cachedMerged.ts < 5 * 60 * 1000) {
       return res.json({
@@ -1018,6 +1117,7 @@ app.get('/api/catalog/movies', async (req, res) => {
       const tmdbData = await fetchTmdbMovieCatalog({
         lang: 'es-ES',
         category,
+        sort,
         page,
         query: '',
         provider,
@@ -1037,7 +1137,7 @@ app.get('/api/catalog/movies', async (req, res) => {
 
     const [movidyData, tmdbData] = await Promise.all([
       scrapeMovidyCatalog({ category, page, query }),
-      fetchTmdbMovieCatalog({ lang: 'es-ES', category, page, query, provider }),
+      fetchTmdbMovieCatalog({ lang: 'es-ES', category, sort, page, query, provider }),
     ]);
 
     const tmdbTitleKeys = new Set<string>();
@@ -1208,11 +1308,13 @@ app.get('/api/catalog/bingetrix', async (req, res) => {
     const query = String(req.query.query || '').trim();
     const provider = String(req.query.provider || 'all').toLowerCase().trim();
     const category = String(req.query.category || 'trending').toLowerCase();
+    const sort = String(req.query.sort || '').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
     const data = await fetchTmdbMovieCatalog({
       lang: 'en-US',
       category,
+      sort,
       page,
       query,
       provider,
@@ -1481,11 +1583,12 @@ app.get('/api/catalog/series', async (req, res) => {
     const provCfg = STREAMING_PROVIDER_MAP[provider];
     const isAnime = ANIME_PROVIDER_IDS.has(provider);
     const category = String(req.query.category || 'trending').toLowerCase();
+    const sort = String(req.query.sort || '').toLowerCase();
     const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
     const isSpanishCatalog = langParam === 'es-ES';
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const cacheKey = `v6|${langParam}|${provider}|${category}|${page}|${query}`;
+    const cacheKey = `v7|${langParam}|${provider}|${category}|${sort}|${page}|${query}`;
     const cached = seriesCatalogCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
       return res.json({ success: true, series: cached.series, hasMore: cached.hasMore, page });
@@ -1600,14 +1703,30 @@ app.get('/api/catalog/series', async (req, res) => {
           )}&sort_by=vote_count.desc&vote_count.gte=400&first_air_date.lte=${todayIso}&without_genres=10767,10763,10764&page=1&include_adult=false`;
         }
       }
-    } else if (category === 'popular') {
-      endpoint = `https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
-    } else if (category === 'top_rated') {
-      endpoint = `https://api.themoviedb.org/3/tv/top_rated?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
     } else if (category === 'anime') {
-      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&sort_by=popularity.desc&vote_count.gte=30&first_air_date.lte=${todayIso}&with_genres=16&with_origin_country=JP&page=${page}&include_adult=false`;
+      const discoverSort =
+        sort === 'top_rated'
+          ? 'vote_average.desc'
+          : sort === 'now_playing'
+          ? 'first_air_date.desc'
+          : 'popularity.desc';
+      const minVotes = sort === 'top_rated' ? 140 : 30;
+      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&first_air_date.lte=${todayIso}&with_genres=16&with_origin_country=JP&page=${page}&include_adult=false`;
     } else if (SERIES_GENRE_MAP[category]) {
-      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&sort_by=popularity.desc&without_genres=10767,10763&with_genres=${SERIES_GENRE_MAP[category]}&page=${page}`;
+      const discoverSort =
+        sort === 'top_rated'
+          ? 'vote_average.desc'
+          : sort === 'now_playing'
+          ? 'first_air_date.desc'
+          : 'popularity.desc';
+      const minVotes = sort === 'top_rated' ? 180 : 40;
+      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&without_genres=10767,10763&with_genres=${SERIES_GENRE_MAP[category]}&page=${page}`;
+    } else if (category === 'popular' || (!category && sort === 'popular')) {
+      endpoint = `https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
+    } else if (category === 'top_rated' || (!category && sort === 'top_rated')) {
+      endpoint = `https://api.themoviedb.org/3/tv/top_rated?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
+    } else if (category === 'now_playing' || (!category && sort === 'now_playing')) {
+      endpoint = `https://api.themoviedb.org/3/tv/on_the_air?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
     } else {
       endpoint = `https://api.themoviedb.org/3/trending/tv/week?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
     }
@@ -1636,6 +1755,8 @@ app.get('/api/catalog/series', async (req, res) => {
         : ['English 1080p', 'Español'],
       platform: provCfg?.label,
       providerId: provCfg ? provider : undefined,
+      genres: mapTmdbGenreLabels(s, langParam),
+      seasonsCount: typeof s.number_of_seasons === 'number' ? s.number_of_seasons : undefined,
     });
 
     const scrapeMovidySeriesFast = () => {
@@ -5225,35 +5346,53 @@ const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
   ...INTERNATIONAL_TV_CHANNELS,
 ];
 
-app.get('/api/catalog/tdt', (_req, res) => {
+app.get('/api/catalog/tdt', async (req, res) => {
+  if (req.query.refresh === '1') {
+    await refreshLiveIptvRegistry(true).catch(() => undefined);
+  } else {
+    void refreshLiveIptvRegistry(false).catch(() => undefined);
+  }
+  const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
   res.json({
     success: true,
-    channels: channelHealthMonitor.prioritizeChannels(SPANISH_TDT_CHANNELS).map((ch) => ({
+    iptvMeta: getIptvSyncMeta(),
+    channels: channelHealthMonitor.prioritizeChannels(merged).map((ch) => ({
       ...ch,
       logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
     })),
   });
 });
 
+const getLiveVoiceChannels = () => {
+  const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
+  return channelHealthMonitor.prioritizeChannels(merged).map((ch) => ({
+    ...ch,
+    logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
+  }));
+};
+
+const getLiveVoiceMatches = async () => {
+  if (cachedSportsSchedule && cachedSportsSchedule.matches.length > 0) {
+    return cachedSportsSchedule.matches;
+  }
+  const permanent = getPermanent247SportsMatches();
+  try {
+    const { rojaMatches } = await fetchLiveSportsAgendaFeeds();
+    return [...permanent, ...rojaMatches];
+  } catch {
+    return permanent;
+  }
+};
+
 registerVoiceAssistantRoutes(app, {
-  getChannels: () =>
-    channelHealthMonitor.prioritizeChannels(SPANISH_TDT_CHANNELS).map((ch) => ({
-      ...ch,
-      logoUrl: ch.logoUrl || resolveOfficialChannelLogoUrl(ch) || undefined,
-    })),
+  getChannels: getLiveVoiceChannels,
   resolveLogoUrl: resolveOfficialChannelLogoUrl,
-  getSportsMatches: async () => {
-    if (cachedSportsSchedule && cachedSportsSchedule.matches.length > 0) {
-      return cachedSportsSchedule.matches;
-    }
-    const permanent = getPermanent247SportsMatches();
-    try {
-      const { rojaMatches } = await fetchLiveSportsAgendaFeeds();
-      return [...permanent, ...rojaMatches];
-    } catch {
-      return permanent;
-    }
-  },
+  getSportsMatches: getLiveVoiceMatches,
+});
+
+geminiLiveBridge = setupGeminiLiveWebSocket(httpServer, {
+  getChannels: getLiveVoiceChannels,
+  getSportsMatches: getLiveVoiceMatches,
 });
 
 // ============================================================================
@@ -9942,7 +10081,7 @@ const CATALA_LIVE_CHANNELS: any[] = [
       {
         id: 'sx3-int-hls',
         label: 'Senyal Internacional 3Cat HD',
-        lang: 'ES',
+        lang: 'CAT',
         quality: '1080p',
         sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-content/c33-super3-hls/master.m3u8',
         resolverType: 'tdt_hls',
@@ -9950,7 +10089,7 @@ const CATALA_LIVE_CHANNELS: any[] = [
       {
         id: 'sx3-24h-cat',
         label: 'Senyal SX3 24h Exclusiu (Espanya)',
-        lang: 'ES',
+        lang: 'CAT',
         quality: '1080p',
         sourceUrl: 'https://directes-tv-cat.3catdirectes.cat/live-content/super3-hls/master.m3u8',
         resolverType: 'tdt_hls',
@@ -9971,7 +10110,7 @@ const CATALA_LIVE_CHANNELS: any[] = [
       {
         id: 'tv3-int-hls',
         label: 'Senyal Internacional TV3 HD',
-        lang: 'ES',
+        lang: 'CAT',
         quality: '1080p',
         sourceUrl: 'https://directes3-tv-int.3catdirectes.cat/live-content/tvi-hls/master.m3u8',
         resolverType: 'tdt_hls',
@@ -9979,7 +10118,7 @@ const CATALA_LIVE_CHANNELS: any[] = [
       {
         id: 'tv3-cat-hls',
         label: 'Senyal Catalunya TV3 HD',
-        lang: 'ES',
+        lang: 'CAT',
         quality: '1080p',
         sourceUrl: 'https://directes3-tv-cat.3catdirectes.cat/live-content/tv3-hls/master.m3u8',
         resolverType: 'tdt_hls',
@@ -10000,7 +10139,7 @@ const CATALA_LIVE_CHANNELS: any[] = [
       {
         id: 'esport3-int-hls',
         label: 'Senyal Oficial Esport3 HD',
-        lang: 'ES',
+        lang: 'CAT',
         quality: '1080p',
         sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-origin/esport3-hls/master.m3u8',
         resolverType: 'tdt_hls',
@@ -10021,7 +10160,7 @@ const CATALA_LIVE_CHANNELS: any[] = [
       {
         id: '324-int-hls',
         label: 'Senyal Oficial 324 HD',
-        lang: 'ES',
+        lang: 'CAT',
         quality: '1080p',
         sourceUrl: 'https://directes-tv-int.3catdirectes.cat/live-content/canal324-hls/master.m3u8',
         resolverType: 'tdt_hls',
@@ -10182,7 +10321,7 @@ async function fetchArchivePackEpisodes(
         tracks.push({
           id: `cat-ia-${seasonNumber}-${epNumber}`,
           label: 'Català · Web HD (Compatible)',
-          lang: 'ES',
+          lang: 'CAT',
           quality: 'HD',
           sourceUrl: iaUrl,
           resolverType: 'direct_mp4',
@@ -10193,7 +10332,7 @@ async function fetchArchivePackEpisodes(
         tracks.push({
           id: `cat-orig-${seasonNumber}-${epNumber}`,
           label: 'Català · Màxima Qualitat Original',
-          lang: 'ES',
+          lang: 'CAT',
           quality: '1080p',
           sourceUrl: origUrl,
           resolverType: 'direct_mp4',
@@ -10531,7 +10670,7 @@ app.get('/api/extract/catala-3cat', async (req, res) => {
           .map((u, idx) => ({
             id: `3cat-mp4-${vidId}-${idx}`,
             label: `Català Oficial 3Cat · ${u.label || 'HD'}`,
-            lang: 'ES',
+            lang: 'CAT',
             quality: String(u.label || 'HD'),
             sourceUrl: String(u.file),
             resolverType: 'direct_mp4',
@@ -10540,7 +10679,7 @@ app.get('/api/extract/catala-3cat', async (req, res) => {
         tracks.push({
           id: `3cat-cloud-${vidId}`,
           label: 'Obrir al Cloud Browser (3Cat Oficial)',
-          lang: 'ES',
+          lang: 'CAT',
           quality: 'HD',
           sourceUrl: officialWebUrl,
           resolverType: 'cloud_browser',
@@ -10612,7 +10751,8 @@ const IPTV_EPG_ID_ALIASES: Record<string, string> = {
 function getAllIptvChannels(): any[] {
   const seen = new Set<string>();
   const combined: any[] = [];
-  for (const ch of [...SPANISH_TDT_CHANNELS, ...CATALA_LIVE_CHANNELS]) {
+  const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
+  for (const ch of [...merged, ...CATALA_LIVE_CHANNELS]) {
     if (!ch?.id || seen.has(ch.id)) continue;
     seen.add(ch.id);
     combined.push(ch);
@@ -10995,13 +11135,20 @@ function rewriteManifestForSamsungIptv(
 
 app.get(
   [
+    '/riffantv.m3u',
+    '/riffantv-smarttv.m3u',
     '/naim-cine.m3u',
     '/NAIM-CINE-Samsung-TV.m3u',
     '/iptv.m3u',
     '/naim-cine.m3u8',
     '/api/iptv/playlist.m3u',
   ],
-  (req, res) => {
+  async (req, res) => {
+    if (req.query.refresh === '1') {
+      await refreshLiveIptvRegistry(true).catch(() => undefined);
+    } else {
+      await refreshLiveIptvRegistry(false).catch(() => undefined);
+    }
     const publicOrigin = getPublicOrigin(req);
     const channels = getAllIptvChannels();
     const lines: string[] = [
@@ -11012,7 +11159,11 @@ app.get(
       const groupTitle = IPTV_GROUP_TITLES[ch.category] || 'TDT y Directo';
       const epgId = getIptvEpgId(ch.id);
       const chno = ch.dial ? String(ch.dial) : String(idx + 1);
-      const logoUrl = `${publicOrigin}/api/iptv/logo/${encodeURIComponent(ch.id)}.png`;
+      const officialLogo = ch.logoUrl || resolveOfficialChannelLogoUrl(ch);
+      const logoUrl =
+        officialLogo && /^https?:\/\//i.test(officialLogo)
+          ? officialLogo
+          : `${publicOrigin}/api/iptv/logo/${encodeURIComponent(ch.id)}.png`;
       const streamUrl = `${publicOrigin}/api/iptv/live/${encodeURIComponent(ch.id)}.m3u8`;
       const safeName = String(ch.name || ch.id).replace(/[\r\n,]+/g, ' ').trim();
 
@@ -11031,11 +11182,23 @@ app.get(
     res.setHeader('Content-Type', 'audio/x-mpegurl; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     if (forceDownload) {
-      res.setHeader('Content-Disposition', 'attachment; filename="NAIM-CINE-Samsung-TV.m3u"');
+      res.setHeader('Content-Disposition', 'attachment; filename="RiffanTV-IPTV.m3u"');
     }
     res.send(playlistBody);
   }
 );
+
+app.get('/api/iptv/status', async (req, res) => {
+  if (req.query.refresh === '1') {
+    await refreshLiveIptvRegistry(true).catch(() => undefined);
+  }
+  const channels = getAllIptvChannels();
+  res.json({
+    ok: true,
+    totalChannels: channels.length,
+    ...getIptvSyncMeta(),
+  });
+});
 
 app.get('/api/iptv/logo/:channelId', (req, res) => {
   const rawId = String(req.params.channelId || '').replace(/\.png$/i, '');
@@ -11351,9 +11514,10 @@ async function startServer() {
     if (ENV.nodeEnv !== 'test') {
       setImmediate(() => {
         try {
+          void refreshLiveIptvRegistry(false).catch(() => undefined);
           channelHealthMonitor.startScheduler(
             () => [
-              ...SPANISH_TDT_CHANNELS,
+              ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),
               ...CATALA_LIVE_CHANNELS,
               ...getPermanent247SportsMatches(),
               ...(cachedSportsSchedule?.matches || []),

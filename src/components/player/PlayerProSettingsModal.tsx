@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import {
   Globe,
   Moon,
@@ -17,6 +17,7 @@ import type {
 } from '../../types';
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
+import { FlagBadgeSvg, type FlagCode } from '../ui/LanguageBadge';
 
 interface PlayerProSettingsModalProps {
   isOpen: boolean;
@@ -103,38 +104,50 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
   autoActiveHeight,
   onChangeQuality,
 }) => {
+  useEffect(() => {
+    if (!isOpen) return;
+    const handlePointerDownOutside = (ev: PointerEvent) => {
+      const target = ev.target as Node | null;
+      if (proMenuRef.current && target && !proMenuRef.current.contains(target)) {
+        onClose();
+      }
+    };
+    const id = window.setTimeout(() => {
+      document.addEventListener('pointerdown', handlePointerDownOutside);
+    }, 30);
+    return () => {
+      window.clearTimeout(id);
+      document.removeEventListener('pointerdown', handlePointerDownOutside);
+    };
+  }, [isOpen, onClose, proMenuRef]);
+
   if (!isOpen) return null;
   const t = UI_COPY[lang];
 
   return (
     <div
-      className="fixed inset-0 z-[195] pointer-events-auto bg-black/20 flex items-end justify-center sm:justify-end p-2 sm:p-4 animate-fade-in"
-      onClick={onClose}
+      className="fixed inset-0 z-[195] pointer-events-none flex items-end sm:items-end justify-end p-2.5 sm:p-4 animate-fade-in"
     >
       <div
         ref={proMenuRef}
         role="dialog"
-        aria-modal="true"
+        aria-modal="false"
         aria-labelledby="naim-player-pro-settings-title"
         tabIndex={-1}
         onClick={(e) => e.stopPropagation()}
-        className="w-full sm:w-[340px] max-w-[calc(100vw-1rem)] rounded-2xl bg-[#12131A]/94 backdrop-blur-xl nc-specular-surface border border-white/15 shadow-[0_16px_50px_rgba(0,0,0,0.85)] overflow-hidden flex flex-col max-h-[64vh] animate-sheet-up sm:animate-scale-in outline-none"
+        className="pointer-events-auto w-[276px] sm:w-[306px] max-w-[calc(100vw-1.25rem)] rounded-2xl bg-[#11121A]/82 backdrop-blur-xl nc-specular-surface border border-white/15 shadow-[0_14px_40px_rgba(0,0,0,0.78)] overflow-hidden flex flex-col max-h-[44vh] animate-sheet-up sm:animate-scale-in outline-none"
       >
-        <div className="pt-2 pb-0.5 flex justify-center sm:hidden">
-          <div className="w-8 h-1 rounded-full bg-white/20" />
-        </div>
-
-        <div className="px-3.5 py-2.5 border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0">
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-[#9146FF]/15 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0">
-              <SlidersHorizontal className="w-3.5 h-3.5" />
+        <div className="px-3 py-2 border-b border-white/[0.08] flex items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <div className="w-6 h-6 rounded-lg bg-[#9146FF]/20 border border-[#9146FF]/35 flex items-center justify-center text-[#BF94FF] shrink-0">
+              <SlidersHorizontal className="w-3 h-3" />
             </div>
             <div className="min-w-0">
-              <h3 id="naim-player-pro-settings-title" className="text-xs font-bold text-white tracking-tight truncate">
+              <h3 id="naim-player-pro-settings-title" className="text-[11px] font-bold text-white tracking-tight truncate">
                 {pickLang(lang, {
-                  es: 'Ajustes de Reproducción',
-                  ca: 'Ajustos de Reproducció',
-                  en: 'Playback Settings',
+                  es: 'Ajustes rápidos',
+                  ca: 'Ajustos ràpids',
+                  en: 'Quick Settings',
                 })}
               </h3>
             </div>
@@ -142,15 +155,15 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
           <button
             type="button"
             onClick={onClose}
-            className="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-zinc-300 cursor-pointer shrink-0"
+            className="w-6 h-6 rounded-lg hover:bg-white/10 flex items-center justify-center text-zinc-300 cursor-pointer shrink-0"
             aria-label={t.closeModal}
           >
-            <X className="w-4 h-4" />
+            <X className="w-3.5 h-3.5" />
           </button>
         </div>
 
-        <div className="p-3 overflow-y-auto custom-scrollbar space-y-2.5 pb-[max(1rem,env(safe-area-inset-bottom))] text-xs">
-          <div className="grid grid-cols-2 gap-2">
+        <div className="p-2.5 overflow-y-auto custom-scrollbar space-y-2 pb-[max(0.65rem,env(safe-area-inset-bottom))] text-[11px]">
+          <div className="grid grid-cols-2 gap-1.5">
             {onToggleCinemaMode && (
               <button
                 type="button"
@@ -158,18 +171,18 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                   triggerHaptic('light');
                   onToggleCinemaMode();
                 }}
-                className={`min-h-[42px] p-2 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                className={`min-h-[34px] px-2 py-1 rounded-xl border flex items-center justify-center gap-1.5 text-[11px] font-bold transition-all active:scale-95 cursor-pointer ${
                   isCinemaMode
                     ? 'bg-amber-400/20 border-amber-400/50 text-amber-200'
-                    : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
+                    : 'bg-white/[0.05] hover:bg-white/[0.09] border-white/[0.08] text-zinc-200'
                 }`}
               >
                 {isCinemaMode ? (
-                  <Sun className="w-4 h-4 text-amber-300 shrink-0" />
+                  <Sun className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                 ) : (
-                  <Moon className="w-4 h-4 text-amber-300 shrink-0" />
+                  <Moon className="w-3.5 h-3.5 text-amber-300 shrink-0" />
                 )}
-                <span>{pickLang(lang, { es: 'Modo Cine', ca: 'Mode Cinema', en: 'Cinema Mode' })}</span>
+                <span>{pickLang(lang, { es: 'Cine', ca: 'Cinema', en: 'Cinema' })}</span>
               </button>
             )}
 
@@ -180,27 +193,27 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                   onTogglePiP(e);
                   onClose();
                 }}
-                className={`min-h-[42px] p-2 rounded-xl border flex items-center justify-center gap-1.5 text-xs font-bold transition-all active:scale-95 cursor-pointer ${
+                className={`min-h-[34px] px-2 py-1 rounded-xl border flex items-center justify-center gap-1.5 text-[11px] font-bold transition-all active:scale-95 cursor-pointer ${
                   isInPiP
                     ? 'bg-[#9146FF]/25 border-[#9146FF]/60 text-white'
-                    : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
+                    : 'bg-white/[0.05] hover:bg-white/[0.09] border-white/[0.08] text-zinc-200'
                 }`}
               >
-                <PictureInPicture2 className="w-4 h-4 text-sky-400 shrink-0" />
-                <span>{pickLang(lang, { es: 'PiP Flotante', ca: 'PiP Flotant', en: 'Floating PiP' })}</span>
+                <PictureInPicture2 className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+                <span>PiP</span>
               </button>
             )}
           </div>
 
           {(videoState.tracks.length > 0 || hlsAudioTracks.length > 0 || !videoState.isLive) && (
-            <div className="p-2.5 rounded-xl bg-white/[0.035] border border-white/[0.08] space-y-2">
-              <div className="text-xs font-bold text-white flex items-center gap-2">
-                <Globe className="w-4 h-4 text-[#9146FF]" />
+            <div className="p-2 rounded-xl bg-white/[0.035] border border-white/[0.08] space-y-1.5">
+              <div className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                <Globe className="w-3.5 h-3.5 text-[#9146FF]" />
                 <span>
                   {pickLang(lang, {
-                    es: 'Idioma de Audio y Servidor',
-                    ca: 'Idioma d’Àudio i Servidor',
-                    en: 'Audio Language & Server',
+                    es: 'Audio y Servidor',
+                    ca: 'Àudio i Servidor',
+                    en: 'Audio & Server',
                   })}
                 </span>
               </div>
@@ -209,14 +222,14 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                 (videoState.tracks || []).some((tr) =>
                   ['ES', 'LAT', 'VOSE', 'EN'].includes(String(tr.lang || '').toUpperCase())
                 ) && (
-                  <div className="flex flex-wrap gap-2">
+                  <div className="grid grid-cols-2 gap-1.5">
                     {(
                       [
-                        { code: 'ES', label: '🇪🇸 Castellano' },
-                        { code: 'LAT', label: '🇲🇽 Latino' },
-                        { code: 'VOSE', label: '💬 VOSE' },
-                        { code: 'EN', label: '🇬🇧 English' },
-                      ] as const
+                        { code: 'ES', flagCode: 'es', label: 'Castellano' },
+                        { code: 'LAT', flagCode: 'mx', label: 'Latino' },
+                        { code: 'VOSE', flagCode: 'vose', label: 'VOSE' },
+                        { code: 'EN', flagCode: 'uk', label: 'English' },
+                      ] as readonly { code: 'ES' | 'LAT' | 'VOSE' | 'EN'; flagCode: FlagCode; label: string }[]
                     )
                       .filter((lBtn) =>
                         (videoState.tracks || []).some(
@@ -233,13 +246,14 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                               onQuickLanguageSwitch(lBtn.code);
                               onClose();
                             }}
-                            className={`flex-1 min-w-[110px] min-h-[42px] px-3 rounded-xl text-xs font-bold cursor-pointer transition-all border ${
+                            className={`min-h-[32px] px-2 rounded-lg text-[11px] font-bold cursor-pointer transition-all border inline-flex items-center justify-center gap-1.5 truncate ${
                               isCurrent
                                 ? 'bg-[#9146FF] border-[#9146FF] text-white'
-                                : 'bg-[#26262C] hover:bg-white/[0.12] border-white/[0.08] text-zinc-200'
+                                : 'bg-[#26262C]/85 hover:bg-white/[0.12] border-white/[0.08] text-zinc-200'
                             }`}
                           >
-                            {lBtn.label}
+                            <FlagBadgeSvg code={lBtn.flagCode} className="w-4 h-2.5 shrink-0" />
+                            <span className="truncate">{lBtn.label}</span>
                           </button>
                         );
                       })}
@@ -308,25 +322,25 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
             </div>
           )}
 
-          <div className="p-2.5 rounded-xl bg-white/[0.035] border border-white/[0.08] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold text-white flex items-center gap-2">
-                <Subtitles className="w-4 h-4 text-sky-400" />
+          <div className="p-2 rounded-xl bg-white/[0.035] border border-white/[0.08] space-y-1.5">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                <Subtitles className="w-3.5 h-3.5 text-sky-400" />
                 <span>
                   {pickLang(lang, {
-                    es: 'Subtítulos Sincronizados',
-                    ca: 'Subtítols Sincronitzats',
-                    en: 'Synced Subtitles',
+                    es: 'Subtítulos',
+                    ca: 'Subtítols',
+                    en: 'Subtitles',
                   })}
                 </span>
               </span>
               <button
                 type="button"
                 onClick={() => subtitleFileInputRef.current?.click()}
-                className="min-h-[36px] px-3 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-xs font-bold text-sky-300 flex items-center gap-1.5 cursor-pointer"
+                className="min-h-[28px] px-2.5 rounded-lg bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-[10px] font-bold text-sky-300 flex items-center gap-1 cursor-pointer"
               >
-                <Upload className="w-3.5 h-3.5" />
-                <span>{pickLang(lang, { es: 'Subir .SRT / .VTT', ca: 'Pujar .SRT / .VTT', en: 'Upload .SRT / .VTT' })}</span>
+                <Upload className="w-3 h-3" />
+                <span>.SRT / .VTT</span>
               </button>
             </div>
 
@@ -334,7 +348,7 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
               aria-label={pickLang(lang, { es: 'Pista de subtítulos', ca: 'Pista de subtítols', en: 'Subtitle track' })}
               value={activeSubId}
               onChange={(e) => onSelectSubtitleTrack(e.target.value)}
-              className="w-full min-h-[44px] px-3.5 rounded-xl bg-[#26262C] border border-white/15 text-xs font-semibold text-white outline-none cursor-pointer"
+              className="w-full min-h-[34px] px-2.5 rounded-lg bg-[#26262C] border border-white/15 text-[11px] font-semibold text-white outline-none cursor-pointer"
             >
               <option value="off">
                 {pickLang(lang, {
@@ -351,23 +365,23 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
             </select>
 
             {activeSubId !== 'off' && (
-              <div className="space-y-2.5 pt-1">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-1.5">
+              <div className="space-y-1.5 pt-0.5">
+                <div className="flex items-center justify-between gap-1.5">
+                  <div className="flex items-center gap-1">
                     <button
                       type="button"
                       onClick={() => setSubtitleOffsetSec((s) => Number((s - 0.5).toFixed(1)))}
-                      className="min-h-[38px] px-3 rounded-xl bg-white/10 hover:bg-white/20 font-mono text-xs text-white cursor-pointer"
+                      className="min-h-[30px] px-2 rounded-lg bg-white/10 hover:bg-white/20 font-mono text-[10px] text-white cursor-pointer"
                     >
                       -0.5s
                     </button>
-                    <span className="font-mono text-xs text-sky-300 min-w-[48px] text-center">
+                    <span className="font-mono text-[10px] text-sky-300 min-w-[40px] text-center">
                       {subtitleOffsetSec >= 0 ? `+${subtitleOffsetSec}s` : `${subtitleOffsetSec}s`}
                     </span>
                     <button
                       type="button"
                       onClick={() => setSubtitleOffsetSec((s) => Number((s + 0.5).toFixed(1)))}
-                      className="min-h-[38px] px-3 rounded-xl bg-white/10 hover:bg-white/20 font-mono text-xs text-white cursor-pointer"
+                      className="min-h-[30px] px-2 rounded-lg bg-white/10 hover:bg-white/20 font-mono text-[10px] text-white cursor-pointer"
                     >
                       +0.5s
                     </button>
@@ -379,7 +393,7 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                         key={sz}
                         type="button"
                         onClick={() => setSubtitleSize(sz)}
-                        className={`min-h-[38px] min-w-[38px] rounded-xl text-xs font-bold uppercase cursor-pointer ${
+                        className={`min-h-[30px] min-w-[30px] rounded-lg text-[10px] font-bold uppercase cursor-pointer ${
                           subtitleSize === sz
                             ? 'bg-[#9146FF] text-white'
                             : 'bg-[#26262C] text-zinc-300'
@@ -391,15 +405,15 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center justify-between gap-2 text-[11px] text-zinc-300">
+                <div className="flex items-center justify-between gap-2 text-[10px] text-zinc-300">
                   <span>{pickLang(lang, { es: 'Color / Fondo', ca: 'Color / Fons', en: 'Color / Box' })}</span>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1">
                     {(['#FFFFFF', '#FDE047', '#38BDF8'] as const).map((clr) => (
                       <button
                         key={clr}
                         type="button"
                         onClick={() => setSubtitleStyle({ fontColor: clr })}
-                        className={`w-6 h-6 rounded-full border-2 cursor-pointer ${
+                        className={`w-5 h-5 rounded-full border-2 cursor-pointer ${
                           subtitleStyle.fontColor === clr ? 'border-white scale-110' : 'border-white/30'
                         }`}
                         style={{ backgroundColor: clr }}
@@ -413,7 +427,7 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                           bgOpacity: subtitleStyle.bgOpacity > 0.4 ? 0 : 0.72,
                         })
                       }
-                      className="px-2 py-1 rounded-lg bg-white/10 text-[10px] font-semibold text-white cursor-pointer"
+                      className="px-2 py-0.5 rounded-md bg-white/10 text-[10px] font-semibold text-white cursor-pointer"
                     >
                       {pickLang(lang, { es: 'Caja', ca: 'Caixa', en: 'Box' })}: {subtitleStyle.bgOpacity > 0.4 ? 'ON' : 'OFF'}
                     </button>
@@ -423,29 +437,29 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
             )}
 
             {!videoState.isLive && (
-              <div className="flex items-center justify-between gap-2 pt-2 border-t border-white/[0.06] text-xs">
+              <div className="flex items-center justify-between gap-1.5 pt-1.5 border-t border-white/[0.06] text-[10px]">
                 <span className="text-zinc-300 font-medium">
                   {pickLang(lang, {
-                    es: 'Ajuste fino de sala',
-                    ca: 'Ajust fi de sala',
-                    en: 'Fine room sync offset',
+                    es: 'Sync sala',
+                    ca: 'Sync sala',
+                    en: 'Room sync',
                   })}
                 </span>
-                <div className="flex items-center gap-1.5">
+                <div className="flex items-center gap-1">
                   <button
                     type="button"
                     onClick={() => setSyncOffsetMs(syncOffsetMs - 50)}
-                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 font-mono text-white cursor-pointer"
+                    className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 font-mono text-white cursor-pointer"
                   >
                     -50ms
                   </button>
-                  <span className="font-mono text-zinc-200 min-w-[54px] text-center">
+                  <span className="font-mono text-zinc-200 min-w-[46px] text-center">
                     {syncOffsetMs >= 0 ? `+${syncOffsetMs}ms` : `${syncOffsetMs}ms`}
                   </span>
                   <button
                     type="button"
                     onClick={() => setSyncOffsetMs(syncOffsetMs + 50)}
-                    className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 font-mono text-white cursor-pointer"
+                    className="px-2 py-0.5 rounded-md bg-white/10 hover:bg-white/20 font-mono text-white cursor-pointer"
                   >
                     +50ms
                   </button>
@@ -454,19 +468,19 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
             )}
           </div>
 
-          <div className="p-4 rounded-2xl bg-white/[0.035] border border-white/[0.08] space-y-3">
-            <div className="grid grid-cols-2 gap-2.5">
+          <div className="p-2 rounded-xl bg-white/[0.035] border border-white/[0.08] space-y-1.5">
+            <div className="grid grid-cols-2 gap-1.5">
               <button
                 type="button"
                 onClick={onToggleVocalBoost}
-                className={`min-h-[48px] px-3 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer ${
+                className={`min-h-[34px] px-2.5 rounded-xl border text-[10px] font-bold flex items-center justify-between cursor-pointer ${
                   vocalBoostEnabled
                     ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
                     : 'bg-[#26262C] border-white/[0.08] text-zinc-300'
                 }`}
               >
-                <span>{pickLang(lang, { es: 'Realce de Voces', ca: 'Realç de Veus', en: 'Vocal Boost' })}</span>
-                <span className="font-mono text-[10px]">
+                <span>{pickLang(lang, { es: 'Voces +', ca: 'Veus +', en: 'Vocal +' })}</span>
+                <span className="font-mono text-[9px]">
                   {vocalBoostEnabled ? 'ON' : 'OFF'}
                 </span>
               </button>
@@ -484,35 +498,35 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
                     return next;
                   })
                 }
-                className={`min-h-[48px] px-3 rounded-xl border text-xs font-bold flex items-center justify-between cursor-pointer ${
+                className={`min-h-[34px] px-2.5 rounded-xl border text-[10px] font-bold flex items-center justify-between cursor-pointer ${
                   ambilightEnabled
                     ? 'bg-[#9146FF]/20 border-[#9146FF]/50 text-white'
                     : 'bg-[#26262C] border-white/[0.08] text-zinc-300'
                 }`}
               >
-                <span>Ambilight Halo</span>
-                <span className="font-mono text-[10px]">
+                <span>Ambilight</span>
+                <span className="font-mono text-[9px]">
                   {ambilightEnabled ? 'ON' : 'OFF'}
                 </span>
               </button>
             </div>
 
             {!videoState.isLive && (
-              <div className="space-y-1.5 pt-1">
-                <span className="text-xs font-semibold text-zinc-400">
+              <div className="space-y-1 pt-0.5">
+                <span className="text-[10px] font-semibold text-zinc-400">
                   {pickLang(lang, {
-                    es: 'Velocidad de reproducción',
-                    ca: 'Velocitat de reproducció',
-                    en: 'Playback speed',
+                    es: 'Velocidad',
+                    ca: 'Velocitat',
+                    en: 'Speed',
                   })}
                 </span>
-                <div className="grid grid-cols-5 gap-1.5">
+                <div className="grid grid-cols-5 gap-1">
                   {[0.75, 1, 1.25, 1.5, 2].map((spd) => (
                     <button
                       key={spd}
                       type="button"
                       onClick={() => onSelectSpeed(spd)}
-                      className={`min-h-[38px] rounded-xl font-mono text-xs font-bold cursor-pointer ${
+                      className={`min-h-[28px] rounded-lg font-mono text-[10px] font-bold cursor-pointer ${
                         playbackSpeed === spd
                           ? 'bg-[#9146FF] text-white'
                           : 'bg-[#26262C] hover:bg-white/15 text-zinc-300'
@@ -526,15 +540,15 @@ export const PlayerProSettingsModal: React.FC<PlayerProSettingsModalProps> = ({
             )}
 
             {qualityLevels.length > 0 && (
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-xs font-semibold text-zinc-400">
+              <div className="flex items-center justify-between pt-0.5">
+                <span className="text-[10px] font-semibold text-zinc-400">
                   {t.qualityLabel}
                 </span>
                 <select
                   aria-label={t.qualityLabel}
                   value={selectedQuality}
                   onChange={(e) => onChangeQuality(Number(e.target.value))}
-                  className="min-h-[38px] px-3 rounded-xl bg-black/60 border border-white/15 text-xs font-mono text-white outline-none cursor-pointer"
+                  className="min-h-[30px] px-2.5 rounded-lg bg-black/60 border border-white/15 text-[11px] font-mono text-white outline-none cursor-pointer"
                 >
                   <option value={-1}>
                     {autoActiveHeight ? `${t.qualityAuto} (${autoActiveHeight}p)` : `${t.qualityAuto} (HD)`}

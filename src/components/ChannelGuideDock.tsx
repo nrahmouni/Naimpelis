@@ -30,6 +30,7 @@ import {
   getChannelRegionMeta,
   type TvRegionId,
 } from './ui/ChannelLogoBadge';
+import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
 
 interface ChannelGuideDockProps {
   lang: AppLanguage;
@@ -43,17 +44,21 @@ interface ChannelGuideDockProps {
 
 type GuideViewTab = 'channel' | 'all';
 
-const REGION_FILTER_TABS: { id: TvRegionId; label: { es: string; ca: string; en: string } }[] = [
-  { id: 'all', label: { es: 'Todos', ca: 'Tots', en: 'All' } },
-  { id: 'es', label: { es: '🇪🇸 España', ca: '🇪🇸 Espanya', en: '🇪🇸 Spain' } },
-  { id: 'ar', label: { es: '🇶🇦 beIN العربية', ca: '🇶🇦 beIN العربية', en: '🇶🇦 beIN Arabic' } },
-  { id: 'ma', label: { es: '🇲🇦 Marruecos', ca: '🇲🇦 Marroc', en: '🇲🇦 Morocco' } },
-  { id: 'docs', label: { es: '🌍 Documentales', ca: '🌍 Documentals', en: '🌍 Docs' } },
-  { id: 'us', label: { es: '🇺🇸 EE.UU.', ca: '🇺🇸 EUA', en: '🇺🇸 USA' } },
-  { id: 'eu', label: { es: '🇪🇺 Europa', ca: '🇪🇺 Europa', en: '🇪🇺 Europe' } },
-  { id: 'latam', label: { es: '🌎 Latam / ES', ca: '🌎 Latam / ES', en: '🌎 Latam / ES' } },
-  { id: 'uk', label: { es: '🇬🇧 UK (EN)', ca: '🇬🇧 UK (EN)', en: '🇬🇧 UK (EN)' } },
-  { id: 'cn', label: { es: '🇨🇳 China (中文)', ca: '🇨🇳 Xina (中文)', en: '🇨🇳 China (中文)' } },
+const REGION_FILTER_TABS: {
+  id: TvRegionId;
+  flagCode: FlagCode;
+  label: { es: string; ca: string; en: string };
+}[] = [
+  { id: 'all', flagCode: 'all', label: { es: 'Todos', ca: 'Tots', en: 'All' } },
+  { id: 'es', flagCode: 'es', label: { es: 'España', ca: 'Espanya', en: 'Spain' } },
+  { id: 'ar', flagCode: 'ar', label: { es: 'beIN العربية', ca: 'beIN العربية', en: 'beIN Arabic' } },
+  { id: 'ma', flagCode: 'ma', label: { es: 'Marruecos', ca: 'Marroc', en: 'Morocco' } },
+  { id: 'docs', flagCode: 'docs', label: { es: 'Documentales', ca: 'Documentals', en: 'Docs' } },
+  { id: 'us', flagCode: 'us', label: { es: 'EE.UU.', ca: 'EUA', en: 'USA' } },
+  { id: 'eu', flagCode: 'eu', label: { es: 'Europa', ca: 'Europa', en: 'Europe' } },
+  { id: 'latam', flagCode: 'lat', label: { es: 'Latam / ES', ca: 'Latam / ES', en: 'Latam / ES' } },
+  { id: 'uk', flagCode: 'uk', label: { es: 'UK (EN)', ca: 'UK (EN)', en: 'UK (EN)' } },
+  { id: 'cn', flagCode: 'cn', label: { es: 'China (中文)', ca: 'Xina (中文)', en: 'China (中文)' } },
 ];
 
 const CATEGORY_FILTER_ORDER: { id: 'all' | TdtCategory; label: { es: string; ca: string; en: string } }[] = [
@@ -396,7 +401,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
         <div className="px-3.5 py-2.5 flex items-center justify-between gap-2 border-b border-white/[0.06] bg-white/[0.015]">
           <div className="flex items-center gap-2.5 min-w-0">
             {headerChannel ? (
-              <ChannelLogoBadge channel={headerChannel} size="sm" showLangTag />
+              <ChannelLogoBadge channel={headerChannel} size="sm" />
             ) : (
               <div className="w-9 h-9 rounded-xl flex items-center justify-center bg-[#9146FF]/20 border border-[#9146FF]/40 shrink-0">
                 <Tv className="w-4 h-4 text-[#BF94FF]" />
@@ -809,8 +814,8 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                       </span>
                     </div>
 
-                    <div className="max-h-[290px] overflow-y-auto pr-1 space-y-1.5">
-                      {upcomingList.map((prog, index) => {
+                    <div className="space-y-1.5">
+                      {upcomingList.slice(0, 18).map((prog, index) => {
                         const key = `${headerChannel?.id || 'ch'}-${prog.startMs}-${index}`;
                         const isLiveNow = prog.startMs <= clockMs && prog.stopMs > clockMs;
                         const isExpanded = expandedProgKey === key;
@@ -935,13 +940,14 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                           setGuideRegion(reg.id);
                           setGuideCategory('all');
                         }}
-                        className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all border shrink-0 ${
+                        className={`min-h-8 px-3 rounded-xl text-xs font-bold whitespace-nowrap cursor-pointer transition-all border shrink-0 inline-flex items-center gap-1.5 ${
                           active
                             ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_3px_12px_rgba(145,70,255,0.35)]'
                             : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
                         }`}
                       >
-                        {pickLang(lang, reg.label)}
+                        <FlagBadgeSvg code={reg.flagCode} className="w-4 h-2.5" />
+                        <span>{pickLang(lang, reg.label)}</span>
                       </button>
                     );
                   })}
@@ -971,8 +977,8 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                   })}
                 </div>
 
-                {/* Multi-Channel EPG Rows */}
-                <div className="max-h-[380px] overflow-y-auto pr-1 space-y-2">
+                {/* Multi-Channel EPG Rows (flows with main page scroll so iPhone/Android/TV never lock momentum) */}
+                <div className="space-y-2 gpu-layer">
                   {filteredGuideChannels.length === 0 ? (
                     <div className="py-8 text-center text-xs text-zinc-400">
                       {pickLang(lang, {
@@ -982,7 +988,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                       })}
                     </div>
                   ) : (
-                    filteredGuideChannels.map((ch) => {
+                    filteredGuideChannels.slice(0, 60).map((ch) => {
                       const snap = computeLiveProgramSnapshot(epgMap[ch.id], clockMs);
                       const isCurrentlyPlaying = playingChannel?.id === ch.id;
                       const isLoadingThis = loadingItemId === `tdt-${ch.id}-0`;
@@ -990,10 +996,10 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                       return (
                         <div
                           key={ch.id}
-                          className={`rounded-xl p-2.5 sm:p-3 border transition-all flex items-center justify-between gap-3 ${
+                          className={`cv-row-auto rounded-xl p-2.5 sm:p-3 border transition-[border-color,background-color,transform] duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] flex items-center justify-between gap-3 ${
                             isCurrentlyPlaying
                               ? 'bg-[#9146FF]/16 border-[#9146FF]/60'
-                              : 'bg-[#161822]/75 hover:bg-[#1B1E2B] border-white/[0.07]'
+                              : 'bg-[#161822]/85 hover:bg-[#1B1E2B] border-white/[0.07]'
                           }`}
                         >
                           <button
@@ -1003,7 +1009,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                           >
                             {/* Crisp SVG Channel Logo */}
                             <div className="relative shrink-0">
-                              <ChannelLogoBadge channel={ch} size="md" showLangTag />
+                              <ChannelLogoBadge channel={ch} size="md" />
                               {isLoadingThis && (
                                 <span className="absolute inset-0 rounded-2xl bg-black/70 flex items-center justify-center">
                                   <Loader2 className="w-4 h-4 text-[#BF94FF] animate-spin" />
@@ -1186,7 +1192,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                     }}
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
-                      <ChannelLogoBadge channel={ch} size="md" showLangTag />
+                      <ChannelLogoBadge channel={ch} size="md" />
                       <div className="min-w-0">
                         <div className="flex items-center gap-1.5">
                           <span className="w-1.5 h-1.5 rounded-full bg-[#EB0400] animate-pulse shrink-0" />

@@ -3,6 +3,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Columns2,
+  Globe,
   Loader2,
   Play,
   Shield,
@@ -153,11 +154,19 @@ const TeamCrestImg: React.FC<{
 const RegionFlagImg: React.FC<{
   src?: string;
   alt: string;
-}> = ({ src, alt }) => {
+  groupTitle?: string;
+}> = ({ src, alt, groupTitle = '' }) => {
   const [failed, setFailed] = useState(false);
+  const haystack = `${alt} ${groupTitle}`.toLowerCase();
+  const isNonEuOrIntl =
+    /africa|caf|afcon|azadegan|iran|asia|afc|concacaf|conmebol|world|mundial|friendly|amistoso|internacional|fifa|liberta|sudam|qualif/i.test(
+      haystack
+    );
+  const isGenericEuFlag =
+    !src || /\/(eu|europe|uefa)(\.|_|-)/i.test(src) || /euro-flag/i.test(src);
 
-  if (!src || failed) {
-    return <Shield className="w-4 h-4 text-zinc-400 shrink-0" />;
+  if (!src || failed || (isNonEuOrIntl && (isGenericEuFlag || !/^[a-z]{2}$/i.test(alt)))) {
+    return <Globe className="w-4 h-4 text-zinc-400 shrink-0" aria-hidden="true" />;
   }
 
   return (
@@ -299,7 +308,17 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
       }
       if (lf) {
         const hayLeague = `${m.groupTitle} ${m.leagueSlug} ${m.regionName}`.toLowerCase();
-        if (!hayLeague.includes(lf)) return false;
+        if (lf === 'hypermotion') {
+          if (!/hypermotion|segunda|laliga 2|esp\.2/.test(hayLeague)) return false;
+        } else if (lf === 'europa') {
+          if (!/europa league|uefa\.europa/.test(hayLeague)) return false;
+        } else if (lf === 'world') {
+          if (!/world|fifa|nations|euro|qualif|copa america|mundial|internacional|selecciones|friendly|amistoso/.test(hayLeague)) {
+            return false;
+          }
+        } else if (!hayLeague.includes(lf)) {
+          return false;
+        }
       }
       if (q) {
         const hay = `${m.homeTeam} ${m.awayTeam} ${m.groupTitle} ${m.regionName}`.toLowerCase();
@@ -370,9 +389,9 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   return (
     <>
       <section className="rounded-3xl overflow-hidden bg-[#10121C] border border-white/[0.08] shadow-[0_12px_36px_rgba(0,0,0,0.45)]">
-        {/* Single-Row Top Bar: Simple Status Chips + Date Switcher */}
-        <div className="px-3 sm:px-4 py-3 bg-[#141724] border-b border-white/[0.07] flex items-center justify-between gap-2">
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+        {/* Top Bar: Unclipped Status Chips + Compact Date Switcher */}
+        <div className="px-3 sm:px-4 py-2.5 bg-[#141724] border-b border-white/[0.07] flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5">
             {statusOptions.map((opt) => {
               const active = statusTab === opt.id;
               return (
@@ -383,7 +402,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                     triggerHaptic('light');
                     setStatusTab(opt.id);
                   }}
-                  className={`min-h-12 px-3.5 rounded-2xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
+                  className={`min-h-10 px-3 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors ${
                     active
                       ? 'bg-[#9146FF] text-white'
                       : 'bg-white/[0.05] hover:bg-white/[0.1] text-zinc-300'
@@ -396,7 +415,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           </div>
 
           {/* Single-row Date Switcher */}
-          <div className="inline-flex items-center rounded-2xl bg-white/[0.05] border border-white/[0.08] shrink-0">
+          <div className="inline-flex items-center rounded-xl bg-white/[0.05] border border-white/[0.08] shrink-0 ml-auto">
             <button
               type="button"
               onClick={() => {
@@ -409,7 +428,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                 ca: 'Dia anterior',
                 en: 'Previous day',
               })}
-              className="min-w-12 min-h-12 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
+              className="min-w-10 min-h-10 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
@@ -419,7 +438,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                 triggerHaptic('light');
                 setDayOffset(0);
               }}
-              className="px-2 min-h-12 text-xs font-bold text-white whitespace-nowrap cursor-pointer"
+              className="px-2 min-h-10 text-xs font-bold text-white whitespace-nowrap cursor-pointer"
             >
               {activeDateLabel}
             </button>
@@ -435,7 +454,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                 ca: 'Dia següent',
                 en: 'Next day',
               })}
-              className="min-w-12 min-h-12 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
+              className="min-w-10 min-h-10 flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer"
             >
               <ChevronRight className="w-4 h-4" />
             </button>
@@ -494,8 +513,12 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
               <div key={group.key}>
                 {/* League Group Header */}
                 <div className="px-3.5 sm:px-4 py-2.5 bg-[#151824] border-y border-white/[0.06] flex items-center gap-2.5">
-                  <RegionFlagImg src={group.regionFlagUrl} alt={group.regionName} />
-                  <h3 className="text-xs font-bold text-zinc-200 leading-snug">
+                  <RegionFlagImg
+                    src={group.regionFlagUrl}
+                    alt={group.regionName}
+                    groupTitle={group.groupTitle}
+                  />
+                  <h3 className="text-xs font-bold text-zinc-200 leading-snug truncate">
                     {group.groupTitle}
                   </h3>
                 </div>
@@ -570,7 +593,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                 shortCode={item.homeShort}
                                 alt={item.homeTeam}
                               />
-                              <span className="text-sm font-semibold text-white leading-tight line-clamp-2">
+                              <span className="text-sm font-semibold text-white leading-tight truncate">
                                 {item.homeTeam}
                               </span>
                               {hasZhChannel && (
@@ -593,7 +616,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                 shortCode={item.awayShort}
                                 alt={item.awayTeam}
                               />
-                              <span className="text-sm font-semibold text-zinc-200 leading-tight line-clamp-2">
+                              <span className="text-sm font-semibold text-zinc-200 leading-tight truncate">
                                 {item.awayTeam}
                               </span>
                             </div>
@@ -611,57 +634,72 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                           </div>
                         </div>
 
-                        {/* Single Watch Button + Favorite */}
-                        <div className="relative z-10 pointer-events-auto shrink-0 flex items-center gap-1">
-                          {primaryCh && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                triggerHaptic('light');
-                                onToggleChannelFavorite({
-                                  favId,
-                                  title: `${item.homeTeam} vs ${item.awayTeam}`,
-                                  channelLabel:
-                                    primaryCh.label ||
-                                    pickLang(lang, {
-                                      es: 'Señal 1',
-                                      ca: 'Senyal 1',
-                                      en: 'Feed 1',
-                                    }),
-                                  channelUrl: primaryCh.sourceUrl,
-                                  competition: item.groupTitle,
-                                  sport: 'soccer',
-                                });
-                              }}
-                              aria-label={pickLang(lang, {
-                                es: 'Guardar partido',
-                                ca: 'Desar partit',
-                                en: 'Save match',
-                              })}
-                              className="min-w-12 min-h-12 flex items-center justify-center rounded-2xl text-zinc-400 hover:text-[#9146FF] cursor-pointer"
-                            >
-                              <Star
-                                className={`w-4 h-4 ${
-                                  isSaved ? 'fill-current text-[#9146FF]' : ''
-                                }`}
-                              />
-                            </button>
-                          )}
+                        {/* Watch Action + Channel Badge ONLY when signals exist; clean chevron otherwise */}
+                        <div className="relative z-10 pointer-events-auto shrink-0 flex items-center gap-1.5">
+                          {primaryCh ? (
+                            <>
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  triggerHaptic('light');
+                                  onToggleChannelFavorite({
+                                    favId,
+                                    title: `${item.homeTeam} vs ${item.awayTeam}`,
+                                    channelLabel:
+                                      primaryCh.label ||
+                                      pickLang(lang, {
+                                        es: 'Señal 1',
+                                        ca: 'Senyal 1',
+                                        en: 'Feed 1',
+                                      }),
+                                    channelUrl: primaryCh.sourceUrl,
+                                    competition: item.groupTitle,
+                                    sport: 'soccer',
+                                  });
+                                }}
+                                aria-label={pickLang(lang, {
+                                  es: 'Guardar partido',
+                                  ca: 'Desar partit',
+                                  en: 'Save match',
+                                })}
+                                className="min-w-10 min-h-10 flex items-center justify-center rounded-xl text-zinc-400 hover:text-[#9146FF] cursor-pointer"
+                              >
+                                <Star
+                                  className={`w-4 h-4 ${
+                                    isSaved ? 'fill-current text-[#9146FF]' : ''
+                                  }`}
+                                />
+                              </button>
 
-                          <button
-                            type="button"
-                            disabled={Boolean(loadingItemId)}
-                            onClick={(e) => handleQuickWatch(e, item)}
-                            className="min-h-12 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap"
-                          >
-                            {isExtracting ? (
-                              <Loader2 className="w-4 h-4 animate-spin" />
-                            ) : (
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                            )}
-                            <span>{pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}</span>
-                          </button>
+                              <button
+                                type="button"
+                                disabled={Boolean(loadingItemId)}
+                                onClick={(e) => handleQuickWatch(e, item)}
+                                className={`min-h-10 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap border ${
+                                  isPlayingThisMatch
+                                    ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.4)]'
+                                    : 'bg-white/[0.06] hover:bg-[#9146FF] border-white/[0.12] hover:border-[#9146FF] text-zinc-100 hover:text-white'
+                                }`}
+                              >
+                                {isExtracting ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  <Play className="w-3.5 h-3.5 fill-current" />
+                                )}
+                                <span className="max-w-[82px] truncate">
+                                  {primaryCh.label || pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}
+                                </span>
+                              </button>
+                            </>
+                          ) : (
+                            <span
+                              aria-hidden="true"
+                              className="w-9 h-9 rounded-xl flex items-center justify-center text-zinc-500 pointer-events-none"
+                            >
+                              <ChevronRight className="w-4 h-4" />
+                            </span>
+                          )}
                         </div>
                       </div>
                     );

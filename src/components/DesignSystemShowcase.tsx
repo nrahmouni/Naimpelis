@@ -30,6 +30,7 @@ import {
   SecondaryButton,
 } from './ui/DesignSystem';
 import { triggerHaptic } from '../utils/haptics';
+import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
 
 interface DesignSystemShowcaseProps {
   onClose?: () => void;
@@ -250,11 +251,13 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
 
               {/* Language Selector: ES | EN | ZH */}
               <div className="flex items-center gap-1 p-1 rounded-xl bg-black/60 border border-white/10">
-                {[
-                  { id: 'es', label: '🇪🇸 Castellano' },
-                  { id: 'en', label: '🇬🇧 English' },
-                  { id: 'zh', label: '🇨🇳 中文 (简体)' },
-                ].map((l) => (
+                {(
+                  [
+                    { id: 'es', flagCode: 'es', label: 'Castellano' },
+                    { id: 'en', flagCode: 'uk', label: 'English' },
+                    { id: 'zh', flagCode: 'cn', label: '中文 (简体)' },
+                  ] as const satisfies readonly { id: PosterLanguage; flagCode: FlagCode; label: string }[]
+                ).map((l) => (
                   <button
                     key={l.id}
                     type="button"
@@ -262,13 +265,14 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
                       triggerHaptic('light');
                       setPosterLang(l.id as PosterLanguage);
                     }}
-                    className={`min-h-8 px-3 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`min-h-8 px-3 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer ${
                       posterLang === l.id
                         ? 'bg-[#9146FF] text-white'
                         : 'text-zinc-400 hover:text-white hover:bg-white/10'
                     }`}
                   >
-                    {l.label}
+                    <FlagBadgeSvg code={l.flagCode} className="w-4 h-2.5 shrink-0" />
+                    <span>{l.label}</span>
                   </button>
                 ))}
               </div>

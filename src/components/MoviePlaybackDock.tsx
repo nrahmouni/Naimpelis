@@ -13,15 +13,15 @@ export interface ActiveMovieContext {
   poster?: string;
   backdrop?: string;
   overview?: string;
-  preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN';
+  preferLang?: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
 }
 
 interface MoviePlaybackDockProps {
   movie: ActiveMovieContext;
   lang: AppLanguage;
-  preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN';
+  preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT';
   loadingItemId?: string | null;
-  onSelectMovie: (movie: CatalogMovie, preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN') => void;
+  onSelectMovie: (movie: CatalogMovie, preferLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT') => void;
 }
 
 export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({

@@ -1,11 +1,12 @@
 import React from 'react';
 import type { SpanishTdtChannel, TdtCategory } from '../../types';
+import type { FlagCode } from './LanguageBadge';
 
 export type TvRegionId = 'all' | 'es' | 'latam' | 'ar' | 'ma' | 'docs' | 'us' | 'eu' | 'uk' | 'cn';
 
 export interface ChannelRegionMeta {
   region: Exclude<TvRegionId, 'all'>;
-  flag: string;
+  flagCode: FlagCode;
   langTag: 'ES' | 'CAT' | 'EN' | 'AR' | 'FR' | 'DE' | 'IT' | 'PT' | '中文';
   countryEs: string;
   countryCa: string;
@@ -16,7 +17,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
   if (ch.category === 'china_football' || ch.id.startsWith('cn-')) {
     return {
       region: 'cn',
-      flag: '🇨🇳',
+      flagCode: 'cn',
       langTag: '中文',
       countryEs: 'China · 中文',
       countryCa: 'Xina · 中文',
@@ -27,7 +28,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
     const isFr = ch.id === 'ma-medi1-afrique';
     return {
       region: 'ma',
-      flag: '🇲🇦',
+      flagCode: 'ma',
       langTag: isFr ? 'FR' : 'AR',
       countryEs: 'Marruecos · المغرب',
       countryCa: 'Marroc · المغرب',
@@ -37,7 +38,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
   if (ch.category === 'bein_arabic' || ch.id.startsWith('bein-ar-') || ch.id.startsWith('ar-')) {
     return {
       region: 'ar',
-      flag: '🇶🇦',
+      flagCode: 'ar',
       langTag: 'AR',
       countryEs: 'beIN Árabe & MENA · العربية',
       countryCa: 'beIN Àrab i MENA · العربية',
@@ -48,7 +49,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
     const isEn = ch.id === 'news-aj-en' || ch.id === 'news-alarabiya-en' || ch.id === 'news-cnbc-eu';
     return {
       region: 'ar',
-      flag: isEn ? '🌍' : '🇶🇦',
+      flagCode: isEn ? 'all' : 'ar',
       langTag: isEn ? 'EN' : 'AR',
       countryEs: 'Noticias Mundiales (Al Jazeera / MENA)',
       countryCa: 'Notícies Mundials (Al Jazeera / MENA)',
@@ -64,7 +65,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
     const isAr = ch.id === 'doc-natgeo-ad';
     return {
       region: 'docs',
-      flag: '🌍',
+      flagCode: 'docs',
       langTag: isEs ? 'ES' : isAr ? 'AR' : 'EN',
       countryEs: 'Documentales & Ciencia (Nat Geo / Discovery)',
       countryCa: 'Documentals i Ciència (Nat Geo / Discovery)',
@@ -75,7 +76,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
     const isEs = ch.id === 'us-cnn-es';
     return {
       region: 'us',
-      flag: '🇺🇸',
+      flagCode: 'us',
       langTag: isEs ? 'ES' : 'EN',
       countryEs: 'Estados Unidos · FOX / NBC / CNN',
       countryCa: 'Estats Units · FOX / NBC / CNN',
@@ -98,7 +99,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
                 : 'EN';
     return {
       region: 'eu',
-      flag: '🇪🇺',
+      flagCode: 'eu',
       langTag,
       countryEs: 'Europa · BBC / Euronews / DW / France 24',
       countryCa: 'Europa · BBC / Euronews / DW / France 24',
@@ -108,7 +109,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
   if (ch.category === 'uk_sports' || ch.id.startsWith('uk-')) {
     return {
       region: 'uk',
-      flag: '🇬🇧',
+      flagCode: 'uk',
       langTag: 'EN',
       countryEs: 'Reino Unido / USA · EN',
       countryCa: 'Regne Unit / USA · EN',
@@ -123,7 +124,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
   ) {
     return {
       region: 'latam',
-      flag: '🌎',
+      flagCode: 'lat',
       langTag: 'ES',
       countryEs: 'Latam & Internacional · ES',
       countryCa: 'Llatinoamèrica i Int. · ES',
@@ -141,7 +142,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
 
   return {
     region: 'es',
-    flag: '🇪🇸',
+    flagCode: isCatala ? 'ca' : 'es',
     langTag: isCatala ? 'CAT' : 'ES',
     countryEs: 'España · TDT y Deportes',
     countryCa: 'Espanya · TDT i Esports',
@@ -940,10 +941,8 @@ const RenderChannelArtwork: React.FC<{
 export const ChannelLogoBadge: React.FC<ChannelLogoBadgeProps> = ({
   channel,
   size = 'md',
-  showLangTag = false,
   className = '',
 }) => {
-  const regionMeta = getChannelRegionMeta(channel);
   const officialLogoUrl = getOfficialChannelLogoUrl(channel);
   const [imgFailed, setImgFailed] = React.useState(false);
 
@@ -959,11 +958,15 @@ export const ChannelLogoBadge: React.FC<ChannelLogoBadgeProps> = ({
       className={`relative shrink-0 select-none shadow-md ${SIZE_CLASSES[size]} ${className}`}
     >
       <div
-        className="w-full h-full overflow-hidden rounded-[inherit] border border-white/[0.14] flex items-center justify-center relative bg-[#121521]"
+        className={`w-full h-full overflow-hidden rounded-[inherit] border flex items-center justify-center relative ${
+          showOfficialImg
+            ? 'bg-white/[0.11] border-white/[0.18]'
+            : 'bg-[#121521] border-white/[0.14]'
+        }`}
         style={
           showOfficialImg
             ? {
-                backgroundImage: `radial-gradient(circle at 25% 20%, ${tone}2E 0%, rgba(16,18,28,0.96) 72%)`,
+                backgroundImage: `radial-gradient(circle at 50% 42%, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.07) 60%, ${tone}28 100%)`,
               }
             : undefined
         }
@@ -976,20 +979,12 @@ export const ChannelLogoBadge: React.FC<ChannelLogoBadgeProps> = ({
             decoding="async"
             referrerPolicy="no-referrer"
             onError={() => setImgFailed(true)}
-            className="w-[82%] h-[82%] object-contain drop-shadow-[0_1px_6px_rgba(255,255,255,0.14)]"
+            className="w-[82%] h-[82%] object-contain drop-shadow-[0_1px_4px_rgba(0,0,0,0.45)]"
           />
         ) : (
           <RenderChannelArtwork channel={channel} />
         )}
       </div>
-      {showLangTag && (
-        <span
-          aria-hidden="true"
-          className="absolute -bottom-1 -right-1 px-1 py-[1px] rounded-md bg-[#0B0C12]/95 border border-white/20 text-[8.5px] font-black text-zinc-100 leading-none shadow"
-        >
-          {regionMeta.langTag}
-        </span>
-      )}
     </div>
   );
 };

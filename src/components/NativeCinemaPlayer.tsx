@@ -50,6 +50,7 @@ import {
   LanguageNoticePopup,
   SubtitleTrackItem,
   VideoState,
+  StreamTrack,
 } from '../types';
 import { UI_COPY, pickLang } from '../utils/i18n';
 import { socketService } from '../services/socket';
@@ -150,7 +151,14 @@ function extractDistinguishingTrackName(
   }
 
   if (!candidate) {
-    const prefix = lang === 'ca' ? 'Servidor' : lang === 'en' ? 'Server' : 'Servidor';
+    const prefix =
+      lang === 'zh'
+        ? '线路'
+        : lang === 'ca'
+        ? 'Servidor'
+        : lang === 'en'
+        ? 'Server'
+        : 'Servidor';
     candidate = `${prefix} ${idx + 1}`;
   }
 
@@ -205,6 +213,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onExpandCompressed,
   onToggleMinimize,
   onClosePlayer,
+  onCancelExtraction,
   isTvMode = false,
   roomCode,
   roomDisplayName,
@@ -2581,12 +2590,37 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     videoState.mode === 'hls' || videoState.mode === 'direct';
   const activeLanguagePopup = localLangPopup || languageNotice;
   const activeTrackObj = videoState.tracks?.[videoState.activeTrackIndex];
-  const activeTrackLangCode = String(activeTrackObj?.lang || '').toUpperCase();
 
-  const handleQuickLanguageSwitch = (targetLangCode: 'ES' | 'LAT' | 'VOSE' | 'EN') => {
+  const resolveTrackLang = (tr?: StreamTrack | null): 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT' => {
+    if (!tr) return 'ES';
+    const raw = String(tr.lang || '').toUpperCase();
+    if (raw === 'CAT' || raw === 'CA' || raw.includes('CATAL') || raw.includes('VALENCI')) return 'CAT';
+    const label = `${tr.label || ''} ${videoState.subtitle || ''} ${videoState.title || ''}`.toLowerCase();
+    if (
+      label.includes('català') ||
+      label.includes('catala') ||
+      label.includes('[cat]') ||
+      label.includes('(cat)') ||
+      label.includes('3cat') ||
+      label.includes('sx3') ||
+      label.includes('3xl') ||
+      label.includes('k3')
+    ) {
+      return 'CAT';
+    }
+    if (raw === 'LAT' || raw.includes('LATIN') || label.includes('latino') || label.includes('latina')) return 'LAT';
+    if (raw === 'VOSE' || raw.includes('SUB') || label.includes('vose') || label.includes('subtitul')) return 'VOSE';
+    if (raw === 'EN' || raw.includes('ENG') || label.includes('english') || label.includes('inglés') || label.includes('ingles')) return 'EN';
+    return 'ES';
+  };
+
+  const activeTrackLangCode = resolveTrackLang(activeTrackObj);
+
+  const handleQuickLanguageSwitch = (targetLangCode: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT') => {
     triggerHaptic('light');
-    const langDisplayNames: Record<'ES' | 'LAT' | 'VOSE' | 'EN', string> = {
+    const langDisplayNames: Record<'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT', string> = {
       ES: 'Castellano (España)',
+      CAT: 'Català',
       LAT: 'Español Latino',
       VOSE: 'Subtitulado (VOSE)',
       EN: 'Inglés Original (EN)',
@@ -2594,7 +2628,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     const requestedName = langDisplayNames[targetLangCode];
 
     const matchingIdx = (videoState.tracks || []).findIndex(
-      (tr) => String(tr.lang || '').toUpperCase() === targetLangCode
+      (tr) => resolveTrackLang(tr) === targetLangCode
     );
 
     if (matchingIdx === -1) {
@@ -3048,6 +3082,23 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 >
                   <SlidersHorizontal className="w-4 h-4 text-zinc-100 shrink-0" />
                   <span className="hidden sm:inline">Ajustes</span>
+                </button>
+              )}
+
+              {/* 3b. Direct 1-Tap Native Picture-in-Picture inside player controls */}
+              {!isTvMode && canUseNativePiPOrCast && (
+                <button
+                  type="button"
+                  onClick={handleTogglePiP}
+                  title={isInPiP ? 'Salir de Picture-in-Picture' : 'Ventana flotante (PiP)'}
+                  aria-label={isInPiP ? 'Salir de Picture-in-Picture' : 'Activar Picture-in-Picture'}
+                  className={`min-h-[44px] min-w-[44px] rounded-2xl backdrop-blur-xl border flex items-center justify-center cursor-pointer active:scale-95 transition-all ${
+                    isInPiP
+                      ? 'bg-[#9146FF]/30 border-[#9146FF] text-white shadow-[0_0_16px_rgba(145,70,255,0.4)]'
+                      : 'bg-[#18181B]/70 hover:bg-[#18181B]/90 border-white/15 text-zinc-100'
+                  }`}
+                >
+                  <PictureInPicture2 className="w-4 h-4 text-sky-400" />
                 </button>
               )}
 
@@ -4207,7 +4258,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* BUFFERING / EXTRACTION / ERROR OVERLAYS                            */}
         {/* ================================================================== */}
         {isExtracting && (
-          <div className="pointer-events-none absolute inset-0 z-25 bg-black/65 backdrop-blur-[2px] flex flex-col items-center justify-center p-4 text-center">
+          <div className="pointer-events-auto absolute inset-0 z-25 bg-black/72 backdrop-blur-[3px] flex flex-col items-center justify-center p-4 text-center">
             <Loader2 className="w-7 h-7 sm:w-9 sm:h-9 animate-spin text-[#9146FF] mb-2" />
             {!isMinimized && (
               <>
@@ -4218,6 +4269,37 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   {t.extractingSub}
                 </p>
               </>
+            )}
+            {onCancelExtraction && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  triggerHaptic('light');
+                  onCancelExtraction();
+                }}
+                aria-label={pickLang(lang, {
+                  es: 'Cancelar carga',
+                  ca: 'Cancel·lar càrrega',
+                  en: 'Cancel loading',
+                  zh: '取消加载',
+                })}
+                className={`pointer-events-auto cursor-pointer active:scale-95 transition-all inline-flex items-center justify-center gap-1.5 font-semibold border border-white/20 bg-white/[0.1] hover:bg-white/[0.18] text-white ${
+                  isMinimized
+                    ? 'mt-1.5 h-7 px-2.5 rounded-lg text-[10px]'
+                    : 'mt-3.5 min-h-[38px] px-4 rounded-xl text-xs sm:text-sm'
+                }`}
+              >
+                <X className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {pickLang(lang, {
+                    es: 'Cancelar',
+                    ca: 'Cancel·lar',
+                    en: 'Cancel',
+                    zh: '取消',
+                  })}
+                </span>
+              </button>
             )}
           </div>
         )}
@@ -4853,11 +4935,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               ) : !videoState.isLive &&
               (videoState.mode === 'hls' || videoState.mode === 'direct') &&
               (videoState.tracks || []).some((tr) =>
-                ['ES', 'LAT', 'VOSE', 'EN'].includes(String(tr.lang || '').toUpperCase())
+                ['ES', 'CAT', 'LAT', 'VOSE', 'EN'].includes(resolveTrackLang(tr))
               ) ? (
                 <div className="flex items-center gap-1 bg-[#121420] p-1 rounded-2xl border border-white/[0.08] shrink-0">
                   {(
                     [
+                      { code: 'CAT', short: 'CAT', title: 'Català' },
                       { code: 'ES', short: 'ES', title: 'Castellano' },
                       { code: 'LAT', short: 'LAT', title: 'Latino' },
                       { code: 'VOSE', short: 'VOSE', title: 'VOSE' },
@@ -4866,7 +4949,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   )
                     .filter((langBtn) =>
                       (videoState.tracks || []).some(
-                        (tr) => String(tr.lang || '').toUpperCase() === langBtn.code
+                        (tr) => resolveTrackLang(tr) === langBtn.code
                       )
                     )
                     .map((langBtn) => {

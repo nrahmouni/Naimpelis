@@ -69,8 +69,9 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
   }, []);
 
   // ---------------------------------------------------------------------------
-  // Draggable Orb Gesture
+  // Draggable Orb Gesture (14px threshold so mobile thumb taps never lock up)
   // ---------------------------------------------------------------------------
+  const DRAG_THRESHOLD_PX = 14;
   const orbDragRef = useRef<{
     pointerId: number;
     startX: number;
@@ -78,10 +79,21 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
     origX: number;
     origY: number;
     moved: boolean;
+    captured: boolean;
   } | null>(null);
+  const justDraggedRef = useRef<boolean>(false);
+
+  const releaseOrbCapture = (el: HTMLButtonElement, pointerId: number) => {
+    try {
+      if (el.hasPointerCapture(pointerId)) {
+        el.releasePointerCapture(pointerId);
+      }
+    } catch {
+      // ignore pointer capture cleanup errors
+    }
+  };
 
   const handleOrbPointerDown = (e: React.PointerEvent<HTMLButtonElement>) => {
-    e.currentTarget.setPointerCapture(e.pointerId);
     orbDragRef.current = {
       pointerId: e.pointerId,
       startX: e.clientX,
@@ -89,6 +101,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
       origX: orbPos.x,
       origY: orbPos.y,
       moved: false,
+      captured: false,
     };
   };
 
@@ -97,7 +110,18 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
     if (!drag || drag.pointerId !== e.pointerId) return;
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
-    if (Math.hypot(dx, dy) > 6) drag.moved = true;
+    if (!drag.moved && Math.hypot(dx, dy) > DRAG_THRESHOLD_PX) {
+      drag.moved = true;
+      justDraggedRef.current = true;
+      if (!drag.captured) {
+        drag.captured = true;
+        try {
+          e.currentTarget.setPointerCapture(e.pointerId);
+        } catch {
+          // ignore
+        }
+      }
+    }
     if (!drag.moved) return;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -110,20 +134,34 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
   const handleOrbPointerUp = (e: React.PointerEvent<HTMLButtonElement>) => {
     const drag = orbDragRef.current;
     orbDragRef.current = null;
-    if (!drag) return;
-    if (!drag.moved) {
-      triggerHaptic('light');
-      onOpenSheet();
-    } else {
-      triggerHaptic('light');
-      try {
-        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-          e.currentTarget.releasePointerCapture(e.pointerId);
-        }
-      } catch {
-        // ignore pointer capture cleanup errors
-      }
+    if (drag?.captured) {
+      releaseOrbCapture(e.currentTarget, e.pointerId);
     }
+    if (drag?.moved) {
+      triggerHaptic('light');
+      window.setTimeout(() => {
+        justDraggedRef.current = false;
+      }, 120);
+    }
+  };
+
+  const handleOrbPointerCancel = (e: React.PointerEvent<HTMLButtonElement>) => {
+    const drag = orbDragRef.current;
+    orbDragRef.current = null;
+    justDraggedRef.current = false;
+    if (drag?.captured) {
+      releaseOrbCapture(e.currentTarget, e.pointerId);
+    }
+  };
+
+  const handleOrbClick = () => {
+    if (justDraggedRef.current) {
+      justDraggedRef.current = false;
+      return;
+    }
+    orbDragRef.current = null;
+    triggerHaptic('light');
+    onOpenSheet();
   };
 
   if (!visible || typeof document === 'undefined') return null;
@@ -137,7 +175,8 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
           onPointerDown={handleOrbPointerDown}
           onPointerMove={handleOrbPointerMove}
           onPointerUp={handleOrbPointerUp}
-          onPointerCancel={handleOrbPointerUp}
+          onPointerCancel={handleOrbPointerCancel}
+          onClick={handleOrbClick}
           style={{
             left: `${orbPos.x}px`,
             top: `${orbPos.y}px`,
@@ -156,7 +195,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
             en: 'Tap to open · Drag to move',
             zh: '点击打开 · 拖动移动',
           })}
-          className="fixed z-[75] rounded-full bg-[#0B0B0F]/72 hover:bg-[#17122B]/85 backdrop-blur-xl border border-[#9146FF]/65 text-white shadow-[0_10px_30px_rgba(0,0,0,0.6),0_0_20px_rgba(145,70,255,0.28)] flex items-center justify-center touch-none select-none cursor-grab active:cursor-grabbing active:scale-95 transition-colors"
+          className="fixed z-[210] rounded-full bg-[#0B0B0F]/82 hover:bg-[#17122B]/90 backdrop-blur-xl border border-[#9146FF]/70 text-white shadow-[0_10px_30px_rgba(0,0,0,0.65),0_0_20px_rgba(145,70,255,0.32)] flex items-center justify-center touch-none select-none cursor-pointer active:scale-95 transition-colors"
         >
           {voiceActive ? (
             <Mic className="w-5 h-5 text-[#00F593]" />
@@ -180,7 +219,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
       {/* 2. RIGHT-SIDE TRANSLUCENT SLIDE-OUT CURTAIN ("PERSIANA") */}
       <AnimatePresence>
         {isSheetOpen && (
-          <div className="fixed inset-0 z-[76] flex justify-end">
+          <div className="fixed inset-0 z-[215] flex justify-end pointer-events-none">
             {/* Soft non-intrusive backdrop so video remains clearly visible underneath */}
             <motion.div
               initial={{ opacity: 0 }}
@@ -191,7 +230,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
                 triggerHaptic('light');
                 onCloseSheet();
               }}
-              className="absolute inset-0 bg-black/25 cursor-pointer"
+              className="pointer-events-auto absolute inset-0 bg-black/10 cursor-pointer"
               aria-hidden="true"
             />
 
@@ -208,7 +247,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
                 en: 'Live room & chat',
                 zh: '房间与实时聊天',
               })}
-              className="relative z-10 h-full w-[88vw] max-w-[390px] bg-[#0B0B0F]/72 backdrop-blur-xl border-l border-[#9146FF]/35 shadow-[-24px_0_64px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden"
+              className="pointer-events-auto relative z-10 h-full w-[86vw] max-w-[380px] bg-[#0B0D14]/78 backdrop-blur-2xl border-l border-[#9146FF]/35 shadow-[-24px_0_64px_rgba(0,0,0,0.8)] flex flex-col overflow-hidden"
             >
               {/* Curtain Top Header */}
               <div className="shrink-0 h-12 px-3.5 bg-[#0B0B0F]/65 border-b border-white/[0.1] flex items-center justify-between gap-2 select-none">

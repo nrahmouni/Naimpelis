@@ -971,8 +971,8 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                 </BrandTile>
 
                 <BrandTile
-                  name="Anime Hub Completo"
-                  sub="Crunchyroll · AnimeBox · JKAnime · AnimeFLV en 1080p"
+                  name="Anime por Género"
+                  sub="Series y películas de animación japonesa en VOSE y Español"
                   accent="#F97316"
                 >
                   <svg viewBox="0 0 150 32" className="h-7 w-auto">
@@ -987,7 +987,7 @@ export const NaimCineAdsPage: React.FC<NaimCineAdsPageProps> = ({ onBack }) => {
                       fontWeight="800"
                       fontSize="15"
                     >
-                      Crunchy · Anime
+                      Anime & Cine
                     </text>
                   </svg>
                 </BrandTile>

@@ -25,6 +25,7 @@ import { pickLang } from '../utils/i18n';
 import { extractSafeAmbientColor } from '../utils/imageUrl';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { PosterImage } from './ui/PosterImage';
+import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
 
 export type MovieAudioLangPreference = 'ES' | 'LAT' | 'VOSE' | 'EN';
 
@@ -47,7 +48,7 @@ interface MediaDetailsModalProps {
 
 const AUDIO_LANGUAGE_OPTIONS: {
   code: MovieAudioLangPreference;
-  flag: string;
+  flagCode: FlagCode;
   labelEs: string;
   labelCa: string;
   labelEn: string;
@@ -57,7 +58,7 @@ const AUDIO_LANGUAGE_OPTIONS: {
 }[] = [
   {
     code: 'ES',
-    flag: '',
+    flagCode: 'es',
     labelEs: 'ES',
     labelCa: 'ES',
     labelEn: 'ES',
@@ -67,7 +68,7 @@ const AUDIO_LANGUAGE_OPTIONS: {
   },
   {
     code: 'LAT',
-    flag: '',
+    flagCode: 'lat',
     labelEs: 'LAT',
     labelCa: 'LAT',
     labelEn: 'LAT',
@@ -77,7 +78,7 @@ const AUDIO_LANGUAGE_OPTIONS: {
   },
   {
     code: 'VOSE',
-    flag: '',
+    flagCode: 'vose',
     labelEs: 'VOSE',
     labelCa: 'VOSE',
     labelEn: 'VOSE',
@@ -87,7 +88,7 @@ const AUDIO_LANGUAGE_OPTIONS: {
   },
   {
     code: 'EN',
-    flag: '',
+    flagCode: 'en',
     labelEs: 'EN',
     labelCa: 'EN',
     labelEn: 'EN',
@@ -577,7 +578,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                               : 'bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-zinc-300'
                           }`}
                         >
-                          {opt.flag && <span className="text-lg shrink-0">{opt.flag}</span>}
+                          <FlagBadgeSvg code={opt.flagCode} className="w-5 h-3.5" />
                           <div className="min-w-0 flex-1">
                             <div
                               className={`text-xs font-bold truncate ${
@@ -652,12 +653,15 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     ) : (
                       <RefreshCw className="w-4 h-4 text-[#BF94FF]" />
                     )}
-                    <span>
-                      {pickLang(lang, {
-                        es: '🇪🇸 Forzar búsqueda en Castellano',
-                        ca: '🇪🇸 Forçar cerca en Castellà',
-                        en: '🇪🇸 Force Castilian Spanish search',
-                      })}
+                    <span className="inline-flex items-center gap-1.5">
+                      <FlagBadgeSvg code="es" className="w-4 h-3" />
+                      <span>
+                        {pickLang(lang, {
+                          es: 'Forzar búsqueda en Castellano',
+                          ca: 'Forçar cerca en Castellà',
+                          en: 'Force Castilian Spanish search',
+                        })}
+                      </span>
                     </span>
                   </button>
                 </>
@@ -718,24 +722,27 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     ) : (
                       <RefreshCw className="w-4 h-4 text-[#BF94FF]" />
                     )}
-                    <span>
-                      {forcingSpanish
-                        ? pickLang(lang, {
-                            es: 'Buscando Castellano...',
-                            ca: 'Cercant Castellà...',
-                            en: 'Searching Castilian...',
-                          })
-                        : forceSpanishStatus === 'found'
-                        ? pickLang(lang, {
-                            es: '🇪🇸 Castellano detectado',
-                            ca: '🇪🇸 Castellà detectat',
-                            en: '🇪🇸 Castilian detected',
-                          })
-                        : pickLang(lang, {
-                            es: '🇪🇸 Forzar búsqueda en Castellano',
-                            ca: '🇪🇸 Forçar cerca en Castellà',
-                            en: '🇪🇸 Force Castilian Spanish search',
-                          })}
+                    <span className="inline-flex items-center gap-1.5">
+                      {!forcingSpanish && <FlagBadgeSvg code="es" className="w-4 h-3" />}
+                      <span>
+                        {forcingSpanish
+                          ? pickLang(lang, {
+                              es: 'Buscando Castellano...',
+                              ca: 'Cercant Castellà...',
+                              en: 'Searching Castilian...',
+                            })
+                          : forceSpanishStatus === 'found'
+                          ? pickLang(lang, {
+                              es: 'Castellano detectado',
+                              ca: 'Castellà detectat',
+                              en: 'Castilian detected',
+                            })
+                          : pickLang(lang, {
+                              es: 'Forzar búsqueda en Castellano',
+                              ca: 'Forçar cerca en Castellà',
+                              en: 'Force Castilian Spanish search',
+                            })}
+                      </span>
                     </span>
                   </button>
                 </>

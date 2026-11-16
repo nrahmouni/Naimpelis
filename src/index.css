@@ -1171,3 +1171,89 @@ html.tv-dpad-active [role="button"]:focus {
   background: rgba(15, 23, 42, 0.24);
 }
 
+/* ==========================================================================
+   CROSS-PLATFORM 60/120FPS SCROLL & GPU MOTION ENGINE (TV · ANDROID · IPHONE)
+   ========================================================================== */
+.smooth-scroll-area {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  scroll-behavior: smooth;
+  scrollbar-gutter: stable;
+}
+
+.gpu-layer {
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.cv-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 240px;
+}
+
+.cv-row-auto {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 92px;
+}
+
+.riffan-spring-press {
+  transition:
+    transform 180ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 160ms ease,
+    border-color 180ms ease,
+    background-color 180ms ease;
+  will-change: transform;
+}
+.riffan-spring-press:active {
+  transform: scale3d(0.97, 0.97, 1);
+}
+
+/* Subtle Google TV & D-Pad spatial breathing room when scrolling focused items */
+html.is-google-tv button,
+html.is-google-tv a,
+html.is-google-tv [role="button"],
+html.tv-dpad-active button,
+html.tv-dpad-active a,
+html.tv-dpad-active [role="button"] {
+  scroll-margin-block: 88px;
+  scroll-margin-inline: 36px;
+}
+
+@keyframes bento-drift-x {
+  0% {
+    transform: translate3d(0%, 0, 0);
+  }
+  100% {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@keyframes bento-float-slow {
+  0%, 100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(0, -6px, 0) scale(1.02);
+  }
+}
+
+.animate-bento-drift {
+  animation: bento-drift-x 28s linear infinite;
+  will-change: transform;
+}
+
+.animate-bento-float {
+  animation: bento-float-slow 7s ease-in-out infinite;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .smooth-scroll-area {
+    scroll-behavior: auto;
+  }
+  .animate-bento-drift,
+  .animate-bento-float {
+    animation: none !important;
+  }
+}

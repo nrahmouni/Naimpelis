@@ -273,6 +273,7 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   const [showTvRemoteSheet, setShowTvRemoteSheet] = useState(false);
   const [showQrInviteSheet, setShowQrInviteSheet] = useState(false);
 
+  const chatListRef = useRef<HTMLDivElement>(null);
   const chatEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -311,7 +312,15 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
   }, [currentUser.name]);
 
   useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (activeTab !== 'chat') return;
+    const raf = window.requestAnimationFrame(() => {
+      if (chatListRef.current) {
+        chatListRef.current.scrollTop = chatListRef.current.scrollHeight;
+      } else {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }
+    });
+    return () => window.cancelAnimationFrame(raf);
   }, [messages.length, activeTab]);
 
   const handleSend = (e: React.FormEvent) => {
@@ -408,7 +417,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
   const formatTime = (ts: number) => {
     const d = new Date(ts);
-    const locale = lang === 'ca' ? 'ca-ES' : lang === 'en' ? 'en-US' : 'es-ES';
+    const locale =
+      lang === 'ca' ? 'ca-ES' : lang === 'en' ? 'en-US' : lang === 'zh' ? 'zh-CN' : 'es-ES';
     return d.toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' });
   };
 
@@ -722,7 +732,8 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
 
           {/* Borderless Chat Stream */}
           <div
-            className={`flex-1 overflow-y-auto px-3.5 py-2.5 space-y-2.5 custom-scrollbar ${
+            ref={chatListRef}
+            className={`flex-1 overflow-y-auto px-3.5 py-2.5 space-y-2.5 custom-scrollbar smooth-scroll-area ${
               showFloatingReactions ? 'pb-16' : 'pb-3'
             }`}
           >
@@ -730,17 +741,28 @@ export const PartySidebar: React.FC<PartySidebarProps> = ({
               <div className="space-y-3">
                 <EmptyStateCard
                   icon={<MessageSquare className="w-6 h-6" />}
-                  title={lang === 'ca' ? 'El xat està tranquil' : lang === 'es' ? 'El chat está tranquilo' : 'Chat is quiet'}
-                  description={
-                    lang === 'ca'
-                      ? 'Saluda el grup o envia una reacció en directe.'
-                      : lang === 'es'
-                        ? 'Saluda al grupo o lanza una reacción en vivo mientras veis la sala.'
-                        : 'Say hi to your room or send a live reaction.'
-                  }
+                  title={pickLang(lang, {
+                    es: 'El chat está tranquilo',
+                    ca: 'El xat està tranquil',
+                    en: 'Chat is quiet',
+                    zh: '聊天室很安静',
+                  })}
+                  description={pickLang(lang, {
+                    es: 'Saluda al grupo o lanza una reacción en vivo mientras veis la sala.',
+                    ca: 'Saluda el grup o envia una reacció en directe.',
+                    en: 'Say hi to your room or send a live reaction.',
+                    zh: '向房间好友打个招呼或发送实时表情互动。',
+                  })}
                 />
                 <div className="flex flex-wrap items-center justify-center gap-1.5 px-2">
-                  {(lang === 'ca'
+                  {(lang === 'zh'
+                    ? [
+                        '👋 大家好！',
+                        '🍿 开始观影！',
+                        '🔥 太精彩了！',
+                        '⏸️ 稍等一下',
+                      ]
+                    : lang === 'ca'
                     ? [
                         '👋 Hola a tots!',
                         '🍿 Comencem!',

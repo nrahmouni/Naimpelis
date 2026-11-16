@@ -160,6 +160,58 @@ function blobToBase64(blob: Blob): Promise<string> {
   });
 }
 
+function downsampleTo16k(float32: Float32Array, inputSampleRate: number): Float32Array {
+  if (inputSampleRate === 16000 || inputSampleRate <= 0) return float32;
+  const ratio = inputSampleRate / 16000;
+  const newLength = Math.max(1, Math.round(float32.length / ratio));
+  const result = new Float32Array(newLength);
+  let offsetResult = 0;
+  let offsetBuffer = 0;
+  while (offsetResult < result.length) {
+    const nextOffsetBuffer = Math.min(float32.length, Math.round((offsetResult + 1) * ratio));
+    let accum = 0;
+    let count = 0;
+    for (let i = offsetBuffer; i < nextOffsetBuffer; i += 1) {
+      accum += float32[i];
+      count += 1;
+    }
+    result[offsetResult] = count > 0 ? accum / count : 0;
+    offsetResult += 1;
+    offsetBuffer = nextOffsetBuffer;
+  }
+  return result;
+}
+
+function float32ToPcm16Base64(float32: Float32Array): string {
+  const int16 = new Int16Array(float32.length);
+  for (let i = 0; i < float32.length; i += 1) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
+  }
+  const bytes = new Uint8Array(int16.buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+function base64Pcm16ToFloat32(base64: string): Float32Array {
+  const binary = atob(base64);
+  const len = binary.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  const int16 = new Int16Array(bytes.buffer);
+  const float32 = new Float32Array(int16.length);
+  for (let i = 0; i < int16.length; i += 1) {
+    float32[i] = int16[i] / 0x8000;
+  }
+  return float32;
+}
+
 export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   isOpen,
   onClose,
@@ -198,6 +250,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [voiceMuted, setVoiceMuted] = useState(false);
   const [handsFree, setHandsFree] = useState(false);
+  const [useLiveApi, setUseLiveApi] = useState(true);
+  const [liveStatus, setLiveStatus] = useState<'idle' | 'connecting' | 'live'>('idle');
   const [micNotice, setMicNotice] = useState<string | null>(null);
   const [items, setItems] = useState<VoiceCandidateItem[]>([]);
 
@@ -208,10 +262,27 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   const recordAutoStopRef = useRef<number | null>(null);
   const audioElRef = useRef<HTMLAudioElement | null>(null);
   const speakAbortRef = useRef<AbortController | null>(null);
+
+  // Gemini Live Bidirectional Audio Refs
+  const liveWsRef = useRef<WebSocket | null>(null);
+  const liveMicStreamRef = useRef<MediaStream | null>(null);
+  const liveInputCtxRef = useRef<AudioContext | null>(null);
+  const liveProcessorRef = useRef<ScriptProcessorNode | null>(null);
+  const liveOutputCtxRef = useRef<AudioContext | null>(null);
+  const liveNextStartTimeRef = useRef<number>(0);
+  const liveActiveSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
+  const liveUserMsgIdRef = useRef<string | null>(null);
+  const liveUserBufRef = useRef<string>('');
+  const liveAssistantMsgIdRef = useRef<string | null>(null);
+  const liveAssistantBufRef = useRef<string>('');
+  const livePendingAutoPlayTimerRef = useRef<number | null>(null);
+
   const handsFreeRef = useRef(handsFree);
   handsFreeRef.current = handsFree;
   const isOpenRef = useRef(isOpen);
   isOpenRef.current = isOpen;
+  const useLiveApiRef = useRef(useLiveApi);
+  useLiveApiRef.current = useLiveApi;
 
   const itemsRef = useRef<VoiceCandidateItem[]>(items);
   itemsRef.current = items;
@@ -231,8 +302,22 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
   }, [messages, interimText, isThinking]);
 
+  const stopLiveAudioPlayback = useCallback(() => {
+    liveActiveSourcesRef.current.forEach((src) => {
+      try {
+        src.stop();
+        src.disconnect();
+      } catch {
+        // ignore
+      }
+    });
+    liveActiveSourcesRef.current.clear();
+    liveNextStartTimeRef.current = 0;
+  }, []);
+
   const stopSpeechOutput = useCallback(() => {
     setIsSpeaking(false);
+    stopLiveAudioPlayback();
     if (speakAbortRef.current) {
       try {
         speakAbortRef.current.abort();
@@ -258,7 +343,61 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     } catch {
       // ignore
     }
-  }, []);
+  }, [stopLiveAudioPlayback]);
+
+  const stopGeminiLiveSession = useCallback(() => {
+    if (livePendingAutoPlayTimerRef.current !== null) {
+      window.clearTimeout(livePendingAutoPlayTimerRef.current);
+      livePendingAutoPlayTimerRef.current = null;
+    }
+    if (liveProcessorRef.current) {
+      try {
+        liveProcessorRef.current.onaudioprocess = null;
+        liveProcessorRef.current.disconnect();
+      } catch {
+        // ignore
+      }
+      liveProcessorRef.current = null;
+    }
+    if (liveInputCtxRef.current) {
+      try {
+        void liveInputCtxRef.current.close();
+      } catch {
+        // ignore
+      }
+      liveInputCtxRef.current = null;
+    }
+    if (liveMicStreamRef.current) {
+      liveMicStreamRef.current.getTracks().forEach((t) => t.stop());
+      liveMicStreamRef.current = null;
+    }
+    if (liveWsRef.current) {
+      try {
+        liveWsRef.current.onopen = null;
+        liveWsRef.current.onmessage = null;
+        liveWsRef.current.onerror = null;
+        liveWsRef.current.onclose = null;
+        liveWsRef.current.close();
+      } catch {
+        // ignore
+      }
+      liveWsRef.current = null;
+    }
+    stopLiveAudioPlayback();
+    if (liveOutputCtxRef.current) {
+      try {
+        void liveOutputCtxRef.current.close();
+      } catch {
+        // ignore
+      }
+      liveOutputCtxRef.current = null;
+    }
+    liveUserMsgIdRef.current = null;
+    liveUserBufRef.current = '';
+    liveAssistantMsgIdRef.current = null;
+    liveAssistantBufRef.current = '';
+    setLiveStatus('idle');
+  }, [stopLiveAudioPlayback]);
 
   const stopMediaRecorderOnly = useCallback((discard = false) => {
     if (recordAutoStopRef.current !== null) {
@@ -299,7 +438,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       recognitionRef.current = null;
     }
     stopMediaRecorderOnly(true);
-  }, [stopMediaRecorderOnly]);
+    stopGeminiLiveSession();
+  }, [stopGeminiLiveSession, stopMediaRecorderOnly]);
 
   const speakWithWebSpeechFallback = useCallback(
     (cleanText: string, onDone?: () => void) => {
@@ -685,7 +825,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
     }
   }, [stopMediaRecorderOnly]);
 
-  const startListening = useCallback(() => {
+  const startLegacyListening = useCallback(() => {
     const Ctor = getSpeechRecognitionCtor();
     if (!Ctor) {
       void startAudioRecorderFallback();
@@ -774,6 +914,271 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
       void startAudioRecorderFallback();
     }
   }, [lang, startAudioRecorderFallback, stopListening, stopSpeechOutput, submitVoiceQuery]);
+
+  const startGeminiLiveSession = useCallback(async () => {
+    if (
+      typeof window === 'undefined' ||
+      !navigator.mediaDevices?.getUserMedia ||
+      typeof WebSocket === 'undefined'
+    ) {
+      startLegacyListening();
+      return;
+    }
+
+    stopListening();
+    stopSpeechOutput();
+    setMicNotice(null);
+    setInterimText('');
+    setLiveStatus('connecting');
+    setIsThinking(true);
+
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+      liveMicStreamRef.current = micStream;
+
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+
+      let outCtx: AudioContext;
+      try {
+        outCtx = new AudioCtx({ sampleRate: 24000 });
+      } catch {
+        outCtx = new AudioCtx();
+      }
+      if (outCtx.state === 'suspended') {
+        await outCtx.resume().catch(() => {});
+      }
+      liveOutputCtxRef.current = outCtx;
+      liveNextStartTimeRef.current = outCtx.currentTime;
+
+      const wsProto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${wsProto}//${window.location.host}/ws/gemini-live?userName=${encodeURIComponent(
+        cleanName
+      )}&lang=${encodeURIComponent(lang)}&activeMedia=${encodeURIComponent(activeMediaTitle)}`;
+
+      const ws = new WebSocket(wsUrl);
+      liveWsRef.current = ws;
+
+      const enqueueLivePcm = (b64: string) => {
+        if (mutedRef.current || !liveOutputCtxRef.current) return;
+        const ctx = liveOutputCtxRef.current;
+        if (ctx.state === 'suspended') {
+          void ctx.resume().catch(() => {});
+        }
+        const float32 = base64Pcm16ToFloat32(b64);
+        if (float32.length === 0) return;
+        const buffer = ctx.createBuffer(1, float32.length, 24000);
+        buffer.getChannelData(0).set(float32);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        const startAt = Math.max(ctx.currentTime + 0.02, liveNextStartTimeRef.current);
+        source.start(startAt);
+        liveNextStartTimeRef.current = startAt + buffer.duration;
+        liveActiveSourcesRef.current.add(source);
+        setIsSpeaking(true);
+        source.onended = () => {
+          liveActiveSourcesRef.current.delete(source);
+          if (liveActiveSourcesRef.current.size === 0) {
+            setIsSpeaking(false);
+          }
+        };
+      };
+
+      ws.onmessage = (ev) => {
+        if (!isOpenRef.current) return;
+        try {
+          const msg = JSON.parse(String(ev.data)) as {
+            ready?: boolean;
+            error?: string;
+            fallback?: boolean;
+            inputTranscript?: string;
+            outputTranscript?: string;
+            audio?: string;
+            interrupted?: boolean;
+            turnComplete?: boolean;
+            toolItems?: VoiceCandidateItem[];
+            autoPlay?: boolean;
+            toolAction?: VoiceAssistantAppAction;
+          };
+
+          if (msg.fallback || msg.error) {
+            stopGeminiLiveSession();
+            setIsThinking(false);
+            setUseLiveApi(false);
+            startLegacyListening();
+            return;
+          }
+
+          if (msg.ready) {
+            setLiveStatus('live');
+            setIsThinking(false);
+            setIsListening(true);
+            triggerHaptic('medium');
+
+            try {
+              let inCtx: AudioContext;
+              try {
+                inCtx = new AudioCtx({ sampleRate: 16000 });
+              } catch {
+                inCtx = new AudioCtx();
+              }
+              liveInputCtxRef.current = inCtx;
+              const srcNode = inCtx.createMediaStreamSource(micStream);
+              const processor = inCtx.createScriptProcessor(2048, 1, 1);
+              const silentGain = inCtx.createGain();
+              silentGain.gain.value = 0;
+
+              processor.onaudioprocess = (audioEv) => {
+                const activeWs = liveWsRef.current;
+                if (!activeWs || activeWs.readyState !== WebSocket.OPEN) return;
+                const rawChannel = audioEv.inputBuffer.getChannelData(0);
+                const pcm16k = downsampleTo16k(rawChannel, inCtx.sampleRate);
+                const audioB64 = float32ToPcm16Base64(pcm16k);
+                activeWs.send(JSON.stringify({ audio: audioB64 }));
+              };
+
+              srcNode.connect(processor);
+              processor.connect(silentGain);
+              silentGain.connect(inCtx.destination);
+              liveProcessorRef.current = processor;
+            } catch {
+              stopGeminiLiveSession();
+              setUseLiveApi(false);
+              startLegacyListening();
+            }
+            return;
+          }
+
+          if (msg.inputTranscript) {
+            liveUserBufRef.current = `${liveUserBufRef.current} ${msg.inputTranscript}`.replace(/\s+/g, ' ').trim();
+            setInterimText(liveUserBufRef.current);
+            liveAssistantMsgIdRef.current = null;
+            liveAssistantBufRef.current = '';
+          }
+
+          if (msg.outputTranscript) {
+            if (liveUserBufRef.current) {
+              const userText = liveUserBufRef.current;
+              const uId = liveUserMsgIdRef.current || `u-live-${Date.now()}`;
+              liveUserMsgIdRef.current = null;
+              liveUserBufRef.current = '';
+              setInterimText('');
+              setMessages((prev) =>
+                prev.some((m) => m.id === uId)
+                  ? prev.map((m) => (m.id === uId ? { ...m, text: userText } : m))
+                  : [...prev, { id: uId, role: 'user', text: userText }]
+              );
+            }
+
+            const aId = liveAssistantMsgIdRef.current || `a-live-${Date.now()}`;
+            liveAssistantMsgIdRef.current = aId;
+            liveAssistantBufRef.current = `${liveAssistantBufRef.current}${msg.outputTranscript}`;
+            const mergedAssistant = liveAssistantBufRef.current.trim();
+            setMessages((prev) =>
+              prev.some((m) => m.id === aId)
+                ? prev.map((m) => (m.id === aId ? { ...m, text: mergedAssistant } : m))
+                : [...prev, { id: aId, role: 'assistant', text: mergedAssistant }]
+            );
+          }
+
+          if (msg.audio) {
+            enqueueLivePcm(msg.audio);
+          }
+
+          if (msg.interrupted) {
+            stopLiveAudioPlayback();
+            setIsSpeaking(false);
+          }
+
+          if (msg.turnComplete) {
+            liveAssistantMsgIdRef.current = null;
+            liveAssistantBufRef.current = '';
+          }
+
+          if (msg.toolAction && onAppAction) {
+            const actionPayload = msg.toolAction;
+            window.setTimeout(() => {
+              onAppAction(actionPayload);
+              if (
+                actionPayload.type === 'open_world' ||
+                actionPayload.type === 'surprise_me' ||
+                actionPayload.type === 'open_friends'
+              ) {
+                onClose();
+              }
+            }, 650);
+          }
+
+          if (Array.isArray(msg.toolItems) && msg.toolItems.length > 0) {
+            setItems(msg.toolItems);
+            if (msg.autoPlay) {
+              const firstCandidate = msg.toolItems[0];
+              if (livePendingAutoPlayTimerRef.current !== null) {
+                window.clearTimeout(livePendingAutoPlayTimerRef.current);
+              }
+              livePendingAutoPlayTimerRef.current = window.setTimeout(() => {
+                triggerCandidatePlay(firstCandidate);
+              }, 950);
+            }
+          }
+        } catch {
+          // ignore malformed ws payload
+        }
+      };
+
+      ws.onerror = () => {
+        stopGeminiLiveSession();
+        setIsThinking(false);
+        setUseLiveApi(false);
+        startLegacyListening();
+      };
+
+      ws.onclose = () => {
+        setLiveStatus('idle');
+        setIsListening(false);
+        setIsThinking(false);
+      };
+    } catch {
+      stopGeminiLiveSession();
+      setIsThinking(false);
+      setMicNotice(
+        pickLang(lang, {
+          es: 'Permiso de micrófono bloqueado. Permite el micro o escribe abajo.',
+          ca: 'Permís de micròfon bloquejat. Permet el micro o escriu a sota.',
+          en: 'Microphone blocked. Allow mic permission or type below.',
+          zh: '麦克风权限被阻止，请允许权限或在下方输入。',
+        })
+      );
+    }
+  }, [
+    activeMediaTitle,
+    cleanName,
+    lang,
+    onAppAction,
+    onClose,
+    startLegacyListening,
+    stopGeminiLiveSession,
+    stopListening,
+    stopLiveAudioPlayback,
+    stopSpeechOutput,
+    triggerCandidatePlay,
+  ]);
+
+  const startListening = useCallback(() => {
+    if (useLiveApiRef.current) {
+      void startGeminiLiveSession();
+      return;
+    }
+    startLegacyListening();
+  }, [startGeminiLiveSession, startLegacyListening]);
 
   startListeningRef.current = startListening;
 
@@ -889,6 +1294,43 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  const next = !useLiveApi;
+                  setUseLiveApi(next);
+                  if (!next) {
+                    stopGeminiLiveSession();
+                    setIsListening(false);
+                  }
+                }}
+                title={pickLang(lang, {
+                  es: 'Conversación bidireccional natural con Gemini Live API',
+                  ca: 'Conversa bidireccional natural amb Gemini Live API',
+                  en: 'Natural bidirectional voice via Gemini Live API',
+                  zh: '使用 Gemini Live API 实时自然语音对话',
+                })}
+                className={`h-8 px-2.5 rounded-xl text-[11px] font-bold flex items-center gap-1.5 transition-colors cursor-pointer ${
+                  useLiveApi
+                    ? liveStatus === 'live'
+                      ? 'bg-emerald-500/25 border border-emerald-400/50 text-emerald-200 shadow-[0_0_12px_rgba(16,185,129,0.3)]'
+                      : 'bg-[#9146FF]/25 border border-[#9146FF]/50 text-[#E9D5FF]'
+                    : 'bg-[#10121C] hover:bg-white/[0.08] text-zinc-400 border border-white/[0.08]'
+                }`}
+              >
+                <span
+                  className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+                    liveStatus === 'live'
+                      ? 'bg-[#00F593] animate-pulse'
+                      : useLiveApi
+                      ? 'bg-[#BF94FF]'
+                      : 'bg-zinc-500'
+                  }`}
+                />
+                <span>Live</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => {
@@ -1018,15 +1460,19 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
               </div>
 
               <p className="text-[11px] font-semibold text-zinc-400 tracking-wider uppercase mt-2.5 text-center">
-                {isThinking
-                  ? pickLang(lang, { es: 'Pensando respuesta...', ca: 'Pensant resposta...', en: 'Thinking...', zh: '正在思考...' })
+                {liveStatus === 'live'
+                  ? isSpeaking
+                    ? pickLang(lang, { es: 'Gemini Live hablando · Interrumpe al hablar', ca: 'Gemini Live parlant', en: 'Gemini Live speaking · Speak to interrupt', zh: 'Gemini Live 正在回复 · 说话可随时打断' })
+                    : pickLang(lang, { es: 'Gemini Live conectado · Habla natural', ca: 'Gemini Live connectat · Parla natural', en: 'Gemini Live connected · Speak naturally', zh: 'Gemini Live 已连接 · 请自然说话' })
+                  : isThinking
+                  ? pickLang(lang, { es: 'Conectando...', ca: 'Connectant...', en: 'Connecting...', zh: '正在连接...' })
                   : isRecordingAudio
                   ? pickLang(lang, { es: 'Grabando audio · Pulsa para enviar', ca: 'Gravant · Prem per enviar', en: 'Recording · Tap to send', zh: '正在录音 · 点击发送' })
                   : isListening
                   ? pickLang(lang, { es: 'Escuchando... Habla ahora', ca: 'Escoltant... Parla ara', en: 'Listening... Speak now', zh: '正在聆听 · 请说话' })
                   : isSpeaking
                   ? pickLang(lang, { es: 'Hablando... Pulsa el micro para interrumpir', ca: 'Parlant... Prem per parlar', en: 'Speaking... Tap mic to interrupt', zh: '正在回复 · 点击麦克风可打断' })
-                  : pickLang(lang, { es: 'Pulsa el micro para hablar', ca: 'Prem el micro per parlar', en: 'Tap mic to talk', zh: '点击麦克风开始说话' })}
+                  : pickLang(lang, { es: 'Pulsa el micro para conversación natural', ca: 'Prem el micro per parlar', en: 'Tap mic for natural voice', zh: '点击麦克风开始自然对话' })}
               </p>
             </div>
 
@@ -1198,8 +1644,19 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              if (inputText.trim() && !isThinking) {
-                void submitVoiceQuery(inputText);
+              const clean = inputText.trim();
+              if (!clean || isThinking) return;
+              if (liveWsRef.current && liveWsRef.current.readyState === WebSocket.OPEN && liveStatus === 'live') {
+                const uTurn: ConversationMessage = {
+                  id: `u-live-txt-${Date.now()}`,
+                  role: 'user',
+                  text: clean,
+                };
+                setMessages((prev) => [...prev, uTurn]);
+                setInputText('');
+                liveWsRef.current.send(JSON.stringify({ text: clean }));
+              } else {
+                void submitVoiceQuery(clean);
               }
             }}
             className="relative z-10 p-3 bg-[#0B0B0F] border-t border-white/[0.08] flex items-center gap-2"

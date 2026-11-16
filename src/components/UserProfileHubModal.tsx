@@ -1399,25 +1399,6 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         Lite: {liteMode ? 'ON' : 'OFF'}
                       </button>
                     </div>
-
-                    {onChangeLang && (
-                      <div className="flex items-center gap-1 flex-wrap">
-                        {(['en', 'es', 'ca', 'zh'] as AppLanguage[]).map((code) => (
-                          <button
-                            key={code}
-                            type="button"
-                            onClick={() => onChangeLang(code)}
-                            className={`min-h-8 px-2.5 rounded-lg text-[11px] font-bold uppercase border cursor-pointer transition-colors ${
-                              lang === code
-                                ? 'bg-[#9146FF] text-white border-[#9146FF]'
-                                : 'bg-[#26262C] border-white/[0.08] text-zinc-300 hover:text-white'
-                            }`}
-                          >
-                            {code === 'en' ? 'ENG' : code === 'ca' ? 'CAT' : code === 'zh' ? 'CHINO' : 'ES'}
-                          </button>
-                        ))}
-                      </div>
-                    )}
                   </div>
 
                   {/* Annual Stats Snapshot + Design System / GDPR links */}

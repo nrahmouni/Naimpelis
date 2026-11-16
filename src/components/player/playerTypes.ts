@@ -188,6 +188,7 @@ export interface NativeCinemaPlayerProps {
   onExpandCompressed?: () => void;
   onToggleMinimize?: () => void;
   onClosePlayer?: () => void;
+  onCancelExtraction?: () => void;
   isTvMode?: boolean;
   roomCode?: string;
   roomDisplayName?: string;
