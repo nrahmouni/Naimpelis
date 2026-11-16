@@ -18,6 +18,8 @@ import type { PrimaryWorldId } from '../store/useAppStore';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { PosterImage } from './ui/PosterImage';
+import { UniversalHomeSearch } from './home/UniversalHomeSearch';
+import type { CatalogMovie, SpanishTdtChannel, SportsMatch } from '../types';
 
 interface EntryHomeScreenProps {
   lang: AppLanguage;
@@ -33,6 +35,15 @@ interface EntryHomeScreenProps {
   lastUsedWorld: PrimaryWorldId | null;
   liveMatchesCount: number;
   roomParticipantsCount: number;
+  movies?: CatalogMovie[];
+  series?: CatalogMovie[];
+  tdtChannels?: SpanishTdtChannel[];
+  liveMatches?: SportsMatch[];
+  onPlayMovie?: (movie: CatalogMovie) => void;
+  onPlaySeries?: (series: CatalogMovie) => void;
+  onPlayChannel?: (channel: SpanishTdtChannel) => void;
+  onPlayMatch?: (match: SportsMatch) => void;
+  onSelectGame?: (gameId: string) => void;
 }
 
 interface WorldTileConfig {
@@ -59,6 +70,15 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   lastUsedWorld,
   liveMatchesCount,
   roomParticipantsCount,
+  movies = [],
+  series = [],
+  tdtChannels = [],
+  liveMatches = [],
+  onPlayMovie = () => {},
+  onPlaySeries = () => {},
+  onPlayChannel = () => {},
+  onPlayMatch = () => {},
+  onSelectGame = () => {},
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(displayName);

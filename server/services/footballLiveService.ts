@@ -1059,6 +1059,12 @@ export async function fetchRealFootballMatchDetails(params: {
     const homeName = String(homeTeamObj.name || params.homeTeam || 'Local').trim();
     const awayName = String(awayTeamObj.name || params.awayTeam || 'Visitante').trim();
 
+    const started = Boolean(st.started);
+    const finished = Boolean(st.finished);
+    const cancelled = Boolean(st.cancelled);
+    const statusState: 'live' | 'upcoming' | 'finished' =
+      finished || cancelled ? 'finished' : started ? 'live' : 'upcoming';
+
     let statusLabel = '';
     if (statusState === 'live') {
       const raw = String(st?.liveTime?.long || st?.liveTime?.short || st?.reason?.short || 'EN VIVO').trim();
