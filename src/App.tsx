@@ -1218,35 +1218,14 @@ export function App() {
       useAppStore.getState().setAuthNotice(null);
       return;
     }
-    if (res.errorCode === 'auth/unauthorized-domain') {
-      const hostHint = res.hostname ? ` (${res.hostname})` : '';
+    if (res.errorCode) {
       useAppStore
         .getState()
         .setAuthNotice(
           pickLang(lang, {
-            es: `Este dominio${hostHint} aún no está autorizado en Firebase Auth. Puedes entrar con tu nombre sin cuenta.`,
-            ca: `Aquest domini${hostHint} encara no està autoritzat a Firebase Auth. Pots entrar amb el teu nom sense compte.`,
-            en: `This domain${hostHint} is not yet authorized in Firebase Auth. You can enter with your name right away.`,
-          })
-        );
-    } else if (res.errorCode === 'auth/popup-blocked') {
-      useAppStore
-        .getState()
-        .setAuthNotice(
-          pickLang(lang, {
-            es: 'El navegador bloqueó la ventana de Google. Permite ventanas emergentes o entra con tu nombre.',
-            ca: 'El navegador ha blocat la finestra de Google. Permet finestres emergents o entra amb el teu nom.',
-            en: 'Popup was blocked by the browser. Allow popups or enter with your name.',
-          })
-        );
-    } else if (res.errorCode) {
-      useAppStore
-        .getState()
-        .setAuthNotice(
-          pickLang(lang, {
-            es: 'No se pudo completar el acceso con Google ahora. Puedes continuar con tu nombre.',
-            ca: 'No s’ha pogut completar l’accés amb Google ara. Pots continuar amb el teu nom.',
-            en: 'Could not complete Google sign-in right now. You can continue with your name.',
+            es: '¡Hola! Entra al instante con tu nombre o apodo para disfrutar de RiffanTV con amigos.',
+            ca: '¡Hola! Entra a l’instant amb el teu nom o sobrenom per gaudir de RiffanTV amb amics.',
+            en: 'Welcome! Enter with your name or nickname to enjoy RiffanTV with friends instantly.',
           })
         );
     }

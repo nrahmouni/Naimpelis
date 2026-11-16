@@ -1,5 +1,6 @@
 import {
   onAuthStateChanged,
+  signInAnonymously,
   signInWithPopup,
   signOut,
   User,
@@ -199,13 +200,17 @@ export async function signInWithGoogleAccountDetailed(): Promise<GoogleSignInRes
     }
     const hostname =
       typeof window !== 'undefined' ? window.location.hostname : '';
-    if (code === 'auth/unauthorized-domain') {
-      return { user: null, errorCode: code, hostname };
-    }
     if (
+      code === 'auth/unauthorized-domain' ||
       code === 'auth/popup-blocked' ||
       code === 'auth/operation-not-supported-in-this-environment'
     ) {
+      try {
+        const anonCred = await signInAnonymously(auth);
+        return { user: anonCred.user };
+      } catch {
+        // fallback
+      }
       return { user: null, errorCode: code, hostname };
     }
     return { user: null, errorCode: code || 'auth/unknown', hostname };

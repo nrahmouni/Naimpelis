@@ -207,28 +207,27 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
         {/* 1. Android */}
         <button
           type="button"
-          onClick={() =>
-            void handleDownloadApk('mobile', '/RIFFAN-TV.apk?v=300', 'RIFFAN-TV.apk')
-          }
+          onClick={async () => {
+            triggerHaptic('medium');
+            if (pwa.isInstallable) {
+              await pwa.install();
+            } else {
+              setShowWebSteps(true);
+            }
+          }}
           className={cardClass(recommendedDevice === 'android')}
         >
           <span className="flex items-center gap-3 min-w-0">
             <span className="w-10 h-10 rounded-xl bg-white/[0.06] border border-white/[0.08] flex items-center justify-center shrink-0">
-              {apkDownloading === 'mobile' ? (
-                <Loader2 className="w-5 h-5 animate-spin text-[#BF94FF]" />
-              ) : apkDone === 'mobile' ? (
-                <Check className="w-5 h-5 text-emerald-400" />
-              ) : (
-                <Smartphone className="w-5 h-5 text-[#BF94FF]" />
-              )}
+              <Smartphone className="w-5 h-5 text-[#BF94FF]" />
             </span>
             <span className="min-w-0">
               <span className="block text-sm font-bold text-white">Android</span>
               <span className="block text-xs text-zinc-400">
                 {pickLang(lang, {
-                  es: 'Descarga directa para teléfono o tablet',
-                  ca: 'Descàrrega directa per a telèfon o tauleta',
-                  en: 'Direct install for phone or tablet',
+                  es: 'Instalación automática WebAPK en teléfono o tablet',
+                  ca: 'Instal·lació automàtica WebAPK en telèfon o tauleta',
+                  en: 'Automatic WebAPK install for phone or tablet',
                 })}
               </span>
             </span>
