@@ -186,7 +186,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
     return liveOne.time ? `${liveOne.title} · ${liveOne.time}` : liveOne.title;
   }, [liveMatches, lang]);
 
-  const greetingWord = pickLang(lang, { es: 'Hola', ca: 'Hola', en: 'Hi', zh: '你好' });
+  const greetingWord = pickLang(lang, { es: 'Hola', ca: 'Hola', en: 'Hi', zh: '你好', rif: 'Azul' });
 
   const renderSpotlightOverlay = (id: string) => {
     const pos = spotlightPos[id] || { x: 50, y: 50 };
@@ -203,7 +203,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
   return (
     <div className="relative w-full overflow-x-hidden">
-      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-3 sm:pt-5 pb-16 space-y-4 sm:space-y-5 @container">
+      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-3 sm:pt-5 pb-20 sm:pb-24 pb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)] space-y-4 sm:space-y-5 @container">
         {/* 1. COMPACT EDITORIAL GREETING */}
         <section className="flex items-end justify-between gap-3">
           <div className="min-w-0 space-y-0.5">
@@ -374,7 +374,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       triggerHaptic('light');
                       onResumeHistoryItem(item);
                     }}
-                    className="scroll-snap-item w-[156px] sm:w-[178px] shrink-0 rounded-2xl bg-[#10121B] border border-white/[0.08] hover:border-[#9146FF]/60 overflow-hidden text-left group active:scale-[0.97] transition-all cursor-pointer"
+                    className="scroll-snap-item w-[164px] sm:w-[185px] shrink-0 rounded-2xl bg-[#10121B] border border-white/[0.08] hover:border-[#9146FF]/60 overflow-hidden text-left group active:scale-[0.97] transition-all cursor-pointer"
                   >
                     <div className="relative aspect-video w-full bg-[#090A0F]">
                       <PosterImage
@@ -400,12 +400,16 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       </div>
                     </div>
                     <div className="p-2.5">
-                      <p className="text-xs font-semibold text-white leading-snug line-clamp-1">
+                      <p className="text-xs font-semibold text-white leading-snug line-clamp-2 min-h-[2.1rem]">
                         {item.title}
                       </p>
-                      {cleanedSubtitle && (
-                        <p className="text-[11px] text-zinc-400 truncate mt-0.5">
+                      {cleanedSubtitle ? (
+                        <p className="text-[11px] text-zinc-400 truncate mt-1">
                           {cleanedSubtitle}
+                        </p>
+                      ) : (
+                        <p className="text-[11px] text-zinc-500 truncate mt-1">
+                          {item.year ? `${item.year}` : ''}
                         </p>
                       )}
                     </div>
@@ -445,12 +449,12 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               className="absolute right-0 top-0 bottom-0 w-[46%] sm:w-[48%] pointer-events-none overflow-hidden select-none"
             >
               {heroPosters.length > 0 ? (
-                <div className="relative w-full h-full flex items-end justify-end pr-2 sm:pr-4 pb-1">
+                <div className="relative w-full h-full flex items-center justify-end pr-2 sm:pr-4 pt-1">
                   {heroPosters.slice(0, 3).map((m, idx) => {
                     const offsets = [
-                      'right-16 sm:right-24 bottom-0 -rotate-8 opacity-80 scale-90',
-                      'right-8 sm:right-12 bottom-1 rotate-2 opacity-95 scale-95 z-[1]',
-                      'right-1 sm:right-2 -bottom-0.5 rotate-8 opacity-100 z-[2]',
+                      'right-16 sm:right-24 bottom-3 sm:bottom-4 -rotate-8 opacity-80 scale-90',
+                      'right-8 sm:right-12 bottom-4 sm:bottom-5 rotate-2 opacity-95 scale-95 z-[1]',
+                      'right-1 sm:right-2 bottom-3 sm:bottom-4 rotate-8 opacity-100 z-[2]',
                     ];
                     return (
                       <div
@@ -494,7 +498,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               )}
             </div>
 
-            <div className="relative z-10 max-w-[58%] sm:max-w-[54%] space-y-1 mt-4">
+            <div className="relative z-10 max-w-[62%] sm:max-w-[56%] space-y-1 mt-3">
               <h2 className="font-display font-bold text-lg sm:text-2xl text-white tracking-tight leading-tight">
                 {pickLang(lang, { es: 'Cine y Series', ca: 'Cine i Sèries', en: 'Movies & Series' })}
               </h2>
@@ -602,15 +606,15 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               aria-hidden="true"
               className="absolute -top-10 -right-10 w-32 h-32 rounded-full bg-sky-500/12 blur-2xl pointer-events-none"
             />
-            {/* Translucent drifting channel badges strip in TV Bento background */}
+            {/* Translucent drifting channel badges strip in TV Bento background safely away from text */}
             <div
               aria-hidden="true"
-              className="pointer-events-none absolute -right-4 bottom-2 flex items-center gap-1.5 opacity-[0.14] group-hover:opacity-[0.24] transition-opacity duration-300"
+              className="pointer-events-none absolute -right-3 top-10 flex items-center gap-1.5 opacity-[0.09] group-hover:opacity-[0.18] rotate-2 transition-opacity duration-300"
             >
-              {featuredChannels.map((ch) => (
+              {featuredChannels.slice(0, 4).map((ch) => (
                 <span
                   key={`bg-${ch.id}`}
-                  className="px-2 py-1 rounded-lg border border-white/25 text-[10px] font-black text-white"
+                  className="px-2 py-0.5 rounded-lg border border-white/20 text-[10px] font-black text-white"
                   style={{ backgroundColor: ch.tone }}
                 >
                   {ch.mark}

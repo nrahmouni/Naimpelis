@@ -1235,20 +1235,12 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
         '播放 DAZN LaLiga',
       ],
       rif: [
-        'Sker asaru In Time',
-        'Sker asaru Game of Thrones T2 E2',
-        'Isura n Christopher Nolan',
-        'Isura n Leonardo DiCaprio',
-        'Mamek taddal tafukt?',
-        'Ẓer takurt DAZN LaLiga',
-      ],
-      rif: [
-        'Ẓer takurt n uḍar DAZN LaLiga',
-        'Isura imezwura n tusna tasengant',
-        'Mamek taddal tafukt?',
-        'Aruy-iyi tabezzart i imnsi',
-        'Melmi ara tazzal Barqa?',
-        'Sker ssinima',
+        'Cɛel lfilm In Time',
+        'Cɛel Game of Thrones T2 E2',
+        'Lafilmat n Christopher Nolan',
+        'Lafilmat n Leonardo DiCaprio',
+        'Xzar takurt n uḍar DAZN LaLiga',
+        'Melmi ara turar Barṣa?',
       ],
     };
     return map[lang] || map.es;

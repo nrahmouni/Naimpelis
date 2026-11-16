@@ -1331,23 +1331,23 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       [
                         {
                           id: 'light',
-                          label: pickLang(lang, { es: 'Tema Claro', ca: 'Tema Clar', en: 'Light Theme' }),
+                          label: pickLang(lang, { es: 'Tema Claro', ca: 'Tema Clar', en: 'Light Theme', rif: 'Mod Acemlal', zh: '浅色主题' }),
                         },
                         {
                           id: 'dark',
-                          label: pickLang(lang, { es: 'Tema Oscuro', ca: 'Tema Fosc', en: 'Dark Theme' }),
+                          label: pickLang(lang, { es: 'Tema Oscuro', ca: 'Tema Fosc', en: 'Dark Theme', rif: 'Mod Aberkan', zh: '深色主题' }),
                         },
                         {
                           id: 'oled',
-                          label: pickLang(lang, { es: 'OLED Negro', ca: 'OLED Negre', en: 'OLED Black' }),
+                          label: pickLang(lang, { es: 'OLED Negro', ca: 'OLED Negre', en: 'OLED Black', rif: 'Aberkan OLED', zh: 'OLED 纯黑' }),
                         },
                         {
                           id: 'soft-dark',
-                          label: pickLang(lang, { es: 'Noche Suave', ca: 'Nit Suau', en: 'Soft Night' }),
+                          label: pickLang(lang, { es: 'Noche Suave', ca: 'Nit Suau', en: 'Soft Night', rif: 'Iḍ Aḥlawan', zh: '柔和夜间' }),
                         },
                         {
                           id: 'high-contrast',
-                          label: pickLang(lang, { es: 'Alto Contraste', ca: 'Alt Contrast', en: 'High Contrast' }),
+                          label: pickLang(lang, { es: 'Alto Contraste', ca: 'Alt Contrast', en: 'High Contrast', rif: 'Kontrast Ameqqran', zh: '高对比度' }),
                         },
                       ] as { id: AppTheme; label: string }[]
                     ).map((opt) => (
@@ -1383,8 +1383,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                           }`}
                         >
                           {d === 'comfortable'
-                            ? pickLang(lang, { es: 'Cómoda', ca: 'Còmoda', en: 'Comfortable' })
-                            : pickLang(lang, { es: 'Compacta', ca: 'Compacta', en: 'Compact' })}
+                            ? pickLang(lang, { es: 'Cómoda', ca: 'Còmoda', en: 'Comfortable', rif: 'Yewseɛ', zh: '宽松' })
+                            : pickLang(lang, { es: 'Compacta', ca: 'Compacta', en: 'Compact', rif: 'Ameẓyan', zh: '紧凑' })}
                         </button>
                       ))}
                       <button
@@ -1396,10 +1396,56 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                             : 'bg-[#26262C] border-white/[0.08] text-zinc-300'
                         }`}
                       >
-                        Lite: {liteMode ? 'ON' : 'OFF'}
+                        {pickLang(lang, {
+                          es: liteMode ? 'Lite: ON' : 'Lite: OFF',
+                          ca: liteMode ? 'Lite: ON' : 'Lite: OFF',
+                          en: liteMode ? 'Lite: ON' : 'Lite: OFF',
+                          rif: liteMode ? 'Afessas: Yexdem' : 'Afessas: Yensa',
+                          zh: liteMode ? '极速: 开启' : '极速: 关闭',
+                        })}
                       </button>
                     </div>
                   </div>
+
+                  {/* 5-Language Switcher */}
+                  {onChangeLang && (
+                    <div className="pt-2 border-t border-white/[0.04] space-y-1.5">
+                      <span className="block text-[11px] font-medium text-zinc-400">
+                        {pickLang(lang, {
+                          es: 'Idioma de la interfaz',
+                          ca: 'Idioma de la interfície',
+                          en: 'Interface language',
+                          rif: "Tutlayt n l'interface",
+                          zh: '界面语言',
+                        })}
+                      </span>
+                      <div className="grid grid-cols-5 gap-1.5">
+                        {[
+                          { id: 'es', label: 'Español' },
+                          { id: 'ca', label: 'Català' },
+                          { id: 'en', label: 'English' },
+                          { id: 'rif', label: 'Tarifit' },
+                          { id: 'zh', label: '中文' },
+                        ].map((l) => (
+                          <button
+                            key={l.id}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              onChangeLang(l.id as AppLanguage);
+                            }}
+                            className={`min-h-8 px-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer transition-colors ${
+                              lang === l.id
+                                ? 'bg-[#9146FF] text-white border-[#9146FF]'
+                                : 'bg-[#26262C] hover:bg-white/[0.1] border-white/[0.08] text-zinc-300'
+                            }`}
+                          >
+                            {l.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   {/* Annual Stats Snapshot + Design System / GDPR links */}
                   <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.07] flex items-center justify-between gap-2 text-[11px] text-zinc-300">
@@ -1408,6 +1454,8 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                         es: `🎬 ${watchHistory.length} vistos · ♥ ${watchlist.length} guardados · ⭐ ${favoriteChannels.length} canales`,
                         ca: `🎬 ${watchHistory.length} vistos · ♥ ${watchlist.length} desats · ⭐ ${favoriteChannels.length} canals`,
                         en: `🎬 ${watchHistory.length} watched · ♥ ${watchlist.length} saved · ⭐ ${favoriteChannels.length} channels`,
+                        rif: `🎬 ${watchHistory.length} txzared · ♥ ${watchlist.length} iḥefḍen · ⭐ ${favoriteChannels.length} lkanalat`,
+                        zh: `🎬 已看 ${watchHistory.length} · ♥ 收藏 ${watchlist.length} · ⭐ 频道 ${favoriteChannels.length}`,
                       })}
                     </span>
                     <div className="flex items-center gap-1.5 shrink-0">

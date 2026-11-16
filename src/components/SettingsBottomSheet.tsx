@@ -48,7 +48,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   isOpen,
   onClose,
   lang,
-  onChangeLang: _onChangeLang,
+  onChangeLang,
   effectiveView,
   onToggleViewMode,
   authUser,
@@ -215,6 +215,44 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               </span>
               <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
+
+            {/* Language Selector */}
+            <div className="pt-2 border-t border-white/[0.04] space-y-1.5">
+              <span className="block text-[11px] font-medium text-zinc-400 px-1">
+                {pickLang(lang, {
+                  es: 'Idioma de la interfaz',
+                  ca: 'Idioma de la interfície',
+                  en: 'Interface language',
+                  rif: "Tutlayt n l'interface",
+                  zh: '界面语言',
+                })}
+              </span>
+              <div className="grid grid-cols-5 gap-1.5">
+                {[
+                  { id: 'es', label: 'Español' },
+                  { id: 'ca', label: 'Català' },
+                  { id: 'en', label: 'English' },
+                  { id: 'rif', label: 'Tarifit' },
+                  { id: 'zh', label: '中文' },
+                ].map((l) => (
+                  <button
+                    key={l.id}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onChangeLang(l.id as AppLanguage);
+                    }}
+                    className={`min-h-8 px-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer transition-colors ${
+                      lang === l.id
+                        ? 'bg-[#9146FF] text-white border-[#9146FF]'
+                        : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.08] text-zinc-300'
+                    }`}
+                  >
+                    {l.label}
+                  </button>
+                ))}
+              </div>
+            </div>
           </section>
 
           {/* TV */}

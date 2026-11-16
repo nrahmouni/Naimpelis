@@ -827,7 +827,7 @@ function buildWebViewMainActivityDex(launchUrl: string): Buffer {
   invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebSettings;', 'setDomStorageEnabled', 'V', ['Z']), [2, 3]);
   invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebSettings;', 'setDatabaseEnabled', 'V', ['Z']), [2, 3]);
   invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebSettings;', 'setUseWideViewPort', 'V', ['Z']), [2, 3]);
-  invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebSettings;', 'setLoadWithOverviewMode', 'V', ['Z']), [2, 3]);
+  invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebSettings;', 'setLoadWithOverviewMode', 'V', ['Z']), [2, 1]);
   invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebSettings;', 'setMediaPlaybackRequiresUserGesture', 'V', ['Z']), [2, 1]);
   invoke35c(onCreateInsns, 0x6e, mId('Landroid/webkit/WebSettings;', 'setMixedContentMode', 'V', ['I']), [2, 1]);
   // webView.setWebViewClient(new WebViewClient())

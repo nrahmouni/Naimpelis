@@ -32,14 +32,28 @@ function readStoredViewPreference(): ViewPreference {
   return 'auto';
 }
 
+export function isMobileDeviceUserAgent(): boolean {
+  if (typeof navigator === 'undefined') return false;
+  const ua = navigator.userAgent || navigator.vendor || (window as unknown as { opera?: string }).opera || '';
+  // Identify Android phones, Samsung Galaxy models (SM-S928 for S24 Ultra, etc.), iPhones, and general mobile devices
+  if (/Android.+Mobile|Mobile Safari|iPhone|iPod|BlackBerry|Opera Mini|IEMobile|WPDesktop|SamsungBrowser|SM-[A-Z0-9]+/i.test(ua)) {
+    return true;
+  }
+  if (/Android/i.test(ua) && !/GoogleTV|Android TV|SmartTV|BRAVIA/i.test(ua)) {
+    if (typeof screen !== 'undefined' && Math.min(screen.width, screen.height) < 768) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function detectCoarseTouchDevice(): boolean {
   if (typeof window === 'undefined') return false;
   try {
+    if (isMobileDeviceUserAgent()) return true;
+    if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) return true;
     if (window.matchMedia?.('(pointer: coarse)').matches) return true;
-    if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0) {
-      // Distinguish pure phones/tablets with no fine mouse hover
-      if (window.matchMedia?.('(hover: none)').matches) return true;
-    }
+    if (window.matchMedia?.('(hover: none)').matches) return true;
   } catch {
     // ignore
   }
@@ -76,14 +90,7 @@ export function useViewLayoutMode() {
   const windowWidth = viewportSize.width;
   const windowHeight = viewportSize.height;
   const isCoarseTouch = detectCoarseTouchDevice();
-
-  // Detect smartphones where Chrome Android's "Sitio para ordenador / Desktop site"
-  // forced a ~980px desktop layout viewport onto a tall portrait phone screen (aspect >= 1.5)
-  const isPhoneForcedDesktopViewport =
-    isCoarseTouch &&
-    windowWidth >= 680 &&
-    windowHeight / Math.max(windowWidth, 1) >= 1.5 &&
-    viewPreference !== 'desktop';
+  const isMobilePhone = isMobileDeviceUserAgent();
 
   const isSmartTvScreen =
     typeof window !== 'undefined' &&
@@ -94,9 +101,16 @@ export function useViewLayoutMode() {
       ));
 
   const naturalMode: EffectiveViewMode =
-    isSmartTvScreen || (!isPhoneForcedDesktopViewport && windowWidth >= 1024)
+    isSmartTvScreen
+      ? 'desktop'
+      : isMobilePhone
+      ? 'mobile'
+      : windowWidth >= 1024
       ? 'desktop'
       : 'mobile';
+
+  const isPhoneForcedDesktopViewport =
+    viewPreference === 'desktop' && windowWidth < 1024;
 
   const effectiveView: EffectiveViewMode =
     viewPreference === 'auto' ? naturalMode : viewPreference;
@@ -105,11 +119,11 @@ export function useViewLayoutMode() {
     try {
       const root = document.documentElement;
       root.style.removeProperty('zoom');
+      root.style.removeProperty('font-size');
       const vp = document.getElementById('naim-viewport');
 
       if (viewPreference === 'desktop' && (window.screen?.width || 1280) < 1024) {
         // User on a small screen explicitly requested Desktop View
-        root.style.removeProperty('font-size');
         vp?.setAttribute(
           'content',
           'width=1280, initial-scale=0.32, minimum-scale=0.2, maximum-scale=5.0, viewport-fit=cover'
@@ -119,20 +133,11 @@ export function useViewLayoutMode() {
           'content',
           'width=device-width, initial-scale=1.0, viewport-fit=cover'
         );
-
-        // If Chrome Android "Sitio para ordenador" still forces a ~980px viewport on a portrait phone,
-        // scale root rem proportionally so 980px === ~24.5rem (100% native full-bleed mobile sizing)
-        if (isPhoneForcedDesktopViewport) {
-          const scale = Math.min(2.65, Math.max(1.75, windowWidth / 392));
-          root.style.fontSize = `${Math.round(16 * scale)}px`;
-        } else {
-          root.style.removeProperty('font-size');
-        }
       }
     } catch {
       // ignore
     }
-  }, [viewPreference, isPhoneForcedDesktopViewport, windowWidth]);
+  }, [viewPreference, windowWidth]);
 
   const setViewPreference = useCallback((next: ViewPreference) => {
     setViewPreferenceState(next);
