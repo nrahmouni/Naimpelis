@@ -280,7 +280,7 @@ export function playNaimcineIntroSound(): boolean {
 
 export const playRiffanIntroSound = playNaimcineIntroSound;
 
-export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala') {
+export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos' | 'kids' | 'sala') {
   try {
     const ctx = getAudioContext();
     if (!ctx) return;
@@ -367,6 +367,22 @@ export function playWorldPortalSound(portal: 'cine' | 'futbol' | 'tv' | 'juegos'
         g.connect(master);
         osc.start(at);
         osc.stop(at + 0.44);
+      });
+    } else if (portal === 'kids') {
+      // Bright cheerful xylophone octave chime (C5 -> E5 -> G5 -> C6)
+      [523.25, 659.25, 783.99, 1046.5].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        const at = now + idx * 0.055;
+        osc.frequency.setValueAtTime(freq, at);
+        g.gain.setValueAtTime(0.001, at);
+        g.gain.linearRampToValueAtTime(0.11, at + 0.015);
+        g.gain.exponentialRampToValueAtTime(0.0008, at + 0.34);
+        osc.connect(g);
+        g.connect(master);
+        osc.start(at);
+        osc.stop(at + 0.36);
       });
     } else {
       // Snappy arcade triad lock-in (C5 -> E5 -> G5)

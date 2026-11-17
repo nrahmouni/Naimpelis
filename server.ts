@@ -23,6 +23,7 @@ import {
 import { serviceMeshGatewayMiddleware } from './server/gateway/serviceMesh.ts';
 import { registerOperationalRoutes } from './server/routes/health.ts';
 import { registerExpandedCatalogRoutes } from './server/routes/expandedCatalog.ts';
+import { registerKidsRoutes, KIDS_LIVE_CHANNELS } from './server/routes/kids.ts';
 import { registerProxyRoutes } from './server/routes/proxies.ts';
 import { registerVoiceAssistantRoutes } from './server/routes/voiceAssistant.ts';
 import { setupGeminiLiveWebSocket } from './server/routes/geminiLive.ts';
@@ -229,6 +230,7 @@ registerOperationalRoutes(app, {
 });
 
 registerExpandedCatalogRoutes(app);
+registerKidsRoutes(app);
 registerProxyRoutes(app, { getPublicOrigin });
 
 // Direct Ready-to-Install Signed Android APK Download (Mobile & Google TV / Chromecast)
@@ -11377,6 +11379,7 @@ const IPTV_GROUP_TITLES: Record<string, string> = {
   entretenimiento: 'Entretenimiento y Variedades',
   noticias_deportes: 'Noticias y Deporte en Directo',
   infantil_autonomicas: 'Infantil y Autonómicas (TV3 · SX3 · Autonómicas)',
+  infantil_kids: 'Riffan Kids (Infantil y Dibujos 24/7)',
   fast_thematic: 'Canales Temáticos FAST 24/7',
   internacional: 'Canales Internacionales',
 };
@@ -11523,6 +11526,18 @@ function getAllIptvChannels(): any[] {
             resolverType: 'tdt_hls',
           },
         ],
+      });
+    }
+  }
+
+  // 6. Riffan Kids Dedicated Channels (Clan, Boing, SX3, Spacetoon, Gulli, Ketnet, CBeebies, Tamazight Kids, CCTV-14)
+  for (const k of KIDS_LIVE_CHANNELS) {
+    if (!seen.has(k.id)) {
+      seen.add(k.id);
+      combined.push({
+        ...k,
+        dial: k.dial || 150 + combined.filter((c) => c.dial >= 150 && c.dial < 170).length,
+        category: 'infantil_kids',
       });
     }
   }
@@ -11957,7 +11972,7 @@ app.get(
     res.setHeader('Content-Type', 'audio/x-mpegurl; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     if (forceDownload) {
-      res.setHeader('Content-Disposition', 'attachment; filename="NAIMCINE-Samsung-Tizen.m3u"');
+      res.setHeader('Content-Disposition', 'attachment; filename="RIFFANTV-IPTV.m3u"');
     }
     res.send(playlistBody);
   }
@@ -12004,8 +12019,13 @@ app.get('/api/iptv/summary', async (req, res) => {
   res.json({
     ok: true,
     totalChannels: channels.length,
-    m3uUrl: `${publicOrigin}/naim-cine.m3u`,
+    m3uUrl: `${publicOrigin}/riffantv.m3u`,
     epgUrl: `${publicOrigin}/epg.xml`,
+    riffantvM3uUrl: `${publicOrigin}/riffantv.m3u`,
+    riffantvEpgUrl: `${publicOrigin}/epg.xml`,
+    tvUrl: `${publicOrigin}/tv`,
+    kidsUrl: `${publicOrigin}/kids`,
+    legacyM3uUrl: `${publicOrigin}/naim-cine.m3u`,
     categories: Object.entries(catMap).map(([id, info]) => ({
       id,
       label: info.label,
@@ -12183,14 +12203,14 @@ app.get('/api/iptv/live/:channelId', async (req, res) => {
   return res.status(503).send('Canal temporalmente sin señal disponible');
 });
 
-app.get(['/epg.xml', '/api/iptv/epg.xml'], async (req, res) => {
+app.get(['/epg.xml', '/riffantv-epg.xml', '/api/iptv/epg.xml'], async (req, res) => {
   try {
     const publicOrigin = getPublicOrigin(req);
     const store = await loadSpanishEpgSchedule();
     const channels = getAllIptvChannels();
     const xmlParts: string[] = [
       '<?xml version="1.0" encoding="UTF-8"?>',
-      '<tv generator-info-name="NAIMCINE IPTV EPG" generator-info-url="' +
+      '<tv generator-info-name="RIFFANTV IPTV EPG" generator-info-url="' +
         escapeXmlText(publicOrigin) +
         '">',
     ];
@@ -12267,7 +12287,7 @@ app.get(['/epg.xml', '/api/iptv/epg.xml'], async (req, res) => {
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
     if (forceDownload) {
-      res.setHeader('Content-Disposition', 'attachment; filename="NAIMCINE-EPG.xml"');
+      res.setHeader('Content-Disposition', 'attachment; filename="RIFFANTV-EPG.xml"');
     }
     res.send(xmlParts.join('\n'));
   } catch (err) {

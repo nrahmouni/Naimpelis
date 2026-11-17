@@ -28,7 +28,12 @@ import { useOnlineStatus, usePWAInstall } from '../utils/usePWAInstall';
 import { triggerHaptic } from '../utils/haptics';
 import { triggerApkDownload } from '../utils/apkDownload';
 import { pickLang } from '../utils/i18n';
-import { isSmartTvBrowser } from '../utils/shortLink';
+import {
+  buildEpgXmlUrl,
+  buildM3uPlaylistUrl,
+  buildTvPairingUrl,
+  isSmartTvBrowser,
+} from '../utils/shortLink';
 import { BottomSheet, SecondaryButton } from './ui/DesignSystem';
 
 // ============================================================================
@@ -188,9 +193,9 @@ export const PWAInstallButton: React.FC<PWAInstallButtonProps> = ({
         <RiffanDownloadIcon size={16} />
         <span>
           {pickLang(lang, {
-            es: 'Instalar NAIMCINE (Smart TV & App)',
-            ca: 'Instal·lar NAIMCINE (Smart TV & App)',
-            en: 'Install NAIMCINE (Smart TV & App)',
+            es: 'Instalar RiffanTV (Smart TV & App)',
+            ca: 'Instal·lar RiffanTV (Smart TV & App)',
+            en: 'Install RiffanTV (Smart TV & App)',
           })}
         </span>
       </button>
@@ -227,10 +232,10 @@ export const PWAInstallLandingCard: React.FC<PWAInstallLandingCardProps> = ({
         <RiffanDownloadIcon size={16} />
         <span>
           {pickLang(lang, {
-            es: 'Instalar NAIMCINE · Smart TV & Móvil',
-            ca: 'Instal·lar NAIMCINE · Smart TV & Mòbil',
-            en: 'Install NAIMCINE · Smart TV & Mobile',
-            zh: '安装 NAIMCINE',
+            es: 'Instalar RiffanTV · Smart TV & Móvil',
+            ca: 'Instal·lar RiffanTV · Smart TV & Mòbil',
+            en: 'Install RiffanTV · Smart TV & Mobile',
+            zh: '安装 RiffanTV',
           })}
         </span>
       </SecondaryButton>
@@ -320,12 +325,11 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
     ? 'android'
     : 'web';
 
-  const originUrl = typeof window !== 'undefined' ? window.location.origin : 'https://naimcine.ai.studio';
-  const m3uUrl = `${originUrl}/naim-cine.m3u`;
-  const m3uDownloadUrl = `${originUrl}/naim-cine.m3u?download=1`;
-  const epgUrl = `${originUrl}/epg.xml`;
-  const epgDownloadUrl = `${originUrl}/epg.xml?download=1`;
-  const tvReceiverUrl = `${originUrl}/tv`;
+  const m3uUrl = buildM3uPlaylistUrl(false);
+  const m3uDownloadUrl = buildM3uPlaylistUrl(true);
+  const epgUrl = buildEpgXmlUrl(false);
+  const epgDownloadUrl = buildEpgXmlUrl(true);
+  const tvReceiverUrl = buildTvPairingUrl();
 
   const handleCopy = async (text: string, type: 'm3u' | 'epg' | 'tv') => {
     triggerHaptic('medium');
@@ -438,16 +442,16 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
       title={
         viewingSection === 'samsung_tizen'
           ? pickLang(lang, {
-              es: 'Samsung Tizen / LG webOS',
-              ca: 'Samsung Tizen / LG webOS',
-              en: 'Samsung Tizen / LG webOS',
-              zh: '三星 Tizen / LG webOS 安装指南',
+              es: 'IPTV Smart TV · Lista M3U y EPG XML',
+              ca: 'IPTV Smart TV · Llista M3U i EPG XML',
+              en: 'IPTV Smart TV · M3U & EPG XML Guide',
+              zh: 'IPTV 智能电视 · M3U 列表与 EPG 指南',
             })
           : pickLang(lang, {
-              es: 'Instalar NAIMCINE',
-              ca: 'Instal·lar NAIMCINE',
-              en: 'Install NAIMCINE',
-              zh: '安装 NAIMCINE',
+              es: 'Instalar RiffanTV',
+              ca: 'Instal·lar RiffanTV',
+              en: 'Install RiffanTV',
+              zh: '安装 RiffanTV',
             })
       }
       subtitle={
@@ -510,7 +514,7 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
             <button
               type="button"
               onClick={() =>
-                void handleDownloadApk('mobile', '/RIFFAN-TV.apk?v=300', 'NAIMCINE.apk')
+                void handleDownloadApk('mobile', '/RIFFAN-TV.apk?v=300', 'RIFFANTV.apk')
               }
               className={cardClass(recommendedDevice === 'android')}
             >
@@ -567,7 +571,7 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
           <button
             type="button"
             onClick={() =>
-              void handleDownloadApk('tv', '/RIFFAN-TV-TV.apk?v=300', 'NAIMCINE-TV.apk')
+              void handleDownloadApk('tv', '/RIFFAN-TV-TV.apk?v=300', 'RIFFANTV-TV.apk')
             }
             className={cardClass(recommendedDevice === 'tv')}
           >
@@ -688,45 +692,91 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
             </span>
           </div>
 
-          {/* Quick Action Download & Copy Grid */}
-          <div className="grid grid-cols-2 gap-2">
-            {/* Download M3U */}
-            <a
-              href={m3uDownloadUrl}
-              download="NAIMCINE-Samsung-Tizen.m3u"
-              onClick={() => triggerHaptic('medium')}
-              className="p-3 rounded-2xl bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.08] flex flex-col items-start gap-1 transition-colors group"
-            >
-              <div className="flex items-center justify-between w-full">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-[#BF94FF]">
-                  Lista IPTV
-                </span>
-                <RiffanDownloadIcon size={16} />
+          {/* Separated Download & Copy Cards: PASO 1 M3U & PASO 2 EPG XML */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            {/* Paso 1: Lista M3U */}
+            <div className="p-3.5 rounded-2xl bg-white/[0.045] border border-white/[0.09] flex flex-col justify-between gap-2.5">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF]">
+                  {pickLang(lang, {
+                    es: 'Paso 1 · Lista de Canales (M3U)',
+                    ca: 'Pas 1 · Llista de Canals (M3U)',
+                    en: 'Step 1 · Channel List (M3U)',
+                  })}
+                </div>
+                <p className="text-xs font-bold text-white mt-0.5">RIFFANTV-IPTV.m3u</p>
+                <p className="text-[11px] text-zinc-400 font-mono truncate mt-0.5">{m3uUrl}</p>
               </div>
-              <span className="text-xs font-bold text-white">Descargar M3U</span>
-              <span className="text-[10px] text-zinc-400 truncate w-full">
-                Archivo .m3u para Smart TV
-              </span>
-            </a>
+              <div className="flex items-center gap-1.5">
+                <a
+                  href={m3uDownloadUrl}
+                  download="RIFFANTV-IPTV.m3u"
+                  onClick={() => triggerHaptic('medium')}
+                  className="flex-1 min-h-9 px-2.5 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <RiffanDownloadIcon size={14} />
+                  <span>{pickLang(lang, { es: 'Descargar .m3u', ca: 'Descarregar .m3u', en: 'Download .m3u' })}</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void handleCopy(m3uUrl, 'm3u')}
+                  className="min-h-9 px-2.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  {copiedType === 'm3u' ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedType === 'm3u' ? 'OK' : pickLang(lang, { es: 'Copiar', ca: 'Copiar', en: 'Copy' })}</span>
+                </button>
+              </div>
+            </div>
 
-            {/* Download EPG XML */}
-            <a
-              href={epgDownloadUrl}
-              download="NAIMCINE-EPG.xml"
-              onClick={() => triggerHaptic('medium')}
-              className="p-3 rounded-2xl bg-white/[0.05] hover:bg-white/[0.09] border border-white/[0.08] flex flex-col items-start gap-1 transition-colors group"
-            >
-              <div className="flex items-center justify-between w-full">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
-                  Guía TV (EPG)
-                </span>
-                <RiffanDownloadIcon size={16} />
+            {/* Paso 2: Guía EPG XML */}
+            <div className="p-3.5 rounded-2xl bg-white/[0.045] border border-emerald-400/25 flex flex-col justify-between gap-2.5">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-emerald-400">
+                  {pickLang(lang, {
+                    es: 'Paso 2 · Guía EPG / XML (XMLTV)',
+                    ca: 'Pas 2 · Guia EPG / XML (XMLTV)',
+                    en: 'Step 2 · EPG Guide / XML (XMLTV)',
+                  })}
+                </div>
+                <p className="text-xs font-bold text-white mt-0.5">RIFFANTV-EPG.xml</p>
+                <p className="text-[11px] text-zinc-400 font-mono truncate mt-0.5">{epgUrl}</p>
               </div>
-              <span className="text-xs font-bold text-white">Descargar XML EPG</span>
-              <span className="text-[10px] text-zinc-400 truncate w-full">
-                Horarios y logos en .xml
-              </span>
-            </a>
+              <div className="flex items-center gap-1.5">
+                <a
+                  href={epgDownloadUrl}
+                  download="RIFFANTV-EPG.xml"
+                  onClick={() => triggerHaptic('medium')}
+                  className="flex-1 min-h-9 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors"
+                >
+                  <RiffanDownloadIcon size={14} />
+                  <span>{pickLang(lang, { es: 'Descargar .xml', ca: 'Descarregar .xml', en: 'Download .xml' })}</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void handleCopy(epgUrl, 'epg')}
+                  className="min-h-9 px-2.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] text-zinc-100 text-[11px] font-semibold flex items-center gap-1 cursor-pointer transition-colors"
+                >
+                  {copiedType === 'epg' ? <CheckCheck className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{copiedType === 'epg' ? 'OK' : pickLang(lang, { es: 'Copiar', ca: 'Copiar', en: 'Copy' })}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* What is EPG / XML explainer */}
+          <div className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-400/20 text-[11px] text-zinc-200 leading-relaxed">
+            <strong className="text-emerald-300">
+              {pickLang(lang, {
+                es: '¿Por qué a veces tu app pide un EPG o XML? ',
+                ca: 'Per què de vegades la teva app demana un EPG o XML? ',
+                en: 'Why do IPTV apps ask for an EPG or XML URL? ',
+              })}
+            </strong>
+            {pickLang(lang, {
+              es: 'La lista M3U carga los canales de vídeo, mientras que el archivo EPG XML añade la programación en directo, horarios y logos en tu TV.',
+              ca: 'La llista M3U carrega els canals de vídeo, mentre que el fitxer EPG XML afegeix la programació en directe, horaris i logotips a la teva TV.',
+              en: 'The M3U playlist loads the live video channels, while the EPG XML file populates TV schedules, show info, and channel logos.',
+            })}
           </div>
 
           {/* Sub Navigation Tabs: Guía | Canales | Enlaces */}
@@ -744,7 +794,7 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
               }`}
             >
               <BookOpen className="w-3.5 h-3.5" />
-              <span>Guía TV</span>
+              <span>{pickLang(lang, { es: 'Cómo configurar', ca: 'Com configurar', en: 'Setup Guide' })}</span>
             </button>
 
             <button
@@ -760,7 +810,7 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
               }`}
             >
               <ListOrdered className="w-3.5 h-3.5" />
-              <span>Canales ({dynamicChannels.length})</span>
+              <span>{pickLang(lang, { es: `Canales (${dynamicChannels.length})`, ca: `Canals (${dynamicChannels.length})`, en: `Channels (${dynamicChannels.length})` })}</span>
             </button>
 
             <button
@@ -776,93 +826,79 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
               }`}
             >
               <LinkIcon className="w-3.5 h-3.5" />
-              <span>Copiar URLs</span>
+              <span>{pickLang(lang, { es: 'Rutas URL', ca: 'Rutes URL', en: 'URLs' })}</span>
             </button>
           </div>
 
           {/* TAB 1: STEP-BY-STEP SETUP GUIDE */}
           {tizenTab === 'guide' && (
             <div className="space-y-3">
-              {/* Samsung Tizen Instructions */}
+              {/* Samsung Tizen & LG webOS */}
               <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="w-6 h-6 rounded-lg bg-[#9146FF]/20 text-[#BF94FF] text-xs font-black flex items-center justify-center">
                     1
                   </span>
                   <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                    Samsung Smart TV (Tizen OS)
+                    Samsung Smart TV (Tizen) & LG (webOS)
                   </h4>
                 </div>
-                <ol className="text-xs text-zinc-300 space-y-1.5 pl-8 list-decimal">
+                <ol className="text-xs text-zinc-300 space-y-1.5 pl-7 list-decimal leading-relaxed">
                   <li>
-                    Abre la tienda <strong>Samsung Apps</strong> en tu televisor.
+                    Instala <strong className="text-white">IBO Player</strong>,{' '}
+                    <strong className="text-white">IPTV Smarters Pro</strong> o{' '}
+                    <strong className="text-white">Smart IPTV (SIPTV)</strong> desde Samsung Apps o LG Content Store.
                   </li>
                   <li>
-                    Instala cualquiera de estas aplicaciones gratuitas recomendadas:{' '}
-                    <strong className="text-white">IBO Player</strong>,{' '}
-                    <strong className="text-white">Smart IPTV (SIPTV)</strong> o{' '}
-                    <strong className="text-white">IPTV Smarters Pro</strong>.
+                    En <strong className="text-white">Playlist / M3U URL</strong> pega:{' '}
+                    <code className="text-[#BF94FF] break-all">{m3uUrl}</code> (o sube el archivo <code className="text-white">RIFFANTV-IPTV.m3u</code>).
                   </li>
                   <li>
-                    Introduce la URL de tu lista M3U (o súbela desde la web de la app como{' '}
-                    <code className="text-[#BF94FF]">iboplayer.com</code>).
-                  </li>
-                  <li>
-                    En el campo EPG, añade la URL XML:{' '}
-                    <code className="text-emerald-300">{epgUrl}</code>.
-                  </li>
-                  <li>
-                    ¡Listo! Tendrás más de 160 canales organizados por carpetas con logos y guía.
+                    En <strong className="text-white">EPG / XMLTV URL</strong> pega:{' '}
+                    <code className="text-emerald-300 break-all">{epgUrl}</code> (o sube <code className="text-white">RIFFANTV-EPG.xml</code>).
                   </li>
                 </ol>
               </div>
 
-              {/* LG webOS Instructions */}
+              {/* Android TV / Google TV / Móvil */}
               <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] space-y-2">
                 <div className="flex items-center gap-2">
                   <span className="w-6 h-6 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-black flex items-center justify-center">
                     2
                   </span>
                   <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                    LG Smart TV (webOS)
+                    Android TV / Google TV / TiviMate / VLC
                   </h4>
                 </div>
-                <ol className="text-xs text-zinc-300 space-y-1.5 pl-8 list-decimal">
+                <ol className="text-xs text-zinc-300 space-y-1.5 pl-7 list-decimal leading-relaxed">
                   <li>
-                    Abre el <strong>LG Content Store</strong> en tu TV LG.
+                    Abre <strong className="text-white">TiviMate</strong>, <strong className="text-white">Televizo</strong>, <strong className="text-white">GSE Smart IPTV</strong> o <strong className="text-white">VLC</strong>.
                   </li>
                   <li>
-                    Descarga <strong className="text-white">IBO Player</strong>,{' '}
-                    <strong className="text-white">IPTV Smarters</strong> o{' '}
-                    <strong className="text-white">SS IPTV</strong>.
+                    Elige <strong className="text-white">Añadir Lista M3U</strong> → introduce <code className="text-[#BF94FF] break-all">{m3uUrl}</code>.
                   </li>
                   <li>
-                    Carga el enlace M3U y el enlace XML EPG facilitados en la pestaña{' '}
-                    <strong>«Copiar URLs»</strong>.
-                  </li>
-                  <li>
-                    Disfruta de las señales en directo 1080p con zapping rápido desde el mando.
+                    En <strong className="text-white">Fuente EPG (XMLTV)</strong> añade <code className="text-emerald-300 break-all">{epgUrl}</code> y pulsa <em>Actualizar guía</em>.
                   </li>
                 </ol>
               </div>
 
               {/* Native TV Web Browser Method (Zero App Install) */}
               <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#9146FF]/15 to-transparent border border-[#9146FF]/30 space-y-2">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <Sparkles className="w-4 h-4 text-[#BF94FF]" />
                     <h4 className="text-xs font-bold text-white uppercase tracking-wider">
-                      Método Directo: Navegador Web TV (/tv)
+                      Receptor Web Directo · /tv
                     </h4>
                   </div>
-                  <span className="text-[10px] font-bold text-[#BF94FF] uppercase bg-[#9146FF]/20 px-2 py-0.5 rounded-full">
-                    Sin instalar nada
+                  <span className="text-[11px] font-semibold text-[#BF94FF]">
+                    Sin apps extra
                   </span>
                 </div>
-                <p className="text-xs text-zinc-300">
-                  Abre el navegador integrado de tu televisor Samsung o LG y entra directamente en{' '}
-                  <strong className="text-white">{tvReceiverUrl}</strong>. Se adaptará automáticamente
-                  a pantalla completa con control por mando a distancia.
+                <p className="text-xs text-zinc-300 leading-relaxed">
+                  Abre el navegador de tu Smart TV y ve a{' '}
+                  <strong className="text-white break-all">{tvReceiverUrl}</strong>. Aparecerá un código de 4 dígitos para emparejar tu móvil al instante.
                 </p>
                 <a
                   href={tvReceiverUrl}
@@ -870,7 +906,7 @@ export const PWAInstallOptionsSheet: React.FC<PWAInstallOptionsSheetProps> = ({
                   rel="noreferrer"
                   className="w-full min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-colors cursor-pointer"
                 >
-                  <span>Abrir /tv en este dispositivo</span>
+                  <span>Abrir {tvReceiverUrl}</span>
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
               </div>

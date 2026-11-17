@@ -9,6 +9,7 @@ import {
   Spade,
   CircleDot,
   Mic,
+  Sparkles,
 } from 'lucide-react';
 import type {
   AppLanguage,
@@ -782,8 +783,39 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           </motion.button>
         </section>
 
-        {/* 5. COMPACT SINGLE-LINE "SORPRÉNDEME" AT THE VERY BOTTOM */}
-        <section>
+        {/* 5. COMPACT ACTION ROW: RIFFAN KIDS (SMALL BUTTON) + SORPRÉNDEME */}
+        <section className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <motion.button
+            type="button"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, delay: 0.16 }}
+            whileTap={{ scale: 0.985 }}
+            onPointerEnter={() => onPreloadWorld?.('kids')}
+            onTouchStart={() => onPreloadWorld?.('kids')}
+            onClick={(e) => handleCardClick('kids', e)}
+            className="w-full min-h-11 px-3.5 py-2 rounded-2xl bg-[#10121B] hover:bg-[#16192B] border border-amber-400/25 hover:border-amber-400/60 flex items-center justify-between gap-2.5 text-left cursor-pointer transition-all duration-200 group"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-7 h-7 rounded-lg bg-amber-400/18 text-amber-300 border border-amber-400/35 flex items-center justify-center shrink-0 group-hover:bg-amber-400 group-hover:text-black transition-colors">
+                <Sparkles className="w-3.5 h-3.5" />
+              </div>
+              <span className="font-display font-semibold text-xs sm:text-sm text-white shrink-0">
+                Riffan Kids
+              </span>
+              <span className="text-xs text-amber-200/80 truncate">
+                ·{' '}
+                {pickLang(lang, {
+                  es: 'Cine, juegos y aprender',
+                  ca: 'Cinema, jocs i aprendre',
+                  en: 'Movies, games & learn',
+                  rif: 'Lafilmat d iraren',
+                })}
+              </span>
+            </div>
+            <RiffanChevronRightIcon size={16} animate="hover" className="shrink-0" />
+          </motion.button>
+
           <motion.button
             type="button"
             initial={{ opacity: 0, y: 8 }}
@@ -794,9 +826,9 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               triggerHaptic('light');
               onOpenSurpriseMe();
             }}
-            className="w-full min-h-12 px-4 py-2.5 rounded-2xl bg-[#10121B] hover:bg-[#151826] border border-white/[0.08] hover:border-[#9146FF]/55 flex items-center justify-between gap-3 text-left cursor-pointer transition-all duration-200 group"
+            className="w-full min-h-11 px-3.5 py-2 rounded-2xl bg-[#10121B] hover:bg-[#151826] border border-white/[0.08] hover:border-[#9146FF]/55 flex items-center justify-between gap-2.5 text-left cursor-pointer transition-all duration-200 group"
           >
-              <div className="flex items-center gap-2.5 min-w-0">
+            <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-7 h-7 rounded-lg bg-[#9146FF]/18 text-[#D8B4FE] border border-[#9146FF]/35 flex items-center justify-center shrink-0 group-hover:bg-[#9146FF] group-hover:text-white transition-colors">
                 <RiffanSurpriseIcon size={15} animate="always" />
               </div>

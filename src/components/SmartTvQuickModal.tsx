@@ -1,9 +1,15 @@
 import React, { useEffect, useState } from 'react';
-import { QrCode } from 'lucide-react';
+import { CheckCheck, Copy, Download, QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { AppLanguage, TvRemoteCommandType } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
+import {
+  buildEpgXmlUrl,
+  buildM3uPlaylistUrl,
+  buildTvPairingUrl,
+  getDisplayTvPairingLabel,
+} from '../utils/shortLink';
 import { BottomSheet, HapticTvRemote, PrimaryButton, StandardInput } from './ui/DesignSystem';
 import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
 import {
@@ -60,7 +66,24 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
     }
   }, [isOpen]);
 
-  const tvUrl = `${window.location.origin}/tv?room=${encodeURIComponent(roomId)}`;
+  const tvUrl = `${buildTvPairingUrl()}?room=${encodeURIComponent(roomId)}`;
+  const tvShortLabel = getDisplayTvPairingLabel();
+  const m3uUrl = buildM3uPlaylistUrl(false);
+  const m3uDownloadUrl = buildM3uPlaylistUrl(true);
+  const epgUrl = buildEpgXmlUrl(false);
+  const epgDownloadUrl = buildEpgXmlUrl(true);
+  const [copiedIptv, setCopiedIptv] = useState<'m3u' | 'epg' | null>(null);
+
+  const handleCopyIptv = async (val: string, kind: 'm3u' | 'epg') => {
+    triggerHaptic('light');
+    try {
+      await navigator.clipboard.writeText(val);
+      setCopiedIptv(kind);
+      setTimeout(() => setCopiedIptv(null), 2000);
+    } catch {
+      // ignore
+    }
+  };
 
   const handleCastAction = async () => {
     triggerHaptic('medium');
@@ -309,21 +332,75 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                 <div className="p-3 rounded-2xl bg-white shadow-lg">
                   <QRCodeSVG value={tvUrl} size={136} level="M" includeMargin={false} />
                 </div>
-                <span className="text-xs text-zinc-400 flex items-center gap-1.5">
-                  <QrCode className="w-3.5 h-3.5 text-[#BF94FF]" />
-                  {pickLang(lang, {
-                    es: 'Escanea desde tu televisor',
-                    ca: 'Escaneja des del televisor',
-                    en: 'Scan from your TV',
-                  })}
+                <span className="text-xs text-zinc-400 flex items-center gap-1.5 text-center">
+                  <QrCode className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+                  <span>
+                    {pickLang(lang, {
+                      es: `O abre ${tvShortLabel} en el navegador de tu TV`,
+                      ca: `O obre ${tvShortLabel} al navegador de la teva TV`,
+                      en: `Or open ${tvShortLabel} in your TV browser`,
+                    })}
+                  </span>
                 </span>
               </div>
             </div>
           )}
         </div>
 
-        {/* Option for Samsung Tizen, LG webOS, M3U & EPG XML */}
-        <div className="pt-1 border-t border-white/[0.06]">
+        {/* Separated M3U + EPG XML quick setup box for Smart TV IPTV Apps */}
+        <div className="pt-2 border-t border-white/[0.06] space-y-2.5">
+          <div className="grid grid-cols-2 gap-2">
+            <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/[0.08] space-y-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-[#BF94FF]">
+                Lista M3U
+              </div>
+              <div className="text-[11px] font-mono text-zinc-300 truncate">{m3uUrl}</div>
+              <div className="flex items-center gap-1">
+                <a
+                  href={m3uDownloadUrl}
+                  download="RIFFANTV-IPTV.m3u"
+                  onClick={() => triggerHaptic('light')}
+                  className="flex-1 min-h-8 px-2 rounded-lg bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>.m3u</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyIptv(m3uUrl, 'm3u')}
+                  className="min-h-8 px-2 rounded-lg bg-white/[0.07] hover:bg-white/[0.13] text-zinc-200 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedIptv === 'm3u' ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+            </div>
+
+            <div className="p-2.5 rounded-xl bg-white/[0.03] border border-emerald-400/20 space-y-1.5">
+              <div className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+                Guía EPG (XML)
+              </div>
+              <div className="text-[11px] font-mono text-zinc-300 truncate">{epgUrl}</div>
+              <div className="flex items-center gap-1">
+                <a
+                  href={epgDownloadUrl}
+                  download="RIFFANTV-EPG.xml"
+                  onClick={() => triggerHaptic('light')}
+                  className="flex-1 min-h-8 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-[11px] font-bold flex items-center justify-center gap-1 transition-colors"
+                >
+                  <Download className="w-3 h-3" />
+                  <span>.xml</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyIptv(epgUrl, 'epg')}
+                  className="min-h-8 px-2 rounded-lg bg-white/[0.07] hover:bg-white/[0.13] text-zinc-200 text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
+                >
+                  {copiedIptv === 'epg' ? <CheckCheck className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <button
             type="button"
             onClick={() => {
@@ -334,7 +411,13 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
           >
             <span className="flex items-center gap-2.5">
               <RiffanTvRemoteIcon size={17} animate="hover" />
-              <span>Samsung Tizen / LG (Lista M3U & EPG XML)</span>
+              <span>
+                {pickLang(lang, {
+                  es: 'Guía IPTV paso a paso (Samsung, LG, TiviMate, EPG XML)',
+                  ca: 'Guia IPTV pas a pas (Samsung, LG, TiviMate, EPG XML)',
+                  en: 'Step-by-step IPTV Guide (Samsung, LG, TiviMate, EPG XML)',
+                })}
+              </span>
             </span>
             <RiffanChevronRightIcon size={16} animate="hover" />
           </button>

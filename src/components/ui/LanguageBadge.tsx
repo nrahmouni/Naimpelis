@@ -20,6 +20,8 @@ export type FlagCode =
   | 'docs'
   | 'all'
   | 'vose'
+  | 'nl'
+  | 'fr'
   | 'rif';
 
 export const FlagBadgeSvg: React.FC<{ code: FlagCode; className?: string }> = ({
@@ -175,6 +177,26 @@ export const FlagBadgeSvg: React.FC<{ code: FlagCode; className?: string }> = ({
         <circle cx="2.2" cy="6.5" r="0.65" fill="#FFFFFF" />
         <circle cx="5.2" cy="6.5" r="0.65" fill="#FFFFFF" />
         <circle cx="8.2" cy="6.5" r="0.65" fill="#FFFFFF" />
+      </svg>
+    );
+  }
+
+  if (code === 'nl') {
+    return (
+      <svg viewBox="0 0 24 16" className={baseClass} aria-hidden="true">
+        <rect width="8" height="16" x="0" fill="#111111" />
+        <rect width="8" height="16" x="8" fill="#FDDA24" />
+        <rect width="8" height="16" x="16" fill="#EF3340" />
+      </svg>
+    );
+  }
+
+  if (code === 'fr') {
+    return (
+      <svg viewBox="0 0 24 16" className={baseClass} aria-hidden="true">
+        <rect width="8" height="16" x="0" fill="#0055A4" />
+        <rect width="8" height="16" x="8" fill="#FFFFFF" />
+        <rect width="8" height="16" x="16" fill="#EF4135" />
       </svg>
     );
   }

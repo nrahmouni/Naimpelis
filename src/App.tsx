@@ -194,6 +194,9 @@ const DesignSystemShowcase = React.lazy(() =>
 const GamesHubSection = React.lazy(() =>
   import('./components/GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
 );
+const RiffanKidsHub = React.lazy(() =>
+  import('./components/kids/RiffanKidsHub').then((m) => ({ default: m.RiffanKidsHub }))
+);
 
 import { NaimcineIntro } from './components/NaimcineIntro';
 import { LobbyScreen } from './components/LobbyScreen';
@@ -361,6 +364,7 @@ export function App() {
   const [introWithSound, setIntroWithSound] = useState<boolean>(false);
   const [showWatchlistOnly, setShowWatchlistOnly] = useState<boolean>(false);
   const [showVoiceAssistant, setShowVoiceAssistant] = useState<boolean>(false);
+  const [kidsExitPromptSeq, setKidsExitPromptSeq] = useState<number>(0);
   const [quickPool, setQuickPool] = useState<{
     movies: CatalogMovie[];
     series: CatalogMovie[];
@@ -410,16 +414,21 @@ export function App() {
   const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
 
   const isGoogleTvApp = isGoogleTvEnvironment();
-  const initialGoogleTvRoom =
-    !initialUrlRoom && isGoogleTvApp && !initialRoute.isTvPairLobby && !initialRoute.isAdsPage
+  const initialAutoRoom =
+    !initialUrlRoom &&
+    (isGoogleTvApp || initialRoute.isKidsMode) &&
+    !initialRoute.isTvPairLobby &&
+    !initialRoute.isAdsPage
       ? loadCachedSavedRooms()[0]?.roomCode || getRecentRooms()[0]?.id || generateShortRoomCode(4)
       : '';
-  const effectiveInitialRoom = initialUrlRoom || initialGoogleTvRoom;
+  const effectiveInitialRoom = initialUrlRoom || initialAutoRoom;
 
   const [roomId, setRoomId] = useState<string>(effectiveInitialRoom);
   const [roomName, setRoomName] = useState<string>(
     effectiveInitialRoom
-      ? isGoogleTvApp && !initialUrlRoom
+      ? initialRoute.isKidsMode
+        ? 'Riffan Kids'
+        : isGoogleTvApp && !initialUrlRoom
         ? 'RiffanTV · Google TV'
         : `Sala ${effectiveInitialRoom.toUpperCase()}`
       : ''
@@ -842,6 +851,9 @@ export function App() {
       } else if (nextWorld === 'juegos') {
         setCatalogSection('games');
         setMobileTab('games');
+      } else if (nextWorld === 'kids') {
+        setCatalogSection('home');
+        setMobileTab('home');
       } else if (nextWorld === 'sala') {
         setMobileTab('room');
         setUnreadChatCount(0);
@@ -849,13 +861,33 @@ export function App() {
         setCatalogSection('home');
         setMobileTab('home');
       }
+
+      if (typeof window !== 'undefined' && inRoomRef.current) {
+        try {
+          const currentPath = window.location.pathname.toLowerCase();
+          if (nextWorld === 'kids') {
+            if (currentPath !== '/kids') {
+              window.history.replaceState({}, '', '/kids');
+            }
+          } else if (currentPath === '/kids' && roomId) {
+            window.history.replaceState({}, '', `/${encodeURIComponent(roomId)}`);
+          }
+        } catch {
+          // ignore URL history error
+        }
+      }
+
       mainScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
       catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     },
-    [setActiveWorld]
+    [setActiveWorld, roomId]
   );
 
   useEffect(() => {
+    if (effectiveInitialRoom && initialRoute.isKidsMode) {
+      applyWorldChange('kids');
+      return;
+    }
     if (!effectiveInitialRoom || !initialDeepLinkGame) return;
     applyWorldChange('juegos');
     if (typeof window !== 'undefined') {
@@ -878,6 +910,8 @@ export function App() {
       void import('./components/FootballMatchboard');
     } else if (world === 'juegos') {
       void import('./components/GamesHubSection');
+    } else if (world === 'kids') {
+      void import('./components/kids/RiffanKidsHub');
     } else if (world === 'cine' || world === 'tv') {
       void import('./components/ExpandedDiscoverySection');
     }
@@ -899,6 +933,7 @@ export function App() {
           nextWorld === 'futbol' ||
           nextWorld === 'tv' ||
           nextWorld === 'juegos' ||
+          nextWorld === 'kids' ||
           nextWorld === 'sala')
       ) {
         if (nextWorld !== 'sala') {
@@ -1657,10 +1692,13 @@ export function App() {
     setRecentRooms(getRecentRooms());
 
     if (typeof window !== 'undefined') {
-      const shortPath = isTvMode
-        ? `/${encodeURIComponent(roomId)}?tv=1`
-        : `/${encodeURIComponent(roomId)}`;
-      window.history.replaceState({}, '', shortPath);
+      const currentPath = window.location.pathname.toLowerCase();
+      if (currentPath !== '/kids' && !initialRoute.isKidsMode) {
+        const shortPath = isTvMode
+          ? `/${encodeURIComponent(roomId)}?tv=1`
+          : `/${encodeURIComponent(roomId)}`;
+        window.history.replaceState({}, '', shortPath);
+      }
     }
 
     const unsubscribe = socketService.subscribe((event) => {
@@ -2406,6 +2444,10 @@ export function App() {
       LAT: 'Español Latino',
       VOSE: 'Subtitulado (VOSE)',
       EN: 'Inglés Original (EN)',
+      NL: 'Flamenco (Vlaams)',
+      FR: 'Francés (FR)',
+      AR: 'Árabe (AR)',
+      ZH: 'Chino (中文)',
       RIF: 'Tarifit (Riffian)',
     };
     const requestedLangName = langFullLabelMap[preferLang] || preferLang || 'Español HD';
@@ -2421,6 +2463,48 @@ export function App() {
         : findSavedResumeSec(histId);
 
     const { reqSeq, signal } = beginMediaExtraction();
+
+    const isKidsLive =
+      movie.id.startsWith('kids-live-') ||
+      movie.platform === 'Riffan Kids Live' ||
+      (movie.bingetrixUrl && movie.bingetrixUrl.endsWith('.m3u8'));
+    if (isKidsLive) {
+      const liveStreamUrl = movie.bingetrixUrl || '';
+      if (liveStreamUrl) {
+        clearExtractionSnapshot();
+        const nextState: VideoState = {
+          mode: 'hls',
+          url: liveStreamUrl,
+          rawSourceUrl: liveStreamUrl,
+          title: movie.title,
+          subtitle: `${movie.year || '2025'} · En Directo HD Kids`,
+          poster: movie.poster,
+          backdrop: movie.backdrop,
+          currentTime: 0,
+          isPlaying: true,
+          isLive: true,
+          tracks: [
+            {
+              id: 'live-0',
+              label: movie.title,
+              lang: 'ES',
+              sourceUrl: liveStreamUrl,
+              resolverType: 'tdt_hls',
+              resolvedStreamUrl: liveStreamUrl,
+            },
+          ],
+          activeTrackIndex: 0,
+          lastUpdated: Date.now(),
+          updatedBy: profile.name,
+        };
+        setVideoState(nextState);
+        socketService.syncVideoState('change_url', nextState, profile.name);
+        playCinemaSound('play');
+        setIsExtracting(false);
+        setLoadingItemId(null);
+        return;
+      }
+    }
 
     setActiveSportsMatch(null);
     setActiveMatchDetails(null);
@@ -2467,6 +2551,42 @@ export function App() {
       if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
+        if (movie.platform === 'Riffan Kids' || movie.id.startsWith('kids-showcase-')) {
+          const fallbackUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
+          const nextState: VideoState = {
+            mode: 'direct',
+            url: fallbackUrl,
+            rawSourceUrl: fallbackUrl,
+            title: movie.title,
+            subtitle: `${movie.year || '2025'} · Animación HD Kids`,
+            poster: movie.poster,
+            backdrop: movie.backdrop,
+            currentTime: resumeAtSec,
+            isPlaying: true,
+            isLive: false,
+            tracks: [
+              {
+                id: 'kids-fallback-0',
+                label: movie.title,
+                lang: 'ES',
+                sourceUrl: fallbackUrl,
+                resolverType: 'direct_mp4',
+                resolvedStreamUrl: fallbackUrl,
+              },
+            ],
+            activeTrackIndex: 0,
+            lastUpdated: Date.now(),
+            updatedBy: profile.name,
+          };
+          clearExtractionSnapshot();
+          videoStateUrlRef.current = nextState.url;
+          setVideoState(nextState);
+          socketService.syncVideoState('change_url', nextState, profile.name);
+          playCinemaSound('play');
+          setIsExtracting(false);
+          setLoadingItemId(null);
+          return;
+        }
         const errMsg =
           data?.error || 'No se pudo cargar esta película en este momento.';
         setExtractionError(errMsg);
@@ -5524,7 +5644,7 @@ export function App() {
             ref={mainScrollRef}
             onScroll={handleCatalogOrWorkspaceScroll}
             className={`flex-1 min-h-0 min-w-0 flex flex-col ${
-              activeWorld === 'sala' || activeWorld === 'juegos'
+              activeWorld === 'sala' || activeWorld === 'juegos' || activeWorld === 'kids'
                 ? 'overflow-hidden'
                 : 'overflow-y-auto overflow-x-clip'
             }`}
@@ -5997,6 +6117,7 @@ export function App() {
                         world === 'futbol' ||
                         world === 'tv' ||
                         world === 'juegos' ||
+                        world === 'kids' ||
                         world === 'sala',
                       originRect,
                     })
@@ -6265,6 +6386,40 @@ export function App() {
                   />
                 </div>
               </WorldShell>
+            ) : activeWorld === 'kids' ? (
+              <div className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden bg-[#0A0E23] flex flex-col">
+                <RiffanKidsHub
+                  shellLang={lang}
+                  exitPromptSeq={kidsExitPromptSeq}
+                  onPlayMovie={(movieItem, preferLang) => {
+                    void handlePlayMovie(movieItem, preferLang || 'ES');
+                  }}
+                  onPlaySeries={async (seriesItem, preferLang) => {
+                    if (seriesItem.tmdbId) {
+                      try {
+                        const res = await fetch(
+                          `/api/catalog/tv/${seriesItem.tmdbId}?season=1&lang=${lang}`
+                        );
+                        const data = await res.json();
+                        const episodes = (data?.details?.episodes || []) as TvEpisodeItem[];
+                        if (episodes.length > 0) {
+                          await handlePlaySeriesEpisode(
+                            data.details as TvSeriesDetails,
+                            episodes[0],
+                            preferLang || 'ES'
+                          );
+                          return;
+                        }
+                      } catch {
+                        // fallback to movie extractor
+                      }
+                    }
+                    void handlePlayMovie(seriesItem, preferLang || 'ES');
+                  }}
+                  onOpenSmartTv={() => setSmartTvModalOpen(true)}
+                  onExitKids={() => enterWorld('entry')}
+                />
+              </div>
             ) : (
               <WorldShell
                 world={activeWorld}
@@ -6404,7 +6559,7 @@ export function App() {
         {/* Always-available Floating Room Chat Orb + Translucent Right-Side Curtain */}
         <FloatingRoomBubble
           lang={lang}
-          visible={inRoom && activeWorld !== 'sala' && !isTvMode}
+          visible={inRoom && activeWorld !== 'sala' && activeWorld !== 'kids' && !isTvMode}
           participantsCount={participants.length}
           voiceActive={voiceChat.isJoined}
           unreadCount={unreadChatCount}

@@ -290,6 +290,9 @@
   .world-tint-youtube {
     background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(244, 63, 94, 0.12), rgba(145, 70, 255, 0.08) 55%, transparent 75%);
   }
+  .world-tint-kids {
+    background-image: radial-gradient(ellipse 80% 45% at 50% -10%, rgba(245, 158, 11, 0.14), rgba(56, 189, 248, 0.09) 55%, transparent 75%);
+  }
 
   .nc-specular-surface {
     background: color-mix(in srgb, var(--nc-bg-elevated) 92%, transparent);

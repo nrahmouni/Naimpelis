@@ -8,6 +8,8 @@ const RESERVED_PATH_SEGMENTS = new Set([
   'favicon',
   'manifest',
   'tv',
+  'kids',
+  'riffankids',
   'ads',
   'naimcine-ads',
 ]);
@@ -16,8 +18,8 @@ const ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
 
 /**
  * Generates a compact, readable 4-character room code (e.g. "k8x4")
- * so invite links on naimcine.ai.studio are ultra-short:
- * https://naimcine.ai.studio/k8x4
+ * so invite links on riffantv.ai.studio are ultra-short:
+ * https://riffantv.ai.studio/k8x4
  */
 export function generateShortRoomCode(length = 4): string {
   let out = '';
@@ -29,17 +31,18 @@ export function generateShortRoomCode(length = 4): string {
 
 /**
  * Reads room code from either clean short URL path (`/k8x4` or `/s/k8x4`),
- * legacy query parameter (`?room=k8x4`), Smart TV route (`/tv`), or promo page (`/ads`).
+ * legacy query parameter (`?room=k8x4`), Smart TV route (`/tv`), Kids route (`/kids`), or promo page (`/ads`).
  */
 export function parseRoomFromWindow(): {
   roomId: string;
   isTvMode: boolean;
   isTvPairLobby: boolean;
+  isKidsMode?: boolean;
   isAdsPage?: boolean;
   gameType?: string;
 } {
   if (typeof window === 'undefined') {
-    return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: false };
+    return { roomId: '', isTvMode: false, isTvPairLobby: false, isKidsMode: false, isAdsPage: false };
   }
 
   const params = new URLSearchParams(window.location.search);
@@ -58,19 +61,28 @@ export function parseRoomFromWindow(): {
       (decodeURIComponent(segments[0]).toLowerCase() === 'ads' ||
         decodeURIComponent(segments[0]).toLowerCase() === 'naimcine-ads'))
   ) {
-    return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: true, gameType };
+    return { roomId: '', isTvMode: false, isTvPairLobby: false, isKidsMode: false, isAdsPage: true, gameType };
+  }
+
+  if (
+    params.get('kids') === '1' ||
+    (segments.length === 1 &&
+      (decodeURIComponent(segments[0]).toLowerCase() === 'kids' ||
+        decodeURIComponent(segments[0]).toLowerCase() === 'riffankids'))
+  ) {
+    return { roomId: '', isTvMode: false, isTvPairLobby: false, isKidsMode: true, isAdsPage: false, gameType };
   }
 
   if (
     params.get('tvpair') === '1' ||
     (segments.length === 1 && decodeURIComponent(segments[0]).toLowerCase() === 'tv')
   ) {
-    return { roomId: '', isTvMode: false, isTvPairLobby: true, isAdsPage: false };
+    return { roomId: '', isTvMode: false, isTvPairLobby: true, isKidsMode: false, isAdsPage: false };
   }
 
   const queryRoom = params.get('room')?.trim().toLowerCase();
   if (queryRoom && /^[a-z0-9-_]{2,32}$/.test(queryRoom)) {
-    return { roomId: queryRoom, isTvMode, isTvPairLobby: false, isAdsPage: false, gameType };
+    return { roomId: queryRoom, isTvMode, isTvPairLobby: false, isKidsMode: false, isAdsPage: false, gameType };
   }
 
   if (segments.length === 1) {
@@ -80,16 +92,16 @@ export function parseRoomFromWindow(): {
       !RESERVED_PATH_SEGMENTS.has(candidate) &&
       /^[a-z0-9-_]{2,32}$/.test(candidate)
     ) {
-      return { roomId: candidate, isTvMode, isTvPairLobby: false, isAdsPage: false, gameType };
+      return { roomId: candidate, isTvMode, isTvPairLobby: false, isKidsMode: false, isAdsPage: false, gameType };
     }
   } else if (segments.length === 2 && (segments[0] === 's' || segments[0] === 'r')) {
     const candidate = decodeURIComponent(segments[1]).toLowerCase();
     if (!candidate.includes('.') && /^[a-z0-9-_]{2,32}$/.test(candidate)) {
-      return { roomId: candidate, isTvMode, isTvPairLobby: false, isAdsPage: false, gameType };
+      return { roomId: candidate, isTvMode, isTvPairLobby: false, isKidsMode: false, isAdsPage: false, gameType };
     }
   }
 
-  return { roomId: '', isTvMode: false, isTvPairLobby: false, isAdsPage: false, gameType };
+  return { roomId: '', isTvMode: false, isTvPairLobby: false, isKidsMode: false, isAdsPage: false, gameType };
 }
 
 /**
@@ -115,7 +127,7 @@ export function extractRoomCodeFromInput(raw: string): string {
       const parts = url.pathname.split('/').filter(Boolean);
       const last = parts[parts.length - 1] || '';
       const cleanLast = last.toLowerCase().replace(/[^a-z0-9-_]/g, '');
-      return cleanLast === 'tv' ? '' : cleanLast;
+      return cleanLast === 'tv' || cleanLast === 'kids' ? '' : cleanLast;
     }
   } catch {
     // fallback to plain code cleanup
@@ -125,7 +137,7 @@ export function extractRoomCodeFromInput(raw: string): string {
     .replace(/^#/, '')
     .toLowerCase()
     .replace(/[^a-z0-9-_]/g, '');
-  return cleaned === 'tv' ? '' : cleaned;
+  return cleaned === 'tv' || cleaned === 'kids' ? '' : cleaned;
 }
 
 /**
@@ -134,7 +146,7 @@ export function extractRoomCodeFromInput(raw: string): string {
 export function buildShortInviteUrl(roomId: string, tvMode = false): string {
   if (typeof window === 'undefined') return '';
   const cleanId = encodeURIComponent(roomId.trim().toLowerCase());
-  const base = `${window.location.origin}/${cleanId}`;
+  const base = `${getPublicOriginForDisplay()}/${cleanId}`;
   return tvMode ? `${base}?tv=1` : base;
 }
 
@@ -145,10 +157,10 @@ export function buildGameInviteUrl(roomId: string, gameType: string): string {
   if (typeof window === 'undefined') return '';
   const cleanId = encodeURIComponent(roomId.trim().toLowerCase());
   const cleanGame = encodeURIComponent(gameType.trim().toLowerCase());
-  return `${window.location.origin}/${cleanId}?game=${cleanGame}`;
+  return `${getPublicOriginForDisplay()}/${cleanId}?game=${cleanGame}`;
 }
 
-const PUBLIC_PRODUCTION_DOMAIN =
+export const PUBLIC_PRODUCTION_DOMAIN =
   (typeof import.meta !== 'undefined' &&
     (import.meta.env?.VITE_PUBLIC_APP_HOST as string | undefined)) ||
   'riffantv.ai.studio';
@@ -162,14 +174,42 @@ export function isPrivateDevPreviewHost(): boolean {
 }
 
 /**
+ * Returns the clean public https origin for UI copy/paste instructions
+ * (prefers https://riffantv.ai.studio over private ais-dev preview URLs).
+ */
+export function getPublicOriginForDisplay(): string {
+  if (typeof window === 'undefined') return `https://${PUBLIC_PRODUCTION_DOMAIN}`;
+  if (isPrivateDevPreviewHost()) {
+    return `https://${PUBLIC_PRODUCTION_DOMAIN}`;
+  }
+  return window.location.origin || `https://${PUBLIC_PRODUCTION_DOMAIN}`;
+}
+
+/**
  * Builds the clean Smart TV 4-digit quick pairing URL using the active host or configured public host.
  */
 export function buildTvPairingUrl(): string {
-  if (typeof window === 'undefined') return `https://${PUBLIC_PRODUCTION_DOMAIN}/tv`;
-  if (isPrivateDevPreviewHost()) {
-    return `https://${PUBLIC_PRODUCTION_DOMAIN}/tv`;
-  }
-  return `${window.location.origin}/tv`;
+  return `${getPublicOriginForDisplay()}/tv`;
+}
+
+/**
+ * Builds the clean Riffan Kids URL (/kids).
+ */
+export function buildKidsUrl(): string {
+  return `${getPublicOriginForDisplay()}/kids`;
+}
+
+/**
+ * Builds the IPTV M3U playlist URL & EPG XML URL for Smart TV apps.
+ */
+export function buildM3uPlaylistUrl(download = false): string {
+  const base = `${getPublicOriginForDisplay()}/riffantv.m3u`;
+  return download ? `${base}?download=1` : base;
+}
+
+export function buildEpgXmlUrl(download = false): string {
+  const base = `${getPublicOriginForDisplay()}/epg.xml`;
+  return download ? `${base}?download=1` : base;
 }
 
 /**

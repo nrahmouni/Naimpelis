@@ -361,7 +361,26 @@ export const RIF_DICTIONARY: Record<string, string> = {
   "Voice": "Awal",
   "Voz": "Awal",
   "conectado": "Yeqqen",
-  "connected": "Yeqqen"
+  "connected": "Yeqqen",
+  "Riffan Kids": "Riffan Kids",
+  "Cine infantil y juegos IA en 8 idiomas": "Lafilmat n iḥenjiren d iraren s IA di 8 n tutlayin",
+  "Kids movies & AI learning in 8 languages": "Lafilmat n iḥenjiren d iraren s IA di 8 n tutlayin",
+  "Cinema infantil i jocs IA en 8 idiomes": "Lafilmat n iḥenjiren d iraren s IA di 8 n tutlayin",
+  "Cine y Series Kids": "Lafilmat d Siriyat n Iḥenjiren",
+  "Kids Movies & Series": "Lafilmat d Siriyat n Iḥenjiren",
+  "Academia de Juegos": "Takadimit n Iraren",
+  "Learning Games": "Iraren n Ulemmed",
+  "Lista M3U y EPG XML": "Llista M3U d EPG XML",
+  "M3U List & EPG XML": "Llista M3U d EPG XML",
+  "Descargar .m3u": "Zdem .m3u",
+  "Download .m3u": "Zdem .m3u",
+  "Descargar .xml": "Zdem .xml",
+  "Download .xml": "Zdem .xml",
+  "Cómo configurar": "Mamec ad tsegmed",
+  "Setup Guide": "Lgid n ussegmi",
+  "Rutas URL": "Ibridan URL",
+  "Pregúntale a Profe IA": "Seqsa Lmuɛellim IA",
+  "Ask AI Teacher": "Seqsa Lmuɛellim IA"
 };
 
 /**

@@ -90,7 +90,7 @@ class ServiceMeshRegistry {
 export const serviceMesh = new ServiceMeshRegistry();
 
 export function mapPathToServiceId(pathname: string): MicroserviceId {
-  if (pathname.startsWith('/api/catalog')) return 'catalog-discovery';
+  if (pathname.startsWith('/api/catalog') || pathname.startsWith('/api/kids')) return 'catalog-discovery';
   if (
     pathname.startsWith('/api/extract') ||
     pathname.startsWith('/api/hls-proxy') ||
@@ -104,6 +104,8 @@ export function mapPathToServiceId(pathname: string): MicroserviceId {
     pathname.startsWith('/api/epg') ||
     pathname.startsWith('/api/iptv') ||
     pathname === '/epg.xml' ||
+    pathname === '/riffantv-epg.xml' ||
+    pathname === '/riffantv.m3u' ||
     pathname === '/naim-cine.m3u'
   ) {
     return 'live-media-epg';
