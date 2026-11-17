@@ -422,13 +422,13 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">
                     {pickLang(lang, {
-                      es: 'Instalar RiffanTV',
-                      ca: 'Instal·lar RiffanTV',
-                      en: 'Install RiffanTV',
+                      es: 'Instalar NAIMCINE',
+                      ca: 'Instal·lar NAIMCINE',
+                      en: 'Install NAIMCINE',
                     })}
                   </span>
                   <span className="block text-xs text-zinc-400">
-                    Android, Google TV / Chromecast, iPhone / PC
+                    Samsung Tizen, LG (M3U · XML), Android APK, Google TV, Web
                   </span>
                 </span>
               </span>

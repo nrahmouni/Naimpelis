@@ -28,14 +28,14 @@ export const FlagBadgeSvg: React.FC<{ code: FlagCode; className?: string }> = ({
   const uid = useId().replace(/:/g, '');
   const baseClass = `${className} rounded-[3px] shrink-0 overflow-hidden shadow-[0_1px_4px_rgba(0,0,0,0.45)] ring-1 ring-white/20`;
 
-  if (code === 'es') {
+  if (code === 'es' || code === 'lat') {
     return (
-      <svg viewBox="0 0 24 16" className={baseClass} aria-hidden="true">
-        <rect width="24" height="4" y="0" fill="#AA151B" />
-        <rect width="24" height="8" y="4" fill="#F1BF00" />
-        <rect width="24" height="4" y="12" fill="#AA151B" />
-        <rect x="5" y="5.5" width="3" height="5" rx="0.8" fill="#AA151B" opacity="0.9" />
-        <rect x="5.7" y="6.2" width="1.6" height="3.6" rx="0.4" fill="#F1BF00" />
+      <svg viewBox="0 0 900 600" className={baseClass} aria-hidden="true">
+        <rect width="900" height="600" fill="#AA151B" />
+        <rect y="150" width="900" height="300" fill="#F1BF00" />
+        <g transform="translate(250, 160) scale(0.65)">
+          <path d="M248,236 H352 V332 A52,56 0 0,1 248,332 Z" fill="#AA151B" stroke="#F1BF00" strokeWidth="10" />
+        </g>
       </svg>
     );
   }
@@ -89,21 +89,11 @@ export const FlagBadgeSvg: React.FC<{ code: FlagCode; className?: string }> = ({
 
   if (code === 'rif') {
     return (
-      <svg viewBox="0 0 24 16" className={baseClass} aria-hidden="true">
-        {/* Red field of the Republic of the Rif */}
-        <rect width="24" height="16" fill="#C8102E" />
-        {/* Central white rhombus / diamond */}
-        <polygon points="12,1.8 20.2,8 12,14.2 3.8,8" fill="#FFFFFF" />
-        {/* Green crescent moon opening towards fly side (right) */}
-        <path
-          d="M 10.5,5.3 A 2.7,2.7 0 1,0 10.5,10.7 A 2.1,2.1 0 1,1 10.5,5.3 Z"
-          fill="#007A3D"
-        />
-        {/* Green six-pointed star (hexagram) cradled by the crescent */}
-        <g fill="#007A3D">
-          <polygon points="12.9,6.5 14.2,8.75 11.6,8.75" />
-          <polygon points="12.9,9.5 14.2,7.25 11.6,7.25" />
-        </g>
+      <svg viewBox="0 0 900 600" className={baseClass} aria-hidden="true">
+        <rect width="900" height="600" fill="#C8102E"/>
+        <polygon points="450,100 700,300 450,500 200,300" fill="#FFFFFF"/>
+        <path d="M 479.98 245.46 A 75 75 0 1 0 479.98 354.54 A 62 62 0 1 1 479.98 245.46 Z" fill="#006233"/>
+        <polygon points="513.5,262 524.47,281 546.41,281 535.44,300 546.41,319 524.47,319 513.5,338 502.53,319 480.59,319 491.56,300 480.59,281 502.53,281" fill="#006233"/>
       </svg>
     );
   }

@@ -53,6 +53,7 @@ import {
   type ExtractedStreamResult,
   type TrackRecord,
 } from './server/extractors/httpHelpers.ts';
+import { FAST_THEMATIC_CHANNELS } from './server/services/catalogDiscoveryService.ts';
 import { INTERNATIONAL_TV_CHANNELS } from './server/data/internationalChannels.ts';
 import {
   extractEmbed69SpanishTracks,
@@ -158,14 +159,14 @@ function getPublicOrigin(req: express.Request): string {
     .split(',')[0]
     .trim();
   const hostWithoutPort = rawHost.split(':')[0].toLowerCase();
-  if (ENV.publicDomain && /^ais-dev-/i.test(hostWithoutPort)) {
-    return `https://${ENV.publicDomain}`;
+  if (hostWithoutPort === 'localhost' || hostWithoutPort === '127.0.0.1' || hostWithoutPort.startsWith('192.168.')) {
+    return `${rawProto}://${rawHost}`;
   }
-  const proto =
-    hostWithoutPort.endsWith('.run.app') || hostWithoutPort.endsWith('.ai.studio')
-      ? 'https'
-      : rawProto;
-  return `${proto}://${rawHost}`;
+  const domain = rawHost.includes('run.app') || rawHost.includes('ai.studio') || rawHost.includes('riffantv.ai.studio')
+    ? rawHost
+    : (ENV.publicDomain || 'riffantv.ai.studio');
+  const proto = domain.includes('localhost') ? 'http' : 'https';
+  return `${proto}://${domain}`;
 }
 
 // ============================================================================
@@ -11357,25 +11358,27 @@ app.get('/api/extract/catala-3cat', async (req, res) => {
 // Compatible with IPTV Smarters Pro, Smart IPTV (SIPTV), SS IPTV, IBO Player, OttPlayer & Flix IPTV
 // ============================================================================
 const IPTV_GROUP_TITLES: Record<string, string> = {
-  generalistas: 'TDT Generalistas',
-  movistar: 'Fútbol · Movistar+',
-  dazn: 'Fútbol · DAZN',
-  uk_sports: 'Deportes UK · Sky & Eurosport (EN)',
-  china_football: 'Fútbol · China (中文 欧冠/西甲/英超)',
-  beinsports: 'Fútbol · beIN SPORTS',
+  generalistas: 'TDT España Generalistas',
+  movistar: 'Fútbol · Movistar+ & LaLiga',
+  dazn: 'Fútbol & Motor · DAZN',
+  uk_sports: 'Deportes UK · Sky Sports & Eurosport',
+  china_football: 'Fútbol · Streaming Internacional',
+  beinsports: 'Fútbol · beIN SPORTS HD',
   bein_arabic: 'Fútbol · beIN SPORTS (العربية)',
   marruecos: 'TV Marruecos (المغرب · SNRT & 2M)',
   documentales: 'Documentales y Ciencia (Nat Geo & Discovery)',
   usa_tv: 'TV Estados Unidos (FOX · NBC · CNN)',
   europa_tv: 'TV Europa (BBC · Euronews · DW · France 24)',
   noticias_intl: 'Noticias Internacionales (Al Jazeera · Al Arabiya)',
-  espn: 'Fútbol · ESPN 1-7',
-  dsports: 'Fútbol · DSports',
-  tnt_space: 'Deportes · TNT y Space',
-  cine_series: 'Cine y Series',
-  entretenimiento: 'Entretenimiento',
-  noticias_deportes: 'Noticias y Deporte',
-  infantil_autonomicas: 'Infantil y Autonómicas',
+  espn: 'Fútbol & Deportes · ESPN 1-7',
+  dsports: 'Fútbol & Deportes · DSports',
+  tnt_space: 'Deportes · TNT Sports & Space',
+  cine_series: 'Cine y Series 24/7',
+  entretenimiento: 'Entretenimiento y Variedades',
+  noticias_deportes: 'Noticias y Deporte en Directo',
+  infantil_autonomicas: 'Infantil y Autonómicas (TV3 · SX3 · Autonómicas)',
+  fast_thematic: 'Canales Temáticos FAST 24/7',
+  internacional: 'Canales Internacionales',
 };
 
 const IPTV_EPG_ID_ALIASES: Record<string, string> = {
@@ -11397,12 +11400,133 @@ const IPTV_EPG_ID_ALIASES: Record<string, string> = {
 function getAllIptvChannels(): any[] {
   const seen = new Set<string>();
   const combined: any[] = [];
-  const merged = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
-  for (const ch of [...merged, ...CATALA_LIVE_CHANNELS]) {
+
+  // 1. National Spanish TDT Channels with synced mirrors
+  const mergedTdt = applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS);
+  for (const ch of mergedTdt) {
     if (!ch?.id || seen.has(ch.id)) continue;
     seen.add(ch.id);
-    combined.push(ch);
+    combined.push({
+      ...ch,
+      dial: ch.dial || combined.length + 1,
+      category: ch.category || 'generalistas',
+    });
   }
+
+  // 2. Catalan Public Channels (TV3, 324, Esport3, SX3)
+  for (const ch of CATALA_LIVE_CHANNELS) {
+    if (!ch?.id || seen.has(ch.id)) continue;
+    seen.add(ch.id);
+    combined.push({
+      ...ch,
+      dial: ch.dial || combined.length + 1,
+      category: ch.category || 'infantil_autonomicas',
+    });
+  }
+
+  // 3. 24/7 Live Sports Multiplexes and Key Football Channels (M+ LaLiga, DAZN LaLiga, UCL, DAZN F1, Premier)
+  const sportsMuxes = getPermanent247SportsMatches();
+  sportsMuxes.forEach((m, idx) => {
+    const muxId = `live-sports-${m.id}`;
+    if (!seen.has(muxId)) {
+      seen.add(muxId);
+      const isLaliga = m.id.includes('laliga');
+      const isF1 = m.id.includes('f1');
+      const isChampions = m.id.includes('champions');
+      const category = isLaliga ? 'movistar' : isF1 ? 'dazn' : isChampions ? 'movistar' : 'noticias_deportes';
+      combined.push({
+        id: muxId,
+        dial: 201 + idx,
+        name: m.title.split(' · ')[0] || m.title,
+        shortMark: isLaliga ? 'LIGA' : isF1 ? 'F1' : isChampions ? 'UCL' : 'SPRT',
+        brandTone: isLaliga ? '#0EA5E9' : isF1 ? '#F59E0B' : '#E11D48',
+        network: m.competition || 'Fútbol 24/7',
+        category,
+        quality: '1080p HD',
+        description: `${m.title} · ${m.competition}`,
+        channels: m.channels,
+      });
+    }
+
+    (m.channels || []).forEach((tr, trIdx) => {
+      const trId = `ch-sport-${tr.id || `${m.id}-${trIdx}`}`;
+      if (!seen.has(trId) && tr.label && !tr.label.includes('Satélite')) {
+        seen.add(trId);
+        const cat = /movistar|m\+/i.test(tr.label)
+          ? 'movistar'
+          : /dazn/i.test(tr.label)
+          ? 'dazn'
+          : /espn/i.test(tr.label)
+          ? 'espn'
+          : /dsports/i.test(tr.label)
+          ? 'dsports'
+          : /tnt/i.test(tr.label)
+          ? 'tnt_space'
+          : 'noticias_deportes';
+        combined.push({
+          id: trId,
+          dial: 210 + combined.filter((c) => c.dial >= 210 && c.dial < 300).length,
+          name: `${tr.label} 24/7`,
+          shortMark: tr.label.replace(/[^A-Za-z0-9]/g, '').slice(0, 4).toUpperCase() || 'SPRT',
+          brandTone: '#9146FF',
+          network: m.competition || 'Deportes en Directo',
+          category: cat,
+          quality: tr.quality || '1080p HD',
+          description: `${tr.label} - Señal oficial en directo`,
+          channels: [tr, ...m.channels.filter((other) => other.id !== tr.id)],
+        });
+      }
+    });
+  });
+
+  // 4. International TV Channels (beIN, Sky Sports, Fox, Nat Geo, Discovery, History, Euronews, BBC, Morocco SNRT & 2M, Al Jazeera, etc.)
+  for (const ch of INTERNATIONAL_TV_CHANNELS) {
+    if (!ch?.id || seen.has(ch.id)) continue;
+    seen.add(ch.id);
+    combined.push({
+      ...ch,
+      dial: ch.dial || 300 + combined.filter((c) => c.dial >= 300 && c.dial < 500).length,
+      category: ch.category || 'internacional',
+    });
+  }
+
+  // 5. 24/7 Thematic FAST Channels (NASA TV, Red Bull TV, NatureTime, Rakuten Movies, Anime)
+  for (const f of FAST_THEMATIC_CHANNELS) {
+    const fId = `fast-${f.id}`;
+    if (!seen.has(fId) && !seen.has(f.id)) {
+      seen.add(fId);
+      const cat =
+        f.category === 'news'
+          ? 'noticias_deportes'
+          : f.category === 'sports'
+          ? 'noticias_deportes'
+          : f.category === 'docs'
+          ? 'documentales'
+          : 'cine_series';
+      combined.push({
+        id: fId,
+        dial: 501 + combined.filter((c) => c.dial >= 500).length,
+        name: f.name,
+        shortMark: f.mark || f.name.slice(0, 4).toUpperCase(),
+        brandTone: f.tone || '#9146FF',
+        network: 'FAST TV 24/7',
+        category: cat,
+        quality: f.quality || '1080p HD',
+        description: f.descriptionEs || f.name,
+        channels: [
+          {
+            id: `${f.id}-direct`,
+            label: `${f.name} HD`,
+            lang: 'ES',
+            quality: f.quality || '1080p',
+            sourceUrl: f.streamUrl,
+            resolverType: 'tdt_hls',
+          },
+        ],
+      });
+    }
+  }
+
   return channelHealthMonitor.prioritizeChannels(combined);
 }
 
@@ -11781,10 +11905,15 @@ function rewriteManifestForSamsungIptv(
 
 app.get(
   [
+    '/naim-cine.m3u',
+    '/naimcine.m3u',
+    '/naimcine-smarttv.m3u',
+    '/NAIM-CINE-Samsung-TV.m3u',
+    '/NAIMCINE-Samsung-Tizen.m3u',
     '/riffantv.m3u',
     '/riffantv-smarttv.m3u',
-    '/naim-cine.m3u',
-    '/NAIM-CINE-Samsung-TV.m3u',
+    '/channels.m3u',
+    '/playlist.m3u',
     '/iptv.m3u',
     '/naim-cine.m3u8',
     '/api/iptv/playlist.m3u',
@@ -11828,7 +11957,7 @@ app.get(
     res.setHeader('Content-Type', 'audio/x-mpegurl; charset=utf-8');
     res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
     if (forceDownload) {
-      res.setHeader('Content-Disposition', 'attachment; filename="RiffanTV-IPTV.m3u"');
+      res.setHeader('Content-Disposition', 'attachment; filename="NAIMCINE-Samsung-Tizen.m3u"');
     }
     res.send(playlistBody);
   }
@@ -11843,6 +11972,57 @@ app.get('/api/iptv/status', async (req, res) => {
     ok: true,
     totalChannels: channels.length,
     ...getIptvSyncMeta(),
+  });
+});
+
+app.get('/api/iptv/summary', async (req, res) => {
+  if (req.query.refresh === '1') {
+    await refreshLiveIptvRegistry(true).catch(() => undefined);
+  }
+  const publicOrigin = getPublicOrigin(req);
+  const channels = getAllIptvChannels();
+  const catMap: Record<string, { label: string; count: number; sampleChannels: string[] }> = {};
+
+  channels.forEach((ch) => {
+    const cat = ch.category || 'generalistas';
+    const groupLabel = IPTV_GROUP_TITLES[cat] || 'TDT y Directo';
+    if (!catMap[cat]) {
+      catMap[cat] = {
+        label: groupLabel,
+        count: 0,
+        sampleChannels: [],
+      };
+    }
+    catMap[cat].count++;
+    if (catMap[cat].sampleChannels.length < 5) {
+      catMap[cat].sampleChannels.push(ch.name);
+    }
+  });
+
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Cache-Control', 'public, max-age=180');
+  res.json({
+    ok: true,
+    totalChannels: channels.length,
+    m3uUrl: `${publicOrigin}/naim-cine.m3u`,
+    epgUrl: `${publicOrigin}/epg.xml`,
+    categories: Object.entries(catMap).map(([id, info]) => ({
+      id,
+      label: info.label,
+      count: info.count,
+      sampleChannels: info.sampleChannels,
+    })),
+    channels: channels.map((c, idx) => ({
+      id: c.id,
+      dial: c.dial || idx + 1,
+      name: c.name,
+      category: c.category,
+      groupTitle: IPTV_GROUP_TITLES[c.category] || 'TDT y Directo',
+      quality: c.quality || '1080p HD',
+      shortMark: c.shortMark || c.name.slice(0, 4).toUpperCase(),
+      brandTone: c.brandTone || '#9146FF',
+      logoUrl: c.logoUrl || `${publicOrigin}/api/iptv/logo/${encodeURIComponent(c.id)}.png`,
+    })),
   });
 });
 
@@ -12010,7 +12190,7 @@ app.get(['/epg.xml', '/api/iptv/epg.xml'], async (req, res) => {
     const channels = getAllIptvChannels();
     const xmlParts: string[] = [
       '<?xml version="1.0" encoding="UTF-8"?>',
-      '<tv generator-info-name="RiffanTV IPTV EPG" generator-info-url="' +
+      '<tv generator-info-name="NAIMCINE IPTV EPG" generator-info-url="' +
         escapeXmlText(publicOrigin) +
         '">',
     ];
@@ -12020,39 +12200,75 @@ app.get(['/epg.xml', '/api/iptv/epg.xml'], async (req, res) => {
       const epgId = getIptvEpgId(ch.id);
       if (emittedChannelIds.has(epgId)) continue;
       emittedChannelIds.add(epgId);
-      const logoUrl = `${publicOrigin}/api/iptv/logo/${encodeURIComponent(ch.id)}.png`;
+      const officialLogo = ch.logoUrl || resolveOfficialChannelLogoUrl(ch);
+      const logoUrl =
+        officialLogo && /^https?:\/\//i.test(officialLogo)
+          ? officialLogo
+          : `${publicOrigin}/api/iptv/logo/${encodeURIComponent(ch.id)}.png`;
       xmlParts.push(`  <channel id="${escapeXmlText(epgId)}">`);
       xmlParts.push(`    <display-name lang="es">${escapeXmlText(ch.name)}</display-name>`);
       xmlParts.push(`    <icon src="${escapeXmlText(logoUrl)}" />`);
       xmlParts.push('  </channel>');
     }
 
-    for (const epgId of emittedChannelIds) {
+    const now = Date.now();
+    for (const ch of channels) {
+      const epgId = getIptvEpgId(ch.id);
       const events = store.get(epgId) || [];
-      for (const ev of events) {
-        xmlParts.push(
-          `  <programme start="${formatXmltvUtcTime(ev.startMs)}" stop="${formatXmltvUtcTime(
-            ev.stopMs
-          )}" channel="${escapeXmlText(epgId)}">`
-        );
-        xmlParts.push(`    <title lang="es">${escapeXmlText(ev.title)}</title>`);
-        if (ev.subtitle) {
-          xmlParts.push(`    <sub-title lang="es">${escapeXmlText(ev.subtitle)}</sub-title>`);
+      if (events.length > 0) {
+        for (const ev of events) {
+          xmlParts.push(
+            `  <programme start="${formatXmltvUtcTime(ev.startMs)}" stop="${formatXmltvUtcTime(
+              ev.stopMs
+            )}" channel="${escapeXmlText(epgId)}">`
+          );
+          xmlParts.push(`    <title lang="es">${escapeXmlText(ev.title)}</title>`);
+          if (ev.subtitle) {
+            xmlParts.push(`    <sub-title lang="es">${escapeXmlText(ev.subtitle)}</sub-title>`);
+          }
+          if (ev.description) {
+            xmlParts.push(`    <desc lang="es">${escapeXmlText(ev.description)}</desc>`);
+          }
+          if (ev.category) {
+            xmlParts.push(`    <category lang="es">${escapeXmlText(ev.category)}</category>`);
+          }
+          xmlParts.push('  </programme>');
         }
-        if (ev.description) {
-          xmlParts.push(`    <desc lang="es">${escapeXmlText(ev.description)}</desc>`);
+      } else {
+        // Continuous 4-hour live program blocks for channels without static JSON EPG
+        // so Smart TV EPG grid never shows empty "No Information"
+        const blockDuration = 4 * 60 * 60 * 1000;
+        const currentBlockStart = Math.floor(now / blockDuration) * blockDuration;
+        for (let b = 0; b < 6; b++) {
+          const bStart = currentBlockStart + b * blockDuration;
+          const bStop = bStart + blockDuration;
+          const blockTitle = ch.category?.includes('futbol') || ch.category?.includes('movistar') || ch.category?.includes('dazn')
+            ? `${ch.name} · Fútbol y Deportes en Directo HD`
+            : ch.category === 'documentales'
+            ? `${ch.name} · Documentales y Naturaleza HD`
+            : ch.category === 'cine_series'
+            ? `${ch.name} · Cine y Series en Emisión Continua`
+            : `${ch.name} · Emisión en Directo HD`;
+
+          xmlParts.push(
+            `  <programme start="${formatXmltvUtcTime(bStart)}" stop="${formatXmltvUtcTime(bStop)}" channel="${escapeXmlText(epgId)}">`
+          );
+          xmlParts.push(`    <title lang="es">${escapeXmlText(blockTitle)}</title>`);
+          xmlParts.push(`    <desc lang="es">${escapeXmlText(ch.description || `Transmisión oficial en directo de ${ch.name} sin cortes para Smart TV.`)}</desc>`);
+          xmlParts.push(`    <category lang="es">${escapeXmlText(IPTV_GROUP_TITLES[ch.category] || 'Directo')}</category>`);
+          xmlParts.push('  </programme>');
         }
-        if (ev.category) {
-          xmlParts.push(`    <category lang="es">${escapeXmlText(ev.category)}</category>`);
-        }
-        xmlParts.push('  </programme>');
       }
     }
 
     xmlParts.push('</tv>');
+    const forceDownload = req.query.download === '1';
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.setHeader('Cache-Control', 'public, max-age=300');
+    if (forceDownload) {
+      res.setHeader('Content-Disposition', 'attachment; filename="NAIMCINE-EPG.xml"');
+    }
     res.send(xmlParts.join('\n'));
   } catch (err) {
     console.warn('/epg.xml error:', err);

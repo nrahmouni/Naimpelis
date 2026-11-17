@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 900 600" width="900" height="600">
+  <title>Bandera de la República del Rif (1921-1926)</title>
+  <!-- Campo rojo -->
+  <rect width="900" height="600" fill="#C8102E"/>
+  <!-- Rombo blanco central -->
+  <polygon points="450,100 700,300 450,500 200,300" fill="#FFFFFF"/>
+  <!-- Media luna verde -->
+  <path d="M 479.98 245.46 A 75 75 0 1 0 479.98 354.54 A 62 62 0 1 1 479.98 245.46 Z" fill="#006233"/>
+  <!-- Estrella verde de seis puntas -->
+  <polygon points="513.5,262 524.47,281 546.41,281 535.44,300 546.41,319 524.47,319 513.5,338 502.53,319 480.59,319 491.56,300 480.59,281 502.53,281" fill="#006233"/>
+</svg>

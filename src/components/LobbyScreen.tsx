@@ -10,7 +10,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { AppLanguage } from '../types';
-import { pickLang } from '../utils/i18n';
+import { pickLang, formatRoomTitle } from '../utils/i18n';
 import {
   generateRandomGuestName,
   RecentRoomEntry,
@@ -111,11 +111,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     const profile = buildProfile();
     triggerHaptic('success');
     const code = generateShortRoomCode(4);
-    const defaultRoomTitle = pickLang(lang, {
-      es: `Sala de ${profile.name}`,
-      ca: `Sala de ${profile.name}`,
-      en: `${profile.name}'s Room`,
-    });
+    const defaultRoomTitle = formatRoomTitle(lang, profile.name);
     onEnterRoom(code, profile, defaultRoomTitle);
   };
 
@@ -201,6 +197,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 es: 'Tu sala privada para ver cine, series, TV y deporte juntos.',
                 ca: 'La teva sala privada per veure cinema, sèries, TV i esport junts.',
                 en: 'Your private theater for movies, series, TV and sports together.',
+                zh: '专属于你与好友的私人影院，电影、剧集、直播与体育同步畅享。',
+                rif: 'Ssinima-nnek i lafilmat, siriyat, talfaza d sspor aked imddukkal.',
               })}
             </h1>
             <p className="text-sm text-zinc-400">
@@ -208,6 +206,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                 es: 'Todo sincronizado en directo con tus amigos.',
                 ca: 'Tot sincronitzat en directe amb els teus amics.',
                 en: 'Watch live in sync together.',
+                zh: '与好友实时同步观看直播。',
+                rif: 'Xzarem direkt marra aked wayawya.',
               })}
             </p>
           </motion.div>
@@ -232,6 +232,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       es: 'Continuar en tus salas',
                       ca: 'Continuar a les teves sales',
                       en: 'Continue in your rooms',
+                      zh: '继续你的房间',
+                      rif: 'Kemmel di texxamin-nnek',
                     })}
                   </span>
                 </div>
@@ -384,6 +386,8 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       es: 'Unirme',
                       ca: 'Unir-me',
                       en: 'Join code',
+                      zh: '通过代码加入',
+                      rif: 'Udef s lkod',
                     })}
                   </span>
                 </button>

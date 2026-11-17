@@ -5,6 +5,7 @@ import {
   Check,
   QrCode,
   ChevronDown,
+  ChevronRight,
   AlertCircle,
   Radio,
 } from 'lucide-react';
@@ -13,6 +14,7 @@ import { AppLanguage, TvRemoteCommandType } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { BottomSheet, HapticTvRemote, PrimaryButton, StandardInput } from './ui/DesignSystem';
+import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
 
 interface SmartTvQuickModalProps {
   isOpen: boolean;
@@ -46,12 +48,14 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
 }) => {
   const [tvCodeInput, setTvCodeInput] = useState('');
   const [showCodePairing, setShowCodePairing] = useState(false);
+  const [showTizenGuide, setShowTizenGuide] = useState(false);
   const [castFeedback, setCastFeedback] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen) {
       setCastFeedback(null);
       setShowCodePairing(false);
+      setShowTizenGuide(false);
     }
   }, [isOpen]);
 
@@ -314,7 +318,32 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Option for Samsung Tizen, LG webOS, M3U & EPG XML */}
+        <div className="pt-1 border-t border-white/[0.06]">
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              setShowTizenGuide(true);
+            }}
+            className="w-full min-h-11 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-between gap-2 cursor-pointer transition-colors"
+          >
+            <span className="flex items-center gap-2.5">
+              <Tv className="w-4 h-4 text-[#BF94FF]" />
+              <span>Samsung Tizen / LG (Lista M3U & EPG XML)</span>
+            </span>
+            <ChevronRight className="w-4 h-4 text-zinc-400" />
+          </button>
+        </div>
       </div>
+
+      <PWAInstallOptionsSheet
+        isOpen={showTizenGuide}
+        onClose={() => setShowTizenGuide(false)}
+        lang={lang}
+        initialSection="samsung_tizen"
+      />
     </BottomSheet>
   );
 };

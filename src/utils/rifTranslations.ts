@@ -5,6 +5,17 @@
  */
 
 export const RIF_DICTIONARY: Record<string, string> = {
+  "Your private theater for movies, series, TV and sports together.": "Ssinima-nnek i lafilmat, siriyat, talfaza d sspor aked imddukkal.",
+  "Tu sala privada para ver cine, series, TV y deporte juntos.": "Ssinima-nnek i lafilmat, siriyat, talfaza d sspor aked imddukkal.",
+  "La teva sala privada per veure cinema, sèries, TV i esport junts.": "Ssinima-nnek i lafilmat, siriyat, talfaza d sspor aked imddukkal.",
+  "Watch live in sync together.": "Xzarem direkt marra aked wayawya.",
+  "Todo sincronizado en directo con tus amigos.": "Xzarem direkt marra aked wayawya.",
+  "Tot sincronitzat en directe amb els teus amics.": "Xzarem direkt marra aked wayawya.",
+  "Continue in your rooms": "Kemmel di texxamin-nnek",
+  "Continuar en tus salas": "Kemmel di texxamin-nnek",
+  "Continuar a les teves sales": "Kemmel di texxamin-nnek",
+  "Join code": "Udef s lkod",
+  "Unirse": "Udef",
   "What do you want to watch today?": "Min texsed ad txzared ass-a?",
   "¿Qué quieres ver hoy?": "Min texsed ad txzared ass-a?",
   "Què vols veure avui?": "Min texsed ad txzared ass-a?",

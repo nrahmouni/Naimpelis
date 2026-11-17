@@ -32,6 +32,13 @@ export function pickLang(lang: AppLanguage, copy: LocalizedTextMap): string {
   return copy.es;
 }
 
+export function formatRoomTitle(lang: AppLanguage, name: string): string {
+  if (lang === 'rif') return `Taxxamt n ${name}`;
+  if (lang === 'en') return `${name}'s Room`;
+  if (lang === 'zh') return `${name}的房间`;
+  return `Sala de ${name}`;
+}
+
 export interface UiCopyShape {
   appTagline: string;
   heroHeadline: string;

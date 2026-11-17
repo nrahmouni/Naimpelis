@@ -42,7 +42,7 @@ function ensureSigningCert(): CertMaterial {
       '9125',
       '-sha256',
       '-subj',
-      '/CN=RiffanTV/O=RiffanTV Media/C=ES',
+      '/CN=NAIMCINE/O=NAIMCINE Media/C=ES',
     ]);
     execFileSync('openssl', [
       'x509',
@@ -1133,7 +1133,7 @@ function buildManifestAndCertSf(files: { name: string; data: Buffer }[]): {
 } {
   const mfLines = [
     'Manifest-Version: 1.0',
-    'Created-By: RiffanTV Build Engine 3.1',
+    'Created-By: NAIMCINE Build Engine 3.1',
     '',
   ];
 
@@ -1153,7 +1153,7 @@ function buildManifestAndCertSf(files: { name: string; data: Buffer }[]): {
     'Signature-Version: 1.0',
     `SHA-256-Digest-Manifest: ${sha256Base64(manifestMf)}`,
     'X-Android-APK-Signed: 2',
-    'Created-By: RiffanTV Build Engine 3.1',
+    'Created-By: NAIMCINE Build Engine 3.1',
     '',
   ];
   for (const sec of sectionStrings) {
