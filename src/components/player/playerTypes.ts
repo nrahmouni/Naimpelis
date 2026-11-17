@@ -218,4 +218,5 @@ export interface NativeCinemaPlayerProps {
     name: string;
     friendCode?: string;
   }) => void;
+  onVideoEnded?: () => void;
 }

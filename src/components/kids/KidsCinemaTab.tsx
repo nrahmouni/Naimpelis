@@ -1,16 +1,12 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
-  Cast,
+  ArrowLeft,
   ChevronLeft,
-  ChevronRight,
-  Film,
-  Loader2,
-  Lock,
   Mic,
   Play,
   Search,
-  Sparkles,
   Tv,
+  Youtube,
   X,
 } from 'lucide-react';
 import type {
@@ -19,11 +15,13 @@ import type {
   KidsAgeGroup,
   KidsLanguageCode,
 } from '../../types';
-import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { FlagBadgeSvg } from '../ui/LanguageBadge';
+import { useKidsStore } from '../../store/useKidsStore';
 import { KIDS_LANGUAGES } from './kidsData';
+import { getKidsDir, getKidsUiCopy } from './kidsI18n';
+import { playKidsSound } from './kidsAudioEngine';
 import { speakKidsText } from './kidsTtsHelper';
+import { KidsSquishButton } from './KidsPrimitives';
 import {
   KidsAnimatedCategoryIcon,
   KidsAnimatedPosterSvg,
@@ -31,31 +29,28 @@ import {
 } from './KidsSvgArt';
 
 interface KidsCinemaTabProps {
-  shellLang: AppLanguage;
+  shellLang?: AppLanguage;
   kidsLang: KidsLanguageCode;
   ageGroup: KidsAgeGroup;
-  lockedLang?: KidsLanguageCode | null;
   recentWatched?: CatalogMovie[];
   approvedOnlyMode?: boolean;
   approvedItems?: CatalogMovie[];
-  onSelectKidsLang: (lang: KidsLanguageCode) => void;
-  onPlayMovie: (movie: CatalogMovie, preferLang: string) => void;
-  onPlaySeries: (series: CatalogMovie, preferLang: string) => void;
+  onPlayItem: (item: CatalogMovie, queuePool: CatalogMovie[]) => void;
   onEarnStar: (stars: number, badgeId?: string) => void;
-  onRequestCastToTv?: (movie: CatalogMovie) => void;
+  onBackToPortal?: () => void;
 }
 
-type KidsCinemaCategory =
-  | 'recent'
-  | 'live'
+export type KidsCinemaCategory =
   | 'all'
-  | 'animation'
+  | 'cartoons'
   | 'animals'
   | 'dinosaurs'
   | 'space'
   | 'magic'
-  | 'series'
-  | 'educational';
+  | 'songs'
+  | 'educational'
+  | 'live'
+  | 'recent';
 
 interface BrowserSpeechRec {
   lang: string;
@@ -68,34 +63,48 @@ interface BrowserSpeechRec {
   stop: () => void;
 }
 
+interface CinemaThemeCard {
+  id: KidsCinemaCategory;
+  titleKey: string;
+  descKey: string;
+  iconName: KidsAnimatedIconId;
+  bgGradient: string;
+  borderTone: string;
+  badgeTone: string;
+}
+
 export const KidsCinemaTab: React.FC<KidsCinemaTabProps> = ({
-  shellLang,
   kidsLang,
   ageGroup,
-  lockedLang = null,
   recentWatched = [],
   approvedOnlyMode = false,
   approvedItems = [],
-  onSelectKidsLang,
-  onPlayMovie,
-  onPlaySeries,
+  onPlayItem,
   onEarnStar,
-  onRequestCastToTv,
+  onBackToPortal,
 }) => {
+  const soundEnabled = useKidsStore((s) => s.ux.soundEnabled);
+  const t = getKidsUiCopy(kidsLang);
+  const dir = getKidsDir(kidsLang);
+
+  // Multi-screen Cinema Step: 'hub' (big visual themes) vs 'list' (scrollable video catalog)
+  const [cinemaStep, setCinemaStep] = useState<'hub' | 'list'>(
+    approvedOnlyMode ? 'list' : 'hub'
+  );
   const [category, setCategory] = useState<KidsCinemaCategory>('all');
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchDraft, setSearchDraft] = useState('');
   const [activeQuery, setActiveQuery] = useState('');
-  const [items, setItems] = useState<Array<CatalogMovie & { aiReason?: string }>>([]);
-  const [loading, setLoading] = useState(true);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiIntro, setAiIntro] = useState<string | null>(null);
+  const [items, setItems] = useState<CatalogMovie[]>([]);
+  const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  const [pageIdx, setPageIdx] = useState(0);
-  const [perPage, setPerPage] = useState(8);
   const [listeningVoice, setListeningVoice] = useState(false);
   const [brokenPosters, setBrokenPosters] = useState<Record<string, boolean>>({});
-  const touchStartXRef = useRef<number | null>(null);
+
+  const listScrollContainerRef = useRef<HTMLDivElement | null>(null);
+
+  const activeLangMeta =
+    KIDS_LANGUAGES.find((l) => l.code === kidsLang) || KIDS_LANGUAGES[0];
 
   const supportsVoice = useMemo(() => {
     if (typeof window === 'undefined') return false;
@@ -106,61 +115,119 @@ export const KidsCinemaTab: React.FC<KidsCinemaTabProps> = ({
     return Boolean(w.SpeechRecognition || w.webkitSpeechRecognition);
   }, []);
 
-  useEffect(() => {
-    const updatePerPage = () => {
-      if (typeof window === 'undefined') return;
-      if (ageGroup === '3-5') {
-        setPerPage(4);
-        return;
-      }
-      if (window.innerWidth < 640) {
-        setPerPage(4);
-      } else if (window.innerWidth < 1024) {
-        setPerPage(6);
-      } else {
-        setPerPage(8);
-      }
-    };
-    updatePerPage();
-    window.addEventListener('resize', updatePerPage);
-    return () => window.removeEventListener('resize', updatePerPage);
-  }, [ageGroup]);
+  // Theme cards for Portada de Cine (Hub)
+  const THEME_CARDS: CinemaThemeCard[] = useMemo(
+    () => [
+      {
+        id: 'live',
+        titleKey: t.catLive,
+        descKey: 'Clan, Boing, SX3, Ketnet, France 4...',
+        iconName: 'live_tv',
+        bgGradient: 'from-emerald-500/25 via-emerald-600/15 to-[#13233E]',
+        borderTone: 'border-emerald-400/50 hover:border-emerald-300',
+        badgeTone: 'bg-emerald-500 text-slate-950',
+      },
+      {
+        id: 'cartoons',
+        titleKey: t.catCartoons,
+        descKey: 'Bluey, Pocoyó, Peppa Pig, Bumba...',
+        iconName: 'cinema',
+        bgGradient: 'from-amber-500/25 via-amber-600/15 to-[#1A1E38]',
+        borderTone: 'border-amber-400/50 hover:border-amber-300',
+        badgeTone: 'bg-amber-400 text-slate-950',
+      },
+      {
+        id: 'animals',
+        titleKey: t.catAnimals,
+        descKey: 'Naturaleza salvaje y animales amigos',
+        iconName: 'animals',
+        bgGradient: 'from-teal-500/25 via-teal-600/15 to-[#122238]',
+        borderTone: 'border-teal-400/50 hover:border-teal-300',
+        badgeTone: 'bg-teal-400 text-slate-950',
+      },
+      {
+        id: 'dinosaurs',
+        titleKey: t.catDinos,
+        descKey: 'T-Rex, fósiles y mundo jurásico',
+        iconName: 'dinosaurs',
+        bgGradient: 'from-lime-500/25 via-lime-600/15 to-[#192620]',
+        borderTone: 'border-lime-400/50 hover:border-lime-300',
+        badgeTone: 'bg-lime-400 text-slate-950',
+      },
+      {
+        id: 'space',
+        titleKey: t.catSpace,
+        descKey: 'Planetas, estrellas y astronautas',
+        iconName: 'space',
+        bgGradient: 'from-indigo-500/25 via-indigo-600/15 to-[#18193D]',
+        borderTone: 'border-indigo-400/50 hover:border-indigo-300',
+        badgeTone: 'bg-indigo-400 text-slate-950',
+      },
+      {
+        id: 'songs',
+        titleKey: 'Canciones',
+        descKey: 'Música, bailes y nanas para cantar',
+        iconName: 'songs',
+        bgGradient: 'from-pink-500/25 via-pink-600/15 to-[#281832]',
+        borderTone: 'border-pink-400/50 hover:border-pink-300',
+        badgeTone: 'bg-pink-400 text-white',
+      },
+      {
+        id: 'magic',
+        titleKey: t.catMagic,
+        descKey: 'Cuentos animados y fantasía mágica',
+        iconName: 'magic',
+        bgGradient: 'from-purple-500/25 via-purple-600/15 to-[#221639]',
+        borderTone: 'border-purple-400/50 hover:border-purple-300',
+        badgeTone: 'bg-purple-400 text-slate-950',
+      },
+      {
+        id: 'recent',
+        titleKey: t.catRecent,
+        descKey: 'Los dibujos que más te gustan',
+        iconName: 'recent',
+        bgGradient: 'from-sky-500/25 via-sky-600/15 to-[#13223A]',
+        borderTone: 'border-sky-400/50 hover:border-sky-300',
+        badgeTone: 'bg-sky-400 text-slate-950',
+      },
+    ],
+    [t]
+  );
 
-  const activeLangMeta =
-    KIDS_LANGUAGES.find((l) => l.code === kidsLang) || KIDS_LANGUAGES[0];
-
+  // Fetch YouTube Kids or Live Channels when in 'list' step
   useEffect(() => {
+    if (cinemaStep !== 'list') return;
+
     if (approvedOnlyMode) {
       setLoading(false);
       setErrorMsg(null);
-      setAiIntro(null);
-      setItems(approvedItems);
-      setPageIdx(0);
+      setItems(
+        approvedItems.filter(
+          (it) => it.platform === 'YouTube Kids' || it.platform === 'Riffan Kids Live'
+        )
+      );
       return;
     }
 
     if (category === 'recent') {
       setLoading(false);
       setErrorMsg(null);
-      setAiIntro(null);
       setItems(recentWatched);
-      setPageIdx(0);
       return;
     }
 
     let cancelled = false;
     setLoading(true);
     setErrorMsg(null);
-    setAiIntro(null);
-    setPageIdx(0);
 
     const params = new URLSearchParams({
       lang: kidsLang,
       category,
+      ageGroup,
       ...(activeQuery ? { q: activeQuery } : {}),
     });
 
-    fetch(`/api/kids/catalog?${params.toString()}`)
+    fetch(`/api/kids/youtube?${params.toString()}`)
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
         if (cancelled) return;
@@ -168,25 +235,11 @@ export const KidsCinemaTab: React.FC<KidsCinemaTabProps> = ({
           setItems(data.items);
         } else {
           setItems([]);
-          setErrorMsg(
-            pickLang(shellLang, {
-              es: 'No se pudo cargar el catálogo infantil ahora.',
-              ca: 'No s’ha pogut carregar el catàleg infantil ara.',
-              en: 'Could not load kids catalog right now.',
-            })
-          );
+          setErrorMsg(t.catalogLoadError);
         }
       })
       .catch(() => {
-        if (!cancelled) {
-          setErrorMsg(
-            pickLang(shellLang, {
-              es: 'Error de conexión al cargar películas infantiles.',
-              ca: 'Error de connexió en carregar pel·lícules infantils.',
-              en: 'Connection error loading kids movies.',
-            })
-          );
-        }
+        if (!cancelled) setErrorMsg(t.catalogConnError);
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -195,20 +248,41 @@ export const KidsCinemaTab: React.FC<KidsCinemaTabProps> = ({
     return () => {
       cancelled = true;
     };
-  }, [kidsLang, category, activeQuery, shellLang, approvedOnlyMode, approvedItems, recentWatched]);
+  }, [
+    cinemaStep,
+    kidsLang,
+    category,
+    ageGroup,
+    activeQuery,
+    approvedOnlyMode,
+    approvedItems,
+    recentWatched,
+    t.catalogLoadError,
+    t.catalogConnError,
+  ]);
 
-  const totalPages = Math.max(1, Math.ceil(items.length / perPage));
-  const safePageIdx = Math.min(pageIdx, totalPages - 1);
-  const visibleItems = useMemo(
-    () => items.slice(safePageIdx * perPage, safePageIdx * perPage + perPage),
-    [items, safePageIdx, perPage]
-  );
+  const handleSelectTheme = (catId: KidsCinemaCategory, label: string) => {
+    triggerHaptic('light');
+    playKidsSound('tap', soundEnabled, true);
+    setActiveQuery('');
+    setSearchDraft('');
+    setCategory(catId);
+    setCinemaStep('list');
+    if (ageGroup === '3-5' && soundEnabled) {
+      void speakKidsText(label, kidsLang, { ageGroup });
+    }
+  };
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const query = searchDraft.trim();
+    if (!query) return;
     triggerHaptic('light');
-    setActiveQuery(searchDraft.trim());
-    setPageIdx(0);
+    playKidsSound('tap', soundEnabled, true);
+    setActiveQuery(query);
+    setCategory('all');
+    setCinemaStep('list');
+    setSearchOpen(false);
   };
 
   const handleVoiceSearch = () => {
@@ -220,7 +294,7 @@ export const KidsCinemaTab: React.FC<KidsCinemaTabProps> = ({
     const Ctor = w.SpeechRecognition || w.webkitSpeechRecognition;
     if (!Ctor) return;
 
-    triggerHaptic('medium');
+    playKidsSound('tap', soundEnabled, true);
     setListeningVoice(true);
     try {
       const rec = new Ctor();
@@ -232,8 +306,9 @@ export const KidsCinemaTab: React.FC<KidsCinemaTabProps> = ({
         if (transcript) {
           setSearchDraft(transcript);
           setActiveQuery(transcript);
-          setPageIdx(0);
-          setSearchOpen(true);
+          setCategory('all');
+          setCinemaStep('list');
+          setSearchOpen(false);
         }
         setListeningVoice(false);
       };
@@ -245,440 +320,354 @@ export const KidsCinemaTab: React.FC<KidsCinemaTabProps> = ({
     }
   };
 
-  const handleAiCurate = async (customPrompt?: string) => {
-    if (approvedOnlyMode) return;
-    const promptText = (customPrompt ?? searchDraft).trim();
-    if (!promptText) return;
-    triggerHaptic('medium');
-    setAiLoading(true);
-    setErrorMsg(null);
-
-    try {
-      const res = await fetch('/api/kids/ai-recommend', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lang: kidsLang,
-          ageGroup,
-          prompt: promptText,
-        }),
-      });
-      const data = await res.json();
-      if (!res.ok || !data?.ok) {
-        setErrorMsg(
-          data?.error ||
-            pickLang(shellLang, {
-              es: 'No se pudo consultar al curador IA.',
-              ca: 'No s’ha pogut consultar el curador IA.',
-              en: 'AI curator unavailable right now.',
-            })
-        );
-      } else if (Array.isArray(data.items) && data.items.length > 0) {
-        setAiIntro(data.intro || null);
-        setItems(data.items);
-        setPageIdx(0);
-        setSearchOpen(false);
-        onEarnStar(2, 'cinefilo_kids');
-      }
-    } catch {
-      setErrorMsg(
-        pickLang(shellLang, {
-          es: 'Error al conectar con la IA de Riffan Kids.',
-          ca: 'Error en connectar amb la IA de Riffan Kids.',
-          en: 'Could not reach Riffan Kids AI.',
-        })
-      );
-    } finally {
-      setAiLoading(false);
+  const handleSelectPlayable = (item: CatalogMovie) => {
+    triggerHaptic('light');
+    playKidsSound('success', soundEnabled, true);
+    if (ageGroup === '3-5' && soundEnabled) {
+      void speakKidsText(item.title, kidsLang, { ageGroup });
     }
-  };
-
-  const categories: Array<{ id: KidsCinemaCategory; iconName: KidsAnimatedIconId; label: string }> = [
-    { id: 'recent', iconName: 'recent', label: pickLang(shellLang, { es: 'Mis Dibujos', ca: 'Els Meus', en: 'Recent' }) },
-    { id: 'live', iconName: 'live_tv', label: pickLang(shellLang, { es: 'Canales TV', ca: 'Canals TV', en: 'TV Live' }) },
-    { id: 'all', iconName: 'animation', label: pickLang(shellLang, { es: 'Todo', ca: 'Tot', en: 'All' }) },
-    { id: 'animation', iconName: 'animation', label: pickLang(shellLang, { es: 'Dibujos', ca: 'Dibuixos', en: 'Cartoons' }) },
-    { id: 'animals', iconName: 'animals', label: pickLang(shellLang, { es: 'Animales', ca: 'Animals', en: 'Animals' }) },
-    { id: 'dinosaurs', iconName: 'dinosaurs', label: pickLang(shellLang, { es: 'Dinos', ca: 'Dinos', en: 'Dinos' }) },
-    { id: 'space', iconName: 'space', label: pickLang(shellLang, { es: 'Espacio', ca: 'Espai', en: 'Space' }) },
-    { id: 'magic', iconName: 'magic', label: pickLang(shellLang, { es: 'Magia', ca: 'Màgia', en: 'Magic' }) },
-    { id: 'series', iconName: 'series', label: pickLang(shellLang, { es: 'Series', ca: 'Sèries', en: 'Series' }) },
-    { id: 'educational', iconName: 'educational', label: pickLang(shellLang, { es: 'Aprender', ca: 'Aprendre', en: 'Learn' }) },
-  ];
-
-  const handlePlayItem = (item: CatalogMovie) => {
-    triggerHaptic('medium');
     onEarnStar(1);
-    if (item.mediaType === 'tv') {
-      onPlaySeries(item, activeLangMeta.preferStreamLang);
-    } else {
-      onPlayMovie(item, activeLangMeta.preferStreamLang);
-    }
+    onPlayItem(item, items);
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartXRef.current = e.touches[0]?.clientX ?? null;
-  };
-
-  const handleTouchEnd = (e: React.TouchEvent) => {
-    const startX = touchStartXRef.current;
-    touchStartXRef.current = null;
-    if (startX === null) return;
-    const endX = e.changedTouches[0]?.clientX ?? startX;
-    const delta = endX - startX;
-    if (Math.abs(delta) < 42) return;
-    if (delta < 0 && safePageIdx < totalPages - 1) {
-      triggerHaptic('light');
-      setPageIdx((p) => Math.min(totalPages - 1, p + 1));
-    } else if (delta > 0 && safePageIdx > 0) {
-      triggerHaptic('light');
-      setPageIdx((p) => Math.max(0, p - 1));
-    }
-  };
+  const activeThemeMeta = THEME_CARDS.find((c) => c.id === category) || THEME_CARDS[1];
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
-      {/* Row 1: Joyful 8-Language Flag Ribbon with instant native audio greeting */}
-      <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-        {KIDS_LANGUAGES.map((item) => {
-          const selected = item.code === kidsLang;
-          const blockedByParent = Boolean(lockedLang && lockedLang !== item.code);
-          return (
-            <button
-              key={item.code}
-              type="button"
-              disabled={blockedByParent}
-              onClick={() => {
-                triggerHaptic('medium');
-                onSelectKidsLang(item.code);
-                void speakKidsText(item.greeting, item.code);
-              }}
-              className={`h-9 px-3 rounded-2xl text-xs font-black flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all border-b-2 active:scale-95 ${
-                selected
-                  ? 'bg-gradient-to-r from-amber-300 to-amber-500 text-zinc-950 border-amber-700 ring-2 ring-amber-300 shadow-md scale-105'
-                  : blockedByParent
-                  ? 'bg-[#12162B]/40 text-zinc-500 border-transparent opacity-40 cursor-not-allowed'
-                  : 'bg-[#182144] hover:bg-[#232F5C] text-zinc-100 border-[#0D1226]'
-              }`}
-            >
-              <FlagBadgeSvg code={item.flagCode} className="w-5 h-3.5 shadow-sm" />
-              <span>{item.nativeLabel}</span>
-              {lockedLang === item.code && <Lock className="w-3 h-3" />}
-            </button>
-          );
-        })}
-      </div>
+    <div dir={dir} className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
+      {/* =========================================================================
+          PANTALLA 2A: PORTADA DE CINE (HUB TEMÁTICO LIMPIO CON TARJETAS GRANDES)
+         ========================================================================= */}
+      {cinemaStep === 'hub' && (
+        <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+          {/* Top Bar inside Cinema Hub */}
+          <div className="shrink-0 flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2">
+              {onBackToPortal && (
+                <KidsSquishButton
+                  onClick={onBackToPortal}
+                  data-tv-focusable="true"
+                  className="min-h-[46px] px-3.5 sm:px-4 rounded-2xl bg-[#182352] hover:bg-[#253268] border-b-4 border-[#0F1635] text-white font-black text-xs sm:text-sm flex items-center gap-1.5"
+                >
+                  <ArrowLeft className="w-4 h-4 rtl:rotate-180" />
+                  <span>{t.backToHome}</span>
+                </KidsSquishButton>
+              )}
+              <div className="flex items-center gap-2">
+                <KidsAnimatedCategoryIcon name="cinema" size={26} />
+                <h2 className="font-display font-black text-base sm:text-xl text-white">
+                  {t.navCinema}
+                </h2>
+              </div>
+            </div>
 
-      {/* Row 2: Joyful Kid Worlds (Categories & Live TV) + Voice / AI Finder */}
-      <div className="shrink-0 flex items-center justify-between gap-2">
-        {approvedOnlyMode ? (
-          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-emerald-500/20 border-2 border-emerald-400/40 text-xs font-black text-emerald-100">
-            <Lock className="w-4 h-4 text-emerald-300" />
-            <span>Selección aprobada por Papá y Mamá</span>
-          </div>
-        ) : (
-          <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-            {categories.map((cat) => (
-              <button
-                key={cat.id}
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  setActiveQuery('');
-                  setSearchDraft('');
-                  setCategory(cat.id);
-                }}
-                className={`h-8 sm:h-9 px-3 rounded-xl sm:rounded-2xl text-xs font-black whitespace-nowrap cursor-pointer border-b-2 flex items-center gap-2 transition-all active:scale-95 ${
-                  category === cat.id && !aiIntro
-                    ? 'bg-gradient-to-r from-sky-300 to-sky-500 text-zinc-950 border-sky-700 shadow-md scale-105'
-                    : 'bg-[#182144] hover:bg-[#232F5C] text-zinc-200 border-[#0D1226]'
-                }`}
-              >
-                <KidsAnimatedCategoryIcon name={cat.iconName} size={16} />
-                <span>{cat.label}</span>
-              </button>
-            ))}
-          </div>
-        )}
-
-        {!approvedOnlyMode && (
-          <div className="flex items-center gap-1.5 shrink-0">
-            {supportsVoice && (
-              <button
-                type="button"
-                onClick={handleVoiceSearch}
-                aria-label="Buscar con voz"
-                title="Habla para buscar dibujos"
-                className={`h-9 w-9 rounded-2xl flex items-center justify-center cursor-pointer border-b-2 transition-all active:scale-95 ${
-                  listeningVoice
-                    ? 'bg-rose-500 text-white border-rose-700 animate-pulse ring-2 ring-rose-400'
-                    : 'bg-pink-500/30 hover:bg-pink-500/45 text-pink-200 border-pink-700/60'
-                }`}
-              >
-                <Mic className="w-4 h-4" />
-              </button>
-            )}
-
-            <button
-              type="button"
-              disabled={aiLoading}
-              onClick={() =>
-                void handleAiCurate(
-                  `Recomienda películas o series divertidas para niños de ${ageGroup} años en ${activeLangMeta.esLabel}`
-                )
-              }
-              className="h-9 px-3 rounded-2xl bg-amber-400/30 hover:bg-amber-400/45 border-b-2 border-amber-600/60 text-amber-200 text-xs font-black flex items-center gap-1.5 cursor-pointer active:scale-95"
-            >
-              {aiLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5 text-amber-300" />}
-              <span>IA</span>
-            </button>
-
-            <button
-              type="button"
+            <KidsSquishButton
               onClick={() => setSearchOpen((v) => !v)}
-              aria-label="Buscar"
-              className={`h-9 px-3 rounded-2xl border-b-2 text-xs font-black flex items-center gap-1.5 cursor-pointer active:scale-95 ${
+              data-tv-focusable="true"
+              ariaLabel={t.searchLabel}
+              className={`min-h-[46px] px-3.5 sm:px-4 rounded-2xl border-b-4 text-xs sm:text-sm font-black flex items-center gap-2 ${
                 searchOpen
-                  ? 'bg-white text-black border-zinc-300'
-                  : 'bg-[#182144] text-zinc-200 border-[#0D1226]'
+                  ? 'bg-sky-400 text-slate-950 border-sky-600'
+                  : 'bg-[#182352] hover:bg-[#253268] text-white border-[#0F1635]'
               }`}
             >
-              {searchOpen ? <X className="w-3 h-3" /> : <Search className="w-3 h-3" />}
-              <span className="hidden sm:inline">Buscar</span>
-            </button>
+              {searchOpen ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
+              <span className="hidden sm:inline">{t.searchLabel}</span>
+            </KidsSquishButton>
           </div>
-        )}
-      </div>
 
-      {/* Collapsible compact search strip */}
-      {searchOpen && !approvedOnlyMode && (
-        <form
-          onSubmit={handleSearchSubmit}
-          className="shrink-0 flex items-center gap-1.5 bg-[#161D38] border border-amber-400/35 rounded-xl p-1.5"
-        >
-          <input
-            type="search"
-            autoFocus
-            value={searchDraft}
-            onChange={(e) => setSearchDraft(e.target.value)}
-            placeholder={`Buscar en ${activeLangMeta.nativeLabel}...`}
-            className="flex-1 h-8 px-2.5 rounded-lg bg-[#0B0F20] text-xs text-white placeholder:text-zinc-400 outline-none"
-          />
-          <button
-            type="submit"
-            className="h-8 px-3 rounded-lg bg-white/15 text-xs font-bold text-white cursor-pointer"
-          >
-            Buscar
-          </button>
-          <button
-            type="button"
-            disabled={aiLoading || !searchDraft.trim()}
-            onClick={() => void handleAiCurate()}
-            className="h-8 px-3 rounded-lg bg-amber-400 text-black text-xs font-extrabold cursor-pointer disabled:opacity-45"
-          >
-            Pedir IA
-          </button>
-        </form>
-      )}
+          {/* Search Box & Voice when opened */}
+          {searchOpen && (
+            <div className="shrink-0 rounded-2xl bg-[#141C42] border-2 border-sky-400/40 p-2.5 shadow-lg">
+              <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+                {supportsVoice && (
+                  <button
+                    type="button"
+                    onClick={handleVoiceSearch}
+                    data-tv-focusable="true"
+                    aria-label={t.voiceSearchLabel}
+                    className={`min-w-[44px] h-11 rounded-xl flex items-center justify-center border-b-2 cursor-pointer ${
+                      listeningVoice
+                        ? 'bg-rose-500 text-white border-rose-700 animate-pulse'
+                        : 'bg-pink-500/25 text-pink-200 border-pink-700/60'
+                    }`}
+                  >
+                    <Mic className="w-5 h-5" />
+                  </button>
+                )}
+                <input
+                  type="search"
+                  autoFocus
+                  value={searchDraft}
+                  onChange={(e) => setSearchDraft(e.target.value)}
+                  placeholder={`${t.searchPlaceholderPrefix} YouTube Kids...`}
+                  className="flex-1 h-11 px-3.5 rounded-xl bg-[#0B1028] text-sm font-semibold text-white placeholder:text-zinc-400 outline-none border border-white/10"
+                />
+                <button
+                  type="submit"
+                  data-tv-focusable="true"
+                  className="h-11 px-5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-sm font-black cursor-pointer shrink-0"
+                >
+                  {t.searchLabel}
+                </button>
+              </form>
+            </div>
+          )}
 
-      {errorMsg && (
-        <div className="shrink-0 px-3 py-1.5 rounded-xl bg-rose-500/20 border border-rose-400/40 text-xs text-rose-100">
-          {errorMsg}
-        </div>
-      )}
-
-      {/* Zero-Scroll Paged Poster Stage */}
-      <div
-        onTouchStart={handleTouchStart}
-        onTouchEnd={handleTouchEnd}
-        className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden"
-      >
-        {loading ? (
-          <div
-            className={`flex-1 min-h-0 grid gap-2.5 ${
-              ageGroup === '3-5'
-                ? 'grid-cols-2 grid-rows-2'
-                : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 grid-rows-2'
-            }`}
-          >
-            {Array.from({ length: perPage }).map((_, idx) => (
-              <div key={idx} className="rounded-2xl bg-[#18203D]/80 animate-pulse" />
-            ))}
-          </div>
-        ) : visibleItems.length === 0 ? (
-          <div className="flex-1 min-h-0 rounded-2xl bg-[#141B34] border border-white/10 flex flex-col items-center justify-center p-4 text-center gap-2">
-            <div className="text-3xl">📺</div>
-            <p className="text-sm font-bold text-white">
-              {category === 'recent'
-                ? 'Aún no has visto dibujos hoy. ¡Elige uno en Todo!'
-                : 'No encontramos títulos aquí'}
-            </p>
-            {!approvedOnlyMode && (
-              <button
-                type="button"
-                onClick={() => {
-                  setCategory('all');
-                  setActiveQuery('');
-                  setSearchDraft('');
-                }}
-                className="h-9 px-4 rounded-xl bg-amber-400 border-b-2 border-amber-600 text-black text-xs font-extrabold cursor-pointer"
-              >
-                Ver todo Kids
-              </button>
-            )}
-          </div>
-        ) : (
-          <div
-            className={`flex-1 min-h-0 grid gap-2.5 ${
-              ageGroup === '3-5'
-                ? 'grid-cols-2 grid-rows-2'
-                : 'grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 grid-rows-2'
-            }`}
-          >
-            {visibleItems.map((item) => {
-              const posterBroken = brokenPosters[item.id];
-              return (
+          {/* Theme Grid: 2 columns in portrait, 3 or 4 in landscape / tablet / TV */}
+          <div className="flex-1 min-h-0 overflow-y-auto no-scrollbar p-1 pb-20">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 landscape:grid-cols-3 lg:landscape:grid-cols-4 gap-3 sm:gap-4">
+              {THEME_CARDS.map((card) => (
                 <div
-                  key={item.id}
+                  key={card.id}
                   role="button"
                   tabIndex={0}
-                  onClick={() => handlePlayItem(item)}
+                  data-tv-focusable="true"
+                  onClick={() => handleSelectTheme(card.id, card.titleKey)}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault();
-                      handlePlayItem(item);
+                      handleSelectTheme(card.id, card.titleKey);
                     }
                   }}
-                  className="group relative rounded-2xl bg-[#151D38] border-2 border-[#253059] border-b-4 hover:border-amber-300 overflow-hidden text-left flex flex-col cursor-pointer transition-all active:translate-y-0.5 shadow-lg min-h-0 outline-none focus-visible:ring-2 focus-visible:ring-amber-300"
+                  className={`group relative rounded-3xl bg-gradient-to-br ${card.bgGradient} border-2 ${card.borderTone} border-b-4 p-4 flex flex-col justify-between gap-3 min-h-[140px] sm:min-h-[160px] cursor-pointer shadow-lg transition-all active:scale-95 hover:scale-[1.02] focus:scale-105 focus:ring-4 focus:ring-amber-400 outline-none`}
                 >
-                  <div className="relative flex-1 min-h-0 w-full bg-[#1C2547] overflow-hidden">
-                    {/* 100% Self-Contained Animated SVG Cover by Riffan Kids */}
-                    <KidsAnimatedPosterSvg
-                      title={item.title}
-                      year={item.year}
-                      rating={item.rating}
-                      langCode={kidsLang}
-                      mediaType={item.mediaType}
-                      category={category}
-                      genres={item.genres}
-                      className="absolute inset-0 w-full h-full"
-                    />
-
-                    {!posterBroken && item.poster && category !== 'live' && item.platform !== 'Riffan Kids Live' && (
-                      <img
-                        src={item.poster}
-                        alt={item.title}
-                        loading="lazy"
-                        referrerPolicy="no-referrer"
-                        onError={() =>
-                          setBrokenPosters((prev) => ({ ...prev, [item.id]: true }))
-                        }
-                        className="relative z-10 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300 opacity-90 group-hover:opacity-100"
-                      />
-                    )}
-                    <div className="absolute inset-0 z-20 bg-gradient-to-t from-[#0D1226] via-black/15 to-transparent pointer-events-none" />
-
-                    <span className="absolute z-30 top-1.5 left-1.5 drop-shadow">
-                      <FlagBadgeSvg code={activeLangMeta.flagCode} className="w-5 h-3.5" />
-                    </span>
-
-                    {onRequestCastToTv && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onRequestCastToTv(item);
-                        }}
-                        aria-label={`Enviar ${item.title} a Smart TV`}
-                        title="Enviar a Smart TV (PIN)"
-                        className="absolute z-30 top-1.5 right-1.5 h-6 px-1.5 rounded-lg bg-black/65 hover:bg-amber-400 text-white hover:text-black border border-white/20 flex items-center gap-1 text-[10px] font-bold cursor-pointer transition-colors"
-                      >
-                        <Cast className="w-3 h-3" />
-                        <span className="hidden sm:inline">TV</span>
-                      </button>
-                    )}
-
-                    <span
-                      className={`absolute z-30 ${
-                        ageGroup === '3-5'
-                          ? 'inset-0 m-auto w-12 h-12 bg-amber-400/95'
-                          : 'bottom-1.5 right-1.5 w-9 h-9 bg-amber-400'
-                      } rounded-full text-zinc-950 flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform`}
-                    >
-                      <Play className={`${ageGroup === '3-5' ? 'w-6 h-6' : 'w-4 h-4'} fill-current ml-0.5`} />
+                  <div className="flex items-center justify-between">
+                    <div className="w-12 h-12 rounded-2xl bg-white/10 backdrop-blur-sm flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <KidsAnimatedCategoryIcon name={card.iconName} size={28} />
+                    </div>
+                    <span className="w-8 h-8 rounded-full bg-white/10 group-hover:bg-amber-400 group-hover:text-slate-950 text-white flex items-center justify-center transition-colors">
+                      <Play className="w-4 h-4 fill-current ms-0.5" />
                     </span>
                   </div>
 
-                  <div className="shrink-0 px-2.5 py-1.5 bg-[#10162E]">
-                    <h3 className="font-display font-bold text-xs text-white truncate">
-                      {item.title}
+                  <div>
+                    <h3 className="font-display font-black text-base sm:text-lg text-white leading-tight">
+                      {card.titleKey}
                     </h3>
-                    {ageGroup !== '3-5' && (
-                      <div className="flex items-center gap-1 text-[10px] text-sky-200/80">
-                        {item.mediaType === 'tv' ? (
-                          <Tv className="w-2.5 h-2.5 text-sky-400 shrink-0" />
-                        ) : (
-                          <Film className="w-2.5 h-2.5 text-amber-400 shrink-0" />
-                        )}
-                        <span className="truncate">
-                          {activeLangMeta.nativeLabel} · {item.year}
-                        </span>
-                      </div>
-                    )}
+                    <p className="text-xs text-sky-100/75 line-clamp-1 mt-0.5">
+                      {card.descKey}
+                    </p>
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
-
-        {/* Swipe Dots + Tactile Left/Right Pager Strip */}
-        {totalPages > 1 && (
-          <div className="shrink-0 flex items-center justify-center gap-3 pt-0.5">
-            <button
-              type="button"
-              disabled={safePageIdx <= 0}
-              onClick={() => {
-                triggerHaptic('light');
-                setPageIdx((p) => Math.max(0, p - 1));
-              }}
-              aria-label="Página anterior"
-              className="h-8 px-3 rounded-xl bg-[#18203D] hover:bg-[#232E56] disabled:opacity-35 border-b-2 border-[#0B0F20] text-white flex items-center gap-1 text-xs font-bold cursor-pointer"
-            >
-              <ChevronLeft className="w-4 h-4" />
-              <span>Anterior</span>
-            </button>
-
-            <div className="flex items-center gap-1.5" aria-label={`Página ${safePageIdx + 1} de ${totalPages}`}>
-              {Array.from({ length: totalPages }).map((_, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => setPageIdx(idx)}
-                  aria-label={`Ir a página ${idx + 1}`}
-                  className={`h-2.5 rounded-full transition-all cursor-pointer ${
-                    idx === safePageIdx ? 'w-6 bg-amber-400' : 'w-2.5 bg-white/25 hover:bg-white/45'
-                  }`}
-                />
               ))}
             </div>
+          </div>
+        </div>
+      )}
 
-            <button
-              type="button"
-              disabled={safePageIdx >= totalPages - 1}
+      {/* =========================================================================
+          PANTALLA 2B: LISTA DE VÍDEOS / CANALES (CON SCROLL VERTICAL FLUIDO)
+         ========================================================================= */}
+      {cinemaStep === 'list' && (
+        <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
+          {/* Top Bar inside Cinema List */}
+          <div className="shrink-0 flex items-center justify-between gap-2">
+            <KidsSquishButton
               onClick={() => {
                 triggerHaptic('light');
-                setPageIdx((p) => Math.min(totalPages - 1, p + 1));
+                playKidsSound('tap', soundEnabled, true);
+                setCinemaStep('hub');
               }}
-              aria-label="Página siguiente"
-              className="h-8 px-3 rounded-xl bg-[#18203D] hover:bg-[#232E56] disabled:opacity-35 border-b-2 border-[#0B0F20] text-white flex items-center gap-1 text-xs font-bold cursor-pointer"
+              data-tv-focusable="true"
+              className="min-h-[46px] px-3.5 sm:px-4 rounded-2xl bg-[#182352] hover:bg-[#253268] border-b-4 border-[#0F1635] text-white font-black text-xs sm:text-sm flex items-center gap-1.5 shrink-0"
             >
-              <span>Más</span>
-              <ChevronRight className="w-4 h-4" />
-            </button>
+              <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
+              <span>{t.backToThemes}</span>
+            </KidsSquishButton>
+
+            <div className="flex items-center gap-2 min-w-0">
+              <KidsAnimatedCategoryIcon name={activeThemeMeta.iconName} size={22} />
+              <h2 className="font-display font-black text-sm sm:text-base text-white truncate">
+                {activeQuery ? `"${activeQuery}"` : activeThemeMeta.titleKey}
+              </h2>
+            </div>
+
+            <KidsSquishButton
+              onClick={() => setSearchOpen((v) => !v)}
+              data-tv-focusable="true"
+              ariaLabel={t.searchLabel}
+              className={`min-h-[46px] min-w-[46px] px-3 rounded-2xl border-b-4 text-xs font-black flex items-center justify-center shrink-0 ${
+                searchOpen
+                  ? 'bg-sky-400 text-slate-950 border-sky-600'
+                  : 'bg-[#182352] hover:bg-[#253268] text-white border-[#0F1635]'
+              }`}
+            >
+              {searchOpen ? <X className="w-4 h-4" /> : <Search className="w-4 h-4" />}
+            </KidsSquishButton>
           </div>
-        )}
-      </div>
+
+          {/* Search Box & Voice when opened in List view */}
+          {searchOpen && (
+            <div className="shrink-0 rounded-2xl bg-[#141C42] border-2 border-sky-400/40 p-2.5 shadow-lg">
+              <form onSubmit={handleSearchSubmit} className="flex items-center gap-2">
+                {supportsVoice && (
+                  <button
+                    type="button"
+                    onClick={handleVoiceSearch}
+                    data-tv-focusable="true"
+                    aria-label={t.voiceSearchLabel}
+                    className={`min-w-[44px] h-11 rounded-xl flex items-center justify-center border-b-2 cursor-pointer ${
+                      listeningVoice
+                        ? 'bg-rose-500 text-white border-rose-700 animate-pulse'
+                        : 'bg-pink-500/25 text-pink-200 border-pink-700/60'
+                    }`}
+                  >
+                    <Mic className="w-5 h-5" />
+                  </button>
+                )}
+                <input
+                  type="search"
+                  autoFocus
+                  value={searchDraft}
+                  onChange={(e) => setSearchDraft(e.target.value)}
+                  placeholder={`${t.searchPlaceholderPrefix} YouTube Kids...`}
+                  className="flex-1 h-11 px-3.5 rounded-xl bg-[#0B1028] text-sm font-semibold text-white placeholder:text-zinc-400 outline-none border border-white/10"
+                />
+                <button
+                  type="submit"
+                  data-tv-focusable="true"
+                  className="h-11 px-5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-sm font-black cursor-pointer shrink-0"
+                >
+                  {t.searchLabel}
+                </button>
+              </form>
+            </div>
+          )}
+
+          {errorMsg && (
+            <div className="shrink-0 px-3.5 py-2 rounded-2xl bg-rose-500/20 border border-rose-400/40 text-xs font-bold text-rose-100">
+              {errorMsg}
+            </div>
+          )}
+
+          {/* NATURAL VERTICAL SCROLLABLE VIDEO CATALOG */}
+          <div
+            ref={listScrollContainerRef}
+            className="flex-1 min-h-0 overflow-y-auto no-scrollbar p-1 pb-24"
+          >
+            {loading ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 landscape:grid-cols-2 md:landscape:grid-cols-3 lg:landscape:grid-cols-4 gap-3.5">
+                {Array.from({ length: 8 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="h-48 rounded-3xl bg-[#162046]/75 animate-pulse border border-white/5"
+                  />
+                ))}
+              </div>
+            ) : items.length === 0 ? (
+              <div className="min-h-[260px] rounded-3xl bg-[#131B3D] border-2 border-white/10 flex flex-col items-center justify-center p-6 text-center gap-3">
+                <div className="text-5xl">📺</div>
+                <p className="text-base font-bold text-white max-w-sm">
+                  {category === 'recent' ? t.emptyRecent : t.emptyDefault}
+                </p>
+                <KidsSquishButton
+                  onClick={() => {
+                    setActiveQuery('');
+                    setSearchDraft('');
+                    setCategory('cartoons');
+                  }}
+                  data-tv-focusable="true"
+                  className="px-6 rounded-2xl bg-amber-400 border-b-4 border-amber-600 text-slate-950 text-sm font-black"
+                >
+                  {t.seeAllKids}
+                </KidsSquishButton>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 landscape:grid-cols-2 md:landscape:grid-cols-3 lg:landscape:grid-cols-4 gap-3.5">
+                {items.map((item) => {
+                  const isChannel =
+                    item.platform === 'Riffan Kids Live' || item.id.startsWith('kids-live-');
+                  const posterBroken = brokenPosters[item.id];
+
+                  return (
+                    <div
+                      key={item.id}
+                      role="button"
+                      tabIndex={0}
+                      data-tv-focusable="true"
+                      onClick={() => handleSelectPlayable(item)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault();
+                          handleSelectPlayable(item);
+                        }
+                      }}
+                      className="group relative rounded-3xl bg-[#151D42] border-2 border-[#293874] border-b-4 hover:border-amber-300 overflow-hidden text-start flex flex-col cursor-pointer transition-all active:scale-[0.98] hover:scale-[1.02] focus:scale-105 focus:ring-4 focus:ring-amber-400 shadow-xl outline-none"
+                    >
+                      {/* Thumbnail Container (16:9 ratio) */}
+                      <div className="relative aspect-video w-full bg-[#1C2652] overflow-hidden">
+                        <KidsAnimatedPosterSvg
+                          title={item.title}
+                          year={item.year}
+                          rating={item.rating}
+                          langCode={kidsLang}
+                          mediaType={isChannel ? 'tv' : 'movie'}
+                          category={category}
+                          genres={item.genres}
+                          className="absolute inset-0 w-full h-full"
+                        />
+
+                        {!posterBroken && item.poster && !isChannel && (
+                          <img
+                            src={item.poster}
+                            alt={item.title}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={() =>
+                              setBrokenPosters((prev) => ({ ...prev, [item.id]: true }))
+                            }
+                            className="relative z-10 w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                        )}
+
+                        <div className="absolute inset-0 z-20 bg-gradient-to-t from-[#0D132D]/95 via-transparent to-transparent pointer-events-none" />
+
+                        {/* Large Play Button */}
+                        <span className="absolute z-30 inset-0 m-auto w-14 h-14 rounded-full bg-amber-400/95 group-hover:bg-amber-300 text-slate-950 flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform">
+                          <Play className="w-7 h-7 fill-current ms-1" />
+                        </span>
+
+                        {/* Duration or Live Badge */}
+                        <div className="absolute z-30 top-2.5 end-2.5 px-2.5 py-0.5 rounded-full bg-black/75 backdrop-blur-sm text-[11px] font-black text-white flex items-center gap-1 shadow-md">
+                          {isChannel ? (
+                            <>
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                              <span>LIVE TV</span>
+                            </>
+                          ) : (
+                            <span>{item.quality || item.year || 'HD'}</span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Card Content with 2-line title */}
+                      <div className="p-3 bg-[#111736] flex-1 flex flex-col justify-between gap-1.5">
+                        <h3 className="font-display font-extrabold text-sm sm:text-base text-white line-clamp-2 leading-snug">
+                          {item.title}
+                        </h3>
+
+                        <div className="flex items-center justify-between text-xs text-sky-200/70 pt-1 border-t border-white/5">
+                          <div className="flex items-center gap-1.5 truncate">
+                            {isChannel ? (
+                              <Tv className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                            ) : (
+                              <Youtube className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                            )}
+                            <span className="truncate">
+                              {isChannel ? t.catLive : item.overview || 'YouTube Kids'}
+                            </span>
+                          </div>
+                          <span className="font-bold text-amber-300 shrink-0">+1 ⭐</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

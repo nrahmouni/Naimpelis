@@ -1,6 +1,7 @@
 import React, { useId } from 'react';
 import type { KidsLanguageCode } from '../../types';
 import type { KidsMascotId } from './kidsData';
+import { getKidsUiCopy } from './kidsI18n';
 
 export type KidsArtTheme =
   | 'space'
@@ -72,6 +73,7 @@ export const KidsAnimatedPosterSvg: React.FC<KidsAnimatedPosterProps> = ({
 }) => {
   const uid = useId().replace(/:/g, '');
   const theme = detectKidsArtTheme(title, category, genres);
+  const t = getKidsUiCopy(langCode);
 
   return (
     <svg
@@ -415,11 +417,11 @@ export const KidsAnimatedPosterSvg: React.FC<KidsAnimatedPosterProps> = ({
         <text x="24" y="16" fontFamily="sans-serif" fontSize="11" fontWeight="bold" fill="#FFFFFF">{rating}</text>
       </g>
 
-      <g transform="translate(254, 16)">
-        {/* Format Pill (TV or HD) */}
-        <rect width="52" height="24" rx="12" fill="#F59E0B" />
-        <text x="26" y="16" fontFamily="sans-serif" fontSize="10" fontWeight="900" fill="#000000" textAnchor="middle">
-          {mediaType === 'tv' ? 'SERIE' : 'PELI'}
+      <g transform="translate(248, 16)">
+        {/* Format Pill (localized across 8 languages) */}
+        <rect width="58" height="24" rx="12" fill="#F59E0B" />
+        <text x="29" y="16" fontFamily="sans-serif" fontSize="9.5" fontWeight="900" fill="#000000" textAnchor="middle">
+          {mediaType === 'tv' ? t.formatSeries : t.formatMovie}
         </text>
       </g>
 
@@ -633,6 +635,7 @@ export type KidsAnimatedIconId =
   | 'dinosaurs'
   | 'space'
   | 'magic'
+  | 'songs'
   | 'series'
   | 'educational'
   | 'puzzle'
@@ -895,3 +898,109 @@ export const KidsAnimatedCategoryIcon: React.FC<{
     </svg>
   );
 };
+
+/* ============================================================================
+ * 4. DETERMINISTIC UNIQUE NAME AVATAR GENERATOR (ZERO BROKEN IMAGES)
+ * ============================================================================ */
+export interface KidsAvatarSpec {
+  mascotId: KidsMascotId;
+  emoji: string;
+  bgStart: string;
+  bgEnd: string;
+  ringColor: string;
+  initial: string;
+}
+
+const AVATAR_PALETTES = [
+  { bgStart: '#F59E0B', bgEnd: '#B45309', ringColor: '#FDE68A' },
+  { bgStart: '#38BDF8', bgEnd: '#0369A1', ringColor: '#BAE6FD' },
+  { bgStart: '#EC4899', bgEnd: '#9D174D', ringColor: '#FBCFE8' },
+  { bgStart: '#10B981', bgEnd: '#047857', ringColor: '#A7F3D0' },
+  { bgStart: '#8B5CF6', bgEnd: '#5B21B6', ringColor: '#DDD6FE' },
+  { bgStart: '#FB923C', bgEnd: '#C2410C', ringColor: '#FED7AA' },
+];
+
+export function generateKidsAvatarSpec(name: string, fallbackEmoji = '🦊'): KidsAvatarSpec {
+  const clean = (name || 'Peque').trim();
+  const lower = clean.toLowerCase();
+  let hash = 0;
+  for (let i = 0; i < lower.length; i++) {
+    hash = (hash * 31 + lower.charCodeAt(i)) >>> 0;
+  }
+
+  let mascotId: KidsMascotId = (['fox', 'dino', 'bot', 'cat'] as KidsMascotId[])[hash % 4];
+  let emoji = fallbackEmoji;
+  if (/leo|leon|simba|rey/.test(lower)) {
+    mascotId = 'cat';
+    emoji = '🦁';
+  } else if (/dino|rex|dragon/.test(lower)) {
+    mascotId = 'dino';
+    emoji = '🦕';
+  } else if (/bot|robo|max|neo/.test(lower)) {
+    mascotId = 'bot';
+    emoji = '🤖';
+  } else if (/zor|fox|luna|mia/.test(lower)) {
+    mascotId = 'fox';
+    emoji = '🦊';
+  }
+
+  const palette = AVATAR_PALETTES[hash % AVATAR_PALETTES.length];
+  return {
+    mascotId,
+    emoji,
+    ...palette,
+    initial: clean.charAt(0).toUpperCase() || 'R',
+  };
+}
+
+export const KidsUniqueNameAvatarSvg: React.FC<{
+  name: string;
+  fallbackEmoji?: string;
+  size?: number;
+  className?: string;
+}> = ({ name, fallbackEmoji = '🦊', size = 44, className = '' }) => {
+  const uid = useId().replace(/:/g, '');
+  const spec = generateKidsAvatarSpec(name, fallbackEmoji);
+
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 100 100"
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+      aria-label={name || 'Avatar Kids'}
+    >
+      <defs>
+        <linearGradient id={`avbg-${uid}`} x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={spec.bgStart} />
+          <stop offset="100%" stopColor={spec.bgEnd} />
+        </linearGradient>
+      </defs>
+      <circle cx="50" cy="50" r="46" fill={`url(#avbg-${uid})`} stroke={spec.ringColor} strokeWidth="5" />
+      <circle cx="32" cy="28" r="10" fill="#FFFFFF" opacity="0.16" />
+      <text
+        x="50"
+        y="58"
+        textAnchor="middle"
+        fontSize="44"
+        fontFamily="system-ui, sans-serif"
+      >
+        {spec.emoji}
+      </text>
+      <circle cx="77" cy="77" r="16" fill="#0F172A" stroke={spec.ringColor} strokeWidth="3" />
+      <text
+        x="77"
+        y="83"
+        textAnchor="middle"
+        fontSize="16"
+        fontWeight="900"
+        fill="#FFFFFF"
+        fontFamily="Fredoka, system-ui, sans-serif"
+      >
+        {spec.initial}
+      </text>
+    </svg>
+  );
+};
+

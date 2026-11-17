@@ -41,7 +41,8 @@ export function isGoogleTvEnvironment(): boolean {
     const params = new URLSearchParams(window.location.search);
     if (
       params.get('googletv') === '1' ||
-      params.get('platform')?.toLowerCase() === 'googletv'
+      params.get('platform')?.toLowerCase() === 'googletv' ||
+      params.get('tv') === '1'
     ) {
       window.sessionStorage?.setItem('naim_google_tv_env', '1');
       return true;
@@ -53,7 +54,7 @@ export function isGoogleTvEnvironment(): boolean {
     // ignore
   }
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
-  return /NaimCineGoogleTV|GoogleTV|Android TV|BRAVIA|AFTB|AFTT|AFTM|AFTKA|Chromecast/i.test(ua);
+  return /NaimCineGoogleTV|GoogleTV|Android TV|BRAVIA|AFTB|AFTT|AFTM|AFTKA|Chromecast|SmartTV|Tizen|Web0S|NetCast|VIDAA|HbbTV|AppleTV/i.test(ua);
 }
 
 const FOCUSABLE_SELECTOR = [

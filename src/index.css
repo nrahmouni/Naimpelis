@@ -1819,3 +1819,58 @@ button:hover .rtv-ico[data-anim="hover"] .rtv-k-draw {
 :root[data-reduced-motion="true"] .rtv-intro-r-play * {
   animation: none !important;
 }
+
+/* ==========================================================================
+   RIFFAN KIDS — ISOLATED CHILD DESIGN SYSTEM SCOPE ([data-world="kids"])
+   Zero-leak scoping: never affects Riffan TV adult dark cinema tokens.
+   ========================================================================== */
+[data-world="kids"] {
+  --kids-font-display: 'Fredoka', 'Outfit', 'Plus Jakarta Sans', sans-serif;
+  --kids-font-body: 'Fredoka', 'Plus Jakarta Sans', sans-serif;
+  --kids-bg-canvas: #0f1636;
+  --kids-bg-surface: #18224f;
+  --kids-bg-elevated: #202d66;
+  --kids-border: rgba(148, 197, 255, 0.24);
+  --kids-text-primary: #ffffff;
+  --kids-text-secondary: #c7dcff;
+  --kids-accent-sun: #fbbf24;
+  --kids-accent-orange: #fb923c;
+  --kids-accent-mint: #34d399;
+  --kids-accent-sky: #38bdf8;
+  --kids-accent-rose: #fb7185;
+  --kids-touch-min: 64px;
+  font-family: var(--kids-font-body);
+  font-size: 18px;
+}
+
+[data-world="kids"][data-age-group="3-5"] {
+  --kids-touch-min: 72px;
+  font-size: 20px;
+}
+
+[data-world="kids"] h1,
+[data-world="kids"] h2,
+[data-world="kids"] h3,
+[data-world="kids"] .font-display {
+  font-family: var(--kids-font-display);
+}
+
+[data-world="kids"] .kids-touch-target {
+  min-width: var(--kids-touch-min);
+  min-height: var(--kids-touch-min);
+}
+
+[data-world="kids"][data-kids-calm="true"],
+[data-world="kids"][data-kids-calm="true"] * {
+  animation-duration: 0.01ms !important;
+  transition-duration: 120ms !important;
+}
+
+[data-world="kids"][data-kids-calm="true"] {
+  filter: saturate(0.84);
+}
+
+[data-world="kids"][data-kids-bedtime="true"] {
+  filter: sepia(0.18) brightness(0.9);
+}
+

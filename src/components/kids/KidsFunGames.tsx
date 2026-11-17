@@ -13,28 +13,39 @@ import {
   Sparkles,
   Trash2,
 } from 'lucide-react';
-import type { AppLanguage, KidsAgeGroup } from '../../types';
-import { pickLang } from '../../utils/i18n';
+import type { AppLanguage, KidsAgeGroup, KidsLanguageCode } from '../../types';
 import { triggerHaptic } from '../../utils/haptics';
+import { useKidsStore } from '../../store/useKidsStore';
+import { KidsConfettiCanvas } from './KidsConfettiCanvas';
+import { getKidsDir, getKidsUiCopy, type KidsUiCopy } from './kidsI18n';
 import {
   KidsAnimatedCategoryIcon,
   type KidsAnimatedIconId,
 } from './KidsSvgArt';
 
 interface KidsFunGamesProps {
-  shellLang: AppLanguage;
+  shellLang?: AppLanguage;
+  kidsLang: KidsLanguageCode;
   ageGroup: KidsAgeGroup;
   unlockedRewards?: string[];
+  resetSeq?: number;
   onEarnStar: (stars: number, badgeId?: string) => void;
   onMissionPlay?: () => void;
+  onBackToPortal?: () => void;
 }
 
 type FunGameId = 'catcher' | 'bubbles' | 'puzzle' | 'simon' | 'draw' | 'piano';
 
 // Shared lightweight WebAudio tone helper for instant musical feedback
 let funAudioCtx: AudioContext | null = null;
-function playKidTone(freq: number, durSec = 0.18, type: OscillatorType = 'sine', vol = 0.14) {
-  if (typeof window === 'undefined') return;
+function playKidTone(
+  freq: number,
+  durSec = 0.18,
+  type: OscillatorType = 'sine',
+  vol = 0.14,
+  soundEnabled = true
+) {
+  if (!soundEnabled || typeof window === 'undefined') return;
   try {
     if (!funAudioCtx) {
       const AC =
@@ -77,10 +88,11 @@ interface FallingSprite {
 
 const StarCatcherCanvas: React.FC<{
   ageGroup: KidsAgeGroup;
-  shellLang: AppLanguage;
+  t: KidsUiCopy;
+  soundEnabled: boolean;
   onEarnStar: (stars: number, badgeId?: string) => void;
   onMissionPlay?: () => void;
-}> = ({ ageGroup, shellLang, onEarnStar, onMissionPlay }) => {
+}> = ({ ageGroup, t, soundEnabled, onEarnStar, onMissionPlay }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [running, setRunning] = useState(false);
   const [score, setScore] = useState(0);
@@ -95,6 +107,8 @@ const StarCatcherCanvas: React.FC<{
   const itemsRef = useRef<FallingSprite[]>([]);
   const particlesRef = useRef<Array<{ x: number; y: number; vx: number; vy: number; color: string; life: number }>>([]);
   const runningRef = useRef(false);
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
 
   const speedFactor = ageGroup === '3-5' ? 0.72 : ageGroup === '6-8' ? 1 : 1.28;
 
@@ -111,7 +125,7 @@ const StarCatcherCanvas: React.FC<{
     setGameOver(false);
     runningRef.current = true;
     setRunning(true);
-    playKidTone(523.25, 0.14, 'triangle');
+    playKidTone(523.25, 0.14, 'triangle', 0.14, soundEnabledRef.current);
   };
 
   useEffect(() => {
@@ -204,7 +218,7 @@ const StarCatcherCanvas: React.FC<{
             if (item.kind === 'meteor') {
               livesRef.current -= 1;
               setLives(livesRef.current);
-              playKidTone(170, 0.25, 'sawtooth', 0.16);
+              playKidTone(170, 0.25, 'sawtooth', 0.16, soundEnabledRef.current);
               triggerHaptic('warning');
               if (livesRef.current <= 0) {
                 runningRef.current = false;
@@ -219,7 +233,7 @@ const StarCatcherCanvas: React.FC<{
               const pts = item.kind === 'gem' ? 3 : 1;
               scoreRef.current += pts;
               setScore(scoreRef.current);
-              playKidTone(item.kind === 'gem' ? 880 : 659.25, 0.12, 'triangle', 0.14);
+              playKidTone(item.kind === 'gem' ? 880 : 659.25, 0.12, 'triangle', 0.14, soundEnabledRef.current);
               triggerHaptic('light');
               if (scoreRef.current % 10 === 0) {
                 onEarnStar(2, 'arcade_estrella');
@@ -342,31 +356,15 @@ const StarCatcherCanvas: React.FC<{
           <div className="absolute inset-0 bg-black/55 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-4 text-center">
             <div className="text-4xl">{gameOver ? '🏆' : '🚀'}</div>
             <h3 className="font-display font-extrabold text-xl text-white">
-              {gameOver
-                ? pickLang(shellLang, {
-                    es: `¡Genial! ${score} puntos`,
-                    ca: `Genial! ${score} punts`,
-                    en: `Awesome! ${score} pts`,
-                  })
-                : pickLang(shellLang, {
-                    es: 'Atrapa Estrellas',
-                    ca: 'Atrapa Estrelles',
-                    en: 'Star Catcher',
-                  })}
+              {gameOver ? `${t.funStars} · ⭐ ${score}` : t.funStars}
             </h3>
-            <p className="text-xs text-zinc-300 max-w-xs">
-              {pickLang(shellLang, {
-                es: 'Mueve el cohete con el dedo y atrapa ⭐🍓💎 ¡Esquiva los ☄️!',
-                ca: 'Mou el coet amb el dit i atrapa ⭐🍓💎 Esquiva els ☄️!',
-                en: 'Slide the rocket to catch ⭐🍓💎 and dodge ☄️!',
-              })}
-            </p>
+            <p className="text-xs text-zinc-300 max-w-xs">{t.funStarsDesc}</p>
             <button
               type="button"
               onClick={startRound}
-              className="min-h-11 px-6 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-black font-display font-black text-sm shadow-lg cursor-pointer active:scale-95 transition-transform"
+              className="min-h-12 px-6 rounded-2xl bg-gradient-to-r from-amber-400 to-orange-500 text-black font-display font-black text-sm shadow-lg cursor-pointer active:scale-95 transition-transform"
             >
-              {gameOver ? 'Jugar otra vez' : '¡A Jugar!'}
+              {gameOver ? t.funPlayAgain : t.funPlayNow}
             </button>
           </div>
         )}
@@ -392,10 +390,11 @@ const BUBBLE_COLORS = ['#F43F5E', '#F59E0B', '#10B981', '#38BDF8', '#A855F7', '#
 const BUBBLE_NOTES = [523.25, 587.33, 659.25, 698.46, 783.99, 880, 987.77, 1046.5];
 
 const BubblePopGame: React.FC<{
-  shellLang: AppLanguage;
+  t: KidsUiCopy;
+  soundEnabled: boolean;
   onEarnStar: (stars: number, badgeId?: string) => void;
   onMissionPlay?: () => void;
-}> = ({ shellLang, onEarnStar, onMissionPlay }) => {
+}> = ({ t, soundEnabled, onEarnStar, onMissionPlay }) => {
   const [bubbles, setBubbles] = useState<BubbleItem[]>([]);
   const [poppedCount, setPoppedCount] = useState(0);
   const [timeLeft, setTimeLeft] = useState(30);
@@ -405,7 +404,7 @@ const BubblePopGame: React.FC<{
     id: idSeed,
     x: 10 + Math.random() * 76,
     y: 12 + Math.random() * 72,
-    size: 56 + Math.floor(Math.random() * 26),
+    size: 58 + Math.floor(Math.random() * 24),
     color: BUBBLE_COLORS[idSeed % BUBBLE_COLORS.length],
     freq: BUBBLE_NOTES[idSeed % BUBBLE_NOTES.length],
     emoji: ['🫧', '⭐', '🦋', '🎈', '🍓', '🐳'][idSeed % 6],
@@ -437,7 +436,7 @@ const BubblePopGame: React.FC<{
 
   const popBubble = (b: BubbleItem) => {
     triggerHaptic('light');
-    playKidTone(b.freq, 0.16, 'sine', 0.18);
+    playKidTone(b.freq, 0.16, 'sine', 0.18, soundEnabled);
     setPoppedCount((c) => c + 1);
     setBubbles((prev) => [
       ...prev.filter((item) => item.id !== b.id),
@@ -475,20 +474,14 @@ const BubblePopGame: React.FC<{
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 p-4 text-center">
             <div className="text-4xl">🫧</div>
             <h3 className="font-display font-extrabold text-xl text-white">
-              {poppedCount > 0
-                ? `¡Explotaste ${poppedCount} burbujas!`
-                : pickLang(shellLang, {
-                    es: 'Explota Burbujas Musicales',
-                    ca: 'Explota Bombolles Musicals',
-                    en: 'Rainbow Bubble Pop',
-                  })}
+              {poppedCount > 0 ? `${t.funBubbles} · 🫧 ${poppedCount}` : t.funBubbles}
             </h3>
             <button
               type="button"
               onClick={startBubbles}
-              className="min-h-11 px-6 rounded-2xl bg-gradient-to-r from-sky-400 to-cyan-500 text-black font-display font-black text-sm shadow-lg cursor-pointer active:scale-95"
+              className="min-h-12 px-6 rounded-2xl bg-gradient-to-r from-sky-400 to-cyan-500 text-black font-display font-black text-sm shadow-lg cursor-pointer active:scale-95"
             >
-              {poppedCount > 0 ? 'Jugar de nuevo' : '¡Empezar!'}
+              {poppedCount > 0 ? t.funPlayAgain : t.gameStartBtn}
             </button>
           </div>
         )}
@@ -592,9 +585,12 @@ function createShuffledTiles(total: number): number[] {
 
 const KidsPuzzleGame: React.FC<{
   ageGroup: KidsAgeGroup;
+  t: KidsUiCopy;
+  soundEnabled: boolean;
+  lowStimulation: boolean;
   onEarnStar: (stars: number, badgeId?: string) => void;
   onMissionPlay?: () => void;
-}> = ({ ageGroup, onEarnStar, onMissionPlay }) => {
+}> = ({ ageGroup, t, soundEnabled, lowStimulation, onEarnStar, onMissionPlay }) => {
   const gridDim = ageGroup === '3-5' ? 2 : 3;
   const totalTiles = gridDim * gridDim;
 
@@ -603,6 +599,13 @@ const KidsPuzzleGame: React.FC<{
   const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
   const [moves, setMoves] = useState(0);
   const [solved, setSolved] = useState(false);
+
+  const sceneLabels: Record<PuzzleSceneId, string> = {
+    space: t.steamSpace,
+    ocean: t.steamOcean,
+    dino: t.catDinos,
+    jungle: t.steamForest,
+  };
 
   const resetPuzzle = useCallback((dim = gridDim) => {
     triggerHaptic('light');
@@ -621,7 +624,7 @@ const KidsPuzzleGame: React.FC<{
     triggerHaptic('light');
     if (selectedSlot === null) {
       setSelectedSlot(slotIdx);
-      playKidTone(440, 0.08, 'triangle', 0.12);
+      playKidTone(440, 0.08, 'triangle', 0.12, soundEnabled);
       return;
     }
     if (selectedSlot === slotIdx) {
@@ -633,13 +636,13 @@ const KidsPuzzleGame: React.FC<{
     setTiles(next);
     setSelectedSlot(null);
     setMoves((m) => m + 1);
-    playKidTone(587.33, 0.1, 'triangle', 0.14);
+    playKidTone(587.33, 0.1, 'triangle', 0.14, soundEnabled);
 
     if (next.every((val, idx) => val === idx)) {
       setSolved(true);
       triggerHaptic('success');
-      playKidTone(784, 0.25, 'triangle', 0.18);
-      window.setTimeout(() => playKidTone(1046.5, 0.35, 'triangle', 0.18), 140);
+      playKidTone(784, 0.25, 'triangle', 0.18, soundEnabled);
+      window.setTimeout(() => playKidTone(1046.5, 0.35, 'triangle', 0.18, soundEnabled), 140);
       onMissionPlay?.();
       onEarnStar(3, 'puzzle_maestro');
     }
@@ -649,7 +652,8 @@ const KidsPuzzleGame: React.FC<{
   const correctCount = tiles.filter((val, idx) => val === idx).length;
 
   return (
-    <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
+    <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden relative">
+      <KidsConfettiCanvas active={solved} lowStimulation={lowStimulation} />
       <div className="shrink-0 flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-[#161E3B] border border-white/10">
         <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
           {PUZZLE_SCENES.map((sc) => (
@@ -657,14 +661,14 @@ const KidsPuzzleGame: React.FC<{
               key={sc.id}
               type="button"
               onClick={() => setSceneId(sc.id)}
-              className={`h-7 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer border whitespace-nowrap ${
+              className={`h-8 px-2.5 rounded-lg text-[11px] font-bold flex items-center gap-1 cursor-pointer border whitespace-nowrap ${
                 sceneId === sc.id
                   ? 'bg-amber-400 text-black border-amber-200'
                   : 'bg-white/10 text-zinc-200 border-white/10'
               }`}
             >
               <span>{sc.emoji}</span>
-              <span>{sc.label}</span>
+              <span>{sceneLabels[sc.id]}</span>
             </button>
           ))}
         </div>
@@ -673,16 +677,14 @@ const KidsPuzzleGame: React.FC<{
           <span className="text-emerald-300 tabular-nums">
             {correctCount}/{totalTiles}
           </span>
-          <span className="text-zinc-300 tabular-nums hidden sm:inline">
-            {moves} mov.
-          </span>
+          <span className="text-zinc-300 tabular-nums hidden sm:inline">{moves}</span>
           <button
             type="button"
             onClick={() => resetPuzzle(gridDim)}
-            className="h-7 px-2.5 rounded-lg bg-white/10 text-white text-[11px] flex items-center gap-1 cursor-pointer"
+            className="h-8 px-2.5 rounded-lg bg-white/10 text-white text-[11px] flex items-center gap-1 cursor-pointer"
           >
             <RefreshCw className="w-3 h-3" />
-            <span>Mezclar</span>
+            <span>{t.funShuffle}</span>
           </button>
         </div>
       </div>
@@ -732,20 +734,18 @@ const KidsPuzzleGame: React.FC<{
             {solved ? (
               <>
                 <p className="font-display font-black text-base text-emerald-300">
-                  ¡Puzle completado! +3 ⭐
+                  {t.funPuzzleSolved}
                 </p>
                 <button
                   type="button"
                   onClick={() => resetPuzzle(gridDim)}
-                  className="h-9 px-4 rounded-xl bg-amber-400 text-black font-display font-extrabold text-xs cursor-pointer"
+                  className="h-10 px-4 rounded-xl bg-amber-400 text-black font-display font-extrabold text-xs cursor-pointer"
                 >
-                  Otro puzle
+                  {t.funOtherPuzzle}
                 </button>
               </>
             ) : (
-              <p className="text-xs text-sky-200 max-w-[160px]">
-                Toca dos piezas para intercambiarlas y formar el dibujo.
-              </p>
+              <p className="text-xs text-sky-200 max-w-[160px]">{t.funPuzzleHint}</p>
             )}
           </div>
         </div>
@@ -765,15 +765,19 @@ const SIMON_PADS = [
 ];
 
 const SimonSaysKidsGame: React.FC<{
+  t: KidsUiCopy;
+  soundEnabled: boolean;
   onEarnStar: (stars: number, badgeId?: string) => void;
   onMissionPlay?: () => void;
-}> = ({ onEarnStar, onMissionPlay }) => {
+}> = ({ t, soundEnabled, onEarnStar, onMissionPlay }) => {
   const [sequence, setSequence] = useState<number[]>([]);
   const [userPos, setUserPos] = useState(0);
   const [litPad, setLitPad] = useState<number | null>(null);
   const [phase, setPhase] = useState<'idle' | 'watching' | 'playing' | 'lost'>('idle');
   const [bestRound, setBestRound] = useState(0);
   const timersRef = useRef<number[]>([]);
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
 
   const clearTimers = () => {
     timersRef.current.forEach((id) => window.clearTimeout(id));
@@ -789,7 +793,7 @@ const SimonSaysKidsGame: React.FC<{
       const startAt = idx * 620 + 260;
       const t1 = window.setTimeout(() => {
         setLitPad(padId);
-        playKidTone(SIMON_PADS[padId].freq, 0.32, 'triangle', 0.2);
+        playKidTone(SIMON_PADS[padId].freq, 0.32, 'triangle', 0.2, soundEnabledRef.current);
       }, startAt);
       const t2 = window.setTimeout(() => {
         setLitPad((curr) => (curr === padId ? null : curr));
@@ -816,7 +820,7 @@ const SimonSaysKidsGame: React.FC<{
     if (phase !== 'playing') return;
     triggerHaptic('light');
     setLitPad(padId);
-    playKidTone(SIMON_PADS[padId].freq, 0.24, 'triangle', 0.2);
+    playKidTone(SIMON_PADS[padId].freq, 0.24, 'triangle', 0.2, soundEnabledRef.current);
     const clearT = window.setTimeout(() => setLitPad((c) => (c === padId ? null : c)), 220);
     timersRef.current.push(clearT);
 
@@ -837,7 +841,7 @@ const SimonSaysKidsGame: React.FC<{
       }
     } else {
       triggerHaptic('warning');
-      playKidTone(185, 0.35, 'sawtooth', 0.16);
+      playKidTone(185, 0.35, 'sawtooth', 0.16, soundEnabledRef.current);
       setPhase('lost');
     }
   };
@@ -846,16 +850,16 @@ const SimonSaysKidsGame: React.FC<{
     <div className="flex-1 min-h-0 flex flex-col gap-2 overflow-hidden">
       <div className="shrink-0 flex items-center justify-between px-3 py-1.5 rounded-xl bg-[#111526] border border-white/10 text-xs font-bold">
         <span className="text-amber-300 tabular-nums">
-          🔔 Ronda {sequence.length} · Récord {bestRound}
+          🔔 {sequence.length} · 🏆 {bestRound}
         </span>
         <span className="text-sky-200">
           {phase === 'watching'
-            ? '¡Mira y escucha!'
+            ? t.funSimonWatch
             : phase === 'playing'
-            ? '¡Tu turno!'
+            ? t.funSimonTurn
             : phase === 'lost'
-            ? '¡Casi! Prueba otra vez'
-            : 'Repite los colores musicales'}
+            ? t.funSimonAlmost
+            : t.funSimonTitle}
         </span>
       </div>
 
@@ -890,16 +894,14 @@ const SimonSaysKidsGame: React.FC<{
           <div className="absolute inset-0 bg-black/55 backdrop-blur-sm rounded-2xl flex flex-col items-center justify-center gap-3 p-4 text-center">
             <div className="text-4xl">🔔</div>
             <h3 className="font-display font-extrabold text-xl text-white">
-              {phase === 'lost'
-                ? `¡Llegaste a la ronda ${Math.max(1, sequence.length)}!`
-                : 'Simón Musical'}
+              {phase === 'lost' ? `${t.funSimonTitle} · 🔔 ${Math.max(1, sequence.length)}` : t.funSimonTitle}
             </h3>
             <button
               type="button"
               onClick={startSimon}
-              className="min-h-11 px-6 rounded-2xl bg-gradient-to-r from-emerald-400 to-sky-400 text-black font-display font-black text-sm shadow-lg cursor-pointer active:scale-95"
+              className="min-h-12 px-6 rounded-2xl bg-gradient-to-r from-emerald-400 to-sky-400 text-black font-display font-black text-sm shadow-lg cursor-pointer active:scale-95"
             >
-              {phase === 'lost' ? 'Volver a jugar' : '¡Empezar!'}
+              {phase === 'lost' ? t.funPlayAgain : t.gameStartBtn}
             </button>
           </div>
         )}
@@ -1125,10 +1127,12 @@ function drawColoringTemplate(
 }
 
 const MagicDoodlePad: React.FC<{
+  t: KidsUiCopy;
+  soundEnabled: boolean;
   unlockedRewards: string[];
   onEarnStar: (stars: number, badgeId?: string) => void;
   onMissionPlay?: () => void;
-}> = ({ unlockedRewards, onEarnStar, onMissionPlay }) => {
+}> = ({ t, soundEnabled, unlockedRewards, onEarnStar, onMissionPlay }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [color, setColor] = useState<string>('#38BDF8');
   const [rainbowMode, setRainbowMode] = useState<boolean>(true);
@@ -1190,7 +1194,7 @@ const MagicDoodlePad: React.FC<{
       const fillCol = rainbowMode ? DRAW_COLORS[strokesRef.current % (DRAW_COLORS.length - 1)] : color;
       const didFill = floodFillCanvas(ctx, canvas.width, canvas.height, x, y, fillCol);
       if (didFill) {
-        playKidTone(587.33, 0.12, 'sine', 0.14);
+        playKidTone(587.33, 0.12, 'sine', 0.14, soundEnabled);
         strokesRef.current += 1;
         if (strokesRef.current === 4) {
           onMissionPlay?.();
@@ -1202,7 +1206,7 @@ const MagicDoodlePad: React.FC<{
 
     if (activeStamp) {
       triggerHaptic('light');
-      playKidTone(784, 0.12, 'triangle', 0.12);
+      playKidTone(784, 0.12, 'triangle', 0.12, soundEnabled);
       ctx.shadowBlur = 0;
       ctx.font = '38px sans-serif';
       ctx.textAlign = 'center';
@@ -1288,14 +1292,14 @@ const MagicDoodlePad: React.FC<{
           <button
             type="button"
             onClick={toggleColoringMode}
-            className={`h-7 px-2.5 rounded-lg text-[11px] font-extrabold flex items-center gap-1 cursor-pointer border ${
+            className={`h-8 px-2.5 rounded-lg text-[11px] font-extrabold flex items-center gap-1 cursor-pointer border ${
               fillMode
                 ? 'bg-emerald-400 text-black border-emerald-200'
                 : 'bg-white/10 text-white border-white/15'
             }`}
           >
             <PaintBucket className="w-3.5 h-3.5" />
-            <span>Colorear</span>
+            <span>{t.funDrawFill}</span>
           </button>
 
           {fillMode &&
@@ -1307,13 +1311,13 @@ const MagicDoodlePad: React.FC<{
                   setTemplateId(tpl.id);
                   paintFreshBackground(true, tpl.id);
                 }}
-                className={`h-7 px-2 rounded-lg text-[11px] font-bold cursor-pointer border ${
+                className={`h-8 px-2 rounded-lg text-[11px] font-bold cursor-pointer border ${
                   templateId === tpl.id
                     ? 'bg-amber-400 text-black border-amber-200'
                     : 'bg-white/10 text-zinc-200 border-white/15'
                 }`}
               >
-                {tpl.label}
+                {tpl.label.split(' ')[0]}
               </button>
             ))}
 
@@ -1326,13 +1330,13 @@ const MagicDoodlePad: React.FC<{
                 setEraserMode(false);
                 setActiveStamp(null);
               }}
-              className={`h-7 px-2 rounded-lg text-[11px] font-bold cursor-pointer border ${
+              className={`h-8 px-2 rounded-lg text-[11px] font-bold cursor-pointer border ${
                 rainbowMode && !neonMode && !eraserMode && !activeStamp
                   ? 'bg-gradient-to-r from-rose-400 via-amber-300 to-sky-400 text-black border-white'
                   : 'bg-white/10 text-white border-white/15'
               }`}
             >
-              🌈 Arcoíris
+              🌈 {t.funDrawBrush}
             </button>
           )}
 
@@ -1401,9 +1405,9 @@ const MagicDoodlePad: React.FC<{
               <button
                 type="button"
                 onClick={() => setBrushSize((s) => (s === 6 ? 12 : s === 12 ? 20 : 6))}
-                className="h-7 px-2 rounded-lg bg-white/10 text-[11px] font-bold text-white cursor-pointer"
+                className="h-8 px-2 rounded-lg bg-white/10 text-[11px] font-bold text-white cursor-pointer"
               >
-                {brushSize === 6 ? 'Fino' : brushSize === 12 ? 'Medio' : 'Gordo'}
+                {brushSize === 6 ? 'S' : brushSize === 12 ? 'M' : 'L'}
               </button>
               <button
                 type="button"
@@ -1411,8 +1415,8 @@ const MagicDoodlePad: React.FC<{
                   setEraserMode((v) => !v);
                   setActiveStamp(null);
                 }}
-                aria-label="Goma"
-                className={`w-7 h-7 rounded-lg flex items-center justify-center cursor-pointer border ${
+                aria-label={t.funDrawClear}
+                className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer border ${
                   eraserMode ? 'bg-rose-500 text-white border-rose-300' : 'bg-white/10 text-zinc-200 border-white/10'
                 }`}
               >
@@ -1426,8 +1430,9 @@ const MagicDoodlePad: React.FC<{
               triggerHaptic('light');
               paintFreshBackground(fillMode, templateId);
             }}
-            aria-label="Borrar dibujo"
-            className="w-7 h-7 rounded-lg bg-white/10 hover:bg-rose-500/30 text-zinc-200 flex items-center justify-center cursor-pointer"
+            aria-label={t.funDrawClear}
+            title={t.funDrawClear}
+            className="w-8 h-8 rounded-lg bg-white/10 hover:bg-rose-500/30 text-zinc-200 flex items-center justify-center cursor-pointer"
           >
             <Trash2 className="w-3.5 h-3.5" />
           </button>
@@ -1471,10 +1476,12 @@ const GUIDED_SONGS: Array<{ id: string; title: string; seq: number[] }> = [
 type PianoInstrument = 'piano' | 'marimba' | 'cat' | 'space';
 
 const RainbowPianoGame: React.FC<{
+  t: KidsUiCopy;
+  soundEnabled: boolean;
   unlockedRewards: string[];
   onEarnStar: (stars: number, badgeId?: string) => void;
   onMissionPlay?: () => void;
-}> = ({ unlockedRewards, onEarnStar, onMissionPlay }) => {
+}> = ({ t, soundEnabled, unlockedRewards, onEarnStar, onMissionPlay }) => {
   const [activeKey, setActiveKey] = useState<number | null>(null);
   const [songIdx, setSongIdx] = useState(1);
   const [step, setStep] = useState(0);
@@ -1484,8 +1491,8 @@ const RainbowPianoGame: React.FC<{
   const expectedIdx = song.seq.length > 0 ? song.seq[step % song.seq.length] : null;
 
   const instruments: Array<{ id: PianoInstrument; label: string; unlocked: boolean }> = [
-    { id: 'piano', label: '🎹 Piano', unlocked: true },
-    { id: 'marimba', label: '🪵 Xilófono', unlocked: true },
+    { id: 'piano', label: `🎹 ${t.funPiano}`, unlocked: true },
+    { id: 'marimba', label: '🪵 Xil', unlocked: true },
     { id: 'cat', label: '🐱 Miau', unlocked: unlockedRewards.includes('piano_cat') },
     { id: 'space', label: '🛸 Sinte', unlocked: unlockedRewards.includes('piano_space') },
   ];
@@ -1494,14 +1501,14 @@ const RainbowPianoGame: React.FC<{
     const key = PIANO_KEYS[idx];
     triggerHaptic('light');
     if (instrument === 'cat') {
-      playKidTone(key.freq * 1.45, 0.25, 'sine', 0.18);
-      window.setTimeout(() => playKidTone(key.freq * 1.25, 0.18, 'triangle', 0.12), 70);
+      playKidTone(key.freq * 1.45, 0.25, 'sine', 0.18, soundEnabled);
+      window.setTimeout(() => playKidTone(key.freq * 1.25, 0.18, 'triangle', 0.12, soundEnabled), 70);
     } else if (instrument === 'space') {
-      playKidTone(key.freq, 0.42, 'sawtooth', 0.12);
+      playKidTone(key.freq, 0.42, 'sawtooth', 0.12, soundEnabled);
     } else if (instrument === 'marimba') {
-      playKidTone(key.freq * 2, 0.2, 'sine', 0.2);
+      playKidTone(key.freq * 2, 0.2, 'sine', 0.2, soundEnabled);
     } else {
-      playKidTone(key.freq, 0.35, 'triangle', 0.22);
+      playKidTone(key.freq, 0.35, 'triangle', 0.22, soundEnabled);
     }
     setActiveKey(idx);
     window.setTimeout(() => setActiveKey((curr) => (curr === idx ? null : curr)), 160);
@@ -1528,13 +1535,13 @@ const RainbowPianoGame: React.FC<{
                 setSongIdx(idx);
                 setStep(0);
               }}
-              className={`h-7 px-2.5 rounded-lg text-xs font-bold cursor-pointer whitespace-nowrap border ${
+              className={`h-8 px-2.5 rounded-lg text-xs font-bold cursor-pointer whitespace-nowrap border ${
                 songIdx === idx
                   ? 'bg-amber-400 text-black border-amber-200'
                   : 'bg-white/10 text-zinc-200 border-white/10'
               }`}
             >
-              {s.title}
+              {s.id === 'free' ? '🎵' : s.title}
             </button>
           ))}
         </div>
@@ -1546,7 +1553,7 @@ const RainbowPianoGame: React.FC<{
                 key={ins.id}
                 type="button"
                 onClick={() => setInstrument(ins.id)}
-                className={`h-7 px-2 rounded-lg text-[11px] font-bold cursor-pointer border ${
+                className={`h-8 px-2 rounded-lg text-[11px] font-bold cursor-pointer border ${
                   instrument === ins.id
                     ? 'bg-pink-500 text-white border-pink-300'
                     : 'bg-white/10 text-zinc-200 border-white/10'
@@ -1556,14 +1563,17 @@ const RainbowPianoGame: React.FC<{
               </button>
             ))}
           {song.seq.length > 0 && (
-            <span className="text-xs font-bold text-amber-300 shrink-0 ml-1">
-              Toca: {PIANO_KEYS[expectedIdx!]?.note}
+            <span className="text-xs font-bold text-amber-300 shrink-0 ms-1">
+              {t.funPianoPlayHint} {PIANO_KEYS[expectedIdx!]?.note}
             </span>
           )}
         </div>
       </div>
 
-      <div className="flex-1 min-h-0 grid grid-cols-4 sm:grid-cols-8 gap-2 p-2 rounded-2xl bg-[#0E1428] border border-white/10">
+      <div
+        dir="ltr"
+        className="flex-1 min-h-0 grid grid-cols-4 sm:grid-cols-8 gap-2 p-2 rounded-2xl bg-[#0E1428] border border-white/10"
+      >
         {PIANO_KEYS.map((k, idx) => {
           const isNext = expectedIdx === idx;
           const isLit = activeKey === idx;
@@ -1592,91 +1602,156 @@ const RainbowPianoGame: React.FC<{
 };
 
 /* ============================================================================
- * EXPORTED ZERO-SCROLL FUN ARCADE WRAPPER
+ * EXPORTED ZERO-SCROLL FUN ARCADE WRAPPER (VISUAL CARD HUB -> FULLSCREEN GAME)
  * ============================================================================ */
-export const KidsFunGames: React.FC<KidsFunGamesProps> = ({
-  shellLang,
+export const KidsFunGames: React.FC<KidsFunGamesProps & { resetSeq?: number }> = ({
+  kidsLang,
   ageGroup,
   unlockedRewards = [],
+  resetSeq = 0,
   onEarnStar,
   onMissionPlay,
+  onBackToPortal,
 }) => {
-  const [activeFun, setActiveFun] = useState<FunGameId>('catcher');
+  const ux = useKidsStore((s) => s.ux);
+  const t = getKidsUiCopy(kidsLang);
+  const dir = getKidsDir(kidsLang);
+  const [activeFun, setActiveFun] = useState<FunGameId | null>(null);
 
-  const tabs: Array<{
+  useEffect(() => {
+    if (resetSeq > 0) {
+      setActiveFun(null);
+    }
+  }, [resetSeq]);
+
+  const cards: Array<{
     id: FunGameId;
     iconName: KidsAnimatedIconId;
     label: string;
+    tone: string;
   }> = [
     {
       id: 'catcher',
       iconName: 'space',
-      label: pickLang(shellLang, { es: 'Estrellas', ca: 'Estrelles', en: 'Stars' }),
+      label: t.funStars,
+      tone: 'from-amber-400/25 to-orange-500/20 border-amber-400/55',
     },
     {
       id: 'bubbles',
       iconName: 'fun',
-      label: pickLang(shellLang, { es: 'Burbujas', ca: 'Bombolles', en: 'Bubbles' }),
+      label: t.funBubbles,
+      tone: 'from-pink-500/25 to-rose-500/20 border-pink-400/55',
     },
     {
       id: 'puzzle',
       iconName: 'puzzle',
-      label: pickLang(shellLang, { es: 'Puzle', ca: 'Puzle', en: 'Puzzle' }),
+      label: t.funPuzzle,
+      tone: 'from-sky-400/25 to-indigo-500/20 border-sky-400/55',
     },
     {
       id: 'simon',
       iconName: 'simon',
-      label: pickLang(shellLang, { es: 'Simón', ca: 'Simó', en: 'Simon' }),
+      label: t.funSimon,
+      tone: 'from-emerald-400/25 to-teal-500/20 border-emerald-400/55',
     },
     {
       id: 'draw',
       iconName: 'draw',
-      label: pickLang(shellLang, { es: 'Dibujar', ca: 'Dibuixar', en: 'Draw' }),
+      label: t.funDraw,
+      tone: 'from-violet-400/25 to-fuchsia-500/20 border-violet-400/55',
     },
     {
       id: 'piano',
       iconName: 'piano',
-      label: pickLang(shellLang, { es: 'Piano', ca: 'Piano', en: 'Piano' }),
+      label: t.funPiano,
+      tone: 'from-cyan-400/25 to-blue-500/20 border-cyan-400/55',
     },
   ];
 
-  return (
-    <div className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
-      <div className="shrink-0 flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-        {tabs.map(({ id, iconName, label }) => {
-          const selected = activeFun === id;
-          return (
+  const activeMeta = cards.find((c) => c.id === activeFun) || null;
+
+  if (!activeFun) {
+    return (
+      <div dir={dir} className="flex-1 min-h-0 flex flex-col gap-3 overflow-hidden">
+        <div className="shrink-0 flex items-center justify-between px-1">
+          <div className="flex items-center gap-2">
+            {onBackToPortal && (
+              <button
+                type="button"
+                onClick={onBackToPortal}
+                data-tv-focusable="true"
+                className="min-h-[46px] px-3.5 sm:px-4 rounded-2xl bg-[#1A244D] hover:bg-[#25336B] border-b-4 border-[#0D132B] text-white text-xs sm:text-sm font-black flex items-center gap-1.5 cursor-pointer active:scale-95"
+              >
+                <ChevronLeft className="w-4 h-4 rtl:rotate-180" />
+                <span>{t.backToHome}</span>
+              </button>
+            )}
+            <h2 className="font-display font-black text-lg sm:text-2xl text-white">
+              {t.chooseGamePrompt}
+            </h2>
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 grid grid-cols-2 sm:grid-cols-3 grid-rows-3 sm:grid-rows-2 gap-3">
+          {cards.map((card) => (
             <button
-              key={id}
+              key={card.id}
               type="button"
               onClick={() => {
                 triggerHaptic('medium');
-                setActiveFun(id);
+                setActiveFun(card.id);
               }}
-              className={`h-9 px-3 rounded-2xl text-xs font-black flex items-center gap-2 whitespace-nowrap cursor-pointer border-b-2 transition-all active:scale-95 ${
-                selected
-                  ? 'bg-gradient-to-r from-pink-400 to-amber-400 text-zinc-950 border-pink-700 shadow-md scale-105'
-                  : 'bg-[#182144] hover:bg-[#232F5C] text-zinc-100 border-[#0D1226]'
-              }`}
+              className={`rounded-3xl bg-gradient-to-br ${card.tone} border-2 border-b-4 p-4 flex flex-col items-center justify-center gap-3 text-center cursor-pointer transition-transform hover:scale-[1.02] active:scale-95 shadow-lg`}
             >
-              <KidsAnimatedCategoryIcon name={iconName} size={18} />
-              <span>{label}</span>
+              <KidsAnimatedCategoryIcon name={card.iconName} size={56} />
+              <span className="font-display font-black text-base sm:text-xl text-white leading-tight">
+                {card.label}
+              </span>
             </button>
-          );
-        })}
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div dir={dir} className="flex-1 min-h-0 flex flex-col gap-2.5 overflow-hidden">
+      <div className="shrink-0 flex items-center justify-between gap-3 px-1">
+        <button
+          type="button"
+          onClick={() => {
+            triggerHaptic('light');
+            setActiveFun(null);
+          }}
+          className="min-h-[46px] px-4 rounded-2xl bg-[#1A244D] hover:bg-[#25336B] border-b-4 border-[#0D132B] text-white text-sm font-black flex items-center gap-2 cursor-pointer active:scale-95"
+        >
+          <ChevronLeft className="w-5 h-5 rtl:rotate-180" />
+          <span>{t.wizBack}</span>
+        </button>
+
+        {activeMeta && (
+          <div className="flex items-center gap-2">
+            <KidsAnimatedCategoryIcon name={activeMeta.iconName} size={24} />
+            <h2 className="font-display font-black text-base sm:text-lg text-white">
+              {activeMeta.label}
+            </h2>
+          </div>
+        )}
       </div>
 
       {activeFun === 'catcher' && (
         <StarCatcherCanvas
           ageGroup={ageGroup}
-          shellLang={shellLang}
+          t={t}
+          soundEnabled={ux.soundEnabled}
           onEarnStar={onEarnStar}
           onMissionPlay={onMissionPlay}
         />
       )}
       {activeFun === 'bubbles' && (
         <BubblePopGame
-          shellLang={shellLang}
+          t={t}
+          soundEnabled={ux.soundEnabled}
           onEarnStar={onEarnStar}
           onMissionPlay={onMissionPlay}
         />
@@ -1684,18 +1759,25 @@ export const KidsFunGames: React.FC<KidsFunGamesProps> = ({
       {activeFun === 'puzzle' && (
         <KidsPuzzleGame
           ageGroup={ageGroup}
+          t={t}
+          soundEnabled={ux.soundEnabled}
+          lowStimulation={ux.lowStimulation}
           onEarnStar={onEarnStar}
           onMissionPlay={onMissionPlay}
         />
       )}
       {activeFun === 'simon' && (
         <SimonSaysKidsGame
+          t={t}
+          soundEnabled={ux.soundEnabled}
           onEarnStar={onEarnStar}
           onMissionPlay={onMissionPlay}
         />
       )}
       {activeFun === 'draw' && (
         <MagicDoodlePad
+          t={t}
+          soundEnabled={ux.soundEnabled}
           unlockedRewards={unlockedRewards}
           onEarnStar={onEarnStar}
           onMissionPlay={onMissionPlay}
@@ -1703,6 +1785,8 @@ export const KidsFunGames: React.FC<KidsFunGamesProps> = ({
       )}
       {activeFun === 'piano' && (
         <RainbowPianoGame
+          t={t}
+          soundEnabled={ux.soundEnabled}
           unlockedRewards={unlockedRewards}
           onEarnStar={onEarnStar}
           onMissionPlay={onMissionPlay}

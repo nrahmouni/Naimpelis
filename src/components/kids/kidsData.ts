@@ -464,6 +464,20 @@ export const KIDS_SHOP_ITEMS: KidsRewardItem[] = [
     desc: 'Sonido galáctico en el Piano',
     cost: 16,
   },
+  {
+    id: 'math_galaxy_theme',
+    emoji: '🌌',
+    title: 'Mates Galaxia',
+    desc: 'Burbujas cósmicas brillantes en Mates',
+    cost: 15,
+  },
+  {
+    id: 'confetti_rainbow',
+    emoji: '🎊',
+    title: 'Súper Confeti',
+    desc: 'Lluvia mágica extra al ganar juegos',
+    cost: 18,
+  },
 ];
 
 export const DEFAULT_PARENT_SAFE_SEEDS: CatalogMovie[] = [
@@ -981,4 +995,107 @@ export function selectKidsMascot(
   };
   saveKidsProgress(next);
   return { ok: true, state: next };
+}
+
+export interface KidsLevelInfo {
+  level: number;
+  rankKey: 'explorer' | 'adventurer' | 'starMaster' | 'superGenius';
+  starsIntoLevel: number;
+  starsForNextLevel: number;
+  progressPct: number;
+}
+
+export function getKidsLevelInfo(stars: number): KidsLevelInfo {
+  const safeStars = Math.max(0, Math.floor(stars));
+  if (safeStars < 20) {
+    return {
+      level: 1,
+      rankKey: 'explorer',
+      starsIntoLevel: safeStars,
+      starsForNextLevel: 20,
+      progressPct: Math.min(100, Math.round((safeStars / 20) * 100)),
+    };
+  }
+  if (safeStars < 50) {
+    const into = safeStars - 20;
+    return {
+      level: 2,
+      rankKey: 'adventurer',
+      starsIntoLevel: into,
+      starsForNextLevel: 30,
+      progressPct: Math.min(100, Math.round((into / 30) * 100)),
+    };
+  }
+  if (safeStars < 100) {
+    const into = safeStars - 50;
+    return {
+      level: 3,
+      rankKey: 'starMaster',
+      starsIntoLevel: into,
+      starsForNextLevel: 50,
+      progressPct: Math.min(100, Math.round((into / 50) * 100)),
+    };
+  }
+  const into = (safeStars - 100) % 50;
+  return {
+    level: 4 + Math.floor((safeStars - 100) / 50),
+    rankKey: 'superGenius',
+    starsIntoLevel: into,
+    starsForNextLevel: 50,
+    progressPct: Math.min(100, Math.round((into / 50) * 100)),
+  };
+}
+
+export type LeitnerBoxesMap = Record<string, 1 | 2 | 3>;
+
+export function loadLeitnerBoxes(profileId = 'kid-1'): LeitnerBoxesMap {
+  if (typeof localStorage === 'undefined') return {};
+  try {
+    const raw = localStorage.getItem(`riffan_kids_leitner_v1_${profileId}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const clean: LeitnerBoxesMap = {};
+    for (const [k, v] of Object.entries(parsed)) {
+      if (v === 1 || v === 2 || v === 3) clean[k] = v;
+    }
+    return clean;
+  } catch {
+    return {};
+  }
+}
+
+export function saveLeitnerBoxes(boxes: LeitnerBoxesMap, profileId = 'kid-1'): void {
+  if (typeof localStorage === 'undefined') return;
+  try {
+    localStorage.setItem(`riffan_kids_leitner_v1_${profileId}`, JSON.stringify(boxes));
+  } catch {
+    // ignore storage errors
+  }
+}
+
+export function updateLeitnerBox(
+  boxes: LeitnerBoxesMap,
+  wordId: string,
+  correct: boolean,
+  profileId = 'kid-1'
+): LeitnerBoxesMap {
+  const prev = boxes[wordId] || 1;
+  const nextLevel: 1 | 2 | 3 = correct
+    ? prev === 1
+      ? 2
+      : 3
+    : 1;
+  const next: LeitnerBoxesMap = { ...boxes, [wordId]: nextLevel };
+  saveLeitnerBoxes(next, profileId);
+  return next;
+}
+
+export function pickLeitnerEntries(
+  bank: KidsVocabEntry[],
+  boxes: LeitnerBoxesMap,
+  count: number
+): KidsVocabEntry[] {
+  return [...bank]
+    .sort((a, b) => (boxes[a.id] || 1) - (boxes[b.id] || 1))
+    .slice(0, Math.max(1, Math.min(bank.length, count)));
 }

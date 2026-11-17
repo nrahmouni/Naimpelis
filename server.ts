@@ -304,6 +304,69 @@ app.get(
   }
 );
 
+app.get(
+  [
+    '/RIFFAN-KIDS-TV.apk',
+    '/riffankids-tv.apk',
+    '/kids-tv.apk',
+    '/api/download/apk-kids-tv',
+  ],
+  (req, res) => {
+    const candidates = [
+      path.resolve(__dirname, 'public', 'RIFFAN-KIDS-TV.apk'),
+      path.resolve(__dirname, 'dist', 'RIFFAN-KIDS-TV.apk'),
+    ];
+    const target = candidates.find((p) => fs.existsSync(p));
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="RIFFAN-KIDS-TV.apk"');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    if (target) {
+      return res.sendFile(target);
+    }
+    try {
+      const apkBuf = buildSignedApkBuffer('kids_tv', getPublicOrigin(req));
+      res.setHeader('Content-Length', String(apkBuf.length));
+      return res.send(apkBuf);
+    } catch (err) {
+      logger.error({ err }, 'kids_tv_apk_build_failed');
+      return res.status(500).json({ error: 'Unable to build Riffan Kids Google TV APK' });
+    }
+  }
+);
+
+app.get(
+  [
+    '/RIFFAN-KIDS.apk',
+    '/riffankids.apk',
+    '/kids.apk',
+    '/riffan-kids.apk',
+    '/api/download/apk-kids',
+  ],
+  (req, res) => {
+    const candidates = [
+      path.resolve(__dirname, 'public', 'RIFFAN-KIDS.apk'),
+      path.resolve(__dirname, 'dist', 'RIFFAN-KIDS.apk'),
+    ];
+    const target = candidates.find((p) => fs.existsSync(p));
+    res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+    res.setHeader('Content-Disposition', 'attachment; filename="RIFFAN-KIDS.apk"');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+    if (target) {
+      return res.sendFile(target);
+    }
+    try {
+      const apkBuf = buildSignedApkBuffer('kids_mobile', getPublicOrigin(req));
+      res.setHeader('Content-Length', String(apkBuf.length));
+      return res.send(apkBuf);
+    } catch (err) {
+      logger.error({ err }, 'kids_mobile_apk_build_failed');
+      return res.status(500).json({ error: 'Unable to build Riffan Kids Mobile APK' });
+    }
+  }
+);
+
 // Serve Zero-Dependency Pure ES5 + Classic CSS Smart TV Receiver (/tv) directly
 // Works on 100% of Samsung Tizen, LG webOS, Bravia, Viera, VIDAA & Fire TV browsers!
 function sendSmartTvReceiverHtml(res: express.Response) {

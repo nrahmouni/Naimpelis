@@ -132,6 +132,9 @@ export default defineConfig(() => {
             if (id.includes('node_modules/motion/')) {
               return 'vendor-motion';
             }
+            if (id.includes('/src/components/kids/') || id.includes('/src/store/useKidsStore')) {
+              return 'feature-kids';
+            }
           },
         },
       },

@@ -6,7 +6,7 @@ import zlib from 'zlib';
 import { ENV, ROOT_DIR } from '../config/env.ts';
 import { LruTtlCache } from '../utils/lruCache.ts';
 
-export type ApkFlavor = 'mobile' | 'tv';
+export type ApkFlavor = 'mobile' | 'tv' | 'kids_tv' | 'kids_mobile';
 
 interface CertMaterial {
   keyPem: string;
@@ -200,8 +200,16 @@ interface AxmlNode {
 const ANDROID_NS = 'http://schemas.android.com/apk/res/android';
 
 function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
-  const pkgName = flavor === 'tv' ? ENV.androidTvPkg : ENV.androidMobilePkg;
-  const versionCode = flavor === 'tv' ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
+  const isTv = flavor === 'tv' || flavor === 'kids_tv';
+  const pkgName =
+    flavor === 'kids_tv'
+      ? 'com.riffantv.kids.tv'
+      : flavor === 'kids_mobile'
+        ? 'com.riffantv.kids'
+        : flavor === 'tv'
+          ? ENV.androidTvPkg
+          : ENV.androidMobilePkg;
+  const versionCode = isTv ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
   const versionName = ENV.appVersionName;
 
   const manifestChildren: AxmlNode[] = [
@@ -300,7 +308,7 @@ function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
     },
   ];
 
-  if (flavor === 'tv') {
+  if (isTv) {
     manifestChildren.push({
       tag: 'uses-feature',
       attrs: [
@@ -343,7 +351,7 @@ function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
     },
   ];
 
-  if (flavor === 'tv') {
+  if (isTv) {
     launcherCategories.push({
       tag: 'category',
       attrs: [
@@ -371,7 +379,7 @@ function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
     { ns: ANDROID_NS, name: 'hardwareAccelerated', resourceId: 0x010102d3, type: 'bool', value: true },
     { ns: ANDROID_NS, name: 'usesCleartextTraffic', resourceId: 0x010104ec, type: 'bool', value: true },
   ];
-  if (flavor === 'tv') {
+  if (isTv) {
     appAttrs.push({
       ns: ANDROID_NS,
       name: 'banner',
@@ -567,8 +575,22 @@ function buildBinaryAndroidManifest(flavor: ApkFlavor): Buffer {
 // BINARY resources.arsc GENERATOR
 // ============================================================================
 function buildResourcesArsc(flavor: ApkFlavor): Buffer {
-  const pkgName = flavor === 'tv' ? ENV.androidTvPkg : ENV.androidMobilePkg;
-  const appLabel = flavor === 'tv' ? 'RiffanTV TV' : 'RiffanTV';
+  const pkgName =
+    flavor === 'kids_tv'
+      ? 'com.riffantv.kids.tv'
+      : flavor === 'kids_mobile'
+        ? 'com.riffantv.kids'
+        : flavor === 'tv'
+          ? ENV.androidTvPkg
+          : ENV.androidMobilePkg;
+  const appLabel =
+    flavor === 'kids_tv'
+      ? 'Riffan Kids TV'
+      : flavor === 'kids_mobile'
+        ? 'Riffan Kids'
+        : flavor === 'tv'
+          ? 'RiffanTV TV'
+          : 'RiffanTV';
   const iconResPath = 'res/mipmap-xxxhdpi-v4/ic_launcher.png';
 
   // Global string pool: [0] = icon path, [1] = app name
@@ -1419,11 +1441,16 @@ function loadAppIconPng(): Buffer {
 
 export function buildSignedApkBuffer(flavor: ApkFlavor, origin: string): Buffer {
   const cleanOrigin = origin.replace(/\/+$/, '');
-  const apkVersionCode = flavor === 'tv' ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
+  const isTv = flavor === 'tv' || flavor === 'kids_tv';
+  const apkVersionCode = isTv ? ENV.appVersionCodeTv : ENV.appVersionCodeMobile;
   const launchUrl =
-    flavor === 'tv'
-      ? `${cleanOrigin}/tv?platform=googletv&apkv=${apkVersionCode}`
-      : `${cleanOrigin}/?platform=android&web=1&apkv=${apkVersionCode}`;
+    flavor === 'kids_tv'
+      ? `${cleanOrigin}/kids?platform=googletv&tv=1&apkv=${apkVersionCode}`
+      : flavor === 'kids_mobile'
+        ? `${cleanOrigin}/kids?platform=android&apkv=${apkVersionCode}`
+        : flavor === 'tv'
+          ? `${cleanOrigin}/tv?platform=googletv&apkv=${apkVersionCode}`
+          : `${cleanOrigin}/?platform=android&web=1&apkv=${apkVersionCode}`;
   const cacheKey = `${flavor}|${launchUrl}`;
 
   const cached = generatedApkCache.get(cacheKey);

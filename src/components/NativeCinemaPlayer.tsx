@@ -242,6 +242,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   onlineUsers = [],
   onOpenFriendsModal,
   onSendDirectRoomInvite,
+  onVideoEnded,
 }) => {
   const { subtitleStyle, setSubtitleStyle, syncOffsetMs, setSyncOffsetMs } = useAppStore();
   const t = UI_COPY[lang];
@@ -3429,6 +3430,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               }
             }}
             onEnded={() => {
+              onVideoEnded?.();
               if (
                 videoState.seriesMeta &&
                 onNextEpisode &&

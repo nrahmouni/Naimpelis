@@ -197,6 +197,9 @@ const GamesHubSection = React.lazy(() =>
 const RiffanKidsHub = React.lazy(() =>
   import('./components/kids/RiffanKidsHub').then((m) => ({ default: m.RiffanKidsHub }))
 );
+const KidsTheaterOverlay = React.lazy(() =>
+  import('./components/kids/KidsTheaterOverlay').then((m) => ({ default: m.KidsTheaterOverlay }))
+);
 
 import { NaimcineIntro } from './components/NaimcineIntro';
 import { LobbyScreen } from './components/LobbyScreen';
@@ -365,6 +368,7 @@ export function App() {
   const [showWatchlistOnly, setShowWatchlistOnly] = useState<boolean>(false);
   const [showVoiceAssistant, setShowVoiceAssistant] = useState<boolean>(false);
   const [kidsExitPromptSeq, setKidsExitPromptSeq] = useState<number>(0);
+  const [kidsVideoEndedSeq, setKidsVideoEndedSeq] = useState<number>(0);
   const [quickPool, setQuickPool] = useState<{
     movies: CatalogMovie[];
     series: CatalogMovie[];
@@ -5161,12 +5165,18 @@ export function App() {
     !isDockedMini &&
     !isMobileKeyboardOpen;
 
+  const isKidsTheaterActive =
+    activeWorld === 'kids' &&
+    !isDockedMini &&
+    (isPlayerActive || (Boolean(extractionError) && !isPlayerClosedLocally));
+
   const hideBrowseBelowPlayer =
     isPlayingMediaReady &&
     !isDockedMini &&
     !isAutoImmersiveLandscape &&
     activeWorld !== 'sala' &&
-    activeWorld !== 'juegos';
+    activeWorld !== 'juegos' &&
+    activeWorld !== 'kids';
   const isMoviePlaybackDockVisible =
     !isFloatingRoomOpen &&
     videoState.mode !== 'idle' &&
@@ -5668,6 +5678,8 @@ export function App() {
                   ? `fixed ${miniCornerPositionClasses} ${
                       isDesktopLayout ? 'w-80' : 'w-56'
                     } z-[55] touch-none select-none cursor-grab active:cursor-grabbing transition-all duration-300 ease-out`
+                  : isKidsTheaterActive
+                  ? 'fixed inset-0 z-[75] w-full h-[100dvh] bg-[#0B0F24] flex flex-col overflow-hidden'
                   : `shrink-0 w-full min-w-0 ${
                       isPlayerActive
                         ? isDesktopLayout
@@ -5685,7 +5697,9 @@ export function App() {
             >
               <div
                 className={
-                  isDockedMini || showCinemaOverlay || isScrollCompressed
+                  isKidsTheaterActive
+                    ? 'relative flex-1 min-h-0 flex flex-col justify-center bg-black overflow-hidden'
+                    : isDockedMini || showCinemaOverlay || isScrollCompressed
                     ? 'relative'
                     : isDesktopLayout
                     ? 'relative rounded-3xl shadow-[0_32px_90px_rgba(0,0,0,0.9)]'
@@ -5723,6 +5737,11 @@ export function App() {
                     onPrevEpisode={handlePrevEpisode}
                     onNextEpisode={handleNextEpisode}
                     onProgressUpdate={handlePlayerProgressUpdate}
+                    onVideoEnded={() => {
+                      if (activeWorld === 'kids') {
+                        setKidsVideoEndedSeq((prev) => prev + 1);
+                      }
+                    }}
                     isCinemaMode={isCinemaMode}
                     onToggleCinemaMode={handleToggleCinemaMode}
                     secondaryStream={secondaryStream}
@@ -5819,7 +5838,28 @@ export function App() {
                     </button>
                   </div>
                 )}
+
+                {isKidsTheaterActive && extractionError && !isPlayerActive && (
+                  <div className="m-auto max-w-md mx-4 p-5 rounded-3xl bg-rose-500/20 border-2 border-rose-400/50 text-center space-y-3">
+                    <div className="text-3xl">😿</div>
+                    <p className="text-base font-bold text-white">{extractionError}</p>
+                  </div>
+                )}
               </div>
+
+              {isKidsTheaterActive && (
+                <React.Suspense fallback={null}>
+                  <KidsTheaterOverlay
+                    title={effectiveVideoState.title}
+                    isLive={Boolean(effectiveVideoState.isLive)}
+                    endedSignalSeq={kidsVideoEndedSeq}
+                    onClosePlayer={() => {
+                      setExtractionError(null);
+                      handleClosePlayer();
+                    }}
+                  />
+                </React.Suspense>
+              )}
             </div>
 
             {/* Host Lock Non-Intrusive Toast */}
@@ -6390,6 +6430,7 @@ export function App() {
               <div className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden bg-[#0A0E23] flex flex-col">
                 <RiffanKidsHub
                   shellLang={lang}
+                  familyUid={authUser?.uid || null}
                   exitPromptSeq={kidsExitPromptSeq}
                   onPlayMovie={(movieItem, preferLang) => {
                     void handlePlayMovie(movieItem, preferLang || 'ES');

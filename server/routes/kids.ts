@@ -1,6 +1,8 @@
 import type { Express, Request, Response } from 'express';
 import { GoogleGenAI, ThinkingLevel, Type } from '@google/genai';
 import { buildTmdbImageUrl, fetchTmdbJson } from '../services/tmdbService.ts';
+import { buildHlsProxyUrl, CHROME_UA } from '../extractors/httpHelpers.ts';
+import { LruTtlCache } from '../utils/lruCache.ts';
 import { logger } from '../utils/logger.ts';
 import type { CatalogMovie } from '../../src/types.ts';
 
@@ -539,6 +541,8 @@ export const KIDS_LIVE_CHANNELS: KidsLiveChannelEntry[] = [
 
 export function kidsChannelToCatalogMovie(ch: KidsLiveChannelEntry): CatalogMovie {
   const directUrl = ch.channels[0]?.sourceUrl || '';
+  const referer = ch.channels[0]?.referer || '';
+  const proxiedHls = directUrl ? buildHlsProxyUrl(directUrl, referer) : '';
   return {
     id: `kids-live-${ch.id}`,
     tmdbId: ch.dial,
@@ -554,7 +558,8 @@ export function kidsChannelToCatalogMovie(ch: KidsLiveChannelEntry): CatalogMovi
     genres: ['Infantil', 'En Directo', 'Canales TV'],
     platform: 'Riffan Kids Live',
     quality: 'HD Kids Directo',
-    bingetrixUrl: directUrl,
+    bingetrixUrl: proxiedHls || directUrl,
+    movidyUrl: directUrl,
   };
 }
 
@@ -1157,7 +1162,8 @@ function mapTmdbItemToKidsCatalogMovie(
 async function fetchKidsDiscoverItems(
   kidsLang: KidsLanguageCode,
   category: string,
-  query: string
+  query: string,
+  ageGroup: KidsAgeGroup = '6-8'
 ): Promise<CatalogMovie[]> {
   // Direct live kids channels category
   if (category === 'live' || category === 'canales') {
@@ -1283,9 +1289,10 @@ async function fetchKidsDiscoverItems(
           ).then((data) => ({ type: 'tv' as const, data }))
         );
       }
+      const certMax = ageGroup === '3-5' ? '0' : '7';
       discoverRequests.push(
         fetchTmdbJson<{ results?: TmdbResultItem[] }>(
-          `/discover/movie?language=${tmdbLang}&sort_by=popularity.desc&certification_country=ES&certification.lte=7&with_genres=16,10751&include_adult=false&page=1`
+          `/discover/movie?language=${tmdbLang}&sort_by=popularity.desc&certification_country=ES&certification.lte=${certMax}&with_genres=16,10751&include_adult=false&page=1`
         ).then((data) => ({ type: 'movie' as const, data })),
         fetchTmdbJson<{ results?: TmdbResultItem[] }>(
           `/discover/tv?language=${tmdbLang}&sort_by=popularity.desc&with_genres=10762|16&include_adult=false&page=1`
@@ -1325,22 +1332,46 @@ async function fetchKidsDiscoverItems(
     }
   }
 
+  if (ageGroup === '3-5' && collected.length > 1) {
+    const gentleRegex = /\b(peppa|pocoyo|bluey|bing|dora|paw|patrulla|clan|mickey|totoro|panda|dino|bebé|bebe|baby)\b/i;
+    collected.sort((a, b) => {
+      const aScore = (a.mediaType === 'tv' ? 1 : 0) + (gentleRegex.test(`${a.title} ${a.overview}`) ? 3 : 0);
+      const bScore = (b.mediaType === 'tv' ? 1 : 0) + (gentleRegex.test(`${b.title} ${b.overview}`) ? 3 : 0);
+      return bScore - aScore;
+    });
+  }
+
   return collected.slice(0, 28);
 }
 
 export function registerKidsRoutes(app: Express): void {
+  // 0. Server AI / Gemini TTS capability discovery (avoids 503 noise on routine speech taps when key is unset)
+  app.get('/api/kids/capabilities', (_req: Request, res: Response) => {
+    const aiAvailable = Boolean(getGeminiClient());
+    res.setHeader('Cache-Control', 'no-store');
+    res.json({
+      ok: true,
+      aiAvailable,
+      ttsAvailable: aiAvailable,
+    });
+  });
+
   // 1. Multilingual Kids Catalog (Movies + Series across 8 languages + theme worlds)
   app.get('/api/kids/catalog', async (req: Request, res: Response) => {
     const kidsLang = normalizeKidsLang(req.query.lang);
     const category = String(req.query.category || 'all').trim().toLowerCase();
     const query = String(req.query.q || '').trim();
+    const rawAge = String(req.query.ageGroup || '6-8').trim();
+    const ageGroup: KidsAgeGroup =
+      rawAge === '3-5' || rawAge === '9-12' ? rawAge : '6-8';
 
-    const items = await fetchKidsDiscoverItems(kidsLang, category, query);
+    const items = await fetchKidsDiscoverItems(kidsLang, category, query, ageGroup);
     res.setHeader('Cache-Control', 'public, max-age=180');
     res.json({
       ok: true,
       lang: kidsLang,
       category,
+      ageGroup,
       total: items.length,
       items,
     });
@@ -1630,7 +1661,19 @@ Answer in 2-3 vivid, joyful sentences kids love, share 1 surprising fun fact, an
       const response = await withGeminiRetry(() =>
         ai.models.generateContent({
           model: 'gemini-3.8-flash-lite-tts',
-          contents: text,
+          contents: [
+            {
+              role: 'user',
+              parts: [
+                {
+                  text,
+                  speechMetadata: {
+                    style: speechStyle,
+                  },
+                },
+              ],
+            },
+          ],
           config: {
             responseModalities: ['AUDIO'],
             speechConfig: {
@@ -1749,6 +1792,216 @@ Languages required:
       logger.warn({ errMsg, word }, 'kids_ai_translate_word_error');
       const mappedErr = formatGeminiRouteError(err, 'No se pudo traducir esa palabra ahora.');
       res.status(mappedErr.status).json({ ok: false, error: mappedErr.message });
+    }
+  });
+
+  // 7. Kid-Safe YouTube Discovery across 8 Languages & Kid Categories (for Kids Independent Player)
+  const kidsYtCache = new LruTtlCache<string, { items: CatalogMovie[]; ts: number }>(120, 5 * 60_000);
+
+  const KIDS_YT_CATEGORY_QUERIES: Record<KidsLanguageCode, Record<string, string>> = {
+    es: {
+      all: 'Pocoyó Español Oficial Bluey Español capítulos completos',
+      cartoons: 'Pocoyó Bluey Peppa Pig capítulos completos español oficial',
+      songs: 'CantaJuego canciones infantiles español niños',
+      animals: 'animales para niños documental educativo español',
+      dinosaurs: 'dinosaurios para niños dibujos animados español',
+      space: 'sistema solar planetas para niños español educativo',
+      magic: 'cuentos infantiles animados español',
+      educational: 'aprender colores números vocales niños español',
+    },
+    ca: {
+      all: 'Mic SX3 Super3 dibuixos animats català infantil',
+      cartoons: 'dibuixos animats en català capítols complets',
+      songs: 'El Pot Petit cançons infantils català',
+      animals: 'animals per a nens en català educatiu',
+      dinosaurs: 'dinosaures per a nens en català',
+      space: 'espai planetes per a nens en català',
+      magic: 'contes infantils en català',
+      educational: 'aprendre català nens petits cançons',
+    },
+    en: {
+      all: 'Bluey Peppa Pig official kids cartoons full episodes',
+      cartoons: 'kids cartoons full episodes family friendly english',
+      songs: 'Super Simple Songs nursery rhymes kids',
+      animals: 'wild animals for kids National Geographic Kids',
+      dinosaurs: 'dinosaurs for kids educational cartoon',
+      space: 'solar system planets for kids educational',
+      magic: 'bedtime fairy tale stories for kids animated',
+      educational: 'phonics ABC numbers learning video for kids',
+    },
+    nl: {
+      all: 'Ketnet Junior Nijntje Bumba kinderliedjes vlaams',
+      cartoons: 'Bumba Maya de Bij Nijntje nederlands vlaams',
+      songs: 'K3 Studio 100 kinderliedjes vlaams',
+      animals: 'dieren voor kinderen educatief nederlands',
+      dinosaurs: 'dinosaurus voor kinderen nederlands',
+      space: 'heelal planeten voor kinderen nederlands',
+      magic: 'sprookjes voor kinderen nederlands animatie',
+      educational: 'leren tellen kleuren voor peuters nederlands',
+    },
+    fr: {
+      all: 'Tchoupi Petit Ours Brun dessins animés français',
+      cartoons: 'dessin animé français complet enfant',
+      songs: 'comptines pour enfants français chansons',
+      animals: 'animaux pour enfants documentaire français',
+      dinosaurs: 'dinosaures pour les enfants français',
+      space: 'système solaire pour enfants français',
+      magic: 'histoires contes pour enfants français',
+      educational: 'apprendre alphabet chiffres enfants français',
+    },
+    ar: {
+      all: 'كرتون اطفال بدون موسيقى سبيستون عربي',
+      cartoons: 'أفلام كرتون للأطفال بالعربية حلقات كاملة',
+      songs: 'أناشيد أطفال تعليمية عربية',
+      animals: 'عالم الحيوانات للأطفال بالعربية',
+      dinosaurs: 'الديناصورات للأطفال بالعربية',
+      space: 'الفضاء والكواكب للأطفال بالعربية',
+      magic: 'قصص الأطفال قبل النوم بالعربية',
+      educational: 'تعليم الحروف والأرقام للأطفال بالعربية',
+    },
+    rif: {
+      all: 'Tarifit Arrif kids songs cartoons tamazight children',
+      cartoons: 'Tamazight Rif kids animated stories songs',
+      songs: 'chansons rifaines enfants tamazight arrif',
+      animals: 'animals documentary kids simple visual',
+      dinosaurs: 'dinosaurs cartoon kids visual adventure',
+      space: 'solar system space animation kids',
+      magic: 'folk stories animation children',
+      educational: 'kids visual numbers animals learning',
+    },
+    zh: {
+      all: '宝宝巴士 熊出没 儿童动画片 中文',
+      cartoons: '中文经典儿童动画片 完整版',
+      songs: '中文儿歌 宝宝巴士 欢乐童谣',
+      animals: '儿童动物科普 动画 中文',
+      dinosaurs: '恐龙儿童动画片 中文科普',
+      space: '太阳系宇宙科普 儿童动画 中文',
+      magic: '中文睡前童话故事 动画',
+      educational: '儿童学汉字 数字 启蒙动画',
+    },
+  };
+
+  async function searchYouTubeKidsRaw(searchQuery: string, hl: string): Promise<CatalogMovie[]> {
+    const ytRes = await fetch(
+      `https://www.youtube.com/results?search_query=${encodeURIComponent(searchQuery)}&hl=${encodeURIComponent(hl)}&sp=EgIQAQ%253D%253D`,
+      {
+        headers: {
+          'User-Agent': CHROME_UA,
+          'Accept-Language': `${hl},en;q=0.8`,
+        },
+        signal: AbortSignal.timeout(6000),
+      }
+    );
+    if (!ytRes.ok) return [];
+    const html = await ytRes.text();
+    const initMatch = html.match(/var\s+ytInitialData\s*=\s*(\{[\s\S]+?\});<\/script>/);
+    if (!initMatch) return [];
+
+    const data = JSON.parse(initMatch[1]);
+    const sections =
+      data?.contents?.twoColumnSearchResultsRenderer?.primaryContents?.sectionListRenderer
+        ?.contents || [];
+
+    const collected: CatalogMovie[] = [];
+    const seen = new Set<string>();
+    const blockedPattern =
+      /\b(horror|gore|18\+|nsfw|blood|kill|murder|scary|creepypasta|roblox|prision|prison|escapa|skibidi|huggy|poppy\s*playtime|fnaf|granny|banban|screamer|prank|broma|zombie|terror|miedo|muerte|asesino|exe)\b/i;
+
+    for (const sec of sections) {
+      const items = sec?.itemSectionRenderer?.contents || [];
+      for (const item of items) {
+        const vr = item?.videoRenderer;
+        if (!vr?.videoId || seen.has(vr.videoId)) continue;
+        const title = (vr.title?.runs?.map((r: { text?: string }) => r.text).join('') || '').trim();
+        const channel =
+          vr.ownerText?.runs?.[0]?.text || vr.longBylineText?.runs?.[0]?.text || 'YouTube Kids';
+        if (!title || blockedPattern.test(title) || blockedPattern.test(channel)) continue;
+        const duration = vr.lengthText?.simpleText || '';
+        // Skip Shorts/vertical clips missing normal duration or >2h streams if needed; keep lively clips & episodes
+        seen.add(vr.videoId);
+        collected.push({
+          id: `yt-${vr.videoId}`,
+          mediaType: 'movie',
+          title,
+          originalTitle: title,
+          year: duration || 'YouTube',
+          rating: '9.5',
+          overview: channel,
+          poster: `https://i.ytimg.com/vi/${vr.videoId}/hqdefault.jpg`,
+          backdrop: `https://i.ytimg.com/vi/${vr.videoId}/mqdefault.jpg`,
+          languages: [hl.toUpperCase()],
+          genres: ['YouTube Kids'],
+          platform: 'YouTube Kids',
+          quality: duration || 'HD',
+          bingetrixUrl: vr.videoId,
+        });
+        if (collected.length >= 20) break;
+      }
+      if (collected.length >= 20) break;
+    }
+    return collected;
+  }
+
+  app.get('/api/kids/youtube', async (req: Request, res: Response) => {
+    const kidsLang = normalizeKidsLang(req.query.lang);
+    const category = String(req.query.category || 'all').trim().toLowerCase();
+    const rawQuery = String(req.query.q || '').trim();
+    const rawAge = String(req.query.ageGroup || '6-8').trim();
+    const ageGroup: KidsAgeGroup =
+      rawAge === '3-5' || rawAge === '9-12' ? rawAge : '6-8';
+
+    if (category === 'live' || category === 'canales') {
+      const sortedChannels = [...KIDS_LIVE_CHANNELS].sort((a, b) => {
+        if (a.langCode === kidsLang && b.langCode !== kidsLang) return -1;
+        if (b.langCode === kidsLang && a.langCode !== kidsLang) return 1;
+        return a.dial - b.dial;
+      });
+      return res.json({
+        ok: true,
+        lang: kidsLang,
+        category: 'live',
+        items: sortedChannels.map(kidsChannelToCatalogMovie),
+      });
+    }
+
+    const langDict = KIDS_YT_CATEGORY_QUERIES[kidsLang] || KIDS_YT_CATEGORY_QUERIES.es;
+    const baseQuery = rawQuery
+      ? `${rawQuery} ${kidsLang === 'en' ? 'kids' : kidsLang === 'es' ? 'niños infantil' : kidsLang === 'fr' ? 'enfants' : kidsLang === 'ar' ? 'أطفال' : kidsLang === 'zh' ? '儿童' : kidsLang === 'nl' ? 'kinderen' : kidsLang === 'ca' ? 'infantil català' : 'kids'} cartoon`
+      : langDict[category] || langDict.all;
+
+    const ageHint = ageGroup === '3-5' ? ' toddler preschool' : ageGroup === '9-12' ? '' : '';
+    const finalQuery = `${baseQuery}${ageHint}`.trim();
+    const cacheKey = `${kidsLang}:${category}:${ageGroup}:${finalQuery.toLowerCase()}`;
+    const cached = kidsYtCache.get(cacheKey);
+    if (cached && Date.now() - cached.ts < 5 * 60_000) {
+      return res.json({ ok: true, lang: kidsLang, category, items: cached.items });
+    }
+
+    const hlMap: Record<KidsLanguageCode, string> = {
+      es: 'es',
+      ca: 'ca',
+      en: 'en',
+      nl: 'nl',
+      fr: 'fr',
+      ar: 'ar',
+      rif: 'es',
+      zh: 'zh-CN',
+    };
+
+    try {
+      let items = await searchYouTubeKidsRaw(finalQuery, hlMap[kidsLang] || 'es');
+      if (items.length === 0 && rawQuery) {
+        items = await searchYouTubeKidsRaw(`${rawQuery} kids`, 'en');
+      }
+      if (items.length === 0) {
+        items = await searchYouTubeKidsRaw(KIDS_YT_CATEGORY_QUERIES.en[category] || KIDS_YT_CATEGORY_QUERIES.en.all, 'en');
+      }
+      kidsYtCache.set(cacheKey, { items, ts: Date.now() });
+      res.setHeader('Cache-Control', 'public, max-age=180');
+      return res.json({ ok: true, lang: kidsLang, category, items });
+    } catch (err) {
+      logger.warn({ err, kidsLang, category }, 'kids_youtube_search_error');
+      return res.json({ ok: true, lang: kidsLang, category, items: [] });
     }
   });
 }
