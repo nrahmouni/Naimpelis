@@ -560,6 +560,56 @@ const ANIMEBOX_CURATED_MOVIE_IDS = [
   635302, // Kimetsu no Yaiba: El tren infinito
 ];
 
+export const CURATED_4K_MOVIE_IDS = [
+  693134, // Dune: Parte Dos
+  872585, // Oppenheimer
+  157336, // Interstellar
+  361743, // Top Gun: Maverick
+  414906, // The Batman
+  335984, // Blade Runner 2049
+  569094, // Spider-Man: Cruzando el Multiverso
+  76600,  // Avatar: El sentido del agua
+  558449, // Gladiator II
+  155,    // El caballero oscuro
+  27205,  // Origen
+  76341,  // Mad Max: Furia en la carretera
+  603692, // John Wick 4
+  299534, // Vengadores: Endgame
+  533535, // Deadpool y Lobezno
+  62,     // 2001: Una odisea del espacio
+  603,    // Matrix
+  945961, // Alien: Romulus
+  933260, // La sustancia
+  786892, // Furiosa: De la saga Mad Max
+  634649, // Spider-Man: No Way Home
+  438631, // Dune
+  19995,  // Avatar
+];
+export const CURATED_4K_MOVIE_SET = new Set(CURATED_4K_MOVIE_IDS);
+
+export const CURATED_4K_SERIES_IDS = [
+  100088, // The Last of Us
+  94997,  // La casa del dragón
+  1399,   // Juego de tronos
+  66732,  // Stranger Things
+  1396,   // Breaking Bad
+  82856,  // The Mandalorian
+  106379, // Fallout
+  126308, // Shōgun
+  95396,  // Severance
+  94605,  // Arcane
+  76479,  // The Boys
+  76773,  // Los Anillos de Poder
+  60059,  // Better Call Saul
+  87108,  // Chernobyl
+  83867,  // Andor
+  125988, // Silo
+  42009,  // Black Mirror
+  60625,  // Rick y Morty
+  70523,  // Dark
+];
+export const CURATED_4K_SERIES_SET = new Set(CURATED_4K_SERIES_IDS);
+
 const STREAMING_PROVIDER_MAP: Record<
   string,
   {
@@ -973,6 +1023,11 @@ async function fetchTmdbMovieCatalog(opts: {
         : 'popularity.desc';
     const minVotes = sort === 'top_rated' ? 220 : 45;
     endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&primary_release_date.lte=${todayIso}&with_genres=${MOVIE_GENRE_MAP[category]}&page=${page}&include_adult=false`;
+  } else if (category === '4k' || sort === '4k') {
+    if (page === 1) {
+      curatedSeedItems = await fetchTmdbItemsByIds(CURATED_4K_MOVIE_IDS, 'movie', lang);
+    }
+    endpoint = `https://api.themoviedb.org/3/discover/movie?api_key=${TMDB_API_KEY}&language=${lang}&sort_by=vote_count.desc&vote_count.gte=1000&vote_average.gte=7.2&primary_release_date.gte=2008-01-01&primary_release_date.lte=${todayIso}&page=${page}&include_adult=false`;
   } else if (category === 'popular' || (!category && sort === 'popular')) {
     endpoint = `https://api.themoviedb.org/3/movie/popular?api_key=${TMDB_API_KEY}&language=${lang}&page=${page}`;
   } else if (category === 'top_rated' || (!category && sort === 'top_rated')) {
@@ -1101,12 +1156,16 @@ async function fetchTmdbMovieCatalog(opts: {
       }
       return true;
     })
-    .map((m) => ({
-      id: `${isEn ? 'bingetrix' : 'es'}-${provider}-movie-${m.id}`,
-      tmdbId: m.id,
-      mediaType: 'movie',
-      title: m.title || m.original_title || 'Película',
-      originalTitle: m.original_title || m.title || '',
+    .map((m) => {
+      const is4k = category === '4k' || sort === '4k' || CURATED_4K_MOVIE_SET.has(Number(m.id));
+      return {
+        id: `${isEn ? 'bingetrix' : 'es'}-${provider}-movie-${m.id}`,
+        tmdbId: m.id,
+        mediaType: 'movie' as const,
+        is4k,
+        quality: is4k ? '4K UHD' : 'HD',
+        title: m.title || m.original_title || 'Película',
+        originalTitle: m.original_title || m.title || '',
       year: m.release_date ? String(m.release_date).split('-')[0] : 'HD',
       rating: m.vote_average ? Number(m.vote_average).toFixed(1) : '',
       overview:
@@ -1129,7 +1188,8 @@ async function fetchTmdbMovieCatalog(opts: {
       genres: mapTmdbGenreLabels(m, lang),
       popularity: Number(m.popularity || 0),
       voteCount: Number(m.vote_count || 0),
-    }));
+    };
+  });
 
   const payload = {
     movies,
@@ -1870,6 +1930,11 @@ app.get('/api/catalog/series', async (req, res) => {
           : 'popularity.desc';
       const minVotes = sort === 'top_rated' ? 180 : 40;
       endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&sort_by=${discoverSort}&vote_count.gte=${minVotes}&without_genres=10767,10763&with_genres=${SERIES_GENRE_MAP[category]}&page=${page}`;
+    } else if (category === '4k' || sort === '4k') {
+      if (page === 1) {
+        curatedAnimeSeedPromise = fetchTmdbItemsByIds(CURATED_4K_SERIES_IDS, 'tv', langParam);
+      }
+      endpoint = `https://api.themoviedb.org/3/discover/tv?api_key=${TMDB_API_KEY}&language=${langParam}&sort_by=vote_count.desc&vote_count.gte=800&vote_average.gte=7.5&first_air_date.gte=2008-01-01&page=${page}&include_adult=false`;
     } else if (category === 'popular' || (!category && sort === 'popular')) {
       endpoint = `https://api.themoviedb.org/3/tv/popular?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
     } else if (category === 'top_rated' || (!category && sort === 'top_rated')) {
@@ -1880,11 +1945,15 @@ app.get('/api/catalog/series', async (req, res) => {
       endpoint = `https://api.themoviedb.org/3/trending/tv/week?api_key=${TMDB_API_KEY}&language=${langParam}&page=${page}`;
     }
 
-    const mapTmdbSeriesItem = (s: any) => ({
-      id: `tv-${langParam}-${provider}-${s.id}`,
-      tmdbId: s.id,
-      mediaType: 'tv',
-      title: s.name || s.original_name || 'Serie',
+    const mapTmdbSeriesItem = (s: any) => {
+      const is4k = category === '4k' || sort === '4k' || CURATED_4K_SERIES_SET.has(Number(s.id));
+      return {
+        id: `tv-${langParam}-${provider}-${s.id}`,
+        tmdbId: s.id,
+        mediaType: 'tv' as const,
+        is4k,
+        quality: is4k ? '4K UHD' : 'HD',
+        title: s.name || s.original_name || 'Serie',
       originalTitle: s.original_name || s.name || '',
       year: s.first_air_date ? String(s.first_air_date).split('-')[0] : 'TV',
       rating: s.vote_average ? Number(s.vote_average).toFixed(1) : '',
@@ -1906,7 +1975,8 @@ app.get('/api/catalog/series', async (req, res) => {
       providerId: provCfg ? provider : undefined,
       genres: mapTmdbGenreLabels(s, langParam),
       seasonsCount: typeof s.number_of_seasons === 'number' ? s.number_of_seasons : undefined,
-    });
+    };
+  };
 
     const scrapeMovidySeriesFast = () => {
       if (!isSpanishCatalog || provCfg || isAnime) {

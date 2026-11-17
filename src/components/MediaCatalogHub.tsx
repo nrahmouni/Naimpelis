@@ -321,8 +321,16 @@ export const TV_FILTER_GROUPS: TvFilterGroup[] = [
   },
 ];
 
+const CURATED_4K_TMDB_SET = new Set<number>([
+  693134, 872585, 157336, 361743, 414906, 335984, 569094, 76600, 558449, 155, 27205,
+  76341, 603692, 299534, 533535, 62, 603, 945961, 933260, 786892, 634649, 438631, 19995,
+  100088, 94997, 1399, 66732, 1396, 82856, 106379, 126308, 95396, 94605, 76479, 76773,
+  60059, 87108, 83867, 125988, 42009, 60625, 70523,
+]);
+
 const MOVIE_SORT_OPTIONS = [
   { id: 'trending', es: 'Tendencias', ca: 'Tendències', en: 'Trending' },
+  { id: '4k', es: '✨ 4K Ultra HD', ca: '✨ 4K Ultra HD', en: '✨ 4K Ultra HD' },
   { id: 'popular', es: 'Populares', ca: 'Populars', en: 'Popular' },
   { id: 'top_rated', es: 'Mejor Valoradas', ca: 'Més Ben Valorades', en: 'Top Rated' },
   { id: 'now_playing', es: 'Estrenos Recientes', ca: 'Estrenes Recents', en: 'New Releases' },
@@ -342,6 +350,7 @@ const MOVIE_GENRES = [
 
 const SERIES_SORT_OPTIONS = [
   { id: 'trending', es: 'Tendencias TV', ca: 'Tendències TV', en: 'Trending TV' },
+  { id: '4k', es: '✨ 4K Ultra HD', ca: '✨ 4K Ultra HD', en: '✨ 4K Ultra HD' },
   { id: 'popular', es: 'Populares', ca: 'Populars', en: 'Popular' },
   { id: 'top_rated', es: 'Mejor Valoradas', ca: 'Més Ben Valorades', en: 'Top Rated' },
 ] as const;
@@ -3362,6 +3371,11 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           const normalized: CatalogMovie = forcedKind
             ? { ...item, mediaType: forcedKind }
             : item;
+          const is4kCard = Boolean(
+            normalized.is4k ||
+            (isSeriesTab ? seriesSort === '4k' : movieSort === '4k') ||
+            (normalized.tmdbId && CURATED_4K_TMDB_SET.has(normalized.tmdbId))
+          );
           return (
             <button
               key={`${normalized.id}-${normalized.mediaType || 'm'}`}
@@ -3369,26 +3383,49 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               onClick={() => openPosterItem(normalized)}
               className="group w-full text-left cursor-pointer active:scale-[0.98] transition-transform flex flex-col gap-1.5"
             >
-              <div className="relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] group-hover:border-[#9146FF]/60 transition-colors">
-                <PosterImage
-                  src={normalized.poster}
-                  alt={normalized.title}
-                  aspect="poster"
-                  imgClassName="sm:group-hover:scale-105 transition-transform duration-300"
-                  fallbackTitle={normalized.title}
-                />
+              <div
+                className={
+                  is4kCard
+                    ? 'relative aspect-[2/3] w-full card-4k-border-beam'
+                    : 'relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#0E0F16] border border-white/[0.08] group-hover:border-[#9146FF]/60 transition-colors'
+                }
+              >
+                <div className={is4kCard ? 'card-4k-inner' : 'w-full h-full'}>
+                  <PosterImage
+                    src={normalized.poster}
+                    alt={normalized.title}
+                    aspect="poster"
+                    imgClassName="sm:group-hover:scale-105 transition-transform duration-300"
+                    fallbackTitle={normalized.title}
+                  />
+                  {is4kCard && (
+                    <div className="absolute top-2 left-2 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-black/85 backdrop-blur-md border border-amber-400/80 shadow-[0_0_12px_rgba(245,158,11,0.5)]">
+                      <span className="text-[10px] font-black tracking-wider bg-gradient-to-r from-amber-300 via-yellow-200 to-amber-400 bg-clip-text text-transparent">
+                        4K
+                      </span>
+                      <span className="text-[9px] font-bold text-cyan-300 tracking-wider">
+                        HDR
+                      </span>
+                    </div>
+                  )}
+                </div>
               </div>
               <div className="px-0.5 min-w-0">
                 <p className="font-display font-bold text-xs text-white line-clamp-1 leading-snug group-hover:text-[#D8B4FE] transition-colors">
                   {normalized.title}
                 </p>
-                {(normalized.year || normalized.rating) && (
-                  <p className="text-[11px] text-zinc-400 mt-0.5 tabular-nums truncate">
+                <p className="text-[11px] text-zinc-400 mt-0.5 tabular-nums truncate flex items-center gap-1.5">
+                  {is4kCard && (
+                    <span className="px-1 py-0.2 rounded bg-amber-400/20 text-amber-300 font-mono text-[9px] font-bold border border-amber-400/40">
+                      4K UHD
+                    </span>
+                  )}
+                  <span>
                     {normalized.year}
                     {normalized.year && normalized.rating ? ' · ' : ''}
                     {normalized.rating ? `★ ${normalized.rating}` : ''}
-                  </p>
-                )}
+                  </span>
+                </p>
               </div>
             </button>
           );
@@ -3443,6 +3480,50 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                 >
                   <FlagBadgeSvg code={activeAudioFlag} className="w-4 h-2.5 shrink-0" />
                   <span>{activeAudioCode}</span>
+                </button>
+
+                {/* FEATURED ANIMATED 4K ULTRA HD FILTER BUTTON */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    if (isSeriesTab) {
+                      const next = seriesSort === '4k' ? 'trending' : '4k';
+                      setSeriesSort(next);
+                      setSeriesPage(1);
+                      if (next === '4k') setSeriesGenre('');
+                    } else {
+                      const next = movieSort === '4k' ? 'trending' : '4k';
+                      setMovieSort(next);
+                      setMoviePage(1);
+                      if (next === '4k') setMovieGenre('');
+                    }
+                  }}
+                  aria-label={pickLang(lang, {
+                    es: isSeriesTab ? 'Ver series en 4K Ultra HD' : 'Ver películas en 4K Ultra HD',
+                    ca: isSeriesTab ? 'Veure sèries en 4K Ultra HD' : 'Veure pel·lícules en 4K Ultra HD',
+                    en: isSeriesTab ? 'View 4K Ultra HD series' : 'View 4K Ultra HD movies',
+                  })}
+                  className={`group relative min-h-11 px-3.5 sm:px-4 rounded-2xl text-xs font-bold border inline-flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all overflow-hidden ${
+                    (isSeriesTab ? seriesSort === '4k' : movieSort === '4k')
+                      ? 'btn-4k-active bg-gradient-to-r from-amber-500/25 via-purple-600/35 to-cyan-500/25 border-amber-400 text-white shadow-[0_0_24px_rgba(251,191,36,0.45)]'
+                      : 'btn-4k-animated text-zinc-100 hover:border-amber-400/80 hover:text-white'
+                  }`}
+                >
+                  <span className="relative z-10 px-1.5 py-0.5 rounded-md bg-gradient-to-r from-amber-400 to-amber-500 text-black text-[10px] font-black tracking-wider uppercase shadow-sm">
+                    4K
+                  </span>
+                  <span className="relative z-10 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300 animate-pulse" />
+                    <span>
+                      {isSeriesTab
+                        ? pickLang(lang, { es: 'Series en 4K', ca: 'Sèries en 4K', en: '4K Series' })
+                        : pickLang(lang, { es: 'Películas en 4K', ca: 'Pel·lícules en 4K', en: '4K Movies' })}
+                    </span>
+                  </span>
+                  <span className="relative z-10 text-[9px] px-1 rounded bg-black/60 font-mono text-cyan-300 border border-cyan-400/40 uppercase tracking-widest hidden sm:inline-block">
+                    ULTRA HD
+                  </span>
                 </button>
 
                 <button
@@ -3521,10 +3602,24 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                           setMoviePage(1);
                         }
                       }}
-                      className="min-h-8 px-2.5 rounded-xl bg-white/[0.07] border border-white/15 text-[11px] font-semibold text-zinc-100 inline-flex items-center gap-1.5 cursor-pointer hover:bg-white/[0.12] transition-colors"
+                      className={`min-h-8 px-2.5 rounded-xl border text-[11px] font-semibold inline-flex items-center gap-1.5 cursor-pointer transition-colors ${
+                        currentSort === '4k'
+                          ? 'bg-gradient-to-r from-amber-500/20 to-purple-500/20 border-amber-400/60 text-amber-200 hover:bg-amber-500/30'
+                          : 'bg-white/[0.07] border-white/15 text-zinc-100 hover:bg-white/[0.12]'
+                      }`}
                     >
-                      <span>{pickLang(lang, activeSortMeta)}</span>
-                      <X className="w-3 h-3 text-zinc-400" />
+                      {currentSort === '4k' ? (
+                        <>
+                          <span className="px-1 py-0.2 rounded bg-amber-400 text-black text-[9px] font-black">4K</span>
+                          <span>{pickLang(lang, { es: 'Películas en 4K Ultra HD', ca: 'Pel·lícules en 4K Ultra HD', en: '4K Ultra HD Collection' })}</span>
+                          <X className="w-3 h-3 text-amber-300" />
+                        </>
+                      ) : (
+                        <>
+                          <span>{pickLang(lang, activeSortMeta)}</span>
+                          <X className="w-3 h-3 text-zinc-400" />
+                        </>
+                      )}
                     </button>
                   )}
 
@@ -3724,7 +3819,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   >
                     <ArrowLeft className="w-4 h-4" />
                     <span>
-                      {activeGenreMeta
+                      {currentSort === '4k'
+                        ? pickLang(lang, { es: 'Volver a Tendencias', ca: 'Tornar a Tendències', en: 'Back to Trending' })
+                        : activeGenreMeta
                         ? pickLang(lang, activeGenreMeta)
                         : activeSortMeta
                         ? pickLang(lang, activeSortMeta)
@@ -3732,6 +3829,33 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     </span>
                   </button>
                 </div>
+
+                {currentSort === '4k' && (
+                  <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-purple-900/30 to-cyan-500/15 border border-amber-400/50 shadow-[0_0_28px_rgba(245,158,11,0.2)] flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center text-black font-black text-sm shadow-md shrink-0">
+                        4K
+                      </div>
+                      <div>
+                        <p className="font-display font-extrabold text-sm sm:text-base text-white flex items-center gap-2">
+                          <span>{pickLang(lang, { es: isSeriesTab ? 'Series en 4K Ultra HD' : 'Películas en 4K Ultra HD', ca: isSeriesTab ? 'Sèries en 4K Ultra HD' : 'Pel·lícules en 4K Ultra HD', en: isSeriesTab ? '4K Ultra HD Series' : '4K Ultra HD Movies' })}</span>
+                          <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-cyan-400/20 text-cyan-300 border border-cyan-400/40">HDR</span>
+                        </p>
+                        <p className="text-xs text-zinc-300">
+                          {pickLang(lang, {
+                            es: 'Masterización oficial en ultra alta definición con efecto visual perimetral y alto rango dinámico.',
+                            ca: 'Masterització oficial en ultra alta definició amb efecte visual perimetral i alt rang dinàmic.',
+                            en: 'Official ultra high definition mastering with perimeter border-beam and dynamic range.',
+                          })}
+                        </p>
+                      </div>
+                    </div>
+                    <span className="text-[11px] font-bold text-amber-300 uppercase tracking-wider flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5 animate-pulse" />
+                      <span>{pickLang(lang, { es: 'Efecto Halo 4K Activo', ca: 'Efecte Halo 4K Actiu', en: '4K Halo Effect Active' })}</span>
+                    </span>
+                  </div>
+                )}
 
                 {(isSeriesTab ? loadingSeries : loadingMovies) ? (
                   <div className="py-10 flex justify-center">

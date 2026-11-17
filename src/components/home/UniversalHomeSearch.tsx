@@ -929,6 +929,12 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                               imgClassName="object-cover group-hover:scale-105 transition-transform duration-200"
                               fallbackTitle={movie.title}
                             />
+                            {Boolean(movie.is4k || (movie.tmdbId && [693134, 872585, 157336, 361743, 414906, 335984, 569094, 76600, 558449, 155, 27205, 299534, 533535].includes(movie.tmdbId))) && (
+                              <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/85 backdrop-blur-md border border-amber-400/80 text-[9px] font-black tracking-wider text-amber-300 shadow-sm flex items-center gap-1">
+                                <span>4K</span>
+                                <span className="text-[8px] text-cyan-300">HDR</span>
+                              </span>
+                            )}
                             {movie.rating && (
                               <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-black/75 text-[10px] font-mono font-bold text-amber-300 tabular-nums">
                                 ★ {movie.rating}
@@ -941,6 +947,9 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                             </p>
                             <div className="flex items-center gap-1.5 text-[10px] text-zinc-400">
                               <span>{movie.year || 'HD'}</span>
+                              {Boolean(movie.is4k) && (
+                                <span className="px-1 rounded bg-amber-400/20 text-amber-300 font-mono text-[9px] font-bold">4K</span>
+                              )}
                               {movie.languages && movie.languages.length > 0 && (
                                 <LanguageBadge code={movie.languages[0]} size="xs" />
                               )}

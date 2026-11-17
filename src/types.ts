@@ -263,6 +263,8 @@ export interface CatalogMovie {
   genres?: string[];
   seasonsCount?: number;
   addedAt?: number;
+  is4k?: boolean;
+  quality?: string;
 }
 
 export interface CastMemberItem {
