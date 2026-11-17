@@ -1,15 +1,9 @@
 import React, { useState } from 'react';
 import {
-  Bell,
-  BellOff,
   CheckCheck,
-  Film,
   Moon,
-  RefreshCw,
-  Settings,
   Trash2,
   Trophy,
-  Users,
   Volume2,
   VolumeX,
 } from 'lucide-react';
@@ -17,6 +11,13 @@ import { useNotificationStore } from '../store/useNotificationStore';
 import type { AppLanguage, AppNotificationItem, NotificationCategory } from '../types';
 import { pickLang } from '../utils/i18n';
 import { BottomSheet, EmptyStateCard, SecondaryButton } from './ui/DesignSystem';
+import {
+  RiffanBellIcon,
+  RiffanMoviesIcon,
+  RiffanSettingsGearIcon,
+  RiffanSyncIcon,
+  RiffanUsersIcon,
+} from './ui/RiffanIcons';
 
 interface NotificationCenterSheetProps {
   isOpen: boolean;
@@ -68,15 +69,15 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
   const renderCategoryIcon = (cat: AppNotificationItem['category']) => {
     switch (cat) {
       case 'invite':
-        return <Users className="w-4 h-4 text-[#BF94FF]" />;
+        return <RiffanUsersIcon size={17} animate="hover" />;
       case 'football':
         return <Trophy className="w-4 h-4 text-[#BF94FF]" />;
       case 'series':
-        return <Film className="w-4 h-4 text-[#BF94FF]" />;
+        return <RiffanMoviesIcon size={17} animate="hover" />;
       case 'update':
-        return <RefreshCw className="w-4 h-4 text-[#BF94FF]" />;
+        return <RiffanSyncIcon size={17} animate="hover" />;
       default:
-        return <Bell className="w-4 h-4 text-zinc-300" />;
+        return <RiffanBellIcon size={17} animate="hover" />;
     }
   };
 
@@ -90,7 +91,7 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
         ca: 'Notificacions',
         en: 'Notifications',
       })}
-      icon={<Bell className="w-5 h-5" />}
+      icon={<RiffanBellIcon size={20} animate={notifications.some((n) => !n.read) ? 'always' : 'hover'} />}
       maxWidth="sm:max-w-xl"
     >
       {/* Top Toolbar: hidden until > 5 notifications */}
@@ -141,7 +142,7 @@ export const NotificationCenterSheet: React.FC<NotificationCenterSheetProps> = (
                 en: 'Preferences',
               })}
             >
-              <Settings className="w-4 h-4" />
+              <RiffanSettingsGearIcon size={16} animate="hover" />
             </button>
           </div>
         </div>

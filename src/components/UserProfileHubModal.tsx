@@ -44,6 +44,7 @@ import { useThemeStore } from '../store/useThemeStore';
 import { useAppStore } from '../store/useAppStore';
 import { SegmentedControl } from './ui/DesignSystem';
 import { PosterImage } from './ui/PosterImage';
+import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
 import { pickLang } from '../utils/i18n';
 import { useFocusTrap } from '../utils/useFocusTrap';
 
@@ -1421,26 +1422,29 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
                       </span>
                       <div className="grid grid-cols-5 gap-1.5">
                         {[
-                          { id: 'es', label: 'Español' },
-                          { id: 'ca', label: 'Català' },
-                          { id: 'en', label: 'English' },
-                          { id: 'rif', label: 'Tarifit' },
-                          { id: 'zh', label: '中文' },
+                          { id: 'es', flag: 'es' as FlagCode, label: 'ES', title: 'Español' },
+                          { id: 'ca', flag: 'ca' as FlagCode, label: 'CA', title: 'Català' },
+                          { id: 'en', flag: 'en' as FlagCode, label: 'EN', title: 'English' },
+                          { id: 'rif', flag: 'rif' as FlagCode, label: 'RIF', title: 'Tarifit' },
+                          { id: 'zh', flag: 'zh' as FlagCode, label: '中文', title: '中文' },
                         ].map((l) => (
                           <button
                             key={l.id}
                             type="button"
+                            title={l.title}
+                            aria-label={l.title}
                             onClick={() => {
                               triggerHaptic('light');
                               onChangeLang(l.id as AppLanguage);
                             }}
-                            className={`min-h-8 px-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer transition-colors ${
+                            className={`min-h-10 px-1.5 rounded-xl text-[11px] font-semibold border cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${
                               lang === l.id
-                                ? 'bg-[#9146FF] text-white border-[#9146FF]'
+                                ? 'bg-[#9146FF] text-white border-[#A970FF]/70 shadow-[0_4px_12px_rgba(145,70,255,0.35)]'
                                 : 'bg-[#26262C] hover:bg-white/[0.1] border-white/[0.08] text-zinc-300'
                             }`}
                           >
-                            {l.label}
+                            <FlagBadgeSvg code={l.flag} className="w-4 h-3 shrink-0" />
+                            <span>{l.label}</span>
                           </button>
                         ))}
                       </div>

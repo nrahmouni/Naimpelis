@@ -11500,7 +11500,7 @@ function getAllIptvChannels(): any[] {
           ? 'noticias_deportes'
           : f.category === 'sports'
           ? 'noticias_deportes'
-          : f.category === 'docs'
+          : f.category === 'documentary'
           ? 'documentales'
           : 'cine_series';
       combined.push({

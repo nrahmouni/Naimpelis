@@ -11,8 +11,8 @@ import {
   ArrowUpRight,
   MessageSquare,
   X,
-  Loader2,
 } from 'lucide-react';
+import { RiffanLoaderR } from './components/ui/RiffanIcons';
 import {
   checkRemoteAppVersion,
   clearStaleCachesAndReload,
@@ -131,6 +131,7 @@ import type { ProfileHubTab } from './components/UserProfileHubModal';
 import { EntryHomeScreen } from './components/EntryHomeScreen';
 import {
   WorldPortalTransition,
+  type PortalOriginRect,
   type WorldPortalKind,
 } from './components/home/WorldPortalTransition';
 import { WorldShell } from './components/worlds/WorldShell';
@@ -811,6 +812,9 @@ export function App() {
 
   const [activePortalTransition, setActivePortalTransition] =
     useState<WorldPortalKind | null>(null);
+  const [portalOriginRect, setPortalOriginRect] =
+    useState<PortalOriginRect | null>(null);
+  const [portalLandingActive, setPortalLandingActive] = useState<boolean>(false);
   const portalTimersRef = useRef<number[]>([]);
 
   const clearPortalTimers = useCallback(() => {
@@ -880,7 +884,10 @@ export function App() {
   }, []);
 
   const enterWorld = useCallback(
-    (nextWorld: WorldId, opts?: { withPortal?: boolean }) => {
+    (
+      nextWorld: WorldId,
+      opts?: { withPortal?: boolean; originRect?: PortalOriginRect }
+    ) => {
       setWorldSearchQuery('');
       setShowWatchlistOnly(false);
       clearPortalTimers();
@@ -898,18 +905,27 @@ export function App() {
           preloadWorld(nextWorld);
         }
         playWorldPortalSound(nextWorld);
+        setPortalLandingActive(false);
+        setPortalOriginRect(opts.originRect ?? null);
         setActivePortalTransition(nextWorld);
         const swapTimer = window.setTimeout(() => {
           applyWorldChange(nextWorld);
-        }, 410);
+          setPortalLandingActive(true);
+        }, 760);
         const exitTimer = window.setTimeout(() => {
           setActivePortalTransition(null);
-        }, 760);
-        portalTimersRef.current = [swapTimer, exitTimer];
+          setPortalOriginRect(null);
+        }, 980);
+        const landingTimer = window.setTimeout(() => {
+          setPortalLandingActive(false);
+        }, 1280);
+        portalTimersRef.current = [swapTimer, exitTimer, landingTimer];
         return;
       }
 
       setActivePortalTransition(null);
+      setPortalOriginRect(null);
+      setPortalLandingActive(false);
       runWithViewTransition(() => {
         applyWorldChange(nextWorld);
       });
@@ -5062,7 +5078,7 @@ export function App() {
       <React.Suspense
         fallback={
           <div className="flex-1 flex items-center justify-center p-6 text-zinc-400">
-            <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
+            <RiffanLoaderR size={40} />
           </div>
         }
       >
@@ -5974,7 +5990,7 @@ export function App() {
                     }));
                     setShowSurpriseModal(true);
                   }}
-                  onSelectWorld={(world) =>
+                  onSelectWorld={(world, originRect) =>
                     enterWorld(world, {
                       withPortal:
                         world === 'cine' ||
@@ -5982,6 +5998,7 @@ export function App() {
                         world === 'tv' ||
                         world === 'juegos' ||
                         world === 'sala',
+                      originRect,
                     })
                   }
                   onPreloadWorld={preloadWorld}
@@ -6057,6 +6074,7 @@ export function App() {
                 onGoHome={() => enterWorld('entry')}
                 onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
                 fullHeight
+                className={portalLandingActive ? 'rtv-world-touchdown' : ''}
               >
                 <PartySidebar
                   worldSalaMode
@@ -6153,6 +6171,7 @@ export function App() {
                 onGoHome={() => enterWorld('entry')}
                 onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
                 fullHeight
+                className={portalLandingActive ? 'rtv-world-touchdown' : ''}
               >
                 <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
                   <GamesHubSection
@@ -6249,6 +6268,7 @@ export function App() {
             ) : (
               <WorldShell
                 world={activeWorld}
+                className={portalLandingActive ? 'rtv-world-touchdown' : ''}
                 title={
                   activeWorld === 'cine'
                     ? pickLang(lang, { es: 'Cine', ca: 'Cinema', en: 'Cinema' })
@@ -6638,7 +6658,11 @@ export function App() {
           />
         </React.Suspense>
 
-        <WorldPortalTransition portal={activePortalTransition} lang={lang} />
+        <WorldPortalTransition
+          portal={activePortalTransition}
+          originRect={portalOriginRect}
+          lang={lang}
+        />
         <GameMatchInviteModal
           invite={incomingGameInvite}
           lang={lang}

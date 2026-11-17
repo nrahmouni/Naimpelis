@@ -32,6 +32,15 @@ import {
 } from './ui/DesignSystem';
 import { triggerHaptic } from '../utils/haptics';
 import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
+import * as RiffanIcons from './ui/RiffanIcons';
+import { RiffanIntroLogoSvg } from './NaimcineIntro';
+import {
+  WORLD_SPECS,
+  WorldEmblemTile,
+  WorldPortalTransition,
+  type PortalOriginRect,
+  type WorldPortalKind,
+} from './home/WorldPortalTransition';
 
 interface DesignSystemShowcaseProps {
   onClose?: () => void;
@@ -101,13 +110,39 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
   const { theme, density, liteMode, reducedMotion, setTheme, setDensity, setLiteMode, setReducedMotion } =
     useThemeStore();
 
-  const [activeTab, setActiveTab] = useState<'posters' | 'logos' | 'tokens' | 'components'>('posters');
+  const [activeTab, setActiveTab] = useState<'posters' | 'logos' | 'tokens' | 'components'>('logos');
   const [posterLang, setPosterLang] = useState<PosterLanguage>('es');
   const [posterFormat, setPosterFormat] = useState<PosterFormat>('vertical');
   const [isExporting, setIsExporting] = useState(false);
   const [exportNotice, setExportNotice] = useState<string | null>(null);
+  const [introReplayKey, setIntroReplayKey] = useState(0);
+  const [wordmarkReplayKey, setWordmarkReplayKey] = useState(0);
+  const [loaderReplayKey, setLoaderReplayKey] = useState(0);
+  const [iconAnimMode, setIconAnimMode] = useState<'always' | 'hover'>('always');
+  const [emblemAnimMode, setEmblemAnimMode] = useState<'always' | 'hover'>('always');
+  const [previewPortal, setPreviewPortal] = useState<{
+    kind: WorldPortalKind;
+    originRect: PortalOriginRect | null;
+  } | null>(null);
 
   const posterPreviewRef = useRef<HTMLDivElement>(null);
+  const portalTimerRef = useRef<number | null>(null);
+
+  const triggerPortalPreview = (kind: WorldPortalKind, e: React.MouseEvent<HTMLButtonElement>) => {
+    triggerHaptic('medium');
+    if (portalTimerRef.current) {
+      window.clearTimeout(portalTimerRef.current);
+    }
+    const r = e.currentTarget.getBoundingClientRect();
+    setPreviewPortal({
+      kind,
+      originRect: { left: r.left, top: r.top, width: r.width, height: r.height },
+    });
+    portalTimerRef.current = window.setTimeout(() => {
+      setPreviewPortal(null);
+      portalTimerRef.current = null;
+    }, 1020);
+  };
 
   const themeOptions: Array<{ id: AppTheme; label: string; desc: string }> = [
     { id: 'oled', label: 'OLED Negro Puro', desc: '#08090d · Contraste máximo' },
@@ -496,11 +531,128 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
             <div className="p-5 rounded-3xl bg-[#0F111D] border border-white/10 space-y-1">
               <h2 className="text-base sm:text-lg font-display font-bold text-white flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-[#9146FF]" />
-                <span>Kit de Logos Oficiales de RiffanTV</span>
+                <span>Identidad Animada & Kit de Logos Oficiales</span>
               </h2>
               <p className="text-xs text-zinc-400">
-                Variantes vectoriales y de imagen con transparencia para desarrollo, aplicaciones, overlays de OBS y cartelería.
+                Logo R animado de bienvenida, Wordmark cinematográfico, Loader perpetuo en bucle y variantes SVG/PNG descargables.
               </p>
+            </div>
+
+            {/* Live Animated Brand Suite: Intro R + Animated Wordmark + Loop Loader R */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              {/* Animated R Intro Tile */}
+              <div className="p-6 rounded-3xl bg-[#111320] border border-white/10 flex flex-col justify-between gap-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#C084FC]">
+                      Intro Principal SVG
+                    </span>
+                    <h3 className="text-base font-bold text-white mt-0.5">Logo R Animado (Splash)</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setIntroReplayKey((k) => k + 1);
+                    }}
+                    className="min-h-9 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <RiffanIcons.RiffanRetryIcon size={14} animate="hover" />
+                    <span>Repetir</span>
+                  </button>
+                </div>
+
+                <div className="py-5 flex items-center justify-center bg-black/60 rounded-2xl border border-white/10 min-h-[190px]">
+                  <div key={introReplayKey} className="w-36 h-36">
+                    <RiffanIntroLogoSvg />
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Placa oscura con bisel metálico animado, trazado secuencial en 3 tiempos, estela cometa en el arco, destello soft-light y brillo diagonal.
+                </p>
+              </div>
+
+              {/* Animated Horizontal Wordmark */}
+              <div className="p-6 rounded-3xl bg-[#111320] border border-white/10 flex flex-col justify-between gap-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#38BDF8]">
+                      Cabecera & Marca
+                    </span>
+                    <h3 className="text-base font-bold text-white mt-0.5">RiffanTV Animated Lockup</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setWordmarkReplayKey((k) => k + 1);
+                    }}
+                    className="min-h-9 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <RiffanIcons.RiffanRetryIcon size={14} animate="hover" />
+                    <span>Repetir</span>
+                  </button>
+                </div>
+
+                <div className="py-5 px-4 flex items-center justify-center bg-black/60 rounded-2xl border border-white/10 min-h-[190px]">
+                  <RiffanIcons.RiffanAnimatedLogo
+                    key={wordmarkReplayKey}
+                    width={260}
+                    height={74}
+                    animate="always"
+                  />
+                </div>
+
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  SVG compuesto (420×120) con isotipo trazado al vuelo y entrada tipográfica escalonada de RiffanTV · Ultra HD Streaming.
+                </p>
+              </div>
+
+              {/* Perpetual Loop R Loader */}
+              <div className="p-6 rounded-3xl bg-[#111320] border border-white/10 flex flex-col justify-between gap-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#00F593]">
+                      Carga en Bucle · 6,8s
+                    </span>
+                    <h3 className="text-base font-bold text-white mt-0.5">Loader R Perpetuo</h3>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setLoaderReplayKey((k) => k + 1);
+                    }}
+                    className="min-h-9 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+                  >
+                    <RiffanIcons.RiffanRetryIcon size={14} animate="hover" />
+                    <span>Reiniciar</span>
+                  </button>
+                </div>
+
+                <div
+                  key={loaderReplayKey}
+                  className="py-5 px-4 flex items-center justify-center gap-6 bg-black/60 rounded-2xl border border-white/10 min-h-[190px]"
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <RiffanIcons.RiffanLoaderR size={78} animate="always" />
+                    <span className="text-[10px] font-mono text-zinc-400">78px · Hero</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-2">
+                    <RiffanIcons.RiffanLoaderR size={52} animate="always" />
+                    <span className="text-[10px] font-mono text-zinc-400">52px · Player</span>
+                  </div>
+                  <div className="flex flex-col items-center gap-2">
+                    <RiffanIcons.RiffanLoaderR size={32} animate="always" />
+                    <span className="text-[10px] font-mono text-zinc-400">32px · Mini</span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-zinc-400 leading-relaxed">
+                  Traza tallo → arco con cometa → pierna, se vacía por el extremo opuesto y vuelve a llenarse en sentido inverso de forma infinita.
+                </p>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -806,9 +958,284 @@ export const DesignSystemShowcase: React.FC<DesignSystemShowcaseProps> = ({ onCl
                 </button>
               </div>
             </div>
+
+            {/* Emblemas de Mundos & Transiciones Interactivas */}
+            <div className="p-5 sm:p-6 rounded-3xl bg-[#0F111D] border border-white/10 space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm sm:text-base font-display font-bold text-white">
+                    Emblemas SVG de Secciones &amp; Transiciones de Entrada
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Monolitos vectoriales con bisel vítreo, halo OLED y barrido óptico. Pulsa cualquier tarjeta para probar su transición real.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-1.5 p-1 rounded-xl bg-white/[0.04] border border-white/[0.08]">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setEmblemAnimMode('always');
+                    }}
+                    className={`min-h-8 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap ${
+                      emblemAnimMode === 'always'
+                        ? 'bg-[#9146FF] text-white'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Siempre vivos
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setEmblemAnimMode('hover');
+                    }}
+                    className={`min-h-8 px-3 rounded-lg text-xs font-semibold cursor-pointer transition-colors whitespace-nowrap ${
+                      emblemAnimMode === 'hover'
+                        ? 'bg-[#9146FF] text-white'
+                        : 'text-zinc-400 hover:text-white'
+                    }`}
+                  >
+                    Al pasar cursor
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+                {(['cine', 'sala', 'juegos', 'futbol', 'tv'] as WorldPortalKind[]).map((kind) => {
+                  const spec = WORLD_SPECS[kind];
+                  return (
+                    <div
+                      key={kind}
+                      className="group relative rounded-2xl bg-[#0A0C14] border border-white/[0.09] hover:border-white/25 overflow-hidden flex flex-col justify-between transition-all duration-200"
+                    >
+                      {/* Architectural studio stage behind emblem */}
+                      <div className="relative pt-7 pb-5 px-4 flex flex-col items-center justify-center overflow-hidden">
+                        <div
+                          aria-hidden="true"
+                          className="absolute inset-0 opacity-75 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none"
+                          style={{
+                            background: `radial-gradient(circle at 50% 54%, rgba(${spec.glowRgb},0.22) 0%, rgba(10,12,20,0) 72%)`,
+                          }}
+                        />
+                        <div
+                          aria-hidden="true"
+                          className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-px pointer-events-none opacity-45 group-hover:opacity-90 transition-opacity"
+                          style={{
+                            background: `linear-gradient(90deg, transparent, ${spec.accent}70, transparent)`,
+                          }}
+                        />
+
+                        <WorldEmblemTile
+                          kind={kind}
+                          animate={emblemAnimMode}
+                          className="relative z-10 w-24 h-24 transition-transform duration-300 group-hover:scale-[1.04]"
+                        />
+                      </div>
+
+                      <div className="px-4 pb-4 space-y-3">
+                        <div className="text-center space-y-1">
+                          <p className="font-display text-sm font-bold text-white tracking-tight">
+                            {spec.title.es}
+                          </p>
+                          <p className="text-[11px] text-zinc-400 leading-snug min-h-[2rem] flex items-center justify-center">
+                            {spec.subtitle.es}
+                          </p>
+                          <div className="pt-1 flex items-center justify-center gap-2 text-[10px] font-mono text-zinc-400 tabular-nums">
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                className="w-2 h-2 rounded-[2px]"
+                                style={{ backgroundColor: spec.accent }}
+                              />
+                              {spec.accent}
+                            </span>
+                            <span aria-hidden="true" className="text-zinc-600">
+                              ·
+                            </span>
+                            <span className="inline-flex items-center gap-1">
+                              <span
+                                className="w-2 h-2 rounded-[2px]"
+                                style={{ backgroundColor: spec.secondary }}
+                              />
+                              {spec.secondary}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={(e) => triggerPortalPreview(kind, e)}
+                          className="w-full min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-[#9146FF] border border-white/[0.08] hover:border-transparent text-[11px] font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors whitespace-nowrap"
+                        >
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>Probar transición</span>
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Banderas SVG Oficiales */}
+            <div className="p-5 rounded-3xl bg-[#0F111D] border border-white/10 space-y-4">
+              <div>
+                <h3 className="text-sm font-bold text-white">Banderas SVG de Idiomas y Regiones</h3>
+                <p className="text-xs text-zinc-400 mt-0.5">
+                  Vectores nítidos con proporciones oficiales para selector de idioma, ligas y audios.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                {(
+                  [
+                    { code: 'es', label: 'España (ES)' },
+                    { code: 'rif', label: 'Rif (TMZ)' },
+                    { code: 'ca', label: 'Catalunya (CAT)' },
+                    { code: 'en', label: 'English (EN)' },
+                    { code: 'zh', label: 'China (中文)' },
+                  ] as Array<{ code: FlagCode; label: string }>
+                ).map(({ code, label }) => (
+                  <div
+                    key={code}
+                    className="p-3.5 rounded-2xl bg-[#111320] border border-white/10 flex items-center gap-3"
+                  >
+                    <FlagBadgeSvg code={code} className="w-9 h-6 shrink-0 shadow-sm" />
+                    <span className="text-xs font-bold text-zinc-200 truncate">{label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Complete 50+ Animated SVG Icon Kit */}
+            <div className="p-5 rounded-3xl bg-[#0F111D] border border-white/10 space-y-5">
+              <div className="flex flex-wrap items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-bold text-white">
+                    Kit Completo de Iconos y Animaciones SVG RiffanTV
+                  </h3>
+                  <p className="text-xs text-zinc-400 mt-0.5">
+                    Cambia entre modo bucle continuo o reproducción al pasar el cursor para probar cada micro-animación.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setIconAnimMode('always');
+                    }}
+                    className={`min-h-9 px-3 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                      iconAnimMode === 'always'
+                        ? 'bg-[#9146FF] text-white'
+                        : 'bg-white/[0.06] text-zinc-300 hover:bg-white/[0.12]'
+                    }`}
+                  >
+                    Siempre animando
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setIconAnimMode('hover');
+                    }}
+                    className={`min-h-9 px-3 rounded-xl text-xs font-bold cursor-pointer transition-colors ${
+                      iconAnimMode === 'hover'
+                        ? 'bg-[#9146FF] text-white'
+                        : 'bg-white/[0.06] text-zinc-300 hover:bg-white/[0.12]'
+                    }`}
+                  >
+                    En hover
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 sm:grid-cols-6 md:grid-cols-8 gap-2.5">
+                {[
+                  { label: 'Loader R', el: <RiffanIcons.RiffanLoaderR size={26} animate={iconAnimMode === 'hover' ? 'always' : 'always'} /> },
+                  { label: 'Spinner', el: <RiffanIcons.RiffanSpinner size={24} animate={iconAnimMode} /> },
+                  { label: 'Dots', el: <RiffanIcons.RiffanDotsLoader size={26} animate={iconAnimMode} /> },
+                  { label: 'Progress', el: <RiffanIcons.RiffanProgressBar width={42} height={14} animate={iconAnimMode === 'hover' ? 'always' : 'always'} /> },
+                  { label: 'Buffering', el: <RiffanIcons.RiffanVideoLoading size={24} animate={iconAnimMode} /> },
+                  { label: 'Play', el: <RiffanIcons.RiffanPlayIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Pause', el: <RiffanIcons.RiffanPauseIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Next Ep', el: <RiffanIcons.RiffanNextEpisodeIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Fullscreen', el: <RiffanIcons.RiffanFullscreenIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Exit FS', el: <RiffanIcons.RiffanExitFullscreenIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Volume', el: <RiffanIcons.RiffanVolumeIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Subtitles', el: <RiffanIcons.RiffanSubtitlesIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Ext Link', el: <RiffanIcons.RiffanExternalLinkIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Retry', el: <RiffanIcons.RiffanRetryIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Cast TV', el: <RiffanIcons.RiffanCastIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Voice', el: <RiffanIcons.RiffanVoiceCallIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Chat', el: <RiffanIcons.RiffanChatIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Sliders', el: <RiffanIcons.RiffanSlidersIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Ch Down', el: <RiffanIcons.RiffanChevronDownIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Ch Up', el: <RiffanIcons.RiffanChevronUpIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Ch Left', el: <RiffanIcons.RiffanChevronLeftIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Ch Right', el: <RiffanIcons.RiffanChevronRightIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Back', el: <RiffanIcons.RiffanBackIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Movies', el: <RiffanIcons.RiffanMoviesIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Series', el: <RiffanIcons.RiffanSeriesIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Surprise', el: <RiffanIcons.RiffanSurpriseIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Star', el: <RiffanIcons.RiffanStarIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Add', el: <RiffanIcons.RiffanAddIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Schedule', el: <RiffanIcons.RiffanScheduleIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Channels', el: <RiffanIcons.RiffanChannelsIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Clock', el: <RiffanIcons.RiffanClockIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Live', el: <RiffanIcons.RiffanLiveIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Users', el: <RiffanIcons.RiffanUsersIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Lang', el: <RiffanIcons.RiffanLanguageIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Mobile', el: <RiffanIcons.RiffanMobileIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Monitor', el: <RiffanIcons.RiffanMonitorIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'TV Remote', el: <RiffanIcons.RiffanTvRemoteIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Room Key', el: <RiffanIcons.RiffanRoomKeyIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Shuffle', el: <RiffanIcons.RiffanShuffleIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Share', el: <RiffanIcons.RiffanShareIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Logout', el: <RiffanIcons.RiffanLogoutIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Sync', el: <RiffanIcons.RiffanSyncIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Warning', el: <RiffanIcons.RiffanWarningIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Info', el: <RiffanIcons.RiffanInfoIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Error', el: <RiffanIcons.RiffanErrorIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Unavail', el: <RiffanIcons.RiffanUnavailableIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Wi-Fi', el: <RiffanIcons.RiffanWifiIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Search', el: <RiffanIcons.RiffanSearchIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Menu', el: <RiffanIcons.RiffanMenuIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Close', el: <RiffanIcons.RiffanCloseIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Home', el: <RiffanIcons.RiffanHomeIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'User', el: <RiffanIcons.RiffanUserIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Mail', el: <RiffanIcons.RiffanMailIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Cart', el: <RiffanIcons.RiffanCartIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Lock', el: <RiffanIcons.RiffanLockIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Check', el: <RiffanIcons.RiffanCheckCircleIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Heart', el: <RiffanIcons.RiffanHeartIcon size={22} active animate={iconAnimMode} /> },
+                  { label: 'Bell', el: <RiffanIcons.RiffanBellIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Settings', el: <RiffanIcons.RiffanSettingsGearIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Arrow', el: <RiffanIcons.RiffanArrowRightIcon size={22} animate={iconAnimMode} /> },
+                  { label: 'Download', el: <RiffanIcons.RiffanDownloadIcon size={22} animate={iconAnimMode} /> },
+                ].map((item) => (
+                  <div
+                    key={item.label}
+                    className="group p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.09] border border-white/[0.08] flex flex-col items-center justify-center gap-1.5 text-center transition-colors"
+                  >
+                    <div className="h-7 flex items-center justify-center">{item.el}</div>
+                    <span className="text-[10px] font-medium text-zinc-300 truncate w-full">
+                      {item.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
           </section>
         )}
       </div>
+
+      <WorldPortalTransition
+        portal={previewPortal?.kind ?? null}
+        originRect={previewPortal?.originRect ?? null}
+        lang="es"
+      />
     </div>
   );
 };

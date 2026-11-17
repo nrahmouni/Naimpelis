@@ -1,24 +1,27 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  Sparkles,
-  Play,
-  Shuffle,
   Flame,
   Laugh,
-  Tv,
   Trophy,
-  Loader2,
-  Search,
   Wand2,
   CheckCircle2,
-  AlertCircle,
-  Film,
 } from 'lucide-react';
 import type { AppLanguage, CatalogMovie } from '../types';
 import { pickLang } from '../utils/i18n';
 import { BottomSheet, PrimaryButton, SecondaryButton } from './ui/DesignSystem';
 import { PosterImage } from './ui/PosterImage';
+import {
+  RiffanChannelsIcon,
+  RiffanLoaderR,
+  RiffanMoviesIcon,
+  RiffanPlayIcon,
+  RiffanSearchIcon,
+  RiffanShuffleIcon,
+  RiffanSpinner,
+  RiffanSurpriseIcon,
+  RiffanWarningIcon,
+} from './ui/RiffanIcons';
 
 interface SurpriseMeRequestLaunch {
   query: string;
@@ -125,7 +128,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
     {
       id: 'all',
       label: pickLang(lang, { es: 'Aleatorio', ca: 'Aleatori', en: 'Random' }),
-      icon: <Sparkles className="w-3.5 h-3.5" />,
+      icon: <RiffanSurpriseIcon size={14} animate="hover" />,
     },
     {
       id: 'highrated',
@@ -145,7 +148,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
     {
       id: 'series',
       label: pickLang(lang, { es: 'Maratón serie', ca: 'Marató sèrie', en: 'Series Binge' }),
-      icon: <Tv className="w-3.5 h-3.5" />,
+      icon: <RiffanChannelsIcon size={14} animate="hover" />,
     },
   ];
 
@@ -369,7 +372,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
               en: 'We check your catalog first, then search iteratively with AI until found',
             })
       }
-      icon={mode === 'surprise' ? <Sparkles className="w-5 h-5" /> : <Wand2 className="w-5 h-5" />}
+      icon={mode === 'surprise' ? <RiffanSurpriseIcon size={20} animate="always" /> : <Wand2 className="w-5 h-5" />}
       maxWidth="sm:max-w-lg"
     >
       {/* Top 2-Mode Switcher: Sorpréndeme | Pedir película */}
@@ -383,7 +386,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
               : 'text-zinc-300 hover:text-white hover:bg-white/[0.05]'
           }`}
         >
-          <Sparkles className="w-3.5 h-3.5 shrink-0" />
+          <RiffanSurpriseIcon size={14} tone={mode === 'surprise' ? 'current' : 'brand'} animate="hover" className="shrink-0" />
           <span className="truncate">
             {pickLang(lang, { es: 'Sorpréndeme', ca: 'Sorprèn-me', en: 'Surprise Me' })}
           </span>
@@ -441,7 +444,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
               <div className="py-8 flex flex-col items-center justify-center gap-3 text-center">
                 {isLoading ? (
                   <>
-                    <Loader2 className="w-6 h-6 text-[#BF94FF] animate-spin" />
+                    <RiffanLoaderR size={40} />
                     <p className="text-xs text-zinc-300 font-medium">
                       {pickLang(lang, {
                         es: 'Cargando estrenos, series y películas para sorprenderte...',
@@ -461,7 +464,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
                     </p>
                     {onRetryLoad && (
                       <SecondaryButton onClick={onRetryLoad} size="md">
-                        <Shuffle className="w-4 h-4" />
+                        <RiffanShuffleIcon size={16} animate="hover" />
                         <span>
                           {pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry' })}
                         </span>
@@ -484,7 +487,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
               }}
               className="flex-1 min-w-0 !px-3 whitespace-nowrap"
             >
-              <Shuffle className="w-4 h-4 shrink-0" />
+              <RiffanShuffleIcon size={16} animate="hover" className="shrink-0" />
               <span className="truncate">
                 {pickLang(lang, {
                   es: 'Otra sugerencia',
@@ -501,7 +504,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
                 }}
                 className="flex-1 min-w-0 !px-3 whitespace-nowrap"
               >
-                <Play className="w-4 h-4 shrink-0 fill-current" />
+                <RiffanPlayIcon size={16} tone="current" animate="hover" className="shrink-0" />
                 <span className="truncate">
                   {pickLang(lang, {
                     es: 'Reproducir ahora',
@@ -529,11 +532,11 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
                   }`}
                 >
                   {tOpt === 'movie' ? (
-                    <Film className="w-3 h-3" />
+                    <RiffanMoviesIcon size={13} tone={requestType === tOpt ? 'current' : 'brand'} animate="hover" />
                   ) : tOpt === 'tv' ? (
-                    <Tv className="w-3 h-3" />
+                    <RiffanChannelsIcon size={13} tone={requestType === tOpt ? 'current' : 'brand'} animate="hover" />
                   ) : (
-                    <Sparkles className="w-3 h-3" />
+                    <RiffanSurpriseIcon size={13} tone={requestType === tOpt ? 'current' : 'brand'} animate="hover" />
                   )}
                   <span>
                     {tOpt === 'all'
@@ -548,7 +551,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
 
             <div className="flex items-center gap-2">
               <div className="relative flex-1 min-w-0">
-                <Search className="w-4 h-4 text-zinc-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <RiffanSearchIcon size={16} animate="hover" className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   type="text"
                   value={requestQuery}
@@ -567,7 +570,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
                 className="!min-h-11 !px-4 shrink-0 whitespace-nowrap"
               >
                 {isSubmittingAi || isSearchingAi ? (
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <RiffanSpinner size={16} tone="current" />
                 ) : (
                   <Wand2 className="w-4 h-4" />
                 )}
@@ -580,7 +583,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
 
           {aiError && (
             <div className="p-3 rounded-xl bg-rose-500/12 border border-rose-400/35 text-xs text-rose-200 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
+              <RiffanWarningIcon size={16} animate="always" className="shrink-0" />
               <span>{aiError}</span>
             </div>
           )}
@@ -592,9 +595,9 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
                 <div className="p-3.5 rounded-2xl bg-white/[0.035] border border-white/[0.08] space-y-2">
                   <div className="flex items-center gap-2 text-xs font-bold text-white">
                     {isSearchingAi ? (
-                      <Loader2 className="w-4 h-4 text-emerald-400 animate-spin shrink-0" />
+                      <RiffanSpinner size={16} className="shrink-0" />
                     ) : (
-                      <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                      <RiffanWarningIcon size={16} animate="always" className="shrink-0" />
                     )}
                     <span>{aiJob.progressLabel}</span>
                   </div>
@@ -637,7 +640,7 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
                     }}
                     className="w-full"
                   >
-                    <Play className="w-4 h-4 fill-current" />
+                    <RiffanPlayIcon size={16} tone="current" />
                     <span>
                       {pickLang(lang, {
                         es: 'Reproducir ahora',

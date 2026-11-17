@@ -6,14 +6,13 @@ import {
   Plus,
   Film,
   Tv,
-  Loader2,
   Youtube,
   Users,
   Globe,
   Volume2,
   VolumeX,
-  RefreshCw,
 } from 'lucide-react';
+import { RiffanRetryIcon, RiffanSpinner } from './ui/RiffanIcons';
 import {
   AppLanguage,
   CatalogMovie,
@@ -586,9 +585,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-[#BF94FF]/40 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
                   >
                     {forcingSpanish ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF]" />
+                      <RiffanSpinner size={16} />
                     ) : (
-                      <RefreshCw className="w-4 h-4 text-[#BF94FF]" />
+                      <RiffanRetryIcon size={16} />
                     )}
                     <span className="inline-flex items-center gap-1.5">
                       <FlagBadgeSvg code="es" className="w-4 h-3" />
@@ -632,7 +631,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     className="flex-1 sm:flex-initial min-h-[48px] px-6 rounded-2xl bg-gradient-to-b from-[#9E5CFF] to-[#772CE8] hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed text-xs sm:text-sm font-bold text-white flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] shadow-[0_10px_28px_rgba(145,70,255,0.38)]"
                   >
                     {loading && !hasProbedLanguages ? (
-                      <Loader2 className="w-4 h-4 animate-spin shrink-0" />
+                      <RiffanSpinner size={16} tone="current" />
                     ) : (
                       <Play className="w-4 h-4 fill-current shrink-0" />
                     )}
@@ -663,9 +662,9 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     className="min-h-[48px] px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-[#BF94FF]/40 text-xs font-bold text-[#EFEFF1] flex items-center gap-2 cursor-pointer transition-colors disabled:opacity-60"
                   >
                     {forcingSpanish ? (
-                      <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF]" />
+                      <RiffanSpinner size={16} />
                     ) : (
-                      <RefreshCw className="w-4 h-4 text-[#BF94FF]" />
+                      <RiffanRetryIcon size={16} />
                     )}
                     <span className="inline-flex items-center gap-1.5">
                       {!forcingSpanish && <FlagBadgeSvg code="es" className="w-4 h-3" />}
@@ -772,7 +771,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
           {loading && (
             <div className="flex items-center gap-2 text-xs text-zinc-400">
-              <Loader2 className="w-4 h-4 animate-spin text-[#9146FF]" />
+              <RiffanSpinner size={16} />
               <span>
                 {pickLang(lang, {
                   es: 'Cargando reparto y recomendaciones...',

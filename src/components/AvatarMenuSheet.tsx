@@ -1,21 +1,19 @@
 import React from 'react';
-import {
-  User,
-  PlayCircle,
-  Bookmark,
-  Bell,
-  Users,
-  Tv,
-  Youtube,
-  Settings,
-  ChevronRight,
-  LogOut,
-} from 'lucide-react';
+import { PlayCircle, Bookmark, Youtube } from 'lucide-react';
 import type { User as FirebaseUser } from 'firebase/auth';
 import type { AppLanguage } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { BottomSheet } from './ui/DesignSystem';
+import {
+  RiffanBellIcon,
+  RiffanCastIcon,
+  RiffanChevronRightIcon,
+  RiffanLogoutIcon,
+  RiffanSettingsGearIcon,
+  RiffanUserIcon,
+  RiffanUsersIcon,
+} from './ui/RiffanIcons';
 
 interface AvatarMenuSheetProps {
   isOpen: boolean;
@@ -73,14 +71,14 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
   const items = [
     {
       id: 'profile',
-      icon: User,
+      iconEl: <RiffanUserIcon size={20} animate="hover" className="shrink-0" />,
       label: pickLang(lang, { es: 'Perfil', ca: 'Perfil', en: 'Profile' }),
       onClick: onOpenProfile,
       badge: null as React.ReactNode,
     },
     {
       id: 'continue',
-      icon: PlayCircle,
+      iconEl: <PlayCircle className="w-5 h-5 text-[#BF94FF] shrink-0" />,
       label: pickLang(lang, {
         es: 'Continuar viendo',
         ca: 'Continuar veient',
@@ -91,14 +89,20 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
     },
     {
       id: 'saved',
-      icon: Bookmark,
+      iconEl: <Bookmark className="w-5 h-5 text-[#BF94FF] shrink-0" />,
       label: pickLang(lang, { es: 'Guardados', ca: 'Desats', en: 'Saved' }),
       onClick: onOpenSaved,
       badge: null as React.ReactNode,
     },
     {
       id: 'notifications',
-      icon: Bell,
+      iconEl: (
+        <RiffanBellIcon
+          size={20}
+          animate={unreadNotificationsCount > 0 ? 'always' : 'hover'}
+          className="shrink-0"
+        />
+      ),
       label: pickLang(lang, {
         es: 'Notificaciones',
         ca: 'Notificacions',
@@ -114,7 +118,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
     },
     {
       id: 'friends',
-      icon: Users,
+      iconEl: <RiffanUsersIcon size={20} animate="hover" className="shrink-0" />,
       label: pickLang(lang, {
         es: 'Amigos e invitaciones',
         ca: 'Amics i invitacions',
@@ -125,7 +129,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
     },
     {
       id: 'tv',
-      icon: Tv,
+      iconEl: <RiffanCastIcon size={20} animate="hover" className="shrink-0" />,
       label: pickLang(lang, {
         es: 'Enviar a TV',
         ca: 'Enviar a TV',
@@ -138,14 +142,14 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
     },
     {
       id: 'youtube',
-      icon: Youtube,
+      iconEl: <Youtube className="w-5 h-5 text-[#BF94FF] shrink-0" />,
       label: 'YouTube',
       onClick: onOpenYouTube,
       badge: null as React.ReactNode,
     },
     {
       id: 'settings',
-      icon: Settings,
+      iconEl: <RiffanSettingsGearIcon size={20} animate="hover" className="shrink-0" />,
       label: pickLang(lang, { es: 'Ajustes', ca: 'Ajustos', en: 'Settings' }),
       onClick: onOpenSettings,
       badge: null as React.ReactNode,
@@ -200,28 +204,25 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
         </div>
 
         <nav className="space-y-1">
-          {items.map((item) => {
-            const Icon = item.icon;
-            return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => runAction(item.onClick)}
-                className="w-full min-h-12 px-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-transparent hover:border-white/[0.08] flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
-              >
-                <span className="flex items-center gap-3 min-w-0">
-                  <Icon className="w-5 h-5 text-[#BF94FF] shrink-0" />
-                  <span className="text-sm font-semibold text-white truncate">
-                    {item.label}
-                  </span>
+          {items.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              onClick={() => runAction(item.onClick)}
+              className="group w-full min-h-12 px-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-transparent hover:border-white/[0.08] flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
+            >
+              <span className="flex items-center gap-3 min-w-0">
+                {item.iconEl}
+                <span className="text-sm font-semibold text-white truncate">
+                  {item.label}
                 </span>
-                <span className="flex items-center gap-2 shrink-0">
-                  {item.badge}
-                  <ChevronRight className="w-4 h-4 text-zinc-500" />
-                </span>
-              </button>
-            );
-          })}
+              </span>
+              <span className="flex items-center gap-2 shrink-0">
+                {item.badge}
+                <RiffanChevronRightIcon size={16} animate="hover" className="opacity-70" />
+              </span>
+            </button>
+          ))}
         </nav>
 
         {((inRoom && onLeaveRoom) || (authUser && onSignOut)) && (
@@ -233,7 +234,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
                 className="w-full min-h-11 px-3.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/25 flex items-center justify-between gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
               >
                 <span className="flex items-center gap-3 min-w-0">
-                  <LogOut className="w-4 h-4 text-rose-400 shrink-0" />
+                  <RiffanLogoutIcon size={16} animate="hover" className="shrink-0" />
                   <span className="text-sm font-semibold text-rose-200 truncate">
                     {pickLang(lang, {
                       es: `Salir de la sala${roomName ? ` (${roomName})` : ''}`,
@@ -254,7 +255,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
                 }}
                 className="w-full min-h-11 px-3.5 rounded-xl bg-white/[0.03] hover:bg-white/[0.08] border border-white/[0.08] flex items-center gap-3 text-left cursor-pointer active:scale-[0.99] transition-all duration-150"
               >
-                <LogOut className="w-4 h-4 text-zinc-400 shrink-0" />
+                <RiffanLogoutIcon size={16} animate="hover" className="shrink-0" />
                 <span className="text-sm font-semibold text-zinc-300 truncate">
                   {pickLang(lang, { es: 'Cerrar sesión', ca: 'Tancar sessió', en: 'Sign out' })}
                 </span>

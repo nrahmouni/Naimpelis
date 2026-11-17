@@ -2,7 +2,6 @@ import React, { useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
-  X,
   Play,
   Pause,
   RotateCcw,
@@ -12,14 +11,17 @@ import {
   Maximize2,
   Unlink,
   Subtitles,
-  Loader2,
-  AlertCircle,
-  RefreshCw,
 } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { useFocusTrap } from '../../utils/useFocusTrap';
 import { PosterImage } from './PosterImage';
+import {
+  RiffanCloseIcon,
+  RiffanRetryIcon,
+  RiffanSpinner,
+  RiffanWarningIcon,
+} from './RiffanIcons';
 
 // ============================================================================
 // 1. SINGLE SOURCE OF TRUTH: BUTTONS & INPUTS (Min 48px Touch Target)
@@ -53,7 +55,7 @@ export const PrimaryButton: React.FC<PrimaryButtonProps> = ({
         fullWidth ? 'w-full' : ''
       } ${sizeClass} ${className}`}
     >
-      {loading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : null}
+      {loading ? <RiffanSpinner size={16} tone="current" className="shrink-0" /> : null}
       {children}
     </button>
   );
@@ -91,7 +93,7 @@ export const SecondaryButton: React.FC<SecondaryButtonProps> = ({
           : 'bg-white/[0.06] hover:bg-white/[0.11] border-white/[0.1] hover:border-white/[0.18] text-zinc-100 hover:text-white'
       } ${fullWidth ? 'w-full' : ''} ${sizeClass} ${className}`}
     >
-      {loading ? <Loader2 className="w-4 h-4 animate-spin shrink-0" /> : null}
+      {loading ? <RiffanSpinner size={16} className="shrink-0" /> : null}
       {children}
     </button>
   );
@@ -251,7 +253,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
                 variant="ghost"
                 aria-label={pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}
               >
-                <X className="w-5 h-5" />
+                <RiffanCloseIcon size={20} animate="hover" />
               </IconButton>
             </div>
 
@@ -785,12 +787,12 @@ export const ErrorRetryBanner: React.FC<{
 }> = ({ message, onRetry, lang = 'es' }) => (
   <div className="p-4 rounded-2xl bg-[#141418] border border-white/[0.1] flex flex-wrap items-center justify-between gap-3">
     <div className="flex items-center gap-2.5 min-w-0">
-      <AlertCircle className="w-5 h-5 text-[#BF94FF] shrink-0" />
+      <RiffanWarningIcon size={20} animate="always" className="shrink-0" />
       <p className="text-xs sm:text-sm text-zinc-200 line-clamp-2">{message}</p>
     </div>
     {onRetry && (
       <SecondaryButton onClick={onRetry}>
-        <RefreshCw className="w-4 h-4" />
+        <RiffanRetryIcon size={16} animate="hover" />
         <span>{pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry' })}</span>
       </SecondaryButton>
     )}

@@ -1,18 +1,10 @@
 import React, { useMemo, useState } from 'react';
 import { motion } from 'motion/react';
 import {
-  Film,
   Trophy,
-  Tv,
   Gamepad2,
-  Users,
-  Sparkles,
   Check,
   Pencil,
-  Play,
-  ChevronRight,
-  Clock,
-  ArrowRight,
   Dices,
   Spade,
   CircleDot,
@@ -32,6 +24,17 @@ import { generateRandomGuestName } from '../utils/storage';
 import { PosterImage } from './ui/PosterImage';
 import { UniversalHomeSearch } from './home/UniversalHomeSearch';
 import { PWAInstallLandingCard } from './PWAInstallPrompt';
+import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
+import {
+  RiffanArrowRightIcon,
+  RiffanChannelsIcon,
+  RiffanChevronRightIcon,
+  RiffanClockIcon,
+  RiffanMoviesIcon,
+  RiffanPlayIcon,
+  RiffanSurpriseIcon,
+  RiffanUsersIcon,
+} from './ui/RiffanIcons';
 
 interface EntryHomeScreenProps {
   lang: AppLanguage;
@@ -42,7 +45,10 @@ interface EntryHomeScreenProps {
   onResumeHistoryItem: (item: WatchHistoryItem) => void;
   onOpenContinueWatchingAll: () => void;
   onOpenSurpriseMe: () => void;
-  onSelectWorld: (world: PrimaryWorldId) => void;
+  onSelectWorld: (
+    world: PrimaryWorldId,
+    originRect?: { left: number; top: number; width: number; height: number }
+  ) => void;
   onPreloadWorld?: (world: PrimaryWorldId) => void;
   lastUsedWorld: PrimaryWorldId | null;
   liveMatchesCount: number;
@@ -105,7 +111,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   onSelectGame = () => {},
   onOpenVoiceAssistant,
   onOpenDesignSystem,
-  onChangeLang: _onChangeLang,
+  onChangeLang,
 }) => {
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(displayName);
@@ -135,9 +141,16 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
     setSpotlightPos((prev) => ({ ...prev, [id]: { x, y } }));
   };
 
-  const handleCardClick = (worldId: PrimaryWorldId) => {
+  const handleCardClick = (
+    worldId: PrimaryWorldId,
+    e?: React.MouseEvent<HTMLButtonElement>
+  ) => {
     triggerHaptic('medium');
-    onSelectWorld(worldId);
+    const r = e?.currentTarget?.getBoundingClientRect();
+    const originRect = r
+      ? { left: r.left, top: r.top, width: r.width, height: r.height }
+      : undefined;
+    onSelectWorld(worldId, originRect);
   };
 
   const heroPosters = useMemo(
@@ -324,7 +337,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           <section className="space-y-2.5">
             <div className="flex items-center justify-between gap-2">
               <h2 className="font-display font-semibold text-sm sm:text-base text-white flex items-center gap-2">
-                <Clock className="w-4 h-4 text-[#BF94FF]" />
+                <RiffanClockIcon size={17} animate="hover" />
                 <span>
                   {pickLang(lang, {
                     es: 'Continuar viendo',
@@ -340,10 +353,10 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                     triggerHaptic('light');
                     onOpenContinueWatchingAll();
                   }}
-                  className="min-h-10 px-2.5 rounded-xl text-xs font-semibold text-[#BF94FF] hover:text-white inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  className="min-h-10 px-2.5 rounded-xl text-xs font-semibold text-[#BF94FF] hover:text-white inline-flex items-center gap-1 cursor-pointer transition-colors group"
                 >
                   <span>{pickLang(lang, { es: 'Ver todo', ca: 'Veure-ho tot', en: 'See all' })}</span>
-                  <ChevronRight className="w-3.5 h-3.5" />
+                  <RiffanChevronRightIcon size={14} animate="hover" />
                 </button>
               )}
             </div>
@@ -387,7 +400,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       <div className="absolute inset-0 bg-gradient-to-t from-black/85 via-black/20 to-transparent" />
                       <span className="absolute inset-0 flex items-center justify-center">
                         <span className="w-9 h-9 rounded-full bg-black/65 backdrop-blur-md border border-white/20 flex items-center justify-center text-white group-hover:bg-[#9146FF] group-hover:border-[#9146FF] transition-colors">
-                          <Play className="w-4 h-4 fill-current ml-0.5" />
+                          <RiffanPlayIcon size={16} tone="current" animate="hover" />
                         </span>
                       </span>
                       {epBadge && (
@@ -432,7 +445,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             onPointerEnter={() => onPreloadWorld?.('cine')}
             onTouchStart={() => onPreloadWorld?.('cine')}
             onPointerMove={(e) => handleCardPointerMove('cine', e)}
-            onClick={() => handleCardClick('cine')}
+            onClick={(e) => handleCardClick('cine', e)}
             className="group relative col-span-2 md:col-span-4 md:order-1 rounded-3xl p-4 sm:p-6 min-h-[154px] sm:min-h-[188px] bg-[#10121C] hover:bg-[#131624] border border-white/[0.09] hover:border-[#9146FF]/55 shadow-[inset_0_1px_0_rgba(255,255,255,0.07),0_14px_34px_rgba(0,0,0,0.45)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
           >
             {renderSpotlightOverlay('cine')}
@@ -487,7 +500,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             {/* Clean Left Text Zone */}
             <div className="relative z-10 flex items-center gap-2 text-xs font-medium text-zinc-400">
               <span className="w-7 h-7 rounded-lg bg-[#9146FF]/18 border border-[#9146FF]/35 flex items-center justify-center text-[#D8B4FE] shrink-0">
-                <Film className="w-3.5 h-3.5" />
+                <RiffanMoviesIcon size={15} animate="hover" />
               </span>
               {lastUsedWorld === 'cine' ? (
                 <span className="text-[#C4A7FF] font-semibold">
@@ -511,7 +524,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
               </p>
               <div className="pt-1.5 inline-flex items-center gap-1 text-xs font-semibold text-[#C4A7FF] group-hover:text-white transition-colors">
                 <span>{pickLang(lang, { es: 'Explorar', ca: 'Explorar', en: 'Browse' })}</span>
-                <ArrowRight className="w-3.5 h-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+                <RiffanArrowRightIcon size={14} animate="hover" />
               </div>
             </div>
           </motion.button>
@@ -526,7 +539,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             onPointerEnter={() => onPreloadWorld?.('futbol')}
             onTouchStart={() => onPreloadWorld?.('futbol')}
             onPointerMove={(e) => handleCardPointerMove('futbol', e)}
-            onClick={() => handleCardClick('futbol')}
+            onClick={(e) => handleCardClick('futbol', e)}
             className="group relative col-span-1 md:col-span-2 md:order-3 rounded-3xl p-4 sm:p-5 min-h-[144px] sm:min-h-[168px] bg-[#10121B] hover:bg-[#131722] border border-white/[0.08] hover:border-emerald-400/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_28px_rgba(0,0,0,0.42)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
           >
             {renderSpotlightOverlay('futbol')}
@@ -597,7 +610,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             onPointerEnter={() => onPreloadWorld?.('tv')}
             onTouchStart={() => onPreloadWorld?.('tv')}
             onPointerMove={(e) => handleCardPointerMove('tv', e)}
-            onClick={() => handleCardClick('tv')}
+            onClick={(e) => handleCardClick('tv', e)}
             className="group relative col-span-1 md:col-span-2 md:order-4 rounded-3xl p-4 sm:p-5 min-h-[144px] sm:min-h-[168px] bg-[#10121B] hover:bg-[#131724] border border-white/[0.08] hover:border-sky-400/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_28px_rgba(0,0,0,0.42)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
           >
             {renderSpotlightOverlay('tv')}
@@ -624,7 +637,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
             <div className="relative z-10 flex items-center justify-between gap-2">
               <div className="w-9 h-9 rounded-xl bg-sky-500/12 border border-sky-400/25 flex items-center justify-center text-sky-400 shrink-0 group-hover:scale-105 transition-transform">
-                <Tv className="w-4 h-4" />
+                <RiffanChannelsIcon size={17} animate="hover" />
               </div>
 
               {/* Clean mini channel medallions strictly tucked in top-right header */}
@@ -665,7 +678,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             onPointerEnter={() => onPreloadWorld?.('juegos')}
             onTouchStart={() => onPreloadWorld?.('juegos')}
             onPointerMove={(e) => handleCardPointerMove('juegos', e)}
-            onClick={() => handleCardClick('juegos')}
+            onClick={(e) => handleCardClick('juegos', e)}
             className="group relative col-span-1 md:col-span-2 md:order-5 rounded-3xl p-4 sm:p-5 min-h-[144px] sm:min-h-[168px] bg-[#10121B] hover:bg-[#151422] border border-white/[0.08] hover:border-fuchsia-400/45 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_28px_rgba(0,0,0,0.42)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
           >
             {renderSpotlightOverlay('juegos')}
@@ -729,7 +742,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             onPointerEnter={() => onPreloadWorld?.('sala')}
             onTouchStart={() => onPreloadWorld?.('sala')}
             onPointerMove={(e) => handleCardPointerMove('sala', e)}
-            onClick={() => handleCardClick('sala')}
+            onClick={(e) => handleCardClick('sala', e)}
             className="group relative col-span-1 md:col-span-2 md:order-2 rounded-3xl p-4 sm:p-5 min-h-[144px] sm:min-h-[188px] bg-gradient-to-br from-[#17132A] via-[#11131E] to-[#10121B] hover:from-[#1D1736] hover:to-[#131522] border border-[#9146FF]/35 hover:border-[#9146FF]/70 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_12px_32px_rgba(145,70,255,0.14)] text-left flex flex-col justify-between overflow-hidden cursor-pointer transition-all duration-200"
           >
             {renderSpotlightOverlay('sala')}
@@ -741,7 +754,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
             <div className="relative z-10 flex items-center justify-between gap-2">
               <div className="w-9 h-9 rounded-xl bg-[#9146FF]/22 border border-[#9146FF]/40 flex items-center justify-center text-[#D8B4FE] shrink-0 group-hover:scale-105 transition-transform">
-                <Users className="w-4 h-4" />
+                <RiffanUsersIcon size={17} animate="hover" />
               </div>
 
               <div className="flex items-center gap-1.5 text-[11px] font-bold text-[#00F593] tabular-nums">
@@ -785,7 +798,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
           >
               <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-7 h-7 rounded-lg bg-[#9146FF]/18 text-[#D8B4FE] border border-[#9146FF]/35 flex items-center justify-center shrink-0 group-hover:bg-[#9146FF] group-hover:text-white transition-colors">
-                <Sparkles className="w-3.5 h-3.5" />
+                <RiffanSurpriseIcon size={15} animate="always" />
               </div>
               <span className="font-display font-semibold text-xs sm:text-sm text-white shrink-0">
                 {pickLang(lang, {
@@ -805,13 +818,47 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                 })}
               </span>
             </div>
-            <ChevronRight className="w-4 h-4 text-[#BF94FF] group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0" />
+            <RiffanChevronRightIcon size={16} animate="hover" className="shrink-0" />
           </motion.button>
         </section>
 
-        {/* 6. INSTALAR RIFFANTV + QUIET FOOTER LINK */}
+        {/* 6. INSTALAR RIFFANTV + IDIOMAS + QUIET FOOTER LINK */}
         <section className="pt-1 space-y-3">
           <PWAInstallLandingCard lang={lang} alwaysShow />
+
+          {onChangeLang && (
+            <div className="rounded-2xl bg-[#10121C]/85 border border-white/[0.08] p-1.5 grid grid-cols-5 gap-1.5">
+              {[
+                { code: 'en' as AppLanguage, flag: 'en' as FlagCode, label: 'EN', title: 'English' },
+                { code: 'es' as AppLanguage, flag: 'es' as FlagCode, label: 'ES', title: 'Español' },
+                { code: 'ca' as AppLanguage, flag: 'ca' as FlagCode, label: 'CA', title: 'Català' },
+                { code: 'rif' as AppLanguage, flag: 'rif' as FlagCode, label: 'RIF', title: 'Tarifit (Riffian)' },
+                { code: 'zh' as AppLanguage, flag: 'zh' as FlagCode, label: 'ZH', title: '中文' },
+              ].map((item) => {
+                const isSelected = lang === item.code;
+                return (
+                  <button
+                    key={item.code}
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onChangeLang(item.code);
+                    }}
+                    title={item.title}
+                    aria-label={item.title}
+                    className={`min-h-10 px-2 rounded-xl text-xs font-display font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] whitespace-nowrap border ${
+                      isSelected
+                        ? 'bg-[#9146FF] text-white border-[#A970FF]/70 shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
+                        : 'bg-transparent hover:bg-white/[0.06] text-zinc-400 hover:text-white border-transparent'
+                    }`}
+                  >
+                    <FlagBadgeSvg code={item.flag} className="w-5 h-3.5 shrink-0" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
 
           {onOpenDesignSystem && (
             <footer className="flex items-center justify-center pt-1">

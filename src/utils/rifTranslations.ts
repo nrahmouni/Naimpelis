@@ -116,7 +116,6 @@ export const RIF_DICTIONARY: Record<string, string> = {
   "Unirse a código o link de amigo...": "Udef s lkod neɣ llyan n umeddakel...",
   "Unir-se a codi o enllaç d'amic...": "Udef s lkod neɣ llyan n umeddakel...",
   "Join": "Udef",
-  "Unirse": "Udef",
   "Unir-se": "Udef",
   "Other recent rooms": "Tixxamin nniḍen n tura",
   "Otras salas recientes": "Tixxamin nniḍen n tura",

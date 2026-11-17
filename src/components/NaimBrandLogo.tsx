@@ -142,7 +142,7 @@ export const RiffanBrandLogo: React.FC<RiffanBrandLogoProps> = ({
           </defs>
         )}
 
-        <g id="rtv-ribbon-r">
+        <g id={`rtv-ribbon-r-${uid}`}>
           {/* Fold 1: Left Slanted Pillar (Back Layer) */}
           <path
             d="M 156 96 H 214 L 184 416 H 126 C 117 416 112 409 113 399 L 143 111 C 144 102 149 96 156 96 Z"

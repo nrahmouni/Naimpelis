@@ -1,20 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import {
-  Tv,
-  Smartphone,
-  Check,
-  QrCode,
-  ChevronDown,
-  ChevronRight,
-  AlertCircle,
-  Radio,
-} from 'lucide-react';
+import { QrCode } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import { AppLanguage, TvRemoteCommandType } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { BottomSheet, HapticTvRemote, PrimaryButton, StandardInput } from './ui/DesignSystem';
 import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
+import {
+  RiffanCastIcon,
+  RiffanCheckCircleIcon,
+  RiffanChevronDownIcon,
+  RiffanChevronRightIcon,
+  RiffanMobileIcon,
+  RiffanTvRemoteIcon,
+  RiffanWarningIcon,
+  RiffanWifiIcon,
+} from './ui/RiffanIcons';
 
 interface SmartTvQuickModalProps {
   isOpen: boolean;
@@ -170,7 +171,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
         {hasConnectedSmartTv && (
           <div className="space-y-3">
             <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-emerald-500/12 border border-emerald-400/30 text-xs font-semibold text-emerald-200">
-              <Radio className="w-4 h-4 text-emerald-400 shrink-0" />
+              <RiffanWifiIcon size={17} animate="always" className="shrink-0" />
               <span>
                 {pickLang(lang, {
                   es: 'Televisor vinculado a la sala',
@@ -197,7 +198,7 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
           fullWidth
           onClick={handleCastAction}
         >
-          <Tv className="w-5 h-5" />
+          <RiffanCastIcon size={20} tone="current" animate="hover" />
           <span>
             {pickLang(lang, {
               es: 'Enviar a TV',
@@ -232,15 +233,17 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             className="w-full min-h-12 px-4 flex items-center justify-between gap-3 text-left cursor-pointer hover:bg-white/[0.04] transition-colors"
           >
             <span className="flex items-center gap-2.5 text-sm font-semibold text-white">
-              <Smartphone className="w-4 h-4 text-[#BF94FF]" />
+              <RiffanMobileIcon size={17} animate="hover" />
               {pickLang(lang, {
                 es: 'Vincular con código',
                 ca: 'Vincular amb codi',
                 en: 'Pair with code',
               })}
             </span>
-            <ChevronDown
-              className={`w-4 h-4 text-zinc-400 transition-transform duration-150 ${
+            <RiffanChevronDownIcon
+              size={16}
+              animate="hover"
+              className={`transition-transform duration-150 ${
                 showCodePairing ? 'rotate-180' : ''
               }`}
             />
@@ -294,9 +297,9 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
                   }`}
                 >
                   {tvClaimStatus.type === 'success' ? (
-                    <Check className="w-4 h-4 shrink-0" />
+                    <RiffanCheckCircleIcon size={16} animate="always" className="shrink-0" />
                   ) : (
-                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <RiffanWarningIcon size={16} animate="always" className="shrink-0" />
                   )}
                   <span>{tvClaimStatus.message}</span>
                 </div>
@@ -330,10 +333,10 @@ export const SmartTvQuickModal: React.FC<SmartTvQuickModalProps> = ({
             className="w-full min-h-11 px-3.5 py-2.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.08] text-xs font-semibold text-zinc-200 flex items-center justify-between gap-2 cursor-pointer transition-colors"
           >
             <span className="flex items-center gap-2.5">
-              <Tv className="w-4 h-4 text-[#BF94FF]" />
+              <RiffanTvRemoteIcon size={17} animate="hover" />
               <span>Samsung Tizen / LG (Lista M3U & EPG XML)</span>
             </span>
-            <ChevronRight className="w-4 h-4 text-zinc-400" />
+            <RiffanChevronRightIcon size={16} animate="hover" />
           </button>
         </div>
       </div>

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Mic, Search, X } from 'lucide-react';
+import { Mic } from 'lucide-react';
 import type { AppLanguage } from '../../types';
 import type { WorldId } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
@@ -7,6 +7,7 @@ import { useSwipeBack } from '../../lib/viewTransition';
 import { NaimBrandLogo } from '../NaimBrandLogo';
 import { AppErrorBoundary } from '../AppErrorBoundary';
 import { SkeletonPosterGrid } from '../ui/DesignSystem';
+import { RiffanBackIcon, RiffanCloseIcon, RiffanSearchIcon } from '../ui/RiffanIcons';
 
 interface WorldShellProps {
   world: Exclude<WorldId, 'entry'>;
@@ -20,6 +21,7 @@ interface WorldShellProps {
   headerActions?: React.ReactNode;
   onOpenVoiceAssistant?: () => void;
   fullHeight?: boolean;
+  className?: string;
   children: React.ReactNode;
 }
 
@@ -35,6 +37,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
   headerActions,
   onOpenVoiceAssistant,
   fullHeight = false,
+  className = '',
   children,
 }) => {
   const [searchOpen, setSearchOpen] = useState(Boolean(searchValue));
@@ -65,7 +68,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
       {...swipeHandlers}
       className={`w-full flex flex-col world-tint-${world} ${
         fullHeight ? 'flex-1 min-h-0 h-full overflow-hidden' : 'min-h-[calc(100dvh-4rem)] pb-24'
-      }`}
+      } ${className}`}
     >
       {/* LIGHTWEIGHT WORLD TOP HEADER */}
       <header className="sticky top-0 z-30 shrink-0 bg-[#07080C]/92 backdrop-blur-2xl border-b border-white/[0.07] shadow-[0_8px_32px_rgba(0,0,0,0.45)] px-2.5 sm:px-4">
@@ -73,7 +76,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
           {searchOpen && onSearchChange ? (
             <div className="flex-1 flex items-center gap-2 min-w-0">
               <div className="relative flex-1 min-w-0">
-                <Search className="w-4 h-4 text-[#BF94FF] absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <RiffanSearchIcon size={16} animate="always" className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
                   ref={searchInputRef}
                   type="search"
@@ -96,7 +99,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                 aria-label={pickLang(lang, { es: 'Cerrar búsqueda', ca: 'Tancar cerca', en: 'Close search' })}
                 className="min-w-11 min-h-11 rounded-2xl bg-[#10121C] hover:bg-white/[0.1] border border-white/[0.08] flex items-center justify-center text-zinc-200 cursor-pointer shrink-0 transition-colors"
               >
-                <X className="w-5 h-5" />
+                <RiffanCloseIcon size={20} animate="hover" />
               </button>
             </div>
           ) : (
@@ -108,7 +111,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                   aria-label={pickLang(lang, { es: 'Volver', ca: 'Tornar', en: 'Back' })}
                   className="min-w-11 min-h-11 rounded-2xl hover:bg-white/[0.08] active:scale-95 flex items-center justify-center text-white cursor-pointer transition-all shrink-0"
                 >
-                  <ArrowLeft className="w-5 h-5" />
+                  <RiffanBackIcon size={20} animate="hover" />
                 </button>
 
                 <button
@@ -147,7 +150,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
                     aria-label={pickLang(lang, { es: 'Buscar', ca: 'Cercar', en: 'Search' })}
                     className="min-w-11 min-h-11 rounded-2xl bg-[#10121C] hover:bg-white/[0.09] border border-white/[0.09] flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
                   >
-                    <Search className="w-4.5 h-4.5" />
+                    <RiffanSearchIcon size={18} animate="hover" />
                   </button>
                 )}
               </div>

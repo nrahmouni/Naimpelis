@@ -7,15 +7,17 @@ import {
   ChevronUp,
   Clock,
   Layers,
-  Loader2,
   Play,
   Radio,
   RefreshCw,
-  Search,
   Sparkles,
   Tv,
-  X,
 } from 'lucide-react';
+import {
+  RiffanCloseIcon,
+  RiffanSearchIcon,
+  RiffanSpinner,
+} from './ui/RiffanIcons';
 import type {
   AppLanguage,
   ChannelLiveEpg,
@@ -903,7 +905,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
               <div className="space-y-3">
                 {/* Search Input */}
                 <div className="relative">
-                  <Search className="w-4 h-4 text-zinc-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <RiffanSearchIcon size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                   <input
                     type="text"
                     value={guideSearch}
@@ -922,7 +924,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                       aria-label="Limpiar búsqueda"
                       className="w-7 h-7 rounded-lg hover:bg-white/[0.08] text-zinc-400 hover:text-white flex items-center justify-center absolute right-2 top-1/2 -translate-y-1/2 cursor-pointer"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <RiffanCloseIcon size={14} />
                     </button>
                   )}
                 </div>
@@ -1012,7 +1014,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                               <ChannelLogoBadge channel={ch} size="md" />
                               {isLoadingThis && (
                                 <span className="absolute inset-0 rounded-2xl bg-black/70 flex items-center justify-center">
-                                  <Loader2 className="w-4 h-4 text-[#BF94FF] animate-spin" />
+                                  <RiffanSpinner size={16} />
                                 </span>
                               )}
                             </div>
@@ -1208,7 +1210,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
 
                     <span className="w-8 h-8 rounded-full bg-black/55 border border-white/20 flex items-center justify-center text-white group-hover:bg-[#9146FF] group-hover:border-[#9146FF] transition-colors shrink-0">
                       {isZapping ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <RiffanSpinner size={14} tone="current" />
                       ) : (
                         <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
                       )}

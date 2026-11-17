@@ -1,35 +1,20 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
 import {
-  Play,
-  Pause,
-  Volume2,
-  VolumeX,
-  Maximize,
-  Minimize,
   Minimize2,
-  Maximize2,
-  X,
-  Cast,
   RotateCcw,
   RotateCw,
-  RefreshCw,
   Tv,
   Film,
   Trophy,
   ArrowLeft,
-  Loader2,
   Sparkles,
-  AlertCircle,
-  Radio,
   SkipForward,
   SkipBack,
   Youtube,
   Moon,
   Sun,
-  SlidersHorizontal,
   Check,
-  MessageSquare,
   Users,
   Share2,
   UserPlus,
@@ -40,10 +25,27 @@ import {
   ExternalLink,
   Mic,
   MicOff,
-  PhoneCall,
   PhoneOff,
   PictureInPicture2,
 } from 'lucide-react';
+import {
+  RiffanCastIcon,
+  RiffanChatIcon,
+  RiffanCloseIcon,
+  RiffanExitFullscreenIcon,
+  RiffanFullscreenIcon,
+  RiffanLiveIcon,
+  RiffanLoaderR,
+  RiffanPauseIcon,
+  RiffanPlayIcon,
+  RiffanRetryIcon,
+  RiffanSlidersIcon,
+  RiffanSpinner,
+  RiffanVideoLoading,
+  RiffanVoiceCallIcon,
+  RiffanVolumeIcon,
+  RiffanWarningIcon,
+} from './ui/RiffanIcons';
 import {
   type AppLanguage,
   ChatMessage,
@@ -2805,7 +2807,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 }`}
               >
                 {activeLanguagePopup.type === 'warning' || activeLanguagePopup.type === 'error' ? (
-                  <AlertCircle className="w-4 h-4" />
+                  <RiffanWarningIcon size={16} animate="always" tone="current" />
                 ) : (
                   <Check className="w-4 h-4" />
                 )}
@@ -2831,7 +2833,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               className="w-6 h-6 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-zinc-300 shrink-0 cursor-pointer"
               aria-label="Cerrar aviso de idioma"
             >
-              <X className="w-3.5 h-3.5" />
+              <RiffanCloseIcon size={14} tone="current" />
             </button>
           </div>
         )}
@@ -2854,7 +2856,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             }}
             className="pointer-events-auto absolute bottom-14 left-3 z-35 max-w-[78%] sm:max-w-[320px] px-3 py-2 rounded-2xl bg-[#18181B]/88 hover:bg-[#18181B] backdrop-blur-md border border-[#9146FF]/35 shadow-2xl flex items-center gap-2 text-left cursor-pointer"
           >
-            <MessageSquare className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+            <RiffanChatIcon size={14} />
             <div className="min-w-0 text-xs">
               <span className="font-bold text-[#BF94FF] mr-1.5">
                 {recentIncomingChatBubble.senderName}:
@@ -2929,7 +2931,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 })}
                 className="pointer-events-auto min-h-[34px] px-3 rounded-full bg-black/75 hover:bg-[#9146FF] backdrop-blur-md border border-white/20 text-[11px] font-bold text-white flex items-center gap-1.5 shadow-lg cursor-pointer active:scale-95 transition-all"
               >
-                <Maximize2 className="w-3.5 h-3.5" />
+                <RiffanFullscreenIcon size={14} tone="current" />
                 <span>{pickLang(lang, { es: 'Ampliar', ca: 'Ampliar', en: 'Expand' })}</span>
               </button>
             )}
@@ -2980,7 +2982,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       : 'bg-[#141418]/80 hover:bg-[#9146FF] border-white/20 text-white'
                   }`}
                 >
-                  <Cast className="w-4 h-4 shrink-0" />
+                  <RiffanCastIcon size={16} tone="current" />
                   <span className="hidden sm:inline">{isCastingToTv ? 'En TV' : 'Cast'}</span>
                 </button>
               )}
@@ -3051,7 +3053,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       aria-label={pickLang(lang, { es: 'Abrir llamada de voz', ca: 'Obrir trucada de veu', en: 'Open voice call' })}
                       className="min-h-[44px] min-w-[44px] px-3 rounded-2xl bg-[#9146FF]/85 hover:bg-[#772CE8] border border-white/20 text-xs font-bold text-white flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                     >
-                      <PhoneCall className="w-4 h-4 shrink-0" />
+                      <RiffanVoiceCallIcon size={16} tone="current" />
                       <span className="hidden sm:inline">
                         {pickLang(lang, { es: 'Voz', ca: 'Veu', en: 'Voice' })}
                       </span>
@@ -3081,7 +3083,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       : 'bg-[#141418]/75 hover:bg-[#141418]/95 border-white/15 text-white'
                   }`}
                 >
-                  <SlidersHorizontal className="w-4 h-4 text-zinc-100 shrink-0" />
+                  <RiffanSlidersIcon size={16} tone="current" />
                   <span className="hidden sm:inline">Ajustes</span>
                 </button>
               )}
@@ -3131,12 +3133,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 >
                   {isFullscreen ? (
                     <>
-                      <Minimize className="w-4 h-4" />
+                      <RiffanExitFullscreenIcon size={16} tone="current" />
                       <span>Salir Pantalla Completa</span>
                     </>
                   ) : (
                     <>
-                      <Maximize className="w-4 h-4" />
+                      <RiffanFullscreenIcon size={16} tone="current" />
                       <span>Pantalla Completa</span>
                     </>
                   )}
@@ -3165,7 +3167,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   aria-label="Salir de pantalla completa"
                   className="min-h-[44px] px-3.5 rounded-2xl bg-black/70 hover:bg-rose-600/90 backdrop-blur-xl border border-white/20 text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all"
                 >
-                  <Minimize className="w-4 h-4" />
+                  <RiffanExitFullscreenIcon size={16} tone="current" />
                   <span>Salir</span>
                 </button>
               ) : (
@@ -3182,7 +3184,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     aria-label="Cerrar reproductor"
                     className="min-h-[44px] min-w-[44px] rounded-2xl bg-black/60 hover:bg-rose-600/90 backdrop-blur-xl border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
                   >
-                    <X className="w-4 h-4" />
+                    <RiffanCloseIcon size={16} tone="current" />
                   </button>
                 )
               )}
@@ -3225,9 +3227,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 className="pointer-events-auto min-h-[40px] min-w-[40px] rounded-xl bg-black/70 hover:bg-black/90 backdrop-blur-md border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
               >
                 {isFullscreen || isHorizontalFullscreen ? (
-                  <Minimize className="w-4 h-4" />
+                  <RiffanExitFullscreenIcon size={16} tone="current" />
                 ) : (
-                  <Maximize className="w-4 h-4" />
+                  <RiffanFullscreenIcon size={16} tone="current" />
                 )}
               </button>
 
@@ -3246,7 +3248,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     aria-label="Cerrar reproductor"
                     className="pointer-events-auto min-h-[40px] min-w-[40px] rounded-xl bg-black/70 hover:bg-rose-600/90 backdrop-blur-md border border-white/15 flex items-center justify-center text-zinc-100 cursor-pointer active:scale-95 transition-all"
                   >
-                    <X className="w-4 h-4" />
+                    <RiffanCloseIcon size={16} tone="current" />
                   </button>
                 )}
             </div>
@@ -3299,7 +3301,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 >
                   {isFullscreen ? (
                     <>
-                      <Minimize className="w-4 h-4" />
+                      <RiffanExitFullscreenIcon size={16} tone="current" />
                       <span>
                         {pickLang(lang, {
                           es: 'Salir Pantalla Completa',
@@ -3310,7 +3312,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     </>
                   ) : (
                     <>
-                      <Maximize className="w-4 h-4" />
+                      <RiffanFullscreenIcon size={16} tone="current" />
                       <span>
                         {pickLang(lang, {
                           es: 'Poner TV en Pantalla Completa',
@@ -3343,7 +3345,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
             {extractionError && (
               <div className="mt-3 px-3.5 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-200 max-w-md flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                <RiffanWarningIcon size={16} animate="always" className="text-rose-400" />
                 <span>{extractionError}</span>
               </div>
             )}
@@ -3379,7 +3381,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   onClick={() => onOpenCatalogSection('tdt')}
                   className="min-h-[44px] px-4 rounded-xl bg-[#1F1F23] hover:bg-[#26262C] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
                 >
-                  <Radio className="w-4 h-4 text-[#EB0400]" />
+                  <RiffanLiveIcon size={16} animate="always" className="text-[#EB0400]" />
                   <span>{t.tabTdt}</span>
                 </button>
                 <button
@@ -3691,7 +3693,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
               className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-zinc-300 flex items-center justify-center cursor-pointer"
               aria-label="Cancelar auto-reproducción"
             >
-              <X className="w-3.5 h-3.5" />
+              <RiffanCloseIcon size={14} tone="current" />
             </button>
           </div>
         )}
@@ -3740,9 +3742,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 }`}
               >
                 {localPlaying ? (
-                  <Pause className="w-7 h-7 sm:w-8 sm:h-8 fill-current" />
+                  <RiffanPauseIcon size={30} tone="current" />
                 ) : (
-                  <Play className="w-7 h-7 sm:w-8 sm:h-8 fill-current ml-0.5" />
+                  <RiffanPlayIcon size={30} tone="current" />
                 )}
               </button>
 
@@ -3796,7 +3798,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 >
                   {isMuted ? (
                     <>
-                      <VolumeX className="w-4 h-4" />
+                      <RiffanVolumeIcon size={16} muted tone="current" />
                       <span>
                         {pickLang(lang, {
                           es: 'Activar Sonido',
@@ -3807,7 +3809,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     </>
                   ) : (
                     <>
-                      <Volume2 className="w-4 h-4 text-[#00F593]" />
+                      <RiffanVolumeIcon size={16} muted={false} className="text-[#00F593]" />
                       <span>
                         {pickLang(lang, {
                           es: 'Sonido Activo',
@@ -3921,7 +3923,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       }}
                       className="min-h-9 px-3.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-100 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <RiffanCloseIcon size={14} tone="current" />
                       <span>
                         {isMobileExternal ? 'Cerrar pestaña' : 'Cerrar ventana'}
                       </span>
@@ -4024,7 +4026,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     }}
                     className="min-h-10 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
                   >
-                    <Play className="w-3.5 h-3.5 fill-current" />
+                    <RiffanPlayIcon size={14} tone="current" />
                     <span>Reabrir</span>
                   </button>
                   <button
@@ -4044,7 +4046,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
             const fallbackHref = externalTargetUrl || activeTrackUrl || externalVidfastHref;
             return (
               <div className="relative w-full h-full bg-[#120E18] flex flex-col items-center justify-center p-4 text-center gap-3">
-                <AlertCircle className="w-8 h-8 text-amber-400" />
+                <RiffanWarningIcon size={32} animate="always" className="text-amber-400" />
                 <div className="space-y-1 max-w-md">
                   <h4 className="font-display font-bold text-sm sm:text-base text-white">
                     Permite ventanas emergentes para este sitio
@@ -4062,7 +4064,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     }}
                     className="min-h-10 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
+                    <RiffanRetryIcon size={14} tone="current" />
                     <span>Reintentar</span>
                   </button>
                   <a
@@ -4115,7 +4117,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     }}
                     className="min-h-11 px-5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs sm:text-sm font-bold inline-flex items-center gap-2 shadow-[0_10px_28px_rgba(145,70,255,0.45)] cursor-pointer transition-all"
                   >
-                    <Play className="w-4 h-4 fill-current" />
+                    <RiffanPlayIcon size={16} tone="current" />
                     <span>Reproducir en ventana externa</span>
                   </button>
                   <button
@@ -4123,7 +4125,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     onClick={handleRetryInlineEmbed}
                     className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-zinc-100 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                   >
-                    <RefreshCw className="w-3.5 h-3.5" />
+                    <RiffanRetryIcon size={14} tone="current" />
                     <span>Reintentar inline</span>
                   </button>
                   <a
@@ -4164,7 +4166,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       }}
                       className="min-h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
                     >
-                      <Play className="w-3 h-3 fill-current" />
+                      <RiffanPlayIcon size={12} tone="current" />
                       <span>
                         {pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}
                       </span>
@@ -4224,7 +4226,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       })}
                       className="w-7 h-7 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
                     >
-                      <X className="w-3.5 h-3.5" />
+                      <RiffanCloseIcon size={14} tone="current" />
                     </button>
                   </div>
                 </div>
@@ -4260,7 +4262,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* ================================================================== */}
         {isExtracting && (
           <div className="pointer-events-auto absolute inset-0 z-25 bg-black/72 backdrop-blur-[3px] flex flex-col items-center justify-center p-4 text-center">
-            <Loader2 className="w-7 h-7 sm:w-9 sm:h-9 animate-spin text-[#9146FF] mb-2" />
+            <RiffanLoaderR size={isMinimized ? 36 : 56} className="mb-2" />
             {!isMinimized && (
               <>
                 <p className="font-display font-semibold text-xs sm:text-base text-white max-w-md">
@@ -4291,7 +4293,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     : 'mt-3.5 min-h-[38px] px-4 rounded-xl text-xs sm:text-sm'
                 }`}
               >
-                <X className="w-3.5 h-3.5 shrink-0" />
+                <RiffanCloseIcon size={14} tone="current" />
                 <span>
                   {pickLang(lang, {
                     es: 'Cancelar',
@@ -4309,7 +4311,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           isBuffering &&
           (videoState.mode === 'hls' || videoState.mode === 'direct') && (
             <div className="pointer-events-none absolute top-3 left-3 z-25 px-2.5 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/10 flex items-center gap-1.5">
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#9146FF]" />
+              <RiffanVideoLoading size={18} />
               {!isMinimized && (
                 <span className="text-[10px] font-medium text-zinc-300">
                   {pickLang(lang, {
@@ -4324,7 +4326,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
         {streamError && !isExtracting && !isMinimized && (
           <div className="absolute inset-0 z-30 bg-black/85 flex flex-col items-center justify-center p-5 text-center gap-3">
-            <AlertCircle className="w-8 h-8 text-amber-400" />
+            <RiffanWarningIcon size={34} animate="always" className="text-amber-400" />
             <p className="text-xs sm:text-sm text-zinc-200 max-w-md">{streamError}</p>
             <div className="flex flex-wrap items-center justify-center gap-2">
               <button
@@ -4332,7 +4334,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 onClick={handleForceReloadStream}
                 className="min-h-[44px] px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
               >
-                <RefreshCw className="w-4 h-4" />
+                <RiffanRetryIcon size={16} tone="current" />
                 <span>
                   {pickLang(lang, {
                     es: 'Reintentar señal',
@@ -4444,9 +4446,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   }
                 >
                   {localPlaying ? (
-                    <Pause className="w-5 h-5 fill-current" />
+                    <RiffanPauseIcon size={20} tone="current" />
                   ) : (
-                    <Play className="w-5 h-5 fill-current" />
+                    <RiffanPlayIcon size={20} tone="current" />
                   )}
                 </button>
 
@@ -4461,11 +4463,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       en: 'Mute',
                     })}
                   >
-                    {isMuted || volume === 0 ? (
-                      <VolumeX className="w-5 h-5 text-rose-400" />
-                    ) : (
-                      <Volume2 className="w-5 h-5" />
-                    )}
+                    <RiffanVolumeIcon
+                      size={20}
+                      muted={isMuted || volume === 0}
+                      tone="current"
+                      className={isMuted || volume === 0 ? 'text-rose-400' : ''}
+                    />
                   </button>
                   <input
                     type="range"
@@ -4708,9 +4711,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   })}
                 >
                   {isFullscreen || isHorizontalFullscreen ? (
-                    <Minimize className="w-4 h-4" />
+                    <RiffanExitFullscreenIcon size={16} tone="current" />
                   ) : (
-                    <Maximize className="w-4 h-4" />
+                    <RiffanFullscreenIcon size={16} tone="current" />
                   )}
                 </button>
               </div>
@@ -4756,7 +4759,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       en: 'Expand player',
                     })}
                   >
-                    <Maximize2 className="w-3.5 h-3.5" />
+                    <RiffanFullscreenIcon size={14} tone="current" />
                   </button>
                 )}
 
@@ -4772,7 +4775,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     title={pickLang(lang, { es: 'Cerrar reproductor', ca: 'Tancar reproductor', en: 'Close player' })}
                     aria-label={pickLang(lang, { es: 'Cerrar reproductor', ca: 'Tancar reproductor', en: 'Close player' })}
                   >
-                    <X className="w-3.5 h-3.5" />
+                    <RiffanCloseIcon size={14} tone="current" />
                   </button>
                 )}
               </div>
@@ -4797,9 +4800,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     }
                   >
                     {localPlaying ? (
-                      <Pause className="w-3.5 h-3.5 fill-current" />
+                      <RiffanPauseIcon size={14} tone="current" />
                     ) : (
-                      <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
+                      <RiffanPlayIcon size={14} tone="current" />
                     )}
                   </button>
                 )}
@@ -4811,11 +4814,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     className="w-7 h-7 rounded-full bg-black/75 hover:bg-black border border-white/20 flex items-center justify-center text-white active:scale-90 transition-transform cursor-pointer"
                     aria-label={pickLang(lang, { es: 'Silenciar', ca: 'Silenciar', en: 'Mute' })}
                   >
-                    {isMuted || volume === 0 ? (
-                      <VolumeX className="w-3.5 h-3.5 text-rose-400" />
-                    ) : (
-                      <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
-                    )}
+                    <RiffanVolumeIcon
+                      size={14}
+                      muted={isMuted || volume === 0}
+                      tone="current"
+                      className={isMuted || volume === 0 ? 'text-rose-400' : 'text-emerald-400'}
+                    />
                   </button>
                 )}
               </div>
@@ -4930,7 +4934,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                             }
                             className="min-h-[34px] px-2.5 rounded-xl text-xs font-bold bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] border border-[#9146FF]/45 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
                           >
-                            <Play className="w-3 h-3 fill-current shrink-0" />
+                            <RiffanPlayIcon size={12} tone="current" />
                             <span>{pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}</span>
                           </button>
                         )}
@@ -4991,10 +4995,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 </div>
               ) : (
                 <div className="flex items-center gap-2 text-xs font-semibold text-zinc-300">
-                  <Radio
-                    className={`w-3.5 h-3.5 shrink-0 ${
-                      videoState.isLive ? 'text-[#EB0400]' : 'text-[#9146FF]'
-                    }`}
+                  <RiffanLiveIcon
+                    size={15}
+                    animate={videoState.isLive ? 'always' : 'hover'}
+                    className={videoState.isLive ? 'text-[#EB0400]' : ''}
                   />
                   <span className="truncate max-w-[180px]">
                     {videoState.tracks[videoState.activeTrackIndex]?.label ||
@@ -5011,7 +5015,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       }}
                       className="min-h-[32px] px-2.5 rounded-xl text-xs font-bold bg-[#9146FF]/20 hover:bg-[#9146FF]/35 text-[#D8B4FE] border border-[#9146FF]/45 flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer"
                     >
-                      <Play className="w-3 h-3 fill-current shrink-0" />
+                      <RiffanPlayIcon size={12} tone="current" />
                       <span>{pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}</span>
                     </button>
                   )}
@@ -5048,7 +5052,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                       : 'bg-[#121420] hover:bg-white/[0.1] text-zinc-100 border-white/[0.1]'
                   }`}
                 >
-                  <MessageSquare className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+                  <RiffanChatIcon size={15} tone={floatingChatOpen ? 'current' : 'brand'} />
                   <span className="tabular-nums">Sala · {Math.max(1, participantCount)}</span>
                   {unreadChatCount > 0 && !floatingChatOpen && (
                     <span className="w-2 h-2 rounded-full bg-[#EB0400] shrink-0" aria-hidden="true" />
@@ -5097,7 +5101,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   en: 'Cast video directly to your TV (Chromecast / AirPlay 2 / Smart TV)',
                 })}
               >
-                <Cast className="w-3.5 h-3.5 shrink-0" />
+                <RiffanCastIcon size={15} tone="current" />
                 <span>
                   {isCastingToTv
                     ? pickLang(lang, { es: 'Transmitiendo', ca: 'Transmetent', en: 'Casting' })
@@ -5175,9 +5179,9 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     })}
                   >
                     {voiceChat.status === 'requesting' ? (
-                      <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                      <RiffanSpinner size={14} tone="current" />
                     ) : (
-                      <PhoneCall className="w-3.5 h-3.5 shrink-0" />
+                      <RiffanVoiceCallIcon size={15} tone="current" />
                     )}
                     <span>
                       {voiceChat.status === 'requesting'
@@ -5201,7 +5205,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                 }}
                 className="min-h-[38px] px-3.5 rounded-2xl bg-[#26262C] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-bold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all"
               >
-                <SlidersHorizontal className="w-3.5 h-3.5 text-zinc-200" />
+                <RiffanSlidersIcon size={15} tone="current" />
                 <span>{pickLang(lang, { es: 'Ajustes', ca: 'Ajustos', en: 'Settings' })}</span>
               </button>
             </div>
@@ -5216,7 +5220,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         (voiceChat.audioPlaybackBlocked && voiceChat.isJoined ? (
           <div className="bg-[#161224] border-t border-[#9146FF]/35 px-3 sm:px-4 py-2 flex items-center justify-between gap-2 text-xs text-[#DFCCFF]">
             <div className="flex items-center gap-1.5 min-w-0">
-              <Volume2 className="w-3.5 h-3.5 text-[#BF94FF] shrink-0" />
+              <RiffanVolumeIcon size={15} />
               <span className="truncate">
                 {pickLang(lang, {
                   es: 'Toca para escuchar la llamada de voz en este dispositivo.',
@@ -5239,7 +5243,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         ) : voiceChat.errorMessage ? (
           <div className="bg-amber-500/10 border-t border-amber-400/35 px-3 sm:px-4 py-2 flex items-center justify-between gap-2 text-xs text-amber-200">
             <div className="flex items-center gap-1.5 min-w-0">
-              <AlertCircle className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <RiffanWarningIcon size={15} animate="always" className="text-amber-300" />
               <span className="truncate">{voiceChat.errorMessage}</span>
             </div>
             <button

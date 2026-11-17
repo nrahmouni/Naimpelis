@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
 import {
-  Users,
   UserPlus,
   UserCheck,
   Send,
-  Share2,
   Check,
-  X,
   Trash2,
-  Play,
-  ArrowRight,
   Copy,
   Tv,
   Trophy,
   Film,
 } from 'lucide-react';
+import {
+  RiffanArrowRightIcon,
+  RiffanCloseIcon,
+  RiffanPlayIcon,
+  RiffanShareIcon,
+  RiffanUsersIcon,
+} from './ui/RiffanIcons';
 import {
   AppLanguage,
   IncomingFriendAddedNotice,
@@ -309,7 +311,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
       onClose={onClose}
       lang={lang}
       maxWidth="sm:max-w-lg"
-      icon={<Users className="w-5 h-5" />}
+      icon={<RiffanUsersIcon size={20} />}
       title={pickLang(lang, {
         es: 'Amigos',
         ca: 'Amics',
@@ -394,7 +396,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
               className="min-h-11 px-3 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
             >
               <span>WhatsApp</span>
-              <ArrowRight className="w-3.5 h-3.5 shrink-0" />
+              <RiffanArrowRightIcon size={14} tone="current" />
             </a>
           </div>
         </div>
@@ -560,7 +562,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
                             className="min-h-12 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-zinc-200 flex items-center gap-1 cursor-pointer"
                           >
                             <span>{pickLang(lang, { es: 'Unirme', ca: 'Unir-me', en: 'Join' })}</span>
-                            <ArrowRight className="w-3.5 h-3.5" />
+                            <RiffanArrowRightIcon size={14} tone="current" />
                           </button>
                         )}
 
@@ -813,7 +815,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
               </>
             ) : (
               <>
-                <Share2 className="w-4 h-4" />
+                <RiffanShareIcon size={16} tone="current" />
                 <span>
                   {pickLang(lang, {
                     es: 'Compartir sala',
@@ -833,7 +835,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
             className="min-h-12 px-4 rounded-2xl bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 font-bold text-xs sm:text-sm flex items-center justify-center gap-2 shadow-[0_8px_24px_rgba(37,211,102,0.3)] transition-all cursor-pointer"
           >
             <span>WhatsApp</span>
-            <ArrowRight className="w-4 h-4" />
+            <RiffanArrowRightIcon size={16} tone="current" />
           </a>
         </div>
       </div>
@@ -937,7 +939,7 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
               })}
               className="w-9 h-9 rounded-full bg-white/[0.08] hover:bg-white/[0.16] text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
             >
-              <X className="w-4 h-4" />
+              <RiffanCloseIcon size={16} tone="current" />
             </button>
           </div>
 
@@ -947,7 +949,7 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
               onClick={() => onAcceptInvite(invite)}
               className="min-h-10 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-[0_8px_24px_rgba(145,70,255,0.4)] cursor-pointer transition-all"
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
+              <RiffanPlayIcon size={14} tone="current" />
               <span>
                 {pickLang(lang, {
                   es: 'Unirme a la sala',
@@ -1028,7 +1030,7 @@ export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProp
               aria-label={pickLang(lang, { es: 'Cerrar aviso', ca: 'Tancar avís', en: 'Dismiss' })}
               className="w-10 h-10 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/10 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all"
             >
-              <X className="w-4 h-4" />
+              <RiffanCloseIcon size={16} tone="current" />
             </button>
           </div>
         </div>

@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { motion } from 'motion/react';
 import {
-  ArrowRight,
-  Shuffle,
-  Play,
-  Clock,
-  Settings,
-  KeyRound,
-} from 'lucide-react';
+  RiffanArrowRightIcon,
+  RiffanClockIcon,
+  RiffanPlayIcon,
+  RiffanRoomKeyIcon,
+  RiffanSettingsGearIcon,
+  RiffanShuffleIcon,
+} from './ui/RiffanIcons';
 import { AppLanguage } from '../types';
 import { pickLang, formatRoomTitle } from '../utils/i18n';
 import {
@@ -180,7 +180,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               en: 'Settings',
             })}
           >
-            <Settings className="w-5 h-5" />
+            <RiffanSettingsGearIcon size={20} animate="hover" />
           </IconButton>
         </header>
 
@@ -226,7 +226,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             {recentRooms.length > 0 && (
               <div className="space-y-2 pb-4 border-b border-white/[0.07]">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
-                  <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
+                  <RiffanClockIcon size={14} animate="hover" />
                   <span>
                     {pickLang(lang, {
                       es: 'Continuar en tus salas',
@@ -250,7 +250,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       }}
                       className="scroll-snap-item min-h-12 px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] text-xs font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-[0.97] transition-all"
                     >
-                      <Play className="w-3.5 h-3.5 text-[#BF94FF] fill-current shrink-0" />
+                      <RiffanPlayIcon size={14} animate="hover" className="shrink-0" />
                       <span>{formatRoomChipName(room.name)}</span>
                     </button>
                   ))}
@@ -306,7 +306,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       en: 'Random name',
                     })}
                   >
-                    <Shuffle className="w-4 h-4" />
+                    <RiffanShuffleIcon size={16} animate="hover" />
                   </IconButton>
                 </div>
               </div>
@@ -324,7 +324,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     en: 'Enter',
                   })}
                 </span>
-                <ArrowRight className="w-4 h-4 shrink-0" />
+                <RiffanArrowRightIcon size={17} tone="current" animate="hover" className="shrink-0" />
               </PrimaryButton>
             </div>
 
@@ -380,7 +380,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   }}
                   className="min-h-11 px-3 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[11px] font-semibold text-[#BF94FF] hover:text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors truncate"
                 >
-                  <KeyRound className="w-3.5 h-3.5 shrink-0" />
+                  <RiffanRoomKeyIcon size={15} animate="hover" className="shrink-0" />
                   <span className="truncate">
                     {pickLang(lang, {
                       es: 'Unirme',
@@ -432,7 +432,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       : 'bg-transparent hover:bg-white/[0.06] text-zinc-400 hover:text-white border-transparent'
                   }`}
                 >
-                  <FlagBadgeSvg code={item.flag} className="w-4 h-3" />
+                  <FlagBadgeSvg code={item.flag} className="w-5 h-3.5 shrink-0" />
                   <span>{item.label}</span>
                 </button>
               );
@@ -446,7 +446,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           onClose={() => setShowJoinSheet(false)}
           lang={lang}
           maxWidth="sm:max-w-sm"
-          icon={<KeyRound className="w-5 h-5" />}
+          icon={<RiffanRoomKeyIcon size={20} animate="always" />}
           title={pickLang(lang, {
             es: 'Unirme con código',
             ca: 'Unir-me amb codi',
@@ -479,7 +479,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <span>
                 {pickLang(lang, { es: 'Unirme', ca: 'Unir-me', en: 'Join' })}
               </span>
-              <ArrowRight className="w-4 h-4" />
+              <RiffanArrowRightIcon size={16} animate="hover" />
             </SecondaryButton>
           </form>
         </BottomSheet>
