@@ -241,10 +241,18 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
     } else {
       setForceSpanishStatus('launched');
     }
+    const resolvedMediaType = latestDetails?.mediaType || item.mediaType;
+    const resolvedTmdbId = item.tmdbId || latestDetails?.tmdbId;
     const enrichedMovie: CatalogMovie = {
       ...item,
-      tmdbId: item.tmdbId || latestDetails?.tmdbId,
+      mediaType: resolvedMediaType,
+      tmdbId: resolvedTmdbId,
       originalTitle: item.originalTitle || latestDetails?.originalTitle,
+      bingetrixUrl:
+        item.bingetrixUrl ||
+        (resolvedMediaType !== 'tv' && resolvedTmdbId
+          ? `https://bingetrix.sc/watch/${resolvedTmdbId}`
+          : undefined),
       year:
         item.year && item.year !== 'HD'
           ? item.year
@@ -601,10 +609,18 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                     disabled={(loading && !hasProbedLanguages) || (hasProbedLanguages && visibleAudioOptions.length === 0)}
                     onClick={() => {
                       triggerHaptic('success');
+                      const resolvedMediaType = details?.mediaType || item.mediaType;
+                      const resolvedTmdbId = item.tmdbId || details?.tmdbId;
                       const enrichedMovie: CatalogMovie = {
                         ...item,
-                        tmdbId: item.tmdbId || details?.tmdbId,
+                        mediaType: resolvedMediaType,
+                        tmdbId: resolvedTmdbId,
                         originalTitle: item.originalTitle || details?.originalTitle,
+                        bingetrixUrl:
+                          item.bingetrixUrl ||
+                          (resolvedMediaType !== 'tv' && resolvedTmdbId
+                            ? `https://bingetrix.sc/watch/${resolvedTmdbId}`
+                            : undefined),
                         year:
                           item.year && item.year !== 'HD'
                             ? item.year
@@ -688,7 +704,14 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
                       subtitle: `${year || 'HD'} · ${selectedAudioLang}`,
                       poster: item.poster || details?.poster,
                       tmdbId: item.tmdbId || details?.tmdbId,
-                      url: item.bingetrixUrl || item.movidyUrl || item.gnulaUrl || item.vestUrl,
+                      url:
+                        item.bingetrixUrl ||
+                        (item.tmdbId || details?.tmdbId
+                          ? `https://bingetrix.sc/watch/${item.tmdbId || details?.tmdbId}`
+                          : undefined) ||
+                        item.movidyUrl ||
+                        item.gnulaUrl ||
+                        item.vestUrl,
                       gnulaUrl: item.gnulaUrl,
                       vestUrl: item.vestUrl,
                       preferLang: selectedAudioLang,

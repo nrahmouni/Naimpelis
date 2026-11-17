@@ -37,6 +37,7 @@ export interface IndexedCatalogEntry {
   languages: string[];
   sources: CatalogSourceTag[];
   popularity: number;
+  voteCount?: number;
   indexedAt: number;
 }
 
@@ -60,6 +61,10 @@ const onDemandQueryCache = new LruTtlCache<string, IndexedCatalogEntry[]>(
   250,
   ONDEMAND_CACHE_TTL_MS
 );
+const tmdbSpanishMetaCache = new LruTtlCache<
+  string,
+  { titles: string[]; year: string; esTitle?: string }
+>(500, 6 * 60 * 60 * 1000);
 
 const indexedKeySet = new Set<string>();
 const sourceMetrics = new Map<CatalogSourceTag, SourceRefreshMetric>();
@@ -77,8 +82,20 @@ export interface RefreshCycleSummary {
   sources: SourceRefreshMetric[];
 }
 
+export function correctCommonSearchTypos(input: string): string {
+  return String(input || '')
+    .replace(/\bsipidr?e?r?\b/gi, 'spider')
+    .replace(/\bspyderman\b/gi, 'spider man')
+    .replace(/\bspidermon\b/gi, 'spider man')
+    .replace(/\binterstelar\b/gi, 'interstellar')
+    .replace(/\bavater\b/gi, 'avatar')
+    .replace(/\bavangers?\b/gi, 'avengers')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
 export function normalizeCatalogQuery(input: string): string {
-  let cleaned = String(input || '')
+  const cleaned = String(input || '')
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -87,16 +104,7 @@ export function normalizeCatalogQuery(input: string): string {
     .replace(/\s+/g, ' ')
     .trim();
 
-  // Common typo corrections (e.g. "sipider" -> "spider", "spyderman" -> "spider man")
-  cleaned = cleaned
-    .replace(/\bsipidr?e?r?\b/g, 'spider')
-    .replace(/\bspyderman\b/g, 'spider man')
-    .replace(/\bspidermon\b/g, 'spider man')
-    .replace(/\binterstelar\b/g, 'interstellar')
-    .replace(/\bavater\b/g, 'avatar')
-    .replace(/\bavangers?\b/g, 'avengers');
-
-  return cleaned.replace(/\s+/g, ' ').trim();
+  return correctCommonSearchTypos(cleaned).toLowerCase();
 }
 
 export function normalizeCompactCatalogQuery(input: string): string {
@@ -346,6 +354,7 @@ function mapTmdbRawToIndexed(
     languages: langs,
     sources,
     popularity: Number(raw.popularity || raw.vote_count || 10),
+    voteCount: Number(raw.vote_count || 0),
     indexedAt: Date.now(),
   };
 }
@@ -697,10 +706,84 @@ async function refreshVestMirrors(): Promise<SourceRefreshMetric> {
   }
 }
 
+export async function fetchTmdbSpanishAltTitles(
+  tmdbId: number,
+  mediaType: 'movie' | 'tv'
+): Promise<{ titles: string[]; year: string; esTitle?: string }> {
+  const cleanId = Number(tmdbId || 0);
+  if (!cleanId) return { titles: [], year: '' };
+  const cKey = `${mediaType}:${cleanId}`;
+  const cached = tmdbSpanishMetaCache.get(cKey);
+  if (cached) return cached;
+
+  try {
+    const apiKey = ENV.tmdbApiKey;
+    const url = `https://api.themoviedb.org/3/${mediaType}/${cleanId}?api_key=${apiKey}&language=es-ES&append_to_response=translations,alternative_titles`;
+    const r = await fetch(url, { signal: AbortSignal.timeout(3500) });
+    if (!r.ok) return { titles: [], year: '' };
+    const tmJson: any = await r.json();
+
+    const esRegions = new Set(['ES', 'MX', 'AR', 'CO', 'CL', 'PE', 'VE', 'UY', '419']);
+    const esTranslationTitles: string[] = [];
+    const esAltTitles: string[] = [];
+    const otherTitles: string[] = [];
+    const primary = String(tmJson?.title || tmJson?.name || '').trim();
+    const orig = String(tmJson?.original_title || tmJson?.original_name || '').trim();
+    const year = String(tmJson?.release_date || tmJson?.first_air_date || '').split('-')[0] || '';
+
+    const translations: any[] = Array.isArray(tmJson?.translations?.translations)
+      ? tmJson.translations.translations
+      : [];
+    for (const tr of translations) {
+      const trName = String(tr?.data?.title || tr?.data?.name || '').trim();
+      if (!trName) continue;
+      const langCode = String(tr?.iso_639_1 || '').toLowerCase();
+      const countryCode = String(tr?.iso_3166_1 || '').toUpperCase();
+      if (langCode === 'es') {
+        if (countryCode === 'ES') esTranslationTitles.unshift(trName);
+        else esTranslationTitles.push(trName);
+      } else if (langCode === 'en') {
+        otherTitles.push(trName);
+      }
+    }
+
+    const rawAltList: any[] = Array.isArray(tmJson?.alternative_titles?.titles)
+      ? tmJson.alternative_titles.titles
+      : Array.isArray(tmJson?.alternative_titles?.results)
+      ? tmJson.alternative_titles.results
+      : [];
+    for (const alt of rawAltList) {
+      const altTitle = String(alt?.title || alt?.name || '').trim();
+      if (!altTitle) continue;
+      const countryCode = String(alt?.iso_3166_1 || '').toUpperCase();
+      if (esRegions.has(countryCode)) {
+        if (countryCode === 'ES') esAltTitles.unshift(altTitle);
+        else esAltTitles.push(altTitle);
+      } else if (countryCode === 'US' || countryCode === 'GB') {
+        otherTitles.push(altTitle);
+      }
+    }
+
+    const deduped = Array.from(
+      new Set(
+        [primary, ...esTranslationTitles, ...esAltTitles, orig, ...otherTitles]
+          .map((s) => s.trim())
+          .filter(Boolean)
+      )
+    );
+    const out = { titles: deduped, year, esTitle: primary || esTranslationTitles[0] || esAltTitles[0] || undefined };
+    tmdbSpanishMetaCache.set(cKey, out);
+    return out;
+  } catch {
+    return { titles: [], year: '' };
+  }
+}
+
 /**
  * Live On-Demand Fallback Scraper when a query misses or underperforms in cache.
- * Searches BOTH TMDB en-US & es-ES + /search/multi + live extraction portals,
- * caches discoveries into `indexedCatalogCache`, and returns relevance-sorted matches.
+ * Searches MOVIDY FIRST (including Spanish hints), then TMDB es-ES & en-US + Gnula,
+ * enriches TMDB matches with TMDB Spanish alt-titles -> Movidy, caches discoveries,
+ * and returns Movidy-prioritized relevance-sorted matches.
  */
 export async function liveOnDemandFallbackSearch(
   rawQuery: string,
@@ -714,30 +797,76 @@ export async function liveOnDemandFallbackSearch(
   if (cached) return cached;
 
   const apiKey = ENV.tmdbApiKey;
+  const correctedQ = correctCommonSearchTypos(cleanQ);
+  const tmdbSearchQ = correctedQ && correctedQ.toLowerCase() !== cleanQ.toLowerCase() ? correctedQ : cleanQ;
   const discovered: IndexedCatalogEntry[] = [];
+  let directMovidyEntry: IndexedCatalogEntry | null = null;
 
   try {
-    // 1. Multi-language TMDB fallback (/search/movie en-US + /search/tv en-US + /search/multi en-US & es-ES)
+    // 1. MOVIDY SEARCH FIRST (Always primary source, using original + typo-corrected + Spanish title hints)
+    try {
+      const hintsToTry = Array.from(
+        new Set([
+          ...generateSpanishTitleHints(cleanQ),
+          ...generateSpanishTitleHints(tmdbSearchQ),
+          tmdbSearchQ,
+          cleanQ,
+        ])
+      ).filter((h) => h && h.length >= 2);
+
+      const expectedMediaType = wantMediaType === 'all' ? undefined : wantMediaType;
+      const movidyUrl = await findMovidyUrlByTitle(hintsToTry[0] || cleanQ, undefined, {
+        titleHints: hintsToTry,
+        expectedMediaType,
+      }).catch(() => null);
+
+      if (movidyUrl) {
+        const mvMeta = await fetchMovidyPageMetadata(movidyUrl).catch(() => null);
+        if (mvMeta && mvMeta.cleanTitle?.trim()) {
+          directMovidyEntry = {
+            id: `movidy-ondemand-${normalizeCompactCatalogQuery(mvMeta.cleanTitle)}`,
+            mediaType: mvMeta.isTvShow ? 'tv' : 'movie',
+            title: mvMeta.cleanTitle,
+            originalTitle: mvMeta.cleanTitle,
+            year: mvMeta.year || 'HD',
+            rating: '',
+            overview: mvMeta.overview || 'Disponible en Movidy.',
+            poster: '',
+            backdrop: '',
+            movidyUrl,
+            languages: ['Castellano', 'Latino', 'VOSE', 'EN'],
+            sources: ['movidy'],
+            popularity: 100,
+            indexedAt: Date.now(),
+          };
+          discovered.push(directMovidyEntry);
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // 2. Multi-language TMDB fallback & Gnula live search (Spanish first, then English/Multi)
     const tmdbUrls: Array<{ url: string; lang: 'en-US' | 'es-ES'; forcedType?: 'movie' | 'tv' }> = [
       {
-        url: `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&language=en-US&query=${encodeURIComponent(cleanQ)}&page=1&include_adult=false`,
-        lang: 'en-US',
+        url: `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&language=es-ES&query=${encodeURIComponent(tmdbSearchQ)}&page=1&include_adult=false`,
+        lang: 'es-ES',
       },
       {
-        url: `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&language=es-ES&query=${encodeURIComponent(cleanQ)}&page=1&include_adult=false`,
-        lang: 'es-ES',
+        url: `https://api.themoviedb.org/3/search/multi?api_key=${apiKey}&language=en-US&query=${encodeURIComponent(tmdbSearchQ)}&page=1&include_adult=false`,
+        lang: 'en-US',
       },
     ];
     if (wantMediaType === 'movie') {
       tmdbUrls.unshift({
-        url: `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&language=en-US&query=${encodeURIComponent(cleanQ)}&page=1&include_adult=false`,
-        lang: 'en-US',
+        url: `https://api.themoviedb.org/3/search/movie?api_key=${apiKey}&language=es-ES&query=${encodeURIComponent(tmdbSearchQ)}&page=1&include_adult=false`,
+        lang: 'es-ES',
         forcedType: 'movie',
       });
     } else if (wantMediaType === 'tv') {
       tmdbUrls.unshift({
-        url: `https://api.themoviedb.org/3/search/tv?api_key=${apiKey}&language=en-US&query=${encodeURIComponent(cleanQ)}&page=1&include_adult=false`,
-        lang: 'en-US',
+        url: `https://api.themoviedb.org/3/search/tv?api_key=${apiKey}&language=es-ES&query=${encodeURIComponent(tmdbSearchQ)}&page=1&include_adult=false`,
+        lang: 'es-ES',
         forcedType: 'tv',
       });
     }
@@ -756,7 +885,7 @@ export async function liveOnDemandFallbackSearch(
         })
       ),
       Promise.race([
-        scrapeGnulaCatalog({ query: cleanQ, mediaType: wantMediaType }).catch(() => ({
+        scrapeGnulaCatalog({ query: tmdbSearchQ, mediaType: wantMediaType }).catch(() => ({
           items: [],
           hasMore: false,
         })),
@@ -777,12 +906,115 @@ export async function liveOnDemandFallbackSearch(
           row,
           mType,
           ['bingetrix', 'tmdb'],
-          reqCfg.lang === 'en-US' ? ['English 1080p', 'VOSE', 'ES'] : ['Castellano', 'Latino', 'VOSE']
+          ['Castellano', 'Latino', 'VOSE', 'EN']
         );
         if (entry) {
           upsertIndexedEntry(entry);
           discovered.push(entry);
         }
+      }
+    }
+
+    // 2B. If Movidy hasn't been attached to top TMDB matches yet, translate top TMDB hits into Spanish
+    // alternative titles (e.g. "Spider-Man: Brand New Day" -> "Spider-Man: Un nuevo día") and search Movidy!
+    const topTmdbCandidates = discovered
+      .filter((d) => Boolean(d.tmdbId) && !d.movidyUrl)
+      .sort(
+        (a, b) =>
+          scoreTitleRelevance(b.title, b.originalTitle, tmdbSearchQ, {
+            altTitle: b.altTitle,
+            popularity: b.popularity,
+            voteCount: b.voteCount,
+          }) -
+          scoreTitleRelevance(a.title, a.originalTitle, tmdbSearchQ, {
+            altTitle: a.altTitle,
+            popularity: a.popularity,
+            voteCount: a.voteCount,
+          })
+      )
+      .slice(0, 4);
+
+    if (topTmdbCandidates.length > 0) {
+      await Promise.all(
+        topTmdbCandidates.map(async (cand) => {
+          if (!cand.tmdbId) return;
+          const esMeta = await fetchTmdbSpanishAltTitles(cand.tmdbId, cand.mediaType);
+          const allCandHints = Array.from(
+            new Set([cand.title, cand.originalTitle, ...esMeta.titles].filter(Boolean))
+          );
+
+          // Check if directMovidyEntry already matches one of these Spanish alt titles + compatible year
+          const yearsCompatible =
+            !directMovidyEntry ||
+            !/^\d{4}$/.test(directMovidyEntry.year) ||
+            !/^\d{4}$/.test(cand.year) ||
+            Math.abs(Number(directMovidyEntry.year) - Number(cand.year)) <= 1;
+          if (
+            directMovidyEntry &&
+            yearsCompatible &&
+            directMovidyEntry.mediaType === cand.mediaType &&
+            areTitlesStrictlyEqual(directMovidyEntry.title, allCandHints)
+          ) {
+            cand.movidyUrl = directMovidyEntry.movidyUrl;
+            cand.altTitle =
+              directMovidyEntry.title !== cand.title ? directMovidyEntry.title : cand.altTitle;
+            if (!cand.sources.includes('movidy')) cand.sources.unshift('movidy');
+            cand.languages = ['Castellano', 'Latino', 'VOSE', 'EN'];
+            upsertIndexedEntry(cand);
+            return;
+          }
+
+          if (esMeta.titles.length > 0) {
+            const matchedMovidyUrl = await findMovidyUrlByTitle(
+              esMeta.titles[0],
+              esMeta.year || (cand.year !== 'HD' ? cand.year : undefined),
+              {
+                titleHints: allCandHints,
+                expectedMediaType: cand.mediaType,
+              }
+            ).catch(() => null);
+
+            if (matchedMovidyUrl) {
+              cand.movidyUrl = matchedMovidyUrl;
+              cand.altTitle =
+                esMeta.esTitle && esMeta.esTitle !== cand.title ? esMeta.esTitle : cand.altTitle;
+              if (!cand.sources.includes('movidy')) cand.sources.unshift('movidy');
+              cand.languages = ['Castellano', 'Latino', 'VOSE', 'EN'];
+              upsertIndexedEntry(cand);
+            }
+          }
+        })
+      );
+    }
+
+    // Attach directMovidyEntry onto the year-compatible title-matching TMDB item and remove duplicate posterless Movidy-only item
+    if (directMovidyEntry) {
+      const mvYr = /^\d{4}$/.test(directMovidyEntry.year) ? Number(directMovidyEntry.year) : 0;
+      const matchedTmdb = discovered
+        .filter((d) => {
+          if (!d.tmdbId) return false;
+          if (d.movidyUrl === directMovidyEntry!.movidyUrl) return true;
+          if (d.mediaType !== directMovidyEntry!.mediaType) return false;
+          if (
+            !areTitlesStrictlyEqual(
+              directMovidyEntry!.title,
+              [d.title, d.originalTitle, d.altTitle || ''].filter(Boolean)
+            )
+          ) {
+            return false;
+          }
+          const dYr = /^\d{4}$/.test(d.year) ? Number(d.year) : 0;
+          return !mvYr || !dYr || Math.abs(mvYr - dYr) <= 1;
+        })
+        .sort((a, b) => (b.voteCount || b.popularity || 0) - (a.voteCount || a.popularity || 0))[0];
+
+      if (matchedTmdb) {
+        matchedTmdb.movidyUrl = matchedTmdb.movidyUrl || directMovidyEntry.movidyUrl;
+        if (!matchedTmdb.sources.includes('movidy')) matchedTmdb.sources.unshift('movidy');
+        matchedTmdb.languages = ['Castellano', 'Latino', 'VOSE', 'EN'];
+        upsertIndexedEntry(matchedTmdb);
+        const mvIdx = discovered.indexOf(directMovidyEntry);
+        if (mvIdx !== -1) discovered.splice(mvIdx, 1);
       }
     }
 
@@ -819,45 +1051,10 @@ export async function liveOnDemandFallbackSearch(
       }
     }
 
-    // Also perform direct Movidy fallback search using query and Spanish title hints
-    try {
-      const hintsToTry = Array.from(new Set([cleanQ, ...generateSpanishTitleHints(cleanQ)]));
-      for (const hint of hintsToTry.slice(0, 3)) {
-        if (!hint || hint.length < 2) continue;
-        const movidyUrl = await findMovidyUrlByTitle(hint, undefined, { titleHints: hintsToTry }).catch(() => null);
-        if (movidyUrl) {
-          const mvMeta = await fetchMovidyPageMetadata(movidyUrl).catch(() => null);
-          if (mvMeta) {
-            const mvEntry: IndexedCatalogEntry = {
-              id: `movidy-ondemand-${normalizeCompactCatalogQuery(mvMeta.cleanTitle || cleanQ)}`,
-              mediaType: mvMeta.isTvShow ? 'tv' : 'movie',
-              title: mvMeta.cleanTitle || cleanQ,
-              originalTitle: mvMeta.cleanTitle || cleanQ,
-              year: mvMeta.year || 'HD',
-              rating: '',
-              overview: mvMeta.overview || 'Disponible en Movidy.',
-              poster: '',
-              backdrop: '',
-              movidyUrl,
-              languages: ['Castellano', 'Latino', 'VOSE'],
-              sources: ['movidy'],
-              popularity: 70,
-              indexedAt: Date.now(),
-            };
-            upsertIndexedEntry(mvEntry);
-            discovered.push(mvEntry);
-            break;
-          }
-        }
-      }
-    } catch {
-      // ignore
-    }
-
-    // 2. Include matching entries already discovered across Gnula / Movidy / Vest / SeriesKao
+    // 3. Include matching entries already discovered across Movidy / Gnula / Vest / SeriesKao
     const fromIndex = searchIndexedCatalog(cleanQ, { mediaType: wantMediaType, limit: 24 });
     const mergedMap = new Map<string, IndexedCatalogEntry>();
-    for (const item of [...fromIndex, ...discovered]) {
+    for (const item of [...discovered, ...fromIndex]) {
       const k = buildEntryKey(item);
       const existing = mergedMap.get(k);
       if (!existing) {
@@ -868,7 +1065,10 @@ export async function liveOnDemandFallbackSearch(
           gnulaUrl: existing.gnulaUrl || item.gnulaUrl,
           movidyUrl: existing.movidyUrl || item.movidyUrl,
           altTitle:
-            item.title !== existing.title ? item.title : existing.altTitle,
+            existing.altTitle || (item.title !== existing.title ? item.title : undefined),
+          languages: existing.movidyUrl || item.movidyUrl
+            ? ['Castellano', 'Latino', 'VOSE', 'EN']
+            : existing.languages,
           sources: Array.from(new Set([...existing.sources, ...item.sources])),
         });
       }
@@ -877,13 +1077,23 @@ export async function liveOnDemandFallbackSearch(
     const scored = Array.from(mergedMap.values())
       .map((entry) => ({
         entry,
-        score: scoreTitleRelevance(entry.title, entry.originalTitle, cleanQ, {
+        score: scoreTitleRelevance(entry.title, entry.originalTitle, tmdbSearchQ, {
           altTitle: entry.altTitle,
           popularity: entry.popularity,
+          voteCount: entry.voteCount,
         }),
       }))
       .filter((x) => x.score >= 70)
-      .sort((a, b) => b.score - a.score)
+      .sort((a, b) => {
+        // Prioritize Movidy-matched items when title relevance is in the same tier
+        const scoreDiff = b.score - a.score;
+        if (Math.abs(scoreDiff) <= 35) {
+          const aMov = a.entry.movidyUrl ? 1 : 0;
+          const bMov = b.entry.movidyUrl ? 1 : 0;
+          if (aMov !== bMov) return bMov - aMov;
+        }
+        return scoreDiff;
+      })
       .map((x) => x.entry);
 
     onDemandQueryCache.set(qCacheKey, scored);

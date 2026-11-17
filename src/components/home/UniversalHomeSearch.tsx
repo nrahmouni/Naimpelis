@@ -124,6 +124,12 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const normQuery = norm(cleanQuery);
   const isSearchActive = cleanQuery.length > 0;
 
+  const closeSearchOverlay = useCallback(() => {
+    setQuery('');
+    lastAutoAiQueryRef.current = '';
+    setAiJob({ status: 'idle', progressLabel: '', item: null });
+  }, []);
+
   // Remote TMDB / catalog auto-fetch on typing
   useEffect(() => {
     if (cleanQuery.length < 2) {
@@ -488,12 +494,14 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
             }}
             onKeyDown={(e) => {
               if (e.key === 'Escape') {
-                setQuery('');
+                closeSearchOverlay();
               } else if (e.key === 'Enter' && cleanQuery.length >= 2) {
                 e.preventDefault();
                 if (aiJob.status === 'found' && aiJob.item) {
-                  if (aiJob.item.mediaType === 'tv') onPlaySeries(aiJob.item);
-                  else onPlayMovie(aiJob.item);
+                  const chosen = aiJob.item;
+                  closeSearchOverlay();
+                  if (chosen.mediaType === 'tv') onPlaySeries(chosen);
+                  else onPlayMovie(chosen);
                 } else if (aiJob.status === 'idle' && (totalHits === 0 || looksLikeNaturalLanguage)) {
                   lastAutoAiQueryRef.current = normQuery;
                   void triggerAiWebSearch(cleanQuery);
@@ -702,10 +710,13 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                           type="button"
                           onClick={() => {
                             triggerHaptic('success');
-                            if (aiJob.item?.mediaType === 'tv') {
-                              onPlaySeries(aiJob.item);
-                            } else if (aiJob.item) {
-                              onPlayMovie(aiJob.item);
+                            const chosen = aiJob.item;
+                            if (!chosen) return;
+                            closeSearchOverlay();
+                            if (chosen.mediaType === 'tv') {
+                              onPlaySeries(chosen);
+                            } else {
+                              onPlayMovie(chosen);
                             }
                           }}
                           className="min-h-10 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1.5 shrink-0 cursor-pointer shadow-md active:scale-95 transition-all"
@@ -770,6 +781,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                           type="button"
                           onClick={() => {
                             triggerHaptic('light');
+                            closeSearchOverlay();
                             onPlayMatch(match);
                           }}
                           className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#00F593]/50 text-left cursor-pointer transition-all active:scale-[0.98]"
@@ -822,6 +834,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                         type="button"
                         onClick={() => {
                           triggerHaptic('light');
+                          closeSearchOverlay();
                           onPlayChannel(ch);
                         }}
                         className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-sky-400/50 text-left cursor-pointer transition-all active:scale-[0.98]"
@@ -859,6 +872,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                           type="button"
                           onClick={() => {
                             triggerHaptic('light');
+                            closeSearchOverlay();
                             onSelectGame(game.id);
                           }}
                           className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-fuchsia-400/50 text-left cursor-pointer transition-all active:scale-[0.98]"
@@ -901,6 +915,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                           type="button"
                           onClick={() => {
                             triggerHaptic('light');
+                            closeSearchOverlay();
                             onPlayMovie(movie);
                           }}
                           className="group rounded-2xl overflow-hidden bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#9146FF]/50 text-left cursor-pointer transition-all active:scale-[0.98] flex flex-col"
@@ -959,6 +974,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                           type="button"
                           onClick={() => {
                             triggerHaptic('light');
+                            closeSearchOverlay();
                             onPlaySeries(s);
                           }}
                           className="group rounded-2xl overflow-hidden bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#9146FF]/50 text-left cursor-pointer transition-all active:scale-[0.98] flex flex-col"

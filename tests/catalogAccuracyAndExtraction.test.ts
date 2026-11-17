@@ -455,7 +455,8 @@ describe('Strict catalog & extractor title/year/director/runtime matching', () =
     expect(serverSrc).toContain('alternative_titles');
     expect(serverSrc).toContain("if (tr.id.startsWith('movidy-') || tr.resolverType === 'movidy_embed') return 1;");
     expect(serverSrc).toContain("if (tr.id.startsWith('gnula-')) return 2;");
-    expect(serverSrc).toContain('Pass 1: Exhaust native HLS/MP4 extractors');
+    expect(serverSrc).toContain('const lDiff = getLangScore(a.lang) - getLangScore(b.lang);');
+    expect(serverSrc).toContain('Resolve streams strictly tier-by-tier in language preference order');
   });
 });
 

@@ -122,6 +122,7 @@ import {
 import { buildSignedApkBuffer } from './server/services/apkBuilderService.ts';
 import { channelHealthMonitor } from './server/services/channelHealthMonitor.ts';
 import {
+  correctCommonSearchTypos,
   getCatalogRefreshStatus,
   liveOnDemandFallbackSearch,
   runRefreshCycle,
@@ -1119,13 +1120,15 @@ async function fetchTmdbMovieCatalog(opts: {
       backdrop: m.backdrop_path ? `https://image.tmdb.org/t/p/w1280${m.backdrop_path}` : '',
       bingetrixUrl: `https://bingetrix.sc/watch/${m.id}`,
       languages: isAnime
-        ? ['Español', 'VOSE · Sub', 'EN']
+        ? ['Español', 'Latino', 'VOSE', 'EN']
         : isEn
-        ? ['English 1080p', 'ES / LAT']
-        : ['Castellano', 'Latino', 'EN'],
+        ? ['English 1080p', 'VOSE', 'ES']
+        : ['Castellano', 'Latino', 'VOSE', 'EN'],
       platform: provCfg?.label,
       providerId: provCfg ? provider : undefined,
       genres: mapTmdbGenreLabels(m, lang),
+      popularity: Number(m.popularity || 0),
+      voteCount: Number(m.vote_count || 0),
     }));
 
   const payload = {
@@ -1146,7 +1149,7 @@ app.get('/api/catalog/movies', async (req, res) => {
     const sort = String(req.query.sort || '').toLowerCase();
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const mergedCacheKey = `merged-es-v11|${provider}|${category}|${sort}|${page}|${query}`;
+    const mergedCacheKey = `merged-es-v13|${provider}|${category}|${sort}|${page}|${query}`;
     const cachedMerged = movieCatalogCache.get(mergedCacheKey);
     if (cachedMerged && Date.now() - cachedMerged.ts < 5 * 60 * 1000) {
       return res.json({
@@ -1195,10 +1198,11 @@ app.get('/api/catalog/movies', async (req, res) => {
       ]);
     };
 
+    const searchQueryForScrapers = query ? correctCommonSearchTypos(query) || query : '';
     const [movidyData, gnulaData, tmdbData] = await Promise.all([
-      scrapeMovidyCatalog({ category, page, query }),
+      scrapeMovidyCatalog({ category, page, query: searchQueryForScrapers }),
       scrapeGnulaMoviesFast(),
-      fetchTmdbMovieCatalog({ lang: 'es-ES', category, sort, page, query, provider }),
+      fetchTmdbMovieCatalog({ lang: 'es-ES', category, sort, page, query: searchQueryForScrapers, provider }),
     ]);
 
     const tmdbTitleKeys = new Set<string>();
@@ -1213,7 +1217,7 @@ app.get('/api/catalog/movies', async (req, res) => {
     const seenTmdbIds = new Set<number>();
     const combinedMovies: any[] = [];
 
-    // 1. Place verified TMDB movies first with authentic TMDB posters/IDs (never attach unverified Movidy URLs across mismatched years)
+    // 1. Place verified TMDB movies with authentic posters/IDs
     for (const tm of tmdbData.movies) {
       const numTmdb = Number(tm.tmdbId || 0);
       if (numTmdb > 0) {
@@ -1227,10 +1231,10 @@ app.get('/api/catalog/movies', async (req, res) => {
       combinedMovies.push(tm);
     }
 
-    // 2. Append pure Movidy movies that are not already covered by TMDB results (e.g. Spanish/exclusive premieres)
-    const filteredMovidyMovies = query
+    // 2. Attach Movidy URLs onto matching TMDB items AND append exclusive Movidy movies
+    const filteredMovidyMovies = searchQueryForScrapers
       ? movidyData.movies.filter(
-          (mv) => scoreTitleRelevance(mv.title, mv.originalTitle, query) >= 70
+          (mv) => scoreTitleRelevance(mv.title, mv.originalTitle, searchQueryForScrapers) >= 70
         )
       : movidyData.movies;
 
@@ -1239,12 +1243,15 @@ app.get('/api/catalog/movies', async (req, res) => {
       const kOutside = normalizeTitleForMatch(String(mv.title || '').replace(/\s*\([^)]*\)/g, ''));
       const kInside = normalizeTitleForMatch(String(mv.title || '').match(/\(([^)]+)\)/)?.[1] || '');
 
-      const matchesExistingTitle =
-        (kFull && tmdbTitleKeys.has(kFull)) ||
-        (kOutside && tmdbTitleKeys.has(kOutside)) ||
-        (kInside && !/^(?:19|20)\d{2}$/.test(kInside) && tmdbTitleKeys.has(kInside));
+      const matchedExisting = combinedMovies.find((m) =>
+        areTitlesStrictlyEqual(mv.title, [m.title, m.originalTitle, m.altTitle || ''].filter(Boolean))
+      );
 
-      if (matchesExistingTitle) {
+      if (matchedExisting) {
+        if (!matchedExisting.movidyUrl && mv.movidyUrl) {
+          matchedExisting.movidyUrl = mv.movidyUrl;
+        }
+        matchedExisting.languages = ['Castellano', 'Latino', 'VOSE', 'EN'];
         continue;
       }
 
@@ -1261,9 +1268,9 @@ app.get('/api/catalog/movies', async (req, res) => {
     }
 
     // 2B. Expand & enrich with GnulaHD mirror catalog (ww3.gnulahd.nu / gnulahd.click / gnulahd.bid)
-    const filteredGnulaMovies = query
+    const filteredGnulaMovies = searchQueryForScrapers
       ? gnulaData.items.filter(
-          (gn: any) => scoreTitleRelevance(gn.title, gn.originalTitle, query) >= 70
+          (gn: any) => scoreTitleRelevance(gn.title, gn.originalTitle, searchQueryForScrapers) >= 70
         )
       : gnulaData.items;
 
@@ -1288,16 +1295,17 @@ app.get('/api/catalog/movies', async (req, res) => {
       combinedMovies.push(gn);
     }
 
-    // 3. Merge multi-source indexed titles & live on-demand fallback search when querying
+    // 3. Always enrich queries with Movidy-first on-demand search (including English -> Spanish TMDB alt-title translation)
     if (query) {
-      const indexedHits = searchIndexedCatalog(query, { mediaType: 'movie', limit: 16 });
+      const indexedHits = searchIndexedCatalog(searchQueryForScrapers, { mediaType: 'movie', limit: 16 });
       const topExistingScore = combinedMovies.reduce(
-        (mx, m) => Math.max(mx, scoreTitleRelevance(m.title, m.originalTitle, query)),
+        (mx, m) => Math.max(mx, scoreTitleRelevance(m.title, m.originalTitle, searchQueryForScrapers)),
         0
       );
+      const topMovieHasMovidy = Boolean(combinedMovies[0]?.movidyUrl);
       const fallbackHits =
-        topExistingScore < 240
-          ? await liveOnDemandFallbackSearch(query, 'movie')
+        topExistingScore < 240 || !topMovieHasMovidy
+          ? await liveOnDemandFallbackSearch(searchQueryForScrapers, 'movie')
           : [];
 
       for (const extra of [...indexedHits, ...fallbackHits]) {
@@ -1306,19 +1314,29 @@ app.get('/api/catalog/movies', async (req, res) => {
           if (existingById) {
             if (!existingById.movidyUrl && extra.movidyUrl) existingById.movidyUrl = extra.movidyUrl;
             if (!existingById.gnulaUrl && extra.gnulaUrl) existingById.gnulaUrl = extra.gnulaUrl;
+            if (!existingById.altTitle && extra.altTitle) existingById.altTitle = extra.altTitle;
+            if (existingById.movidyUrl) {
+              existingById.languages = ['Castellano', 'Latino', 'VOSE', 'EN'];
+            }
             continue;
           }
         }
-        // Skip undated external-only hits (movidy/gnula/serieskao) whose title already matches an existing TMDB entry
+        // Skip undated external-only hits whose title already matches an existing TMDB entry
         if (!extra.tmdbId) {
           const existingByTitle = combinedMovies.find((m) =>
-            areTitlesStrictlyEqual(extra.title, [m.title, m.originalTitle].filter(Boolean))
+            areTitlesStrictlyEqual(extra.title, [m.title, m.originalTitle, m.altTitle || ''].filter(Boolean))
           );
           if (existingByTitle) {
             if (!existingByTitle.movidyUrl && extra.movidyUrl) existingByTitle.movidyUrl = extra.movidyUrl;
             if (!existingByTitle.gnulaUrl && extra.gnulaUrl) existingByTitle.gnulaUrl = extra.gnulaUrl;
+            if (existingByTitle.movidyUrl) {
+              existingByTitle.languages = ['Castellano', 'Latino', 'VOSE', 'EN'];
+            }
             continue;
           }
+        }
+        if (extra.movidyUrl && combinedMovies.some((m) => m.movidyUrl === extra.movidyUrl)) {
+          continue;
         }
         const kEx = normalizeTitleForMatch(extra.title);
         const kExOrig = normalizeTitleForMatch(extra.originalTitle || '');
@@ -1330,17 +1348,31 @@ app.get('/api/catalog/movies', async (req, res) => {
         combinedMovies.push(extra);
       }
 
-      // Rank strictly by original/localized title relevance so exact matches always lead
-      combinedMovies.sort(
-        (a, b) =>
-          scoreTitleRelevance(b.title, b.originalTitle, query, { altTitle: b.altTitle }) -
-          scoreTitleRelevance(a.title, a.originalTitle, query, { altTitle: a.altTitle })
-      );
+      // Rank by relevance, prioritizing Movidy-backed matches first within equal relevance tiers
+      combinedMovies.sort((a, b) => {
+        const sA = scoreTitleRelevance(a.title, a.originalTitle, searchQueryForScrapers, {
+          altTitle: a.altTitle,
+          popularity: a.popularity,
+          voteCount: a.voteCount,
+        });
+        const sB = scoreTitleRelevance(b.title, b.originalTitle, searchQueryForScrapers, {
+          altTitle: b.altTitle,
+          popularity: b.popularity,
+          voteCount: b.voteCount,
+        });
+        const diff = sB - sA;
+        if (Math.abs(diff) <= 35) {
+          const aMov = a.movidyUrl ? 1 : 0;
+          const bMov = b.movidyUrl ? 1 : 0;
+          if (aMov !== bMov) return bMov - aMov;
+        }
+        return diff;
+      });
     }
 
     // 4. Attach or append crawled mirror entries (321moviesfree, cuevana4br, flixlat, 123pelicula)
     if (page === 1 || query) {
-      const vestEntries = listVestCatalogEntries({ mediaType: 'movie', query });
+      const vestEntries = listVestCatalogEntries({ mediaType: 'movie', query: searchQueryForScrapers || query });
       for (const ve of vestEntries) {
         const kVe = normalizeTitleForMatch(ve.title);
         if (ve.tmdbId) {
@@ -1419,29 +1451,50 @@ app.get('/api/catalog/bingetrix', async (req, res) => {
     let movies = [...data.movies];
 
     if (query) {
-      const indexedHits = searchIndexedCatalog(query, { mediaType: 'all', limit: 16 });
+      const cleanBingQuery = correctCommonSearchTypos(query) || query;
+      const indexedHits = searchIndexedCatalog(cleanBingQuery, { mediaType: 'all', limit: 16 });
       const topScore = movies.reduce(
-        (mx, m) => Math.max(mx, scoreTitleRelevance(m.title, m.originalTitle, query)),
+        (mx, m) => Math.max(mx, scoreTitleRelevance(m.title, m.originalTitle, cleanBingQuery)),
         0
       );
+      const topHasMovidy = Boolean(movies[0]?.movidyUrl);
       const fallbackHits =
-        topScore < 240 ? await liveOnDemandFallbackSearch(query, 'all') : [];
+        topScore < 240 || !topHasMovidy
+          ? await liveOnDemandFallbackSearch(cleanBingQuery, 'all')
+          : [];
 
       const seenIds = new Set<string>(
         movies.map((m) => `${m.mediaType || 'movie'}:${m.tmdbId || m.id}`)
       );
       for (const extra of [...indexedHits, ...fallbackHits]) {
         const k = `${extra.mediaType}:${extra.tmdbId || extra.id}`;
-        if (seenIds.has(k)) continue;
+        if (seenIds.has(k)) {
+          const existing = movies.find((m) => `${m.mediaType || 'movie'}:${m.tmdbId || m.id}` === k);
+          if (existing) {
+            if (!existing.movidyUrl && extra.movidyUrl) existing.movidyUrl = extra.movidyUrl;
+            if (!existing.gnulaUrl && extra.gnulaUrl) existing.gnulaUrl = extra.gnulaUrl;
+            if (!existing.altTitle && extra.altTitle) existing.altTitle = extra.altTitle;
+          }
+          continue;
+        }
+        if (extra.movidyUrl && movies.some((m) => m.movidyUrl === extra.movidyUrl)) {
+          continue;
+        }
         seenIds.add(k);
         movies.push(extra);
       }
 
-      movies.sort(
-        (a, b) =>
-          scoreTitleRelevance(b.title, b.originalTitle, query, { altTitle: b.altTitle }) -
-          scoreTitleRelevance(a.title, a.originalTitle, query, { altTitle: a.altTitle })
-      );
+      movies.sort((a, b) => {
+        const sA = scoreTitleRelevance(a.title, a.originalTitle, cleanBingQuery, { altTitle: a.altTitle });
+        const sB = scoreTitleRelevance(b.title, b.originalTitle, cleanBingQuery, { altTitle: b.altTitle });
+        const diff = sB - sA;
+        if (Math.abs(diff) <= 35) {
+          const aMov = a.movidyUrl ? 1 : 0;
+          const bMov = b.movidyUrl ? 1 : 0;
+          if (aMov !== bMov) return bMov - aMov;
+        }
+        return diff;
+      });
     }
 
     res.json({ success: true, movies, hasMore: data.hasMore, page });
@@ -1684,7 +1737,7 @@ app.get('/api/catalog/series', async (req, res) => {
     const isSpanishCatalog = langParam === 'es-ES';
     const page = Math.max(1, Math.min(100, parseInt(String(req.query.page || '1'), 10) || 1));
 
-    const cacheKey = `v8|${langParam}|${provider}|${category}|${sort}|${page}|${query}`;
+    const cacheKey = `v9|${langParam}|${provider}|${category}|${sort}|${page}|${query}`;
     const cached = seriesCatalogCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 5 * 60 * 1000) {
       return res.json({ success: true, series: cached.series, hasMore: cached.hasMore, page });
@@ -1992,10 +2045,17 @@ app.get('/api/catalog/series', async (req, res) => {
       : movidySeriesData.series;
 
     for (const ms of filteredMovidySeries) {
-      if (ms?.tmdbId && !seenTmdbIds.has(ms.tmdbId)) {
-        seenTmdbIds.add(ms.tmdbId);
-        combinedSeries.push(ms);
+      if (!ms?.tmdbId) continue;
+      if (seenTmdbIds.has(ms.tmdbId)) {
+        const existing = combinedSeries.find((s) => Number(s.tmdbId) === Number(ms.tmdbId));
+        if (existing && !existing.movidyUrl && ms.movidyUrl) {
+          existing.movidyUrl = ms.movidyUrl;
+          existing.languages = ['Castellano', 'Latino', 'VOSE', 'EN'];
+        }
+        continue;
       }
+      seenTmdbIds.add(ms.tmdbId);
+      combinedSeries.push(ms);
     }
 
     for (const orig of originalsLead) {
@@ -2019,7 +2079,12 @@ app.get('/api/catalog/series', async (req, res) => {
         )
       : gnulaSeriesData.items;
 
+    const seenGnulaSeriesUrls = new Set<string>();
     for (const gs of filteredGnulaSeries) {
+      if (gs?.mediaType && gs.mediaType !== 'tv') continue;
+      const normUrl = gs?.gnulaUrl ? normalizeGnulaUrl(gs.gnulaUrl) : '';
+      if (normUrl && seenGnulaSeriesUrls.has(normUrl)) continue;
+      if (normUrl) seenGnulaSeriesUrls.add(normUrl);
       const existing = combinedSeries.find((s) =>
         areTitlesStrictlyEqual(gs.title, [s.title, s.originalTitle].filter(Boolean))
       );
@@ -2032,15 +2097,19 @@ app.get('/api/catalog/series', async (req, res) => {
       combinedSeries.push(gs);
     }
 
-    // Merge indexed & live on-demand TV series fallback matches when querying
+    // Merge indexed & live on-demand TV series fallback matches (Movidy first) when querying
     if (query) {
-      const indexedTv = searchIndexedCatalog(query, { mediaType: 'tv', limit: 16 });
+      const cleanSeriesQ = correctCommonSearchTypos(query) || query;
+      const indexedTv = searchIndexedCatalog(cleanSeriesQ, { mediaType: 'tv', limit: 16 });
       const topScore = combinedSeries.reduce(
-        (mx, s) => Math.max(mx, scoreTitleRelevance(s.title, s.originalTitle, query)),
+        (mx, s) => Math.max(mx, scoreTitleRelevance(s.title, s.originalTitle, cleanSeriesQ)),
         0
       );
+      const topSeriesHasMovidy = Boolean(combinedSeries[0]?.movidyUrl);
       const fallbackTv =
-        topScore < 240 ? await liveOnDemandFallbackSearch(query, 'tv').catch(() => []) : [];
+        topScore < 240 || !topSeriesHasMovidy
+          ? await liveOnDemandFallbackSearch(cleanSeriesQ, 'tv').catch(() => [])
+          : [];
 
       for (const extra of [...indexedTv, ...fallbackTv]) {
         if (extra.tmdbId) {
@@ -2048,18 +2117,28 @@ app.get('/api/catalog/series', async (req, res) => {
           if (existingById) {
             if (!existingById.movidyUrl && extra.movidyUrl) existingById.movidyUrl = extra.movidyUrl;
             if (!existingById.gnulaUrl && extra.gnulaUrl) existingById.gnulaUrl = extra.gnulaUrl;
+            if (!existingById.altTitle && extra.altTitle) existingById.altTitle = extra.altTitle;
             continue;
           }
           seenTmdbIds.add(extra.tmdbId);
         }
+        if (extra.movidyUrl && combinedSeries.some((s) => s.movidyUrl === extra.movidyUrl)) {
+          continue;
+        }
         combinedSeries.push(extra);
       }
 
-      combinedSeries.sort(
-        (a, b) =>
-          scoreTitleRelevance(b.title, b.originalTitle, query, { altTitle: b.altTitle }) -
-          scoreTitleRelevance(a.title, a.originalTitle, query, { altTitle: a.altTitle })
-      );
+      combinedSeries.sort((a, b) => {
+        const sA = scoreTitleRelevance(a.title, a.originalTitle, cleanSeriesQ, { altTitle: a.altTitle });
+        const sB = scoreTitleRelevance(b.title, b.originalTitle, cleanSeriesQ, { altTitle: b.altTitle });
+        const diff = sB - sA;
+        if (Math.abs(diff) <= 35) {
+          const aMov = a.movidyUrl ? 1 : 0;
+          const bMov = b.movidyUrl ? 1 : 0;
+          if (aMov !== bMov) return bMov - aMov;
+        }
+        return diff;
+      });
     }
 
     // Attach or append Vest mirror TV entries (321moviesfree, cuevana4br, flixlat, 123pelicula)
@@ -6002,6 +6081,7 @@ function extractLocalizedTmdbTitleHints(tmJson: any): string[] {
   const enRegions = new Set(['US', 'GB', 'AU', 'CA']);
 
   const esTitles: string[] = [];
+  const esAltTitles: string[] = [];
   const enTitles: string[] = [];
   const otherTitles: string[] = [];
 
@@ -6016,7 +6096,7 @@ function extractLocalizedTmdbTitleHints(tmJson: any): string[] {
     if (!trName) continue;
     const langCode = String(tr?.iso_639_1 || '').toLowerCase();
     const countryCode = String(tr?.iso_3166_1 || '').toUpperCase();
-    if (langCode === 'es' || esRegions.has(countryCode)) {
+    if (langCode === 'es') {
       if (countryCode === 'ES') esTitles.unshift(trName);
       else esTitles.push(trName);
     } else if (langCode === 'en' || enRegions.has(countryCode)) {
@@ -6036,8 +6116,8 @@ function extractLocalizedTmdbTitleHints(tmJson: any): string[] {
     if (!altTitle) continue;
     const countryCode = String(alt?.iso_3166_1 || '').toUpperCase();
     if (esRegions.has(countryCode)) {
-      if (countryCode === 'ES') esTitles.unshift(altTitle);
-      else esTitles.push(altTitle);
+      if (countryCode === 'ES') esAltTitles.unshift(altTitle);
+      else esAltTitles.push(altTitle);
     } else if (enRegions.has(countryCode)) {
       enTitles.push(altTitle);
     } else {
@@ -6047,8 +6127,8 @@ function extractLocalizedTmdbTitleHints(tmJson: any): string[] {
 
   const ordered =
     esTitles.length > 0 && primary && orig && normalizeTitleForMatch(primary) === normalizeTitleForMatch(orig)
-      ? [...esTitles, primary, orig, ...enTitles, ...otherTitles]
-      : [primary, ...esTitles, orig, ...enTitles, ...otherTitles];
+      ? [...esTitles, primary, ...esAltTitles, orig, ...enTitles, ...otherTitles]
+      : [primary, ...esTitles, ...esAltTitles, orig, ...enTitles, ...otherTitles];
 
   return Array.from(new Set(ordered.filter(Boolean)));
 }
@@ -6990,7 +7070,7 @@ app.get('/api/extract/stream', async (req, res) => {
       // 1. Movidy -> 2. GnulaHD -> 3. Bingetrix/EN -> 4. Others (Embed69/SeriesKao/Vest)
       const allDiscovered: TrackRecord[] = isVestLink
         ? [...vestTracks, ...movidyTracks, ...gnulaTracks, ...enTracks, ...esTracks]
-        : hasExplicitGnulaUrl
+        : !hasExplicitMovidyUrl && hasExplicitGnulaUrl
         ? [...gnulaTracks, ...movidyTracks, ...enTracks, ...esTracks, ...vestTracks]
         : [...movidyTracks, ...gnulaTracks, ...enTracks, ...esTracks, ...vestTracks];
 
@@ -7046,7 +7126,7 @@ app.get('/api/extract/stream', async (req, res) => {
       // 1 = Movidy, 2 = GnulaHD, 3 = Bingetrix / EN HLS, 4 = Others (Embed69, SeriesKao, Vest, AnimeAV1)
       const sourcePriority = (tr: TrackRecord): number => {
         if (isVestLink && tr.resolverType === 'vest_hls') return 0;
-        if (hasExplicitGnulaUrl && tr.id.startsWith('gnula-')) return 0;
+        if (!hasExplicitMovidyUrl && hasExplicitGnulaUrl && tr.id.startsWith('gnula-')) return 0;
         if (tr.id.startsWith('movidy-') || tr.resolverType === 'movidy_embed') return 1;
         if (tr.id.startsWith('gnula-')) return 2;
         if (
@@ -7087,13 +7167,13 @@ app.get('/api/extract/stream', async (req, res) => {
       };
 
       const orderedTracks: TrackRecord[] = [...allDiscovered].sort((a, b) => {
+        const lDiff = getLangScore(a.lang) - getLangScore(b.lang);
+        if (lDiff !== 0) return lDiff;
         const aIsWeb = a.resolverType === 'web_embed' || a.resolverType === 'embed_sniff';
         const bIsWeb = b.resolverType === 'web_embed' || b.resolverType === 'embed_sniff';
         if (aIsWeb !== bIsWeb) {
           return aIsWeb ? 1 : -1;
         }
-        const lDiff = getLangScore(a.lang) - getLangScore(b.lang);
-        if (lDiff !== 0) return lDiff;
         const dDiff = getEffectiveDownPenalty(a) - getEffectiveDownPenalty(b);
         if (dDiff !== 0) return dDiff;
         const rDiff = resolverPriority(a.resolverType) - resolverPriority(b.resolverType);
@@ -7103,8 +7183,10 @@ app.get('/api/extract/stream', async (req, res) => {
         return getTrackHealthScore(a) - getTrackHealthScore(b);
       });
 
-      // Resolve ALL native HLS/MP4 extractors across language priority (ES -> LAT -> VOSE -> EN)
-      // BEFORE ever falling back to a `web_embed` popup window (e.g. VOE-WEB)
+      // Resolve streams strictly tier-by-tier in language preference order (ES -> LAT -> VOSE -> EN).
+      // Within each language tier, exhaust native HLS/MP4 extractors first (Movidy -> GnulaHD -> Bingetrix -> Others),
+      // and if none resolve natively in that tier, fall back to a verified alive web_embed in that SAME language
+      // before dropping down to a lower-priority language (e.g. never play EN when ES/LAT/VOSE exists).
       let primaryStreamUrl = '';
       let primaryMode: 'hls' | 'direct' | 'embed' = 'hls';
       let resolvedTrack: TrackRecord | null = null;
@@ -7120,21 +7202,64 @@ app.get('/api/extract/stream', async (req, res) => {
         return shouldProxyHtml ? `/api/embed-proxy?url=${encodeURIComponent(url)}` : url;
       };
 
+      const verifyWebEmbedCandidateAlive = async (
+        track: TrackRecord,
+        url: string
+      ): Promise<boolean> => {
+        if (!url || !/^https?:\/\//i.test(url)) return false;
+        // Skip GnulaHD player redirects that resolve to the fake "aviso.mp4" notice clip
+        if (/player\.gnulahd\./i.test(url)) {
+          try {
+            const headRes = await fetch(url, {
+              method: 'HEAD',
+              redirect: 'manual',
+              headers: { Referer: 'https://ww3.gnulahd.nu/', 'User-Agent': CHROME_UA },
+              signal: AbortSignal.timeout(2200),
+            });
+            const loc = String(headRes.headers.get('location') || '').toLowerCase();
+            if (loc.includes('aviso.mp4')) return false;
+          } catch {
+            // allow if HEAD check itself timed out
+          }
+        }
+        // Movidy VOE embeds were already 404-checked inside resolveMovidyEmbedTrack
+        if (/voe\.[a-z]+/i.test(url) && !track.id.startsWith('movidy-')) {
+          try {
+            const check = await curlGetText(
+              url,
+              { Referer: 'https://embed69.org/', 'User-Agent': CHROME_UA },
+              3,
+              true
+            );
+            if (
+              check.text &&
+              /<title>\s*404|not found<\/title>|file was deleted|no longer available/i.test(
+                check.text.slice(0, 1200)
+              )
+            ) {
+              return false;
+            }
+          } catch {
+            // allow on network timeout
+          }
+        }
+        return true;
+      };
+
       const tierScores = Array.from(
         new Set(orderedTracks.map((t) => getLangScore(t.lang)))
       ).sort((a, b) => a - b);
 
-      let firstWebEmbedCandidate: { idx: number; track: TrackRecord; url: string } | null = null;
-
-      // Pass 1: Exhaust native HLS/MP4 extractors tier-by-tier (Movidy -> GnulaHD -> Bingetrix -> Others)
       for (const tierScore of tierScores) {
+        const tierWebEmbedCandidates: { idx: number; track: TrackRecord; url: string }[] = [];
+
         for (let i = 0; i < orderedTracks.length; i++) {
           if (getLangScore(orderedTracks[i].lang) !== tierScore) continue;
           const candidate = orderedTracks[i];
 
           if (candidate.resolverType === 'web_embed') {
-            if (!firstWebEmbedCandidate && candidate.sourceUrl) {
-              firstWebEmbedCandidate = { idx: i, track: candidate, url: candidate.sourceUrl };
+            if (candidate.sourceUrl) {
+              tierWebEmbedCandidates.push({ idx: i, track: candidate, url: candidate.sourceUrl });
             }
             continue;
           }
@@ -7160,13 +7285,11 @@ app.get('/api/extract/stream', async (req, res) => {
                 resolverType: 'web_embed',
                 sourceUrl: resolvedMv.embedUrl,
               };
-              if (!firstWebEmbedCandidate) {
-                firstWebEmbedCandidate = {
-                  idx: i,
-                  track: orderedTracks[i],
-                  url: resolvedMv.embedUrl,
-                };
-              }
+              tierWebEmbedCandidates.push({
+                idx: i,
+                track: orderedTracks[i],
+                url: resolvedMv.embedUrl,
+              });
             } else {
               deadTrackIndices.add(i);
             }
@@ -7207,18 +7330,32 @@ app.get('/api/extract/stream', async (req, res) => {
         }
 
         if (primaryStreamUrl) break;
-      }
 
-      // Pass 2: Only if zero native HLS/MP4 streams succeeded anywhere, use the top `web_embed` candidate
-      if (!primaryStreamUrl && firstWebEmbedCandidate) {
-        const proxiedWeb = toProxiedEmbedUrl(firstWebEmbedCandidate.url);
-        orderedTracks[firstWebEmbedCandidate.idx] = {
-          ...firstWebEmbedCandidate.track,
-          resolvedStreamUrl: proxiedWeb,
-        };
-        primaryStreamUrl = proxiedWeb;
-        primaryMode = 'embed';
-        resolvedTrack = orderedTracks[firstWebEmbedCandidate.idx];
+        if (tierWebEmbedCandidates.length > 0) {
+          tierWebEmbedCandidates.sort(
+            (a, b) =>
+              sourcePriority(a.track) - sourcePriority(b.track) ||
+              getTrackHealthScore(a.track) - getTrackHealthScore(b.track)
+          );
+          for (const cand of tierWebEmbedCandidates) {
+            const alive = await verifyWebEmbedCandidateAlive(cand.track, cand.url);
+            if (!alive) {
+              deadTrackIndices.add(cand.idx);
+              continue;
+            }
+            const proxiedWeb = toProxiedEmbedUrl(cand.url);
+            orderedTracks[cand.idx] = {
+              ...cand.track,
+              resolvedStreamUrl: proxiedWeb,
+            };
+            primaryStreamUrl = proxiedWeb;
+            primaryMode = 'embed';
+            resolvedTrack = orderedTracks[cand.idx];
+            break;
+          }
+        }
+
+        if (primaryStreamUrl) break;
       }
 
       if (primaryStreamUrl) {
@@ -7651,7 +7788,7 @@ app.get('/api/extract/stream', async (req, res) => {
         return orderedEntries.map((entry) => ({
           id: entry.id,
           label: entry.label,
-          lang: preferLang || 'EN',
+          lang: 'EN',
           quality: '1080p',
           sourceUrl: entry.url,
           resolverType: 'web_embed' as const,
@@ -7682,6 +7819,7 @@ app.get('/api/extract/stream', async (req, res) => {
         const firstTrack = combinedFallbackTracks[0];
         const fallbackMode: ExtractedStreamResult['mode'] =
           firstTrack.resolverType === 'youtube' ? 'youtube' : 'embed';
+        const resolvedLang = String(firstTrack.lang || 'EN').toUpperCase();
         const fallbackResult: ExtractedStreamResult = {
           success: true,
           mode: fallbackMode,
@@ -7692,9 +7830,9 @@ app.get('/api/extract/stream', async (req, res) => {
           title: displayFallbackTitle,
           tracks: combinedFallbackTracks,
           requestedLang: preferLang,
-          resolvedLang: firstTrack.lang || preferLang,
+          resolvedLang,
           resolvedLabel: firstTrack.label,
-          languageFallbackUsed: false,
+          languageFallbackUsed: resolvedLang !== preferLang,
           availableLanguages: Array.from(
             new Set(combinedFallbackTracks.map((t) => String(t.lang || '').toUpperCase()))
           ),
@@ -7846,7 +7984,7 @@ const richDetailsCache = new LruTtlCache<string, { details: any; ts: number }>(3
 
 app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
   try {
-    const mediaType = req.params.mediaType === 'tv' ? 'tv' : 'movie';
+    let effectiveMediaType: 'movie' | 'tv' = req.params.mediaType === 'tv' ? 'tv' : 'movie';
     let cleanId = String(req.params.tmdbId || '').replace(/\D/g, '');
     const titleHint = String(req.query.title || '').trim();
     const movidyUrlHint = String(req.query.movidyUrl || '').trim();
@@ -7862,13 +8000,29 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
       gnulaMeta = await fetchGnulaPageMetadata(gnulaUrlHint);
     }
 
-    if ((!cleanId || cleanId === '0') && (movidyMeta?.cleanTitle || gnulaMeta?.cleanTitle || titleHint)) {
-      const resolved = await resolveTmdbIdByTitle(
-        movidyMeta?.cleanTitle || gnulaMeta?.cleanTitle || titleHint,
-        mediaType,
-        movidyMeta?.year || gnulaMeta?.year || undefined
-      );
-      if (resolved) cleanId = String(resolved);
+    if (!cleanId || cleanId === '0') {
+      if (movidyMeta || gnulaMeta) {
+        if (movidyMeta?.isTvShow || gnulaMeta?.isTvShow) {
+          effectiveMediaType = 'tv';
+        } else if ((gnulaMeta && !gnulaMeta.isTvShow) || (movidyMeta && !movidyMeta.isTvShow)) {
+          effectiveMediaType = 'movie';
+        }
+      }
+      const lookupTitle = movidyMeta?.cleanTitle || gnulaMeta?.cleanTitle || titleHint;
+      const lookupYear = movidyMeta?.year || gnulaMeta?.year || undefined;
+      if (lookupTitle) {
+        const resolved = await resolveTmdbIdByTitle(lookupTitle, effectiveMediaType, lookupYear);
+        if (resolved) {
+          cleanId = String(resolved);
+        } else {
+          const altType: 'movie' | 'tv' = effectiveMediaType === 'tv' ? 'movie' : 'tv';
+          const altResolved = await resolveTmdbIdByTitle(lookupTitle, altType, lookupYear);
+          if (altResolved) {
+            cleanId = String(altResolved);
+            effectiveMediaType = altType;
+          }
+        }
+      }
     }
 
     // If a Movidy or GnulaHD item has no exact TMDB match (e.g. brand-new release or homonym from another year),
@@ -7878,7 +8032,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
       const metaTitle = movidyMeta?.cleanTitle || gnulaMeta?.cleanTitle || titleHint;
       const availableLanguages = await probeAvailableLanguages({
         tmdbId: '',
-        mediaType,
+        mediaType: effectiveMediaType,
         titleHints: [metaTitle, gnulaMeta?.origTitle || ''].filter(Boolean),
         movidyUrl: movidyUrlHint || undefined,
         gnulaUrl: gnulaUrlHint || undefined,
@@ -7889,7 +8043,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         success: true,
         details: {
           tmdbId: undefined,
-          mediaType: (movidyMeta?.isTvShow || gnulaMeta?.isTvShow) ? 'tv' : mediaType,
+          mediaType: effectiveMediaType,
           title: titleHint || metaTitle || 'Película',
           originalTitle: gnulaMeta?.origTitle || metaTitle || undefined,
           year: metaYear || 'HD',
@@ -7911,14 +8065,14 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
     if (!cleanId || cleanId === '0') return res.status(400).json({ success: false });
 
     const langParam = String(req.query.lang || 'es').toLowerCase() === 'en' ? 'en-US' : 'es-ES';
-    const cacheKey = `v6|${mediaType}|${cleanId}|${langParam}|${movidyUrlHint}|${gnulaUrlHint}`;
+    const cacheKey = `v7|${effectiveMediaType}|${cleanId}|${langParam}|${movidyUrlHint}|${gnulaUrlHint}`;
     const cached = !force ? richDetailsCache.get(cacheKey) : undefined;
     if (cached && Date.now() - cached.ts < 10 * 60 * 1000) {
       return res.json({ success: true, details: cached.details });
     }
 
     const data = await fetchTmdbJson<any>(
-      `/${mediaType}/${cleanId}`,
+      `/${effectiveMediaType}/${cleanId}`,
       {
         language: langParam,
         append_to_response: 'videos,credits,recommendations,watch/providers,external_ids,translations,alternative_titles',
@@ -7956,7 +8110,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
 
     const localizedTitleData = await resolveLocalizedTmdbTitle({
       tmdbId: Number(cleanId),
-      mediaType,
+      mediaType: effectiveMediaType,
       currentTitle: data.title || data.name || '',
       originalTitle: data.original_title || data.original_name || '',
       lang: langParam,
@@ -7974,18 +8128,18 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
     const rawCast: any[] = Array.isArray(data?.credits?.cast) ? data.credits.cast : [];
     const rawCrew: any[] = Array.isArray(data?.credits?.crew) ? data.credits.crew : [];
     const director =
-      mediaType === 'movie'
+      effectiveMediaType === 'movie'
         ? rawCrew.find((c) => c.job === 'Director')?.name
         : Array.isArray(data?.created_by) && data.created_by[0]?.name
         ? data.created_by[0].name
         : undefined;
 
     const runtimeMin =
-      mediaType === 'movie'
+      effectiveMediaType === 'movie'
         ? Number(data?.runtime || 0)
         : Number(data?.episode_run_time?.[0] || 0);
     const runtimeText =
-      mediaType === 'tv'
+      effectiveMediaType === 'tv'
         ? `${Number(data?.number_of_seasons || 1)} temp · ${Number(data?.number_of_episodes || 0)} eps`
         : runtimeMin > 0
         ? `${Math.floor(runtimeMin / 60)}h ${runtimeMin % 60}m`
@@ -8002,7 +8156,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         let vids: any[] = Array.isArray(data?.videos?.results) ? data.videos.results : [];
         if (vids.length === 0 && langParam !== 'en-US') {
           const enJson = await fetchTmdbJson<any>(
-            `/${mediaType}/${cleanId}/videos`,
+            `/${effectiveMediaType}/${cleanId}/videos`,
             { language: 'en-US' },
             15 * 60 * 1000
           ).catch(() => null);
@@ -8013,9 +8167,9 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
       probeAvailableLanguages({
         tmdbId: cleanId,
         imdbId: tmdbImdbId,
-        mediaType,
-        season: mediaType === 'tv' ? 1 : undefined,
-        episode: mediaType === 'tv' ? 1 : undefined,
+        mediaType: effectiveMediaType,
+        season: effectiveMediaType === 'tv' ? 1 : undefined,
+        episode: effectiveMediaType === 'tv' ? 1 : undefined,
         titleHints: allTitleHints,
         movidyUrl: movidyUrlHint || undefined,
         gnulaUrl: gnulaUrlHint || undefined,
@@ -8025,7 +8179,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         runtimeMinHint: runtimeMin || undefined,
         force,
       }),
-      fetchTmdbTitleLogo(Number(cleanId), mediaType, req.query.lang === 'en' ? 'en' : 'es'),
+      fetchTmdbTitleLogo(Number(cleanId), effectiveMediaType, req.query.lang === 'en' ? 'en' : 'es'),
     ]);
 
     const availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[] =
@@ -8048,7 +8202,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
 
     const details = {
       tmdbId: Number(cleanId),
-      mediaType,
+      mediaType: effectiveMediaType,
       title: primaryTitle,
       originalTitle,
       tagline: data.tagline || undefined,
@@ -8075,9 +8229,9 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
         .filter((item) => item && item.id && (item.poster_path || item.backdrop_path))
         .slice(0, 8)
         .map((item) => ({
-          id: `${mediaType}-${item.id}`,
+          id: `${effectiveMediaType}-${item.id}`,
           tmdbId: item.id,
-          mediaType,
+          mediaType: effectiveMediaType,
           title: item.title || item.name || 'Título',
           originalTitle: item.original_title || item.original_name || '',
           year: String(item.release_date || item.first_air_date || '').split('-')[0] || 'HD',
@@ -8085,7 +8239,7 @@ app.get('/api/catalog/details/:mediaType/:tmdbId', async (req, res) => {
           overview: item.overview || '',
           poster: item.poster_path ? `https://image.tmdb.org/t/p/w500${item.poster_path}` : '',
           backdrop: item.backdrop_path ? `https://image.tmdb.org/t/p/w780${item.backdrop_path}` : '',
-          bingetrixUrl: mediaType === 'movie' ? `https://bingetrix.sc/watch/${item.id}` : undefined,
+          bingetrixUrl: effectiveMediaType === 'movie' ? `https://bingetrix.sc/watch/${item.id}` : undefined,
           languages: ['Español', 'VOSE'],
         })),
       availableLanguages,

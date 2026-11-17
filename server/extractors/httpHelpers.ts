@@ -607,8 +607,21 @@ export function buildTsProxyUrl(
   return `${originPrefix}/api/ts-proxy/${ext}?url=${encodeURIComponent(rawMediaUrl)}&referer=${encodeURIComponent(referer)}${needsAac ? '&aac=1' : ''}`;
 }
 
-export function normalizeTitleForMatch(raw: string): string {
+export function decodeBasicHtmlEntities(raw: string): string {
   return String(raw || '')
+    .replace(/&#0*38;|&amp;|&#x0*26;/gi, '&')
+    .replace(/&#0*39;|&#8217;|&apos;/gi, "'")
+    .replace(/&#8211;|&ndash;/gi, '-')
+    .replace(/&#8212;|&mdash;/gi, '-')
+    .replace(/&quot;|&#34;/gi, '"')
+    .replace(/&#(\d+);/g, (_m, dec) => {
+      const n = Number(dec);
+      return Number.isFinite(n) && n >= 32 && n <= 65535 ? String.fromCharCode(n) : ' ';
+    });
+}
+
+export function normalizeTitleForMatch(raw: string): string {
+  return decodeBasicHtmlEntities(raw)
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
@@ -1103,7 +1116,7 @@ export async function probeHlsSegmentHealth(rawM3u8Url: string, origin: string):
 }
 
 export function extractTitleMatchVariants(raw: string): string[] {
-  const str = String(raw || '').trim();
+  const str = decodeBasicHtmlEntities(raw).trim();
   if (!str) return [];
   const full = normalizeTitleForMatch(str);
   const outside = normalizeTitleForMatch(str.replace(/\s*\([^)]*\)/g, ''));
@@ -1118,6 +1131,18 @@ export function extractTitleMatchVariants(raw: string): string[] {
     if (/^(?:19|20)\d{2}$/.test(insideRaw)) continue;
     const insideNorm = normalizeTitleForMatch(insideRaw);
     if (insideNorm.length >= 2) variants.add(insideNorm);
+  }
+  // Handle dual-title separators used by Movidy/Gnula (e.g. "Deadpool y Lobezno - Deadpool 3", "Title A / Title B")
+  const splitParts = str
+    .replace(/\s*\([^)]*\)/g, '')
+    .split(/\s+(?:-|–|—|\/|\|)\s+/)
+    .map((p) => p.trim())
+    .filter((p) => p.length >= 3);
+  if (splitParts.length > 1) {
+    for (const part of splitParts) {
+      const normPart = normalizeTitleForMatch(part);
+      if (normPart.length >= 3) variants.add(normPart);
+    }
   }
   return Array.from(variants);
 }

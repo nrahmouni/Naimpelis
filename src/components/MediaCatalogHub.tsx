@@ -686,12 +686,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   const [loadingMoreMovies, setLoadingMoreMovies] = useState(false);
   const [spotlightImgFailed, setSpotlightImgFailed] = useState(false);
 
-  // TV Series state (default VOSE; Sort & Genre separated)
+  // TV Series state (default ES Castellano; Sort & Genre separated)
   const [seriesQuery, setSeriesQuery] = useState('');
   const [debouncedSeriesQuery, setDebouncedSeriesQuery] = useState('');
   const [seriesSort, setSeriesSort] = useState<string>('trending');
   const [seriesGenre, setSeriesGenre] = useState<string>('');
-  const [seriesLangMode, setSeriesLangMode] = useState<'ES' | 'LAT' | 'VOSE' | 'EN'>('VOSE');
+  const [seriesLangMode, setSeriesLangMode] = useState<'ES' | 'LAT' | 'VOSE' | 'EN'>('ES');
   const [seriesPage, setSeriesPage] = useState<number>(1);
   const [hasMoreSeries, setHasMoreSeries] = useState<boolean>(false);
   const [seriesList, setSeriesList] = useState<CatalogMovie[]>([]);
@@ -768,7 +768,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     onCineTabChange?.(tab);
   };
 
-  const [internalCineCastellano, setInternalCineCastellano] = useState(false);
+  const [internalCineCastellano, setInternalCineCastellano] = useState(true);
   const effectiveCineCastellano = controlledCineCastellano ?? internalCineCastellano;
   const setEffectiveCineCastellano = (enabled: boolean) => {
     setInternalCineCastellano(enabled);
@@ -784,7 +784,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
   const [cineSpecialPortal, setCineSpecialPortal] = useState<'none' | 'catala'>('none');
   const [cineFiltersOpen, setCineFiltersOpen] = useState(false);
-  const [cineAudioOverride, setCineAudioOverride] = useState<'ES' | 'VOSE' | 'EN'>('VOSE');
+  const [cineAudioOverride, setCineAudioOverride] = useState<'ES' | 'VOSE' | 'EN'>('ES');
   const [futbolFiltersOpen, setFutbolFiltersOpen] = useState(false);
   const [futbolLangFilter, setFutbolLangFilter] = useState<'all' | 'ZH'>('all');
   const [futbolLeagueFilter, setFutbolLeagueFilter] = useState<string>('');
@@ -2274,10 +2274,16 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         }
         isBookmarked={previewItem ? isBookmarked(previewItem) : false}
         onClose={() => setPreviewItem(null)}
-        onPlayMovie={(m, pLang, opts) => onPlayMovie(m, pLang, opts)}
+        onPlayMovie={(m, pLang, opts) => {
+          setShowSectionSearch(false);
+          onExternalSearchChange?.('');
+          onPlayMovie(m, pLang, opts);
+        }}
         onOpenSeriesEpisodes={(tmdbId, forceSpanish) => {
           const seed = previewItem || undefined;
           setPreviewItem(null);
+          setShowSectionSearch(false);
+          onExternalSearchChange?.('');
           openSeriesDetails(tmdbId, seed?.seasonNumber || 1, seed, Boolean(forceSpanish));
         }}
         onToggleBookmark={(m) => onToggleCatalogFavorite(m)}
@@ -3340,7 +3346,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
             : 'vose';
 
         const activeFilterCount =
-          (activeAudioCode !== 'VOSE' ? 1 : 0) +
+          (activeAudioCode !== 'ES' ? 1 : 0) +
           (currentSort !== 'trending' ? 1 : 0) +
           (currentGenre !== '' ? 1 : 0);
 
@@ -3430,7 +3436,7 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                     }
                   }}
                   className={`min-h-11 px-3.5 rounded-2xl text-xs font-bold border inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
-                    activeAudioCode !== 'VOSE'
+                    activeAudioCode === 'ES'
                       ? 'bg-[#9146FF] border-[#9146FF] text-white'
                       : 'bg-white/[0.05] border-white/[0.1] text-zinc-200 hover:bg-white/[0.1]'
                   }`}
@@ -3478,24 +3484,24 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
               {/* Dismissible Active Filter Chips */}
               {activeFilterCount > 0 && (
                 <div className="flex items-center gap-1.5 flex-wrap pt-0.5">
-                  {activeAudioCode !== 'VOSE' && (
+                  {activeAudioCode !== 'ES' && (
                     <button
                       type="button"
                       onClick={() => {
                         triggerHaptic('light');
                         setCineSpecialPortal('none');
-                        setEffectiveCineCastellano(false);
-                        setCineAudioOverride('VOSE');
-                        setSeriesLangMode('VOSE');
+                        setEffectiveCineCastellano(true);
+                        setCineAudioOverride('ES');
+                        setSeriesLangMode('ES');
                       }}
                       className="min-h-8 px-2.5 rounded-xl bg-[#9146FF]/18 border border-[#9146FF]/45 text-[11px] font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer hover:bg-[#9146FF]/30 transition-colors"
                     >
                       <FlagBadgeSvg code={activeAudioFlag} className="w-3.5 h-2.5 shrink-0" />
                       <span>
-                        {activeAudioCode === 'ES'
-                          ? 'Castellano'
-                          : activeAudioCode === 'CAT'
+                        {activeAudioCode === 'CAT'
                           ? 'Català'
+                          : activeAudioCode === 'VOSE'
+                          ? 'VOSE (Subtitulada)'
                           : 'English (VO)'}
                       </span>
                       <X className="w-3 h-3 text-zinc-300" />
@@ -4161,9 +4167,9 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
                   <button
                     type="button"
                     onClick={() => {
-                      setEffectiveCineCastellano(false);
-                      setCineAudioOverride('VOSE');
-                      setSeriesLangMode('VOSE');
+                      setEffectiveCineCastellano(true);
+                      setCineAudioOverride('ES');
+                      setSeriesLangMode('ES');
                       setMovieSort('trending');
                       setMovieGenre('');
                       setSeriesSort('trending');

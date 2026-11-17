@@ -928,25 +928,54 @@ export async function scrapeGnulaCatalog(opts: {
       relPath = page > 1 ? `${base}?pag=${page}` : base;
     }
 
-    const res = await fetchGnulaPathWithMirrorFailover(relPath, { timeoutMs: 4800 });
+    const [res, jsonHits] = await Promise.all([
+      fetchGnulaPathWithMirrorFailover(relPath, { timeoutMs: 4800 }),
+      query && page === 1
+        ? searchGnulaHd(query).catch(() => [] as GnulaSearchResultItem[])
+        : Promise.resolve([] as GnulaSearchResultItem[]),
+    ]);
+
+    const jsonTypeByUrl = new Map<string, 'movie' | 'tv'>();
+    for (const hit of jsonHits) {
+      if (!hit.url) continue;
+      const normHitUrl = normalizeGnulaUrl(hit.url);
+      if (!normHitUrl) continue;
+      const isTvHit = /serie|anime/i.test(hit.type || '') && !/pelicula/i.test(hit.type || '');
+      jsonTypeByUrl.set(normHitUrl, isTvHit ? 'tv' : 'movie');
+    }
+
     let items: GnulaCatalogCardItem[] = [];
     if (res?.text) {
-      items = parseGnulaCardsFromHtml(res.text, res.origin).map((it) => ({
-        ...it,
-        mediaType: mediaType === 'tv' ? 'tv' : mediaType === 'movie' ? 'movie' : it.mediaType,
-      }));
+      items = parseGnulaCardsFromHtml(res.text, res.origin)
+        .map((it) => {
+          const normUrl = normalizeGnulaUrl(it.gnulaUrl);
+          const inferredType: 'movie' | 'tv' = !query
+            ? mediaType === 'tv'
+              ? 'tv'
+              : mediaType === 'movie'
+              ? 'movie'
+              : it.mediaType
+            : jsonTypeByUrl.get(normUrl) || it.mediaType;
+          return {
+            ...it,
+            mediaType: inferredType,
+          };
+        })
+        .filter((it) => {
+          if (!query || mediaType === 'all') return true;
+          return it.mediaType === mediaType;
+        });
     }
 
     // Supplement search with JSON API hits when querying
     if (query && page === 1) {
-      const jsonHits = await searchGnulaHd(query).catch(() => [] as GnulaSearchResultItem[]);
       const existingUrls = new Set(items.map((it) => normalizeGnulaUrl(it.gnulaUrl)));
       for (const hit of jsonHits) {
         if (!hit.url) continue;
         const normHitUrl = normalizeGnulaUrl(hit.url);
         if (existingUrls.has(normHitUrl)) continue;
-        const isTvHit = /serie|anime/i.test(hit.type || '');
-        if (mediaType === 'movie' && isTvHit && !/pelicula/i.test(hit.type || '')) continue;
+        const isTvHit = /serie|anime/i.test(hit.type || '') && !/pelicula/i.test(hit.type || '');
+        if (mediaType === 'movie' && isTvHit) continue;
         if (mediaType === 'tv' && !isTvHit) continue;
         existingUrls.add(normHitUrl);
         const slug =

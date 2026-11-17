@@ -767,8 +767,14 @@ export async function fetchMovidyPageMetadata(
     const html = await fetchMovidyWithMirrorFailover(cleanUrl, '/pelis/', 5000);
 
     if (!html) return null;
+    if (/<title>\s*404|p[áa]gina no encontrada|not found<\/title>/i.test(html.slice(0, 1500))) {
+      return null;
+    }
 
     const meta = parseMovidyHtmlMetadata(html);
+    if (!meta.cleanTitle && !meta.isTvShow && !html.includes('play-url')) {
+      return null;
+    }
     movidyPageMetaCache.set(cleanUrl, meta);
     return meta;
   } catch {
@@ -849,10 +855,13 @@ export function verifyMovidyMetaMatch(
   if (opts.expectedMediaType === 'tv' && !meta.isTvShow) {
     return { ok: false, exactYear: false, reason: 'movie_not_tv_show' };
   }
+  if (!meta.cleanTitle || !meta.cleanTitle.trim()) {
+    return { ok: false, exactYear: false, reason: 'missing_title' };
+  }
   const isTv = opts.expectedMediaType === 'tv' || meta.isTvShow;
   const candRuntimeMin = parseDurationTextToMinutes(meta.durationText);
   return isMetadataCompatibleForMedia({
-    candidateTitle: meta.cleanTitle || undefined,
+    candidateTitle: meta.cleanTitle,
     targetTitleHints: opts.titleHints,
     candidateYear: meta.year || undefined,
     expectedYear: opts.expectedYear,
@@ -930,26 +939,41 @@ export async function findMovidyUrlByTitle(
     const rawClean = String(title || '').trim();
     const clean = rawClean.replace(/\s*\([^)]*\)/g, '').trim();
     const queryTerm = clean || rawClean;
-    const allHints = Array.from(
-      new Set([rawClean, ...(opts?.titleHints || [])].map((s) => String(s || '').trim()).filter(Boolean))
+    const baseHints = Array.from(
+      new Set([rawClean, clean, ...(opts?.titleHints || [])].map((s) => String(s || '').trim()).filter(Boolean))
     );
+    const spanishHints = baseHints.flatMap((h) => generateSpanishTitleHints(h));
+    const allHints = Array.from(new Set([...baseHints, ...spanishHints].filter(Boolean)));
 
     if (!queryTerm || queryTerm.length < 2 || allHints.length === 0) {
       return null;
     }
 
-    const searchTerms = Array.from(
-      new Set(
-        [
-          queryTerm,
-          ...(opts?.titleHints || []).map((t) =>
-            String(t || '')
-              .replace(/\s*\([^)]*\)/g, '')
-              .trim()
-          ),
-        ].filter((s) => s && s.length >= 2)
-      )
-    );
+    // Prioritize Spanish localized titles and hyphen/colon-free search terms (Movidy WP search returns 0 for some hyphenated English queries like "Spider-Man")
+    const rawSearchPool = [
+      ...spanishHints.map((t) => String(t || '').replace(/\s*\([^)]*\)/g, '').trim()),
+      ...allHints.map((t) => String(t || '').replace(/\s*\([^)]*\)/g, '').trim()),
+    ].filter((s) => s && s.length >= 2);
+
+    const searchTerms: string[] = [];
+    const seenTerms = new Set<string>();
+    const pushTerm = (t: string) => {
+      const k = t.toLowerCase();
+      if (t.length >= 2 && !seenTerms.has(k)) {
+        seenTerms.add(k);
+        searchTerms.push(t);
+      }
+    };
+    for (const t of rawSearchPool) {
+      pushTerm(t);
+      const noPunct = t.replace(/[:\-\u2013]+/g, ' ').replace(/\s+/g, ' ').trim();
+      if (noPunct !== t) pushTerm(noPunct);
+      // Also extract subtitle part (e.g. "Un nuevo día") for faster WordPress match
+      const colonParts = t.split(/[:\u2013]/).map((p) => p.trim()).filter((p) => p.length >= 4);
+      if (colonParts.length > 1) {
+        pushTerm(colonParts[colonParts.length - 1]);
+      }
+    }
 
     const exactMatches: string[] = [];
     const itemRe =
@@ -972,7 +996,7 @@ export async function findMovidyUrlByTitle(
       }
     };
 
-    // Query top 4 hints concurrently so non-literal Spanish alt titles match in ~1 round trip
+    // Query top 4 hints concurrently so Spanish alt titles & English queries match in ~1 round trip
     const firstHtmls = await Promise.all(
       searchTerms
         .slice(0, 4)
@@ -982,29 +1006,29 @@ export async function findMovidyUrlByTitle(
       collectHits(html, true);
     }
 
-    // If top 4 hints missed, try remaining localized hints sequentially
+    // If top 4 hints missed, try remaining localized/sanitized hints sequentially
     if (exactMatches.length === 0 && searchTerms.length > 4) {
-      for (const term of searchTerms.slice(4, 7)) {
+      for (const term of searchTerms.slice(4, 8)) {
         const html = await fetchMovidyWithMirrorFailover(
           `/?s=${encodeURIComponent(term)}&_=${Date.now()}`,
           '/',
-          4000
+          3800
         );
         collectHits(html, true);
         if (exactMatches.length > 0) break;
       }
     }
 
-    // Franchise prefix fallback (e.g. "Spider-Man: Brand New Day" -> search "Spider-Man" and filter by exact year)
-    if (exactMatches.length === 0 && expectedYear) {
+    // Franchise prefix fallback (e.g. "Spider-Man: Brand New Day" -> search "Spider" and filter by exact year or hints)
+    if (exactMatches.length === 0) {
       const prefix = queryTerm.split(/[:\-\u2013]/)[0]?.trim();
-      if (prefix && prefix.length >= 3 && prefix !== queryTerm) {
+      if (prefix && prefix.length >= 3 && !seenTerms.has(prefix.toLowerCase())) {
         const html = await fetchMovidyWithMirrorFailover(
           `/?s=${encodeURIComponent(prefix)}&_=${Date.now()}`,
           '/',
           4200
         );
-        collectHits(html, false);
+        collectHits(html, !expectedYear);
       }
     }
     // (collected via collectHits above)
