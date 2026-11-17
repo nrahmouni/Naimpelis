@@ -1,5 +1,4 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import Hls from 'hls.js';
 import {
   ArrowLeft,
   Maximize2,
@@ -9,19 +8,22 @@ import {
   RotateCcw,
   RotateCw,
   Star,
-  Tv,
+  Trophy,
+  Volume1,
   Volume2,
   VolumeX,
+  Youtube,
 } from 'lucide-react';
 import type { CatalogMovie } from '../../types';
 import { triggerHaptic } from '../../utils/haptics';
 import { useKidsStore } from '../../store/useKidsStore';
+import { EXTENDED_VOCAB_ITEMS } from './kidsCurriculumData';
 import { playKidsSound } from './kidsAudioEngine';
 import { getKidsDir, getKidsUiCopy } from './kidsI18n';
 import { speakKidsText } from './kidsTtsHelper';
 import { KidsSpeakButton, KidsSquishButton } from './KidsPrimitives';
 import { KidsConfettiCanvas } from './KidsConfettiCanvas';
-import { KidsAnimatedCategoryIcon } from './KidsSvgArt';
+import { KidsAnimatedCategoryIcon, KidsVocabSvg } from './KidsSvgArt';
 
 import type {
   YouTubePlayerEvent,
@@ -77,10 +79,9 @@ function formatSec(sec: number): string {
 }
 
 /**
- * Reproductor propio 100% independiente al estilo Kids:
- * - Reproduce vídeos de YouTube Kids usando YouTube IFrame API con controles gigantes propios.
- * - Reproduce Canales TV Infantiles en directo mediante HLS.js dentro del mismo marco amigable.
- * - Nunca sale al reproductor de adultos de RiffanTV ni muestra menús de Watch Party o extractores.
+ * Kid-safe independent YouTube Kids player.
+ * Supports Portrait mobile, Horizontal landscape mobile, Tablet, and Google TV D-Pad remote controls.
+ * Zero external YouTube clutter and zero emojis.
  */
 export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
   item,
@@ -92,6 +93,9 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
   const ux = useKidsStore((s) => s.ux);
   const awardStars = useKidsStore((s) => s.awardStars);
   const trackMission = useKidsStore((s) => s.trackMission);
+  const consumeCinemaMinute = useKidsStore((s) => s.consumeCinemaMinute);
+  const tickActiveMinute = useKidsStore((s) => s.tickActiveMinute);
+  const recordDomainResult = useKidsStore((s) => s.recordDomainResult);
 
   const profile = getActiveProfile();
   const kidsLang = profile.preferredLang;
@@ -99,18 +103,11 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
   const t = getKidsUiCopy(kidsLang);
   const dir = getKidsDir(kidsLang);
 
-  const isLiveChannel =
-    item.platform === 'Riffan Kids Live' || item.id.startsWith('kids-live-');
-  const ytVideoId = useMemo(
-    () => (isLiveChannel ? '' : extractYouTubeVideoId(item)),
-    [isLiveChannel, item]
-  );
+  const ytVideoId = useMemo(() => extractYouTubeVideoId(item), [item]);
 
   const stageWrapRef = useRef<HTMLDivElement | null>(null);
   const ytHostRef = useRef<HTMLDivElement | null>(null);
   const ytPlayerRef = useRef<YouTubePlayerInstance | null>(null);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const hlsRef = useRef<Hls | null>(null);
   const gestureStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const [isPlaying, setIsPlaying] = useState(true);
@@ -125,6 +122,12 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
   const [rewardClaimed, setRewardClaimed] = useState(false);
   const [confettiActive, setConfettiActive] = useState(false);
   const [retryCounter, setRetryCounter] = useState(0);
+  const [magicPauseDone, setMagicPauseDone] = useState(false);
+  const [magicPauseData, setMagicPauseData] = useState<{
+    word: string;
+    targetId: string;
+    choices: Array<{ id: string; iconId: string; label: string }>;
+  } | null>(null);
 
   const showToast = (msg: string) => {
     setGestureToast(msg);
@@ -146,8 +149,35 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
     }
   };
 
+  const openMagicPause = () => {
+    const pool = [...EXTENDED_VOCAB_ITEMS].sort(() => Math.random() - 0.5).slice(0, 3);
+    const target = pool[0];
+    if (!target) return;
+    const rawWord = (target.translations[kidsLang] || target.translations.es).word;
+    const cleanWord = (rawWord.includes('(') ? rawWord.slice(0, rawWord.indexOf('(')) : rawWord).trim();
+    ytPlayerRef.current?.pauseVideo?.();
+    setIsPlaying(false);
+    setMagicPauseDone(true);
+    setMagicPauseData({
+      word: cleanWord,
+      targetId: target.id,
+      choices: [...pool]
+        .sort(() => Math.random() - 0.5)
+        .map((c) => ({
+          id: c.id,
+          iconId: c.iconId,
+          label: c.translations.es.word,
+        })),
+    });
+    if (ux.soundEnabled) {
+      void speakKidsText(cleanWord, kidsLang, { ageGroup });
+    }
+  };
+
   useEffect(() => {
     setRewardClaimed(false);
+    setMagicPauseDone(false);
+    setMagicPauseData(null);
     setIsEnded(false);
     setStreamError(null);
     setCurrentSec(0);
@@ -156,9 +186,29 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
     setIsPlaying(true);
   }, [item.id]);
 
-  // 1. Initialize YouTube Kids IFrame Player
   useEffect(() => {
-    if (isLiveChannel || !ytVideoId) return;
+    if (!isPlaying || isEnded || streamError) return;
+    const timer = window.setInterval(() => {
+      consumeCinemaMinute();
+      tickActiveMinute('cinema');
+    }, 60_000);
+    return () => window.clearInterval(timer);
+  }, [consumeCinemaMinute, isEnded, isPlaying, streamError, tickActiveMinute]);
+
+  useEffect(() => {
+    if (!magicPauseDone && currentSec >= 120 && isPlaying && !isEnded) {
+      openMagicPause();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentSec, isEnded, isPlaying, magicPauseDone]);
+
+  useEffect(() => {
+    if (!ytVideoId) {
+      setIsBuffering(false);
+      setStreamError(t.catalogLoadError);
+      return;
+    }
+
     let cancelled = false;
     let timePoll: number | null = null;
 
@@ -252,97 +302,11 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLiveChannel, ytVideoId, retryCounter]);
-
-  // 2. Initialize Kids Live TV Channel (HLS.js)
-  useEffect(() => {
-    if (!isLiveChannel) return;
-    const video = videoRef.current;
-    const streamUrl = item.bingetrixUrl || item.movidyUrl || '';
-    if (!video || !streamUrl) {
-      setStreamError(t.catalogLoadError);
-      setIsBuffering(false);
-      return;
-    }
-
-    if (hlsRef.current) {
-      hlsRef.current.destroy();
-      hlsRef.current = null;
-    }
-
-    setIsBuffering(true);
-    setStreamError(null);
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-        maxBufferLength: 24,
-      });
-      hlsRef.current = hls;
-      hls.loadSource(streamUrl);
-      hls.attachMedia(video);
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        setIsBuffering(false);
-        setIsPlaying(true);
-        void video.play().catch(() => {
-          setIsPlaying(false);
-        });
-      });
-      hls.on(Hls.Events.ERROR, (_evt, data) => {
-        if (data.fatal) {
-          if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
-            hls.startLoad();
-          } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) {
-            hls.recoverMediaError();
-          } else {
-            setIsBuffering(false);
-            setStreamError(t.catalogConnError);
-          }
-        }
-      });
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      video.src = streamUrl;
-      video.addEventListener(
-        'loadedmetadata',
-        () => {
-          setIsBuffering(false);
-          void video.play().catch(() => setIsPlaying(false));
-        },
-        { once: true }
-      );
-    } else {
-      setIsBuffering(false);
-      setStreamError(t.catalogLoadError);
-    }
-
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy();
-        hlsRef.current = null;
-      }
-      video.pause();
-      video.removeAttribute('src');
-      video.load();
-    };
-  }, [isLiveChannel, item.bingetrixUrl, item.movidyUrl, retryCounter, t.catalogConnError, t.catalogLoadError]);
+  }, [ytVideoId, retryCounter, t.catalogLoadError]);
 
   const handleTogglePlay = () => {
     triggerHaptic('light');
     playKidsSound('tap', ux.soundEnabled, true);
-    if (isLiveChannel) {
-      const v = videoRef.current;
-      if (!v) return;
-      if (v.paused) {
-        void v.play().catch(() => {});
-        setIsPlaying(true);
-      } else {
-        v.pause();
-        setIsPlaying(false);
-      }
-      return;
-    }
-
     const yt = ytPlayerRef.current;
     if (!yt) return;
     const state = yt.getPlayerState?.();
@@ -357,7 +321,6 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
   };
 
   const handleSeekDelta = (deltaSec: number) => {
-    if (isLiveChannel) return;
     const yt = ytPlayerRef.current;
     if (!yt) return;
     triggerHaptic('light');
@@ -367,11 +330,11 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
     const next = Math.max(0, Math.min(dur, cur + deltaSec));
     yt.seekTo?.(next, true);
     setCurrentSec(next);
-    showToast(deltaSec < 0 ? `⏪ ${deltaSec}s` : `⏩ +${deltaSec}s`);
+    showToast(deltaSec < 0 ? `${deltaSec} s` : `+${deltaSec} s`);
   };
 
   const handleSeekBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (isLiveChannel || durationSec <= 0) return;
+    if (durationSec <= 0) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const rel = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
     const ratio = dir === 'rtl' ? 1 - rel : rel;
@@ -388,30 +351,25 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
     setVolumePct(nextPct);
     setIsMuted(nextPct === 0);
 
-    if (isLiveChannel && videoRef.current) {
-      videoRef.current.muted = nextPct === 0;
-      videoRef.current.volume = nextPct / 100;
-    } else if (ytPlayerRef.current) {
+    if (ytPlayerRef.current) {
       if (nextPct === 0) ytPlayerRef.current.mute?.();
       else {
         ytPlayerRef.current.unMute?.();
         ytPlayerRef.current.setVolume?.(nextPct);
       }
     }
-    showToast(`🔊 ${nextPct}%`);
+    showToast(`${t.theaterVolume}: ${nextPct}%`);
   };
 
   const handleToggleMute = () => {
     triggerHaptic('light');
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
-    if (isLiveChannel && videoRef.current) {
-      videoRef.current.muted = nextMuted;
-    } else if (ytPlayerRef.current) {
+    if (ytPlayerRef.current) {
       if (nextMuted) ytPlayerRef.current.mute?.();
       else ytPlayerRef.current.unMute?.();
     }
-    showToast(nextMuted ? '🔇 0%' : `🔊 ${volumePct}%`);
+    showToast(nextMuted ? t.theaterMute : `${t.theaterVolume}: ${volumePct}%`);
   };
 
   const handleFullscreen = () => {
@@ -495,7 +453,6 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
       if (key === 'ArrowDown' || code === 40 || code === 20) {
         e.preventDefault();
         handleVolumeDelta(-10);
-        return;
       }
     };
 
@@ -503,7 +460,7 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
     return () => {
       window.removeEventListener('keydown', handleRemoteKey, { capture: true });
     };
-  }, [handleTogglePlay, handleSeekDelta, handleVolumeDelta, isPlaying, onClose]);
+  });
 
   const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     const touch = e.touches[0];
@@ -526,9 +483,7 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
   };
 
   const progressPct =
-    !isLiveChannel && durationSec > 0
-      ? Math.max(0, Math.min(100, (currentSec / durationSec) * 100))
-      : 0;
+    durationSec > 0 ? Math.max(0, Math.min(100, (currentSec / durationSec) * 100)) : 0;
 
   const suggestions = upNextItems.filter((u) => u.id !== item.id).slice(0, 3);
 
@@ -536,7 +491,7 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
     <div
       ref={stageWrapRef}
       dir={dir}
-      className="fixed inset-0 z-[270] bg-gradient-to-b from-[#131C44] via-[#0D1330] to-[#080C1F] flex flex-col gap-3 p-3 sm:p-4 overflow-hidden select-none"
+      className="fixed inset-0 z-[270] bg-gradient-to-b from-[#131C44] via-[#0D1330] to-[#080C1F] flex flex-col gap-2 sm:gap-3 p-2.5 sm:p-4 landscape:gap-1.5 landscape:p-2 overflow-hidden select-none"
     >
       <KidsConfettiCanvas
         active={confettiActive}
@@ -544,81 +499,74 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
         onComplete={() => setConfettiActive(false)}
       />
 
-      {/* TOP KID-STYLE PLAYER HEADER */}
-      <div className="shrink-0 flex items-center justify-between gap-3 rounded-3xl bg-[#182352]/95 border-2 border-[#32438A] px-3 py-2 shadow-xl">
+      {/* TOP PLAYER HEADER */}
+      <div className="shrink-0 flex items-center justify-between gap-2 sm:gap-3 rounded-2xl sm:rounded-3xl bg-[#182352]/95 border-2 border-[#32438A] px-2.5 sm:px-3 py-1.5 sm:py-2 landscape:py-1 shadow-xl">
         <KidsSquishButton
           onClick={onClose}
           ariaLabel={t.theaterBackToKids}
-          className="px-4 sm:px-5 rounded-2xl bg-rose-500 hover:bg-rose-400 text-white border-b-4 border-rose-700 font-black text-sm sm:text-base flex items-center gap-2 shrink-0"
+          className="px-3.5 sm:px-5 rounded-xl sm:rounded-2xl bg-rose-500 hover:bg-rose-400 text-white border-b-4 border-rose-700 font-black text-xs sm:text-sm flex items-center gap-1.5 shrink-0"
         >
-          <ArrowLeft className="w-5 h-5 rtl:rotate-180" />
+          <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5 rtl:rotate-180" />
           <span>{t.theaterBackToKids}</span>
         </KidsSquishButton>
 
-        <div className="flex-1 min-w-0 flex items-center justify-center gap-2.5 px-2">
-          <KidsAnimatedCategoryIcon name={isLiveChannel ? 'live_tv' : 'cinema'} size={26} />
+        <div className="flex-1 min-w-0 flex items-center justify-center gap-2 px-1">
+          <KidsAnimatedCategoryIcon name="cinema" size={22} />
           <div className="min-w-0 text-center sm:text-start">
-            <h2 className="font-display font-black text-sm sm:text-lg text-white truncate">
+            <h2 className="font-display font-black text-xs sm:text-base text-white truncate">
               {item.title}
             </h2>
-            <p className="text-[11px] font-bold text-sky-200/80 truncate">
-              {isLiveChannel ? t.catLive : 'YouTube Kids'}
-              {item.overview ? ` · ${item.overview}` : ''}
+            <p className="text-[10px] sm:text-[11px] font-bold text-sky-200/80 truncate hidden sm:block">
+              YouTube Kids {item.overview ? `· ${item.overview}` : ''}
             </p>
           </div>
-          <KidsSpeakButton text={item.title} lang={kidsLang} size="md" />
+          <KidsSpeakButton text={item.title} lang={kidsLang} size="md" className="hidden sm:flex" />
         </div>
 
-        <KidsSquishButton
-          onClick={triggerCompletionReward}
-          disabled={rewardClaimed}
-          sound="star"
-          className={`px-4 rounded-2xl border-b-4 font-black text-xs sm:text-sm flex items-center gap-1.5 shrink-0 ${
-            rewardClaimed
-              ? 'bg-emerald-400 text-slate-950 border-emerald-600'
-              : 'bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 border-amber-700'
-          }`}
-        >
-          <Star className="w-4 h-4 fill-current" />
-          <span>{rewardClaimed ? '+5 ⭐' : t.theaterClaimFiveStars}</span>
-        </KidsSquishButton>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <KidsSquishButton
+            onClick={openMagicPause}
+            className="hidden sm:flex px-3 rounded-xl sm:rounded-2xl bg-indigo-500/25 hover:bg-indigo-500/40 border border-indigo-300/40 border-b-4 text-indigo-100 font-black text-xs items-center gap-1"
+          >
+            <span>Pausa Mágica +3</span>
+          </KidsSquishButton>
+
+          <KidsSquishButton
+            onClick={triggerCompletionReward}
+            disabled={rewardClaimed}
+            sound="star"
+            className={`px-3 sm:px-4 rounded-xl sm:rounded-2xl border-b-4 font-black text-xs sm:text-sm flex items-center gap-1.5 shrink-0 ${
+              rewardClaimed
+                ? 'bg-emerald-400 text-slate-950 border-emerald-600'
+                : 'bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 border-amber-700'
+            }`}
+          >
+            <Star className="w-4 h-4 fill-current" />
+            <span className="tabular-nums">{rewardClaimed ? '+5' : t.theaterClaimFiveStars}</span>
+          </KidsSquishButton>
+        </div>
       </div>
 
-      {/* CENTER KID-CINEMA SCREEN */}
+      {/* CENTER YOUTUBE KIDS VIDEO STAGE */}
       <div
         onTouchStart={handleTouchStart}
         onTouchEnd={handleTouchEnd}
-        className="relative flex-1 min-h-0 rounded-3xl bg-black border-4 border-[#324691] shadow-[0_20px_50px_rgba(0,0,0,0.65)] overflow-hidden flex items-center justify-center"
+        className="relative flex-1 min-h-0 rounded-2xl sm:rounded-3xl bg-black border-2 sm:border-4 border-[#324691] shadow-[0_20px_50px_rgba(0,0,0,0.65)] overflow-hidden flex items-center justify-center"
       >
-        {isLiveChannel ? (
-          <video
-            ref={videoRef}
-            playsInline
-            autoPlay
-            onPlaying={() => {
-              setIsBuffering(false);
-              setIsPlaying(true);
-            }}
-            onWaiting={() => setIsBuffering(true)}
-            onClick={handleTogglePlay}
-            className="w-full h-full object-contain bg-black cursor-pointer"
-          />
-        ) : (
-          <div ref={ytHostRef} className="w-full h-full bg-black" />
-        )}
+        <div ref={ytHostRef} className="w-full h-full bg-black" />
 
-        {/* Tap shield overlay when paused or buffering so kids don't hit random YouTube links */}
-        {!isLiveChannel && !isPlaying && !isEnded && !streamError && (
+        {!isPlaying && !isEnded && !streamError && (
           <button
             type="button"
+            data-tv-focusable="true"
             onClick={handleTogglePlay}
             aria-label={t.theaterPlay}
             className="absolute inset-0 z-10 bg-black/45 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 cursor-pointer"
           >
-            <span className="w-24 h-24 rounded-full bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 border-b-4 border-amber-700 flex items-center justify-center shadow-2xl">
-              <Play className="w-12 h-12 fill-current ms-1" />
+            <span className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 border-b-4 border-amber-700 flex items-center justify-center shadow-2xl">
+              <Play className="w-10 h-10 sm:w-12 sm:h-12 fill-current ms-1" />
             </span>
-            <span className="font-display font-black text-xl text-white drop-shadow">
+            <span className="font-display font-black text-lg sm:text-xl text-white drop-shadow">
               {t.theaterPlay}
             </span>
           </button>
@@ -626,22 +574,20 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
 
         {isBuffering && !streamError && (
           <div className="pointer-events-none absolute inset-0 z-20 bg-[#0D1330]/60 flex flex-col items-center justify-center gap-2">
-            <KidsAnimatedCategoryIcon name={isLiveChannel ? 'live_tv' : 'cinema'} size={52} />
-            <span className="text-sm font-black text-sky-200">
-              {isLiveChannel ? t.catLive : 'YouTube Kids'}...
-            </span>
+            <KidsAnimatedCategoryIcon name="cinema" size={48} />
+            <span className="text-sm font-black text-sky-200">YouTube Kids...</span>
           </div>
         )}
 
         {gestureToast && (
-          <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 rounded-2xl bg-amber-400 text-slate-950 font-black text-base shadow-xl">
+          <div className="pointer-events-none absolute top-4 left-1/2 -translate-x-1/2 z-30 px-4 py-1.5 rounded-2xl bg-amber-400 text-slate-950 font-black text-sm sm:text-base shadow-xl">
             {gestureToast}
           </div>
         )}
 
         {streamError && (
           <div className="absolute inset-0 z-30 bg-[#0F1636]/95 flex flex-col items-center justify-center p-6 text-center gap-4">
-            <Tv className="w-12 h-12 text-amber-300" />
+            <Youtube className="w-12 h-12 text-rose-400" />
             <p className="font-display font-bold text-base sm:text-lg text-white max-w-md">
               {streamError}
             </p>
@@ -666,10 +612,11 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
           </div>
         )}
 
-        {/* KID CELEBRATION & UP-NEXT OVERLAY WHEN VIDEO ENDS */}
         {isEnded && (
           <div className="absolute inset-0 z-30 bg-[#0D1433]/92 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center gap-4">
-            <div className="text-5xl">🎉</div>
+            <div className="w-16 h-16 rounded-2xl bg-amber-400/20 border border-amber-300/40 flex items-center justify-center">
+              <Trophy className="w-9 h-9 text-amber-300" />
+            </div>
             <h3 className="font-display font-black text-2xl sm:text-3xl text-amber-300">
               {t.theaterEarnedFiveStars}
             </h3>
@@ -700,6 +647,7 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
                   <button
                     key={next.id}
                     type="button"
+                    data-tv-focusable="true"
                     onClick={() => {
                       triggerHaptic('medium');
                       onSelectItem(next);
@@ -723,122 +671,158 @@ export const KidsIndependentPlayer: React.FC<KidsIndependentPlayerProps> = ({
             )}
           </div>
         )}
+
+        {magicPauseData && (
+          <div className="absolute inset-0 z-40 bg-[#0B112B]/95 backdrop-blur-md flex flex-col items-center justify-center p-5 text-center gap-4">
+            <span className="px-3 py-1 rounded-full bg-indigo-500/25 border border-indigo-300/40 text-indigo-200 text-xs font-black uppercase">
+              Pausa Mágica Educativa · +3 Estrellas
+            </span>
+            <h3 className="font-display font-black text-2xl sm:text-3xl text-amber-300">
+              ¿Cuál es &ldquo;{magicPauseData.word}&rdquo;?
+            </h3>
+            <div className="grid grid-cols-3 gap-3 max-w-md w-full">
+              {magicPauseData.choices.map((ch) => (
+                <button
+                  key={ch.id}
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => {
+                    const isOk = ch.id === magicPauseData.targetId;
+                    if (isOk) {
+                      playKidsSound('levelUp', ux.soundEnabled, true);
+                      setConfettiActive(true);
+                      awardStars(3, 'cinefilo_kids');
+                      recordDomainResult('lang', true, ch.id);
+                      showToast('+3 Estrellas');
+                    } else {
+                      playKidsSound('error', ux.soundEnabled, false);
+                      recordDomainResult('lang', false, magicPauseData.targetId);
+                      awardStars(1);
+                      showToast('+1 por participar');
+                    }
+                    setMagicPauseData(null);
+                    ytPlayerRef.current?.playVideo?.();
+                    setIsPlaying(true);
+                  }}
+                  className="p-3 rounded-2xl bg-[#182352] hover:bg-[#233270] border-2 border-white/15 flex flex-col items-center gap-1.5 cursor-pointer"
+                >
+                  <KidsVocabSvg iconId={ch.iconId} size={52} />
+                  <span className="text-xs font-black text-white">{ch.label}</span>
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setMagicPauseData(null);
+                ytPlayerRef.current?.playVideo?.();
+                setIsPlaying(true);
+              }}
+              className="text-xs font-bold text-sky-300 hover:underline cursor-pointer"
+            >
+              Continuar vídeo
+            </button>
+          </div>
+        )}
       </div>
 
       {/* BOTTOM KID-FRIENDLY CONTROLS DOCK */}
-      <div className="shrink-0 rounded-3xl bg-[#182352]/95 border-2 border-[#32438A] px-3 py-2.5 flex flex-col gap-2 shadow-xl">
-        {/* Rainbow progress bar for YouTube VOD OR Live channel switcher strip */}
-        {!isLiveChannel ? (
-          <div className="flex items-center gap-3 px-1">
-            <span className="text-xs font-black text-sky-200 tabular-nums shrink-0">
-              {formatSec(currentSec)}
-            </span>
+      <div className="shrink-0 rounded-2xl sm:rounded-3xl bg-[#182352]/95 border-2 border-[#32438A] px-2.5 sm:px-3 py-1.5 sm:py-2.5 landscape:py-1.5 flex flex-col gap-1.5 sm:gap-2 shadow-xl">
+        <div className="flex items-center gap-2.5 px-1">
+          <span className="text-[11px] sm:text-xs font-black text-sky-200 tabular-nums shrink-0">
+            {formatSec(currentSec)}
+          </span>
+          <div
+            role="slider"
+            aria-label="Video progress"
+            aria-valuemin={0}
+            aria-valuemax={Math.round(durationSec)}
+            aria-valuenow={Math.round(currentSec)}
+            tabIndex={0}
+            onClick={handleSeekBarClick}
+            className="relative flex-1 h-3.5 sm:h-4 rounded-full bg-[#0B1028] border border-white/15 overflow-hidden cursor-pointer"
+          >
             <div
-              role="slider"
-              aria-label="Video progress"
-              aria-valuemin={0}
-              aria-valuemax={Math.round(durationSec)}
-              aria-valuenow={Math.round(currentSec)}
-              tabIndex={0}
-              onClick={handleSeekBarClick}
-              className="relative flex-1 h-4 rounded-full bg-[#0B1028] border border-white/15 overflow-hidden cursor-pointer"
-            >
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-amber-300 via-pink-400 to-sky-400 transition-all duration-200"
-                style={{ width: `${progressPct}%` }}
-              />
-            </div>
-            <span className="text-xs font-black text-sky-200 tabular-nums shrink-0">
-              {formatSec(durationSec)}
-            </span>
+              className="h-full rounded-full bg-gradient-to-r from-amber-300 via-pink-400 to-sky-400 transition-all duration-200"
+              style={{ width: `${progressPct}%` }}
+            />
           </div>
-        ) : suggestions.length > 0 && onSelectItem ? (
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-            {suggestions.map((ch) => (
-              <button
-                key={ch.id}
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  onSelectItem(ch);
-                }}
-                className="h-9 px-3 rounded-xl bg-[#22306B] hover:bg-amber-400 hover:text-slate-950 text-xs font-black text-white whitespace-nowrap cursor-pointer transition-colors shrink-0"
-              >
-                📺 {ch.title}
-              </button>
-            ))}
-          </div>
-        ) : null}
+          <span className="text-[11px] sm:text-xs font-black text-sky-200 tabular-nums shrink-0">
+            {formatSec(durationSec)}
+          </span>
+        </div>
 
-        <div className="flex items-center justify-between gap-2.5 overflow-x-auto no-scrollbar">
-          <div className="flex items-center gap-2.5 shrink-0">
-            {!isLiveChannel && (
-              <KidsSquishButton
-                onClick={() => handleSeekDelta(-10)}
-                ariaLabel={t.theaterRewind}
-                className="w-16 rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-white border-b-4 border-[#10183B] flex items-center justify-center font-black text-xs gap-0.5"
-              >
-                <RotateCcw className="w-5 h-5" />
-                <span>10</span>
-              </KidsSquishButton>
-            )}
+        <div className="flex items-center justify-between gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <KidsSquishButton
+              onClick={() => handleSeekDelta(-10)}
+              ariaLabel={t.theaterRewind}
+              className="!min-w-[44px] px-2.5 sm:w-16 rounded-xl sm:rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-white border-b-4 border-[#10183B] flex items-center justify-center font-black text-xs gap-1"
+            >
+              <RotateCcw className="w-4 h-4 sm:w-5 sm:h-5" />
+              <span>10</span>
+            </KidsSquishButton>
 
             <KidsSquishButton
               onClick={handleTogglePlay}
               ariaLabel={isPlaying ? t.theaterPause : t.theaterPlay}
-              className="px-6 rounded-2xl bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 border-b-4 border-amber-700 font-black text-base flex items-center gap-2 shadow-lg"
+              className="px-4 sm:px-6 rounded-xl sm:rounded-2xl bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 border-b-4 border-amber-700 font-black text-xs sm:text-base flex items-center gap-1.5 sm:gap-2 shadow-lg"
             >
-              {isPlaying ? <Pause className="w-6 h-6 fill-current" /> : <Play className="w-6 h-6 fill-current" />}
+              {isPlaying ? (
+                <Pause className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
+              ) : (
+                <Play className="w-5 h-5 sm:w-6 sm:h-6 fill-current" />
+              )}
               <span>{isPlaying ? t.theaterPause : t.theaterPlay}</span>
             </KidsSquishButton>
 
-            {!isLiveChannel && (
-              <KidsSquishButton
-                onClick={() => handleSeekDelta(10)}
-                ariaLabel={t.theaterForward}
-                className="w-16 rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-white border-b-4 border-[#10183B] flex items-center justify-center font-black text-xs gap-0.5"
-              >
-                <span>10</span>
-                <RotateCw className="w-5 h-5" />
-              </KidsSquishButton>
-            )}
+            <KidsSquishButton
+              onClick={() => handleSeekDelta(10)}
+              ariaLabel={t.theaterForward}
+              className="!min-w-[44px] px-2.5 sm:w-16 rounded-xl sm:rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-white border-b-4 border-[#10183B] flex items-center justify-center font-black text-xs gap-1"
+            >
+              <span>10</span>
+              <RotateCw className="w-4 h-4 sm:w-5 sm:h-5" />
+            </KidsSquishButton>
           </div>
 
-          <div className="flex items-center gap-2.5 shrink-0">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <KidsSquishButton
               onClick={() => handleVolumeDelta(-15)}
               ariaLabel={`${t.theaterVolume} -`}
-              className="w-16 rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-sky-200 border-b-4 border-[#10183B] font-black text-lg flex items-center justify-center"
+              className="hidden sm:flex landscape:flex px-3 sm:w-16 rounded-xl sm:rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-sky-200 border-b-4 border-[#10183B] font-black text-sm items-center justify-center gap-0.5"
             >
-              🔉-
+              <Volume1 className="w-5 h-5" />
+              <span>-</span>
             </KidsSquishButton>
 
             <KidsSquishButton
               onClick={handleToggleMute}
               ariaLabel={isMuted ? t.theaterUnmute : t.theaterMute}
-              className={`w-16 rounded-2xl border-b-4 flex items-center justify-center ${
+              className={`!min-w-[44px] px-2.5 sm:w-16 rounded-xl sm:rounded-2xl border-b-4 flex items-center justify-center ${
                 isMuted
                   ? 'bg-rose-500/30 text-rose-200 border-rose-700'
                   : 'bg-[#233270] text-emerald-300 border-[#10183B]'
               }`}
             >
-              {isMuted ? <VolumeX className="w-6 h-6" /> : <Volume2 className="w-6 h-6" />}
+              {isMuted ? <VolumeX className="w-5 h-5 sm:w-6 sm:h-6" /> : <Volume2 className="w-5 h-5 sm:w-6 sm:h-6" />}
             </KidsSquishButton>
 
             <KidsSquishButton
               onClick={() => handleVolumeDelta(15)}
               ariaLabel={`${t.theaterVolume} +`}
-              className="w-16 rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-sky-200 border-b-4 border-[#10183B] font-black text-lg flex items-center justify-center"
+              className="hidden sm:flex landscape:flex px-3 sm:w-16 rounded-xl sm:rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-sky-200 border-b-4 border-[#10183B] font-black text-sm items-center justify-center gap-0.5"
             >
-              🔊+
+              <Volume2 className="w-5 h-5" />
+              <span>+</span>
             </KidsSquishButton>
 
             <KidsSquishButton
               onClick={handleFullscreen}
               ariaLabel={t.theaterFullscreen}
-              className="w-16 rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-white border-b-4 border-[#10183B] flex items-center justify-center"
+              className="!min-w-[44px] px-2.5 sm:w-16 rounded-xl sm:rounded-2xl bg-[#233270] hover:bg-[#2E418F] text-white border-b-4 border-[#10183B] flex items-center justify-center"
             >
-              <Maximize2 className="w-6 h-6" />
+              <Maximize2 className="w-5 h-5 sm:w-6 sm:h-6" />
             </KidsSquishButton>
           </div>
         </div>

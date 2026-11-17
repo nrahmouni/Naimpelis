@@ -155,6 +155,12 @@ export async function speakKidsText(
     }
   }
 
+  // Instant offline bypass: when offline, use browser Web Speech API directly
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    speakWithBrowserFallback(cleanText, lang, options);
+    return 'browser';
+  }
+
   try {
     const canUseGeminiTts = await isGeminiTtsAvailable();
     if (canUseGeminiTts) {

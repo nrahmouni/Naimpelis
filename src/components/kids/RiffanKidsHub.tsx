@@ -1,14 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ArrowRight,
   Award,
+  BarChart3,
+  BookOpen,
+  Cake,
   Cast,
   Check,
+  CheckCircle2,
   Clock,
   Delete,
   Download,
+  Film,
+  Gamepad2,
   Gift,
+  Globe,
   Home,
+  KeyRound,
+  Link2,
   Lock,
+  Moon,
+  Music,
   Plus,
   Settings2,
   Sparkles,
@@ -18,6 +30,7 @@ import {
   Users,
   Volume2,
   VolumeX,
+  Wand2,
   X,
 } from 'lucide-react';
 import type {
@@ -30,13 +43,19 @@ import { triggerHaptic } from '../../utils/haptics';
 import { useKidsStore } from '../../store/useKidsStore';
 import { isGoogleTvEnvironment, useTvSpatialRemote } from '../../utils/tvSpatialNav';
 import { FlagBadgeSvg } from '../ui/LanguageBadge';
+import kidsWorldCinemaImg from '../../assets/images/kids_world_cinema_1794940117384.jpg';
+import kidsWorldLanguagesImg from '../../assets/images/kids_world_languages_1794940117132.jpg';
+import kidsWorldGamesImg from '../../assets/images/kids_world_games_1794940117589.jpg';
+import kidsMascotFennecImg from '../../assets/images/kids_mascot_fennec_1794940117205.jpg';
 import {
   createFreshDailyMissions,
   DEFAULT_PARENT_SAFE_SEEDS,
   getKidsLevelInfo,
   isDailyMissionChestReady,
+  isValidKidsExitPin,
   KIDS_AVATAR_CHOICES,
   KIDS_BADGES,
+  KIDS_EXIT_PIN,
   KIDS_LANGUAGES,
   KIDS_MASCOTS,
   KIDS_SHOP_ITEMS,
@@ -49,28 +68,29 @@ import { KidsSpeakButton, KidsSquishButton } from './KidsPrimitives';
 import { KidsConfettiCanvas } from './KidsConfettiCanvas';
 import { KidsCinemaTab } from './KidsCinemaTab';
 import { KidsIndependentPlayer } from './KidsIndependentPlayer';
-import { KidsFunGames } from './KidsFunGames';
-import { KidsLearningGames } from './KidsLearningGames';
+import { KidsGamesHub } from './KidsGamesHub';
+import { KidsLanguagesStudio } from './KidsLanguagesStudio';
+import { KidsPetWorldModal } from './KidsPetWorldModal';
+import { KidsDiplomaModal } from './KidsDiplomaModal';
+import { KidsStoryStudio } from './KidsStoryStudio';
+import { KidsFamilyOnboardingModal } from './KidsFamilyOnboardingModal';
+import { KidsApkModal } from './KidsApkModal';
+import { KidsApkInstallCard } from './KidsApkInstallCard';
 import {
   KidsAnimatedCategoryIcon,
   KidsAnimatedMascotSvg,
+  KidsAvatarArtworkSvg,
+  KidsBadgeIcon,
   KidsUniqueNameAvatarSvg,
 } from './KidsSvgArt';
 import { KidsStepWizard } from './KidsStepWizard';
 import { speakKidsText } from './kidsTtsHelper';
 
-export const KIDS_EXIT_PIN = '1122';
-
-export function isValidKidsExitPin(pin: string): boolean {
-  return pin.trim() === KIDS_EXIT_PIN;
-}
+export { KIDS_EXIT_PIN, isValidKidsExitPin };
 
 interface RiffanKidsHubProps {
   shellLang: AppLanguage;
-  familyUid?: string | null;
   exitPromptSeq?: number;
-  onPlayMovie: (movie: CatalogMovie, preferLang: string) => void;
-  onPlaySeries: (series: CatalogMovie, preferLang: string) => void;
   onOpenSmartTv?: () => void;
   onExitKids: () => void;
 }
@@ -86,18 +106,18 @@ const AGE_GROUPS: Array<{ id: KidsAgeGroup; label: string }> = [
 
 export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
   shellLang,
-  familyUid = null,
   exitPromptSeq = 0,
-  onPlayMovie,
-  onPlaySeries,
   onOpenSmartTv,
   onExitKids,
 }) => {
   const profilesStore = useKidsStore((s) => s.profilesStore);
   const ux = useKidsStore((s) => s.ux);
+  const parentPin = useKidsStore((s) => s.parentPin);
   const getActiveProfile = useKidsStore((s) => s.getActiveProfile);
   const getAgeAdaptation = useKidsStore((s) => s.getAgeAdaptation);
-  const bindFamilyAccount = useKidsStore((s) => s.bindFamilyAccount);
+  const verifyParentPin = useKidsStore((s) => s.verifyParentPin);
+  const changeParentPin = useKidsStore((s) => s.changeParentPin);
+  const resetDefaultPin = useKidsStore((s) => s.resetDefaultPin);
   const updateActiveProgress = useKidsStore((s) => s.updateActiveProfile);
   const createProfileAction = useKidsStore((s) => s.createProfile);
   const switchProfileAction = useKidsStore((s) => s.switchProfile);
@@ -112,6 +132,9 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
   const updateParentPrefsAction = useKidsStore((s) => s.updateParentPrefs);
   const toggleSound = useKidsStore((s) => s.toggleSound);
   const toggleLowStimulation = useKidsStore((s) => s.toggleLowStimulation);
+  const toggleDyslexiaFont = useKidsStore((s) => s.toggleDyslexiaFont);
+  const toggleSyllableHighlight = useKidsStore((s) => s.toggleSyllableHighlight);
+  const toggleTortoiseSpeech = useKidsStore((s) => s.toggleTortoiseSpeech);
   const setBedtimeMode = useKidsStore((s) => s.setBedtimeMode);
   const tickActiveMinute = useKidsStore((s) => s.tickActiveMinute);
 
@@ -120,14 +143,8 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
   const t = useMemo(() => getKidsUiCopy(progress.preferredLang), [progress.preferredLang]);
   const dir = useMemo(() => getKidsDir(progress.preferredLang), [progress.preferredLang]);
 
-  useEffect(() => {
-    bindFamilyAccount(familyUid || null);
-  }, [familyUid, bindFamilyAccount]);
-
   const [activeTab, setActiveTab] = useState<KidsHubTab>('portal');
-  const [isTvActive, setIsTvActive] = useState<boolean>(() => isGoogleTvEnvironment());
-  const [funResetSeq, setFunResetSeq] = useState(0);
-  const [learnResetSeq, setLearnResetSeq] = useState(0);
+  const [isTvActive] = useState<boolean>(() => isGoogleTvEnvironment());
   const [activePlayback, setActivePlayback] = useState<{
     item: CatalogMovie;
     queue: CatalogMovie[];
@@ -140,9 +157,28 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
   const [pinDigits, setPinDigits] = useState<string>('');
   const [pinError, setPinError] = useState<boolean>(false);
 
+  // On-device PIN customization form state inside Parent Panel
+  const [curPinInput, setCurPinInput] = useState('');
+  const [newPinInput, setNewPinInput] = useState('');
+  const [pinChangeNotice, setPinChangeNotice] = useState<{ ok: boolean; msg: string } | null>(null);
+
   const [albumModalOpen, setAlbumModalOpen] = useState<boolean>(false);
+  const [petWorldOpen, setPetWorldOpen] = useState<boolean>(false);
+  const [diplomaOpen, setDiplomaOpen] = useState<boolean>(false);
+  const [storyStudioOpen, setStoryStudioOpen] = useState<boolean>(false);
   const [wizardOpen, setWizardOpen] = useState<boolean>(false);
+  const [familyOnboardingOpen, setFamilyOnboardingOpen] = useState<boolean>(() => {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem('riffan_kids_family_setup_done') !== 'true';
+  });
+  const [apkModalOpen, setApkModalOpen] = useState<boolean>(false);
+  const [isOffline, setIsOffline] = useState<boolean>(() => {
+    return typeof navigator !== 'undefined' ? !navigator.onLine : false;
+  });
   const [parentModalOpen, setParentModalOpen] = useState<boolean>(false);
+  const [ytImportUrl, setYtImportUrl] = useState<string>('');
+  const [ytImportStatus, setYtImportStatus] = useState<string>('');
+  const [ytImportLoading, setYtImportLoading] = useState<boolean>(false);
   const [starToast, setStarToast] = useState<string | null>(null);
   const [celebrationBurst, setCelebrationBurst] = useState<boolean>(false);
   const [confettiActive, setConfettiActive] = useState<boolean>(false);
@@ -153,7 +189,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
   const lullabyIntervalRef = useRef<number | null>(null);
 
   const [newSiblingName, setNewSiblingName] = useState('');
-  const [newSiblingAvatar, setNewSiblingAvatar] = useState(KIDS_AVATAR_CHOICES[0]);
+  const [newSiblingAvatar, setNewSiblingAvatar] = useState<string>(KIDS_AVATAR_CHOICES[0]);
   const [newSiblingAge, setNewSiblingAge] = useState<KidsAgeGroup>('6-8');
 
   const activeMascot =
@@ -170,7 +206,6 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
       ? t.rankAdventurer
       : t.rankExplorer;
 
-  // Google TV & Smart TV remote control navigation (D-Pad, Back, Select)
   useTvSpatialRemote({
     onBackStep: () => {
       if (activePlayback) {
@@ -187,6 +222,26 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
       }
       if (parentModalOpen) {
         setParentModalOpen(false);
+        return true;
+      }
+      if (storyStudioOpen) {
+        setStoryStudioOpen(false);
+        return true;
+      }
+      if (petWorldOpen) {
+        setPetWorldOpen(false);
+        return true;
+      }
+      if (diplomaOpen) {
+        setDiplomaOpen(false);
+        return true;
+      }
+      if (familyOnboardingOpen) {
+        setFamilyOnboardingOpen(false);
+        return true;
+      }
+      if (apkModalOpen) {
+        setApkModalOpen(false);
         return true;
       }
       if (albumModalOpen) {
@@ -207,12 +262,23 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
   });
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onOnline = () => setIsOffline(false);
+    const onOffline = () => setIsOffline(true);
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+    return () => {
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+    };
+  }, []);
+
+  useEffect(() => {
     if (isTvActive && typeof document !== 'undefined') {
       document.documentElement.classList.add('tv-dpad-active', 'is-google-tv');
     }
   }, [isTvActive]);
 
-  // Active-only usage timer (pauses automatically when app is backgrounded)
   useEffect(() => {
     const id = window.setInterval(() => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
@@ -222,7 +288,6 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
     return () => window.clearInterval(id);
   }, [tickActiveMinute]);
 
-  // Gentle WebAudio Music-Box Lullaby generator when Bedtime Audio is enabled
   useEffect(() => {
     if (!bedtimeMode || !lullabyPlaying || typeof window === 'undefined') {
       if (lullabyIntervalRef.current) {
@@ -323,11 +388,14 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
     setPinDigits(next);
 
     if (next.length === 4) {
-      if (isValidKidsExitPin(next)) {
+      if (verifyParentPin(next)) {
         triggerHaptic('success');
         setPinModalOpen(false);
         setPinDigits('');
         if (pinIntent === 'parent_settings') {
+          setPinChangeNotice(null);
+          setCurPinInput('');
+          setNewPinInput('');
           setParentModalOpen(true);
         } else if (pinIntent === 'cast_tv') {
           if (pendingCastMovie) {
@@ -397,16 +465,17 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
   const handleEarnStar = (deltaStars: number, badgeId?: string) => {
     playKidsSound('star', ux.soundEnabled, true);
     awardStarsAction(deltaStars, badgeId);
-    triggerToast(`+${deltaStars} ⭐`);
+    triggerToast(`+${deltaStars} ${t.starsAvailableSuffix}`);
   };
 
-  const handleClaimChest = () => {
+  const handleClaimChest = (): boolean => {
     const ok = claimDailyChestAction();
     if (ok) {
       playKidsSound('chest', ux.soundEnabled, true);
       setConfettiActive(true);
-      triggerToast('+10 ⭐');
+      triggerToast(`+10 ${t.starsAvailableSuffix}`);
     }
+    return ok;
   };
 
   const handlePickMascot = (mascot: KidsMascotMeta) => {
@@ -414,7 +483,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
     if (ok) {
       playKidsSound('success', ux.soundEnabled, true);
       setConfettiActive(true);
-      triggerToast(`${mascot.emoji} ${mascot.name}`);
+      triggerToast(mascot.name);
     } else {
       playKidsSound('error', ux.soundEnabled, true);
       triggerToast(t.shopNeedStars);
@@ -427,7 +496,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
       playKidsSound('success', ux.soundEnabled, true);
       setConfettiActive(true);
       const itemMeta = KIDS_SHOP_ITEMS.find((i) => i.id === rewardId);
-      triggerToast(itemMeta ? `${itemMeta.emoji} ${itemMeta.title}` : '🎁 +1');
+      triggerToast(itemMeta ? itemMeta.title : t.shopOwned);
     } else {
       playKidsSound('error', ux.soundEnabled, true);
       triggerToast(t.shopNeedStars);
@@ -465,6 +534,20 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
     updateParentPrefs({ approvedItems: nextList });
   };
 
+  const handleSaveCustomPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = changeParentPin(curPinInput, newPinInput);
+    if (res.ok) {
+      playKidsSound('success', ux.soundEnabled, true);
+      setPinChangeNotice({ ok: true, msg: t.pinSavedMsg });
+      setCurPinInput('');
+      setNewPinInput('');
+    } else {
+      playKidsSound('error', ux.soundEnabled, true);
+      setPinChangeNotice({ ok: false, msg: t.pinInvalidMsg });
+    }
+  };
+
   const parentCandidatePool = useMemo(() => {
     const map = new Map<string, CatalogMovie>();
     for (const m of [
@@ -472,7 +555,9 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
       ...(progress.parentPrefs?.approvedItems || []),
       ...DEFAULT_PARENT_SAFE_SEEDS,
     ]) {
-      if (!map.has(m.id)) map.set(m.id, m);
+      if (m.platform === 'YouTube Kids' && !map.has(m.id)) {
+        map.set(m.id, m);
+      }
     }
     return Array.from(map.values());
   }, [progress.recentWatched, progress.parentPrefs?.approvedItems]);
@@ -487,7 +572,9 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
       data-kids-bedtime={bedtimeMode ? 'true' : 'false'}
       dir={dir}
       lang={progress.preferredLang}
-      className="relative flex-1 min-h-0 h-full flex flex-col gap-3 p-3 sm:p-4 overflow-hidden select-none bg-gradient-to-b from-[#131B3A] via-[#0F152E] to-[#0B0F21]"
+      className={`relative flex-1 min-h-0 h-full flex flex-col gap-2.5 sm:gap-3 p-2.5 sm:p-4 landscape:p-2.5 landscape:gap-2 overflow-hidden select-none bg-gradient-to-b from-[#111936] via-[#0D132B] to-[#080C1C] ${
+        ux.dyslexiaFont ? 'tracking-wide leading-relaxed' : ''
+      }`}
     >
       <KidsConfettiCanvas
         active={confettiActive}
@@ -505,72 +592,125 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
       {celebrationBurst && starToast && (
         <div
           aria-live="polite"
-          className="pointer-events-none fixed top-20 left-1/2 -translate-x-1/2 z-[240] px-5 py-2 rounded-full bg-gradient-to-r from-amber-400 to-pink-500 text-black font-display font-black text-sm shadow-xl flex items-center gap-2 animate-bounce motion-reduce:animate-none"
+          className="pointer-events-none fixed top-16 left-1/2 -translate-x-1/2 z-[240] px-5 py-2 rounded-full bg-gradient-to-r from-amber-400 to-pink-500 text-slate-950 font-display font-black text-sm shadow-xl flex items-center gap-2 animate-bounce motion-reduce:animate-none"
         >
-          <span>{activeMascot.emoji}</span>
+          <Star className="w-4 h-4 fill-slate-950 shrink-0" />
           <span>{starToast}</span>
         </div>
       )}
 
-      {/* STREAMLINED CHILD HEADER */}
-      <div className="shrink-0 relative z-[225] flex items-center justify-between gap-2 rounded-3xl bg-[#141B3B]/95 border-2 border-[#293870] px-2.5 sm:px-4 py-2 shadow-xl backdrop-blur-md">
-        {/* Left: either Home/Back button or Kid Profile */}
-        {activeTab === 'portal' ? (
-          <KidsSquishButton
-            onClick={() => setAlbumModalOpen(true)}
-            data-tv-focusable="true"
-            ariaLabel={`${t.albumTitlePrefix} ${progress.name || 'Peque'}`}
-            title={`${t.albumTitlePrefix} ${progress.name || 'Peque'}`}
-            className="flex items-center gap-2 sm:gap-2.5 px-2 sm:px-3.5 rounded-2xl bg-[#1C264E] hover:bg-[#253265] border-2 border-b-4 border-[#33427D] shrink-0"
-          >
-            <div className="relative w-8 h-8 sm:w-10 sm:h-10 shrink-0 flex items-center justify-center">
-              <KidsUniqueNameAvatarSvg
-                name={progress.name || 'Peque'}
-                fallbackEmoji={progress.avatarEmoji || activeMascot.emoji}
-                size={34}
-              />
-              {chestReady && (
-                <span className="absolute -top-1 -end-1 w-3 h-3 rounded-full bg-rose-500 ring-2 ring-white animate-ping" />
-              )}
-            </div>
-            <div className="text-start">
-              <div className="hidden xs:block sm:block text-xs sm:text-sm font-black text-white leading-tight max-w-[70px] sm:max-w-[100px] truncate">
-                {progress.name || 'Peque'}
-              </div>
-              <div className="flex items-center gap-1 text-xs sm:text-sm font-black text-amber-300 tabular-nums">
-                <Star className="w-3.5 h-3.5 fill-amber-300 text-amber-300" />
-                <span>{progress.stars}</span>
-              </div>
-            </div>
-          </KidsSquishButton>
-        ) : (
-          <KidsSquishButton
-            onClick={() => setActiveTab('portal')}
-            data-tv-focusable="true"
-            className="flex items-center gap-1.5 sm:gap-2 px-2.5 sm:px-4 rounded-2xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs sm:text-sm border-b-4 border-amber-600 shadow-md shrink-0"
-          >
-            <Home className="w-4 h-4" />
-            <span className="hidden sm:inline">{t.backToHome}</span>
-            <span className="sm:hidden text-xs">{t.backToHome}</span>
-          </KidsSquishButton>
-        )}
-
-        {/* Center: Title / Active World indicator */}
+      {/* CLEAN SINGLE-ROW HEADER (No outer box clutter, fits 320px+ mobile with zero clipping) */}
+      <header className="shrink-0 relative z-[225] flex items-center justify-between gap-2 px-1 sm:px-2 py-1 landscape:py-0.5 pt-safe border-b border-white/10">
         <div className="flex items-center gap-2 min-w-0">
           {activeTab === 'portal' ? (
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-white font-display font-black text-xs sm:text-base tracking-wide truncate">
-              <span>🎈</span>
-              <span className="bg-gradient-to-r from-amber-300 via-pink-300 to-sky-300 bg-clip-text text-transparent truncate">
+            <KidsSquishButton
+              onClick={() => setAlbumModalOpen(true)}
+              ariaLabel={`${t.albumTitlePrefix} ${progress.name || 'Peque'}`}
+              title={`${t.albumTitlePrefix} ${progress.name || 'Peque'}`}
+              className="!min-w-0 !min-h-[42px] h-10 sm:h-11 flex items-center gap-2 px-2 sm:px-2.5 rounded-xl bg-white/[0.07] hover:bg-white/[0.13] border border-white/10 shrink-0"
+            >
+              <div className="relative w-7 h-7 sm:w-8 sm:h-8 shrink-0 flex items-center justify-center">
+                <KidsUniqueNameAvatarSvg
+                  name={progress.name || 'Peque'}
+                  fallbackAvatarId={progress.avatarEmoji || 'fennec'}
+                  size={30}
+                />
+                {chestReady && (
+                  <span className="absolute -top-0.5 -end-0.5 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-[#0D132B]" />
+                )}
+              </div>
+              <div className="text-start flex items-center gap-1.5">
+                <span className="hidden sm:inline text-xs sm:text-sm font-bold text-white max-w-[90px] truncate">
+                  {progress.name || 'Peque'}
+                </span>
+                <span className="flex items-center gap-1 text-xs font-black text-amber-300 tabular-nums">
+                  <Star className="w-3.5 h-3.5 fill-amber-300 text-amber-300 shrink-0" />
+                  <span>{progress.stars}</span>
+                </span>
+              </div>
+            </KidsSquishButton>
+          ) : (
+            <KidsSquishButton
+              onClick={() => setActiveTab('portal')}
+              className="!min-w-0 !min-h-[42px] h-10 sm:h-11 flex items-center gap-1.5 px-3 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-black text-xs sm:text-sm shadow-md shrink-0"
+            >
+              <Home className="w-4 h-4 shrink-0" />
+              <span className="whitespace-nowrap">{t.backToHome}</span>
+            </KidsSquishButton>
+          )}
+
+          {/* Sibling Quick-Switcher: 1 tap to switch brother/sister with ZERO menus! */}
+          {activeTab === 'portal' && profilesStore.profiles.length > 1 && (
+            <div className="flex items-center gap-1 bg-white/5 p-1 rounded-2xl border border-white/10 shrink-0">
+              {profilesStore.profiles.map((p) => {
+                const isCurrent = p.id === progress.id;
+                return (
+                  <button
+                    key={p.id}
+                    type="button"
+                    data-tv-focusable="true"
+                    onClick={() => {
+                      if (p.id) handleSwitchSibling(p.id);
+                    }}
+                    className={`h-9 px-2 sm:px-2.5 rounded-xl flex items-center gap-1.5 transition-all cursor-pointer ${
+                      isCurrent
+                        ? 'bg-amber-400 text-slate-950 font-black shadow-md ring-2 ring-amber-300'
+                        : 'bg-white/5 hover:bg-white/15 text-zinc-200'
+                    }`}
+                    title={`Cambiar a ${p.name || 'Hermano'}`}
+                  >
+                    <div className="w-5 h-5 rounded-full overflow-hidden flex items-center justify-center">
+                      <KidsUniqueNameAvatarSvg
+                        name={p.name || 'Peque'}
+                        fallbackAvatarId={p.avatarEmoji || 'fennec'}
+                        size={20}
+                      />
+                    </div>
+                    <span className="text-[11px] font-black max-w-[55px] sm:max-w-[70px] truncate">
+                      {p.name || 'Peque'}
+                    </span>
+                  </button>
+                );
+              })}
+              <button
+                type="button"
+                data-tv-focusable="true"
+                onClick={() => setFamilyOnboardingOpen(true)}
+                title="Configurar peques de la familia"
+                className="w-8 h-8 rounded-xl bg-white/10 hover:bg-white/20 text-amber-300 flex items-center justify-center cursor-pointer"
+              >
+                <Plus className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
+          {activeTab === 'portal' && profilesStore.profiles.length === 1 && (
+            <button
+              type="button"
+              data-tv-focusable="true"
+              onClick={() => setFamilyOnboardingOpen(true)}
+              title="Añadir hermanos (+ Hermanos)"
+              className="hidden sm:flex h-9 px-2.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-amber-300 text-xs font-bold items-center gap-1 cursor-pointer shrink-0"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span className="text-[11px]">+ Hermanos</span>
+            </button>
+          )}
+
+          {/* Brand / Active Section Title */}
+          {activeTab === 'portal' ? (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="font-display font-black text-base sm:text-xl tracking-tight bg-gradient-to-r from-amber-300 via-pink-300 to-sky-300 bg-clip-text text-transparent truncate">
                 Riffan Kids
               </span>
               {isTvActive && (
-                <span className="hidden sm:inline-block ms-1 px-1.5 py-0.5 rounded text-[10px] bg-red-600 font-bold text-white">
+                <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-600 font-bold text-white shrink-0">
                   TV
                 </span>
               )}
             </div>
           ) : (
-            <div className="flex items-center gap-1.5 sm:gap-2 px-2.5 py-1 rounded-xl bg-white/5 border border-white/10 text-white font-display font-black text-xs sm:text-sm truncate">
+            <div className="flex items-center gap-1.5 min-w-0 text-white font-display font-black text-sm sm:text-base">
               <KidsAnimatedCategoryIcon
                 name={activeTab === 'cinema' ? 'cinema' : activeTab === 'fun' ? 'fun' : 'learn'}
                 size={18}
@@ -582,371 +722,377 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
           )}
         </div>
 
-        {/* Right: 4 Quick Utility Buttons (TV, Flag, Sound, Parent Gate) */}
+        {/* Right Quick Controls — exact budget for 320px+ screens */}
         <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
           {remainingMins !== null && (
-            <div className="hidden lg:flex h-10 px-2.5 rounded-2xl bg-indigo-500/25 border border-indigo-300/35 items-center gap-1 text-xs font-black text-indigo-100 tabular-nums">
+            <div className="hidden lg:flex h-10 px-2.5 rounded-xl bg-indigo-500/20 border border-indigo-300/30 items-center gap-1 text-xs font-black text-indigo-100 tabular-nums">
               <Clock className="w-3.5 h-3.5" />
               <span>{remainingMins}m</span>
             </div>
           )}
 
-          {/* TV Mode / Cast */}
+          {onOpenSmartTv && (
+            <KidsSquishButton
+              onClick={() => openPinModal('cast_tv')}
+              ariaLabel={t.connectSmartTv}
+              title={t.connectSmartTv}
+              className={`hidden sm:flex !min-w-[42px] !min-h-[42px] h-10 sm:h-11 px-2.5 rounded-xl border items-center justify-center gap-1.5 ${
+                isTvActive
+                  ? 'bg-rose-500/20 text-rose-300 border-rose-400/40'
+                  : 'bg-white/[0.07] hover:bg-white/[0.13] text-zinc-200 border-white/10'
+              }`}
+            >
+              <Tv className="w-4 h-4 text-amber-300 shrink-0" />
+              <span className="hidden xl:inline text-xs font-black">TV</span>
+            </KidsSquishButton>
+          )}
+
           <KidsSquishButton
-            onClick={() => openPinModal('cast_tv')}
-            data-tv-focusable="true"
-            ariaLabel={t.connectSmartTv}
-            title={t.connectSmartTv}
-            className={`h-10 sm:h-11 px-2 sm:px-3 rounded-2xl border-2 border-b-4 flex items-center justify-center gap-1 ${
-              isTvActive
-                ? 'bg-rose-500/25 text-rose-300 border-rose-400/50'
-                : 'bg-[#1C254D] hover:bg-[#253163] text-zinc-300 border-[#303E73]'
-            }`}
+            onClick={() => setApkModalOpen(true)}
+            ariaLabel="Descargar APK para Google TV y Móvil"
+            title="Descargar APK para Google TV y Móvil"
+            className="!min-w-[42px] !min-h-[42px] h-10 sm:h-11 px-2 sm:px-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-sky-200 flex items-center justify-center gap-1.5 shrink-0"
           >
-            <Tv className="w-4 h-4 sm:w-5 sm:h-5 text-amber-300" />
-            <span className="hidden xl:inline text-xs font-black">TV</span>
+            <Download className="w-4 h-4 text-sky-300 shrink-0" />
+            <span className="hidden xl:inline text-xs font-black">APK</span>
           </KidsSquishButton>
 
-          {/* Language Flag */}
           <KidsSquishButton
             onClick={() => {
               if (progress.parentPrefs?.lockedLang) return;
               setLangModalOpen(true);
             }}
-            data-tv-focusable="true"
             ariaLabel={t.chooseLanguageTitle}
             title={t.chooseLanguageTitle}
-            className={`h-10 sm:h-11 px-2 sm:px-3 rounded-2xl border-2 border-b-4 flex items-center gap-1.5 ${
+            className={`!min-w-[42px] !min-h-[42px] h-10 sm:h-11 px-2 sm:px-2.5 rounded-xl border flex items-center justify-center gap-1.5 ${
               progress.parentPrefs?.lockedLang
-                ? 'bg-[#151D3D] text-zinc-400 border-[#28366B] cursor-not-allowed'
-                : 'bg-[#1C254D] hover:bg-[#253163] text-white border-[#303E73]'
+                ? 'bg-white/[0.04] text-zinc-400 border-white/10 cursor-not-allowed'
+                : 'bg-white/[0.07] hover:bg-white/[0.13] text-white border-white/10'
             }`}
           >
             <FlagBadgeSvg
               code={(KIDS_LANGUAGES.find((l) => l.code === progress.preferredLang) || KIDS_LANGUAGES[0]).flagCode}
-              className="w-5 h-3.5 sm:w-6 sm:h-4 shadow-sm shrink-0"
+              className="w-5 h-3.5 shadow-sm shrink-0"
             />
             <span className="hidden md:inline text-xs font-black uppercase">
               {progress.preferredLang}
             </span>
           </KidsSquishButton>
 
-          {/* Sound Mute / Unmute */}
           <KidsSquishButton
             onClick={toggleSound}
-            data-tv-focusable="true"
             ariaLabel={ux.soundEnabled ? t.soundOn : t.soundOff}
             title={ux.soundEnabled ? t.soundOn : t.soundOff}
-            className={`w-9 sm:w-11 h-10 sm:h-11 rounded-2xl border-2 border-b-4 flex items-center justify-center ${
+            className={`!min-w-[42px] !min-h-[42px] h-10 sm:h-11 w-10 sm:w-11 rounded-xl border flex items-center justify-center ${
               ux.soundEnabled
-                ? 'bg-emerald-500/25 text-emerald-200 border-emerald-400/50'
-                : 'bg-[#1C254D] text-zinc-400 border-[#303E73]'
+                ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/40'
+                : 'bg-white/[0.07] text-zinc-400 border-white/10'
             }`}
           >
-            {ux.soundEnabled ? <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" /> : <VolumeX className="w-4 h-4 sm:w-5 sm:h-5" />}
+            {ux.soundEnabled ? <Volume2 className="w-4 h-4" /> : <VolumeX className="w-4 h-4" />}
           </KidsSquishButton>
 
-          {/* Parent Lock Gate */}
           <KidsSquishButton
             onClick={() => openPinModal('parent_settings')}
-            data-tv-focusable="true"
-            className="h-10 sm:h-11 px-2 sm:px-3 rounded-2xl bg-[#171F3F] hover:bg-rose-500/25 border-2 border-b-4 border-rose-500/50 text-xs sm:text-sm font-black text-zinc-100 flex items-center gap-1.5"
+            ariaLabel={t.parentsBtn}
             title={t.parentsBtn}
+            className="!min-w-[42px] !min-h-[42px] h-10 sm:h-11 w-10 sm:w-auto sm:px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/40 text-xs sm:text-sm font-black text-zinc-100 flex items-center justify-center gap-1.5"
           >
-            <Lock className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-amber-300 shrink-0" />
-            <span className="hidden sm:inline">{t.parentsBtn}</span>
+            <Lock className="w-4 h-4 text-amber-300 shrink-0" />
+            <span className="hidden sm:inline whitespace-nowrap">{t.parentsBtn}</span>
           </KidsSquishButton>
         </div>
-      </div>
+      </header>
 
-      {/* MULTI-SCREEN WORKSPACE */}
-      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
-        {/* SCREEN 1: PORTAL / HOME SCREEN */}
-        {activeTab === 'portal' && (
-          <div className="flex-1 min-h-0 flex flex-col gap-3 sm:gap-4 overflow-y-auto no-scrollbar p-1 pb-4">
-            {/* Friendly Mascot Welcome Banner */}
-            <div className="shrink-0 rounded-3xl bg-gradient-to-r from-[#17224D] via-[#1D2A5E] to-[#17224D] border-2 border-amber-400/35 p-3.5 sm:p-5 shadow-xl flex items-center justify-between gap-3 sm:gap-4">
-              <div className="flex items-center gap-3 sm:gap-4 min-w-0">
-                <div className="text-4xl sm:text-5xl shrink-0 animate-bounce motion-reduce:animate-none">
-                  {activeMascot.emoji}
-                </div>
-                <div className="min-w-0">
-                  <h1 className="font-display font-black text-lg sm:text-2xl text-white truncate">
-                    {t.portalWelcome.replace('{name}', progress.name || 'Peque')}
-                  </h1>
-                  <p className="text-xs sm:text-sm text-sky-200/90 font-medium line-clamp-1">
-                    {t.portalSubtitle}
-                  </p>
-                </div>
-              </div>
-
-              {/* Daily Chest or Mascot Action */}
-              <div className="shrink-0 flex items-center gap-2">
-                {chestReady ? (
-                  <KidsSquishButton
-                    onClick={handleClaimChest}
-                    data-tv-focusable="true"
-                    className="px-3 sm:px-4 py-2 rounded-2xl bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 font-black text-xs sm:text-sm border-b-4 border-amber-700 shadow-lg animate-pulse"
-                  >
-                    🎁 {t.openChestReward}
-                  </KidsSquishButton>
-                ) : (
-                  <KidsSquishButton
-                    onClick={() => setAlbumModalOpen(true)}
-                    data-tv-focusable="true"
-                    className="px-3 sm:px-4 py-2 rounded-2xl bg-white/10 hover:bg-white/20 text-white font-bold text-xs sm:text-sm border-b-4 border-black/30"
-                  >
-                    ⭐ {progress.stars} {t.starsAvailableSuffix}
-                  </KidsSquishButton>
-                )}
-              </div>
-            </div>
-
-            {/* The 3 Giant World Cards (Stacked in portrait, 3 columns in landscape/TV) */}
-            <div className="flex-1 grid grid-cols-1 md:grid-cols-3 landscape:grid-cols-3 gap-3 sm:gap-5 min-h-0">
-              {/* 1. Cinema & TV World */}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  playKidsSound('tap', ux.soundEnabled, true);
-                  setActiveTab('cinema');
-                }}
-                data-tv-focusable="true"
-                className="group relative rounded-3xl bg-gradient-to-br from-amber-400 via-amber-500 to-orange-500 text-slate-950 border-4 border-amber-300 shadow-[0_8px_24px_rgba(245,158,11,0.35)] p-4 sm:p-6 flex flex-col justify-between items-start text-start cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 focus:scale-105 focus:ring-4 focus:ring-amber-300 min-h-[140px] sm:min-h-[180px]"
-              >
-                <div className="w-full flex items-center justify-between">
-                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white/25 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
-                    <KidsAnimatedCategoryIcon name="cinema" size={40} />
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-950/20 text-slate-950 font-black text-[11px] sm:text-xs uppercase tracking-wider">
-                    YouTube Kids & TV
-                  </span>
-                </div>
-                <div className="my-2 sm:my-3">
-                  <div className="font-display font-black text-xl sm:text-3xl text-slate-950 leading-tight">
-                    {t.navCinema}
-                  </div>
-                  <p className="text-xs sm:text-sm font-bold text-slate-900/80 mt-1 line-clamp-2">
-                    {t.portalCinemaDesc}
-                  </p>
-                </div>
-                <div className="w-full flex items-center justify-between pt-2 border-t border-slate-950/15">
-                  <span className="font-display font-black text-xs sm:text-sm uppercase tracking-wide">
-                    {t.portalEnterBtn} →
-                  </span>
-                  <span className="text-xl">🎬</span>
-                </div>
-              </button>
-
-              {/* 2. Fun Games World */}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  playKidsSound('tap', ux.soundEnabled, true);
-                  setFunResetSeq((s) => s + 1);
-                  setActiveTab('fun');
-                }}
-                data-tv-focusable="true"
-                className="group relative rounded-3xl bg-gradient-to-br from-pink-400 via-pink-500 to-rose-500 text-white border-4 border-pink-300 shadow-[0_8px_24px_rgba(236,72,153,0.35)] p-4 sm:p-6 flex flex-col justify-between items-start text-start cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 focus:scale-105 focus:ring-4 focus:ring-pink-300 min-h-[140px] sm:min-h-[180px]"
-              >
-                <div className="w-full flex items-center justify-between">
-                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white/25 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
-                    <KidsAnimatedCategoryIcon name="fun" size={40} />
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-white/20 text-white font-black text-[11px] sm:text-xs uppercase tracking-wider">
-                    Minijuegos
-                  </span>
-                </div>
-                <div className="my-2 sm:my-3">
-                  <div className="font-display font-black text-xl sm:text-3xl text-white leading-tight">
-                    {t.navFun}
-                  </div>
-                  <p className="text-xs sm:text-sm font-bold text-pink-100/90 mt-1 line-clamp-2">
-                    {t.portalFunDesc}
-                  </p>
-                </div>
-                <div className="w-full flex items-center justify-between pt-2 border-t border-white/20">
-                  <span className="font-display font-black text-xs sm:text-sm uppercase tracking-wide">
-                    {t.portalEnterBtn} →
-                  </span>
-                  <span className="text-xl">🎮</span>
-                </div>
-              </button>
-
-              {/* 3. Learning World */}
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('medium');
-                  playKidsSound('tap', ux.soundEnabled, true);
-                  setLearnResetSeq((s) => s + 1);
-                  setActiveTab('learn');
-                }}
-                data-tv-focusable="true"
-                className="group relative rounded-3xl bg-gradient-to-br from-sky-400 via-cyan-500 to-teal-500 text-slate-950 border-4 border-sky-300 shadow-[0_8px_24px_rgba(14,165,233,0.35)] p-4 sm:p-6 flex flex-col justify-between items-start text-start cursor-pointer transition-all duration-200 hover:scale-[1.02] active:scale-95 focus:scale-105 focus:ring-4 focus:ring-sky-300 min-h-[140px] sm:min-h-[180px]"
-              >
-                <div className="w-full flex items-center justify-between">
-                  <div className="w-12 h-12 sm:w-16 sm:h-16 rounded-2xl bg-white/25 flex items-center justify-center shadow-inner group-hover:scale-110 transition-transform">
-                    <KidsAnimatedCategoryIcon name="learn" size={40} />
-                  </div>
-                  <span className="px-2.5 py-1 rounded-full bg-slate-950/20 text-slate-950 font-black text-[11px] sm:text-xs uppercase tracking-wider">
-                    Aprender
-                  </span>
-                </div>
-                <div className="my-2 sm:my-3">
-                  <div className="font-display font-black text-xl sm:text-3xl text-slate-950 leading-tight">
-                    {t.navLearn}
-                  </div>
-                  <p className="text-xs sm:text-sm font-bold text-slate-900/80 mt-1 line-clamp-2">
-                    {t.portalLearnDesc}
-                  </p>
-                </div>
-                <div className="w-full flex items-center justify-between pt-2 border-t border-slate-950/15">
-                  <span className="font-display font-black text-xs sm:text-sm uppercase tracking-wide">
-                    {t.portalEnterBtn} →
-                  </span>
-                  <span className="text-xl">🎓</span>
-                </div>
-              </button>
-            </div>
-
-            {/* Mascot and Album Quick Access Footer Banner */}
-            <div className="shrink-0 rounded-2xl bg-[#141B3B]/90 border border-white/10 p-3 sm:p-4 flex items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
-                <span className="text-3xl">{activeMascot.emoji}</span>
-                <div>
-                  <div className="text-xs sm:text-sm font-black text-white">
-                    {t.albumTitlePrefix} {progress.name || 'Peque'} · {rankLabel}
-                  </div>
-                  <div className="text-[11px] sm:text-xs text-sky-200/70">
-                    {progress.stars} ⭐ {t.starsAvailableSuffix} · {progress.unlockedRewards?.length || 0} {t.shopOwned}
-                  </div>
-                </div>
-              </div>
-
-              <KidsSquishButton
-                onClick={() => setAlbumModalOpen(true)}
-                data-tv-focusable="true"
-                className="px-3.5 sm:px-4 py-2 rounded-xl bg-[#202B59] hover:bg-[#2A3973] border-b-2 border-[#101736] text-white text-xs sm:text-sm font-black flex items-center gap-1.5"
-              >
-                <Award className="w-4 h-4 text-amber-300" />
-                <span>{t.portalRewardsBtn}</span>
-              </KidsSquishButton>
-            </div>
-          </div>
-        )}
-
-        {/* SCREEN 2: 2-STEP CINEMA & TV (YOUTUBE KIDS + LIVE CHANNELS) */}
-        {activeTab === 'cinema' && (
-          <KidsCinemaTab
-            shellLang={shellLang}
-            kidsLang={progress.preferredLang}
-            ageGroup={progress.ageGroup}
-            recentWatched={progress.recentWatched || []}
-            approvedOnlyMode={Boolean(progress.parentPrefs?.approvedOnlyMode)}
-            approvedItems={progress.parentPrefs?.approvedItems || []}
-            onPlayItem={(item, queuePool) => {
-              recordWatchedAction(item);
-              setActivePlayback({ item, queue: queuePool });
-            }}
-            onEarnStar={handleEarnStar}
-            onBackToPortal={() => setActiveTab('portal')}
-          />
-        )}
-
-        {/* SCREEN 3: FUN GAMES (STAR CATCHER, BUBBLES, PUZZLE, SIMON, DOODLE, PIANO) */}
-        {activeTab === 'fun' && (
-          <KidsFunGames
-            shellLang={shellLang}
-            kidsLang={progress.preferredLang}
-            ageGroup={progress.ageGroup}
-            unlockedRewards={progress.unlockedRewards}
-            resetSeq={funResetSeq}
-            onEarnStar={handleEarnStar}
-            onMissionPlay={() => trackMissionAction('play')}
-            onBackToPortal={() => setActiveTab('portal')}
-          />
-        )}
-
-        {/* SCREEN 4: LEARNING & LANGUAGES (8-LANG VOCAB, MATH BUBBLES, STEAM, MEMORY, SCIENCE) */}
-        {activeTab === 'learn' && (
-          <KidsLearningGames
-            shellLang={shellLang}
-            kidsLang={progress.preferredLang}
-            ageGroup={progress.ageGroup}
-            lockedLang={progress.parentPrefs?.lockedLang}
-            bedtimeMode={bedtimeMode}
-            unlockedRewards={progress.unlockedRewards}
-            resetSeq={learnResetSeq}
-            onSelectKidsLang={handleSelectKidsLang}
-            onEarnStar={handleEarnStar}
-            onMissionLearn={() => trackMissionAction('learn')}
-            onBackToPortal={() => setActiveTab('portal')}
-          />
-        )}
-      </div>
-
-      {/* MOBILE BOTTOM NAVIGATION DOCK (VISIBLE ON SUB-SCREENS FOR EASY SWITCHING) */}
-      {activeTab !== 'portal' && (
-        <div className="shrink-0 sm:hidden z-30 pt-1 pb-safe">
-          <div className="flex items-center justify-around gap-1 px-2 py-1.5 rounded-2xl bg-[#121835]/95 border border-[#263568] backdrop-blur-md shadow-2xl">
+      {/* BODY WRAPPER: Horizontal Landscape Navigation Rail + Main Screen */}
+      <div className="flex-1 min-h-0 flex flex-row gap-2.5 overflow-hidden">
+        {/* Compact Left Navigation Rail visible on Horizontal Mobile Landscape in Sub-Tabs */}
+        {activeTab !== 'portal' && (
+          <nav
+            aria-label="Riffan Kids Rail"
+            className="hidden landscape:flex md:landscape:hidden shrink-0 w-14 flex-col items-center justify-between py-2 px-1 rounded-2xl bg-[#121835]/95 border border-white/10"
+          >
             <button
               type="button"
               onClick={() => setActiveTab('portal')}
-              className="flex flex-col items-center gap-0.5 px-2 py-1 rounded-xl text-zinc-300 active:scale-95 text-[10px] font-bold"
+              aria-label={t.backToHome}
+              className="w-11 h-11 rounded-xl bg-white/5 hover:bg-white/15 text-zinc-200 flex items-center justify-center cursor-pointer"
             >
-              <span className="text-base">🏠</span>
-              <span>{t.backToHome}</span>
+              <Home className="w-5 h-5" />
             </button>
-            <button
-              type="button"
-              onClick={() => setActiveTab('cinema')}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-[10px] font-black active:scale-95 ${
-                activeTab === 'cinema'
-                  ? 'bg-amber-400 text-slate-950 shadow-md'
-                  : 'text-zinc-300'
-              }`}
-            >
-              <span className="text-base">🎬</span>
-              <span>{t.navCinema}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setFunResetSeq((s) => s + 1);
-                setActiveTab('fun');
-              }}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-[10px] font-black active:scale-95 ${
-                activeTab === 'fun'
-                  ? 'bg-pink-500 text-white shadow-md'
-                  : 'text-zinc-300'
-              }`}
-            >
-              <span className="text-base">🎮</span>
-              <span>{t.navFun}</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setLearnResetSeq((s) => s + 1);
-                setActiveTab('learn');
-              }}
-              className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl text-[10px] font-black active:scale-95 ${
-                activeTab === 'learn'
-                  ? 'bg-sky-400 text-slate-950 shadow-md'
-                  : 'text-zinc-300'
-              }`}
-            >
-              <span className="text-base">🎓</span>
-              <span>{t.navLearn}</span>
-            </button>
-          </div>
-        </div>
-      )}
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                onClick={() => setActiveTab('cinema')}
+                aria-label={t.navCinema}
+                className={`w-11 h-11 rounded-xl flex items-center justify-center cursor-pointer ${
+                  activeTab === 'cinema' ? 'bg-amber-400 text-slate-950' : 'text-zinc-300 bg-white/5'
+                }`}
+              >
+                <Film className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('fun')}
+                aria-label={t.navFun}
+                className={`w-11 h-11 rounded-xl flex items-center justify-center cursor-pointer ${
+                  activeTab === 'fun' ? 'bg-pink-500 text-white' : 'text-zinc-300 bg-white/5'
+                }`}
+              >
+                <Gamepad2 className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab('learn')}
+                aria-label={t.navLearn}
+                className={`w-11 h-11 rounded-xl flex items-center justify-center cursor-pointer ${
+                  activeTab === 'learn' ? 'bg-sky-400 text-slate-950' : 'text-zinc-300 bg-white/5'
+                }`}
+              >
+                <Globe className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="w-9 h-9 flex items-center justify-center">
+              <KidsAnimatedMascotSvg id={activeMascot.id} size={30} />
+            </div>
+          </nav>
+        )}
 
-      {/* STANDALONE KID-STYLE INDEPENDENT PLAYER (YOUTUBE KIDS + LIVE TV CHANNELS) */}
+        {/* MAIN CONTENT AREA */}
+        <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
+          {/* SCREEN 1: PORTAL HOME WITH 3 CORE PILLARS */}
+          {activeTab === 'portal' && (
+            <div className="flex-1 min-h-0 flex flex-col gap-2 sm:gap-3 overflow-hidden px-0.5 py-1 justify-between">
+              {/* Unboxed Mascot Greeting Strip — no duplicate star number, no truncated prose */}
+              <div className="shrink-0 flex items-center justify-between gap-3 px-1">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 sm:w-14 sm:h-14 rounded-2xl overflow-hidden border border-amber-300/45 bg-[#141B3B] shrink-0 shadow-md">
+                    {activeMascot.id === 'fox' ? (
+                      <img
+                        src={kidsMascotFennecImg}
+                        alt={activeMascot.name}
+                        referrerPolicy="no-referrer"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <KidsAnimatedMascotSvg id={activeMascot.id} size={44} />
+                    )}
+                  </div>
+                  <div className="min-w-0">
+                    <h1 className="font-display font-black text-lg sm:text-3xl text-white leading-tight truncate">
+                      {t.portalWelcome.replace('{name}', progress.name || 'Peque')}
+                    </h1>
+                    <p className="text-xs sm:text-sm text-sky-200/80 font-semibold truncate">
+                      {progress.ageGroup} {t.yearsLabel} · {t.levelLabel} {levelInfo.level} · {activeMascot.name}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 flex-wrap justify-end">
+                  <KidsSquishButton
+                    onClick={() => {
+                      playKidsSound('tap', ux.soundEnabled, true);
+                      setStoryStudioOpen(true);
+                    }}
+                    className="!min-h-[40px] h-10 px-2.5 sm:px-3.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/35 border border-indigo-400/40 text-indigo-100 font-black text-xs sm:text-sm flex items-center gap-1.5"
+                  >
+                    <BookOpen className="w-4 h-4 text-indigo-300 shrink-0" />
+                    <span className="whitespace-nowrap">Cuentos IA</span>
+                  </KidsSquishButton>
+
+                  <KidsSquishButton
+                    onClick={() => {
+                      playKidsSound('tap', ux.soundEnabled, true);
+                      setPetWorldOpen(true);
+                    }}
+                    className="!min-h-[40px] h-10 px-2.5 sm:px-3.5 rounded-xl bg-amber-400/15 hover:bg-amber-400/30 border border-amber-300/40 text-amber-100 font-black text-xs sm:text-sm flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+                    <span className="whitespace-nowrap">Mi Mundo</span>
+                  </KidsSquishButton>
+
+                  {chestReady ? (
+                    <KidsSquishButton
+                      onClick={handleClaimChest}
+                      className="!min-h-[40px] h-10 px-3 sm:px-4 rounded-xl bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 font-black text-xs sm:text-sm shadow-lg flex items-center gap-1.5"
+                    >
+                      <Gift className="w-4 h-4 shrink-0" />
+                      <span className="whitespace-nowrap">{t.openChestReward}</span>
+                    </KidsSquishButton>
+                  ) : (
+                    <KidsSquishButton
+                      onClick={() => setAlbumModalOpen(true)}
+                      className="!min-h-[40px] h-10 px-2.5 sm:px-3.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-white font-bold text-xs sm:text-sm flex items-center gap-1.5"
+                    >
+                      <Award className="w-4 h-4 text-amber-300 shrink-0" />
+                      <span className="hidden sm:inline whitespace-nowrap">{t.portalRewardsBtn}</span>
+                    </KidsSquishButton>
+                  )}
+                </div>
+              </div>
+
+              {/* The 3 Core Illustrated Worlds — all 3 cleanly fit in Portrait, Horizontal Landscape, Tablet & Google TV with ZERO scroll */}
+              <div className="flex-1 min-h-0 grid grid-cols-1 grid-rows-3 md:grid-cols-3 md:grid-rows-1 landscape:grid-cols-3 landscape:grid-rows-1 gap-2 sm:gap-3">
+                {/* 1. CINE KIDS */}
+                <button
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    playKidsSound('tap', ux.soundEnabled, true);
+                    setActiveTab('cinema');
+                  }}
+                  className="group relative rounded-2xl sm:rounded-3xl overflow-hidden border border-amber-300/40 hover:border-amber-300 bg-gradient-to-br from-amber-950/60 to-[#0B1028] shadow-xl flex flex-col justify-end text-start cursor-pointer transition-transform duration-200 hover:scale-[1.01] active:scale-[0.98] focus-visible:scale-[1.02] focus-visible:ring-4 focus-visible:ring-amber-300 min-h-0 h-full outline-none"
+                >
+                  <img
+                    src={kidsWorldCinemaImg}
+                    alt={t.navCinema}
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#060919]/95 via-[#060919]/55 to-transparent" />
+
+                  <div className="relative z-10 p-3 sm:p-4 flex items-end justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-amber-300">
+                        YouTube Kids · {progress.preferredLang.toUpperCase()}
+                      </div>
+                      <h2 className="font-display font-black text-lg sm:text-2xl text-white leading-tight mt-0.5">
+                        {t.navCinema}
+                      </h2>
+                      <p className="text-xs font-medium text-sky-100/85 line-clamp-1 mt-0.5">
+                        {t.portalCinemaDesc}
+                      </p>
+                    </div>
+                    <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center shrink-0 shadow-md group-hover:scale-110 transition-transform">
+                      <ArrowRight className="w-4 h-4 rtl:rotate-180" />
+                    </span>
+                  </div>
+                </button>
+
+                {/* 2. 4 JUEGOS */}
+                <button
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    playKidsSound('tap', ux.soundEnabled, true);
+                    setActiveTab('fun');
+                  }}
+                  className="group relative rounded-2xl sm:rounded-3xl overflow-hidden border border-pink-300/40 hover:border-pink-300 bg-gradient-to-br from-pink-950/60 to-[#0B1028] shadow-xl flex flex-col justify-end text-start cursor-pointer transition-transform duration-200 hover:scale-[1.01] active:scale-[0.98] focus-visible:scale-[1.02] focus-visible:ring-4 focus-visible:ring-pink-300 min-h-0 h-full outline-none"
+                >
+                  <img
+                    src={kidsWorldGamesImg}
+                    alt={t.navFun}
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#060919]/95 via-[#060919]/55 to-transparent" />
+
+                  <div className="relative z-10 p-3 sm:p-4 flex items-end justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-pink-300">
+                        Arcade · Mates · Memoria · Música
+                      </div>
+                      <h2 className="font-display font-black text-lg sm:text-2xl text-white leading-tight mt-0.5">
+                        {t.navFun}
+                      </h2>
+                      <p className="text-xs font-medium text-pink-100/85 line-clamp-1 mt-0.5">
+                        {t.portalFunDesc}
+                      </p>
+                    </div>
+                    <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-pink-400 text-slate-950 flex items-center justify-center shrink-0 shadow-md group-hover:scale-110 transition-transform">
+                      <ArrowRight className="w-4 h-4 rtl:rotate-180" />
+                    </span>
+                  </div>
+                </button>
+
+                {/* 3. IDIOMAS CON TARIFIT */}
+                <button
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => {
+                    triggerHaptic('medium');
+                    playKidsSound('tap', ux.soundEnabled, true);
+                    setActiveTab('learn');
+                  }}
+                  className="group relative rounded-2xl sm:rounded-3xl overflow-hidden border border-sky-300/40 hover:border-sky-300 bg-gradient-to-br from-sky-950/60 to-[#0B1028] shadow-xl flex flex-col justify-end text-start cursor-pointer transition-transform duration-200 hover:scale-[1.01] active:scale-[0.98] focus-visible:scale-[1.02] focus-visible:ring-4 focus-visible:ring-sky-300 min-h-0 h-full outline-none"
+                >
+                  <img
+                    src={kidsWorldLanguagesImg}
+                    alt={t.navLearn}
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                  />
+                  <div className="absolute inset-0 bg-gradient-to-t from-[#060919]/95 via-[#060919]/55 to-transparent" />
+
+                  <div className="relative z-10 p-3 sm:p-4 flex items-end justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[10px] sm:text-xs font-extrabold uppercase tracking-wider text-sky-300">
+                        ES · EN · FR · AR · RIF +3
+                      </div>
+                      <h2 className="font-display font-black text-lg sm:text-2xl text-white leading-tight mt-0.5">
+                        {t.navLearn}
+                      </h2>
+                      <p className="text-xs font-medium text-sky-100/85 line-clamp-1 mt-0.5">
+                        {t.portalLearnDesc}
+                      </p>
+                    </div>
+                    <span className="w-8 h-8 sm:w-9 sm:h-9 rounded-full bg-sky-400 text-slate-950 flex items-center justify-center shrink-0 shadow-md group-hover:scale-110 transition-transform">
+                      <ArrowRight className="w-4 h-4 rtl:rotate-180" />
+                    </span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* SCREEN 2: YOUTUBE KIDS CINEMA */}
+          {activeTab === 'cinema' && (
+            <KidsCinemaTab
+              shellLang={shellLang}
+              kidsLang={progress.preferredLang}
+              ageGroup={progress.ageGroup}
+              recentWatched={progress.recentWatched || []}
+              approvedOnlyMode={Boolean(progress.parentPrefs?.approvedOnlyMode)}
+              approvedItems={progress.parentPrefs?.approvedItems || []}
+              onPlayItem={(item, queuePool) => {
+                recordWatchedAction(item);
+                setActivePlayback({ item, queue: queuePool });
+              }}
+              onEarnStar={handleEarnStar}
+              onBackToPortal={() => setActiveTab('portal')}
+            />
+          )}
+
+          {/* SCREEN 3: 4 POLISHED GAMES */}
+          {activeTab === 'fun' && (
+            <KidsGamesHub
+              kidsLang={progress.preferredLang}
+              ageGroup={progress.ageGroup}
+              profileId={progress.id || 'kid-1'}
+              unlockedRewards={progress.unlockedRewards}
+              onEarnStar={handleEarnStar}
+              onMissionPlay={() => trackMissionAction('play')}
+              onBackToPortal={() => setActiveTab('portal')}
+            />
+          )}
+
+          {/* SCREEN 4: IDIOMAS CON TARIFIT STUDIO */}
+          {activeTab === 'learn' && (
+            <KidsLanguagesStudio
+              kidsLang={progress.preferredLang}
+              ageGroup={progress.ageGroup}
+              onChangeLang={handleSelectKidsLang}
+              onEarnStar={handleEarnStar}
+              onMissionLearn={() => trackMissionAction('learn')}
+              onBackToPortal={() => setActiveTab('portal')}
+            />
+          )}
+        </main>
+      </div>
+
+      {/* STANDALONE KID-SAFE YOUTUBE KIDS PLAYER */}
       {activePlayback && (
         <KidsIndependentPlayer
           item={activePlayback.item}
@@ -962,7 +1108,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
         />
       )}
 
-      {/* 1-TAP 8-LANGUAGE VISUAL PICKER MODAL */}
+      {/* 8-LANGUAGE SELECTOR MODAL */}
       {langModalOpen && (
         <div
           role="dialog"
@@ -996,6 +1142,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                   <button
                     key={item.code}
                     type="button"
+                    data-tv-focusable="true"
                     onClick={() => {
                       handleSelectKidsLang(item.code);
                       void speakKidsText(item.greeting, item.code, {
@@ -1003,7 +1150,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                       });
                       setLangModalOpen(false);
                     }}
-                    className={`min-h-[56px] px-3.5 py-2.5 rounded-2xl border-2 border-b-4 flex items-center gap-3 cursor-pointer transition-transform active:scale-95 ${
+                    className={`min-h-[54px] px-3.5 py-2.5 rounded-2xl border-2 border-b-4 flex items-center gap-3 cursor-pointer transition-transform active:scale-95 ${
                       selected
                         ? 'bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 border-amber-700'
                         : 'bg-[#1B254D] hover:bg-[#243269] text-white border-[#0E142E]'
@@ -1021,7 +1168,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
         </div>
       )}
 
-      {/* SCREEN-TIME LOCK OVERLAY */}
+      {/* SCREEN-TIME REST OVERLAY */}
       {isTimeUp && !pinModalOpen && !parentModalOpen && (
         <div
           role="dialog"
@@ -1030,12 +1177,14 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
           className="fixed inset-0 z-[255] bg-[#0B0F22]/95 backdrop-blur-lg flex items-center justify-center p-5 text-center"
         >
           <div className="w-full max-w-sm rounded-3xl bg-[#161F42] border-2 border-amber-400/40 p-6 space-y-4 shadow-2xl">
-            <div className="text-5xl">🌙</div>
+            <div className="w-16 h-16 mx-auto rounded-2xl bg-indigo-500/20 border border-indigo-300/35 flex items-center justify-center">
+              <Moon className="w-9 h-9 text-amber-300" />
+            </div>
             <h2 className="font-display font-extrabold text-2xl text-white">
               {t.timeUpTitle}
             </h2>
             <p className="text-sm text-sky-100/80">
-              {t.timeUpBody} ({progress.stars} ⭐)
+              {t.timeUpBody} ({progress.stars} {t.starsAvailableSuffix})
             </p>
             <KidsSquishButton
               onClick={() => openPinModal('parent_settings')}
@@ -1047,7 +1196,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
         </div>
       )}
 
-      {/* STAR ALBUM, SIBLING PROFILES, DAILY CHEST & MASCOT SHOP MODAL */}
+      {/* PROFILE, DAILY CHEST, MASCOTS, REWARD SHOP & BADGES MODAL (ZERO EMOJIS) */}
       {albumModalOpen && (
         <div
           role="dialog"
@@ -1055,12 +1204,12 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
           dir={dir}
           className="fixed inset-0 z-[258] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
         >
-          <div className="w-full max-w-lg max-h-[88dvh] rounded-3xl bg-[#141B38] border-2 border-amber-400/40 p-4 sm:p-5 shadow-2xl flex flex-col gap-3 overflow-hidden">
+          <div className="w-full max-w-lg max-h-[90dvh] rounded-3xl bg-[#141B38] border-2 border-amber-400/40 p-4 sm:p-5 shadow-2xl flex flex-col gap-3 overflow-hidden">
             <div className="shrink-0 flex items-center justify-between gap-2">
               <div className="flex items-center gap-3 min-w-0">
                 <KidsUniqueNameAvatarSvg
                   name={progress.name || 'Peque 1'}
-                  fallbackEmoji={progress.avatarEmoji || activeMascot.emoji}
+                  fallbackAvatarId={progress.avatarEmoji || 'fennec'}
                   size={48}
                 />
                 <KidsAnimatedMascotSvg id={activeMascot.id} size={42} />
@@ -1069,8 +1218,9 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                     {t.albumTitlePrefix} {progress.name || 'Peque 1'}
                   </h2>
                   <div className="flex flex-wrap items-center gap-2 text-xs font-bold tabular-nums">
-                    <span className="text-amber-300">
-                      {progress.stars} ⭐ {t.starsAvailableSuffix}
+                    <span className="inline-flex items-center gap-1 text-amber-300">
+                      <Star className="w-3.5 h-3.5 fill-amber-300" />
+                      {progress.stars} {t.starsAvailableSuffix}
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-sky-500/20 border border-sky-400/40 text-sky-200 text-[11px]">
                       {t.levelLabel} {levelInfo.level} · {rankLabel}
@@ -1088,14 +1238,15 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
               </button>
             </div>
 
-            {/* Explorer XP Progress Bar */}
+            {/* Explorer XP Bar */}
             <div className="shrink-0 px-3 py-2 rounded-2xl bg-[#0F152D] border border-sky-400/25 space-y-1">
               <div className="flex items-center justify-between text-[11px] font-extrabold text-sky-200">
-                <span>
-                  🏅 {t.levelLabel} {levelInfo.level} · {rankLabel}
+                <span className="inline-flex items-center gap-1">
+                  <Award className="w-3.5 h-3.5 text-amber-300" />
+                  {t.levelLabel} {levelInfo.level} · {rankLabel}
                 </span>
-                <span className="text-amber-300 tabular-nums">
-                  {levelInfo.starsIntoLevel}/{levelInfo.starsForNextLevel} ⭐ ({levelInfo.progressPct}%)
+                <span className="inline-flex items-center gap-1 text-amber-300 tabular-nums">
+                  {levelInfo.starsIntoLevel}/{levelInfo.starsForNextLevel} ({levelInfo.progressPct}%)
                 </span>
               </div>
               <div className="h-2.5 rounded-full bg-white/10 overflow-hidden">
@@ -1106,14 +1257,17 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
               </div>
             </div>
 
-            {/* Quick Age, Wizard, Calm & Bedtime controls cleanly inside Mi Espacio */}
+            {/* Quick Controls */}
             <div className="shrink-0 flex flex-wrap items-center gap-2">
               <button
                 type="button"
                 onClick={cycleMobileAgeGroup}
-                className="h-9 px-3 rounded-xl bg-[#1C264E] border border-sky-400/30 text-xs font-black text-sky-200 cursor-pointer"
+                className="h-9 px-3 rounded-xl bg-[#1C264E] border border-sky-400/30 text-xs font-black text-sky-200 inline-flex items-center gap-1.5 cursor-pointer"
               >
-                🎂 {progress.ageGroup} {t.yearsLabel}
+                <Cake className="w-3.5 h-3.5 text-amber-300" />
+                <span>
+                  {progress.ageGroup} {t.yearsLabel}
+                </span>
               </button>
               <button
                 type="button"
@@ -1121,20 +1275,22 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                   setAlbumModalOpen(false);
                   setWizardOpen(true);
                 }}
-                className="h-9 px-3 rounded-xl bg-[#1C264E] border border-amber-400/35 text-xs font-black text-amber-200 cursor-pointer"
+                className="h-9 px-3 rounded-xl bg-[#1C264E] border border-amber-400/35 text-xs font-black text-amber-200 inline-flex items-center gap-1.5 cursor-pointer"
               >
-                🪄 {t.stepWizardShort}
+                <Wand2 className="w-3.5 h-3.5" />
+                <span>{t.stepWizardShort}</span>
               </button>
               <button
                 type="button"
                 onClick={toggleLowStimulation}
-                className={`h-9 px-3 rounded-xl border text-xs font-black cursor-pointer ${
+                className={`h-9 px-3 rounded-xl border text-xs font-black inline-flex items-center gap-1.5 cursor-pointer ${
                   ux.lowStimulation
                     ? 'bg-teal-500/30 border-teal-300 text-teal-100'
                     : 'bg-[#1C264E] border-white/10 text-teal-200'
                 }`}
               >
-                🫧 {t.calmMode}
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{t.calmMode}</span>
               </button>
               <button
                 type="button"
@@ -1143,39 +1299,42 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                   setBedtimeMode(next);
                   if (!next) setLullabyPlaying(false);
                 }}
-                className={`h-9 px-3 rounded-xl border text-xs font-black cursor-pointer ${
+                className={`h-9 px-3 rounded-xl border text-xs font-black inline-flex items-center gap-1.5 cursor-pointer ${
                   bedtimeMode
                     ? 'bg-indigo-500 border-indigo-300 text-white'
                     : 'bg-[#1C264E] border-white/10 text-indigo-200'
                 }`}
               >
-                🌙 {t.bedtimeMode}
+                <Moon className="w-3.5 h-3.5" />
+                <span>{t.bedtimeMode}</span>
               </button>
               {bedtimeMode && (
                 <button
                   type="button"
                   onClick={() => setLullabyPlaying((v) => !v)}
-                  className={`h-9 px-3 rounded-xl border text-xs font-black cursor-pointer ${
+                  className={`h-9 px-3 rounded-xl border text-xs font-black inline-flex items-center gap-1.5 cursor-pointer ${
                     lullabyPlaying
                       ? 'bg-amber-400 border-amber-200 text-black'
                       : 'bg-[#1C264E] border-white/10 text-amber-200'
                   }`}
                 >
-                  🎵 {t.lullabyLabel}
+                  <Music className="w-3.5 h-3.5" />
+                  <span>{t.lullabyLabel}</span>
                 </button>
               )}
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pe-1">
-              {/* Daily Missions & +10 Star Chest */}
+              {/* Daily Missions */}
               <div className="p-3 rounded-2xl bg-gradient-to-br from-[#1B254D] to-[#151D3D] border border-amber-400/30 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   <h3 className="text-xs font-extrabold text-amber-200 flex items-center gap-1.5">
                     <Gift className="w-3.5 h-3.5" /> {t.dailyMissionsTitle}
                   </h3>
                   {dailyMissions.chestClaimed ? (
-                    <span className="text-[11px] font-bold text-emerald-300">
-                      ✅ {t.chestOpenedToday}
+                    <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-300">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
+                      {t.chestOpenedToday}
                     </span>
                   ) : chestReady ? (
                     <button
@@ -1210,7 +1369,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                 </div>
               </div>
 
-              {/* Sibling Profiles Switcher + Creator */}
+              {/* Profiles on this Device */}
               <div className="space-y-2">
                 <h3 className="text-xs font-extrabold text-sky-200 flex items-center gap-1.5">
                   <Users className="w-3.5 h-3.5" /> {t.siblingsTitle} ({profilesStore.profiles.length})
@@ -1234,11 +1393,14 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                         >
                           <KidsUniqueNameAvatarSvg
                             name={prof.name || 'Peque'}
-                            fallbackEmoji={prof.avatarEmoji || '🦊'}
+                            fallbackAvatarId={prof.avatarEmoji || 'fennec'}
                             size={24}
                           />
                           <span>{prof.name}</span>
-                          <span className="text-[10px] text-amber-300">{prof.stars}⭐</span>
+                          <span className="inline-flex items-center gap-0.5 text-[10px] text-amber-300 tabular-nums">
+                            {prof.stars}
+                            <Star className="w-2.5 h-2.5 fill-amber-300" />
+                          </span>
                         </button>
                         {profilesStore.profiles.length > 1 && (
                           <button
@@ -1262,13 +1424,13 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                         key={av}
                         type="button"
                         onClick={() => setNewSiblingAvatar(av)}
-                        className={`w-8 h-8 rounded-lg text-sm flex items-center justify-center cursor-pointer border ${
+                        className={`w-8 h-8 rounded-lg flex items-center justify-center cursor-pointer border ${
                           newSiblingAvatar === av
                             ? 'bg-amber-400/30 border-amber-300'
                             : 'bg-white/5 border-white/10'
                         }`}
                       >
-                        {av}
+                        <KidsAvatarArtworkSvg avatarId={av} size={22} />
                       </button>
                     ))}
                   </div>
@@ -1302,7 +1464,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
               {/* Mascots Picker */}
               <div className="space-y-1.5">
                 <h3 className="text-xs font-extrabold text-sky-200 flex items-center gap-1.5">
-                  <span>🐾</span> {t.chooseMascotTitle}
+                  <Sparkles className="w-3.5 h-3.5 text-amber-300" /> {t.chooseMascotTitle}
                 </h3>
                 <div className="grid grid-cols-4 gap-2">
                   {KIDS_MASCOTS.map((m) => {
@@ -1320,10 +1482,10 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                             : 'bg-[#1B2447] hover:bg-[#232F5C] border-[#29376B] text-zinc-200'
                         }`}
                       >
-                        <span className="text-2xl">{m.emoji}</span>
+                        <KidsAnimatedMascotSvg id={m.id} size={36} />
                         <span className="text-[11px] font-bold">{m.name}</span>
-                        <span className="text-[10px] font-extrabold text-amber-300">
-                          {selected ? t.mascotActive : owned ? t.mascotUse : `${m.costStars} ⭐`}
+                        <span className="text-[10px] font-extrabold text-amber-300 tabular-nums">
+                          {selected ? t.mascotActive : owned ? t.mascotUse : `${m.costStars}`}
                         </span>
                       </button>
                     );
@@ -1334,7 +1496,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
               {/* Reward Shop */}
               <div className="space-y-1.5">
                 <h3 className="text-xs font-extrabold text-pink-200 flex items-center gap-1.5">
-                  <span>🎁</span> {t.rewardShopTitle}
+                  <Gift className="w-3.5 h-3.5" /> {t.rewardShopTitle}
                 </h3>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {KIDS_SHOP_ITEMS.map((item) => {
@@ -1355,7 +1517,9 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                         }`}
                       >
                         <div className="flex items-center gap-2 min-w-0">
-                          <span className="text-2xl shrink-0">{item.emoji}</span>
+                          <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center shrink-0 text-amber-300">
+                            <KidsBadgeIcon iconId={item.iconId} className="w-5 h-5" />
+                          </div>
                           <div className="min-w-0">
                             <div className="text-xs font-extrabold truncate">{item.title}</div>
                             <div className="text-[10px] text-sky-200/75 truncate">{item.desc}</div>
@@ -1367,7 +1531,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                               <Check className="w-3.5 h-3.5" /> {t.shopOwned}
                             </span>
                           ) : (
-                            `${t.shopGetBtn} · ${item.cost} ⭐`
+                            `${item.cost}`
                           )}
                         </span>
                       </button>
@@ -1376,25 +1540,25 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                 </div>
               </div>
 
-              {/* Earned Badges Grid */}
+              {/* Badges */}
               <div className="space-y-1.5">
                 <h3 className="text-xs font-extrabold text-amber-200 flex items-center gap-1.5">
                   <Award className="w-3.5 h-3.5" /> {t.badgesTitle} ({progress.badges.length}/{KIDS_BADGES.length})
                 </h3>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
                   {KIDS_BADGES.map((b) => {
                     const earned = progress.badges.includes(b.id);
                     return (
                       <div
                         key={b.id}
-                        className={`p-2 rounded-xl border text-center flex flex-col items-center gap-0.5 ${
+                        className={`p-2 rounded-xl border text-center flex flex-col items-center gap-1 ${
                           earned
-                            ? 'bg-amber-400/15 border-amber-400/40 text-white'
+                            ? 'bg-amber-400/15 border-amber-400/40 text-amber-300'
                             : 'bg-black/25 border-white/5 text-zinc-500 opacity-45 grayscale'
                         }`}
                       >
-                        <span className="text-xl">{b.emoji}</span>
-                        <span className="text-[10px] font-bold leading-tight truncate w-full">
+                        <KidsBadgeIcon iconId={b.iconId} className="w-5 h-5" />
+                        <span className="text-[10px] font-bold leading-tight truncate w-full text-white">
                           {b.label}
                         </span>
                       </div>
@@ -1407,7 +1571,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
         </div>
       )}
 
-      {/* MANDATORY PIN 1122 EXIT / PARENTAL / SMART TV GATE MODAL */}
+      {/* ON-DEVICE CUSTOMIZABLE PIN GATE MODAL */}
       {pinModalOpen && (
         <div
           role="dialog"
@@ -1423,7 +1587,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                 ) : pinIntent === 'cast_tv' ? (
                   <Cast className="w-5 h-5" />
                 ) : (
-                  <Sparkles className="w-5 h-5" />
+                  <Lock className="w-5 h-5" />
                 )}
               </div>
               <h2 className="font-display font-extrabold text-lg text-white">
@@ -1435,7 +1599,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
               </h2>
               <p className="text-xs text-sky-200/75">
                 {pinIntent === 'cast_tv' && pendingCastMovie
-                  ? `«${pendingCastMovie.title}»`
+                  ? pendingCastMovie.title
                   : t.pinSubDefault}
               </p>
             </div>
@@ -1481,7 +1645,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
 
             {pinError && <p className="text-xs font-bold text-rose-400">{t.pinWrong}</p>}
 
-            <div dir="ltr" className="grid grid-cols-3 gap-3">
+            <div dir="ltr" className="grid grid-cols-3 gap-2.5">
               {['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => (
                 <KidsSquishButton
                   key={d}
@@ -1525,7 +1689,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
         </div>
       )}
 
-      {/* PARENT SETTINGS PANEL (UNLOCKED BY PIN 1122) */}
+      {/* LOCAL PARENTAL CONTROL PANEL (WITH CUSTOMIZABLE ON-DEVICE PIN) */}
       {parentModalOpen && (
         <div
           role="dialog"
@@ -1533,7 +1697,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
           dir={dir}
           className="fixed inset-0 z-[265] bg-black/80 backdrop-blur-md flex items-center justify-center p-3 sm:p-5"
         >
-          <div className="w-full max-w-lg max-h-[88dvh] rounded-3xl bg-[#141B38] border-2 border-sky-400/40 p-5 shadow-2xl flex flex-col gap-3 overflow-hidden">
+          <div className="w-full max-w-lg max-h-[90dvh] rounded-3xl bg-[#141B38] border-2 border-sky-400/40 p-5 shadow-2xl flex flex-col gap-3 overflow-hidden">
             <div className="shrink-0 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Settings2 className="w-5 h-5 text-sky-400" />
@@ -1552,6 +1716,72 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
             </div>
 
             <div className="flex-1 min-h-0 overflow-y-auto space-y-4 pe-1">
+              {/* Custom On-Device Parent PIN Manager */}
+              <form
+                onSubmit={handleSaveCustomPin}
+                className="p-3 rounded-2xl bg-[#0D1226] border border-amber-400/30 space-y-2.5"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-amber-200">
+                    <KeyRound className="w-4 h-4" />
+                    <span>{t.pinChangeTitle}</span>
+                  </div>
+                  {parentPin !== KIDS_EXIT_PIN && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        resetDefaultPin();
+                        setPinChangeNotice({ ok: true, msg: t.pinResetDefaultBtn });
+                      }}
+                      className="text-[11px] font-bold text-sky-300 hover:underline cursor-pointer"
+                    >
+                      {t.pinResetDefaultBtn}
+                    </button>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={curPinInput}
+                    onChange={(e) => setCurPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    placeholder={t.pinCurrentLabel}
+                    className="h-10 px-3 rounded-xl bg-[#161F42] border border-white/15 text-xs font-bold text-white outline-none"
+                  />
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={newPinInput}
+                    onChange={(e) => setNewPinInput(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                    placeholder={t.pinNewLabel}
+                    className="h-10 px-3 rounded-xl bg-[#161F42] border border-white/15 text-xs font-bold text-white outline-none"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-2">
+                  {pinChangeNotice ? (
+                    <span
+                      className={`text-[11px] font-bold ${
+                        pinChangeNotice.ok ? 'text-emerald-300' : 'text-rose-300'
+                      }`}
+                    >
+                      {pinChangeNotice.msg}
+                    </span>
+                  ) : (
+                    <span className="text-[11px] text-zinc-400">PIN: ****</span>
+                  )}
+                  <button
+                    type="submit"
+                    className="h-9 px-3.5 rounded-xl bg-amber-400 text-slate-950 text-xs font-black cursor-pointer"
+                  >
+                    {t.pinSaveBtn}
+                  </button>
+                </div>
+              </form>
+
               {/* Lock Language */}
               <div className="space-y-1.5">
                 <label className="text-xs font-bold text-sky-200">{t.lockLangLabel}</label>
@@ -1617,7 +1847,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                 </div>
               </div>
 
-              {/* Screen Time Limit & Active Usage */}
+              {/* Screen Timer */}
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between gap-2">
                   <label className="text-xs font-bold text-sky-200">{t.screenTimerLabel}</label>
@@ -1649,7 +1879,7 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                 </div>
               </div>
 
-              {/* Sensory & Audio Ergonomics */}
+              {/* Audio & Sensory Ergonomics */}
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -1674,14 +1904,14 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                       : 'bg-white/5 border-white/10 text-zinc-300'
                   }`}
                 >
-                  <span>🫧</span>
+                  <Sparkles className="w-4 h-4" />
                   <span>
                     {t.calmMode}: {ux.lowStimulation ? 'ON' : 'OFF'}
                   </span>
                 </button>
               </div>
 
-              {/* Parent Curated Safe-Only Watchlist */}
+              {/* Approved-only YouTube Kids List */}
               <div className="space-y-2 p-3 rounded-2xl bg-[#0D1226] border border-white/10">
                 <div className="flex items-center justify-between gap-2">
                   <div>
@@ -1727,7 +1957,218 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                     );
                   })}
                 </div>
+
+                {/* Paste & Verify YouTube URL */}
+                <div className="pt-2 border-t border-white/10 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-black text-sky-200">
+                    <Link2 className="w-3.5 h-3.5" />
+                    <span>Añadir enlace seguro de YouTube Kids</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={ytImportUrl}
+                      onChange={(e) => setYtImportUrl(e.target.value)}
+                      placeholder="https://youtube.com/watch?v=..."
+                      className="flex-1 h-9 px-2.5 rounded-lg bg-[#161F42] border border-white/15 text-xs text-white outline-none"
+                    />
+                    <button
+                      type="button"
+                      disabled={ytImportLoading || !ytImportUrl.trim()}
+                      onClick={async () => {
+                        setYtImportLoading(true);
+                        setYtImportStatus('');
+                        try {
+                          const r = await fetch('/api/kids/youtube-resolve', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: ytImportUrl, lang: progress.preferredLang }),
+                          });
+                          const data = await r.json();
+                          if (data?.ok && data.item) {
+                            const cur = progress.parentPrefs?.approvedItems || [];
+                            updateParentPrefs({
+                              approvedItems: [data.item, ...cur.filter((m) => m.id !== data.item.id)],
+                            });
+                            setYtImportUrl('');
+                            setYtImportStatus(`Añadido: ${data.item.title}`);
+                          } else {
+                            setYtImportStatus(data?.error || 'No se pudo verificar este enlace.');
+                          }
+                        } catch {
+                          setYtImportStatus('Error de conexión al verificar el enlace.');
+                        } finally {
+                          setYtImportLoading(false);
+                        }
+                      }}
+                      className="h-9 px-3 rounded-lg bg-sky-400 text-slate-950 text-xs font-black cursor-pointer disabled:opacity-45 shrink-0"
+                    >
+                      {ytImportLoading ? '...' : 'Verificar'}
+                    </button>
+                  </div>
+                  {ytImportStatus && (
+                    <p className="text-[11px] font-bold text-amber-200">{ytImportStatus}</p>
+                  )}
+                </div>
               </div>
+
+              {/* Earn-Cinema-By-Learning & Dyslexia/Tortoise Accessibility */}
+              <div className="space-y-2 p-3 rounded-2xl bg-[#0D1226] border border-indigo-400/25">
+                <div className="flex items-center justify-between gap-2">
+                  <div>
+                    <div className="text-xs font-extrabold text-white">Gana Cine Aprendiendo</div>
+                    <div className="text-[11px] text-zinc-400">
+                      Banco actual: {progress.parentPrefs?.earnedCinemaMinutes ?? 15} min (+2 min/acierto)
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateParentPrefs({
+                          earnedCinemaMinutes: (progress.parentPrefs?.earnedCinemaMinutes ?? 15) + 10,
+                        })
+                      }
+                      className="h-8 px-2.5 rounded-lg bg-amber-400/20 text-amber-200 text-[11px] font-black cursor-pointer"
+                    >
+                      +10m
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateParentPrefs({
+                          earnCinemaByLearning: !progress.parentPrefs?.earnCinemaByLearning,
+                        })
+                      }
+                      className={`h-8 px-3 rounded-lg text-xs font-black cursor-pointer border ${
+                        progress.parentPrefs?.earnCinemaByLearning
+                          ? 'bg-emerald-400 text-black border-emerald-200'
+                          : 'bg-white/10 text-zinc-200 border-white/15'
+                      }`}
+                    >
+                      {progress.parentPrefs?.earnCinemaByLearning ? t.onLabel : t.offLabel}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-1.5 pt-1">
+                  <button
+                    type="button"
+                    onClick={toggleDyslexiaFont}
+                    className={`h-9 px-2 rounded-lg text-[11px] font-black border cursor-pointer ${
+                      ux.dyslexiaFont
+                        ? 'bg-indigo-400 text-slate-950 border-indigo-200'
+                        : 'bg-white/5 text-zinc-300 border-white/10'
+                    }`}
+                  >
+                    Lectura Dislexia: {ux.dyslexiaFont ? 'ON' : 'OFF'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleSyllableHighlight}
+                    className={`h-9 px-2 rounded-lg text-[11px] font-black border cursor-pointer ${
+                      ux.syllableHighlight
+                        ? 'bg-indigo-400 text-slate-950 border-indigo-200'
+                        : 'bg-white/5 text-zinc-300 border-white/10'
+                    }`}
+                  >
+                    Sílabas: {ux.syllableHighlight ? 'ON' : 'OFF'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleTortoiseSpeech}
+                    className={`h-9 px-2 rounded-lg text-[11px] font-black border cursor-pointer ${
+                      ux.tortoiseSpeech
+                        ? 'bg-emerald-400 text-slate-950 border-emerald-200'
+                        : 'bg-white/5 text-zinc-300 border-white/10'
+                    }`}
+                  >
+                    Voz Tortuga: {ux.tortoiseSpeech ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Progreso Real & Family Export */}
+              <div className="space-y-2.5 p-3 rounded-2xl bg-[#0D1226] border border-emerald-400/25">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-300">
+                    <BarChart3 className="w-4 h-4" />
+                    <span>Progreso Educativo de Hoy</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const an = progress.analytics;
+                      const pct = (c: number, tot: number) => (tot > 0 ? `${Math.round((c / tot) * 100)}%` : 'Sin datos');
+                      const summary = [
+                        `RIFFAN KIDS - RESUMEN FAMILIAR (${new Date().toISOString().slice(0, 10)})`,
+                        `Perfil: ${progress.name || 'Peque'} (${progress.ageGroup} años)`,
+                        `Estrellas totales: ${progress.stars} | Racha: ${progress.streakDays} días`,
+                        `Aprendizaje hoy: ${an?.learnMinutesToday ?? 0} min | Cine hoy: ${an?.cinemaMinutesToday ?? 0} min`,
+                        `Precisión Idiomas: ${pct(an?.domainCorrect.lang ?? 0, an?.domainTotal.lang ?? 0)}`,
+                        `Precisión Mates: ${pct(an?.domainCorrect.math ?? 0, an?.domainTotal.math ?? 0)}`,
+                        `Precisión Música: ${pct(an?.domainCorrect.music ?? 0, an?.domainTotal.music ?? 0)}`,
+                        `Precisión Lógica: ${pct(an?.domainCorrect.logic ?? 0, an?.domainTotal.logic ?? 0)}`,
+                        `Palabras practicadas hoy: ${(an?.practicedWords || []).join(', ') || 'Ninguna aún'}`,
+                      ].join('\n');
+                      const blob = new Blob([summary], { type: 'text/plain;charset=utf-8' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = `resumen-riffan-kids-${(progress.name || 'peque').toLowerCase()}.txt`;
+                      document.body.appendChild(a);
+                      a.click();
+                      a.remove();
+                      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+                    }}
+                    className="h-8 px-2.5 rounded-lg bg-emerald-400/20 hover:bg-emerald-400/35 text-emerald-200 text-[11px] font-black flex items-center gap-1 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>Exportar (.txt)</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-xs font-bold">
+                  <div className="p-2 rounded-xl bg-white/5 text-emerald-200 tabular-nums">
+                    Aprendizaje hoy: {progress.analytics?.learnMinutesToday ?? 0} min
+                  </div>
+                  <div className="p-2 rounded-xl bg-white/5 text-amber-200 tabular-nums">
+                    Cine hoy: {progress.analytics?.cinemaMinutesToday ?? 0} min
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-2 text-[11px] font-black">
+                  {(
+                    [
+                      { key: 'lang', label: 'Idiomas', bar: 'bg-sky-400' },
+                      { key: 'math', label: 'Mates', bar: 'bg-amber-400' },
+                      { key: 'music', label: 'Música', bar: 'bg-emerald-400' },
+                      { key: 'logic', label: 'Lógica', bar: 'bg-pink-400' },
+                    ] as const
+                  ).map((d) => {
+                    const ok = progress.analytics?.domainCorrect[d.key] ?? 0;
+                    const tot = progress.analytics?.domainTotal[d.key] ?? 0;
+                    const pct = tot > 0 ? Math.round((ok / tot) * 100) : 0;
+                    return (
+                      <div key={d.key} className="space-y-1">
+                        <div className="flex justify-between text-sky-100">
+                          <span>{d.label}</span>
+                          <span className="tabular-nums">{tot > 0 ? `${pct}%` : '—'}</span>
+                        </div>
+                        <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                          <div className={`h-full ${d.bar} rounded-full`} style={{ width: `${pct}%` }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <div className="text-[11px] font-bold text-amber-200 bg-amber-400/10 border border-amber-300/25 rounded-xl px-2.5 py-2">
+                  Consejo de hoy: practicad en la mesa las palabras &ldquo;Aman&rdquo; (agua) y &ldquo;Aɣrum&rdquo; (pan) en voz alta.
+                </div>
+              </div>
+
+              <KidsApkInstallCard />
 
               {onOpenSmartTv && (
                 <button
@@ -1742,6 +2183,18 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
                   <span>{t.connectSmartTv}</span>
                 </button>
               )}
+
+              <button
+                type="button"
+                onClick={() => {
+                  setParentModalOpen(false);
+                  setFamilyOnboardingOpen(true);
+                }}
+                className="w-full h-11 rounded-xl bg-purple-500/20 hover:bg-purple-500/35 border border-purple-400/40 text-purple-200 text-xs font-black flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <Users className="w-4 h-4 text-purple-300" />
+                <span>Configurar Hermanos y Familia (Nombres, Edades y Avatares)</span>
+              </button>
             </div>
 
             <div className="shrink-0 grid grid-cols-2 gap-2 pt-1">
@@ -1777,6 +2230,38 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
           onClose={() => setWizardOpen(false)}
         />
       )}
+
+      <KidsPetWorldModal
+        open={petWorldOpen}
+        onClose={() => setPetWorldOpen(false)}
+        kidsLang={progress.preferredLang}
+        onClaimChest={handleClaimChest}
+        onOpenDiploma={() => setDiplomaOpen(true)}
+      />
+
+      <KidsStoryStudio
+        open={storyStudioOpen}
+        onClose={() => setStoryStudioOpen(false)}
+        kidsLang={progress.preferredLang}
+        ageGroup={progress.ageGroup}
+        onEarnStar={handleEarnStar}
+      />
+
+      <KidsDiplomaModal
+        open={diplomaOpen}
+        onClose={() => setDiplomaOpen(false)}
+        kidsLang={progress.preferredLang}
+      />
+
+      <KidsFamilyOnboardingModal
+        open={familyOnboardingOpen}
+        onClose={() => setFamilyOnboardingOpen(false)}
+      />
+
+      <KidsApkModal
+        open={apkModalOpen}
+        onClose={() => setApkModalOpen(false)}
+      />
     </div>
   );
 };

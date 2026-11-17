@@ -1,0 +1,1024 @@
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowRight,
+  ArrowUp,
+  CheckCircle2,
+  ChefHat,
+  Compass,
+  Delete,
+  Flame,
+  Play,
+  RefreshCw,
+  Sparkles,
+  Star,
+  Trash2,
+  Trophy,
+  Utensils,
+  Volume2,
+} from 'lucide-react';
+import type { KidsAgeGroup, KidsLanguageCode } from '../../types';
+import { triggerHaptic } from '../../utils/haptics';
+import { useKidsStore } from '../../store/useKidsStore';
+import { FlagBadgeSvg } from '../ui/LanguageBadge';
+import {
+  KIDS_LANGUAGES,
+  loadLeitnerBoxes,
+  pickLeitnerEntries,
+  updateLeitnerBox,
+  type KidsVocabEntry,
+  type LeitnerBoxesMap,
+} from './kidsData';
+import { EXTENDED_VOCAB_ITEMS } from './kidsCurriculumData';
+import { playKidsCardFlip, playKidsComboNote, playKidsSound } from './kidsAudioEngine';
+import { getKidsDir, getKidsUiCopy } from './kidsI18n';
+import { speakKidsText } from './kidsTtsHelper';
+import { KidsSquishButton } from './KidsPrimitives';
+import { KidsConfettiCanvas } from './KidsConfettiCanvas';
+import { KidsAnimatedMascotSvg, KidsVocabSvg } from './KidsSvgArt';
+
+type MemoryArcadeMode = 'memory' | 'kitchen' | 'logic';
+
+interface MemoryCardItem {
+  uid: string;
+  pairId: string;
+  kind: 'art' | 'word';
+  iconId: string;
+  word: string;
+  spokenText: string;
+  flipped: boolean;
+  matched: boolean;
+}
+
+function cleanSpokenWord(raw: string): string {
+  const idx = raw.indexOf('(');
+  return (idx >= 0 ? raw.slice(0, idx) : raw).trim() || raw.trim();
+}
+
+const FULL_VOCAB_ENTRIES: KidsVocabEntry[] = EXTENDED_VOCAB_ITEMS.map((item) => ({
+  id: item.id,
+  category:
+    item.category === 'animals' ||
+    item.category === 'nature' ||
+    item.category === 'numbers' ||
+    item.category === 'family'
+      ? item.category
+      : 'animals',
+  iconId: item.iconId,
+  translations: item.translations,
+}));
+
+function buildLeitnerDeck(
+  lang: KidsLanguageCode,
+  ageGroup: KidsAgeGroup,
+  boxes: LeitnerBoxesMap
+): MemoryCardItem[] {
+  const pairCount = ageGroup === '3-5' ? 3 : 6;
+  const chosen: KidsVocabEntry[] = pickLeitnerEntries(FULL_VOCAB_ENTRIES, boxes, pairCount);
+  const deck: MemoryCardItem[] = [];
+
+  for (const entry of chosen) {
+    const tr = entry.translations[lang] || entry.translations.es;
+    const cleanWord = cleanSpokenWord(tr.word);
+    deck.push({
+      uid: `${entry.id}-art-${Math.random().toString(36).slice(2, 6)}`,
+      pairId: entry.id,
+      kind: 'art',
+      iconId: entry.iconId,
+      word: cleanWord,
+      spokenText: cleanWord,
+      flipped: false,
+      matched: false,
+    });
+    deck.push({
+      uid: `${entry.id}-word-${Math.random().toString(36).slice(2, 6)}`,
+      pairId: entry.id,
+      kind: 'word',
+      iconId: entry.iconId,
+      word: cleanWord,
+      spokenText: cleanWord,
+      flipped: false,
+      matched: false,
+    });
+  }
+  return deck.sort(() => Math.random() - 0.5);
+}
+
+/* ============================================================================
+ * KITCHEN ORDER HELPERS
+ * ============================================================================ */
+const KITCHEN_FOOD_IDS = ['apple', 'bread', 'milk', 'honey', 'tea', 'orange_fruit', 'water'];
+const CUSTOMER_ANIMALS = [
+  { id: 'cat', name: 'Amucc' },
+  { id: 'lion', name: 'Ayrad' },
+  { id: 'bird', name: 'Ajeḍiḍ' },
+  { id: 'dog', name: 'Aqzin' },
+];
+
+interface KitchenOrder {
+  customer: { id: string; name: string };
+  requiredIds: string[];
+}
+
+function buildKitchenOrder(ageGroup: KidsAgeGroup): KitchenOrder {
+  const count = ageGroup === '3-5' ? 2 : 3;
+  const pool = [...KITCHEN_FOOD_IDS].sort(() => Math.random() - 0.5);
+  const requiredIds = pool.slice(0, count);
+  const customer = CUSTOMER_ANIMALS[Math.floor(Math.random() * CUSTOMER_ANIMALS.length)];
+  return { customer, requiredIds };
+}
+
+/* ============================================================================
+ * LOGIC BRIDGE PUZZLE HELPERS (BFS-VERIFIED SOLVABLE)
+ * ============================================================================ */
+type LogicDir = 'up' | 'right' | 'down' | 'left';
+
+interface LogicLevel {
+  cols: number;
+  rows: number;
+  start: { x: number; y: number };
+  goal: { x: number; y: number };
+  rocks: Array<{ x: number; y: number }>;
+  bonusStar: { x: number; y: number } | null;
+}
+
+function isPathSolvable(
+  cols: number,
+  rows: number,
+  start: { x: number; y: number },
+  goal: { x: number; y: number },
+  rocks: Array<{ x: number; y: number }>
+): boolean {
+  const rockSet = new Set(rocks.map((r) => `${r.x},${r.y}`));
+  if (rockSet.has(`${start.x},${start.y}`) || rockSet.has(`${goal.x},${goal.y}`)) return false;
+  const queue: Array<{ x: number; y: number }> = [start];
+  const visited = new Set<string>([`${start.x},${start.y}`]);
+  const deltas = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 },
+  ];
+  while (queue.length > 0) {
+    const cur = queue.shift()!;
+    if (cur.x === goal.x && cur.y === goal.y) return true;
+    for (const d of deltas) {
+      const nx = cur.x + d.dx;
+      const ny = cur.y + d.dy;
+      const key = `${nx},${ny}`;
+      if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !rockSet.has(key) && !visited.has(key)) {
+        visited.add(key);
+        queue.push({ x: nx, y: ny });
+      }
+    }
+  }
+  return false;
+}
+
+function generateLogicLevel(ageGroup: KidsAgeGroup): LogicLevel {
+  const cols = ageGroup === '9-12' ? 5 : 4;
+  const rows = 4;
+  const start = { x: 0, y: rows - 1 };
+  const goal = { x: cols - 1, y: 0 };
+  const rockCount = ageGroup === '3-5' ? 2 : ageGroup === '6-8' ? 3 : 5;
+
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const candidates: Array<{ x: number; y: number }> = [];
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        if ((x === start.x && y === start.y) || (x === goal.x && y === goal.y)) continue;
+        candidates.push({ x, y });
+      }
+    }
+    const shuffled = candidates.sort(() => Math.random() - 0.5);
+    const rocks = shuffled.slice(0, rockCount);
+    if (isPathSolvable(cols, rows, start, goal, rocks)) {
+      const bonusStar = shuffled[rockCount] || null;
+      return { cols, rows, start, goal, rocks, bonusStar };
+    }
+  }
+  return {
+    cols,
+    rows,
+    start,
+    goal,
+    rocks: [{ x: 1, y: 2 }, { x: 2, y: 1 }],
+    bonusStar: { x: 1, y: 1 },
+  };
+}
+
+interface KidsMemoryGameProps {
+  kidsLang: KidsLanguageCode;
+  ageGroup: KidsAgeGroup;
+  profileId: string;
+  onEarnStar: (stars: number, badgeId?: string) => void;
+  onMissionPlay?: () => void;
+}
+
+export const KidsMemoryGame: React.FC<KidsMemoryGameProps> = ({
+  kidsLang,
+  ageGroup,
+  profileId,
+  onEarnStar,
+  onMissionPlay,
+}) => {
+  const ux = useKidsStore((s) => s.ux);
+  const activeMascotId = useKidsStore((s) => s.getActiveProfile().mascotId);
+  const recordDomainResult = useKidsStore((s) => s.recordDomainResult);
+  const t = getKidsUiCopy(kidsLang);
+  const dir = getKidsDir(kidsLang);
+
+  const [subMode, setSubMode] = useState<MemoryArcadeMode>('memory');
+  const [practiceLang, setPracticeLang] = useState<KidsLanguageCode>(kidsLang);
+
+  // --- Mode 1: Leitner Memory ---
+  const [leitnerBoxes, setLeitnerBoxes] = useState<LeitnerBoxesMap>(() =>
+    loadLeitnerBoxes(profileId)
+  );
+  const [deck, setDeck] = useState<MemoryCardItem[]>(() =>
+    buildLeitnerDeck(kidsLang, ageGroup, loadLeitnerBoxes(profileId))
+  );
+  const [peeking, setPeeking] = useState(true);
+  const [selectedUids, setSelectedUids] = useState<string[]>([]);
+  const [moves, setMoves] = useState(0);
+  const [combo, setCombo] = useState(0);
+  const [victory, setVictory] = useState(false);
+
+  // --- Mode 2: World Kitchen ---
+  const [kitchenOrder, setKitchenOrder] = useState<KitchenOrder>(() => buildKitchenOrder(ageGroup));
+  const [trayIds, setTrayIds] = useState<string[]>([]);
+  const [kitchenFeedback, setKitchenFeedback] = useState<'idle' | 'ok' | 'retry'>('idle');
+  const [kitchenServedCount, setKitchenServedCount] = useState(0);
+
+  // --- Mode 3: Logic Bridge ---
+  const [logicLevel, setLogicLevel] = useState<LogicLevel>(() => generateLogicLevel(ageGroup));
+  const [program, setProgram] = useState<LogicDir[]>([]);
+  const [playerPos, setPlayerPos] = useState<{ x: number; y: number }>(logicLevel.start);
+  const [isRunningLogic, setIsRunningLogic] = useState(false);
+  const [logicStatus, setLogicStatus] = useState<'idle' | 'won' | 'bumped' | 'short'>('idle');
+  const [collectedBonus, setCollectedBonus] = useState(false);
+
+  const [confettiActive, setConfettiActive] = useState(false);
+  const logicTimerRef = useRef<number[]>([]);
+
+  const clearLogicTimers = () => {
+    logicTimerRef.current.forEach((id) => window.clearTimeout(id));
+    logicTimerRef.current = [];
+  };
+
+  useEffect(() => () => clearLogicTimers(), []);
+
+  const resetDeck = useCallback(
+    (langOverride?: KidsLanguageCode) => {
+      const target = langOverride || practiceLang;
+      const boxes = loadLeitnerBoxes(profileId);
+      setLeitnerBoxes(boxes);
+      setDeck(buildLeitnerDeck(target, ageGroup, boxes));
+      setSelectedUids([]);
+      setMoves(0);
+      setCombo(0);
+      setVictory(false);
+      setConfettiActive(false);
+      setPeeking(true);
+    },
+    [ageGroup, practiceLang, profileId]
+  );
+
+  useEffect(() => {
+    if (!peeking) return;
+    const timer = window.setTimeout(() => setPeeking(false), 1450);
+    return () => window.clearTimeout(timer);
+  }, [peeking]);
+
+  useEffect(() => {
+    resetDeck(practiceLang);
+  }, [ageGroup, practiceLang, profileId, resetDeck]);
+
+  const speakRate = ux.tortoiseSpeech ? 0.72 : undefined;
+
+  const kitchenFoods = useMemo(
+    () =>
+      KITCHEN_FOOD_IDS.map((id) => {
+        const entry = EXTENDED_VOCAB_ITEMS.find((v) => v.id === id) || EXTENDED_VOCAB_ITEMS[0];
+        const tr = entry.translations[practiceLang] || entry.translations.es;
+        return {
+          id: entry.id,
+          iconId: entry.iconId,
+          word: cleanSpokenWord(tr.word),
+          esWord: entry.translations.es.word,
+        };
+      }),
+    [practiceLang]
+  );
+
+  const speakOrderPrompt = useCallback(
+    (order: KitchenOrder) => {
+      if (!ux.soundEnabled) return;
+      const words = order.requiredIds
+        .map((id) => {
+          const item = EXTENDED_VOCAB_ITEMS.find((v) => v.id === id);
+          return cleanSpokenWord((item?.translations[practiceLang] || item?.translations.es)?.word || id);
+        })
+        .join(', ');
+      void speakKidsText(words, practiceLang, { ageGroup, rate: speakRate });
+    },
+    [ageGroup, practiceLang, speakRate, ux.soundEnabled]
+  );
+
+  const handleCardPress = (card: MemoryCardItem) => {
+    if (peeking || victory || card.flipped || card.matched || selectedUids.length >= 2) return;
+
+    triggerHaptic('light');
+    playKidsCardFlip(ux.soundEnabled);
+    if (ux.soundEnabled) {
+      void speakKidsText(card.spokenText, practiceLang, { ageGroup, rate: speakRate });
+    }
+
+    const updated = deck.map((c) => (c.uid === card.uid ? { ...c, flipped: true } : c));
+    const nextSel = [...selectedUids, card.uid];
+    setDeck(updated);
+    setSelectedUids(nextSel);
+
+    if (nextSel.length === 2) {
+      setMoves((m) => m + 1);
+      const [idA, idB] = nextSel;
+      const first = updated.find((c) => c.uid === idA);
+      const second = updated.find((c) => c.uid === idB);
+
+      if (first && second && first.pairId === second.pairId) {
+        const nextBoxes = updateLeitnerBox(leitnerBoxes, first.pairId, true, profileId);
+        setLeitnerBoxes(nextBoxes);
+        recordDomainResult('lang', true, first.pairId);
+        const nextCombo = combo + 1;
+        setCombo(nextCombo);
+
+        window.setTimeout(() => {
+          playKidsComboNote(nextCombo - 1, ux.soundEnabled);
+          triggerHaptic('success');
+          onMissionPlay?.();
+          onEarnStar(nextCombo >= 2 ? 3 : 2, 'memory_master');
+
+          setDeck((curr) => {
+            const nextDeck = curr.map((c) =>
+              c.pairId === first.pairId ? { ...c, matched: true, flipped: true } : c
+            );
+            if (nextDeck.every((c) => c.matched)) {
+              setVictory(true);
+              setConfettiActive(true);
+              playKidsSound('levelUp', ux.soundEnabled, true);
+              onEarnStar(3, 'memory_master');
+            }
+            return nextDeck;
+          });
+          setSelectedUids([]);
+        }, 300);
+      } else {
+        setCombo(0);
+        if (first) {
+          recordDomainResult('lang', false, first.pairId);
+          setLeitnerBoxes((curr) => updateLeitnerBox(curr, first.pairId, false, profileId));
+        }
+        window.setTimeout(() => {
+          playKidsSound('error', ux.soundEnabled, false);
+          setDeck((curr) =>
+            curr.map((c) => (c.uid === idA || c.uid === idB ? { ...c, flipped: false } : c))
+          );
+          setSelectedUids([]);
+        }, 720);
+      }
+    }
+  };
+
+  /* ============================================================================
+   * KITCHEN HANDLERS
+   * ============================================================================ */
+  const handleAddIngredient = (id: string, word: string) => {
+    if (kitchenFeedback === 'ok') return;
+    triggerHaptic('light');
+    playKidsSound('tap', ux.soundEnabled, false);
+    if (ux.soundEnabled) {
+      void speakKidsText(word, practiceLang, { ageGroup, rate: speakRate });
+    }
+    setKitchenFeedback('idle');
+    setTrayIds((curr) => (curr.includes(id) ? curr.filter((x) => x !== id) : [...curr, id]));
+  };
+
+  const handleServeKitchen = () => {
+    if (trayIds.length === 0) return;
+    const reqSorted = [...kitchenOrder.requiredIds].sort().join('|');
+    const traySorted = [...trayIds].sort().join('|');
+    const isOk = reqSorted === traySorted;
+
+    if (isOk) {
+      triggerHaptic('success');
+      playKidsSound('levelUp', ux.soundEnabled, true);
+      setKitchenFeedback('ok');
+      setConfettiActive(true);
+      setKitchenServedCount((c) => c + 1);
+      onMissionPlay?.();
+      kitchenOrder.requiredIds.forEach((wid) => recordDomainResult('lang', true, wid));
+      onEarnStar(3, 'tarifit_friend');
+
+      window.setTimeout(() => {
+        const nextOrder = buildKitchenOrder(ageGroup);
+        setKitchenOrder(nextOrder);
+        setTrayIds([]);
+        setKitchenFeedback('idle');
+        speakOrderPrompt(nextOrder);
+      }, 1200);
+    } else {
+      triggerHaptic('warning');
+      playKidsSound('error', ux.soundEnabled, false);
+      recordDomainResult('lang', false);
+      setKitchenFeedback('retry');
+    }
+  };
+
+  /* ============================================================================
+   * LOGIC BRIDGE HANDLERS
+   * ============================================================================ */
+  const newLogicPuzzle = () => {
+    clearLogicTimers();
+    const lv = generateLogicLevel(ageGroup);
+    setLogicLevel(lv);
+    setProgram([]);
+    setPlayerPos(lv.start);
+    setIsRunningLogic(false);
+    setLogicStatus('idle');
+    setCollectedBonus(false);
+  };
+
+  const runLogicProgram = () => {
+    if (isRunningLogic || program.length === 0) return;
+    clearLogicTimers();
+    setIsRunningLogic(true);
+    setLogicStatus('idle');
+    setPlayerPos(logicLevel.start);
+    setCollectedBonus(false);
+
+    let cx = logicLevel.start.x;
+    let cy = logicLevel.start.y;
+    let bonusHit = false;
+    const rockSet = new Set(logicLevel.rocks.map((r) => `${r.x},${r.y}`));
+
+    for (let idx = 0; idx < program.length; idx++) {
+      const stepDir = program[idx];
+      const nextX = stepDir === 'right' ? cx + 1 : stepDir === 'left' ? cx - 1 : cx;
+      const nextY = stepDir === 'down' ? cy + 1 : stepDir === 'up' ? cy - 1 : cy;
+      const blocked =
+        nextX < 0 ||
+        nextX >= logicLevel.cols ||
+        nextY < 0 ||
+        nextY >= logicLevel.rows ||
+        rockSet.has(`${nextX},${nextY}`);
+
+      const stepTimer = window.setTimeout(() => {
+        if (blocked) {
+          playKidsSound('error', ux.soundEnabled, true);
+          recordDomainResult('logic', false);
+          setIsRunningLogic(false);
+          setLogicStatus('bumped');
+          return;
+        }
+        playKidsSound('tap', ux.soundEnabled, false);
+        cx = nextX;
+        cy = nextY;
+        setPlayerPos({ x: cx, y: cy });
+
+        if (
+          logicLevel.bonusStar &&
+          cx === logicLevel.bonusStar.x &&
+          cy === logicLevel.bonusStar.y &&
+          !bonusHit
+        ) {
+          bonusHit = true;
+          setCollectedBonus(true);
+          playKidsSound('star', ux.soundEnabled, true);
+        }
+
+        if (cx === logicLevel.goal.x && cy === logicLevel.goal.y) {
+          clearLogicTimers();
+          setIsRunningLogic(false);
+          setLogicStatus('won');
+          setConfettiActive(true);
+          playKidsSound('levelUp', ux.soundEnabled, true);
+          recordDomainResult('logic', true);
+          onMissionPlay?.();
+          onEarnStar(bonusHit ? 5 : 4, 'memory_master');
+          return;
+        }
+
+        if (idx === program.length - 1) {
+          setIsRunningLogic(false);
+          setLogicStatus('short');
+        }
+      }, (idx + 1) * 320);
+
+      logicTimerRef.current.push(stepTimer);
+      if (blocked) break;
+      cx = nextX;
+      cy = nextY;
+    }
+  };
+
+  const masteredCount = Object.values(leitnerBoxes).filter((lvl) => lvl >= 3).length;
+  const pairCount = deck.length / 2;
+  const starRating = moves <= pairCount + 2 ? 3 : moves <= pairCount + 6 ? 2 : 1;
+  const activeLangMeta =
+    KIDS_LANGUAGES.find((l) => l.code === practiceLang) || KIDS_LANGUAGES[0];
+
+  const renderDirArrow = (d: LogicDir, cls = 'w-4 h-4') => {
+    if (d === 'up') return <ArrowUp className={cls} />;
+    if (d === 'right') return <ArrowRight className={cls} />;
+    if (d === 'down') return <ArrowDown className={cls} />;
+    return <ArrowLeft className={cls} />;
+  };
+
+  return (
+    <div
+      dir={dir}
+      className="flex-1 min-h-0 rounded-2xl bg-[#141B34] border-2 border-pink-400/25 p-2 sm:p-3 flex flex-col gap-2 overflow-hidden relative"
+    >
+      <KidsConfettiCanvas
+        active={confettiActive}
+        lowStimulation={ux.lowStimulation}
+        onComplete={() => setConfettiActive(false)}
+      />
+
+      {/* COMPACT HUD + 3 SUB-MODES + 8-LANGUAGE PICKER */}
+      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-[#0F152B] border border-white/10 text-xs font-black">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(
+            [
+              { id: 'memory', label: 'Memoria 60+', Icon: Sparkles },
+              { id: 'kitchen', label: 'Cocina del Mundo', Icon: ChefHat },
+              { id: 'logic', label: 'Puente Lógico', Icon: Compass },
+            ] as const
+          ).map(({ id, label, Icon }) => (
+            <button
+              key={id}
+              type="button"
+              data-tv-focusable="true"
+              onClick={() => {
+                playKidsSound('tap', ux.soundEnabled, false);
+                setSubMode(id);
+                setConfettiActive(false);
+              }}
+              className={`h-8 px-2.5 rounded-lg font-black text-[11px] flex items-center gap-1 cursor-pointer transition-colors ${
+                subMode === id
+                  ? 'bg-pink-400 text-slate-950 shadow'
+                  : 'bg-[#1A244D] text-sky-100 hover:bg-[#233266]'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{label}</span>
+            </button>
+          ))}
+        </div>
+
+        <div className="flex items-center gap-2">
+          {subMode !== 'logic' && (
+            <div className="flex items-center gap-1.5">
+              <FlagBadgeSvg code={activeLangMeta.flagCode} className="w-4 h-3 shrink-0" />
+              <select
+                aria-label={t.chooseLanguageTitle}
+                value={practiceLang}
+                onChange={(e) => setPracticeLang(e.target.value as KidsLanguageCode)}
+                className="h-8 px-2 rounded-lg bg-[#1A244D] border border-white/15 text-xs font-black text-white outline-none focus:border-amber-400 cursor-pointer"
+              >
+                {KIDS_LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.nativeLabel}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {subMode === 'memory' && combo > 1 && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-orange-500/20 text-orange-300 tabular-nums">
+              <Flame className="w-3.5 h-3.5 fill-orange-400" />
+              x{combo}
+            </span>
+          )}
+
+          {subMode === 'memory' && (
+            <span className="hidden md:inline text-emerald-300 tabular-nums">
+              {masteredCount}/{FULL_VOCAB_ENTRIES.length}
+            </span>
+          )}
+
+          {subMode === 'kitchen' && (
+            <span className="text-amber-300 tabular-nums">Pedidos: {kitchenServedCount}</span>
+          )}
+
+          {subMode === 'memory' && (
+            <button
+              type="button"
+              data-tv-focusable="true"
+              onClick={() => resetDeck()}
+              className="h-8 px-2.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-black text-white flex items-center gap-1 cursor-pointer"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">{t.memoryNewDeck}</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* =====================================================================
+       * SUBMODE 1: MEMORIA LEITNER (60+ CONCEPTS)
+       * ===================================================================== */}
+      {subMode === 'memory' && (
+        <div className="relative flex-1 min-h-0 overflow-y-auto no-scrollbar">
+          <div
+            className={`h-full grid gap-2 sm:gap-3 ${
+              deck.length <= 6
+                ? 'grid-cols-2 sm:grid-cols-3 landscape:grid-cols-3'
+                : 'grid-cols-3 sm:grid-cols-4 landscape:grid-cols-6'
+            }`}
+          >
+            {deck.map((card) => {
+              const revealed = peeking || card.flipped || card.matched;
+              const boxLevel = leitnerBoxes[card.pairId] || 1;
+              return (
+                <button
+                  key={card.uid}
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => handleCardPress(card)}
+                  className={`min-h-[84px] sm:min-h-[110px] landscape:min-h-[72px] rounded-2xl border-2 border-b-4 p-2 flex flex-col items-center justify-center gap-1 transition-all duration-200 cursor-pointer outline-none focus-visible:ring-4 focus-visible:ring-amber-300 ${
+                    card.matched
+                      ? 'bg-emerald-500/20 border-emerald-400 text-emerald-100 scale-[0.98]'
+                      : revealed
+                      ? 'bg-[#1F2C63] border-amber-300 text-white shadow-lg'
+                      : 'bg-gradient-to-br from-[#1C285B] to-[#131B3E] hover:from-[#243475] border-[#32448C] text-sky-300'
+                  }`}
+                >
+                  {revealed ? (
+                    card.kind === 'art' ? (
+                      <div className="flex flex-col items-center justify-center gap-1">
+                        <KidsVocabSvg iconId={card.iconId} size={44} />
+                        <span className="text-[10px] font-bold text-amber-300 uppercase tracking-wide">
+                          Lv.{boxLevel}
+                        </span>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center justify-center gap-1 px-1">
+                        <span className="font-display font-black text-sm sm:text-base text-white text-center leading-tight">
+                          {card.word}
+                        </span>
+                        <Volume2 className="w-3.5 h-3.5 text-sky-300" />
+                      </div>
+                    )
+                  ) : (
+                    <div className="w-11 h-11 rounded-2xl bg-amber-400/10 border border-amber-300/30 flex items-center justify-center">
+                      <Sparkles className="w-5 h-5 text-amber-300" />
+                    </div>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {victory && (
+            <div className="absolute inset-0 bg-[#0B1026]/92 backdrop-blur-md rounded-2xl flex flex-col items-center justify-center gap-3 p-5 text-center">
+              <div className="w-16 h-16 rounded-2xl bg-amber-400/20 border border-amber-300/40 flex items-center justify-center">
+                <Trophy className="w-9 h-9 text-amber-300" />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                {[1, 2, 3].map((n) => (
+                  <Star
+                    key={n}
+                    className={`w-7 h-7 ${
+                      n <= starRating ? 'fill-amber-300 text-amber-300' : 'text-white/20'
+                    }`}
+                  />
+                ))}
+              </div>
+
+              <h3 className="font-display font-black text-2xl sm:text-3xl text-amber-300">
+                {t.memoryVictoryTitle}
+              </h3>
+              <p className="text-sm sm:text-base font-bold text-white max-w-sm">
+                {t.memoryVictoryBody} ({moves} {t.memoryMovesLabel})
+              </p>
+              <KidsSquishButton
+                onClick={() => resetDeck()}
+                className="px-6 rounded-2xl bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 border-b-4 border-amber-700 font-black text-base"
+              >
+                {t.funPlayAgain}
+              </KidsSquishButton>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =====================================================================
+       * SUBMODE 2: LA COCINA DEL MUNDO (PEDIDOS EN IDIOMA OBJETIVO)
+       * ===================================================================== */}
+      {subMode === 'kitchen' && (
+        <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto no-scrollbar p-1">
+          {/* Customer Ticket */}
+          <div className="rounded-2xl bg-[#0F152B] border border-pink-400/25 p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-14 h-14 rounded-2xl bg-pink-500/15 border border-pink-400/30 flex items-center justify-center shrink-0">
+                <KidsVocabSvg iconId={kitchenOrder.customer.id} size={44} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[11px] font-black uppercase tracking-wider text-pink-300">
+                  Pedido en {activeLangMeta.nativeLabel}
+                </div>
+                <div className="flex flex-wrap items-center gap-1.5 mt-1">
+                  {kitchenOrder.requiredIds.map((rid) => {
+                    const f = kitchenFoods.find((x) => x.id === rid);
+                    return (
+                      <span
+                        key={rid}
+                        className="px-2.5 py-1 rounded-xl bg-amber-400/15 border border-amber-300/40 text-amber-200 font-display font-black text-sm"
+                      >
+                        {f?.word}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              data-tv-focusable="true"
+              onClick={() => speakOrderPrompt(kitchenOrder)}
+              className="h-10 px-4 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-black text-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
+            >
+              <Volume2 className="w-4 h-4" />
+              <span>Escuchar pedido</span>
+            </button>
+          </div>
+
+          {/* Pantry Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5">
+            {kitchenFoods.map((food) => {
+              const selected = trayIds.includes(food.id);
+              return (
+                <button
+                  key={food.id}
+                  type="button"
+                  data-tv-focusable="true"
+                  onClick={() => handleAddIngredient(food.id, food.word)}
+                  className={`p-3 rounded-2xl border-2 border-b-4 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    selected
+                      ? 'bg-emerald-500/25 border-emerald-400 text-white scale-[1.03] shadow-lg'
+                      : 'bg-[#19234A] hover:bg-[#223066] border-[#2E3E78] text-sky-100'
+                  }`}
+                >
+                  <KidsVocabSvg iconId={food.iconId} size={46} />
+                  <span className="font-display font-black text-sm text-white leading-tight text-center">
+                    {food.word}
+                  </span>
+                  {ageGroup === '3-5' && (
+                    <span className="text-[10px] font-bold text-sky-300/80">{food.esWord}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Serving Tray & Action */}
+          <div className="mt-auto rounded-2xl bg-[#0F152B] border border-white/10 p-3 flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-black text-sky-200">Tu bandeja:</span>
+              {trayIds.length === 0 ? (
+                <span className="text-xs font-bold text-slate-400">
+                  Toca los ingredientes del pedido arriba
+                </span>
+              ) : (
+                trayIds.map((tid) => {
+                  const f = kitchenFoods.find((x) => x.id === tid);
+                  return (
+                    <span
+                      key={tid}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/10 text-xs font-black text-white"
+                    >
+                      <KidsVocabSvg iconId={f?.iconId || 'apple'} size={20} />
+                      <span>{f?.word}</span>
+                    </span>
+                  );
+                })
+              )}
+              {kitchenFeedback === 'retry' && (
+                <span className="text-xs font-black text-rose-300">
+                  Revisa los ingredientes del ticket e inténtalo otra vez
+                </span>
+              )}
+              {kitchenFeedback === 'ok' && (
+                <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-300">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Pedido perfecto. +3 estrellas</span>
+                </span>
+              )}
+            </div>
+
+            <KidsSquishButton
+              onClick={handleServeKitchen}
+              disabled={trayIds.length === 0 || kitchenFeedback === 'ok'}
+              className="px-5 rounded-xl bg-gradient-to-b from-emerald-300 to-emerald-500 border-b-4 border-emerald-700 text-slate-950 font-black text-sm flex items-center gap-2 disabled:opacity-45"
+            >
+              <Utensils className="w-4 h-4" />
+              <span>Servir Plato</span>
+            </KidsSquishButton>
+          </div>
+        </div>
+      )}
+
+      {/* =====================================================================
+       * SUBMODE 3: PUENTE LÓGICO (PRE-CODING DIRECCIONAL)
+       * ===================================================================== */}
+      {subMode === 'logic' && (
+        <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 overflow-y-auto no-scrollbar p-1">
+          {/* Interactive Tile Board */}
+          <div className="flex-1 rounded-2xl bg-[#0B1126] border border-cyan-400/25 p-3 flex flex-col items-center justify-center gap-2">
+            <div className="w-full flex items-center justify-between text-xs font-black">
+              <span className="text-cyan-300">Programa los pasos para llegar al cofre</span>
+              <button
+                type="button"
+                data-tv-focusable="true"
+                onClick={newLogicPuzzle}
+                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Nuevo Mapa</span>
+              </button>
+            </div>
+
+            <div
+              className="grid gap-1.5 sm:gap-2 w-full max-w-[360px]"
+              style={{ gridTemplateColumns: `repeat(${logicLevel.cols}, minmax(0, 1fr))` }}
+            >
+              {Array.from({ length: logicLevel.rows * logicLevel.cols }).map((_, flatIdx) => {
+                const x = flatIdx % logicLevel.cols;
+                const y = Math.floor(flatIdx / logicLevel.cols);
+                const isPlayer = playerPos.x === x && playerPos.y === y;
+                const isGoal = logicLevel.goal.x === x && logicLevel.goal.y === y;
+                const isRock = logicLevel.rocks.some((r) => r.x === x && r.y === y);
+                const isBonus =
+                  !collectedBonus &&
+                  logicLevel.bonusStar &&
+                  logicLevel.bonusStar.x === x &&
+                  logicLevel.bonusStar.y === y;
+
+                return (
+                  <div
+                    key={`${x}-${y}`}
+                    className={`aspect-square rounded-xl border-2 flex items-center justify-center transition-all ${
+                      isPlayer
+                        ? 'bg-amber-400/25 border-amber-300 scale-105'
+                        : isGoal
+                        ? 'bg-emerald-500/25 border-emerald-400'
+                        : isRock
+                        ? 'bg-slate-800 border-slate-700'
+                        : 'bg-[#172149] border-[#26356F]'
+                    }`}
+                  >
+                    {isPlayer ? (
+                      <KidsAnimatedMascotSvg id={activeMascotId} size={36} />
+                    ) : isGoal ? (
+                      <Trophy className="w-6 h-6 text-emerald-300" />
+                    ) : isRock ? (
+                      <KidsVocabSvg iconId="mountain" size={32} />
+                    ) : isBonus ? (
+                      <Star className="w-5 h-5 fill-amber-300 text-amber-300" />
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Direction Command Queue & Pad */}
+          <div className="lg:w-72 shrink-0 rounded-2xl bg-[#0F152B] border border-white/10 p-3 flex flex-col justify-between gap-3">
+            <div>
+              <div className="flex items-center justify-between text-xs font-black text-sky-200 mb-2">
+                <span>Secuencia ({program.length}/10)</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    disabled={isRunningLogic || program.length === 0}
+                    onClick={() => setProgram((p) => p.slice(0, -1))}
+                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-40 cursor-pointer"
+                    aria-label="Borrar último paso"
+                  >
+                    <Delete className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isRunningLogic || program.length === 0}
+                    onClick={() => {
+                      setProgram([]);
+                      setPlayerPos(logicLevel.start);
+                      setLogicStatus('idle');
+                    }}
+                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-40 cursor-pointer"
+                    aria-label="Limpiar ruta"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+
+              <div className="min-h-[60px] rounded-xl bg-[#0A0F20] border border-white/10 p-2 flex flex-wrap gap-1.5 content-start">
+                {program.length === 0 ? (
+                  <span className="text-[11px] font-bold text-slate-400">
+                    Pulsa las flechas abajo para crear el camino
+                  </span>
+                ) : (
+                  program.map((step, i) => (
+                    <span
+                      key={i}
+                      className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-cyan-200 flex items-center justify-center"
+                    >
+                      {renderDirArrow(step)}
+                    </span>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Arrow Controls */}
+            <div className="grid grid-cols-3 gap-1.5 max-w-[190px] mx-auto w-full">
+              <div />
+              <button
+                type="button"
+                data-tv-focusable="true"
+                disabled={isRunningLogic || program.length >= 10}
+                onClick={() => setProgram((p) => [...p, 'up'])}
+                className="h-11 rounded-xl bg-[#1C285B] hover:bg-[#283982] border-b-4 border-[#0E1535] text-white flex items-center justify-center cursor-pointer disabled:opacity-40"
+                aria-label="Arriba"
+              >
+                <ArrowUp className="w-5 h-5" />
+              </button>
+              <div />
+              <button
+                type="button"
+                data-tv-focusable="true"
+                disabled={isRunningLogic || program.length >= 10}
+                onClick={() => setProgram((p) => [...p, 'left'])}
+                className="h-11 rounded-xl bg-[#1C285B] hover:bg-[#283982] border-b-4 border-[#0E1535] text-white flex items-center justify-center cursor-pointer disabled:opacity-40"
+                aria-label="Izquierda"
+              >
+                <ArrowLeft className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                data-tv-focusable="true"
+                disabled={isRunningLogic || program.length >= 10}
+                onClick={() => setProgram((p) => [...p, 'down'])}
+                className="h-11 rounded-xl bg-[#1C285B] hover:bg-[#283982] border-b-4 border-[#0E1535] text-white flex items-center justify-center cursor-pointer disabled:opacity-40"
+                aria-label="Abajo"
+              >
+                <ArrowDown className="w-5 h-5" />
+              </button>
+              <button
+                type="button"
+                data-tv-focusable="true"
+                disabled={isRunningLogic || program.length >= 10}
+                onClick={() => setProgram((p) => [...p, 'right'])}
+                className="h-11 rounded-xl bg-[#1C285B] hover:bg-[#283982] border-b-4 border-[#0E1535] text-white flex items-center justify-center cursor-pointer disabled:opacity-40"
+                aria-label="Derecha"
+              >
+                <ArrowRight className="w-5 h-5" />
+              </button>
+            </div>
+
+            {logicStatus === 'won' && (
+              <div className="text-center text-xs font-black text-emerald-300">
+                Ruta completada. +{collectedBonus ? 5 : 4} estrellas
+              </div>
+            )}
+            {logicStatus === 'bumped' && (
+              <div className="text-center text-xs font-black text-rose-300">
+                Obstáculo en el camino. Ajusta un paso
+              </div>
+            )}
+            {logicStatus === 'short' && (
+              <div className="text-center text-xs font-black text-amber-300">
+                Faltaron pasos hasta el cofre
+              </div>
+            )}
+
+            <KidsSquishButton
+              onClick={logicStatus === 'won' ? newLogicPuzzle : runLogicProgram}
+              disabled={isRunningLogic || (logicStatus !== 'won' && program.length === 0)}
+              className="w-full rounded-xl bg-gradient-to-b from-cyan-300 to-cyan-500 border-b-4 border-cyan-700 text-slate-950 font-black text-sm flex items-center justify-center gap-1.5 disabled:opacity-45"
+            >
+              <Play className="w-4 h-4 fill-current" />
+              <span>{logicStatus === 'won' ? 'Siguiente Mapa' : 'Ejecutar Ruta'}</span>
+            </KidsSquishButton>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};

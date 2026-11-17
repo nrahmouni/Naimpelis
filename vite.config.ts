@@ -57,6 +57,22 @@ export default defineConfig(() => {
               purpose: 'maskable',
             },
           ],
+          shortcuts: [
+            {
+              name: 'Riffan Kids',
+              short_name: 'Kids',
+              description: 'Academia infantil Riffan Kids con Tarifit, cine y juegos',
+              url: '/?tab=kids',
+              icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+            },
+            {
+              name: 'Riffan TV Directos',
+              short_name: 'TV',
+              description: 'Emisión y canales de TV',
+              url: '/tv',
+              icons: [{ src: '/pwa-192x192.png', sizes: '192x192' }],
+            },
+          ],
         },
         workbox: {
           cacheId: 'riffantv-studio-v1',
@@ -76,6 +92,20 @@ export default defineConfig(() => {
             /\.apk(\?|$)/i,
           ],
           runtimeCaching: [
+            {
+              urlPattern: /^\/api\/kids\/catalog(\?.*)?$/i,
+              handler: 'StaleWhileRevalidate',
+              options: {
+                cacheName: 'kids-catalog-cache',
+                expiration: {
+                  maxEntries: 30,
+                  maxAgeSeconds: 60 * 60 * 24 * 7,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
+            },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
               handler: 'CacheFirst',

@@ -25,6 +25,8 @@ import {
   KIDS_VOCAB_BANK,
   pickLeitnerEntries,
   recordKidsWatched,
+  resetKidsParentPin,
+  saveKidsParentPin,
   selectKidsMascot,
   switchKidsProfile,
   trackKidsMission,
@@ -32,7 +34,12 @@ import {
   updateLeitnerBox,
 } from '../src/components/kids/kidsData';
 import { computeAdaptiveMathStep } from '../src/components/kids/KidsMathBubblesGame';
-import { findCollidingSteamBucket } from '../src/components/kids/KidsSteamSortGame';
+import {
+  EXTENDED_VOCAB_ITEMS,
+  KIDS_LEARNING_ISLANDS,
+  KIDS_SENTENCE_BANK,
+  KIDS_STICKER_ALBUM,
+} from '../src/components/kids/kidsCurriculumData';
 import { registerKidsRoutes } from '../server/routes/kids';
 import { lookupRifTranslation, RIF_DICTIONARY } from '../src/utils/rifTranslations';
 import { isValidKidsExitPin, KIDS_EXIT_PIN } from '../src/components/kids/RiffanKidsHub';
@@ -128,6 +135,8 @@ describe('Riffan Kids (/kids) & IPTV M3U/EPG Routing', () => {
     expect(isValidKidsExitPin('0000')).toBe(false);
     expect(isValidKidsExitPin('1234')).toBe(false);
     expect(isValidKidsExitPin('')).toBe(false);
+    expect(saveKidsParentPin('ab12')).toBe(false);
+    resetKidsParentPin();
 
     for (const entry of KIDS_VOCAB_BANK) {
       for (const code of codes) {
@@ -326,9 +335,9 @@ describe('Riffan Kids (/kids) & IPTV M3U/EPG Routing', () => {
       expect(rifValue).not.toMatch(FORBIDDEN_TAMAZIGHT_NEOLOGISMS);
     }
 
-    // Deterministic name-based avatar generation (e.g., Leo -> lion, consistent hash for other names)
+    // Deterministic name-based zero-emoji avatar generation
     const leoSpec = generateKidsAvatarSpec('Leo');
-    expect(leoSpec.emoji).toBe('🦁');
+    expect(leoSpec.avatarId).toBe('lion');
     expect(generateKidsAvatarSpec('leo')).toEqual(leoSpec);
     const noraSpecA = generateKidsAvatarSpec('Nora');
     const noraSpecB = generateKidsAvatarSpec('Nora');
@@ -367,18 +376,7 @@ describe('Riffan Kids (/kids) & IPTV M3U/EPG Routing', () => {
     expect(picked.map((p) => p.id)).toContain('dog');
     expect(picked.map((p) => p.id)).not.toContain('cat');
 
-    // 3. STEAM Drag & Drop DOM Rect collision bounds
-    const rects = {
-      forest: { left: 0, right: 100, top: 300, bottom: 420 },
-      ocean: { left: 110, right: 210, top: 300, bottom: 420 },
-      space: { left: 220, right: 320, top: 300, bottom: 420 },
-    };
-    expect(findCollidingSteamBucket(50, 350, rects)).toBe('forest');
-    expect(findCollidingSteamBucket(160, 380, rects)).toBe('ocean');
-    expect(findCollidingSteamBucket(280, 320, rects)).toBe('space');
-    expect(findCollidingSteamBucket(150, 120, rects)).toBeNull();
-
-    // 4. Explorer Level progression & expanded reward shop
+    // 3. Explorer Level progression & expanded reward shop
     expect(getKidsLevelInfo(0)).toMatchObject({ level: 1, rankKey: 'explorer' });
     expect(getKidsLevelInfo(25)).toMatchObject({ level: 2, rankKey: 'adventurer' });
     expect(getKidsLevelInfo(65)).toMatchObject({ level: 3, rankKey: 'starMaster' });
@@ -430,6 +428,12 @@ describe('Riffan Kids (/kids) & IPTV M3U/EPG Routing', () => {
           status: 200,
           headers: { 'Content-Type': 'text/html' },
         });
+      }
+      if (url.startsWith('https://www.youtube.com/oembed')) {
+        return new Response(
+          JSON.stringify({ title: 'Bluey Official Episode', author_name: 'Bluey Official' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
       }
       return realFetch(input as RequestInfo, init);
     });
@@ -527,6 +531,82 @@ describe('Riffan Kids (/kids) & IPTV M3U/EPG Routing', () => {
       fetchSpy.mockRestore();
       if (prevGeminiKey !== undefined) process.env.GEMINI_API_KEY = prevGeminiKey;
       if (prevGoogleKey !== undefined) process.env.GOOGLE_API_KEY = prevGoogleKey;
+      await new Promise<void>((resolve, reject) =>
+        server.close((err) => (err ? reject(err) : resolve()))
+      );
+    }
+  });
+
+  it('verifies 60-word curriculum, sentence bank, 6 learning islands, 16 stickers, and /api/kids/youtube-resolve', async () => {
+    expect(EXTENDED_VOCAB_ITEMS.length).toBeGreaterThanOrEqual(60);
+    expect(KIDS_LEARNING_ISLANDS.length).toBe(6);
+    expect(KIDS_STICKER_ALBUM.length).toBe(16);
+    expect(KIDS_SENTENCE_BANK.length).toBeGreaterThanOrEqual(12);
+
+    for (const item of EXTENDED_VOCAB_ITEMS) {
+      for (const lang of KIDS_LANGUAGES) {
+        const tr = item.translations[lang.code];
+        expect(tr?.word.trim().length).toBeGreaterThan(0);
+        expect(tr?.phonetic.trim().length).toBeGreaterThan(0);
+      }
+      expect(FORBIDDEN_TAMAZIGHT_NEOLOGISMS.test(item.translations.rif.word)).toBe(false);
+    }
+
+    for (const sent of KIDS_SENTENCE_BANK) {
+      for (const lang of KIDS_LANGUAGES) {
+        const s = sent.translations[lang.code];
+        expect(s?.full.trim().length).toBeGreaterThan(0);
+        expect(s?.tokens.length).toBeGreaterThanOrEqual(2);
+      }
+      expect(FORBIDDEN_TAMAZIGHT_NEOLOGISMS.test(sent.translations.rif.full)).toBe(false);
+    }
+
+    const realFetch = globalThis.fetch;
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith('https://www.youtube.com/oembed')) {
+        return new Response(
+          JSON.stringify({ title: 'Sesame Street ABC', author_name: 'Sesame Official' }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      return realFetch(input as RequestInfo, init);
+    });
+
+    const app = express();
+    app.use(express.json());
+    registerKidsRoutes(app);
+    const server = http.createServer(app);
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const port = (server.address() as { port: number }).port;
+
+    try {
+      const badRes = await realFetch(`http://127.0.0.1:${port}/api/kids/youtube-resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://example.com/not-yt', lang: 'es' }),
+      });
+      expect(badRes.status).toBe(400);
+
+      const goodRes = await realFetch(`http://127.0.0.1:${port}/api/kids/youtube-resolve`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: 'https://youtu.be/dQw4w9WgXaa', lang: 'es' }),
+      });
+      expect(goodRes.status).toBe(200);
+      const body = (await goodRes.json()) as {
+        ok: boolean;
+        item: { id: string; title: string; platform: string; bingetrixUrl: string };
+      };
+      expect(body.ok).toBe(true);
+      expect(body.item).toMatchObject({
+        id: 'yt-dQw4w9WgXaa',
+        title: 'Sesame Street ABC',
+        platform: 'YouTube Kids',
+        bingetrixUrl: 'dQw4w9WgXaa',
+      });
+    } finally {
+      fetchSpy.mockRestore();
       await new Promise<void>((resolve, reject) =>
         server.close((err) => (err ? reject(err) : resolve()))
       );

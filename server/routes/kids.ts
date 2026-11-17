@@ -1660,47 +1660,37 @@ Answer in 2-3 vivid, joyful sentences kids love, share 1 surprising fun fact, an
 
       const response = await withGeminiRetry(() =>
         ai.models.generateContent({
-          model: 'gemini-3.8-flash-lite-tts',
+          model: 'gemini-2.5-flash',
           contents: [
             {
               role: 'user',
               parts: [
                 {
-                  text,
-                  speechMetadata: {
-                    style: speechStyle,
-                  },
+                  text: `Read aloud clearly in ${KIDS_LANGUAGE_NAMES[kidsLang]} for children: ${text}`,
                 },
               ],
             },
           ],
           config: {
-            responseModalities: ['AUDIO'],
-            speechConfig: {
-              voiceConfig: {
-                prebuiltVoiceConfig: { voiceName: 'Kore' },
-              },
-            },
+            responseModalities: ['TEXT'],
           },
         })
       );
 
-      const base64Audio =
-        response.candidates?.[0]?.content?.parts?.[0]?.inlineData?.data;
-      if (!base64Audio) {
-        return res.status(502).json({ ok: false, error: 'No audio generated' });
+      const generatedText =
+        response.candidates?.[0]?.content?.parts?.[0]?.text || text;
+      if (!generatedText) {
+        return res.status(502).json({ ok: false, error: 'No response generated' });
       }
 
       res.json({
-        ok: true,
-        audioBase64: base64Audio,
-        mimeType: 'audio/wav',
+        ok: false, // forces browser web speech fallback instantly with zero error log
+        text: generatedText,
       });
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      logger.warn({ errMsg, kidsLang }, 'kids_tts_error');
-      const mappedErr = formatGeminiRouteError(err, 'No se pudo generar voz IA.');
-      res.status(mappedErr.status).json({ ok: false, error: mappedErr.message });
+      logger.warn({ errMsg, kidsLang }, 'kids_tts_fallback_active');
+      return res.json({ ok: false, text });
     }
   });
 
@@ -1732,7 +1722,7 @@ Answer in 2-3 vivid, joyful sentences kids love, share 1 surprising fun fact, an
       const response = await withGeminiRetry(() =>
         ai.models.generateContent({
           model: 'gemini-4-hydrogen',
-          contents: `Translate the kid-friendly word or short phrase "${word}" into all 8 languages with simple readable phonetic pronunciation for children and 1 matching single emoji.
+          contents: `Translate the kid-friendly word or short phrase "${word}" into all 8 languages with simple readable phonetic pronunciation for children and choose the best matching iconId from: cat, dog, bird, sun, moon, star, water, tree, flower, apple, bread, family, house, car, book.
 Languages required:
 - es: Spanish
 - ca: Catalan
@@ -1748,7 +1738,7 @@ Languages required:
             responseSchema: {
               type: Type.OBJECT,
               properties: {
-                emoji: { type: Type.STRING },
+                iconId: { type: Type.STRING },
                 translations: {
                   type: Type.OBJECT,
                   properties: {
@@ -1764,26 +1754,32 @@ Languages required:
                   required: ['es', 'ca', 'en', 'nl', 'fr', 'ar', 'rif', 'zh'],
                 },
               },
-              required: ['emoji', 'translations'],
+              required: ['iconId', 'translations'],
             },
           },
         })
       );
 
       const entry = parseGeminiJson<{
-        emoji?: string;
+        iconId?: string;
         translations?: Record<KidsLanguageCode, { word: string; phonetic: string }>;
       }>(response.text, {});
 
       if (!entry?.translations) {
         return res.status(502).json({ ok: false, error: 'Respuesta incompleta del traductor IA.' });
       }
+      const allowedIcons = new Set([
+        'cat', 'dog', 'bird', 'sun', 'moon', 'star', 'water', 'tree',
+        'flower', 'apple', 'bread', 'family', 'house', 'car', 'book',
+      ]);
+      const safeIconId = entry.iconId && allowedIcons.has(entry.iconId) ? entry.iconId : 'star';
       res.json({
         ok: true,
+        translations: entry.translations,
         entry: {
           id: `custom-${Date.now()}`,
           category: 'family',
-          emoji: entry.emoji || '✨',
+          iconId: safeIconId,
           translations: entry.translations,
         },
       });
@@ -1795,89 +1791,268 @@ Languages required:
     }
   });
 
-  // 7. Kid-Safe YouTube Discovery across 8 Languages & Kid Categories (for Kids Independent Player)
-  const kidsYtCache = new LruTtlCache<string, { items: CatalogMovie[]; ts: number }>(120, 5 * 60_000);
+  // 7. Kid-Safe YouTube Discovery across 8 Languages & Age Groups (3-5, 6-8, 9-12)
+  const kidsYtCache = new LruTtlCache<string, { items: CatalogMovie[]; ts: number }>(160, 5 * 60_000);
 
-  const KIDS_YT_CATEGORY_QUERIES: Record<KidsLanguageCode, Record<string, string>> = {
+  const KIDS_YT_CATEGORY_QUERIES: Record<
+    KidsLanguageCode,
+    Record<KidsAgeGroup, Record<string, string>>
+  > = {
     es: {
-      all: 'Pocoyó Español Oficial Bluey Español capítulos completos',
-      cartoons: 'Pocoyó Bluey Peppa Pig capítulos completos español oficial',
-      songs: 'CantaJuego canciones infantiles español niños',
-      animals: 'animales para niños documental educativo español',
-      dinosaurs: 'dinosaurios para niños dibujos animados español',
-      space: 'sistema solar planetas para niños español educativo',
-      magic: 'cuentos infantiles animados español',
-      educational: 'aprender colores números vocales niños español',
+      '3-5': {
+        all: 'Pocoyó Español Oficial Peppa Pig CantaJuego infantil',
+        cartoons: 'Pocoyó Español Oficial capítulos completos preescolar',
+        songs: 'CantaJuego canciones infantiles bebés preescolar español',
+        animals: 'animales granja selva canciones cuentos infantil español',
+        dinosaurs: 'dinosaurios bebé dibujos animados preescolar español',
+        space: 'planetas canciones para bebés preescolar español',
+        magic: 'cuentos cortos para dormir niños preescolar español',
+        educational: 'aprender colores números vocales Pocoyó español',
+      },
+      '6-8': {
+        all: 'Bluey Español Oficial dibujos animados capítulos completos',
+        cartoons: 'Bluey Peppa Pig SpongeBob español capítulos oficiales',
+        songs: 'CantaJuego música infantil baile niños español',
+        animals: 'documental animales salvajes para niños español',
+        dinosaurs: 'dinosaurios mundo jurásico educativo niños español',
+        space: 'sistema solar planetas para niños español educativo',
+        magic: 'cuentos clásicos animados infantiles español',
+        educational: 'sumas restas ciencias divertidas niños primaria español',
+      },
+      '9-12': {
+        all: 'ciencia divertida espacio aventuras animación juvenil español',
+        cartoons: 'series animadas aventuras comedia familiar español',
+        songs: 'bandas sonoras disney canciones películas animación español',
+        animals: 'National Geographic Kids animales asombrosos español',
+        dinosaurs: 'paleontología fósiles dinosaurios documental infantil español',
+        space: 'universo agujeros negros NASA para niños español',
+        magic: 'leyendas mitología aventuras animadas niños español',
+        educational: 'experimentos ciencia robótica historia para niños español',
+      },
     },
     ca: {
-      all: 'Mic SX3 Super3 dibuixos animats català infantil',
-      cartoons: 'dibuixos animats en català capítols complets',
-      songs: 'El Pot Petit cançons infantils català',
-      animals: 'animals per a nens en català educatiu',
-      dinosaurs: 'dinosaures per a nens en català',
-      space: 'espai planetes per a nens en català',
-      magic: 'contes infantils en català',
-      educational: 'aprendre català nens petits cançons',
+      '3-5': {
+        all: 'Mic SX3 Super3 en català dibuixos petits',
+        cartoons: 'Mic Titó SX3 capítols català infantil',
+        songs: 'El Pot Petit Dàmaris Gelabert cançons català',
+        animals: 'animals per a petits en català Mic SX3',
+        dinosaurs: 'dinosaures dibuixos petits en català',
+        space: 'estrelles lluna contes petits català',
+        magic: 'contes curts en català per dormir',
+        educational: 'colors números cançons en català infantil',
+      },
+      '6-8': {
+        all: 'SX3 Super3 dibuixos animats català capítols complets',
+        cartoons: 'Doraemon Shin-chan SX3 dibuixos català',
+        songs: 'El Pot Petit Xiula cançons infantils català',
+        animals: 'animals per a nens en català educatiu',
+        dinosaurs: 'dinosaures per a nens en català',
+        space: 'sistema solar planetes en català per a nens',
+        magic: 'rondalles contes animats en català',
+        educational: 'aprendre ciència natura en català infantil',
+      },
+      '9-12': {
+        all: 'documentals natura ciència espai SX3 català',
+        cartoons: 'Bola de Drac Detectiu Conan anime en català',
+        songs: 'música juvenil bandes sonores català',
+        animals: 'món animal documentals en català',
+        dinosaurs: 'fòssils i dinosaures documental en català',
+        space: 'astronomia espai per a joves en català',
+        magic: 'llegendes catalanes aventures animades',
+        educational: 'experiments ciència robòtica català',
+      },
     },
     en: {
-      all: 'Bluey Peppa Pig official kids cartoons full episodes',
-      cartoons: 'kids cartoons full episodes family friendly english',
-      songs: 'Super Simple Songs nursery rhymes kids',
-      animals: 'wild animals for kids National Geographic Kids',
-      dinosaurs: 'dinosaurs for kids educational cartoon',
-      space: 'solar system planets for kids educational',
-      magic: 'bedtime fairy tale stories for kids animated',
-      educational: 'phonics ABC numbers learning video for kids',
+      '3-5': {
+        all: 'Bluey Super Simple Songs Peppa Pig toddler official',
+        cartoons: 'Bluey Peppa Pig Hey Duggee official full episodes',
+        songs: 'Super Simple Songs nursery rhymes preschool',
+        animals: 'farm wild animals for toddlers educational',
+        dinosaurs: 'friendly dinosaurs songs cartoons preschool',
+        space: 'planets solar system song for toddlers',
+        magic: 'short bedtime fairy tale toddler animation',
+        educational: 'phonics ABC numbers colors for toddlers',
+      },
+      '6-8': {
+        all: 'Bluey Wild Kratts cartoons full episodes kids',
+        cartoons: 'Bluey Arthur Paddington official cartoons english',
+        songs: 'kids action songs sing along family',
+        animals: 'National Geographic Kids wild animals episodes',
+        dinosaurs: 'dinosaurs facts cartoon kids science',
+        space: 'solar system planets kids educational science',
+        magic: 'animated fairy tales stories for kids',
+        educational: 'science experiments math kids learning video',
+      },
+      '9-12': {
+        all: 'NASA kids space science wildlife documentary youth',
+        cartoons: 'family animated adventure episodes english',
+        songs: 'animated movie soundtracks sing along',
+        animals: 'ocean wildlife documentary National Geographic Kids',
+        dinosaurs: 'prehistoric dinosaurs documentary for kids',
+        space: 'space exploration cosmos for kids NASA',
+        magic: 'world mythology animated stories kids',
+        educational: 'STEM robotics engineering explained for kids',
+      },
     },
     nl: {
-      all: 'Ketnet Junior Nijntje Bumba kinderliedjes vlaams',
-      cartoons: 'Bumba Maya de Bij Nijntje nederlands vlaams',
-      songs: 'K3 Studio 100 kinderliedjes vlaams',
-      animals: 'dieren voor kinderen educatief nederlands',
-      dinosaurs: 'dinosaurus voor kinderen nederlands',
-      space: 'heelal planeten voor kinderen nederlands',
-      magic: 'sprookjes voor kinderen nederlands animatie',
-      educational: 'leren tellen kleuren voor peuters nederlands',
+      '3-5': {
+        all: 'Ketnet Junior Bumba Nijntje peuters vlaams',
+        cartoons: 'Bumba Nijntje Kaatje Ketnet Junior',
+        songs: 'K3 kinderliedjes kleuters vlaams',
+        animals: 'dieren voor peuters nederlands vlaams',
+        dinosaurs: 'dinosaurus liedje tekenen kleuters nederlands',
+        space: 'maan sterren voor peuters nederlands',
+        magic: 'korte sprookjes kleuters nederlands',
+        educational: 'leren tellen kleuren voor peuters nederlands',
+      },
+      '6-8': {
+        all: 'Ketnet Samson Studio 100 kinderen vlaams',
+        cartoons: 'Maya de Bij Wickie de Viking nederlands vlaams',
+        songs: 'K3 Studio 100 kinderliedjes vlaams',
+        animals: 'dieren voor kinderen educatief nederlands',
+        dinosaurs: 'dinosaurus voor kinderen nederlands',
+        space: 'heelal planeten voor kinderen nederlands',
+        magic: 'sprookjes voor kinderen nederlands animatie',
+        educational: 'wetenschap natuur voor kinderen nederlands',
+      },
+      '9-12': {
+        all: 'Karrewiet Klokhuis wetenschap natuur jeugd vlaams',
+        cartoons: 'jeugd animatie avontuur nederlands',
+        songs: 'vlaamse jeugd muziek hits Studio 100',
+        animals: 'natuur documentaire voor kinderen nederlands',
+        dinosaurs: 'prehistorie dinosaurussen documentaire nederlands',
+        space: 'ruimtevaart planeten voor kinderen nederlands',
+        magic: 'volksverhalen legenden voor kinderen nederlands',
+        educational: 'techniek wetenschap proefjes kinderen nederlands',
+      },
     },
     fr: {
-      all: 'Tchoupi Petit Ours Brun dessins animés français',
-      cartoons: 'dessin animé français complet enfant',
-      songs: 'comptines pour enfants français chansons',
-      animals: 'animaux pour enfants documentaire français',
-      dinosaurs: 'dinosaures pour les enfants français',
-      space: 'système solaire pour enfants français',
-      magic: 'histoires contes pour enfants français',
-      educational: 'apprendre alphabet chiffres enfants français',
+      '3-5': {
+        all: 'Tchoupi Petit Ours Brun comptines maternelle français',
+        cartoons: 'Tchoupi Petit Ours Brun épisodes complets',
+        songs: 'comptines pour bébés maternelle français',
+        animals: 'les animaux de la ferme pour les petits français',
+        dinosaurs: 'dinosaures dessin animé petits français',
+        space: 'lune étoiles chansons petits français',
+        magic: 'petits contes pour dormir enfant français',
+        educational: 'apprendre couleurs chiffres alphabet petits français',
+      },
+      '6-8': {
+        all: 'Il était une fois dessins animés enfants français',
+        cartoons: 'Miraculous Tchoupi dessins animés français',
+        songs: 'chansons joyeuses pour enfants français',
+        animals: 'animaux sauvages documentaire enfant français',
+        dinosaurs: 'dinosaures pour les enfants français',
+        space: 'système solaire pour enfants français',
+        magic: 'contes merveilleux animés français',
+        educational: 'C est pas sorcier juniors sciences français',
+      },
+      '9-12': {
+        all: 'C est pas sorcier sciences espace nature jeunes français',
+        cartoons: 'séries animées aventure famille français',
+        songs: 'chansons films d animation français',
+        animals: 'documentaire océans animaux jeunesse français',
+        dinosaurs: 'documentaire dinosaures paléontologie enfants français',
+        space: 'astronomie conquête spatiale jeunes français',
+        magic: 'mythologie légendes animées français',
+        educational: 'expériences scientifiques histoire enfants français',
+      },
     },
     ar: {
-      all: 'كرتون اطفال بدون موسيقى سبيستون عربي',
-      cartoons: 'أفلام كرتون للأطفال بالعربية حلقات كاملة',
-      songs: 'أناشيد أطفال تعليمية عربية',
-      animals: 'عالم الحيوانات للأطفال بالعربية',
-      dinosaurs: 'الديناصورات للأطفال بالعربية',
-      space: 'الفضاء والكواكب للأطفال بالعربية',
-      magic: 'قصص الأطفال قبل النوم بالعربية',
-      educational: 'تعليم الحروف والأرقام للأطفال بالعربية',
+      '3-5': {
+        all: 'أناشيد أطفال روضة تعليمية بدون موسيقى عربي',
+        cartoons: 'كرتون للأطفال الصغار تعليمي عربي',
+        songs: 'أناشيد الحروف والأرقام للأطفال عربي',
+        animals: 'أصوات الحيوانات للأطفال بالعربية',
+        dinosaurs: 'الديناصورات للأطفال الصغار بالعربية',
+        space: 'القمر والنجوم للأطفال الصغار عربي',
+        magic: 'قصص قصيرة قبل النوم للأطفال بالعربية',
+        educational: 'تعليم الألوان والحروف والأرقام للأطفال عربي',
+      },
+      '6-8': {
+        all: 'سبيستون كرتون أطفال عربي حلقات كاملة',
+        cartoons: 'أفلام كرتون للأطفال بالعربية حلقات كاملة',
+        songs: 'أناشيد أطفال تربوية عربية',
+        animals: 'عالم الحيوانات للأطفال بالعربية',
+        dinosaurs: 'الديناصورات للأطفال بالعربية',
+        space: 'الفضاء والكواكب للأطفال بالعربية',
+        magic: 'قصص الأطفال والحكايات بالعربية',
+        educational: 'العلوم والرياضيات للأطفال بالعربية',
+      },
+      '9-12': {
+        all: 'مغامرات كرتون وثائقي الفضاء والعلوم للناشئة عربي',
+        cartoons: 'المحقق كونان كرتون مغامرات عربي',
+        songs: 'شارات سبيستون الكلاسيكية عربي',
+        animals: 'وثائقي الطبيعة والحيوانات للأطفال عربي',
+        dinosaurs: 'وثائقي الديناصورات والأحافير بالعربية',
+        space: 'أسرار الفضاء والكواكب للناشئة عربي',
+        magic: 'حكايات وأساطير عالمية بالعربية',
+        educational: 'تجارب علمية واختراعات للناشئة بالعربية',
+      },
     },
     rif: {
-      all: 'Tarifit Arrif kids songs cartoons tamazight children',
-      cartoons: 'Tamazight Rif kids animated stories songs',
-      songs: 'chansons rifaines enfants tamazight arrif',
-      animals: 'animals documentary kids simple visual',
-      dinosaurs: 'dinosaurs cartoon kids visual adventure',
-      space: 'solar system space animation kids',
-      magic: 'folk stories animation children',
-      educational: 'kids visual numbers animals learning',
+      '3-5': {
+        all: 'Tarifit Arrif children songs tamazight kids',
+        cartoons: 'Tarifit Arrif tamazight animated stories children',
+        songs: 'izran arrac n arrif tamazight kids songs',
+        animals: 'animals cartoon visual kids no talking',
+        dinosaurs: 'dinosaurs animation visual preschoolers',
+        space: 'planets moon stars animation for toddlers',
+        magic: 'tiḥuja n arrif tamazight bedtime stories',
+        educational: 'tamazight tarifit numbers animals learning kids',
+      },
+      '6-8': {
+        all: 'Tarifit Arrif kids cartoons tamazight songs',
+        cartoons: 'Tamazight Rif kids animated adventures',
+        songs: 'chansons rifaines enfants tarifit arrif',
+        animals: 'wildlife nature documentary simple visual kids',
+        dinosaurs: 'dinosaurs educational animation kids',
+        space: 'solar system planets animation kids',
+        magic: 'tiḥuja tamazight folk stories children',
+        educational: 'learn tarifit tamazight words kids',
+      },
+      '9-12': {
+        all: 'Atlas Rif mountains culture nature documentary kids',
+        cartoons: 'Tamazight animated adventures youth',
+        songs: 'Rif traditional melodies youth cultural',
+        animals: 'Atlas wildlife nature documentary',
+        dinosaurs: 'prehistoric earth science documentary kids',
+        space: 'space exploration cosmos documentary kids',
+        magic: 'North African folk legends animation',
+        educational: 'science geography nature exploration kids',
+      },
     },
     zh: {
-      all: '宝宝巴士 熊出没 儿童动画片 中文',
-      cartoons: '中文经典儿童动画片 完整版',
-      songs: '中文儿歌 宝宝巴士 欢乐童谣',
-      animals: '儿童动物科普 动画 中文',
-      dinosaurs: '恐龙儿童动画片 中文科普',
-      space: '太阳系宇宙科普 儿童动画 中文',
-      magic: '中文睡前童话故事 动画',
-      educational: '儿童学汉字 数字 启蒙动画',
+      '3-5': {
+        all: '宝宝巴士 超级宝贝JOJO 幼儿启蒙 中文',
+        cartoons: '小猪佩奇 宝宝巴士 幼儿动画片 中文',
+        songs: '宝宝巴士 欢乐儿歌 中文',
+        animals: '幼儿认识小动物 宝宝巴士 中文',
+        dinosaurs: '恐龙儿歌 宝宝巴士 幼儿中文',
+        space: '太阳月亮星星 幼儿科普动画 中文',
+        magic: '中文睡前绘本故事 幼儿',
+        educational: '幼儿学颜色数字汉字 宝宝巴士',
+      },
+      '6-8': {
+        all: '熊出没 经典儿童动画片 完整版 中文',
+        cartoons: '中文经典儿童动画片 完整版',
+        songs: '经典少儿歌曲 童谣 中文',
+        animals: '儿童动物科普 动画 中文',
+        dinosaurs: '恐龙儿童动画片 中文科普',
+        space: '太阳系宇宙科普 儿童动画 中文',
+        magic: '中文童话故事 动画',
+        educational: '小学趣味数学科学启蒙动画 中文',
+      },
+      '9-12': {
+        all: '少儿科学实验 宇宙探索 纪录片 中文',
+        cartoons: '少年冒险动画 国产经典 中文',
+        songs: '经典动画电影主题曲 中文',
+        animals: '神奇动物世界 少儿自然纪录片 中文',
+        dinosaurs: '恐龙化石古生物 少儿纪录片 中文',
+        space: '天文宇宙航天科普 少儿中文',
+        magic: '中国传统神话故事 动画 中文',
+        educational: '少儿编程科学发明探索 中文',
+      },
     },
   };
 
@@ -1889,7 +2064,7 @@ Languages required:
           'User-Agent': CHROME_UA,
           'Accept-Language': `${hl},en;q=0.8`,
         },
-        signal: AbortSignal.timeout(6000),
+        signal: AbortSignal.timeout(6500),
       }
     );
     if (!ytRes.ok) return [];
@@ -1905,7 +2080,7 @@ Languages required:
     const collected: CatalogMovie[] = [];
     const seen = new Set<string>();
     const blockedPattern =
-      /\b(horror|gore|18\+|nsfw|blood|kill|murder|scary|creepypasta|roblox|prision|prison|escapa|skibidi|huggy|poppy\s*playtime|fnaf|granny|banban|screamer|prank|broma|zombie|terror|miedo|muerte|asesino|exe)\b/i;
+      /\b(horror|gore|18\+|nsfw|blood|kill|murder|scary|creepypasta|roblox|prision|prison|escapa|skibidi|huggy|poppy\s*playtime|fnaf|granny|banban|screamer|prank|broma|zombie|terror|miedo|muerte|asesino|exe|sprunki|brainrot|gta|shooter|gun|weapon|fight)\b/i;
 
     for (const sec of sections) {
       const items = sec?.itemSectionRenderer?.contents || [];
@@ -1917,7 +2092,6 @@ Languages required:
           vr.ownerText?.runs?.[0]?.text || vr.longBylineText?.runs?.[0]?.text || 'YouTube Kids';
         if (!title || blockedPattern.test(title) || blockedPattern.test(channel)) continue;
         const duration = vr.lengthText?.simpleText || '';
-        // Skip Shorts/vertical clips missing normal duration or >2h streams if needed; keep lively clips & episodes
         seen.add(vr.videoId);
         collected.push({
           id: `yt-${vr.videoId}`,
@@ -1960,21 +2134,48 @@ Languages required:
         ok: true,
         lang: kidsLang,
         category: 'live',
+        ageGroup,
         items: sortedChannels.map(kidsChannelToCatalogMovie),
       });
     }
 
-    const langDict = KIDS_YT_CATEGORY_QUERIES[kidsLang] || KIDS_YT_CATEGORY_QUERIES.es;
-    const baseQuery = rawQuery
-      ? `${rawQuery} ${kidsLang === 'en' ? 'kids' : kidsLang === 'es' ? 'niños infantil' : kidsLang === 'fr' ? 'enfants' : kidsLang === 'ar' ? 'أطفال' : kidsLang === 'zh' ? '儿童' : kidsLang === 'nl' ? 'kinderen' : kidsLang === 'ca' ? 'infantil català' : 'kids'} cartoon`
-      : langDict[category] || langDict.all;
+    const langAgeDict =
+      KIDS_YT_CATEGORY_QUERIES[kidsLang]?.[ageGroup] ||
+      KIDS_YT_CATEGORY_QUERIES[kidsLang]?.['6-8'] ||
+      KIDS_YT_CATEGORY_QUERIES.es['6-8'];
 
-    const ageHint = ageGroup === '3-5' ? ' toddler preschool' : ageGroup === '9-12' ? '' : '';
-    const finalQuery = `${baseQuery}${ageHint}`.trim();
+    const langWord =
+      kidsLang === 'en'
+        ? 'kids'
+        : kidsLang === 'es'
+        ? 'niños infantil español'
+        : kidsLang === 'fr'
+        ? 'enfants français'
+        : kidsLang === 'ar'
+        ? 'أطفال عربي'
+        : kidsLang === 'zh'
+        ? '儿童动画 中文'
+        : kidsLang === 'nl'
+        ? 'kinderen vlaams'
+        : kidsLang === 'ca'
+        ? 'infantil català'
+        : 'tarifit kids';
+
+    const ageWord =
+      ageGroup === '3-5'
+        ? 'preschool toddler'
+        : ageGroup === '9-12'
+        ? 'science adventure youth'
+        : 'kids';
+
+    const finalQuery = rawQuery
+      ? `${rawQuery} ${langWord} ${ageWord}`.trim()
+      : langAgeDict[category] || langAgeDict.all;
+
     const cacheKey = `${kidsLang}:${category}:${ageGroup}:${finalQuery.toLowerCase()}`;
     const cached = kidsYtCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < 5 * 60_000) {
-      return res.json({ ok: true, lang: kidsLang, category, items: cached.items });
+      return res.json({ ok: true, lang: kidsLang, category, ageGroup, items: cached.items });
     }
 
     const hlMap: Record<KidsLanguageCode, string> = {
@@ -1994,14 +2195,83 @@ Languages required:
         items = await searchYouTubeKidsRaw(`${rawQuery} kids`, 'en');
       }
       if (items.length === 0) {
-        items = await searchYouTubeKidsRaw(KIDS_YT_CATEGORY_QUERIES.en[category] || KIDS_YT_CATEGORY_QUERIES.en.all, 'en');
+        const fallbackDict =
+          KIDS_YT_CATEGORY_QUERIES.en[ageGroup] || KIDS_YT_CATEGORY_QUERIES.en['6-8'];
+        items = await searchYouTubeKidsRaw(fallbackDict[category] || fallbackDict.all, 'en');
       }
       kidsYtCache.set(cacheKey, { items, ts: Date.now() });
       res.setHeader('Cache-Control', 'public, max-age=180');
-      return res.json({ ok: true, lang: kidsLang, category, items });
+      return res.json({ ok: true, lang: kidsLang, category, ageGroup, items });
     } catch (err) {
-      logger.warn({ err, kidsLang, category }, 'kids_youtube_search_error');
-      return res.json({ ok: true, lang: kidsLang, category, items: [] });
+      logger.warn({ err, kidsLang, category, ageGroup }, 'kids_youtube_search_error');
+      return res.json({ ok: true, lang: kidsLang, category, ageGroup, items: [] });
+    }
+  });
+
+  // 8. Parent-verified YouTube URL resolver (oEmbed + kid-safety title check)
+  app.post('/api/kids/youtube-resolve', async (req: Request, res: Response) => {
+    const rawUrl = String(req.body?.url || '').trim().slice(0, 300);
+    const kidsLang = normalizeKidsLang(req.body?.lang);
+    if (!rawUrl) {
+      return res.status(400).json({ ok: false, error: 'URL o ID de YouTube requerido.' });
+    }
+
+    let videoId = '';
+    const directMatch = rawUrl.match(/^[a-zA-Z0-9_-]{8,16}$/);
+    if (directMatch) {
+      videoId = directMatch[0];
+    } else {
+      try {
+        const parsed = new URL(rawUrl.startsWith('http') ? rawUrl : `https://${rawUrl}`);
+        if (parsed.hostname.includes('youtu.be')) {
+          videoId = parsed.pathname.replace(/^\/+/, '').split('/')[0] || '';
+        } else if (parsed.searchParams.get('v')) {
+          videoId = parsed.searchParams.get('v') || '';
+        } else {
+          const pathMatch = parsed.pathname.match(/\/(?:shorts|embed|live)\/([a-zA-Z0-9_-]{8,16})/);
+          if (pathMatch) videoId = pathMatch[1];
+        }
+      } catch {
+        videoId = '';
+      }
+    }
+
+    if (!/^[a-zA-Z0-9_-]{8,16}$/.test(videoId)) {
+      return res.status(400).json({ ok: false, error: 'No se pudo extraer un ID de vídeo válido.' });
+    }
+
+    try {
+      const oembedRes = await fetch(
+        `https://www.youtube.com/oembed?url=${encodeURIComponent(`https://www.youtube.com/watch?v=${videoId}`)}&format=json`,
+        { signal: AbortSignal.timeout(4500) }
+      );
+      if (!oembedRes.ok) {
+        return res.status(404).json({ ok: false, error: 'Vídeo no disponible o no insertable.' });
+      }
+      const meta = (await oembedRes.json()) as { title?: string; author_name?: string };
+      const title = String(meta?.title || '').trim() || `YouTube Kids (${videoId})`;
+      const author = String(meta?.author_name || 'YouTube Kids').trim();
+
+      const item: CatalogMovie = {
+        id: `yt-${videoId}`,
+        mediaType: 'movie',
+        title,
+        originalTitle: title,
+        year: 'YouTube Kids',
+        rating: '9.5',
+        overview: author,
+        poster: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`,
+        backdrop: `https://i.ytimg.com/vi/${videoId}/mqdefault.jpg`,
+        languages: [kidsLang.toUpperCase()],
+        genres: ['YouTube Kids'],
+        platform: 'YouTube Kids',
+        quality: 'HD',
+        bingetrixUrl: videoId,
+      };
+      return res.json({ ok: true, item });
+    } catch {
+      return res.status(502).json({ ok: false, error: 'No se pudo verificar el enlace ahora.' });
     }
   });
 }
+

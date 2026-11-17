@@ -95,22 +95,24 @@ export const KIDS_LANGUAGES: KidsLanguageMeta[] = [
   },
 ];
 
+export type KidsVocabCategory = 'animals' | 'nature' | 'numbers' | 'family';
+
 export interface KidsVocabEntry {
   id: string;
-  category: 'animals' | 'nature' | 'numbers' | 'family';
-  emoji: string;
+  category: KidsVocabCategory;
+  iconId: string;
   translations: Record<KidsLanguageCode, { word: string; phonetic: string }>;
 }
 
 /**
- * Complete 8-language children's vocabulary bank:
- * Español, Català, English, Vlaams (Flamenco), Français, العربية, Tarifit (authentic Riffian), 中文
+ * Authentic 8-language vocabulary bank featuring everyday Riffian Berber (Tarifit)
+ * alongside Español, Català, English, Vlaams, Français, العربية, and 中文.
  */
 export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'cat',
     category: 'animals',
-    emoji: '🐱',
+    iconId: 'cat',
     translations: {
       es: { word: 'Gato', phonetic: 'GA-to' },
       ca: { word: 'Gat', phonetic: 'gat' },
@@ -125,7 +127,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'dog',
     category: 'animals',
-    emoji: '🐶',
+    iconId: 'dog',
     translations: {
       es: { word: 'Perro', phonetic: 'PE-rro' },
       ca: { word: 'Gos', phonetic: 'gos' },
@@ -140,7 +142,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'bird',
     category: 'animals',
-    emoji: '🐦',
+    iconId: 'bird',
     translations: {
       es: { word: 'Pájaro', phonetic: 'PÁ-ja-ro' },
       ca: { word: 'Ocell', phonetic: 'u-SELL' },
@@ -155,7 +157,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'fish',
     category: 'animals',
-    emoji: '🐠',
+    iconId: 'fish',
     translations: {
       es: { word: 'Pez', phonetic: 'pes' },
       ca: { word: 'Peix', phonetic: 'peix' },
@@ -168,9 +170,24 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
     },
   },
   {
+    id: 'lion',
+    category: 'animals',
+    iconId: 'lion',
+    translations: {
+      es: { word: 'León', phonetic: 'le-ÓN' },
+      ca: { word: 'Lleó', phonetic: 'lle-Ó' },
+      en: { word: 'Lion', phonetic: 'LAI-on' },
+      nl: { word: 'Leeuw', phonetic: 'leeu' },
+      fr: { word: 'Lion', phonetic: 'lyon' },
+      ar: { word: 'أسد (Asad)', phonetic: 'A-sad' },
+      rif: { word: 'Ayrad', phonetic: 'ay-RAD' },
+      zh: { word: '狮子 (Shīzi)', phonetic: 'shi-zi' },
+    },
+  },
+  {
     id: 'sun',
     category: 'nature',
-    emoji: '☀️',
+    iconId: 'sun',
     translations: {
       es: { word: 'Sol', phonetic: 'sol' },
       ca: { word: 'Sol', phonetic: 'sol' },
@@ -185,7 +202,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'moon',
     category: 'nature',
-    emoji: '🌙',
+    iconId: 'moon',
     translations: {
       es: { word: 'Luna', phonetic: 'LU-na' },
       ca: { word: 'Lluna', phonetic: 'LLU-na' },
@@ -200,7 +217,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'water',
     category: 'nature',
-    emoji: '💧',
+    iconId: 'water',
     translations: {
       es: { word: 'Agua', phonetic: 'A-gwa' },
       ca: { word: 'Aigua', phonetic: 'AI-gwa' },
@@ -215,7 +232,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'star',
     category: 'nature',
-    emoji: '⭐',
+    iconId: 'star',
     translations: {
       es: { word: 'Estrella', phonetic: 'es-TRE-lla' },
       ca: { word: 'Estrella', phonetic: 'es-TRE-lla' },
@@ -228,9 +245,39 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
     },
   },
   {
+    id: 'mountain',
+    category: 'nature',
+    iconId: 'mountain',
+    translations: {
+      es: { word: 'Montaña', phonetic: 'mon-TA-ña' },
+      ca: { word: 'Muntanya', phonetic: 'mun-TA-nya' },
+      en: { word: 'Mountain', phonetic: 'MAUN-tin' },
+      nl: { word: 'Berg', phonetic: 'berj' },
+      fr: { word: 'Montagne', phonetic: 'mon-TAN-ye' },
+      ar: { word: 'جبل (Jabal)', phonetic: 'JA-bal' },
+      rif: { word: 'Adrar', phonetic: 'ad-RAR' },
+      zh: { word: '山 (Shān)', phonetic: 'shan' },
+    },
+  },
+  {
+    id: 'tree',
+    category: 'nature',
+    iconId: 'tree',
+    translations: {
+      es: { word: 'Árbol', phonetic: 'ÁR-bol' },
+      ca: { word: 'Arbre', phonetic: 'AR-bra' },
+      en: { word: 'Tree', phonetic: 'tri' },
+      nl: { word: 'Boom', phonetic: 'bom' },
+      fr: { word: 'Arbre', phonetic: 'ARBR' },
+      ar: { word: 'شجرة (Shajara)', phonetic: 'SHA-ja-ra' },
+      rif: { word: 'Ttejra', phonetic: 't-TEJ-ra' },
+      zh: { word: '树 (Shù)', phonetic: 'shu' },
+    },
+  },
+  {
     id: 'one',
     category: 'numbers',
-    emoji: '1️⃣',
+    iconId: 'one',
     translations: {
       es: { word: 'Uno', phonetic: 'U-no' },
       ca: { word: 'Un', phonetic: 'un' },
@@ -245,7 +292,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'two',
     category: 'numbers',
-    emoji: '2️⃣',
+    iconId: 'two',
     translations: {
       es: { word: 'Dos', phonetic: 'dos' },
       ca: { word: 'Dos', phonetic: 'dos' },
@@ -260,7 +307,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'three',
     category: 'numbers',
-    emoji: '3️⃣',
+    iconId: 'three',
     translations: {
       es: { word: 'Tres', phonetic: 'tres' },
       ca: { word: 'Tres', phonetic: 'tres' },
@@ -275,7 +322,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'book',
     category: 'family',
-    emoji: '📖',
+    iconId: 'book',
     translations: {
       es: { word: 'Libro', phonetic: 'LI-bro' },
       ca: { word: 'Llibre', phonetic: 'LLI-bre' },
@@ -290,7 +337,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'friend',
     category: 'family',
-    emoji: '🤝',
+    iconId: 'friend',
     translations: {
       es: { word: 'Amigo', phonetic: 'a-MI-go' },
       ca: { word: 'Amic', phonetic: 'a-MIK' },
@@ -305,7 +352,7 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
   {
     id: 'home',
     category: 'family',
-    emoji: '🏡',
+    iconId: 'home',
     translations: {
       es: { word: 'Casa', phonetic: 'KA-sa' },
       ca: { word: 'Casa', phonetic: 'KA-sa' },
@@ -317,72 +364,20 @@ export const KIDS_VOCAB_BANK: KidsVocabEntry[] = [
       zh: { word: '家 (Jiā)', phonetic: 'jia' },
     },
   },
-];
-
-export interface KidsScienceFactCard {
-  id: string;
-  emoji: string;
-  title: string;
-  topicEs: string;
-  summary: string;
-  sampleQuestion: string;
-  accentColor: string;
-}
-
-export const KIDS_SCIENCE_CARDS: KidsScienceFactCard[] = [
   {
-    id: 'earth',
-    emoji: '🌍',
-    title: 'La Tierra y los Océanos',
-    topicEs: '¿Por qué la Tierra se llama el planeta azul?',
-    summary: 'El 70% de nuestro planeta está cubierto por agua líquida y una atmósfera que nos protege del Sol.',
-    sampleQuestion: '¿Por qué el cielo es azul y los océanos son salados?',
-    accentColor: '#38BDF8',
-  },
-  {
-    id: 'mars',
-    emoji: '🔴',
-    title: 'Marte, el Planeta Rojo',
-    topicEs: '¿Qué exploran los rovers en Marte?',
-    summary: 'Su polvo tiene óxido de hierro (como hierro oxidado) y alberga el volcán más alto del sistema solar: el Monte Olimpo.',
-    sampleQuestion: '¿Podremos vivir algún día en Marte?',
-    accentColor: '#F97316',
-  },
-  {
-    id: 'saturn',
-    emoji: '🪐',
-    title: 'Los Anillos de Saturno',
-    topicEs: '¿De qué están hechos los anillos de Saturno?',
-    summary: 'Millones de trozos de hielo, roca y polvo espacial que giran juntos como una pista gigante alrededor del planeta.',
-    sampleQuestion: '¿Por qué Saturno flotaría en una piscina gigante?',
-    accentColor: '#F59E0B',
-  },
-  {
-    id: 'bees',
-    emoji: '🐝',
-    title: 'Abejas y Polinización',
-    topicEs: '¿Cómo ayudan las abejas a las flores y frutas?',
-    summary: 'Cuando buscan néctar llevan polen de flor en flor, permitiendo que nazcan manzanas, fresas y bosques enteros.',
-    sampleQuestion: '¿Cómo fabrican la miel las abejas?',
-    accentColor: '#EAB308',
-  },
-  {
-    id: 'dinosaurs',
-    emoji: '🦕',
-    title: 'Dinosaurios y Fósiles',
-    topicEs: '¿Cómo sabemos qué aspecto tenían los dinosaurios?',
-    summary: 'Los paleontólogos estudian huesos fosilizados y huellas guardadas en la roca desde hace millones de años.',
-    sampleQuestion: '¿Las aves actuales descienden de los dinosaurios?',
-    accentColor: '#10B981',
-  },
-  {
-    id: 'brain',
-    emoji: '🧠',
-    title: 'El Cerebro Curioso',
-    topicEs: '¿Cómo guarda recuerdos nuestro cerebro?',
-    summary: 'Cada vez que practicas idiomas, música o mates, millones de neuronas conectan caminos más rápidos como un superpoder.',
-    sampleQuestion: '¿Qué pasa en el cerebro mientras dormimos?',
-    accentColor: '#A855F7',
+    id: 'bread',
+    category: 'family',
+    iconId: 'bread',
+    translations: {
+      es: { word: 'Pan', phonetic: 'pan' },
+      ca: { word: 'Pa', phonetic: 'pa' },
+      en: { word: 'Bread', phonetic: 'bred' },
+      nl: { word: 'Brood', phonetic: 'broot' },
+      fr: { word: 'Pain', phonetic: 'pan' },
+      ar: { word: 'خبز (Khubz)', phonetic: 'khubz' },
+      rif: { word: 'Aɣrum', phonetic: 'agh-RUM' },
+      zh: { word: '面包 (Miànbāo)', phonetic: 'mian-bao' },
+    },
   },
 ];
 
@@ -390,46 +385,50 @@ export type KidsMascotId = 'fox' | 'dino' | 'bot' | 'cat';
 
 export interface KidsMascotMeta {
   id: KidsMascotId;
-  emoji: string;
   name: string;
   cheerEs: string;
   costStars: number;
 }
 
 export const KIDS_MASCOTS: KidsMascotMeta[] = [
-  { id: 'fox', emoji: '🦊', name: 'Zorri', cheerEs: '¡Sigue así, campeón!', costStars: 0 },
-  { id: 'dino', emoji: '🦕', name: 'Dino', cheerEs: '¡Roooar de alegría!', costStars: 15 },
-  { id: 'bot', emoji: '🤖', name: 'Robi', cheerEs: '¡Súper cerebro activo!', costStars: 25 },
-  { id: 'cat', emoji: '🐱', name: 'Michi', cheerEs: '¡Miau, qué divertido!', costStars: 35 },
+  { id: 'fox', name: 'Zorri', cheerEs: 'Sigue así, campeón.', costStars: 0 },
+  { id: 'dino', name: 'Dino', cheerEs: '¡Gran salto de aventura!', costStars: 15 },
+  { id: 'bot', name: 'Robi', cheerEs: '¡Súper mente activa!', costStars: 25 },
+  { id: 'cat', name: 'Michi', cheerEs: '¡A por otro reto!', costStars: 35 },
 ];
 
-export const KIDS_AVATAR_CHOICES = ['🦁', '🐰', '🐼', '🦊', '🦄', '🐸'];
+export type KidsAvatarId = 'fennec' | 'lion' | 'owl' | 'dolphin' | 'panda' | 'falcon';
+
+export const KIDS_AVATAR_CHOICES: KidsAvatarId[] = [
+  'fennec',
+  'lion',
+  'owl',
+  'dolphin',
+  'panda',
+  'falcon',
+];
 
 export interface KidsBadgeMeta {
   id: string;
-  emoji: string;
+  iconId: string;
   label: string;
 }
 
 export const KIDS_BADGES: KidsBadgeMeta[] = [
-  { id: 'explorador', emoji: '🧭', label: 'Explorador' },
-  { id: 'cinefilo_kids', emoji: '🎬', label: 'Cinéfilo' },
-  { id: 'artista_kids', emoji: '🎨', label: 'Artista' },
-  { id: 'musico_kids', emoji: '🎹', label: 'Músico' },
-  { id: 'puzzle_maestro', emoji: '🧩', label: 'Puzles' },
-  { id: 'simon_musical', emoji: '🔔', label: 'Simón' },
-  { id: 'math_wizard', emoji: '🧮', label: 'Mago Mates' },
-  { id: 'memory_master', emoji: '🧠', label: 'Súper Memoria' },
-  { id: 'story_explorer', emoji: '📖', label: 'Cuentacuentos' },
-  { id: 'science_curious', emoji: '🔬', label: 'Científico' },
-  { id: 'trivia_champion', emoji: '🏆', label: 'Campeón Trivia' },
-  { id: 'estrella_oro', emoji: '🌟', label: 'Estrella Oro' },
-  { id: 'genio_multilingue', emoji: '🌍', label: 'Políglota' },
+  { id: 'explorador', iconId: 'compass', label: 'Explorador' },
+  { id: 'cinefilo_kids', iconId: 'film', label: 'Cinéfilo' },
+  { id: 'arcade_estrella', iconId: 'rocket', label: 'Estelar' },
+  { id: 'simon_musical', iconId: 'bell', label: 'Simón' },
+  { id: 'math_wizard', iconId: 'calc', label: 'Mago Mates' },
+  { id: 'memory_master', iconId: 'brain', label: 'Súper Memoria' },
+  { id: 'tarifit_friend', iconId: 'globe', label: '8 Idiomas' },
+  { id: 'estrella_oro', iconId: 'star', label: 'Estrella Oro' },
+  { id: 'genio_multilingue', iconId: 'trophy', label: 'Políglota' },
 ];
 
 export interface KidsRewardItem {
   id: string;
-  emoji: string;
+  iconId: string;
   title: string;
   desc: string;
   cost: number;
@@ -437,141 +436,102 @@ export interface KidsRewardItem {
 
 export const KIDS_SHOP_ITEMS: KidsRewardItem[] = [
   {
-    id: 'draw_neon',
-    emoji: '✨',
-    title: 'Pincel Neón',
-    desc: 'Trazo brillante mágico en Dibujar',
-    cost: 10,
-  },
-  {
-    id: 'draw_space_stamps',
-    emoji: '🦄',
-    title: 'Sellos Mágicos',
-    desc: 'Unicornio, OVNI, Dragón y Arcoíris',
-    cost: 14,
-  },
-  {
-    id: 'piano_cat',
-    emoji: '🐱',
-    title: 'Piano Miau',
-    desc: 'Modo divertido de notas gatunas',
+    id: 'math_galaxy_theme',
+    iconId: 'planets',
+    title: 'Mates Galaxia',
+    desc: 'Burbujas cósmicas brillantes en Mates',
     cost: 12,
   },
   {
-    id: 'piano_space',
-    emoji: '🛸',
-    title: 'Sinte Espacial',
-    desc: 'Sonido galáctico en el Piano',
-    cost: 16,
-  },
-  {
-    id: 'math_galaxy_theme',
-    emoji: '🌌',
-    title: 'Mates Galaxia',
-    desc: 'Burbujas cósmicas brillantes en Mates',
+    id: 'rocket_golden_skin',
+    iconId: 'rocket',
+    title: 'Nave Dorada',
+    desc: 'Cohete estelar dorado en Atrapa Estrellas',
     cost: 15,
   },
   {
     id: 'confetti_rainbow',
-    emoji: '🎊',
+    iconId: 'sparkles',
     title: 'Súper Confeti',
     desc: 'Lluvia mágica extra al ganar juegos',
     cost: 18,
+  },
+  {
+    id: 'tarifit_crown_frame',
+    iconId: 'crown',
+    title: 'Marco Atlas',
+    desc: 'Borde especial dorado para tu perfil',
+    cost: 22,
   },
 ];
 
 export const DEFAULT_PARENT_SAFE_SEEDS: CatalogMovie[] = [
   {
-    id: 'kids-movie-862',
-    tmdbId: 862,
+    id: 'yt-kids-pocoyo',
     mediaType: 'movie',
-    title: 'Toy Story',
-    year: '1995',
-    rating: '8.0',
-    overview: 'Los juguetes cobran vida cuando nadie mira.',
-    poster: 'https://image.tmdb.org/t/p/w500/uXDfjJbdP4ijW5hWSBrPrlKpxab.jpg',
-    backdrop: 'https://image.tmdb.org/t/p/w780/lxD5ak7BOoinRNehOCA85CQ8ubr.jpg',
-    languages: ['ES', 'CAT', 'EN'],
-    genres: ['Infantil', 'Animación'],
-    platform: 'Riffan Kids',
-    quality: 'HD Kids',
+    title: 'Pocoyó en Español — Aventura Oficial',
+    year: 'YouTube Kids',
+    rating: '9.5',
+    overview: 'Pocoyó Oficial',
+    poster: '',
+    backdrop: '',
+    languages: ['ES'],
+    genres: ['YouTube Kids'],
+    platform: 'YouTube Kids',
+    quality: 'HD',
+    bingetrixUrl: 'bO0y0N2wS0U',
   },
   {
-    id: 'kids-tv-82728',
-    tmdbId: 82728,
-    mediaType: 'tv',
-    title: 'Bluey',
-    year: '2018',
-    rating: '8.7',
-    overview: 'Aventuras familiares llenas de juegos e imaginación.',
-    poster: 'https://image.tmdb.org/t/p/w500/9p4pNoVN6V70o2d7iV6k0z8oJ9.jpg',
-    backdrop: 'https://image.tmdb.org/t/p/w780/9p4pNoVN6V70o2d7iV6k0z8oJ9.jpg',
-    languages: ['ES', 'EN', 'FR'],
-    genres: ['Infantil', 'Serie'],
-    platform: 'Riffan Kids',
-    quality: 'HD Kids',
-  },
-  {
-    id: 'kids-movie-354912',
-    tmdbId: 354912,
+    id: 'yt-kids-bluey',
     mediaType: 'movie',
-    title: 'Coco',
-    year: '2017',
-    rating: '8.2',
-    overview: 'Un viaje musical lleno de familia y color.',
-    poster: 'https://image.tmdb.org/t/p/w500/gGEsBPAijhVUFoiNpgZXqRVWJt2.jpg',
-    backdrop: 'https://image.tmdb.org/t/p/w780/askg3SMvhqEl4OL52YuvdtY40Yb.jpg',
+    title: 'Bluey — Juegos en Familia',
+    year: 'YouTube Kids',
+    rating: '9.6',
+    overview: 'Bluey Oficial',
+    poster: '',
+    backdrop: '',
     languages: ['ES', 'EN'],
-    genres: ['Infantil', 'Música'],
-    platform: 'Riffan Kids',
-    quality: 'HD Kids',
-  },
-  {
-    id: 'kids-movie-8392',
-    tmdbId: 8392,
-    mediaType: 'movie',
-    title: 'Mi vecino Totoro',
-    year: '1988',
-    rating: '8.1',
-    overview: 'Amistad mágica en el bosque.',
-    poster: 'https://image.tmdb.org/t/p/w500/rtGDOeG9LzoerkDGZF9dnVeLppL.jpg',
-    backdrop: 'https://image.tmdb.org/t/p/w780/etqr6fOOCXQOgwrQXaKwenTSuzx.jpg',
-    languages: ['ES', 'CAT', 'ZH'],
-    genres: ['Infantil', 'Fantasía'],
-    platform: 'Riffan Kids',
-    quality: 'HD Kids',
-  },
-  {
-    id: 'kids-movie-12',
-    tmdbId: 12,
-    mediaType: 'movie',
-    title: 'Buscando a Nemo',
-    year: '2003',
-    rating: '7.8',
-    overview: 'Una aventura submarina inolvidable.',
-    poster: 'https://image.tmdb.org/t/p/w500/eHuGQ10FUzK1mdOY69wF5pGgEf5.jpg',
-    backdrop: 'https://image.tmdb.org/t/p/w780/n2vIG0uQNp5R5gR9T2B0zJ8V6sH.jpg',
-    languages: ['ES', 'EN', 'NL'],
-    genres: ['Infantil', 'Animales'],
-    platform: 'Riffan Kids',
-    quality: 'HD Kids',
-  },
-  {
-    id: 'kids-movie-116149',
-    tmdbId: 116149,
-    mediaType: 'movie',
-    title: 'Paddington',
-    year: '2014',
-    rating: '7.1',
-    overview: 'Un osito amable en busca de un hogar.',
-    poster: 'https://image.tmdb.org/t/p/w500/wpchRGhRhv9i3W44iW7L9p4G9k8.jpg',
-    backdrop: 'https://image.tmdb.org/t/p/w780/8e0d8xY4M0xW2n9f6sF6rN3K2oT.jpg',
-    languages: ['ES', 'EN', 'FR', 'NL'],
-    genres: ['Infantil', 'Familia'],
-    platform: 'Riffan Kids',
-    quality: 'HD Kids',
+    genres: ['YouTube Kids'],
+    platform: 'YouTube Kids',
+    quality: 'HD',
+    bingetrixUrl: 'W1yK9N5bM3Q',
   },
 ];
+
+export interface KidsSavedStory {
+  id: string;
+  title: string;
+  lang: KidsLanguageCode;
+  chapters: string[];
+  featuredWords: string[];
+  createdAt: string;
+}
+
+export interface KidsPetCareState {
+  energy: number;
+  happiness: number;
+  xp: number;
+  level: number;
+}
+
+export interface KidsLearningAnalytics {
+  date: string;
+  learnMinutesToday: number;
+  cinemaMinutesToday: number;
+  domainCorrect: {
+    lang: number;
+    math: number;
+    music: number;
+    logic: number;
+  };
+  domainTotal: {
+    lang: number;
+    math: number;
+    music: number;
+    logic: number;
+  };
+  practicedWords: string[];
+}
 
 export interface KidsDailyMissions {
   date: string;
@@ -588,6 +548,8 @@ export interface KidsParentPrefs {
   timerStartedAt: number | null;
   approvedOnlyMode?: boolean;
   approvedItems?: CatalogMovie[];
+  earnCinemaByLearning?: boolean;
+  earnedCinemaMinutes?: number;
 }
 
 export interface KidsProgressState {
@@ -602,6 +564,13 @@ export interface KidsProgressState {
   preferredLang: KidsLanguageCode;
   mascotId: KidsMascotId;
   unlockedRewards: string[];
+  unlockedStickers?: string[];
+  roomDecor?: string[];
+  completedNodes?: Record<string, boolean>;
+  placementDone?: boolean;
+  petCare?: KidsPetCareState;
+  savedStories?: KidsSavedStory[];
+  analytics?: KidsLearningAnalytics;
   recentWatched?: CatalogMovie[];
   dailyMissions?: KidsDailyMissions;
   parentPrefs: KidsParentPrefs;
@@ -614,6 +583,47 @@ export interface KidsProfilesStore {
 
 const KIDS_PROGRESS_STORAGE_KEY = 'riffan_kids_progress_v1';
 const KIDS_PROFILES_STORAGE_KEY = 'riffan_kids_profiles_v2';
+const KIDS_PARENT_PIN_STORAGE_KEY = 'riffan_kids_parent_pin_v1';
+
+export const KIDS_EXIT_PIN = '1122';
+
+export function loadKidsParentPin(): string {
+  if (typeof localStorage === 'undefined') return KIDS_EXIT_PIN;
+  try {
+    const raw = (localStorage.getItem(KIDS_PARENT_PIN_STORAGE_KEY) || '').trim();
+    if (/^\d{4}$/.test(raw)) return raw;
+  } catch {
+    // ignore storage errors
+  }
+  return KIDS_EXIT_PIN;
+}
+
+export function saveKidsParentPin(pin: string): boolean {
+  const clean = pin.trim();
+  if (!/^\d{4}$/.test(clean)) return false;
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.setItem(KIDS_PARENT_PIN_STORAGE_KEY, clean);
+    } catch {
+      return false;
+    }
+  }
+  return true;
+}
+
+export function resetKidsParentPin(): void {
+  if (typeof localStorage !== 'undefined') {
+    try {
+      localStorage.removeItem(KIDS_PARENT_PIN_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+  }
+}
+
+export function isValidKidsExitPin(pin: string): boolean {
+  return pin.trim() === loadKidsParentPin();
+}
 
 export function getTodayIsoDate(): string {
   return new Date().toISOString().slice(0, 10);
@@ -629,13 +639,33 @@ export function createFreshDailyMissions(date = getTodayIsoDate()): KidsDailyMis
   };
 }
 
+export function createFreshPetCare(): KidsPetCareState {
+  return {
+    energy: 80,
+    happiness: 85,
+    xp: 0,
+    level: 1,
+  };
+}
+
+export function createFreshAnalytics(date = getTodayIsoDate()): KidsLearningAnalytics {
+  return {
+    date,
+    learnMinutesToday: 0,
+    cinemaMinutesToday: 0,
+    domainCorrect: { lang: 0, math: 0, music: 0, logic: 0 },
+    domainTotal: { lang: 0, math: 0, music: 0, logic: 0 },
+    practicedWords: [],
+  };
+}
+
 export function createDefaultKidsProfile(
   overrides: Partial<KidsProgressState> = {}
 ): KidsProgressState {
   return {
     id: overrides.id || 'kid-1',
     name: overrides.name || 'Peque 1',
-    avatarEmoji: overrides.avatarEmoji || '🦊',
+    avatarEmoji: overrides.avatarEmoji || 'fennec',
     stars: 12,
     streakDays: 1,
     completedLessons: 0,
@@ -644,6 +674,13 @@ export function createDefaultKidsProfile(
     preferredLang: 'es',
     mascotId: 'fox',
     unlockedRewards: [],
+    unlockedStickers: ['stk-lion'],
+    roomDecor: ['room-bookshelf'],
+    completedNodes: {},
+    placementDone: false,
+    petCare: createFreshPetCare(),
+    savedStories: [],
+    analytics: createFreshAnalytics(),
     recentWatched: [],
     dailyMissions: createFreshDailyMissions(),
     parentPrefs: {
@@ -652,7 +689,9 @@ export function createDefaultKidsProfile(
       timerMinutes: null,
       timerStartedAt: null,
       approvedOnlyMode: false,
-      approvedItems: DEFAULT_PARENT_SAFE_SEEDS.slice(0, 4),
+      approvedItems: [],
+      earnCinemaByLearning: false,
+      earnedCinemaMinutes: 15,
     },
     ...overrides,
   };
@@ -673,6 +712,31 @@ function normalizeKidsState(raw: Partial<KidsProgressState>): KidsProgressState 
         }
       : createFreshDailyMissions(today);
 
+  const rawAnalytics = raw.analytics;
+  const analytics: KidsLearningAnalytics =
+    rawAnalytics && rawAnalytics.date === today
+      ? {
+          date: today,
+          learnMinutesToday: Number(rawAnalytics.learnMinutesToday || 0),
+          cinemaMinutesToday: Number(rawAnalytics.cinemaMinutesToday || 0),
+          domainCorrect: {
+            lang: Number(rawAnalytics.domainCorrect?.lang || 0),
+            math: Number(rawAnalytics.domainCorrect?.math || 0),
+            music: Number(rawAnalytics.domainCorrect?.music || 0),
+            logic: Number(rawAnalytics.domainCorrect?.logic || 0),
+          },
+          domainTotal: {
+            lang: Number(rawAnalytics.domainTotal?.lang || 0),
+            math: Number(rawAnalytics.domainTotal?.math || 0),
+            music: Number(rawAnalytics.domainTotal?.music || 0),
+            logic: Number(rawAnalytics.domainTotal?.logic || 0),
+          },
+          practicedWords: Array.isArray(rawAnalytics.practicedWords)
+            ? rawAnalytics.practicedWords.slice(0, 30)
+            : [],
+        }
+      : createFreshAnalytics(today);
+
   const parentPrefs: KidsParentPrefs = {
     lockedLang: raw.parentPrefs?.lockedLang ?? null,
     lockedAge: raw.parentPrefs?.lockedAge ?? null,
@@ -688,6 +752,11 @@ function normalizeKidsState(raw: Partial<KidsProgressState>): KidsProgressState 
     approvedItems: Array.isArray(raw.parentPrefs?.approvedItems)
       ? raw.parentPrefs!.approvedItems
       : defaults.parentPrefs.approvedItems,
+    earnCinemaByLearning: Boolean(raw.parentPrefs?.earnCinemaByLearning),
+    earnedCinemaMinutes:
+      typeof raw.parentPrefs?.earnedCinemaMinutes === 'number'
+        ? Math.max(0, raw.parentPrefs.earnedCinemaMinutes)
+        : 15,
   };
 
   return {
@@ -700,6 +769,25 @@ function normalizeKidsState(raw: Partial<KidsProgressState>): KidsProgressState 
     badges: Array.isArray(raw.badges) ? raw.badges : defaults.badges,
     mascotId: raw.mascotId || defaults.mascotId,
     unlockedRewards: Array.isArray(raw.unlockedRewards) ? raw.unlockedRewards : [],
+    unlockedStickers: Array.isArray(raw.unlockedStickers)
+      ? raw.unlockedStickers
+      : defaults.unlockedStickers,
+    roomDecor: Array.isArray(raw.roomDecor) ? raw.roomDecor : defaults.roomDecor,
+    completedNodes:
+      raw.completedNodes && typeof raw.completedNodes === 'object'
+        ? raw.completedNodes
+        : {},
+    placementDone: Boolean(raw.placementDone),
+    petCare: raw.petCare
+      ? {
+          energy: Math.max(0, Math.min(100, Number(raw.petCare.energy ?? 80))),
+          happiness: Math.max(0, Math.min(100, Number(raw.petCare.happiness ?? 85))),
+          xp: Math.max(0, Number(raw.petCare.xp ?? 0)),
+          level: Math.max(1, Number(raw.petCare.level ?? 1)),
+        }
+      : createFreshPetCare(),
+    savedStories: Array.isArray(raw.savedStories) ? raw.savedStories.slice(0, 16) : [],
+    analytics,
     recentWatched: Array.isArray(raw.recentWatched) ? raw.recentWatched.slice(0, 8) : [],
     dailyMissions,
     preferredLang: parentPrefs.lockedLang || raw.preferredLang || defaults.preferredLang,
@@ -732,7 +820,6 @@ export function loadKidsProfilesStore(): KidsProfilesStore {
       }
     }
 
-    // Migrate legacy single-profile progress if present
     const legacyRaw = localStorage.getItem(KIDS_PROGRESS_STORAGE_KEY);
     if (legacyRaw) {
       const migrated = normalizeKidsState(JSON.parse(legacyRaw) as Partial<KidsProgressState>);
@@ -762,7 +849,7 @@ export function saveKidsProfilesStore(store: KidsProfilesStore): void {
 export function createKidsProfile(
   store: KidsProfilesStore,
   name: string,
-  avatarEmoji: string,
+  avatarId: string,
   ageGroup: KidsAgeGroup
 ): { store: KidsProfilesStore; profile: KidsProgressState } {
   const cleanName = name.trim().slice(0, 18) || `Peque ${store.profiles.length + 1}`;
@@ -771,7 +858,7 @@ export function createKidsProfile(
   const profile = createDefaultKidsProfile({
     id: `kid-${Date.now().toString(36)}-${Math.floor(Math.random() * 1000)}`,
     name: cleanName,
-    avatarEmoji: avatarEmoji || '🦁',
+    avatarEmoji: avatarId || 'lion',
     ageGroup,
     parentPrefs: currentActive?.parentPrefs
       ? { ...currentActive.parentPrefs }
