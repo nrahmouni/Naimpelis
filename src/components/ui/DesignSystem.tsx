@@ -152,7 +152,7 @@ export const StandardInput = React.forwardRef<HTMLInputElement, StandardInputPro
           {...props}
           className={`w-full min-h-12 ${icon ? 'pl-10' : 'pl-4'} ${
             rightElement ? 'pr-12' : 'pr-4'
-          } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.085] border border-white/[0.1] focus:border-[#9146FF] text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all duration-150 ${className}`}
+          } py-2.5 rounded-2xl bg-white/[0.05] hover:bg-white/[0.07] focus:bg-white/[0.085] border border-white/[0.1] focus:border-[#9146FF] focus:ring-2 focus:ring-[#9146FF]/50 text-sm text-white placeholder:text-zinc-500 focus:outline-none transition-all duration-150 ${className}`}
         />
         {rightElement && (
           <div className="absolute right-1.5 flex items-center justify-center">
@@ -202,7 +202,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
-          className="fixed inset-0 z-[235] bg-black/75 backdrop-blur-md flex items-end sm:items-center justify-center sm:p-4 overflow-x-hidden"
+          className="fixed inset-0 z-[235] bg-black/85 backdrop-blur-xl flex items-end sm:items-center justify-center sm:p-4 overflow-x-hidden"
           onClick={onClose}
         >
           <motion.div

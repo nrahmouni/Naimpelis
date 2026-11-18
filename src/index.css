@@ -1874,3 +1874,22 @@ button:hover .rtv-ico[data-anim="hover"] .rtv-k-draw {
   filter: sepia(0.18) brightness(0.9);
 }
 
+/* ==========================================================================
+   DIRECT ENHANCEMENTS FOR 50-POINT AUDIT (TOUCH TARGETS & CONTRAST)
+   ========================================================================== */
+.rtv-touch-optimized button,
+.rtv-touch-optimized [role="button"],
+.rtv-touch-optimized a {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+.rtv-contrast-boost {
+  color: var(--nc-text-primary, #f4f5f8);
+}
+
+.rtv-subtle-contrast {
+  color: var(--nc-text-secondary, #c2c7d6);
+}
+
+

@@ -3,35 +3,30 @@ import { getAuth, GoogleAuthProvider } from 'firebase/auth';
 import {
   doc,
   getDocFromServer,
-  initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
+  getFirestore,
 } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
 
-export const db = initializeFirestore(
-  app,
-  {
-    experimentalForceLongPolling: true,
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
-  },
-  firebaseConfig.firestoreDatabaseId
-);
+export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
 
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
-if (typeof window !== 'undefined' && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
-  void getDocFromServer(doc(db, 'test', 'connection')).catch((error: unknown) => {
-    if (!isTransientFirestoreError(error)) {
-      console.warn('Firestore connection check deferred:', error instanceof Error ? error.message : String(error));
+async function testConnection() {
+  try {
+    await getDocFromServer(doc(db, 'test', 'connection'));
+  } catch (error) {
+    if (error instanceof Error && error.message.includes('the client is offline')) {
+      console.error('Please check your Firebase configuration.');
     }
-  });
+  }
+}
+
+if (typeof window !== 'undefined') {
+  void testConnection();
 }
 
 export enum OperationType {

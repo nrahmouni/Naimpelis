@@ -25,6 +25,7 @@ import type {
 } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
+import { useGlobalEscape } from '../utils/useGlobalEscape';
 import { PosterImage } from './ui/PosterImage';
 
 export interface VoiceCandidateItem {
@@ -225,6 +226,8 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   onPlayMatch,
   onAppAction,
 }) => {
+  useGlobalEscape(onClose, isOpen);
+
   const cleanName =
     (userName || '').trim() || pickLang(lang, { es: 'amigo', ca: 'amic', en: 'friend', zh: '朋友' });
 

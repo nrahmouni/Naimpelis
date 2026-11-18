@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import type { AppLanguage, CatalogMovie } from '../types';
 import { pickLang } from '../utils/i18n';
+import { useGlobalEscape } from '../utils/useGlobalEscape';
 import { BottomSheet, PrimaryButton, SecondaryButton } from './ui/DesignSystem';
 import { PosterImage } from './ui/PosterImage';
 import {
@@ -79,6 +80,8 @@ export const SurpriseMeModal: React.FC<SurpriseMeModalProps> = ({
   const [mode, setMode] = useState<ModalMode>('surprise');
   const [mood, setMood] = useState<MoodId>('all');
   const [rollSeed, setRollSeed] = useState<number>(() => Math.floor(Math.random() * 10000));
+
+  useGlobalEscape(onClose, isOpen);
 
   // AI Request Movie state
   const [requestQuery, setRequestQuery] = useState('');

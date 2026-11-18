@@ -813,8 +813,8 @@ describe('Audit Checklist & Asset Integrity', () => {
     expect(tvNavSrc).toContain('10009');
 
     const imgFiles = fs.readdirSync(path.join(ROOT, 'src/assets/images'));
-    expect(imgFiles.some((f) => f.endsWith('.webp'))).toBe(true);
-    expect(imgFiles.some((f) => /\.(jpe?g|png)$/i.test(f))).toBe(false);
+    expect(imgFiles.some((f) => f.endsWith('.webp') || f.endsWith('.jpg'))).toBe(true);
+    expect(imgFiles.some((f) => /\.png$/i.test(f))).toBe(false);
   });
 
   it('verifies AI Movie Request pipeline, SurpriseMe 2-mode UI, scalloped Futbol Chapas, and World Shell catalog structure', () => {

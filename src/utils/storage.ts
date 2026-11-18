@@ -1,4 +1,7 @@
 import { CatalogMovie, FavoriteChannelItem, SavedFriend, WatchHistoryItem } from '../types';
+import { LruTtlCache } from '../shared/lruCache';
+
+const catalogKeyCache = new LruTtlCache<string, string>(500, 15 * 60 * 1000);
 
 export interface StoredProfile {
   id: string;
@@ -90,19 +93,26 @@ export function normalizeCatalogTitle(rawTitle: string): string {
 }
 
 export function getCatalogFavoriteKey(item: CatalogMovie): string {
+  const cacheKey = `${item.mediaType || 'movie'}:${item.tmdbId || ''}:${item.id || ''}:${item.title || ''}`;
+  const cached = catalogKeyCache.get(cacheKey);
+  if (cached) return cached;
+
   const prefix = item.mediaType === 'tv' ? 'series' : 'movie';
+  let computed = '';
   if (item.tmdbId && Number.isFinite(Number(item.tmdbId)) && Number(item.tmdbId) > 0) {
-    return sanitizeItemKey(`${prefix}-${Number(item.tmdbId)}`);
+    computed = sanitizeItemKey(`${prefix}-${Number(item.tmdbId)}`);
+  } else {
+    const strippedId = stripMediaPrefix(item.id || '');
+    if (strippedId) {
+      computed = sanitizeItemKey(`${prefix}-${strippedId}`);
+    } else {
+      const normTitle = normalizeCatalogTitle(item.title || 'item').replace(/\s+/g, '-');
+      computed = sanitizeItemKey(`${prefix}-${normTitle || 'item'}`);
+    }
   }
-  const strippedId = stripMediaPrefix(item.id || '');
-  if (/^\d+$/.test(strippedId)) {
-    return sanitizeItemKey(`${prefix}-${strippedId}`);
-  }
-  if (strippedId) {
-    return sanitizeItemKey(`${prefix}-${strippedId}`);
-  }
-  const normTitle = normalizeCatalogTitle(item.title || 'item').replace(/\s+/g, '-');
-  return sanitizeItemKey(`${prefix}-${normTitle || 'item'}`);
+
+  catalogKeyCache.set(cacheKey, computed);
+  return computed;
 }
 
 export function isSameCatalogItem(a: CatalogMovie, b: CatalogMovie): boolean {

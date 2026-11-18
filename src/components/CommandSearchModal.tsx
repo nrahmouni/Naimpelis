@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { CornerDownLeft, Film, Loader2, Search, Sparkles, Trophy, Tv, Wand2, X } from 'lucide-react';
 import type { AppLanguage, CatalogMovie, SpanishTdtChannel } from '../types';
 import { pickLang } from '../utils/i18n';
+import { useGlobalEscape } from '../utils/useGlobalEscape';
 import { BottomSheet, StandardInput } from './ui/DesignSystem';
 import { PosterImage } from './ui/PosterImage';
 import { ChannelLogoBadge } from './ui/ChannelLogoBadge';
@@ -47,6 +48,8 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
     }
   });
   const inputRef = useRef<HTMLInputElement | null>(null);
+
+  useGlobalEscape(onClose, isOpen);
 
   useEffect(() => {
     if (isOpen) {
