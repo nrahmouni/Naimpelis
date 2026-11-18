@@ -10,12 +10,13 @@ export interface RiffanIconProps extends React.SVGProps<SVGSVGElement> {
   animate?: 'always' | 'hover' | 'none';
   /**
    * 'brand': signature RiffanTV #8B5CF6 -> #4CC9F0 gradient stroke/fill
+   * 'kids': Riffan Kids warm #FBBF24 -> #F472B6 gradient stroke/fill
    * 'current': inherits currentColor for crisp contrast inside solid #9146FF / colored buttons
    */
-  tone?: 'brand' | 'current';
+  tone?: 'brand' | 'current' | 'kids';
 }
 
-function useRiffanIconDefs(tone: 'brand' | 'current' = 'brand') {
+function useRiffanIconDefs(tone: 'brand' | 'current' | 'kids' = 'brand') {
   const rawId = useId().replace(/:/g, '');
   const gradId = `rtv-g-${rawId}`;
   const paint = tone === 'current' ? 'currentColor' : `url(#${gradId})`;
@@ -36,6 +37,30 @@ const BrandGradientDef: React.FC<{ id: string; x1?: number; y1?: number; x2?: nu
     </linearGradient>
   </defs>
 );
+
+const KidsGradientDef: React.FC<{ id: string; x1?: number; y1?: number; x2?: number; y2?: number }> = ({
+  id,
+  x1 = 6,
+  y1 = 6,
+  x2 = 42,
+  y2 = 42,
+}) => (
+  <defs>
+    <linearGradient id={id} x1={x1} y1={y1} x2={x2} y2={y2} gradientUnits="userSpaceOnUse">
+      <stop offset="0" stopColor="#FBBF24" />
+      <stop offset="1" stopColor="#F472B6" />
+    </linearGradient>
+  </defs>
+);
+
+const ToneGradientDef: React.FC<{ tone: 'brand' | 'current' | 'kids'; id: string }> = ({
+  tone,
+  id,
+}) => {
+  if (tone === 'current') return null;
+  if (tone === 'kids') return <KidsGradientDef id={id} />;
+  return <BrandGradientDef id={id} />;
+};
 
 const BASE_STROKE = {
   fill: 'none',
@@ -1634,7 +1659,7 @@ export const RiffanDownloadIcon: React.FC<RiffanIconProps> = ({
   const { gradId, paint } = useRiffanIconDefs(tone);
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
-      {tone === 'brand' && <BrandGradientDef id={gradId} />}
+      <ToneGradientDef tone={tone} id={gradId} />
       <path stroke={paint} {...BASE_STROKE} d="M9 38 H39" />
       <g className="rtv-k-nudge-down">
         <path stroke={paint} {...BASE_STROKE} d="M24 8 V29" />
@@ -1643,3 +1668,381 @@ export const RiffanDownloadIcon: React.FC<RiffanIconProps> = ({
     </svg>
   );
 };
+
+// ============================================================================
+// 8. DEPORTES Y SALÓN DE JUEGOS
+// ============================================================================
+
+export const RiffanFootballIcon: React.FC<RiffanIconProps> = ({
+  size = 22,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-ball" style={{ transformOrigin: '24px 24px' }}>
+        <circle stroke={paint} {...BASE_STROKE} cx="24" cy="24" r="16" />
+        <polygon stroke={paint} fill={paint} fillOpacity="0.22" strokeWidth="2.5" strokeLinejoin="round" points="24,16 30.5,20.8 28,28.5 20,28.5 17.5,20.8" />
+        <path stroke={paint} strokeWidth="2.2" strokeLinecap="round" d="M24 16 V8.5 M30.5 20.8 L38 17.5 M28 28.5 L33.5 36 M20 28.5 L14.5 36 M17.5 20.8 L10 17.5" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanTrophyIcon: React.FC<RiffanIconProps> = ({
+  size = 22,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-trophy" style={{ transformOrigin: '24px 24px' }}>
+        <path {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.14" d="M15 9 H33 V19 C33 25 29 29 24 29 C19 29 15 25 15 19 Z" />
+        <path {...BASE_STROKE} stroke={paint} d="M15 12 H10 C8 12 8 20 12 21 H15 M33 12 H38 C40 12 40 20 36 21 H33" />
+        <path {...BASE_STROKE} stroke={paint} d="M24 29 V37 M17 39 H31" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanGamesIcon: React.FC<RiffanIconProps> = ({
+  size = 22,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <path {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.14" d="M14 15 H34 C38.5 15 42 19 42 24 L40.5 32.5 C40 35.5 37 37 34.5 35 L30 31 H18 L13.5 35 C11 37 8 35.5 7.5 32.5 L6 24 C6 19 9.5 15 14 15 Z" />
+      <path {...BASE_STROKE} stroke={paint} d="M14 21 V27 M11 24 H17" />
+      <g className="rtv-k-twinkle" style={{ transformOrigin: '33px 23px' }}>
+        <circle fill={paint} cx="31" cy="21.5" r="1.9" />
+        <circle fill={paint} cx="35.5" cy="25.5" r="1.9" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanBilliardsIcon: React.FC<RiffanIconProps> = ({
+  size = 22,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-ball" style={{ transformOrigin: '24px 24px' }}>
+        <circle {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.16" cx="24" cy="24" r="15.5" />
+        <circle stroke={paint} strokeWidth="2.4" fill="none" cx="24" cy="23" r="6.8" />
+        <circle stroke={paint} strokeWidth="2.2" fill="none" cx="24" cy="20.8" r="2.1" />
+        <circle stroke={paint} strokeWidth="2.2" fill="none" cx="24" cy="25.2" r="2.4" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanDiceIcon: React.FC<RiffanIconProps> = ({
+  size = 22,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-dice" style={{ transformOrigin: '24px 24px' }}>
+        <rect {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.14" x="9" y="9" width="30" height="30" rx="7" />
+        <circle fill={paint} cx="17" cy="17" r="2.2" />
+        <circle fill={paint} cx="31" cy="17" r="2.2" />
+        <circle fill={paint} cx="24" cy="24" r="2.2" />
+        <circle fill={paint} cx="17" cy="31" r="2.2" />
+        <circle fill={paint} cx="31" cy="31" r="2.2" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanCardsIcon: React.FC<RiffanIconProps> = ({
+  size = 22,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <rect {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.1" x="9" y="11" width="18" height="26" rx="4" transform="rotate(-10 18 24)" />
+      <g className="rtv-k-card-fan" style={{ transformOrigin: '28px 32px' }}>
+        <rect {...BASE_STROKE} stroke={paint} fill="#0E1018" fillOpacity="0.88" x="19" y="10" width="19" height="27" rx="4" transform="rotate(8 28 24)" />
+        <path fill={paint} d="M28.5 19 L32 23.5 L28.5 28 L25 23.5 Z" />
+      </g>
+    </svg>
+  );
+};
+
+// ============================================================================
+// 9. CUENTA Y UTILIDADES DE PERFIL
+// ============================================================================
+
+export const RiffanContinueWatchingIcon: React.FC<RiffanIconProps> = ({
+  size = 20,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <circle stroke={paint} {...BASE_STROKE} cx="24" cy="24" r="16" strokeDasharray="78 24" />
+      <path className="rtv-k-play" style={{ transformOrigin: '25px 24px' }} stroke={paint} fill={paint} fillOpacity="0.24" strokeWidth="2.8" strokeLinejoin="round" d="M20 17 L32 24 L20 31 Z" />
+    </svg>
+  );
+};
+
+export const RiffanBookmarkIcon: React.FC<RiffanIconProps & { active?: boolean }> = ({
+  size = 20,
+  animate = 'hover',
+  tone = 'brand',
+  active = false,
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <path
+        {...BASE_STROKE}
+        className="rtv-k-bookmark"
+        style={{ transformOrigin: '24px 10px', fill: paint, fillOpacity: active ? 0.82 : 0.16 }}
+        stroke={paint}
+        d="M14 9 H34 C35.7 9 37 10.3 37 12 V39 L24 31 L11 39 V12 C11 10.3 12.3 9 14 9 Z"
+      />
+    </svg>
+  );
+};
+
+export const RiffanYouTubeIcon: React.FC<RiffanIconProps> = ({
+  size = 20,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <rect {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.12" x="6" y="11" width="36" height="26" rx="8" />
+      <path className="rtv-k-play" style={{ transformOrigin: '25px 24px' }} stroke={paint} fill={paint} fillOpacity="0.3" strokeWidth="2.8" strokeLinejoin="round" d="M20 18 L31 24 L20 30 Z" />
+    </svg>
+  );
+};
+
+export const RiffanDevicesIcon: React.FC<RiffanIconProps> = ({
+  size = 20,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <path {...BASE_STROKE} stroke={paint} d="M24 33 H8 C6.9 33 6 32.1 6 31 V12 C6 10.9 6.9 10 8 10 H36 C37.1 10 38 10.9 38 12 V16" />
+      <path {...BASE_STROKE} stroke={paint} d="M12 39 H22" />
+      <rect {...BASE_STROKE} className="rtv-k-nudge-up" stroke={paint} fill={paint} fillOpacity="0.15" x="29" y="20" width="13" height="20" rx="3" />
+    </svg>
+  );
+};
+
+export const RiffanVoiceMicIcon: React.FC<RiffanIconProps> = ({
+  size = 20,
+  animate = 'hover',
+  tone = 'brand',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <rect {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.18" x="19" y="8" width="10" height="19" rx="5" />
+      <path {...BASE_STROKE} stroke={paint} d="M12 22 C12 29 17 34 24 34 C31 34 36 29 36 22 M24 34 V40 M18 40 H30" />
+      <path className="rtv-k-wave" style={{ animationDelay: '0s' }} stroke={paint} strokeWidth="2.4" strokeLinecap="round" fill="none" d="M7 18 C5 21 5 25 7 28" />
+      <path className="rtv-k-wave" style={{ animationDelay: '0.25s' }} stroke={paint} strokeWidth="2.4" strokeLinecap="round" fill="none" d="M41 18 C43 21 43 25 41 28" />
+    </svg>
+  );
+};
+
+// ============================================================================
+// 10. RIFFAN KIDS (ACENTO CÁLIDO AMBAR -> ROSA)
+// ============================================================================
+
+export const RiffanKidsFoxIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-trophy" style={{ transformOrigin: '24px 26px' }}>
+        <path {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.2" d="M10 10 L17 18 H31 L38 10 L40 24 C40 33 32 39 24 39 C16 39 8 33 8 24 Z" />
+        <circle fill={paint} cx="18.5" cy="25" r="2.1" />
+        <circle fill={paint} cx="29.5" cy="25" r="2.1" />
+        <circle fill={paint} cx="24" cy="31" r="2.2" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanKidsLearnIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <path {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.16" d="M24 14 C19 10 12 10 7 13 V36 C12 33 19 33 24 37 C29 33 36 33 41 36 V13 C36 10 29 10 24 14 Z" />
+      <path {...BASE_STROKE} stroke={paint} d="M24 14 V37" />
+      <path className="rtv-k-star" style={{ transformOrigin: '24px 8px' }} fill={paint} d="M24 4 L25.8 8 L30 8.6 L27 11.4 L27.8 15.5 L24 13.5 L20.2 15.5 L21 11.4 L18 8.6 L22.2 8 Z" />
+    </svg>
+  );
+};
+
+export const RiffanKidsDrawIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <path {...BASE_STROKE} className="rtv-k-card-fan" style={{ transformOrigin: '16px 32px' }} stroke={paint} fill={paint} fillOpacity="0.2" d="M31 9 L39 17 L19 37 L9 39 L11 29 Z" />
+      <path {...BASE_STROKE} stroke={paint} d="M26 14 L34 22" />
+    </svg>
+  );
+};
+
+export const RiffanKidsPianoIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <rect {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.14" x="7" y="19" width="34" height="20" rx="5" />
+      <path {...BASE_STROKE} stroke={paint} d="M16 19 V31 M24 19 V31 M32 19 V31" />
+      <path className="rtv-k-note" style={{ transformOrigin: '24px 12px' }} stroke={paint} strokeWidth="2.8" strokeLinecap="round" fill="none" d="M20 14 V8 L30 6 V12" />
+    </svg>
+  );
+};
+
+export const RiffanKidsPuzzleIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <path {...BASE_STROKE} className="rtv-k-nudge-up" stroke={paint} fill={paint} fillOpacity="0.2" d="M12 16 H20 C20 12.5 28 12.5 28 16 H36 V23 C39.5 23 39.5 31 36 31 V38 H12 V31 C15.5 31 15.5 23 12 23 Z" />
+    </svg>
+  );
+};
+
+export const RiffanKidsSimonIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <path {...BASE_STROKE} className="rtv-k-wave" style={{ animationDelay: '0s' }} stroke={paint} fill={paint} fillOpacity="0.26" d="M22 8 A16 16 0 0 0 8 22 H22 Z" />
+      <path {...BASE_STROKE} className="rtv-k-wave" style={{ animationDelay: '0.3s' }} stroke={paint} fill={paint} fillOpacity="0.26" d="M26 8 V22 H40 A16 16 0 0 0 26 8 Z" />
+      <path {...BASE_STROKE} className="rtv-k-wave" style={{ animationDelay: '0.6s' }} stroke={paint} fill={paint} fillOpacity="0.26" d="M8 26 A16 16 0 0 0 22 40 V26 Z" />
+      <path {...BASE_STROKE} className="rtv-k-wave" style={{ animationDelay: '0.9s' }} stroke={paint} fill={paint} fillOpacity="0.26" d="M26 26 V40 A16 16 0 0 0 40 26 Z" />
+    </svg>
+  );
+};
+
+export const RiffanKidsBubblesIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <circle {...BASE_STROKE} className="rtv-k-bubble" style={{ animationDelay: '0s' }} stroke={paint} fill={paint} fillOpacity="0.2" cx="17" cy="27" r="9" />
+      <circle {...BASE_STROKE} className="rtv-k-bubble" style={{ animationDelay: '0.3s' }} stroke={paint} fill={paint} fillOpacity="0.22" cx="33" cy="17" r="7" />
+      <circle {...BASE_STROKE} className="rtv-k-bubble" style={{ animationDelay: '0.6s' }} stroke={paint} fill={paint} fillOpacity="0.18" cx="32" cy="35" r="5" />
+    </svg>
+  );
+};
+
+export const RiffanKidsMagicIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <path {...BASE_STROKE} stroke={paint} d="M10 38 L29 19" />
+      <path className="rtv-k-star" style={{ transformOrigin: '33px 15px' }} fill={paint} stroke={paint} strokeWidth="2" strokeLinejoin="round" d="M33 7 L35.5 12.5 L41 15 L35.5 17.5 L33 23 L30.5 17.5 L25 15 L30.5 12.5 Z" />
+      <circle className="rtv-k-twinkle" style={{ transformOrigin: '16px 14px' }} fill={paint} cx="16" cy="14" r="2.2" />
+      <circle className="rtv-k-twinkle" style={{ transformOrigin: '36px 32px', animationDelay: '0.35s' }} fill={paint} cx="36" cy="32" r="2" />
+    </svg>
+  );
+};
+

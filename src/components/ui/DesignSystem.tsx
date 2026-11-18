@@ -202,7 +202,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.15, ease: 'easeOut' }}
-          className="fixed inset-0 z-[235] bg-black/85 backdrop-blur-xl flex items-end sm:items-center justify-center sm:p-4 overflow-x-hidden"
+          className="fixed inset-0 z-[235] bg-black/85 backdrop-blur-xl flex items-end sm:items-center justify-center sm:p-4 overflow-x-clip"
           onClick={onClose}
         >
           <motion.div
@@ -258,7 +258,7 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
             </div>
 
             {/* Body */}
-            <div className="p-4 sm:p-5 overflow-y-auto overflow-x-hidden min-w-0 w-full custom-scrollbar space-y-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+            <div className="p-4 sm:p-5 overflow-y-auto overflow-x-clip min-w-0 w-full custom-scrollbar space-y-4 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
               {children}
             </div>
           </motion.div>

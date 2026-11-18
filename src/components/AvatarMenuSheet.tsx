@@ -1,5 +1,4 @@
 import React from 'react';
-import { PlayCircle, Bookmark, Youtube } from 'lucide-react';
 import type { User as FirebaseUser } from 'firebase/auth';
 import type { AppLanguage } from '../types';
 import { pickLang } from '../utils/i18n';
@@ -7,12 +6,15 @@ import { triggerHaptic } from '../utils/haptics';
 import { BottomSheet } from './ui/DesignSystem';
 import {
   RiffanBellIcon,
+  RiffanBookmarkIcon,
   RiffanCastIcon,
   RiffanChevronRightIcon,
+  RiffanContinueWatchingIcon,
   RiffanLogoutIcon,
   RiffanSettingsGearIcon,
   RiffanUserIcon,
   RiffanUsersIcon,
+  RiffanYouTubeIcon,
 } from './ui/RiffanIcons';
 
 interface AvatarMenuSheetProps {
@@ -78,7 +80,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
     },
     {
       id: 'continue',
-      iconEl: <PlayCircle className="w-5 h-5 text-[#BF94FF] shrink-0" />,
+      iconEl: <RiffanContinueWatchingIcon size={20} animate="hover" className="shrink-0" />,
       label: pickLang(lang, {
         es: 'Continuar viendo',
         ca: 'Continuar veient',
@@ -89,7 +91,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
     },
     {
       id: 'saved',
-      iconEl: <Bookmark className="w-5 h-5 text-[#BF94FF] shrink-0" />,
+      iconEl: <RiffanBookmarkIcon size={20} animate="hover" className="shrink-0" />,
       label: pickLang(lang, { es: 'Guardados', ca: 'Desats', en: 'Saved' }),
       onClick: onOpenSaved,
       badge: null as React.ReactNode,
@@ -142,7 +144,7 @@ export const AvatarMenuSheet: React.FC<AvatarMenuSheetProps> = ({
     },
     {
       id: 'youtube',
-      iconEl: <Youtube className="w-5 h-5 text-[#BF94FF] shrink-0" />,
+      iconEl: <RiffanYouTubeIcon size={20} animate="hover" className="shrink-0" />,
       label: 'YouTube',
       onClick: onOpenYouTube,
       badge: null as React.ReactNode,

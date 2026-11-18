@@ -216,7 +216,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   };
 
   return (
-    <div className="relative w-full overflow-x-hidden">
+    <div className="relative w-full overflow-x-clip">
       <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-3 sm:pt-5 pb-20 sm:pb-24 pb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)] space-y-4 sm:space-y-5 @container">
         {/* 1. COMPACT EDITORIAL GREETING */}
         <section className="flex items-end justify-between gap-3">

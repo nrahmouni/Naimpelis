@@ -4,9 +4,6 @@ import {
   MicOff,
   Play,
   Send,
-  Sparkles,
-  Tv,
-  Trophy,
   Volume2,
   VolumeX,
   X,
@@ -15,6 +12,11 @@ import {
   Square,
   Trash2,
 } from 'lucide-react';
+import {
+  RiffanTrophyIcon,
+  RiffanTvRemoteIcon,
+  RiffanVoiceMicIcon,
+} from './ui/RiffanIcons';
 import { motion, AnimatePresence } from 'motion/react';
 import type {
   AppLanguage,
@@ -1282,7 +1284,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-9 h-9 rounded-2xl bg-gradient-to-tr from-[#9146FF] to-[#00F0FF] p-[1.5px] shadow-[0_0_16px_rgba(145,70,255,0.45)] shrink-0">
                 <div className="w-full h-full rounded-[14px] bg-[#10121C] flex items-center justify-center text-[#BF94FF]">
-                  <Sparkles className="w-4 h-4" />
+                  <RiffanVoiceMicIcon size={20} animate={liveStatus === 'live' || isListening ? 'always' : 'hover'} />
                 </div>
               </div>
               <div className="min-w-0">
@@ -1563,7 +1565,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <Tv className="w-5 h-5 text-[#BF94FF]" />
+                              <RiffanTvRemoteIcon size={22} animate="none" />
                             )}
                           </div>
                         ) : it.kind === 'match' ? (
@@ -1576,7 +1578,7 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
                                 referrerPolicy="no-referrer"
                               />
                             ) : (
-                              <Trophy className="w-6 h-6 text-emerald-400" />
+                              <RiffanTrophyIcon size={24} animate="hover" />
                             )}
                           </div>
                         ) : (

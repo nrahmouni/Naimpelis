@@ -856,5 +856,20 @@ describe('Audit Checklist & Asset Integrity', () => {
     expect(appSrc).toContain('<EntryHomeScreen');
     expect(appSrc).toContain('<WorldShell');
   });
+
+  it('guarantees fluid vertical scrolling across mobile, desktop and TV without nested overflow-y traps', () => {
+    const appSrc = fs.readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
+    expect(appSrc).toContain('className="h-[100dvh] w-full max-w-[100vw] bg-[#0B0B0E] text-[#EFEFF1] overflow-hidden"');
+    expect(appSrc).toContain('ref={catalogScrollRef} className="w-full min-w-0 shrink-0"');
+    expect(appSrc).toContain('overflow-y-auto overflow-x-clip touch-pan-y smooth-scroll-area');
+
+    const entrySrc = fs.readFileSync(path.join(ROOT, 'src/components/EntryHomeScreen.tsx'), 'utf8');
+    expect(entrySrc).toContain('overflow-x-clip');
+    expect(entrySrc).not.toContain('overflow-x-hidden');
+
+    const cssSrc = fs.readFileSync(path.join(ROOT, 'src/index.css'), 'utf8');
+    expect(cssSrc).toContain('touch-action: pan-y;');
+    expect(cssSrc).toMatch(/html,\s*body,\s*#root\s*\{[^}]*height:\s*100%;/);
+  });
 });
 

@@ -387,7 +387,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
   const headerChannel = inspectedChannel || playingChannel;
 
   return (
-    <div className="space-y-4 w-full overflow-x-hidden">
+    <div className="space-y-4 w-full overflow-x-clip">
       {/* ==================================================================== */}
       {/* 1. PREMIUM NAVIGABLE CHANNEL GUIDE DOCK (EPG)                        */}
       {/* ==================================================================== */}

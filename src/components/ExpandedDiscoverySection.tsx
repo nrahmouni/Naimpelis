@@ -1,9 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ChevronRight, Loader2, Sparkles } from 'lucide-react';
 import type { AppLanguage, CatalogMovie, RoomQueueItem } from '../types';
-import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
-import { PosterImage } from './ui/PosterImage';
+import { CinePosterCard } from './catalog/CinePosterCard';
 import { VirtualizedPosterGrid } from './VirtualizedPosterGrid';
 
 export interface CatalogGenreItem {
@@ -77,6 +76,8 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
   filterState,
   onGenresLoaded,
   onSelectItem,
+  isBookmarked,
+  onToggleBookmark,
 }) => {
   const [collections, setCollections] = useState<EditorialCollection[]>([]);
   const [loadingCollections, setLoadingCollections] = useState(true);
@@ -219,34 +220,13 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                 gapPx={12}
                 getKey={(item) => `exp-${discoverMediaType}-${item.id}`}
                 renderItem={(item) => (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      onSelectItem({ ...item, mediaType: discoverMediaType });
-                    }}
-                    className="group w-full text-left flex flex-col gap-2 cursor-pointer"
-                  >
-                    <div className="aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#141418] border border-white/[0.08] group-hover:border-[#9146FF]/60 transition-colors">
-                      <PosterImage
-                        src={item.poster}
-                        alt={item.title}
-                        aspect="none"
-                        className="w-full h-full"
-                        imgClassName="object-cover"
-                        fallbackTitle={item.title}
-                      />
-                    </div>
-                    <div className="px-0.5 space-y-0.5">
-                      <h4 className="font-display font-semibold text-xs text-white leading-snug line-clamp-2">
-                        {item.title}
-                      </h4>
-                      <p className="text-[11px] text-zinc-400 tabular-nums">
-                        {item.year || 'HD'}
-                        {item.rating ? ` · ★ ${item.rating}` : ''}
-                      </p>
-                    </div>
-                  </button>
+                  <CinePosterCard
+                    item={item}
+                    forcedKind={discoverMediaType}
+                    isBookmarked={isBookmarked?.(item)}
+                    onToggleBookmark={onToggleBookmark ? (m) => onToggleBookmark(m) : undefined}
+                    onSelect={(selected) => onSelectItem(selected)}
+                  />
                 )}
               />
 
@@ -302,48 +282,19 @@ export const ExpandedDiscoverySection: React.FC<ExpandedDiscoverySectionProps> =
                 {title}
               </h3>
 
-              <div className="flex items-stretch gap-3 sm:gap-4 overflow-x-auto no-scrollbar pb-1">
-                {col.items.map((item, idx) => {
-                  const key = `${col.id}-${item.id}`;
-                  const showRank = colIndex === 0 && idx < 10;
-
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        onSelectItem({ ...item, mediaType: col.mediaType });
-                      }}
-                      className="group relative w-[136px] sm:w-[164px] shrink-0 text-left flex flex-col gap-2 cursor-pointer"
-                    >
-                      <div className="relative aspect-[2/3] w-full rounded-2xl overflow-hidden bg-[#141418] border border-white/[0.08] group-hover:border-[#9146FF]/60 transition-colors">
-                        <PosterImage
-                          src={item.poster}
-                          alt={item.title}
-                          aspect="none"
-                          className="w-full h-full"
-                          imgClassName="object-cover"
-                          fallbackTitle={item.title}
-                        />
-                        {showRank && (
-                          <span className="absolute bottom-2 left-2.5 font-display font-black text-2xl leading-none text-white drop-shadow-[0_2px_10px_rgba(0,0,0,0.95)] tabular-nums">
-                            {idx + 1}
-                          </span>
-                        )}
-                      </div>
-
-                      <div className="px-0.5 space-y-0.5">
-                        <h4 className="font-display font-semibold text-xs text-white leading-snug line-clamp-2">
-                          {item.title}
-                        </h4>
-                        <p className="text-[11px] text-zinc-400 tabular-nums">
-                          {item.year || 'HD'} · ★ {item.rating || '7.5'}
-                        </p>
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="scroll-snap-x flex items-stretch gap-3 sm:gap-4 overflow-x-auto no-scrollbar pb-1">
+                {col.items.map((item, idx) => (
+                  <CinePosterCard
+                    key={`${col.id}-${item.id}`}
+                    item={item}
+                    forcedKind={col.mediaType}
+                    rankIndex={colIndex === 0 && idx < 10 ? idx + 1 : undefined}
+                    isBookmarked={isBookmarked?.(item)}
+                    onToggleBookmark={onToggleBookmark ? (m) => onToggleBookmark(m) : undefined}
+                    onSelect={(selected) => onSelectItem(selected)}
+                    className="scroll-snap-item w-[136px] sm:w-[162px] shrink-0"
+                  />
+                ))}
               </div>
             </section>
           );

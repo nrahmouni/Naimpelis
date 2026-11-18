@@ -141,6 +141,7 @@
   html, body, #root {
     width: 100%;
     max-width: 100vw;
+    height: 100%;
     min-height: 100dvh;
     background-color: var(--nc-bg-canvas);
     color: var(--nc-text-primary);
@@ -1180,8 +1181,7 @@ html.tv-dpad-active [role="button"]:focus {
 .smooth-scroll-area {
   -webkit-overflow-scrolling: touch;
   overscroll-behavior-y: contain;
-  scroll-behavior: smooth;
-  scrollbar-gutter: stable;
+  touch-action: pan-y;
 }
 
 .gpu-layer {
@@ -1685,6 +1685,64 @@ button:hover .rtv-ico[data-anim="hover"] .rtv-k-draw {
   stroke-dasharray: 1;
   animation: rtv-ico-draw 3.2s cubic-bezier(.6,0,.3,1) infinite both;
 }
+
+@keyframes rtv-ico-ball-bounce {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  45% { transform: translateY(-3px) rotate(22deg); }
+}
+@keyframes rtv-ico-trophy-lift {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-2.5px) scale(1.06); }
+}
+@keyframes rtv-ico-dice-tilt {
+  0%, 100% { transform: rotate(0deg) scale(1); }
+  35% { transform: rotate(-10deg) scale(1.06); }
+  70% { transform: rotate(8deg) scale(1.03); }
+}
+@keyframes rtv-ico-card-fan {
+  0%, 100% { transform: rotate(0deg) translateY(0); }
+  50% { transform: rotate(7deg) translateY(-2px); }
+}
+@keyframes rtv-ico-bookmark-dip {
+  0%, 100% { transform: scaleY(1); }
+  45% { transform: scaleY(1.1); }
+}
+@keyframes rtv-ico-bubble-float {
+  0%, 100% { transform: translateY(0) scale(1); }
+  50% { transform: translateY(-3px) scale(1.08); }
+}
+@keyframes rtv-ico-note-hop {
+  0%, 100% { transform: translateY(0) rotate(0deg); }
+  50% { transform: translateY(-3px) rotate(-6deg); }
+}
+
+.rtv-ico[data-anim="always"] .rtv-k-ball,
+.group:hover .rtv-ico[data-anim="hover"] .rtv-k-ball,
+button:hover .rtv-ico[data-anim="hover"] .rtv-k-ball { animation: rtv-ico-ball-bounce 1.8s ease-in-out infinite; }
+
+.rtv-ico[data-anim="always"] .rtv-k-trophy,
+.group:hover .rtv-ico[data-anim="hover"] .rtv-k-trophy,
+button:hover .rtv-ico[data-anim="hover"] .rtv-k-trophy { animation: rtv-ico-trophy-lift 2s ease-in-out infinite; }
+
+.rtv-ico[data-anim="always"] .rtv-k-dice,
+.group:hover .rtv-ico[data-anim="hover"] .rtv-k-dice,
+button:hover .rtv-ico[data-anim="hover"] .rtv-k-dice { animation: rtv-ico-dice-tilt 2.2s ease-in-out infinite; }
+
+.rtv-ico[data-anim="always"] .rtv-k-card-fan,
+.group:hover .rtv-ico[data-anim="hover"] .rtv-k-card-fan,
+button:hover .rtv-ico[data-anim="hover"] .rtv-k-card-fan { animation: rtv-ico-card-fan 1.9s ease-in-out infinite; }
+
+.rtv-ico[data-anim="always"] .rtv-k-bookmark,
+.group:hover .rtv-ico[data-anim="hover"] .rtv-k-bookmark,
+button:hover .rtv-ico[data-anim="hover"] .rtv-k-bookmark { animation: rtv-ico-bookmark-dip 1.8s ease-in-out infinite; }
+
+.rtv-ico[data-anim="always"] .rtv-k-bubble,
+.group:hover .rtv-ico[data-anim="hover"] .rtv-k-bubble,
+button:hover .rtv-ico[data-anim="hover"] .rtv-k-bubble { animation: rtv-ico-bubble-float 2s ease-in-out infinite; }
+
+.rtv-ico[data-anim="always"] .rtv-k-note,
+.group:hover .rtv-ico[data-anim="hover"] .rtv-k-note,
+button:hover .rtv-ico[data-anim="hover"] .rtv-k-note { animation: rtv-ico-note-hop 1.7s ease-in-out infinite; }
 
 /* ==========================================================================
    RIFFANTV ANIMATED R INTRO LOGO KEYFRAMES

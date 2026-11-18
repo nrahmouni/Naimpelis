@@ -5,24 +5,10 @@ import {
   RotateCcw,
   RotateCw,
   Tv,
-  Film,
-  Trophy,
   ArrowLeft,
-  Sparkles,
   SkipForward,
-  SkipBack,
-  Youtube,
-  Moon,
-  Sun,
   Check,
-  Users,
-  Share2,
-  UserPlus,
-  Send,
   Globe,
-  AudioLines,
-  Settings2,
-  ExternalLink,
   Mic,
   MicOff,
   PhoneOff,
@@ -47,21 +33,14 @@ import {
   RiffanWarningIcon,
 } from './ui/RiffanIcons';
 import {
-  type AppLanguage,
   ChatMessage,
   LanguageNoticePopup,
-  SubtitleTrackItem,
   VideoState,
-  StreamTrack,
 } from '../types';
 import { UI_COPY, pickLang } from '../utils/i18n';
 import { socketService } from '../services/socket';
 import { triggerHaptic } from '../utils/haptics';
-import {
-  findActiveSubtitleText,
-  ParsedSubtitleCue,
-  parseSubtitleText,
-} from '../utils/subtitles';
+import { findActiveSubtitleText } from '../utils/subtitles';
 import { SecondaryHlsStage } from './SecondaryHlsStage';
 import { useAppStore } from '../store/useAppStore';
 import { useFocusTrap } from '../utils/useFocusTrap';
@@ -69,9 +48,7 @@ import {
   formatTimecode,
   type NativeCinemaPlayerProps,
   type ScreenOrientationWithLock,
-  type WakeLockSentinelLike,
   type WebKitVideoElement,
-  type YouTubePlayerEvent,
   type YouTubePlayerInstance,
 } from './player/playerTypes';
 import { useDirectCast } from './player/useDirectCast';
@@ -79,113 +56,16 @@ import { CloudBrowserOverlay } from './player/CloudBrowserOverlay';
 import { PlayerProSettingsModal } from './player/PlayerProSettingsModal';
 import { VoiceWaveBars } from './games/GameVoiceBar';
 import { MediaLanguageSelector } from './ui/LanguageBadge';
-import {
-  getEmbedServerStatus,
-  isMobileExternalTabContext,
-  setEmbedServerStatus,
-  unwrapEmbedUrl,
-} from './player/embedWindowUtils';
-
-const KNOWN_HOST_LABELS: Array<[RegExp, string]> = [
-  [/vidfast/i, 'VidFast'],
-  [/vidrock/i, 'VidRock'],
-  [/vidsrc|vidsrccc/i, 'VidSrc'],
-  [/vidlink/i, 'VidLink'],
-  [/embed69/i, 'Embed69'],
-  [/vidhide|dhtpre|peymin/i, 'VidHide'],
-  [/voe\.sx|voe/i, 'VOE'],
-  [/streamwish|wish/i, 'StreamWish'],
-  [/filemoon/i, 'FileMoon'],
-  [/ok\.ru|okru/i, 'OK.ru'],
-  [/dood|d000d/i, 'Dood'],
-  [/mixdrop/i, 'MixDrop'],
-  [/mega\.nz/i, 'Mega'],
-];
-
-function extractDistinguishingTrackName(
-  track: { label?: string; sourceUrl?: string; resolvedStreamUrl?: string; resolverType?: string },
-  idx: number,
-  lang: AppLanguage
-): string {
-  if (track.resolverType === 'youtube') {
-    const cleaned = (track.label || '').replace(/\s*\([^)]*\)/g, '').trim();
-    if (cleaned) return cleaned;
-  }
-
-  const rawLabel = (track.label || '').trim();
-  const parts = rawLabel
-    .split('·')
-    .map((p) => p.trim())
-    .filter(Boolean);
-
-  const genericFirst = /^(servidor\s*web|embed|web|stream|mirror|enlace|opci[oó]n|castellano|latino|english|vose|es|lat|en)$/i;
-  let candidate = '';
-  if (parts.length >= 2) {
-    // Pick the most descriptive part (usually provider/server)
-    candidate = genericFirst.test(parts[0]) ? parts.slice(1).join(' · ') : parts[0];
-  } else if (parts.length === 1 && !genericFirst.test(parts[0])) {
-    candidate = parts[0];
-  }
-
-  // Try matching provider token from label or unwrapped sourceUrl
-  const unwrapped = unwrapEmbedUrl(track.sourceUrl || track.resolvedStreamUrl || '');
-  for (const [rx, pretty] of KNOWN_HOST_LABELS) {
-    if (rx.test(candidate) || rx.test(rawLabel) || rx.test(unwrapped)) {
-      const langPrefix =
-        /\bVOSE\b/i.test(rawLabel)
-          ? 'VOSE '
-          : /\bLAT\b/i.test(rawLabel)
-          ? 'LAT '
-          : '';
-      candidate = `${langPrefix}${pretty}`.trim();
-      break;
-    }
-  }
-
-  if (!candidate || /^servidor\s*web$/i.test(candidate)) {
-    try {
-      const host = new URL(unwrapped).hostname.replace(/^www\./, '').split('.')[0];
-      if (host && host.length >= 2 && host !== 'localhost') {
-        candidate = host.charAt(0).toUpperCase() + host.slice(1, 12);
-      }
-    } catch {
-      // ignore invalid url
-    }
-  }
-
-  if (!candidate) {
-    const prefix =
-      lang === 'zh'
-        ? '线路'
-        : lang === 'ca'
-        ? 'Servidor'
-        : lang === 'en'
-        ? 'Server'
-        : 'Servidor';
-    candidate = `${prefix} ${idx + 1}`;
-  }
-
-  return candidate.length > 18 ? `${candidate.slice(0, 17)}…` : candidate;
-}
-
-function formatUniqueTrackChipLabels(
-  tracks: Array<{ label?: string; sourceUrl?: string; resolvedStreamUrl?: string; resolverType?: string }>,
-  lang: AppLanguage
-): string[] {
-  const raw = tracks.map((tr, idx) => extractDistinguishingTrackName(tr, idx, lang));
-  const totals = new Map<string, number>();
-  for (const name of raw) {
-    totals.set(name, (totals.get(name) || 0) + 1);
-  }
-  const seen = new Map<string, number>();
-  return raw.map((name) => {
-    const count = totals.get(name) || 1;
-    if (count <= 1) return name;
-    const nextIdx = (seen.get(name) || 0) + 1;
-    seen.set(name, nextIdx);
-    return `${name} ${nextIdx}`;
-  });
-}
+import { resolveTrackLang } from './player/trackLabelUtils';
+import { IdleStandbyStage } from './player/IdleStandbyStage';
+import { EmbedStagePanel } from './player/EmbedStagePanel';
+import { PlayerTransportBar } from './player/PlayerTransportBar';
+import { MiniPlayerHud } from './player/MiniPlayerHud';
+import { useEmbedExternalWindow } from './player/useEmbedExternalWindow';
+import { usePlayerSubtitles } from './player/usePlayerSubtitles';
+import { useYouTubeIframeSync } from './player/useYouTubeIframeSync';
+import { useCinemaPlatformApis } from './player/useCinemaPlatformApis';
+import { useTvReceiverRemote } from './player/useTvReceiverRemote';
 
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   videoState,
@@ -307,25 +187,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [playerToast, setPlayerToast] = useState<string | null>(null);
   const [embedRescueDismissedUrl, setEmbedRescueDismissedUrl] = useState<string>('');
 
-  // Controlled External Window ('cineplayer') + Inline Embed Watchdog State
-  const externalWinRef = useRef<Window | null>(null);
-  const lastNavigatedExternalUrlRef = useRef<string>('');
-  const triedEmbedIndicesRef = useRef<Set<number>>(new Set());
-  const watchdogTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const lastAttemptedEmbedUrlRef = useRef<string>('');
-  const latestSelectTrackRef = useRef(onSelectTrack);
-  latestSelectTrackRef.current = onSelectTrack;
   const latestCurrentTimeRef = useRef<number>(0);
-
-  const [externalWinState, setExternalWinState] = useState<
-    'idle' | 'open' | 'closed' | 'blocked'
-  >('idle');
-  const [externalTargetUrl, setExternalTargetUrl] = useState<string>('');
-  const [embedWatchdogPhase, setEmbedWatchdogPhase] = useState<
-    'watching' | 'verified' | 'window_preferred' | 'exhausted'
-  >('watching');
-  const [inlineRetryUrl, setInlineRetryUrl] = useState<string>('');
-  const [inlineRetryNonce, setInlineRetryNonce] = useState<number>(0);
 
   // Local Language Popup State & Incoming Chat Toast State
   const [localLangPopup, setLocalLangPopup] = useState<LanguageNoticePopup | null>(null);
@@ -356,26 +218,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     }
   });
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
-  const [subtitleTracks, setSubtitleTracks] = useState<SubtitleTrackItem[]>([]);
-  const [activeSubId, setActiveSubId] = useState<string>('off');
-  const [parsedCues, setParsedCues] = useState<ParsedSubtitleCue[]>([]);
-  const [subtitleOffsetSec, setSubtitleOffsetSec] = useState<number>(0);
-  const [subtitleSize, setSubtitleSize] = useState<'sm' | 'md' | 'lg'>('md');
-  const subtitleFileInputRef = useRef<HTMLInputElement | null>(null);
 
   // Auto-Next Episode Countdown State
   const [autoNextCountdown, setAutoNextCountdown] = useState<number | null>(null);
   const [autoNextCancelledForUrl, setAutoNextCancelledForUrl] = useState<string>('');
   const autoNextTriggeredUrlRef = useRef<string>('');
-
-  // Web Audio API Nodes Ref (created once per <video> element)
-  const audioGraphRef = useRef<{
-    ctx: AudioContext;
-    source: MediaElementAudioSourceNode;
-    speechFilter: BiquadFilterNode;
-    compressor: DynamicsCompressorNode;
-    makeupGain: GainNode;
-  } | null>(null);
 
   const showTransientToast = useCallback((msg: string) => {
     setPlayerToast(msg);
@@ -386,303 +233,27 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
 
   latestCurrentTimeRef.current = currentTime;
 
-  const activeEmbedInlineUrl =
-    videoState.mode === 'embed'
-      ? videoState.tracks[videoState.activeTrackIndex]?.resolvedStreamUrl ||
-        videoState.tracks[videoState.activeTrackIndex]?.sourceUrl ||
-        videoState.url ||
-        ''
-      : '';
-  const rawActiveEmbedUrl =
-    videoState.mode === 'embed'
-      ? videoState.tracks[videoState.activeTrackIndex]?.sourceUrl ||
-        videoState.tracks[videoState.activeTrackIndex]?.resolvedStreamUrl ||
-        videoState.url ||
-        ''
-      : '';
-  const activeEmbedDirectUrl =
-    videoState.mode === 'embed'
-      ? unwrapEmbedUrl(rawActiveEmbedUrl || videoState.url)
-      : '';
-  const isMobileExternal = isMobileExternalTabContext();
-  const embedMediaIdentityKey =
-    videoState.mode === 'embed'
-      ? `${videoState.rawSourceUrl || ''}::${videoState.seriesMeta?.season || ''}::${videoState.seriesMeta?.episode || ''}`
-      : '';
-
-  // Reset tried-track chain whenever movie or series episode changes
-  useEffect(() => {
-    if (!embedMediaIdentityKey) return;
-    triedEmbedIndicesRef.current = new Set([videoState.activeTrackIndex]);
-    setInlineRetryUrl('');
-  }, [embedMediaIdentityKey]);
-
-  // Poll `ref.closed` every 1s while controlled external window is open
-  useEffect(() => {
-    if (externalWinState !== 'open') return;
-    const pollId = window.setInterval(() => {
-      const w = externalWinRef.current;
-      if (!w || w.closed) {
-        externalWinRef.current = null;
-        setExternalWinState('closed');
-      }
-    }, 1000);
-    return () => {
-      window.clearInterval(pollId);
-    };
-  }, [externalWinState]);
-
-  // If external window is already open and episode/season/server changes, navigate that SAME window
-  useEffect(() => {
-    if (videoState.mode !== 'embed' || !activeEmbedDirectUrl) return;
-    if (externalWinState !== 'open') return;
-    const w = externalWinRef.current;
-    if (!w || w.closed) {
-      externalWinRef.current = null;
-      setExternalWinState('closed');
-      return;
-    }
-    if (lastNavigatedExternalUrlRef.current !== activeEmbedDirectUrl) {
-      lastNavigatedExternalUrlRef.current = activeEmbedDirectUrl;
-      setExternalTargetUrl(activeEmbedDirectUrl);
-      try {
-        w.location.href = activeEmbedDirectUrl;
-      } catch {
-        // ignore cross-origin restrictions if browser blocks location write
-      }
-    }
-  }, [videoState.mode, activeEmbedDirectUrl, externalWinState]);
-
-  // Inline Embed Watchdog (17s) + localStorage per-server preference
-  useEffect(() => {
-    if (watchdogTimerRef.current) {
-      clearTimeout(watchdogTimerRef.current);
-      watchdogTimerRef.current = null;
-    }
-    if (
-      videoState.mode !== 'embed' ||
-      !activeEmbedDirectUrl ||
-      isExtracting ||
-      externalWinState === 'open'
-    ) {
-      return;
-    }
-
-    triedEmbedIndicesRef.current.add(videoState.activeTrackIndex);
-    lastAttemptedEmbedUrlRef.current = activeEmbedDirectUrl;
-
-    const savedStatus = getEmbedServerStatus(activeEmbedDirectUrl);
-    if (savedStatus === 'inline_ok') {
-      setEmbedWatchdogPhase('verified');
-      return;
-    }
-    if (savedStatus === 'window_required' && inlineRetryUrl !== activeEmbedDirectUrl) {
-      setEmbedWatchdogPhase('window_preferred');
-      return;
-    }
-
-    setEmbedWatchdogPhase('watching');
-    const snapshotUrl = activeEmbedDirectUrl;
-    const snapshotIdx = videoState.activeTrackIndex;
-
-    watchdogTimerRef.current = setTimeout(() => {
-      watchdogTimerRef.current = null;
-      setEmbedServerStatus(snapshotUrl, 'window_required');
-
-      const webIndices = videoState.tracks
-        .map((tr, i) => ({ tr, i }))
-        .filter(({ tr, i }) => i !== snapshotIdx && tr.resolverType === 'web_embed')
-        .map(({ i }) => i);
-
-      const nextUntriedIdx = webIndices.find(
-        (i) => !triedEmbedIndicesRef.current.has(i)
-      );
-
-      if (nextUntriedIdx !== undefined) {
-        triedEmbedIndicesRef.current.add(nextUntriedIdx);
-        latestSelectTrackRef.current(nextUntriedIdx, latestCurrentTimeRef.current);
-      } else {
-        lastAttemptedEmbedUrlRef.current = snapshotUrl;
-        setEmbedWatchdogPhase('exhausted');
-      }
-    }, 17_000);
-
-    return () => {
-      if (watchdogTimerRef.current) {
-        clearTimeout(watchdogTimerRef.current);
-        watchdogTimerRef.current = null;
-      }
-    };
-  }, [
-    videoState.mode,
-    videoState.activeTrackIndex,
-    videoState.tracks,
-    activeEmbedDirectUrl,
-    isExtracting,
+  const {
     externalWinState,
-    inlineRetryUrl,
-    inlineRetryNonce,
-  ]);
-
-  // Listen for iframe playback / VidFast ready status postMessage to immediately verify inline playback
-  useEffect(() => {
-    if (videoState.mode !== 'embed' || !activeEmbedDirectUrl) return;
-    const onMessage = (ev: MessageEvent) => {
-      const d = ev?.data;
-      if (!d || typeof d !== 'object') return;
-      const isProxyReady =
-        d.source === 'naim-embed-proxy' &&
-        (d.event === 'playing' || d.event === 'loadeddata');
-      const isVidfastReady = d.event === 'status' && Number(d.data) === 200;
-      const isGenericPlayerReady =
-        d.type === 'PLAYER_EVENT' ||
-        (d.event === 'ready' && Boolean(d.data));
-      if (isProxyReady || isVidfastReady || isGenericPlayerReady) {
-        setEmbedServerStatus(activeEmbedDirectUrl, 'inline_ok');
-        setEmbedWatchdogPhase('verified');
-        if (watchdogTimerRef.current) {
-          clearTimeout(watchdogTimerRef.current);
-          watchdogTimerRef.current = null;
-        }
-      }
-    };
-    window.addEventListener('message', onMessage);
-    return () => {
-      window.removeEventListener('message', onMessage);
-    };
-  }, [videoState.mode, activeEmbedDirectUrl]);
-
-  // Ensure timers are cleared on unmount without force-closing user's external window
-  useEffect(() => {
-    return () => {
-      if (watchdogTimerRef.current) {
-        clearTimeout(watchdogTimerRef.current);
-        watchdogTimerRef.current = null;
-      }
-    };
-  }, []);
-
-  const openControlledExternalWindow = useCallback(
-    (urlOverride?: string) => {
-      const targetUrl = unwrapEmbedUrl(
-        urlOverride ||
-          externalTargetUrl ||
-          lastAttemptedEmbedUrlRef.current ||
-          activeEmbedDirectUrl
-      );
-      if (!targetUrl) return;
-      setExternalTargetUrl(targetUrl);
-
-      if (externalWinRef.current && !externalWinRef.current.closed) {
-        lastNavigatedExternalUrlRef.current = targetUrl;
-        try {
-          externalWinRef.current.location.href = targetUrl;
-          externalWinRef.current.focus();
-        } catch {
-          // ignore
-        }
-        setExternalWinState('open');
-        return;
-      }
-
-      const features = isMobileExternal
-        ? undefined
-        : 'width=1280,height=720,menubar=no,toolbar=no';
-      let opened: Window | null = null;
-      try {
-        opened = window.open(targetUrl, 'cineplayer', features);
-      } catch {
-        opened = null;
-      }
-
-      if (!opened) {
-        setExternalWinState('blocked');
-        showTransientToast('Permite ventanas emergentes para este sitio');
-        return;
-      }
-
-      externalWinRef.current = opened;
-      lastNavigatedExternalUrlRef.current = targetUrl;
-      setExternalWinState('open');
-      try {
-        opened.focus();
-      } catch {
-        // ignore
-      }
-    },
-    [
-      externalTargetUrl,
-      activeEmbedDirectUrl,
-      isMobileExternal,
-      showTransientToast,
-    ]
-  );
-
-  const handleFocusExternalWindow = useCallback(() => {
-    const w = externalWinRef.current;
-    if (!w || w.closed) {
-      externalWinRef.current = null;
-      setExternalWinState('closed');
-      return;
-    }
-    try {
-      w.focus();
-    } catch {
-      // ignore
-    }
-  }, []);
-
-  const handleCloseExternalWindow = useCallback(() => {
-    const w = externalWinRef.current;
-    externalWinRef.current = null;
-    try {
-      w?.close();
-    } catch {
-      // ignore
-    }
-    setExternalWinState('idle');
-  }, []);
-
-  const handleSelectExternalServer = useCallback(
-    (trackIdx: number) => {
-      const track = videoState.tracks[trackIdx];
-      if (!track) return;
-      const targetUrl = unwrapEmbedUrl(track.sourceUrl || track.resolvedStreamUrl || '');
-      if (targetUrl && externalWinRef.current && !externalWinRef.current.closed) {
-        lastNavigatedExternalUrlRef.current = targetUrl;
-        setExternalTargetUrl(targetUrl);
-        try {
-          externalWinRef.current.location.href = targetUrl;
-        } catch {
-          // ignore
-        }
-      }
-      onSelectTrack(trackIdx, currentTime);
-    },
-    [videoState.tracks, onSelectTrack, currentTime]
-  );
-
-  const handleMarkInlineServerWorking = useCallback(() => {
-    if (!activeEmbedDirectUrl) return;
-    if (watchdogTimerRef.current) {
-      clearTimeout(watchdogTimerRef.current);
-      watchdogTimerRef.current = null;
-    }
-    setEmbedServerStatus(activeEmbedDirectUrl, 'inline_ok');
-    setEmbedWatchdogPhase('verified');
-    showTransientToast('Servidor guardado como funcional');
-  }, [activeEmbedDirectUrl, showTransientToast]);
-
-  const handleRetryInlineEmbed = useCallback(() => {
-    if (watchdogTimerRef.current) {
-      clearTimeout(watchdogTimerRef.current);
-      watchdogTimerRef.current = null;
-    }
-    setExternalWinState('idle');
-    setInlineRetryUrl(activeEmbedDirectUrl);
-    setInlineRetryNonce((n) => n + 1);
-    setEmbedWatchdogPhase('watching');
-  }, [activeEmbedDirectUrl]);
+    externalTargetUrl,
+    embedWatchdogPhase,
+    activeEmbedInlineUrl,
+    activeEmbedDirectUrl,
+    lastAttemptedEmbedUrl,
+    isMobileExternal,
+    openControlledExternalWindow,
+    handleFocusExternalWindow,
+    handleCloseExternalWindow,
+    handleSelectExternalServer,
+    handleMarkInlineServerWorking,
+    handleRetryInlineEmbed,
+  } = useEmbedExternalWindow({
+    videoState,
+    isExtracting,
+    currentTime,
+    onSelectTrack,
+    showTransientToast,
+  });
 
   const {
     isCastingToTv,
@@ -818,142 +389,47 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const shouldRotate90 =
     isStageFullscreen && forceLandscapeRotation && viewportDims.h > viewportDims.w;
 
-  // Listen for Mobile Remote Control commands when running as a Smart TV Receiver
-  useEffect(() => {
-    if (!isTvMode) return;
-    const unsub = socketService.subscribe((event) => {
-      if (event.type !== 'TV_REMOTE_COMMAND') return;
-      const cmd = event.payload?.command;
-      if (cmd === 'vol_up' || cmd === 'vol_down') {
-        setVolume((prev) => {
-          const delta = cmd === 'vol_up' ? 0.15 : -0.15;
-          const nextVol = Math.max(0, Math.min(1, Number((prev + delta).toFixed(2))));
-          if (videoRef.current) {
-            videoRef.current.volume = nextVol;
-            if (nextVol > 0) videoRef.current.muted = false;
-          }
-          try {
-            if (ytPlayerRef.current?.setVolume) {
-              ytPlayerRef.current.setVolume(Math.round(nextVol * 100));
-              if (nextVol > 0 && ytPlayerRef.current?.unMute) {
-                ytPlayerRef.current.unMute();
-              }
-            }
-          } catch {
-            // ignore
-          }
-          if (nextVol > 0) setIsMuted(false);
-          showTransientToast(`🔊 Volumen TV · ${Math.round(nextVol * 100)}%`);
-          return nextVol;
-        });
-      } else if (cmd === 'toggle_mute') {
-        setIsMuted((prev) => {
-          const nextMuted = !prev;
-          if (videoRef.current) {
-            videoRef.current.muted = nextMuted;
-          }
-          try {
-            if (nextMuted) ytPlayerRef.current?.mute?.();
-            else ytPlayerRef.current?.unMute?.();
-          } catch {
-            // ignore
-          }
-          showTransientToast(
-            nextMuted ? '🔇 Televisor silenciado' : '🔊 Sonido TV activado'
-          );
-          return nextMuted;
-        });
-      } else if (cmd === 'toggle_fullscreen') {
-        const container = stageWrapperRef.current || document.documentElement;
-        const video = videoRef.current as (HTMLVideoElement & { webkitEnterFullscreen?: () => void }) | null;
-        if (document.fullscreenElement) {
-          document.exitFullscreen().catch(() => {});
-          showTransientToast('Saliendo de pantalla completa');
-        } else if (container?.requestFullscreen) {
-          container
-            .requestFullscreen()
-            .then(() => showTransientToast('✓ Pantalla Completa activada'))
-            .catch(() => {
-              if (video?.webkitEnterFullscreen) {
-                try {
-                  video.webkitEnterFullscreen();
-                  return;
-                } catch {
-                  // ignore
-                }
-              }
-              showTransientToast('Pulsa Pantalla Completa en la TV para ocultar la barra');
-            });
-        }
-      } else if (cmd === 'toggle_aspect') {
-        setTvAspectMode((prev) => {
-          const next = prev === 'contain' ? 'cover' : prev === 'cover' ? 'fill' : 'contain';
-          showTransientToast(
-            next === 'cover'
-              ? 'Formato TV · Pantalla Rellena sin bordes negros'
-              : next === 'fill'
-              ? 'Formato TV · Estirado 16:9 completo'
-              : 'Formato TV · Original sin recorte'
-          );
-          return next;
-        });
-      } else if (cmd === 'toggle_hud') {
-        setShowControls((prev) => !prev);
-      } else if (cmd === 'reload_tv') {
-        if (hlsRef.current) hlsRef.current.startLoad();
-        else if (videoRef.current && videoState.url) {
-          videoRef.current.load();
-          videoRef.current.play().catch(() => {});
-        }
-        showTransientToast('Resincronizando señal HD en TV...');
-      } else if (cmd === 'toggle_ambilight') {
-        setAmbilightEnabled((prev) => {
-          const next = !prev;
-          showTransientToast(
-            next ? '✨ Ambilight TV activado' : 'Ambilight TV desactivado'
-          );
-          return next;
-        });
-      } else if (cmd === 'cycle_subtitles') {
-        const subOptions = ['off', ...subtitleTracks.map((s) => s.id)];
-        if (subOptions.length <= 1) {
-          showTransientToast('💬 No hay subtítulos adicionales en este título');
-        } else {
-          const curIdx = Math.max(0, subOptions.indexOf(activeSubId));
-          const nextSubId = subOptions[(curIdx + 1) % subOptions.length];
-          handleSelectSubtitleTrack(nextSubId);
-          const nextLabel =
-            nextSubId === 'off'
-              ? 'Desactivados'
-              : subtitleTracks.find((s) => s.id === nextSubId)?.label || 'Activados';
-          showTransientToast(`💬 Subtítulos TV: ${nextLabel}`);
-        }
-      } else if (cmd === 'cycle_audio') {
-        if (videoState.tracks && videoState.tracks.length > 1) {
-          const nextIdx = (videoState.activeTrackIndex + 1) % videoState.tracks.length;
-          const nextTrack = videoState.tracks[nextIdx];
-          onSelectTrack(nextIdx, videoRef.current?.currentTime || currentTime || 0);
-          showTransientToast(`🔊 Audio TV: ${nextTrack?.label || `Pista ${nextIdx + 1}`}`);
-        } else {
-          showTransientToast('🔊 Audio original único en esta señal');
-        }
-      } else if (cmd === 'disconnect_tv') {
-        onExitTvMode?.();
-      }
-    });
-    return () => unsub();
-  }, [
-    isTvMode,
-    onExitTvMode,
+  const {
+    subtitleTracks,
+    activeSubId,
+    parsedCues,
+    subtitleOffsetSec,
+    setSubtitleOffsetSec,
+    subtitleSize,
+    setSubtitleSize,
+    subtitleFileInputRef,
+    handleSelectSubtitleTrack,
+    handleUploadLocalSubtitle,
+  } = usePlayerSubtitles({
+    videoState,
+    lang,
     showTransientToast,
-    videoState.url,
-    videoState.tracks,
-    videoState.activeTrackIndex,
+    onResetMenus: () => {
+      setShowProMenu(false);
+      setActiveHudMenu(null);
+    },
+  });
+
+  useTvReceiverRemote({
+    isTvMode,
+    videoState,
+    stageWrapperRef,
+    videoRef,
+    hlsRef,
+    ytPlayerRef,
     subtitleTracks,
     activeSubId,
     currentTime,
+    setVolume,
+    setIsMuted,
+    setTvAspectMode,
+    setShowControls,
+    setAmbilightEnabled,
+    handleSelectSubtitleTrack,
     onSelectTrack,
-  ]);
+    onExitTvMode,
+    showTransientToast,
+  });
 
   // Keyboard shortcuts for Modo Cine (T / Escape) when player is active
   useEffect(() => {
@@ -979,154 +455,28 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [isTvMode, videoState.mode, isCinemaMode, onToggleCinemaMode]);
 
-  // ============================================================================
-  // CINEMA PRO 1: REAL-TIME AMBILIGHT HALO SAMPLER (ZERO REACT RE-RENDERS)
-  // Restricted to Cinema/TV/Fullscreen desktop views so mobile hardware video
-  // decoders never stall on GPU-to-CPU canvas frame readbacks during sports.
-  // ============================================================================
-  useEffect(() => {
-    const stageEl = stageWrapperRef.current;
-    if (!stageEl) return;
-
-    const shouldGlow =
-      ambilightEnabled &&
-      !isMinimized &&
-      !isCompressed &&
-      (isCinemaMode || isTvMode || isStageFullscreen) &&
-      localPlaying &&
-      (videoState.mode === 'hls' || videoState.mode === 'direct');
-
-    if (!shouldGlow) {
-      stageEl.style.boxShadow = '';
-      return;
-    }
-
-    const canvas = document.createElement('canvas');
-    canvas.width = 6;
-    canvas.height = 4;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-    if (!ctx) return;
-
-    const sampleFrame = () => {
-      const video = videoRef.current;
-      if (!video || video.paused || video.readyState < 2 || !stageWrapperRef.current) return;
-      try {
-        ctx.drawImage(video, 0, 0, 6, 4);
-        const data = ctx.getImageData(0, 0, 6, 4).data;
-        let rL = 0, gL = 0, bL = 0, nL = 0;
-        let rR = 0, gR = 0, bR = 0, nR = 0;
-        for (let y = 0; y < 4; y++) {
-          for (let x = 0; x < 6; x++) {
-            const idx = (y * 6 + x) * 4;
-            const r = data[idx];
-            const g = data[idx + 1];
-            const b = data[idx + 2];
-            if (x < 3) {
-              rL += r; gL += g; bL += b; nL++;
-            } else {
-              rR += r; gR += g; bR += b; nR++;
-            }
-          }
-        }
-        const boost = (v: number) => Math.min(255, Math.max(24, Math.round(v * 1.22)));
-        const leftRgb = `${boost(rL / nL)}, ${boost(gL / nL)}, ${boost(bL / nL)}`;
-        const rightRgb = `${boost(rR / nR)}, ${boost(gR / nR)}, ${boost(bR / nR)}`;
-        const alpha = isCinemaMode ? 0.56 : 0.38;
-        stageWrapperRef.current.style.boxShadow = `-24px 0 70px -12px rgba(${leftRgb}, ${alpha}), 24px 0 70px -12px rgba(${rightRgb}, ${alpha})`;
-      } catch {
-        // ignore if frame unavailable
-      }
-    };
-
-    sampleFrame();
-    const timer = setInterval(sampleFrame, 750);
-    return () => {
-      clearInterval(timer);
-      if (stageWrapperRef.current) {
-        stageWrapperRef.current.style.boxShadow = '';
-      }
-    };
-  }, [ambilightEnabled, isMinimized, isCompressed, isTvMode, isStageFullscreen, localPlaying, videoState.mode, isCinemaMode]);
-
-  // ============================================================================
-  // CINEMA PRO 2: WEB AUDIO VOCAL BOOST / NIGHT COMPRESSOR
-  // ============================================================================
-  const toggleVocalBoost = useCallback(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const next = !vocalBoostEnabled;
-    try {
-      const AudioCtx = window.AudioContext || window.webkitAudioContext;
-      if (!AudioCtx) return;
-
-      if (!audioGraphRef.current) {
-        const ctx = new AudioCtx();
-        const source = ctx.createMediaElementSource(video);
-        const speechFilter = ctx.createBiquadFilter();
-        speechFilter.type = 'peaking';
-        speechFilter.frequency.value = 2400;
-        speechFilter.Q.value = 1.0;
-        speechFilter.gain.value = 4.5;
-
-        const compressor = ctx.createDynamicsCompressor();
-        compressor.threshold.value = -28;
-        compressor.knee.value = 24;
-        compressor.ratio.value = 6;
-        compressor.attack.value = 0.005;
-        compressor.release.value = 0.22;
-
-        const makeupGain = ctx.createGain();
-        makeupGain.gain.value = 1.45;
-
-        audioGraphRef.current = { ctx, source, speechFilter, compressor, makeupGain };
-      }
-
-      const g = audioGraphRef.current;
-      if (g.ctx.state === 'suspended') {
-        g.ctx.resume().catch(() => {});
-      }
-      g.source.disconnect();
-      g.speechFilter.disconnect();
-      g.compressor.disconnect();
-      g.makeupGain.disconnect();
-
-      if (next) {
-        g.source.connect(g.speechFilter);
-        g.speechFilter.connect(g.compressor);
-        g.compressor.connect(g.makeupGain);
-        g.makeupGain.connect(g.ctx.destination);
-      } else {
-        g.source.connect(g.ctx.destination);
-      }
-
-      setVocalBoostEnabled(next);
-      try {
-        localStorage.setItem('naim_vocal_boost_v1', String(next));
-      } catch {
-        // ignore
-      }
-      showTransientToast(
-        next
-          ? pickLang(lang, {
-              es: 'Realce de Voces y Modo Noche activado',
-              ca: 'Realç de Veus i Mode Nit activat',
-              en: 'Vocal Boost & Night Mode enabled',
-            })
-          : pickLang(lang, {
-              es: 'Audio original restaurado',
-              ca: 'Àudio original restaurat',
-              en: 'Original audio restored',
-            })
-      );
-    } catch {
-      setVocalBoostEnabled(false);
-      try {
-        localStorage.setItem('naim_vocal_boost_v1', 'false');
-      } catch {
-        // ignore
-      }
-    }
-  }, [vocalBoostEnabled, lang, showTransientToast]);
+  const { toggleVocalBoost } = useCinemaPlatformApis({
+    lang,
+    videoState,
+    stageWrapperRef,
+    videoRef,
+    ambilightEnabled,
+    vocalBoostEnabled,
+    setVocalBoostEnabled,
+    isMinimized,
+    isCompressed,
+    isTvMode,
+    isStageFullscreen,
+    isCinemaMode,
+    localPlaying,
+    currentTime,
+    duration,
+    playbackSpeed,
+    setIsInPiP,
+    showTransientToast,
+    onNextEpisode,
+    onSyncAction,
+  });
 
   // Apply playback speed to HTML5 video & YouTube
   const handleSelectSpeed = (rate: number) => {
@@ -1141,131 +491,6 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         // ignore
       }
     }
-  };
-
-  // ============================================================================
-  // CINEMA PRO 3: AUTOMATIC CLOUD SUBTITLES + .SRT / .VTT UPLOAD
-  // ============================================================================
-  useEffect(() => {
-    setActiveSubId('off');
-    setParsedCues([]);
-    setSubtitleOffsetSec(0);
-    setShowProMenu(false);
-    setActiveHudMenu(null);
-
-    if (videoState.mode !== 'hls' && videoState.mode !== 'direct') {
-      setSubtitleTracks([]);
-      return;
-    }
-
-    const builtInSubs: SubtitleTrackItem[] = Array.isArray(videoState.subtitles)
-      ? videoState.subtitles
-      : [];
-
-    let detectedTmdbId = videoState.seriesMeta?.tmdbId;
-    if (!detectedTmdbId && videoState.rawSourceUrl) {
-      const m = videoState.rawSourceUrl.match(/(?:watch|movie|-)\/?(\d{2,9})(?:$|\/)/i);
-      if (m) detectedTmdbId = Number(m[1]);
-    }
-    if (!detectedTmdbId) {
-      setSubtitleTracks(builtInSubs);
-      return;
-    }
-
-    setSubtitleTracks(builtInSubs);
-    let cancelled = false;
-    const qs = new URLSearchParams({ tmdbId: String(detectedTmdbId) });
-    if (videoState.seriesMeta?.season && videoState.seriesMeta?.episode) {
-      qs.set('season', String(videoState.seriesMeta.season));
-      qs.set('episode', String(videoState.seriesMeta.episode));
-    }
-
-    fetch(`/api/subtitles/search?${qs.toString()}`)
-      .then((r) => r.json())
-      .then((data) => {
-        if (!cancelled && Array.isArray(data?.tracks)) {
-          const merged = [...builtInSubs];
-          const seenIds = new Set(merged.map((s) => s.id));
-          for (const tr of data.tracks as SubtitleTrackItem[]) {
-            if (tr?.id && !seenIds.has(tr.id)) {
-              seenIds.add(tr.id);
-              merged.push(tr);
-            }
-          }
-          setSubtitleTracks(merged);
-        }
-      })
-      .catch(() => {});
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    videoState.url,
-    videoState.mode,
-    videoState.rawSourceUrl,
-    videoState.subtitles,
-    videoState.seriesMeta?.tmdbId,
-    videoState.seriesMeta?.season,
-    videoState.seriesMeta?.episode,
-  ]);
-
-  const handleSelectSubtitleTrack = async (trackId: string) => {
-    setActiveSubId(trackId);
-    if (trackId === 'off') {
-      setParsedCues([]);
-      return;
-    }
-    const found = subtitleTracks.find((s) => s.id === trackId);
-    if (!found) return;
-    if (found.rawContent) {
-      setParsedCues(parseSubtitleText(found.rawContent));
-      return;
-    }
-    if (found.url) {
-      try {
-        const res = await fetch(found.url);
-        const text = await res.text();
-        setParsedCues(parseSubtitleText(text));
-      } catch {
-        showTransientToast(
-          pickLang(lang, {
-            es: 'No se pudo cargar este subtítulo',
-            ca: 'No s’ha pogut carregar aquest subtítol',
-            en: 'Failed to load subtitle',
-          })
-        );
-      }
-    }
-  };
-
-  const handleUploadLocalSubtitle = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const content = String(reader.result || '');
-      const cues = parseSubtitleText(content);
-      const customId = `local-${Date.now()}`;
-      const newTrack: SubtitleTrackItem = {
-        id: customId,
-        label: file.name.slice(0, 26),
-        lang: 'LOCAL',
-        rawContent: content,
-      };
-      setSubtitleTracks((prev) => [newTrack, ...prev]);
-      setActiveSubId(customId);
-      setParsedCues(cues);
-      showTransientToast(
-        pickLang(lang, {
-          es: `Subtítulos cargados (${cues.length} líneas)`,
-          ca: `Subtítols carregats (${cues.length} línies)`,
-          en: `Subtitles loaded (${cues.length} cues)`,
-        })
-      );
-    };
-    reader.readAsText(file);
-    e.target.value = '';
   };
 
   // ============================================================================
@@ -1307,223 +532,7 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     onNextEpisode,
   ]);
 
-  // ============================================================================
-  // SCREEN WAKE LOCK (Prevents phone/tablet screen from sleeping mid-movie/match)
-  // ============================================================================
-  useEffect(() => {
-    let wakeLock: WakeLockSentinelLike | null = null;
-    const requestLock = async () => {
-      try {
-        const nav = navigator as Navigator & {
-          wakeLock?: { request: (type: 'screen') => Promise<WakeLockSentinelLike> };
-        };
-        if (localPlaying && nav.wakeLock?.request) {
-          wakeLock = await nav.wakeLock.request('screen');
-        }
-      } catch {
-        // ignore unsupported or battery-saver restrictions
-      }
-    };
-    requestLock();
-
-    const onVisChange = () => {
-      if (document.visibilityState === 'visible' && localPlaying) {
-        requestLock();
-      }
-    };
-    document.addEventListener('visibilitychange', onVisChange);
-
-    return () => {
-      document.removeEventListener('visibilitychange', onVisChange);
-      wakeLock?.release?.().catch(() => {});
-    };
-  }, [localPlaying]);
-
-  // Stall 8s Auto-Failover & QoE Metrics Reporter
-  useEffect(() => {
-    if (!isBuffering || !localPlaying || videoState.mode === 'idle') return;
-    rebufferCountRef.current += 1;
-    const stallTimer = setTimeout(() => {
-      const elapsedSinceLoad = Math.max(0, Date.now() - streamLoadStartRef.current);
-      const activeTrack = videoState.tracks?.[videoState.activeTrackIndex];
-      fetch('/api/metrics/qoe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          platform: isTvMode ? 'smart-tv' : 'web',
-          startupMs: Math.min(60_000, elapsedSinceLoad),
-          rebufferCount: rebufferCountRef.current,
-          rebufferMs: 8000,
-          stallFailoverUsed: true,
-          failed: true,
-          sourceUrl: activeTrack?.sourceUrl || videoState.url || undefined,
-        }),
-      }).catch(() => {});
-      if (
-        canControlRoom &&
-        videoState.tracks.length > 1 &&
-        videoState.activeTrackIndex + 1 < videoState.tracks.length
-      ) {
-        showTransientToast(
-          pickLang(lang, {
-            es: 'Cambio automático de servidor por buffering...',
-            ca: 'Canvi automàtic de servidor per buffering...',
-            en: 'Auto-switching backup server after buffering...',
-          })
-        );
-        onSelectTrack(videoState.activeTrackIndex + 1, currentTime);
-      }
-    }, 8000);
-    return () => clearTimeout(stallTimer);
-  }, [
-    isBuffering,
-    localPlaying,
-    isTvMode,
-    videoState.mode,
-    videoState.url,
-    videoState.tracks,
-    videoState.activeTrackIndex,
-    canControlRoom,
-    onSelectTrack,
-    currentTime,
-    lang,
-    showTransientToast,
-  ]);
-
-  // ============================================================================
-  // PICTURE-IN-PICTURE (SUPERPONER VÍDEO ENCIMA DEL TELÉFONO) + MEDIA SESSION
-  // ============================================================================
-  useEffect(() => {
-    const video = videoRef.current as WebKitVideoElement | null;
-    if (!video) return;
-
-    // Enable Android Chrome / PWA automatic PiP when swiping to phone home screen
-    try {
-      video.autoPictureInPicture = true;
-    } catch {
-      // ignore
-    }
-
-    const onEnterPiP = () => setIsInPiP(true);
-    const onLeavePiP = () => setIsInPiP(false);
-    const onWebkitModeChange = () => {
-      setIsInPiP(video.webkitPresentationMode === 'picture-in-picture');
-    };
-
-    video.addEventListener('enterpictureinpicture', onEnterPiP);
-    video.addEventListener('leavepictureinpicture', onLeavePiP);
-    video.addEventListener('webkitpresentationmodechanged', onWebkitModeChange);
-
-    return () => {
-      video.removeEventListener('enterpictureinpicture', onEnterPiP);
-      video.removeEventListener('leavepictureinpicture', onLeavePiP);
-      video.removeEventListener('webkitpresentationmodechanged', onWebkitModeChange);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
-    if (videoState.mode === 'idle') {
-      navigator.mediaSession.metadata = null;
-      return;
-    }
-
-    try {
-      navigator.mediaSession.metadata = new MediaMetadata({
-        title: videoState.title || 'RiffanTV',
-        artist: videoState.subtitle || 'RiffanTV Sala Sincronizada',
-        album: 'RiffanTV',
-        artwork: videoState.poster
-          ? [{ src: videoState.poster, sizes: '512x512', type: 'image/jpeg' }]
-          : [{ src: '/pwa-512x512.png', sizes: '512x512', type: 'image/png' }],
-      });
-
-      navigator.mediaSession.setActionHandler('play', () => {
-        const v = videoRef.current;
-        if (v) {
-          v.play().catch(() => {});
-          onSyncAction('play', { isPlaying: true, currentTime: v.currentTime || 0 });
-        }
-      });
-      navigator.mediaSession.setActionHandler('pause', () => {
-        const v = videoRef.current;
-        if (v) {
-          v.pause();
-          onSyncAction('pause', { isPlaying: false, currentTime: v.currentTime || 0 });
-        }
-      });
-      if (!videoState.isLive) {
-        navigator.mediaSession.setActionHandler('seekbackward', () => {
-          const v = videoRef.current;
-          if (!v) return;
-          const next = Math.max(0, (v.currentTime || 0) - 10);
-          v.currentTime = next;
-          onSyncAction('seek', { currentTime: next, isPlaying: !v.paused });
-        });
-        navigator.mediaSession.setActionHandler('seekforward', () => {
-          const v = videoRef.current;
-          if (!v) return;
-          const next = (v.currentTime || 0) + 10;
-          v.currentTime = next;
-          onSyncAction('seek', { currentTime: next, isPlaying: !v.paused });
-        });
-      }
-      if (videoState.seriesMeta && onNextEpisode) {
-        navigator.mediaSession.setActionHandler('nexttrack', () => {
-          onNextEpisode();
-        });
-      }
-      // Chrome Android Auto-PiP handler
-      try {
-        const ms = navigator.mediaSession as MediaSession & {
-          setActionHandler: (action: string, handler: (() => void) | null) => void;
-        };
-        ms.setActionHandler(
-          'enterpictureinpicture',
-          async () => {
-            const v = videoRef.current as WebKitVideoElement | null;
-            if (v?.requestPictureInPicture && !document.pictureInPictureElement) {
-              await v.requestPictureInPicture();
-            }
-          }
-        );
-      } catch {
-        // ignore if action unsupported in browser
-      }
-    } catch {
-      // ignore
-    }
-  }, [
-    videoState.mode,
-    videoState.title,
-    videoState.subtitle,
-    videoState.poster,
-    videoState.isLive,
-    videoState.seriesMeta,
-    onNextEpisode,
-    onSyncAction,
-  ]);
-
-  // Update lock-screen MediaSession position state
-  useEffect(() => {
-    if (
-      typeof navigator === 'undefined' ||
-      !('mediaSession' in navigator) ||
-      typeof navigator.mediaSession.setPositionState !== 'function'
-    ) {
-      return;
-    }
-    if (videoState.mode === 'idle' || videoState.isLive || duration <= 0) return;
-    try {
-      navigator.mediaSession.setPositionState({
-        duration: Math.max(duration, currentTime),
-        playbackRate: playbackSpeed || 1,
-        position: Math.max(0, Math.min(duration, currentTime)),
-      });
-    } catch {
-      // ignore invalid position state
-    }
-  }, [currentTime, duration, playbackSpeed, videoState.mode, videoState.isLive]);
+  // Screen Wake Lock, PiP listeners & MediaSession are handled via useCinemaPlatformApis above
 
   // Global PC Keyboard Shortcuts (Space/K, F, M, J/ArrowLeft, L/ArrowRight, C)
   useEffect(() => {
@@ -2032,167 +1041,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     syncOffsetMs,
   ]);
 
-  // ============================================================================
-  // ENGINE 2: YOUTUBE OFFICIAL IFRAME API ENGINE
-  // ============================================================================
-  useEffect(() => {
-    if (videoState.mode !== 'youtube' || !videoState.url) {
-      if (ytPlayerRef.current?.destroy) {
-        try {
-          ytPlayerRef.current.destroy();
-        } catch {
-          // ignore
-        }
-        ytPlayerRef.current = null;
-      }
-      return;
-    }
-
-    let cancelled = false;
-
-    const mountYtPlayer = () => {
-      if (cancelled || !window.YT?.Player) return;
-      if (ytPlayerRef.current?.loadVideoById) {
-        ytPlayerRef.current.loadVideoById(videoState.url, videoState.currentTime || 0);
-        try {
-          ytPlayerRef.current.unMute?.();
-          ytPlayerRef.current.setVolume?.(100);
-          setIsMuted(false);
-          setVolume(1);
-        } catch {
-          // ignore
-        }
-        return;
-      }
-
-      ytPlayerRef.current = new window.YT.Player(ytContainerId.current, {
-        videoId: videoState.url,
-        playerVars: {
-          autoplay: 1,
-          mute: 0,
-          controls: 1,
-          rel: 0,
-          modestbranding: 1,
-          playsinline: 1,
-          start: Math.floor(videoState.currentTime || 0),
-        },
-        events: {
-          onReady: (e: YouTubePlayerEvent) => {
-            try {
-              e.target.unMute?.();
-              e.target.setVolume?.(100);
-              setIsMuted(false);
-              setVolume(1);
-            } catch {
-              // ignore
-            }
-            if (videoState.isPlaying) {
-              e.target.playVideo();
-            } else {
-              e.target.pauseVideo();
-            }
-          },
-          onStateChange: (e: YouTubePlayerEvent) => {
-            if (e.data === 1) {
-              try {
-                if (e.target.isMuted?.()) {
-                  e.target.unMute?.();
-                }
-                if ((e.target.getVolume?.() ?? 100) === 0) {
-                  e.target.setVolume?.(100);
-                }
-                setIsMuted(Boolean(e.target.isMuted?.()));
-              } catch {
-                // ignore
-              }
-            }
-            if (isApplyingRemoteRef.current) return;
-            if (e.data === 1) {
-              setLocalPlaying(true);
-              onSyncAction('play', {
-                isPlaying: true,
-                currentTime: e.target.getCurrentTime?.() || 0,
-              });
-            } else if (e.data === 2) {
-              setLocalPlaying(false);
-              onSyncAction('pause', {
-                isPlaying: false,
-                currentTime: e.target.getCurrentTime?.() || 0,
-              });
-            }
-          },
-        },
-      });
-    };
-
-    if (window.YT?.Player) {
-      mountYtPlayer();
-    } else {
-      const existingScript = document.querySelector(
-        'script[src="https://www.youtube.com/iframe_api"]'
-      );
-      if (!existingScript) {
-        const tag = document.createElement('script');
-        tag.src = 'https://www.youtube.com/iframe_api';
-        document.head.appendChild(tag);
-      }
-      const prevCallback = window.onYouTubeIframeAPIReady;
-      window.onYouTubeIframeAPIReady = () => {
-        prevCallback?.();
-        mountYtPlayer();
-      };
-    }
-
-    return () => {
-      cancelled = true;
-    };
-  }, [videoState.mode, videoState.url]);
-
-  useEffect(() => {
-    if (videoState.mode !== 'youtube' || !ytPlayerRef.current?.getPlayerState) return;
-    isApplyingRemoteRef.current = true;
-    const yt = ytPlayerRef.current;
-    const serverNow = Date.now() + socketService.serverClockOffsetMs;
-    const elapsedSec =
-      videoState.isPlaying && Number.isFinite(videoState.lastUpdated) && videoState.lastUpdated > 0
-        ? Math.max(0, Math.min(12, (serverNow - videoState.lastUpdated) / 1000))
-        : 0;
-    const expectedTime = videoState.currentTime + elapsedSec + syncOffsetMs / 1000;
-    const ytTime = yt.getCurrentTime?.() || 0;
-    const signedDrift = expectedTime - ytTime;
-    const absDrift = Math.abs(signedDrift);
-
-    if (absDrift > 2.5) {
-      yt.setPlaybackRate?.(1);
-      yt.seekTo?.(Math.max(0, expectedTime), true);
-    } else if (videoState.isPlaying && absDrift >= 0.45 && absDrift <= 2.0) {
-      yt.setPlaybackRate?.(signedDrift > 0 ? 1.05 : 0.95);
-      if (smoothDriftTimerRef.current) clearTimeout(smoothDriftTimerRef.current);
-      smoothDriftTimerRef.current = setTimeout(() => {
-        ytPlayerRef.current?.setPlaybackRate?.(1);
-      }, 2400);
-    } else {
-      yt.setPlaybackRate?.(1);
-    }
-
-    if (videoState.isPlaying) {
-      yt.playVideo?.();
-    } else {
-      yt.pauseVideo?.();
-    }
-    const timer = setTimeout(() => {
-      isApplyingRemoteRef.current = false;
-    }, 450);
-    return () => {
-      clearTimeout(timer);
-    };
-  }, [
-    videoState.isPlaying,
-    videoState.currentTime,
-    videoState.lastUpdated,
-    videoState.mode,
+  useYouTubeIframeSync({
+    videoState,
+    ytPlayerRef,
+    ytContainerId,
+    isApplyingRemoteRef,
+    smoothDriftTimerRef,
     syncOffsetMs,
-  ]);
+    setIsMuted,
+    setVolume,
+    setLocalPlaying,
+    onSyncAction,
+  });
 
   // ============================================================================
   // PLAYER INTERACTIONS
@@ -2595,30 +1455,10 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const activeLanguagePopup = localLangPopup || languageNotice;
   const activeTrackObj = videoState.tracks?.[videoState.activeTrackIndex];
 
-  const resolveTrackLang = (tr?: StreamTrack | null): 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT' => {
-    if (!tr) return 'ES';
-    const raw = String(tr.lang || '').toUpperCase();
-    if (raw === 'CAT' || raw === 'CA' || raw.includes('CATAL') || raw.includes('VALENCI')) return 'CAT';
-    const label = `${tr.label || ''} ${videoState.subtitle || ''} ${videoState.title || ''}`.toLowerCase();
-    if (
-      label.includes('català') ||
-      label.includes('catala') ||
-      label.includes('[cat]') ||
-      label.includes('(cat)') ||
-      label.includes('3cat') ||
-      label.includes('sx3') ||
-      label.includes('3xl') ||
-      label.includes('k3')
-    ) {
-      return 'CAT';
-    }
-    if (raw === 'LAT' || raw.includes('LATIN') || label.includes('latino') || label.includes('latina')) return 'LAT';
-    if (raw === 'VOSE' || raw.includes('SUB') || label.includes('vose') || label.includes('subtitul')) return 'VOSE';
-    if (raw === 'EN' || raw.includes('ENG') || label.includes('english') || label.includes('inglés') || label.includes('ingles')) return 'EN';
-    return 'ES';
-  };
-
-  const activeTrackLangCode = resolveTrackLang(activeTrackObj);
+  const activeTrackLangCode = resolveTrackLang(activeTrackObj, {
+    subtitle: videoState.subtitle,
+    title: videoState.title,
+  });
 
   const handleQuickLanguageSwitch = (targetLangCode: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'CAT') => {
     triggerHaptic('light');
@@ -2632,7 +1472,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     const requestedName = langDisplayNames[targetLangCode];
 
     const matchingIdx = (videoState.tracks || []).findIndex(
-      (tr) => resolveTrackLang(tr) === targetLangCode
+      (tr) =>
+        resolveTrackLang(tr, {
+          subtitle: videoState.subtitle,
+          title: videoState.title,
+        }) === targetLangCode
     );
 
     if (matchingIdx === -1) {
@@ -3259,151 +2103,18 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* IDLE STANDBY STAGE (Apple TV OLED Lounge)                          */}
         {/* ================================================================== */}
         {videoState.mode === 'idle' && !isExtracting && !isMinimized && (
-          <div className="absolute inset-0 flex flex-col items-center justify-center p-5 sm:p-8 text-center bg-gradient-to-b from-[#18181B] via-[#0E0E10] to-[#09090B]">
-            {isTvMode && (
-              <div className="mb-4 px-4 py-1.5 rounded-full bg-[#00F593]/15 border border-[#00F593]/40 text-xs sm:text-sm font-semibold text-[#00F593] flex items-center gap-2">
-                <span className="w-2 h-2 rounded-full bg-[#00F593]" />
-                <span>
-                  {pickLang(lang, {
-                    es: `${roomDisplayName || `Sala ${(roomCode || '').toUpperCase()}`} · ${participantCount} ${participantCount === 1 ? 'conectado' : 'conectados'}`,
-                    ca: `${roomDisplayName || `Sala ${(roomCode || '').toUpperCase()}`} · ${participantCount} ${participantCount === 1 ? 'connectat' : 'connectats'}`,
-                    en: `${roomDisplayName || `Room ${(roomCode || '').toUpperCase()}`} · ${participantCount} connected`,
-                  })}
-                </span>
-              </div>
-            )}
-            <div className="w-12 h-12 rounded-2xl bg-[#9146FF]/15 border border-[#9146FF]/35 flex items-center justify-center mb-3 shadow-[0_0_30px_rgba(145,70,255,0.22)]">
-              <Tv className="w-6 h-6 text-[#BF94FF]" />
-            </div>
-            <h3 className="font-display font-semibold text-base sm:text-2xl text-white text-balance">
-              {isTvMode
-                ? pickLang(lang, {
-                    es: 'Televisor listo para proyectar en 1080p',
-                    ca: 'Televisor preparat per projectar en 1080p',
-                    en: 'TV ready to project in 1080p',
-                  })
-                : t.standbyTitle}
-            </h3>
-            <p className="text-xs sm:text-base text-zinc-400 max-w-lg mt-1.5">
-              {isTvMode
-                ? pickLang(lang, {
-                    es: 'Elige una película, serie, partido en directo o vídeo de YouTube desde tu móvil y empezará aquí automáticamente.',
-                    ca: 'Tria una pel·lícula, sèrie, partit en directe o vídeo de YouTube des del mòbil i començarà aquí automàticament.',
-                    en: 'Pick any movie, series, live match, or YouTube video on your phone and it will play here automatically.',
-                  })
-                : t.standbySub}
-            </p>
-            {isTvMode && (
-              <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
-                <button
-                  type="button"
-                  onClick={handleToggleFullscreen}
-                  className="min-h-[46px] px-5 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] text-xs sm:text-sm font-bold text-white flex items-center gap-2 cursor-pointer transition-colors shadow-[0_12px_30px_rgba(145,70,255,0.35)]"
-                >
-                  {isFullscreen ? (
-                    <>
-                      <RiffanExitFullscreenIcon size={16} tone="current" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Salir Pantalla Completa',
-                          ca: 'Sortir Pantalla Completa',
-                          en: 'Exit Fullscreen',
-                        })}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <RiffanFullscreenIcon size={16} tone="current" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Poner TV en Pantalla Completa',
-                          ca: 'Posar TV en Pantalla Completa',
-                          en: 'Enter TV Fullscreen',
-                        })}
-                      </span>
-                    </>
-                  )}
-                </button>
-
-                {onExitTvMode && (
-                  <button
-                    type="button"
-                    onClick={onExitTvMode}
-                    className="min-h-[46px] px-5 rounded-2xl bg-[#26262C] hover:bg-white/[0.14] border border-white/15 text-xs sm:text-sm font-semibold text-zinc-200 flex items-center gap-2 cursor-pointer transition-colors"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    <span>
-                      {pickLang(lang, {
-                        es: 'Cambiar código o salir de Modo TV',
-                        ca: 'Canviar codi o sortir de Mode TV',
-                        en: 'Switch code or exit TV Mode',
-                      })}
-                    </span>
-                  </button>
-                )}
-              </div>
-            )}
-
-            {extractionError && (
-              <div className="mt-3 px-3.5 py-2.5 rounded-xl bg-rose-500/15 border border-rose-500/30 text-xs text-rose-200 max-w-md flex items-center gap-2">
-                <RiffanWarningIcon size={16} animate="always" className="text-rose-400" />
-                <span>{extractionError}</span>
-              </div>
-            )}
-
-            {onOpenCatalogSection && (
-              <div className="mt-5 flex flex-wrap items-center justify-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => onOpenCatalogSection('movies')}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-xs sm:text-sm font-semibold text-white flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
-                >
-                  <Film className="w-4 h-4" />
-                  <span>{t.tabMovies}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenCatalogSection('series')}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#1F1F23] hover:bg-[#26262C] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
-                >
-                  <Tv className="w-4 h-4 text-[#BF94FF]" />
-                  <span>{t.tabSeries}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenCatalogSection('anime')}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#1F1F23] hover:bg-[#26262C] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
-                >
-                  <Sparkles className="w-4 h-4 text-[#F47521]" />
-                  <span>Anime</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenCatalogSection('tdt')}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#1F1F23] hover:bg-[#26262C] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
-                >
-                  <RiffanLiveIcon size={16} animate="always" className="text-[#EB0400]" />
-                  <span>{t.tabTdt}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenCatalogSection('sports')}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#1F1F23] hover:bg-[#26262C] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
-                >
-                  <Trophy className="w-4 h-4 text-amber-400" />
-                  <span>{t.tabSports}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onOpenCatalogSection('youtube')}
-                  className="min-h-[44px] px-4 rounded-xl bg-[#1F1F23] hover:bg-[#26262C] border border-white/10 text-xs sm:text-sm font-medium text-zinc-200 flex items-center gap-2 whitespace-nowrap cursor-pointer transition-colors"
-                >
-                  <Youtube className="w-4 h-4 text-[#EB0400]" />
-                  <span>YouTube</span>
-                </button>
-              </div>
-            )}
-          </div>
+          <IdleStandbyStage
+            lang={lang}
+            isTvMode={isTvMode}
+            isFullscreen={isFullscreen}
+            roomCode={roomCode}
+            roomDisplayName={roomDisplayName}
+            participantCount={participantCount}
+            extractionError={extractionError}
+            onToggleFullscreen={handleToggleFullscreen}
+            onExitTvMode={onExitTvMode}
+            onOpenCatalogSection={onOpenCatalogSection}
+          />
         )}
 
         {/* ================================================================== */}
@@ -3830,412 +2541,32 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* ================================================================== */}
         {/* UNIVERSAL WEB EMBED STAGE (INLINE + CONTROLLED EXTERNAL WINDOW)    */}
         {/* ================================================================== */}
-        {videoState.mode === 'embed' && videoState.url && (() => {
-          const activeTrack = videoState.tracks[videoState.activeTrackIndex];
-          const activeTrackUrl = unwrapEmbedUrl(
-            activeTrack?.sourceUrl || activeTrack?.resolvedStreamUrl || videoState.url
-          );
-          const externalVidfastHref = (() => {
-            const candidates = [
-              activeTrackUrl,
-              unwrapEmbedUrl(videoState.rawSourceUrl || ''),
-              unwrapEmbedUrl(videoState.url),
-              ...videoState.tracks.map((tr) => unwrapEmbedUrl(tr.sourceUrl)),
-            ].filter(Boolean);
-
-            for (const c of candidates) {
-              if (/vidfast\.[a-z.]+/i.test(c)) {
-                return c.replace(/vidfast\.[a-z.]+/i, 'vidfast.vc');
-              }
-            }
-            if (videoState.seriesMeta?.tmdbId) {
-              return `https://vidfast.vc/tv/${videoState.seriesMeta.tmdbId}/${
-                videoState.seriesMeta.season || 1
-              }/${videoState.seriesMeta.episode || 1}?autoPlay=true&theme=9146FF`;
-            }
-            for (const c of candidates) {
-              const tvM =
-                c.match(/(?:bingetrix|vidsrc|vidlink|autoembed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?tv\/(?:tmdb\/)?(\d+)[/-](\d+)[/-](\d+)/i) ||
-                c.match(/2embed\.[a-z.]+\/(?:embedtv|tv)\/(\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i);
-              if (tvM) {
-                return `https://vidfast.vc/tv/${tvM[1]}/${tvM[2]}/${tvM[3]}?autoPlay=true&theme=9146FF`;
-              }
-              const movM = c.match(
-                /(?:bingetrix|vidsrc|vidlink|autoembed|2embed)\.[a-z.]+\/(?:watch\/|embed\/|v2\/)?(?:movie\/)?(?:tmdb\/)?(\d+)/i
-              );
-              if (movM) {
-                return `https://vidfast.vc/movie/${movM[1]}?autoPlay=true&theme=9146FF`;
-              }
-            }
-            return activeTrackUrl;
-          })();
-
-          const inlineIframeSrc = activeEmbedInlineUrl || videoState.url;
-          const lastAttemptedUrl =
-            lastAttemptedEmbedUrlRef.current || activeTrackUrl || activeEmbedDirectUrl;
-          const canPrevEpisode = Boolean(
-            videoState.seriesMeta &&
-              onPrevEpisode &&
-              (videoState.seriesMeta.season > 1 || videoState.seriesMeta.episode > 1)
-          );
-
-          // 1) Controlled External Window Active Panel
-          if (externalWinState === 'open') {
-            return (
-              <div className="relative w-full h-full bg-gradient-to-b from-[#171226] via-[#0F0F15] to-black flex flex-col items-center justify-center p-3 sm:p-5 text-center overflow-y-auto">
-                <div className="w-full max-w-lg rounded-2xl bg-[#14141B]/95 border border-[#9146FF]/45 p-3.5 sm:p-4 shadow-2xl space-y-3">
-                  <div className="flex items-center justify-between gap-2 text-left">
-                    <div className="min-w-0">
-                      <div className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-bold uppercase tracking-wider mb-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                        <span>
-                          {isMobileExternal
-                            ? 'Reproduciendo en pestaña externa'
-                            : 'Reproduciendo en ventana externa'}
-                        </span>
-                      </div>
-                      <h4 className="font-display font-bold text-xs sm:text-sm text-white truncate">
-                        {videoState.title}
-                      </h4>
-                      <p className="text-[11px] text-zinc-400 truncate">
-                        {activeTrack?.label || 'Servidor Web'}
-                      </p>
-                    </div>
-                  </div>
-
-                  {/* Window focus / close controls */}
-                  <div className="flex flex-wrap items-center justify-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        handleFocusExternalWindow();
-                      }}
-                      className="min-h-9 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-                    >
-                      <ExternalLink className="w-3.5 h-3.5" />
-                      <span>Traer al frente</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        handleCloseExternalWindow();
-                      }}
-                      className="min-h-9 px-3.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/40 text-rose-100 text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-                    >
-                      <RiffanCloseIcon size={14} tone="current" />
-                      <span>
-                        {isMobileExternal ? 'Cerrar pestaña' : 'Cerrar ventana'}
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Episode Prev / Next controls when watching a series */}
-                  {videoState.seriesMeta && (onPrevEpisode || onNextEpisode) && (
-                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1 border-t border-white/[0.08]">
-                      {onPrevEpisode && (
-                        <button
-                          type="button"
-                          disabled={!canPrevEpisode || isExtracting}
-                          onClick={() => {
-                            triggerHaptic('light');
-                            onPrevEpisode();
-                          }}
-                          className="min-h-8 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-                        >
-                          <SkipBack className="w-3.5 h-3.5" />
-                          <span>Capítulo anterior</span>
-                        </button>
-                      )}
-                      {onNextEpisode && (
-                        <button
-                          type="button"
-                          disabled={isExtracting}
-                          onClick={() => {
-                            triggerHaptic('light');
-                            onNextEpisode();
-                          }}
-                          className="min-h-8 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] disabled:opacity-40 disabled:cursor-not-allowed text-xs font-semibold text-white inline-flex items-center gap-1.5 cursor-pointer transition-colors"
-                        >
-                          <span>Siguiente capítulo</span>
-                          <SkipForward className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  )}
-
-                  {/* Server Switcher inside active External Window Panel */}
-                  {videoState.tracks.length > 1 && (
-                    <div className="pt-1 border-t border-white/[0.08]">
-                      <div className="text-[10px] font-semibold uppercase tracking-wider text-zinc-400 mb-1.5">
-                        Cambiar servidor en {isMobileExternal ? 'pestaña' : 'ventana'}
-                      </div>
-                      <div className="flex flex-wrap items-center justify-center gap-1.5">
-                        {(() => {
-                          const extTracks = videoState.tracks.slice(0, 6);
-                          const extLabels = formatUniqueTrackChipLabels(extTracks, lang);
-                          return extTracks.map((tr, idx) => {
-                            const isAct = idx === videoState.activeTrackIndex;
-                            const label = extLabels[idx] || `Servidor ${idx + 1}`;
-                            return (
-                              <button
-                                key={tr.id || idx}
-                                type="button"
-                                onClick={() => {
-                                  triggerHaptic('light');
-                                  handleSelectExternalServer(idx);
-                                }}
-                                className={`min-h-7 px-2.5 rounded-lg text-[11px] font-bold cursor-pointer transition-colors ${
-                                  isAct
-                                    ? 'bg-[#9146FF] text-white'
-                                    : 'bg-white/[0.08] hover:bg-white/[0.16] text-zinc-200'
-                                }`}
-                              >
-                                {label}
-                              </button>
-                            );
-                          });
-                        })()}
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          }
-
-          // 2) Controlled External Window Closed State (detected by 1s ref.closed poll)
-          if (externalWinState === 'closed') {
-            return (
-              <div className="relative w-full h-full bg-[#0E0E14] flex flex-col items-center justify-center p-4 text-center gap-3">
-                <div className="w-11 h-11 rounded-2xl bg-white/[0.07] border border-white/15 flex items-center justify-center text-zinc-200">
-                  <ExternalLink className="w-5 h-5" />
-                </div>
-                <div className="space-y-1 max-w-md">
-                  <h4 className="font-display font-bold text-sm sm:text-base text-white">
-                    {isMobileExternal ? 'Pestaña cerrada' : 'Ventana cerrada'}
-                  </h4>
-                  <p className="text-xs text-zinc-400 truncate">{videoState.title}</p>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      openControlledExternalWindow(activeTrackUrl);
-                    }}
-                    className="min-h-10 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <RiffanPlayIcon size={14} tone="current" />
-                    <span>Reabrir</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleRetryInlineEmbed}
-                    className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-100 text-xs font-semibold cursor-pointer"
-                  >
-                    Reintentar inline
-                  </button>
-                </div>
-              </div>
-            );
-          }
-
-          // 3) Popup Blocker Fallback State (window.open returned null)
-          if (externalWinState === 'blocked') {
-            const fallbackHref = externalTargetUrl || activeTrackUrl || externalVidfastHref;
-            return (
-              <div className="relative w-full h-full bg-[#120E18] flex flex-col items-center justify-center p-4 text-center gap-3">
-                <RiffanWarningIcon size={32} animate="always" className="text-amber-400" />
-                <div className="space-y-1 max-w-md">
-                  <h4 className="font-display font-bold text-sm sm:text-base text-white">
-                    Permite ventanas emergentes para este sitio
-                  </h4>
-                  <p className="text-xs text-zinc-300">
-                    El navegador bloqueó la ventana controlada. Puedes reintentar o abrir en pestaña normal.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('medium');
-                      openControlledExternalWindow(fallbackHref);
-                    }}
-                    className="min-h-10 px-4 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <RiffanRetryIcon size={14} tone="current" />
-                    <span>Reintentar</span>
-                  </button>
-                  <a
-                    href={fallbackHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="min-h-10 px-4 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/40 text-emerald-100 text-xs font-bold inline-flex items-center gap-1.5"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Abrir fuera</span>
-                  </a>
-                  <button
-                    type="button"
-                    onClick={handleRetryInlineEmbed}
-                    className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 text-zinc-200 text-xs font-semibold cursor-pointer"
-                  >
-                    Reintentar inline
-                  </button>
-                </div>
-              </div>
-            );
-          }
-
-          // 4) Watchdog Exhausted OR Server Persisted as window_required
-          if (
-            embedWatchdogPhase === 'exhausted' ||
-            embedWatchdogPhase === 'window_preferred'
-          ) {
-            return (
-              <div className="relative w-full h-full bg-gradient-to-b from-[#171224] to-black flex flex-col items-center justify-center p-4 text-center gap-3">
-                <div className="space-y-1 max-w-md">
-                  <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF]">
-                    {activeTrack?.label || 'Servidor Web'}
-                  </div>
-                  <h4 className="font-display font-bold text-sm sm:text-base text-white">
-                    {embedWatchdogPhase === 'window_preferred'
-                      ? 'Este servidor requiere ventana externa para reproducir sin bloqueos'
-                      : 'Los servidores integrados no respondieron a tiempo'}
-                  </h4>
-                  <p className="text-xs text-zinc-400">
-                    Abre el reproductor directamente en {isMobileExternal ? 'una pestaña' : 'una ventana'} controlada con cambio de capítulos y servidores.
-                  </p>
-                </div>
-                <div className="flex flex-wrap items-center justify-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('success');
-                      openControlledExternalWindow(lastAttemptedUrl);
-                    }}
-                    className="min-h-11 px-5 rounded-xl bg-[#9146FF] hover:bg-[#772CE8] text-white text-xs sm:text-sm font-bold inline-flex items-center gap-2 shadow-[0_10px_28px_rgba(145,70,255,0.45)] cursor-pointer transition-all"
-                  >
-                    <RiffanPlayIcon size={16} tone="current" />
-                    <span>Reproducir en ventana externa</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleRetryInlineEmbed}
-                    className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-zinc-100 text-xs font-semibold inline-flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <RiffanRetryIcon size={14} tone="current" />
-                    <span>Reintentar inline</span>
-                  </button>
-                  <a
-                    href={externalVidfastHref}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="min-h-10 px-3.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/15 text-zinc-100 text-xs font-semibold inline-flex items-center gap-1.5"
-                  >
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    <span>Abrir fuera</span>
-                  </a>
-                </div>
-              </div>
-            );
-          }
-
-          // 5) Default Inline Iframe Mode (clean Permissions Policy `allow`, NO sandbox tricks)
-          return (
-            <div className="relative w-full h-full bg-black">
-              <iframe
-                key={inlineIframeSrc}
-                src={inlineIframeSrc}
-                title={videoState.title || 'Reproductor Web HD'}
-                allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-                allowFullScreen
-                referrerPolicy="no-referrer"
-                className="w-full h-full border-0 bg-black"
-              />
-
-              {!isMinimized && embedRescueDismissedUrl !== videoState.url && (
-                <div className="absolute top-2.5 left-2.5 z-20 max-w-[calc(100%-9.5rem)] flex items-center pointer-events-none opacity-90 hover:opacity-100 transition-opacity">
-                  <div className="pointer-events-auto flex items-center gap-1 px-1.5 py-1 rounded-xl bg-black/75 backdrop-blur-md border border-white/[0.12] shadow-lg text-[10px] text-zinc-200 overflow-x-auto no-scrollbar">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        openControlledExternalWindow(activeTrackUrl);
-                      }}
-                      className="min-h-7 px-2.5 rounded-lg bg-[#9146FF] hover:bg-[#772CE8] text-white font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
-                    >
-                      <RiffanPlayIcon size={12} tone="current" />
-                      <span>
-                        {pickLang(lang, { es: 'Ventana', ca: 'Finestra', en: 'Window' })}
-                      </span>
-                    </button>
-
-                    {embedWatchdogPhase !== 'verified' && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('success');
-                          handleMarkInlineServerWorking();
-                        }}
-                        title="Confirmar que este servidor funciona integrado y detener cambio automático"
-                        className="min-h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-400/35 text-emerald-200 font-bold whitespace-nowrap inline-flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
-                      >
-                        <Check className="w-3 h-3" />
-                        <span>{pickLang(lang, { es: 'Funciona', ca: 'Funciona', en: 'Works' })}</span>
-                      </button>
-                    )}
-
-                    {onOpenInCloudBrowser && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('medium');
-                          onOpenInCloudBrowser(activeTrackUrl);
-                        }}
-                        className="min-h-7 px-2 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 font-semibold whitespace-nowrap cursor-pointer shrink-0 transition-colors"
-                      >
-                        Cloud HD
-                      </button>
-                    )}
-
-                    <a
-                      href={externalVidfastHref}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="min-h-7 px-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-zinc-100 font-semibold whitespace-nowrap inline-flex items-center gap-1 shrink-0 transition-colors"
-                    >
-                      <ExternalLink className="w-3 h-3" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Abrir',
-                          ca: 'Obrir',
-                          en: 'Open',
-                        })}
-                      </span>
-                    </a>
-
-                    <button
-                      type="button"
-                      onClick={() => setEmbedRescueDismissedUrl(videoState.url)}
-                      aria-label={pickLang(lang, {
-                        es: 'Ocultar aviso',
-                        ca: 'Amagar avís',
-                        en: 'Dismiss notice',
-                      })}
-                      className="w-7 h-7 rounded-lg hover:bg-white/10 text-zinc-400 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
-                    >
-                      <RiffanCloseIcon size={14} tone="current" />
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        {videoState.mode === 'embed' && videoState.url && (
+          <EmbedStagePanel
+            lang={lang}
+            videoState={videoState}
+            isExtracting={isExtracting}
+            isMinimized={isMinimized}
+            isMobileExternal={isMobileExternal}
+            externalWinState={externalWinState}
+            externalTargetUrl={externalTargetUrl}
+            embedWatchdogPhase={embedWatchdogPhase}
+            activeEmbedInlineUrl={activeEmbedInlineUrl}
+            activeEmbedDirectUrl={activeEmbedDirectUrl}
+            lastAttemptedEmbedUrl={lastAttemptedEmbedUrl}
+            embedRescueDismissedUrl={embedRescueDismissedUrl}
+            setEmbedRescueDismissedUrl={setEmbedRescueDismissedUrl}
+            onPrevEpisode={onPrevEpisode}
+            onNextEpisode={onNextEpisode}
+            onOpenControlledExternalWindow={openControlledExternalWindow}
+            onFocusExternalWindow={handleFocusExternalWindow}
+            onCloseExternalWindow={handleCloseExternalWindow}
+            onSelectExternalServer={handleSelectExternalServer}
+            onMarkInlineServerWorking={handleMarkInlineServerWorking}
+            onRetryInlineEmbed={handleRetryInlineEmbed}
+            onOpenInCloudBrowser={onOpenInCloudBrowser}
+          />
+        )}
 
         {/* ================================================================== */}
         {/* ISOLATED SERVER-SIDE CLOUD BROWSER                                 */}
@@ -4372,481 +2703,62 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
         {/* ZERO-OVERLAP BOTTOM TRANSPORT BAR (3.8s Inactivity Auto-Hide)      */}
         {/* ================================================================== */}
         {!isMinimized && (videoState.mode === 'hls' || videoState.mode === 'direct') && (
-          <div
-            className={`pointer-events-none absolute bottom-0 inset-x-0 z-30 px-2.5 sm:px-5 pb-2 sm:pb-3 pt-4 bg-gradient-to-t from-black/95 via-black/75 to-transparent transition-opacity duration-300 ${
-              showControls ? 'opacity-100' : 'opacity-0'
-            }`}
-          >
-            {/* Protected Legible Timeline Scrubber (Rotation-aware for 90deg Landscape) */}
-            {!videoState.isLive && duration > 0 && (
-              <div
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (!shouldRotate90) return;
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const ratio = Math.max(
-                    0,
-                    Math.min(1, (e.clientY - rect.top) / Math.max(1, rect.height))
-                  );
-                  handleScrub(Math.round(ratio * duration));
-                }}
-                onTouchMove={(e) => {
-                  if (!shouldRotate90 || !e.touches[0]) return;
-                  e.stopPropagation();
-                  const rect = e.currentTarget.getBoundingClientRect();
-                  const ratio = Math.max(
-                    0,
-                    Math.min(1, (e.touches[0].clientY - rect.top) / Math.max(1, rect.height))
-                  );
-                  handleScrub(Math.round(ratio * duration));
-                }}
-                className={`relative h-7 flex items-center px-1 mb-0.5 ${
-                  showControls ? 'pointer-events-auto' : 'pointer-events-none'
-                }`}
-              >
-                <div className="relative w-full h-1.5 rounded-full bg-white/25 overflow-hidden pointer-events-none shadow-inner">
-                  <div
-                    className="h-full rounded-full bg-gradient-to-r from-[#9146FF] to-[#BF94FF] transition-[width] duration-100"
-                    style={{
-                      width: `${Math.min(100, Math.max(0, (Math.min(currentTime, duration) / Math.max(1, duration)) * 100))}%`,
-                    }}
-                  />
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={Math.max(1, duration)}
-                  step={1}
-                  value={Math.min(currentTime, duration)}
-                  onChange={(e) => handleScrub(Number(e.target.value))}
-                  aria-label={pickLang(lang, {
-                    es: 'Línea de tiempo',
-                    ca: 'Línia de temps',
-                    en: 'Timeline',
-                  })}
-                  className="absolute inset-x-1 inset-y-0 w-[calc(100%-0.5rem)] h-full cinema-range cinema-range-overlay z-10"
-                />
-              </div>
-            )}
-
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className={`flex items-center justify-between gap-1 sm:gap-1.5 ${
-                showControls ? 'pointer-events-auto' : 'pointer-events-none'
-              }`}
-            >
-              {/* Left Cluster: Play/Pause + Mute/Volume + Timecode */}
-              <div className="flex items-center gap-0.5 sm:gap-1 min-w-0 shrink-0">
-                <button
-                  type="button"
-                  onClick={handleTogglePlay}
-                  className="min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer shrink-0"
-                  aria-label={
-                    localPlaying
-                      ? pickLang(lang, { es: 'Pausar', ca: 'Pausar', en: 'Pause' })
-                      : pickLang(lang, { es: 'Reproducir', ca: 'Reproduir', en: 'Play' })
-                  }
-                >
-                  {localPlaying ? (
-                    <RiffanPauseIcon size={20} tone="current" />
-                  ) : (
-                    <RiffanPlayIcon size={20} tone="current" />
-                  )}
-                </button>
-
-                <div className="flex items-center gap-1 shrink-0">
-                  <button
-                    type="button"
-                    onClick={handleToggleMute}
-                    className="min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[44px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
-                    aria-label={pickLang(lang, {
-                      es: 'Silenciar',
-                      ca: 'Silenciar',
-                      en: 'Mute',
-                    })}
-                  >
-                    <RiffanVolumeIcon
-                      size={20}
-                      muted={isMuted || volume === 0}
-                      tone="current"
-                      className={isMuted || volume === 0 ? 'text-rose-400' : ''}
-                    />
-                  </button>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={isMuted ? 0 : volume}
-                    onChange={(e) => handleVolumeSlider(Number(e.target.value))}
-                    aria-label={pickLang(lang, {
-                      es: 'Volumen',
-                      ca: 'Volum',
-                      en: 'Volume',
-                    })}
-                    className="hidden md:block w-20 cinema-range"
-                  />
-                </div>
-
-                {videoState.isLive ? (
-                  <div className="flex items-center gap-1.5 pl-1 text-[11px] sm:text-xs font-bold text-white whitespace-nowrap">
-                    <span className="w-2 h-2 rounded-full bg-[#EB0400]" />
-                    <span>{t.liveNow}</span>
-                  </div>
-                ) : (
-                  <div className="text-[11px] sm:text-xs font-mono tabular-nums text-zinc-200 pl-0.5 whitespace-nowrap shrink-0">
-                    {formatTimecode(currentTime)}
-                    <span className="text-zinc-500 mx-0.5">/</span>
-                    {formatTimecode(duration)}
-                  </div>
-                )}
-              </div>
-
-              {/* Right Cluster: HUD Audio Track + Video Quality + Orientation Rotate + Fullscreen */}
-              <div className="relative flex items-center gap-1 shrink-0">
-                {videoState.mode === 'hls' && hlsAudioTracks.length > 1 && (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        revealControls();
-                        setActiveHudMenu((prev) => (prev === 'audio' ? null : 'audio'));
-                      }}
-                      aria-label={t.audioTrackLabel}
-                      aria-expanded={activeHudMenu === 'audio'}
-                      className={`min-h-[40px] px-2.5 rounded-2xl text-[11px] font-bold flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap ${
-                        activeHudMenu === 'audio'
-                          ? 'bg-[#9146FF] text-white'
-                          : 'bg-white/10 hover:bg-white/18 text-zinc-100'
-                      }`}
-                    >
-                      <AudioLines className="w-3.5 h-3.5 shrink-0" />
-                      <span className="hidden sm:inline max-w-[84px] truncate">
-                        {hlsAudioTracks.find((tr) => tr.id === selectedHlsAudioTrack)?.lang ||
-                          hlsAudioTracks.find((tr) => tr.id === selectedHlsAudioTrack)?.name ||
-                          t.audioTrackLabel}
-                      </span>
-                    </button>
-
-                    {activeHudMenu === 'audio' && (
-                      <div
-                        role="menu"
-                        aria-label={t.audioTrackLabel}
-                        className="absolute bottom-full right-0 mb-2 w-48 p-1.5 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl border border-white/15 shadow-[0_18px_45px_rgba(0,0,0,0.85)] z-50 space-y-0.5"
-                      >
-                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                          {t.audioTrackEmbedded}
-                        </div>
-                        {hlsAudioTracks.map((tr) => {
-                          const isSelected = tr.id === selectedHlsAudioTrack;
-                          return (
-                            <button
-                              key={tr.id}
-                              type="button"
-                              role="menuitemradio"
-                              aria-checked={isSelected}
-                              onClick={() => handleSelectHlsAudioTrack(tr.id)}
-                              className={`w-full min-h-[36px] px-2.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 text-left cursor-pointer transition-colors ${
-                                isSelected
-                                  ? 'bg-[#9146FF] text-white'
-                                  : 'text-zinc-200 hover:bg-white/10'
-                              }`}
-                            >
-                              <span className="truncate">{tr.name}</span>
-                              {tr.lang && (
-                                <span className="text-[10px] font-mono opacity-80 shrink-0">
-                                  {tr.lang}
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {videoState.mode === 'hls' && qualityLevels.length > 0 && (
-                  <div className="relative">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        revealControls();
-                        setActiveHudMenu((prev) => (prev === 'quality' ? null : 'quality'));
-                      }}
-                      aria-label={t.qualityLabel}
-                      aria-expanded={activeHudMenu === 'quality'}
-                      className={`min-h-[38px] sm:min-h-[40px] px-2 sm:px-2.5 rounded-2xl text-[11px] font-mono font-bold flex items-center gap-1 transition-all cursor-pointer whitespace-nowrap ${
-                        activeHudMenu === 'quality'
-                          ? 'bg-[#9146FF] text-white'
-                          : 'bg-white/10 hover:bg-white/18 text-zinc-100'
-                      }`}
-                    >
-                      <Settings2 className="w-3.5 h-3.5 shrink-0" />
-                      <span>
-                        {selectedQuality === -1 ? (
-                          autoActiveHeight ? (
-                            <>
-                              <span className="hidden sm:inline">{t.qualityAuto} · </span>
-                              {autoActiveHeight}p
-                            </>
-                          ) : (
-                            t.qualityAuto
-                          )
-                        ) : (
-                          `${qualityLevels.find((q) => q.index === selectedQuality)?.height || ''}p`
-                        )}
-                      </span>
-                    </button>
-
-                    {activeHudMenu === 'quality' && (
-                      <div
-                        role="menu"
-                        aria-label={t.qualityLabel}
-                        className="absolute bottom-full right-0 mb-2 w-44 p-1.5 rounded-2xl bg-[#141418]/96 backdrop-blur-2xl border border-white/15 shadow-[0_18px_45px_rgba(0,0,0,0.85)] z-50 space-y-0.5"
-                      >
-                        <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-zinc-400">
-                          {t.qualityLabel}
-                        </div>
-                        <button
-                          type="button"
-                          role="menuitemradio"
-                          aria-checked={selectedQuality === -1}
-                          onClick={() => handleChangeQuality(-1)}
-                          className={`w-full min-h-[36px] px-2.5 rounded-xl text-xs font-semibold flex items-center justify-between gap-2 cursor-pointer transition-colors ${
-                            selectedQuality === -1
-                              ? 'bg-[#9146FF] text-white'
-                              : 'text-zinc-200 hover:bg-white/10'
-                          }`}
-                        >
-                          <span>{t.qualityAuto}</span>
-                          {autoActiveHeight && selectedQuality === -1 && (
-                            <span className="font-mono text-[10px] opacity-80">
-                              {autoActiveHeight}p
-                            </span>
-                          )}
-                        </button>
-                        {qualityLevels.map((q) => {
-                          const isSelected = selectedQuality === q.index;
-                          return (
-                            <button
-                              key={q.index}
-                              type="button"
-                              role="menuitemradio"
-                              aria-checked={isSelected}
-                              onClick={() => handleChangeQuality(q.index)}
-                              className={`w-full min-h-[36px] px-2.5 rounded-xl text-xs font-mono font-semibold flex items-center justify-between gap-2 cursor-pointer transition-colors ${
-                                isSelected
-                                  ? 'bg-[#9146FF] text-white'
-                                  : 'text-zinc-200 hover:bg-white/10'
-                              }`}
-                            >
-                              <span>{q.height}p</span>
-                              {q.height >= 1080 && (
-                                <span className="text-[10px] font-sans opacity-80">FHD</span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {canUseNativePiPOrCast && (
-                  <button
-                    type="button"
-                    onClick={handleTogglePiP}
-                    className={`min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[42px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
-                      isInPiP
-                        ? 'bg-[#9146FF]/30 text-[#BF94FF] border border-[#9146FF]/50'
-                        : 'hover:bg-white/12 text-white'
-                    }`}
-                    title={pickLang(lang, {
-                      es: 'Pantalla en imagen (PiP)',
-                      ca: 'Pantalla en imatge (PiP)',
-                      en: 'Picture-in-Picture (PiP)',
-                    })}
-                    aria-label="Picture-in-Picture"
-                  >
-                    <PictureInPicture2 className="w-4 h-4 text-sky-400" />
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={handleToggleLandscapeRotation}
-                  className={`min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[42px] rounded-2xl flex items-center justify-center transition-all active:scale-90 cursor-pointer ${
-                    (isFullscreen || isHorizontalFullscreen) && forceLandscapeRotation
-                      ? 'bg-[#9146FF]/25 text-[#BF94FF] border border-[#9146FF]/50'
-                      : 'hover:bg-white/12 text-white'
-                  }`}
-                  title={pickLang(lang, {
-                    es: 'Girar pantalla en horizontal (16:9)',
-                    ca: 'Girar pantalla en horitzontal (16:9)',
-                    en: 'Rotate landscape (16:9)',
-                  })}
-                  aria-label={pickLang(lang, {
-                    es: 'Girar en horizontal',
-                    ca: 'Girar en horitzontal',
-                    en: 'Rotate landscape',
-                  })}
-                >
-                  <RotateCw className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleToggleFullscreen}
-                  className="min-h-[38px] sm:min-h-[42px] min-w-[34px] sm:min-w-[42px] rounded-2xl hover:bg-white/12 flex items-center justify-center text-white active:scale-90 transition-all cursor-pointer"
-                  title={pickLang(lang, {
-                    es: 'Pantalla completa horizontal',
-                    ca: 'Pantalla completa horitzontal',
-                    en: 'Landscape fullscreen',
-                  })}
-                  aria-label={pickLang(lang, {
-                    es: 'Pantalla completa',
-                    ca: 'Pantalla completa',
-                    en: 'Fullscreen',
-                  })}
-                >
-                  {isFullscreen || isHorizontalFullscreen ? (
-                    <RiffanExitFullscreenIcon size={16} tone="current" />
-                  ) : (
-                    <RiffanFullscreenIcon size={16} tone="current" />
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
+          <PlayerTransportBar
+            lang={lang}
+            mode={videoState.mode}
+            isLive={videoState.isLive}
+            duration={duration}
+            currentTime={currentTime}
+            shouldRotate90={shouldRotate90}
+            showControls={showControls}
+            localPlaying={localPlaying}
+            isMuted={isMuted}
+            volume={volume}
+            hlsAudioTracks={hlsAudioTracks}
+            selectedHlsAudioTrack={selectedHlsAudioTrack}
+            qualityLevels={qualityLevels}
+            selectedQuality={selectedQuality}
+            autoActiveHeight={autoActiveHeight}
+            activeHudMenu={activeHudMenu}
+            setActiveHudMenu={setActiveHudMenu}
+            canUseNativePiPOrCast={canUseNativePiPOrCast}
+            isInPiP={isInPiP}
+            isFullscreen={isFullscreen}
+            isHorizontalFullscreen={isHorizontalFullscreen}
+            forceLandscapeRotation={forceLandscapeRotation}
+            revealControls={revealControls}
+            onScrub={handleScrub}
+            onTogglePlay={handleTogglePlay}
+            onToggleMute={handleToggleMute}
+            onVolumeSlider={handleVolumeSlider}
+            onSelectHlsAudioTrack={handleSelectHlsAudioTrack}
+            onChangeQuality={handleChangeQuality}
+            onTogglePiP={handleTogglePiP}
+            onToggleLandscapeRotation={handleToggleLandscapeRotation}
+            onToggleFullscreen={handleToggleFullscreen}
+          />
         )}
+
         {/* ================================================================== */}
         {/* FLOATING 16:9 DRAGGABLE MINI-PLAYER HUD OVERLAY (WHEN MINIMIZED)   */}
         {/* ================================================================== */}
         {isMinimized && (
-          <div className="pointer-events-none absolute inset-0 z-40 flex flex-col justify-between p-2 bg-gradient-to-b from-black/75 via-transparent to-black/80">
-            {/* Top Row: Drag Grip + Title + Expand & Close Buttons */}
-            <div className="flex items-center justify-between gap-1.5">
-              <div className="flex items-center gap-1.5 min-w-0 px-2 py-0.5 rounded-full bg-black/65 backdrop-blur-md border border-white/15">
-                <span className="text-[10px] text-[#BF94FF] font-bold leading-none">⠿</span>
-                <span className="font-display font-bold text-[10px] text-white truncate max-w-[115px] sm:max-w-[155px]">
-                  {videoState.title}
-                </span>
-              </div>
-
-              <div
-                onPointerDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-                className="pointer-events-auto flex items-center gap-1 shrink-0"
-              >
-                {onToggleMinimize && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerHaptic('light');
-                      onToggleMinimize();
-                    }}
-                    className="w-7 h-7 rounded-full bg-[#9146FF] hover:bg-[#772CE8] flex items-center justify-center text-white shadow-lg active:scale-90 transition-transform cursor-pointer"
-                    title={pickLang(lang, {
-                      es: 'Ampliar reproductor',
-                      ca: 'Ampliar reproductor',
-                      en: 'Expand player',
-                    })}
-                    aria-label={pickLang(lang, {
-                      es: 'Ampliar reproductor',
-                      ca: 'Ampliar reproductor',
-                      en: 'Expand player',
-                    })}
-                  >
-                    <RiffanFullscreenIcon size={14} tone="current" />
-                  </button>
-                )}
-
-                {onClosePlayer && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      triggerHaptic('light');
-                      onClosePlayer();
-                    }}
-                    className="w-7 h-7 rounded-full bg-black/75 hover:bg-rose-600 border border-white/20 flex items-center justify-center text-zinc-200 hover:text-white active:scale-90 transition-transform cursor-pointer"
-                    title={pickLang(lang, { es: 'Cerrar reproductor', ca: 'Tancar reproductor', en: 'Close player' })}
-                    aria-label={pickLang(lang, { es: 'Cerrar reproductor', ca: 'Tancar reproductor', en: 'Close player' })}
-                  >
-                    <RiffanCloseIcon size={14} tone="current" />
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Bottom Row: Play/Pause + Mute/Unmute + Corner Hint */}
-            <div className="flex items-center justify-between gap-1.5">
-              <div
-                onPointerDown={(e) => e.stopPropagation()}
-                onTouchStart={(e) => e.stopPropagation()}
-                className="pointer-events-auto flex items-center gap-1"
-              >
-                {(canUseNativePiPOrCast || videoState.mode === 'youtube') && (
-                  <button
-                    type="button"
-                    onClick={handleTogglePlay}
-                    className="w-7 h-7 rounded-full bg-black/75 hover:bg-black border border-white/20 flex items-center justify-center text-white active:scale-90 transition-transform cursor-pointer"
-                    aria-label={
-                      localPlaying
-                        ? pickLang(lang, { es: 'Pausar', ca: 'Pausa', en: 'Pause' })
-                        : pickLang(lang, { es: 'Reproducir', ca: 'Reproduir', en: 'Play' })
-                    }
-                  >
-                    {localPlaying ? (
-                      <RiffanPauseIcon size={14} tone="current" />
-                    ) : (
-                      <RiffanPlayIcon size={14} tone="current" />
-                    )}
-                  </button>
-                )}
-
-                {(canUseNativePiPOrCast || videoState.mode === 'youtube') && (
-                  <button
-                    type="button"
-                    onClick={handleToggleMute}
-                    className="w-7 h-7 rounded-full bg-black/75 hover:bg-black border border-white/20 flex items-center justify-center text-white active:scale-90 transition-transform cursor-pointer"
-                    aria-label={pickLang(lang, { es: 'Silenciar', ca: 'Silenciar', en: 'Mute' })}
-                  >
-                    <RiffanVolumeIcon
-                      size={14}
-                      muted={isMuted || volume === 0}
-                      tone="current"
-                      className={isMuted || volume === 0 ? 'text-rose-400' : 'text-emerald-400'}
-                    />
-                  </button>
-                )}
-              </div>
-
-              <span className="text-[9px] font-semibold text-zinc-300/90 bg-black/55 px-2 py-0.5 rounded-full backdrop-blur-sm">
-                {pickLang(lang, {
-                  es: 'Arrastra a 4 esquinas',
-                  ca: 'Arrossega a 4 cantonades',
-                  en: 'Drag to 4 corners',
-                })}
-              </span>
-            </div>
-
-            {/* Thin Bottom Playback Progress Line */}
-            {!videoState.isLive && duration > 0 && (
-              <div className="absolute bottom-0 inset-x-0 h-[3px] bg-white/20">
-                <div
-                  className="h-full bg-[#9146FF]"
-                  style={{
-                    width: `${Math.min(100, Math.max(4, Math.round((currentTime / duration) * 100)))}%`,
-                  }}
-                />
-              </div>
-            )}
-          </div>
+          <MiniPlayerHud
+            lang={lang}
+            title={videoState.title}
+            mode={videoState.mode}
+            isLive={videoState.isLive}
+            duration={duration}
+            currentTime={currentTime}
+            localPlaying={localPlaying}
+            isMuted={isMuted}
+            volume={volume}
+            canUseNativePiPOrCast={canUseNativePiPOrCast}
+            onToggleMinimize={onToggleMinimize}
+            onClosePlayer={onClosePlayer}
+            onTogglePlay={handleTogglePlay}
+            onToggleMute={handleToggleMute}
+          />
         )}
         </div>
       </div>
@@ -4870,7 +2782,12 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                     const availableTrackLangs = Array.from(
                       new Set(
                         (videoState.tracks || [])
-                          .map(resolveTrackLang)
+                          .map((tr) =>
+                            resolveTrackLang(tr, {
+                              subtitle: videoState.subtitle,
+                              title: videoState.title,
+                            })
+                          )
                           .filter((c) => ['ES', 'CAT', 'LAT', 'VOSE', 'EN'].includes(c))
                       )
                     );
@@ -4892,7 +2809,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
                   {(() => {
                     const sameLangTracks = (videoState.tracks || [])
                       .map((tr, idx) => ({ tr, idx }))
-                      .filter(({ tr }) => resolveTrackLang(tr) === activeTrackLangCode);
+                      .filter(
+                        ({ tr }) =>
+                          resolveTrackLang(tr, {
+                            subtitle: videoState.subtitle,
+                            title: videoState.title,
+                          }) === activeTrackLangCode
+                      );
                     if (sameLangTracks.length <= 1 && videoState.mode !== 'embed') return null;
                     return (
                       <div className="flex items-center gap-1 bg-[#121420] p-1 rounded-2xl border border-white/[0.08] shrink-0">

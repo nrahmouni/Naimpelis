@@ -383,7 +383,7 @@ export const TvReceiverPairingScreen: React.FC<TvReceiverPairingScreenProps> = (
   const digits = pairingCode ? pairingCode.split('') : ['•', '•', '•', '•'];
 
   return (
-    <div className="min-h-screen w-full bg-[#0B0B0F] text-[#EFEFF1] flex flex-col justify-between p-5 sm:p-10 lg:p-12 relative overflow-x-hidden select-none">
+    <div className="min-h-screen w-full bg-[#0B0B0F] text-[#EFEFF1] flex flex-col justify-between p-5 sm:p-10 lg:p-12 relative overflow-x-clip select-none">
       {/* Ambient Aurora & Broadcast Lighting */}
       <div className="pointer-events-none fixed inset-0 nc-aurora-ambient" />
       <div className="pointer-events-none fixed -top-48 left-1/2 -translate-x-1/2 w-[780px] h-[360px] rounded-full bg-[#9146FF]/18 blur-[150px]" />
