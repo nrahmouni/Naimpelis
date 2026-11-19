@@ -50,12 +50,19 @@ export function useLiveTvAndSportsCatalog({
   const adrarCountryFilter = useAppStore((s) => s.adrarCountryFilter);
   const setAdrarCountryFilter = useAppStore((s) => s.setAdrarCountryFilter);
   const [tvFavOnly, setTvFavOnly] = useState<boolean>(false);
-  const [tdtSearch, setTdtSearch] = useState('');
+  const [tdtSearch, setTdtSearch] = useState(() =>
+    worldMode === 'tv' ? (externalSearchQuery || '') : ''
+  );
   const [epgMap, setEpgMap] = useState<Record<string, ChannelLiveEpg>>({});
   const [epgMadridClock, setEpgMadridClock] = useState<string>('');
   const [loadingEpg, setLoadingEpg] = useState(false);
   const [epgFilter, setEpgFilter] = useState<'all' | 'sports_now' | 'cinema_now'>('all');
   const [selectedEpgChannel, setSelectedEpgChannel] = useState<SpanishTdtChannel | null>(null);
+  const requestedEpgChannel = useAppStore((s) => s.requestedEpgChannel);
+  useEffect(() => {
+    if (!requestedEpgChannel) return;
+    setSelectedEpgChannel(requestedEpgChannel);
+  }, [requestedEpgChannel]);
   const [epgClockMs, setEpgClockMs] = useState<number>(() => Date.now());
 
   const footballLiveBrand = useAppStore((s) => s.footballLiveBrand) as FootballBrandFilter;
@@ -70,7 +77,7 @@ export function useLiveTvAndSportsCatalog({
   const futbolLeagueFilter = rawFutbolLeagueFilter === 'all' ? '' : rawFutbolLeagueFilter;
   const setFutbolLeagueFilter = useAppStore((s) => s.setFutbolLeagueFilter);
   const [tvFiltersOpen, setTvFiltersOpen] = useState(false);
-  const prevExternalSearchRef = useRef<string | undefined>(externalSearchQuery);
+  const prevExternalSearchRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
     if (externalSearchQuery === undefined) return;

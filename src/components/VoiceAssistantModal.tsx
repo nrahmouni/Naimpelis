@@ -11,6 +11,7 @@ import type {
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { useGlobalEscape } from '../utils/useGlobalEscape';
+import { useBackInterceptor } from '../lib/backInterceptor';
 import {
   getQuickVoiceChips,
   type VoiceAssistantAppAction,
@@ -50,6 +51,10 @@ export const VoiceAssistantModal: React.FC<VoiceAssistantModalProps> = ({
   onAppAction,
 }) => {
   useGlobalEscape(onClose, isOpen);
+  useBackInterceptor(isOpen, 'voice-assistant-modal', onClose, {
+    priority: 24,
+    lockScroll: true,
+  });
 
   const cleanName =
     (userName || '').trim() ||

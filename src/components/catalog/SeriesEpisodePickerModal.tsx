@@ -31,6 +31,7 @@ import { triggerHaptic } from '../../utils/haptics';
 import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { useFocusTrap } from '../../utils/useFocusTrap';
 import { useSuppressFloatingBubble } from '../../utils/useSuppressFloatingBubble';
+import { useBackInterceptor } from '../../lib/backInterceptor';
 import { sanitizeItemKey } from '../../utils/storage';
 import { PosterImage } from '../ui/PosterImage';
 import { formatShortTime } from './catalogConstants';
@@ -95,6 +96,10 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
 
   useFocusTrap(Boolean(selectedSeries), onClose, modalRef);
   useSuppressFloatingBubble(Boolean(selectedSeries));
+  useBackInterceptor(Boolean(selectedSeries), 'series-episode-picker-modal', onClose, {
+    priority: 16,
+    lockScroll: true,
+  });
 
   const seriesTmdbId = selectedSeries?.tmdbId;
   const activeSeason = selectedSeries?.activeSeason;

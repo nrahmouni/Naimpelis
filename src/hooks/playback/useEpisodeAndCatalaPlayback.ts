@@ -3,6 +3,7 @@ import { playCinemaSound } from '../../utils/haptics';
 import { addWatchHistoryItem, sanitizeItemKey } from '../../utils/storage';
 import { upsertCloudWatchHistory } from '../../services/userCloudSync';
 import { isAbortError } from '../../utils/appSessionHelpers';
+import { useAppStore } from '../../store/useAppStore';
 import type {
   CatalaEpisodeItem,
   CatalaSeriesDetails,
@@ -172,6 +173,17 @@ export function useEpisodeAndCatalaPlayback(ctx: PlaybackCoreContext) {
       upsertCloudWatchHistory(item).catch(() => {});
 
       clearExtractionSnapshot();
+      const store = useAppStore.getState();
+      if (store.playbackReturnContext?.seriesModal) {
+        store.setPlaybackReturnContext({
+          ...store.playbackReturnContext,
+          seriesModal: {
+            ...store.playbackReturnContext.seriesModal,
+            season: targetSeason,
+            episode: targetEp,
+          },
+        });
+      }
       videoStateUrlRef.current = nextState.url;
       setVideoState(nextState);
       commitVideoStateSync('change_url', nextState);

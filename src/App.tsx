@@ -62,6 +62,7 @@ export function App() {
     isMobileChatWithKeyboard, isAutoImmersiveLandscape, hideBrowseBelowPlayer,
     isMoviePlaybackDockVisible, isChannelGuideDockVisible, lockMainWorkspaceScroll,
     sessionMode, hasEnteredApp, shareToast, deepLinkResolving,
+    exitToastVisible, restorePlaybackOrigin,
   } = c;
 
   if (showDesignSystem || isAdsPageOpen || isTvPairLobby || (!inRoom && !hasEnteredApp) || isTvMode) {
@@ -406,6 +407,7 @@ export function App() {
                     setCinemaModePersist(false);
                     if (isOnMobileSocialTab) setPinFullPlayerOnChat(false);
                     else setIsPlayerMinimized(true);
+                    restorePlaybackOrigin({ reason: 'minimize' });
                   }
                 }}
                 onClosePlayer={playback.handleClosePlayer}
@@ -688,6 +690,22 @@ export function App() {
                 <Check className="w-3 h-3" />
               </span>
               <span className="truncate">{shareToast}</span>
+            </div>
+          )}
+
+          {exitToastVisible && (
+            <div
+              role="status"
+              aria-live="polite"
+              className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[135] w-auto max-w-[calc(100%-2rem)] px-4 py-2.5 rounded-2xl bg-[#121420]/96 backdrop-blur-xl border border-white/20 text-xs font-semibold text-white shadow-[0_20px_50px_rgba(0,0,0,0.85)] pointer-events-none animate-fade-in"
+            >
+              <span>
+                {pickLang(lang, {
+                  es: 'Pulsa atrás de nuevo para salir',
+                  ca: 'Prem enrere de nou per sortir',
+                  en: 'Press back again to exit',
+                })}
+              </span>
             </div>
           )}
         </div>

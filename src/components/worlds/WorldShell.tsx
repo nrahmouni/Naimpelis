@@ -4,6 +4,11 @@ import type { AppLanguage } from '../../types';
 import type { WorldId } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
 import { useSwipeBack } from '../../lib/viewTransition';
+import {
+  getActiveBackInterceptorCount,
+  tryConsumeBackInterceptor,
+  useBackInterceptor,
+} from '../../lib/backInterceptor';
 import { NaimBrandLogo } from '../NaimBrandLogo';
 import { AppErrorBoundary } from '../AppErrorBoundary';
 import { SkeletonPosterGrid } from '../ui/DesignSystem';
@@ -69,6 +74,20 @@ export const WorldShell: React.FC<WorldShellProps> = ({
     onSearchChange?.('');
   };
 
+  useBackInterceptor(
+    Boolean(onSearchChange && (searchOpen || searchValue.trim().length > 0)),
+    `world-search-${world}`,
+    handleCloseSearch,
+    { priority: 6 }
+  );
+
+  const handleHeaderBack = () => {
+    if (getActiveBackInterceptorCount() > 0 && tryConsumeBackInterceptor()) {
+      return;
+    }
+    onBack();
+  };
+
   return (
     <div
       {...swipeHandlers}
@@ -113,7 +132,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
               <div className="flex items-center gap-1.5 min-w-0">
                 <button
                   type="button"
-                  onClick={onBack}
+                  onClick={handleHeaderBack}
                   aria-label={pickLang(lang, { es: 'Volver', ca: 'Tornar', en: 'Back' })}
                   className="min-w-11 min-h-11 rounded-2xl hover:bg-white/[0.08] active:scale-95 flex items-center justify-center text-white cursor-pointer transition-all shrink-0"
                 >

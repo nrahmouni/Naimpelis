@@ -9,6 +9,7 @@ import type { AppLanguage, ChannelLiveEpg, SpanishTdtChannel } from '../../types
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useFocusTrap } from '../../utils/useFocusTrap';
+import { useBackInterceptor } from '../../lib/backInterceptor';
 import { ChannelLogoBadge, getChannelRegionMeta } from '../ui/ChannelLogoBadge';
 
 interface EpgChannelModalProps {
@@ -32,6 +33,10 @@ export const EpgChannelModal: React.FC<EpgChannelModalProps> = ({
 }) => {
   const modalRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(Boolean(channel), onClose, modalRef);
+  useBackInterceptor(Boolean(channel), 'epg-channel-modal', onClose, {
+    priority: 15,
+    lockScroll: true,
+  });
 
   if (!channel) return null;
 

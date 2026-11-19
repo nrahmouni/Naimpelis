@@ -52,6 +52,16 @@ export function subscribeBackInterceptorCount(cb: () => void): () => void {
   };
 }
 
+let lastBackPopHandledAt = 0;
+
+export function markBackPopHandled(): void {
+  lastBackPopHandledAt = Date.now();
+}
+
+export function getLastBackPopHandledAt(): number {
+  return lastBackPopHandledAt;
+}
+
 /**
  * Consumes the highest-priority (most recently pushed) interceptor.
  * Returns true if an overlay/modal/view handled the Back action.

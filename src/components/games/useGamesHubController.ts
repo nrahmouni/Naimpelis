@@ -26,6 +26,7 @@ import { triggerHaptic } from '../../utils/haptics';
 import { buildCanonicalShareUrl } from '../../shared/dedicatedRoutes';
 import { copyTextToClipboard, showAppShareToast } from '../../utils/shareDedicatedLink';
 import { useAppStore } from '../../store/useAppStore';
+import { useBackInterceptor } from '../../lib/backInterceptor';
 import type { AppLanguage } from '../../types';
 
 export function isPartyGame(id: UnifiedGameId): id is PartyGameType {
@@ -355,6 +356,20 @@ export function useGamesHubController({
     }
     setSelectedGame(null);
   };
+
+  useBackInterceptor(
+    showGameSwitcher,
+    'games-switcher-modal',
+    () => setShowGameSwitcher(false),
+    { priority: 15 }
+  );
+
+  useBackInterceptor(
+    Boolean(selectedGame),
+    'games-active-match',
+    handleBackToGames,
+    { priority: 12 }
+  );
 
   const switchModeForActiveGame = (targetMode: 'online' | 'offline') => {
     if (!selectedGame || targetMode === hubMode) return;

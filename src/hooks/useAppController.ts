@@ -52,6 +52,8 @@ import { useRoomAuthoritativeState } from './useRoomAuthoritativeState';
 import { useRoomLifecycleActions } from './useRoomLifecycleActions';
 import { useRoomGameActions } from './useRoomGameActions';
 import { useDeepLinkRouter } from './useDeepLinkRouter';
+import { useAppNavigationHistory } from './useAppNavigationHistory';
+import { useBackInterceptor } from '../lib/backInterceptor';
 import { isGoogleTvEnvironment } from '../utils/tvSpatialNav';
 import {
   checkIsNestedSandboxFrame,
@@ -210,11 +212,16 @@ export function useAppController() {
   const [roomName, setRoomName] = useState<string>(initialRoomName);
   const [inRoom, setInRoom] = useState<boolean>(Boolean(effectiveInitialRoom));
   const [worldSearchQuery, setWorldSearchQuery] = useState<string>('');
+  const worldSearchQueryRef = useRef<string>(worldSearchQuery);
+  worldSearchQueryRef.current = worldSearchQuery;
   const [avatarMenuOpen, setAvatarMenuOpen] = useState<boolean>(false);
   const [settingsSheetOpen, setSettingsSheetOpen] = useState<boolean>(false);
   const [isPlayerMinimized, setIsPlayerMinimized] = useState<boolean>(false);
   const [pinFullPlayerOnChat, setPinFullPlayerOnChat] = useState<boolean>(true);
   const [isPlayerClosedLocally, setIsPlayerClosedLocally] = useState<boolean>(false);
+  const [isDocumentFullscreen, setIsDocumentFullscreen] = useState<boolean>(() =>
+    typeof document !== 'undefined' ? Boolean(document.fullscreenElement) : false
+  );
   const [isCinemaMode, setIsCinemaMode] = useState<boolean>(() => {
     try {
       return sessionStorage.getItem(CINEMA_MODE_SESSION_KEY) === '1';
@@ -227,6 +234,15 @@ export function useAppController() {
     const stored = getStoredProfile();
     return !stored.isCustomized && !wasGuestPopupDismissed(initialUrlRoom);
   });
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return undefined;
+    const handleFsChange = () => {
+      setIsDocumentFullscreen(Boolean(document.fullscreenElement));
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+  }, []);
 
   const catalogScrollRef = useRef<HTMLDivElement | null>(null);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
@@ -311,26 +327,32 @@ export function useAppController() {
     (inRoom || hasEnteredApp) && !isTvMode && activeWorld === 'entry'
   );
 
-  const { activePortalTransition, portalOriginRect, portalLandingActive, preloadWorld, enterWorld } =
-    useWorldNavigation({
-      sessionMode,
-      roomId,
-      reducedMotion,
-      effectiveInitialRoom,
-      initialIsKidsMode: initialRoute.isKidsMode,
-      initialDeepLinkGame,
-      inRoomRef,
-      mainScrollRef,
-      catalogScrollRef,
-      setActiveWorld,
-      setCatalogSection: roomState.setCatalogSection,
-      setMobileTab: roomState.setMobileTab,
-      setUnreadChatCount: roomState.setUnreadChatCount,
-      setIsInActiveGame: roomState.setIsInActiveGame,
-      setWorldSearchQuery,
-      setShowWatchlistOnly,
-      onUpgradeSoloToParty: (opts) => upgradeSoloToPartyRef.current(opts),
-    });
+  const {
+    activePortalTransition,
+    portalOriginRect,
+    portalLandingActive,
+    preloadWorld,
+    enterWorld,
+    applyWorldChange,
+  } = useWorldNavigation({
+    sessionMode,
+    roomId,
+    reducedMotion,
+    effectiveInitialRoom,
+    initialIsKidsMode: initialRoute.isKidsMode,
+    initialDeepLinkGame,
+    inRoomRef,
+    mainScrollRef,
+    catalogScrollRef,
+    setActiveWorld,
+    setCatalogSection: roomState.setCatalogSection,
+    setMobileTab: roomState.setMobileTab,
+    setUnreadChatCount: roomState.setUnreadChatCount,
+    setIsInActiveGame: roomState.setIsInActiveGame,
+    setWorldSearchQuery,
+    setShowWatchlistOnly,
+    onUpgradeSoloToParty: (opts) => upgradeSoloToPartyRef.current(opts),
+  });
 
   useCloudSyncSubscriptions({
     savedRoomsCacheKey: SAVED_ROOMS_CACHE_KEY,
@@ -428,12 +450,97 @@ export function useAppController() {
   const roomGameActions = useRoomGameActions();
 
   const scrollDesktopToPlayer = useCallback(() => {
+    const scrollTopMain = mainScrollRef.current?.scrollTop ?? 0;
+    const scrollTopCatalog = catalogScrollRef.current?.scrollTop ?? 0;
+    const store = useAppStore.getState();
+    const existing = store.playbackReturnContext;
+    if (existing) {
+      store.setPlaybackReturnContext({
+        ...existing,
+        homeSearchQuery: existing.homeSearchQuery ?? store.homeSearchQuery,
+        homeSearchCategory: existing.homeSearchCategory ?? store.homeSearchCategory,
+        scrollTopMain: existing.scrollTopMain ?? scrollTopMain,
+        scrollTopCatalog: existing.scrollTopCatalog ?? scrollTopCatalog,
+      });
+    } else {
+      store.setPlaybackReturnContext({
+        world: store.activeWorld,
+        cineTab: store.cineTab,
+        cineSpecialPortal: store.cineSpecialPortal,
+        futbolTab: store.futbolTab,
+        searchQuery: worldSearchQueryRef.current,
+        homeSearchQuery: store.homeSearchQuery,
+        homeSearchCategory: store.homeSearchCategory,
+        scrollTopMain,
+        scrollTopCatalog,
+      });
+    }
+
     setIsPlayerClosedLocally(false);
     setIsPlayerMinimized(false);
     miniDrag.setIsAutoMiniByScroll(false);
     mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
     catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
   }, [miniDrag]);
+
+  const restorePlaybackOrigin = useCallback(
+    (_opts?: { reason: 'close' | 'cancel' | 'minimize' }) => {
+      const store = useAppStore.getState();
+      const ctx = store.playbackReturnContext;
+      if (!ctx) return;
+      store.setPlaybackReturnContext(null);
+
+      if (ctx.world && ctx.world !== store.activeWorld) {
+        applyWorldChange(ctx.world, { skipScrollReset: true });
+      }
+      if (ctx.cineTab) {
+        store.setCineTab(ctx.cineTab);
+      }
+      if (ctx.cineSpecialPortal !== undefined) {
+        store.setCineSpecialPortal(ctx.cineSpecialPortal);
+      }
+      if (ctx.futbolTab) {
+        store.setFutbolTab(ctx.futbolTab);
+      }
+      if (typeof ctx.searchQuery === 'string') {
+        setWorldSearchQuery(ctx.searchQuery);
+      }
+      if (typeof ctx.homeSearchQuery === 'string') {
+        store.setHomeSearchQuery(ctx.homeSearchQuery);
+      }
+      if (ctx.homeSearchCategory) {
+        store.setHomeSearchCategory(ctx.homeSearchCategory);
+      }
+
+      if (ctx.movieModal) {
+        store.setRequestedMovieModal(ctx.movieModal);
+      }
+      if (ctx.seriesModal) {
+        store.setRequestedSeriesModal({
+          series: ctx.seriesModal.series,
+          season: ctx.seriesModal.season,
+          episode: ctx.seriesModal.episode ?? undefined,
+          lang: ctx.seriesModal.lang,
+          forceSpanish: ctx.seriesModal.forceSpanish,
+          fromPreviewItem: ctx.seriesModal.fromPreviewItem ?? null,
+          initialScrollTop: ctx.seriesModal.pageScrollTop,
+        });
+      }
+      if (ctx.catalaModal) {
+        store.setRequestedCatalaModal(ctx.catalaModal);
+      }
+      if (ctx.epgChannel) {
+        store.setRequestedEpgChannel(ctx.epgChannel);
+      }
+
+      const mainTop = ctx.scrollTopMain ?? 0;
+      const catalogTop = ctx.scrollTopCatalog ?? 0;
+      if (mainTop > 0 || catalogTop > 0) {
+        store.setPendingScrollRestore({ mainTop, catalogTop });
+      }
+    },
+    [applyWorldChange]
+  );
 
   const handleToggleCinemaMode = useCallback(() => {
     setIsCinemaMode((prev) => {
@@ -496,6 +603,7 @@ export function useAppController() {
     setMobileTab: roomState.setMobileTab,
     showHostLockNotice,
     scrollDesktopToPlayer,
+    onRestorePlaybackOrigin: restorePlaybackOrigin,
   });
 
   roomState.handlePlayQueueItemRef.current = playback.handlePlayQueueItem;
@@ -728,8 +836,63 @@ export function useAppController() {
     isInActiveGame: roomState.isInActiveGame,
   });
 
+  const pendingScrollRestore = useAppStore((s) => s.pendingScrollRestore);
+  const setPendingScrollRestore = useAppStore((s) => s.setPendingScrollRestore);
+
+  useEffect(() => {
+    if (!pendingScrollRestore || hideBrowseBelowPlayer) return;
+    const raf = window.requestAnimationFrame(() => {
+      mainScrollRef.current?.scrollTo({
+        top: pendingScrollRestore.mainTop,
+        behavior: 'auto',
+      });
+      catalogScrollRef.current?.scrollTo({
+        top: pendingScrollRestore.catalogTop,
+        behavior: 'auto',
+      });
+      setPendingScrollRestore(null);
+    });
+    return () => window.cancelAnimationFrame(raf);
+  }, [pendingScrollRestore, hideBrowseBelowPlayer, setPendingScrollRestore]);
+
+  useBackInterceptor(
+    roomState.isExtracting,
+    'active-media-extraction',
+    playback.handleCancelMediaExtraction,
+    { priority: 22 }
+  );
+
+  const { exitToastVisible, triggerBackStep } = useAppNavigationHistory({
+    enabled: !isTvMode && !isTvPairLobby && !isAdsPageOpen && (inRoom || hasEnteredApp),
+    inRoom,
+    activeWorld,
+    onReturnToEntry: () => enterWorld('entry'),
+    hasActivePlayer: isPlayerActive,
+    isPlayerMinimized: isPlayerMinimized || isDockedMini,
+    isFullscreen: isDocumentFullscreen,
+    onExitFullscreen: () => {
+      try {
+        void document.exitFullscreen?.();
+      } catch {
+        // ignore
+      }
+    },
+    onMinimizePlayer: () => {
+      setCinemaModePersist(false);
+      if (isOnMobileSocialTab) setPinFullPlayerOnChat(false);
+      else setIsPlayerMinimized(true);
+      restorePlaybackOrigin({ reason: 'minimize' });
+    },
+    onExitRoomOrApp: () => {
+      if (inRoom && sessionMode !== 'solo') {
+        lifecycle.handleLeaveRoom();
+      }
+    },
+  });
+
   return {
     sessionMode, setSessionMode, hasEnteredApp, setHasEnteredApp, shareToast, deepLinkResolving,
+    exitToastVisible, triggerBackStep, restorePlaybackOrigin,
     lang, setLang, profile, recentRooms, watchHistory, watchlist, favoriteChannels, savedFriends,
     onlineUsers, friendsModalOpen, setFriendsModalOpen, incomingInvite, setIncomingInvite,
     friendAddedNotice, setFriendAddedNotice, inviteSentFeedback, friendNoticeTimerRef,

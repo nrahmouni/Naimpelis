@@ -14,6 +14,7 @@ import { EffectiveViewMode, getMonogramInitials } from './MobileViewportGuard';
 import { SegmentedControl } from './ui/DesignSystem';
 import { pickLang } from '../utils/i18n';
 import { useFocusTrap } from '../utils/useFocusTrap';
+import { useBackInterceptor } from '../lib/backInterceptor';
 import { ProfileHistoryTab } from './profile/ProfileHistoryTab';
 import { ProfileSavedTab } from './profile/ProfileSavedTab';
 import { ProfileAccountRoomCard } from './profile/ProfileAccountRoomCard';
@@ -106,6 +107,10 @@ export const UserProfileHubModal: React.FC<UserProfileHubModalProps> = ({
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useFocusTrap(isOpen, onClose, dialogRef);
+  useBackInterceptor(isOpen, 'user-profile-hub-modal', onClose, {
+    priority: 14,
+    lockScroll: true,
+  });
 
   useEffect(() => {
     if (isOpen) {

@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import type { TypingUserPayload } from '../shared/protocol';
 import type {
+  CatalaSeriesDetails,
   CatalogMovie,
   ScheduledRoomItem,
+  SpanishTdtChannel,
   SubtitleStyleSettings,
   TvSeriesDetails,
 } from '../types';
@@ -24,11 +26,47 @@ export type PrimaryWorldId =
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
+export type HomeSearchCategoryFilter = 'all' | 'movies' | 'series' | 'sports' | 'tv' | 'games';
 
 export interface RequestedSeriesModalPayload {
   series: CatalogMovie | TvSeriesDetails;
   season?: number;
   episode?: number;
+  lang?: string;
+  forceSpanish?: boolean;
+  fromPreviewItem?: CatalogMovie | null;
+  initialScrollTop?: number;
+}
+
+export interface RequestedCatalaModalPayload {
+  series: CatalaSeriesDetails;
+  season: number;
+}
+
+export interface PlaybackReturnSeriesSnapshot {
+  series: TvSeriesDetails;
+  season: number;
+  episode?: number | null;
+  lang?: string;
+  forceSpanish?: boolean;
+  fromPreviewItem?: CatalogMovie | null;
+  pageScrollTop?: number;
+}
+
+export interface PlaybackReturnContext {
+  world: WorldId;
+  cineTab?: CineSubTab;
+  cineSpecialPortal?: 'none' | 'catala';
+  futbolTab?: FutbolSubTab;
+  searchQuery?: string;
+  homeSearchQuery?: string;
+  homeSearchCategory?: HomeSearchCategoryFilter;
+  scrollTopMain?: number;
+  scrollTopCatalog?: number;
+  movieModal?: CatalogMovie | null;
+  seriesModal?: PlaybackReturnSeriesSnapshot | null;
+  catalaModal?: RequestedCatalaModalPayload | null;
+  epgChannel?: SpanishTdtChannel | null;
 }
 
 const PRIMARY_WORLDS: PrimaryWorldId[] = [
@@ -81,12 +119,19 @@ interface AppShellState {
   futbolStatusTab: 'live' | 'upcoming' | 'all';
   requestedMovieModal: CatalogMovie | null;
   requestedSeriesModal: RequestedSeriesModalPayload | null;
+  requestedCatalaModal: RequestedCatalaModalPayload | null;
+  requestedEpgChannel: SpanishTdtChannel | null;
   requestedMatchSlug: string | null;
+  playbackReturnContext: PlaybackReturnContext | null;
+  pendingScrollRestore: { mainTop: number; catalogTop: number } | null;
+  homeSearchQuery: string;
+  homeSearchCategory: HomeSearchCategoryFilter;
   activeNavSection: ShellNavSection;
   activeWorld: WorldId;
   lastUsedWorld: PrimaryWorldId | null;
   cineTab: CineSubTab;
   cineCastellano: boolean;
+  cineSpecialPortal: 'none' | 'catala';
   futbolTab: FutbolSubTab;
   isFloatingRoomOpen: boolean;
   floatingBubbleSuppressCount: number;
@@ -116,11 +161,18 @@ interface AppShellState {
   setFutbolStatusTab: (tab: 'live' | 'upcoming' | 'all') => void;
   setRequestedMovieModal: (movie: CatalogMovie | null) => void;
   setRequestedSeriesModal: (payload: RequestedSeriesModalPayload | null) => void;
+  setRequestedCatalaModal: (payload: RequestedCatalaModalPayload | null) => void;
+  setRequestedEpgChannel: (channel: SpanishTdtChannel | null) => void;
   setRequestedMatchSlug: (slug: string | null) => void;
+  setPlaybackReturnContext: (ctx: PlaybackReturnContext | null) => void;
+  setPendingScrollRestore: (pos: { mainTop: number; catalogTop: number } | null) => void;
+  setHomeSearchQuery: (q: string) => void;
+  setHomeSearchCategory: (category: HomeSearchCategoryFilter) => void;
   setActiveNavSection: (section: ShellNavSection) => void;
   setActiveWorld: (world: WorldId) => void;
   setCineTab: (tab: CineSubTab) => void;
   setCineCastellano: (enabled: boolean) => void;
+  setCineSpecialPortal: (portal: 'none' | 'catala') => void;
   setFutbolTab: (tab: FutbolSubTab) => void;
   setIsFloatingRoomOpen: (open: boolean) => void;
   pushBubbleSuppression: () => void;
@@ -193,12 +245,19 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   futbolStatusTab: 'all',
   requestedMovieModal: null,
   requestedSeriesModal: null,
+  requestedCatalaModal: null,
+  requestedEpgChannel: null,
   requestedMatchSlug: null,
+  playbackReturnContext: null,
+  pendingScrollRestore: null,
+  homeSearchQuery: '',
+  homeSearchCategory: 'all',
   activeNavSection: 'home',
   activeWorld: 'entry',
   lastUsedWorld: loadLastUsedWorld(),
   cineTab: 'movies',
   cineCastellano: true,
+  cineSpecialPortal: 'none',
   futbolTab: 'matches',
   isFloatingRoomOpen: false,
   floatingBubbleSuppressCount: 0,
@@ -240,7 +299,13 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setFutbolStatusTab: (futbolStatusTab) => set({ futbolStatusTab }),
   setRequestedMovieModal: (requestedMovieModal) => set({ requestedMovieModal }),
   setRequestedSeriesModal: (requestedSeriesModal) => set({ requestedSeriesModal }),
+  setRequestedCatalaModal: (requestedCatalaModal) => set({ requestedCatalaModal }),
+  setRequestedEpgChannel: (requestedEpgChannel) => set({ requestedEpgChannel }),
   setRequestedMatchSlug: (requestedMatchSlug) => set({ requestedMatchSlug }),
+  setPlaybackReturnContext: (playbackReturnContext) => set({ playbackReturnContext }),
+  setPendingScrollRestore: (pendingScrollRestore) => set({ pendingScrollRestore }),
+  setHomeSearchQuery: (homeSearchQuery) => set({ homeSearchQuery }),
+  setHomeSearchCategory: (homeSearchCategory) => set({ homeSearchCategory }),
 
   setActiveNavSection: (activeNavSection) => set({ activeNavSection }),
   setActiveWorld: (activeWorld) => {
@@ -260,6 +325,7 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   },
   setCineTab: (cineTab) => set({ cineTab }),
   setCineCastellano: (cineCastellano) => set({ cineCastellano }),
+  setCineSpecialPortal: (cineSpecialPortal) => set({ cineSpecialPortal }),
   setFutbolTab: (futbolTab) => set({ futbolTab }),
   setIsFloatingRoomOpen: (isFloatingRoomOpen) => set({ isFloatingRoomOpen }),
   pushBubbleSuppression: () =>

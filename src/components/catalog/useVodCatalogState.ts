@@ -38,8 +38,13 @@ export function useVodCatalogState({
   const [homeSortBy] = useState<
     'popularity.desc' | 'vote_average.desc' | 'primary_release_date.desc'
   >('popularity.desc');
-  const [homeQuery, setHomeQuery] = useState('');
-  const [debouncedHomeQuery, setDebouncedHomeQuery] = useState('');
+  const initialCineSearch = worldMode === 'cine' ? (externalSearchQuery || '') : '';
+  const initialCineTrimmed = initialCineSearch.trim();
+  const initialHomeDebounced =
+    initialCineTrimmed && !/^https?:\/\//i.test(initialCineTrimmed) ? initialCineTrimmed : '';
+
+  const [homeQuery, setHomeQuery] = useState(initialCineSearch);
+  const [debouncedHomeQuery, setDebouncedHomeQuery] = useState(initialHomeDebounced);
   const [homeMovieResults, setHomeMovieResults] = useState<CatalogMovie[]>([]);
   const [homeSeriesResults, setHomeSeriesResults] = useState<CatalogMovie[]>([]);
   const [loadingHomeMovies, setLoadingHomeMovies] = useState(false);
@@ -51,8 +56,8 @@ export function useVodCatalogState({
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
   const [, setIsHeroHovered] = useState(false);
 
-  const [movieQuery, setMovieQuery] = useState('');
-  const [debouncedMovieQuery, setDebouncedMovieQuery] = useState('');
+  const [movieQuery, setMovieQuery] = useState(initialCineSearch);
+  const [debouncedMovieQuery, setDebouncedMovieQuery] = useState(initialCineTrimmed);
   const [movieSort, setMovieSort] = useState<string>('trending');
   const [movieGenre, setMovieGenre] = useState<string>('');
   const [moviePage, setMoviePage] = useState<number>(1);
@@ -61,8 +66,8 @@ export function useVodCatalogState({
   const [loadingMovies, setLoadingMovies] = useState(false);
   const [loadingMoreMovies, setLoadingMoreMovies] = useState(false);
 
-  const [seriesQuery, setSeriesQuery] = useState('');
-  const [debouncedSeriesQuery, setDebouncedSeriesQuery] = useState('');
+  const [seriesQuery, setSeriesQuery] = useState(initialCineSearch);
+  const [debouncedSeriesQuery, setDebouncedSeriesQuery] = useState(initialCineTrimmed);
   const [seriesSort, setSeriesSort] = useState<string>('trending');
   const [seriesGenre, setSeriesGenre] = useState<string>('');
   const [seriesLangMode, setSeriesLangMode] = useState<'ES' | 'LAT' | 'VOSE' | 'EN'>('ES');
@@ -79,22 +84,33 @@ export function useVodCatalogState({
   const [loadingSeriesDetails, setLoadingSeriesDetails] = useState(false);
   const [probingSeriesLangs, setProbingSeriesLangs] = useState(false);
   const seriesFetchSeqRef = useRef(0);
+  const [detailsReturnPreviewItem, setDetailsReturnPreviewItemState] =
+    useState<CatalogMovie | null>(null);
+  const detailsReturnPreviewRef = useRef<CatalogMovie | null>(null);
+  const setDetailsReturnPreviewItem = (item: CatalogMovie | null) => {
+    detailsReturnPreviewRef.current = item;
+    setDetailsReturnPreviewItemState(item);
+  };
   const requestedMovieModal = useAppStore((s) => s.requestedMovieModal);
   const requestedSeriesModal = useAppStore((s) => s.requestedSeriesModal);
+  const requestedCatalaModal = useAppStore((s) => s.requestedCatalaModal);
 
-  const [ytQuery, setYtQuery] = useState('');
+  const [ytQuery, setYtQuery] = useState(worldMode === 'youtube' ? (externalSearchQuery || '') : '');
   const [debouncedYtQuery, setDebouncedYtQuery] = useState(
-    'resumen partido laliga champions highlights hd'
+    worldMode === 'youtube' && externalSearchQuery?.trim()
+      ? externalSearchQuery.trim()
+      : 'resumen partido laliga champions highlights hd'
   );
   const [ytResults, setYtResults] = useState<YouTubeSearchItem[]>([]);
   const [loadingYt, setLoadingYt] = useState(false);
 
-  const [cineSpecialPortal, setCineSpecialPortal] = useState<'none' | 'catala'>('none');
+  const cineSpecialPortal = useAppStore((s) => s.cineSpecialPortal);
+  const setCineSpecialPortal = useAppStore((s) => s.setCineSpecialPortal);
   const [cineFiltersOpen, setCineFiltersOpen] = useState(false);
   const [cineAudioOverride, setCineAudioOverride] = useState<'ES' | 'VOSE' | 'EN'>('ES');
 
-  const [catalaQuery, setCatalaQuery] = useState('');
-  const [debouncedCatalaQuery, setDebouncedCatalaQuery] = useState('');
+  const [catalaQuery, setCatalaQuery] = useState(initialCineSearch);
+  const [debouncedCatalaQuery, setDebouncedCatalaQuery] = useState(initialCineTrimmed);
   const [catalaItems, setCatalaItems] = useState<CatalaCatalogItem[]>([]);
   const [loadingCatala, setLoadingCatala] = useState<boolean>(false);
   const [selectedCatalaSeries, setSelectedCatalaSeries] = useState<CatalaSeriesDetails | null>(
@@ -130,6 +146,15 @@ export function useVodCatalogState({
       ('activeSeason' in rawSeries ? rawSeries.activeSeason : undefined) ||
       1;
     setHighlightedEpisodeNumber(requestedSeriesModal.episode || null);
+    if (requestedSeriesModal.fromPreviewItem !== undefined) {
+      setDetailsReturnPreviewItem(requestedSeriesModal.fromPreviewItem || null);
+    }
+    if (typeof requestedSeriesModal.forceSpanish === 'boolean') {
+      setForceSpanishSeriesActive(requestedSeriesModal.forceSpanish);
+    }
+    if (requestedSeriesModal.lang) {
+      setSeriesModalLang(requestedSeriesModal.lang);
+    }
     if (
       'episodes' in rawSeries &&
       Array.isArray(rawSeries.episodes) &&
@@ -140,17 +165,36 @@ export function useVodCatalogState({
       setLoadingSeriesDetails(false);
       if (Array.isArray(rawSeries.availableLanguages) && rawSeries.availableLanguages.length > 0) {
         const avail = rawSeries.availableLanguages;
-        setSeriesModalLang(avail.includes('ES') ? 'ES' : avail[0]);
+        if (!requestedSeriesModal.lang) {
+          setSeriesModalLang(avail.includes('ES') ? 'ES' : avail[0]);
+        }
         setProbingSeriesLangs(false);
       } else if (rawSeries.tmdbId) {
-        openSeriesDetails(Number(rawSeries.tmdbId), reqSeason, rawSeries, false);
+        openSeriesDetails(
+          Number(rawSeries.tmdbId),
+          reqSeason,
+          rawSeries,
+          Boolean(requestedSeriesModal.forceSpanish)
+        );
       }
       return;
     }
     if (rawSeries.tmdbId) {
-      openSeriesDetails(Number(rawSeries.tmdbId), reqSeason, rawSeries, false);
+      openSeriesDetails(
+        Number(rawSeries.tmdbId),
+        reqSeason,
+        rawSeries,
+        Boolean(requestedSeriesModal.forceSpanish)
+      );
     }
   }, [requestedSeriesModal]);
+
+  useEffect(() => {
+    if (!requestedCatalaModal) return;
+    setCineSpecialPortal('catala');
+    setSelectedCatalaSeries(requestedCatalaModal.series);
+    setLoadingCatalaEpisodes(false);
+  }, [requestedCatalaModal, setCineSpecialPortal]);
 
   useEffect(() => {
     const clean = homeQuery.trim();
@@ -714,6 +758,9 @@ export function useVodCatalogState({
     setSelectedSeries,
     highlightedEpisodeNumber,
     setHighlightedEpisodeNumber,
+    detailsReturnPreviewItem,
+    detailsReturnPreviewRef,
+    setDetailsReturnPreviewItem,
     seriesModalLang,
     setSeriesModalLang,
     forceSpanishSeriesActive,

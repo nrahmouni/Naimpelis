@@ -8,6 +8,7 @@ import type {
 } from '../../types';
 import { triggerHaptic } from '../../utils/haptics';
 import { useKidsStore } from '../../store/useKidsStore';
+import { useBackInterceptor } from '../../lib/backInterceptor';
 import { isGoogleTvEnvironment, useTvSpatialRemote } from '../../utils/tvSpatialNav';
 import {
   createFreshDailyMissions,
@@ -153,54 +154,83 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
       ? t.rankAdventurer
       : t.rankExplorer;
 
+  const consumeKidsInnerBackLayer = (): boolean => {
+    if (activePlayback) {
+      setActivePlayback(null);
+      return true;
+    }
+    if (langModalOpen) {
+      setLangModalOpen(false);
+      return true;
+    }
+    if (pinModalOpen) {
+      setPinModalOpen(false);
+      return true;
+    }
+    if (parentModalOpen) {
+      setParentModalOpen(false);
+      return true;
+    }
+    if (storyStudioOpen) {
+      setStoryStudioOpen(false);
+      return true;
+    }
+    if (petWorldOpen) {
+      setPetWorldOpen(false);
+      return true;
+    }
+    if (diplomaOpen) {
+      setDiplomaOpen(false);
+      return true;
+    }
+    if (familyOnboardingOpen) {
+      setFamilyOnboardingOpen(false);
+      return true;
+    }
+    if (apkModalOpen) {
+      setApkModalOpen(false);
+      return true;
+    }
+    if (albumModalOpen) {
+      setAlbumModalOpen(false);
+      return true;
+    }
+    if (wizardOpen) {
+      setWizardOpen(false);
+      return true;
+    }
+    if (activeTab !== 'portal') {
+      setActiveTab('portal');
+      return true;
+    }
+    return false;
+  };
+
+  const hasKidsInnerLayer = Boolean(
+    activePlayback ||
+      langModalOpen ||
+      pinModalOpen ||
+      parentModalOpen ||
+      storyStudioOpen ||
+      petWorldOpen ||
+      diplomaOpen ||
+      familyOnboardingOpen ||
+      apkModalOpen ||
+      albumModalOpen ||
+      wizardOpen ||
+      activeTab !== 'portal'
+  );
+
+  useBackInterceptor(
+    hasKidsInnerLayer,
+    'kids-hub-inner-nav',
+    () => consumeKidsInnerBackLayer(),
+    { priority: 14 }
+  );
+
   useTvSpatialRemote({
     onBackStep: () => {
-      if (activePlayback) {
-        setActivePlayback(null);
-        return true;
-      }
-      if (langModalOpen) {
-        setLangModalOpen(false);
-        return true;
-      }
-      if (pinModalOpen) {
-        setPinModalOpen(false);
-        return true;
-      }
-      if (parentModalOpen) {
-        setParentModalOpen(false);
-        return true;
-      }
-      if (storyStudioOpen) {
-        setStoryStudioOpen(false);
-        return true;
-      }
-      if (petWorldOpen) {
-        setPetWorldOpen(false);
-        return true;
-      }
-      if (diplomaOpen) {
-        setDiplomaOpen(false);
-        return true;
-      }
-      if (familyOnboardingOpen) {
-        setFamilyOnboardingOpen(false);
-        return true;
-      }
-      if (apkModalOpen) {
-        setApkModalOpen(false);
-        return true;
-      }
-      if (albumModalOpen) {
-        setAlbumModalOpen(false);
-        return true;
-      }
-      if (wizardOpen) {
-        setWizardOpen(false);
-        return true;
-      }
-      if (activeTab !== 'portal') {
-        setActiveTab('portal');
+      if (consumeKidsInnerBackLayer()) {
         return true;
       }
       openPinModal('exit');

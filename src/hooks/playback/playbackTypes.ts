@@ -54,6 +54,7 @@ export interface UsePlaybackOrchestratorOptions {
   setMobileTab: React.Dispatch<React.SetStateAction<MobileNavTab>>;
   showHostLockNotice: (hostDisplayName?: string, reason?: string) => void;
   scrollDesktopToPlayer: () => void;
+  onRestorePlaybackOrigin?: (opts?: { reason: 'close' | 'cancel' | 'minimize' }) => void;
 }
 
 export interface PreExtractionSnapshot {

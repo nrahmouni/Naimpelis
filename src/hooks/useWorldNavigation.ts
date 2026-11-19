@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Dispatch, MutableRefObject, SetStateAction } from 'react';
 import type { CatalogSection } from '../components/MediaCatalogHub';
 import type { PortalOriginRect, WorldPortalKind } from '../components/home/WorldPortalTransition';
-import type { PrimaryWorldId, SessionMode, WorldId } from '../store/useAppStore';
+import { useAppStore, type PrimaryWorldId, type SessionMode, type WorldId } from '../store/useAppStore';
 import type { MobileNavTab } from '../utils/appSessionHelpers';
 import { playWorldPortalSound } from '../utils/haptics';
 import { runWithViewTransition } from '../lib/viewTransition';
@@ -62,7 +62,7 @@ export function useWorldNavigation({
   useEffect(() => () => clearPortalTimers(), [clearPortalTimers]);
 
   const applyWorldChange = useCallback(
-    (nextWorld: WorldId) => {
+    (nextWorld: WorldId, opts?: { skipScrollReset?: boolean }) => {
       setActiveWorld(nextWorld);
       if (nextWorld === 'cine') {
         setCatalogSection('movies');
@@ -96,18 +96,20 @@ export function useWorldNavigation({
           const currentPath = window.location.pathname.toLowerCase();
           if (nextWorld === 'kids') {
             if (currentPath !== '/kids') {
-              window.history.replaceState({}, '', '/kids');
+              window.history.replaceState(window.history.state, '', '/kids');
             }
           } else if (currentPath === '/kids' && roomId && sessionMode === 'party') {
-            window.history.replaceState({}, '', `/${encodeURIComponent(roomId)}`);
+            window.history.replaceState(window.history.state, '', `/${encodeURIComponent(roomId)}`);
           }
         } catch {
           // ignore
         }
       }
 
-      mainScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
-      catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+      if (!opts?.skipScrollReset) {
+        mainScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+        catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+      }
     },
     [
       sessionMode,
@@ -165,6 +167,13 @@ export function useWorldNavigation({
 
       setWorldSearchQuery('');
       setShowWatchlistOnly(false);
+      const navStore = useAppStore.getState();
+      navStore.setHomeSearchQuery('');
+      navStore.setRequestedMovieModal(null);
+      navStore.setRequestedSeriesModal(null);
+      if (nextWorld === 'entry') {
+        navStore.setCineSpecialPortal('none');
+      }
       clearPortalTimers();
 
       if (
@@ -222,5 +231,6 @@ export function useWorldNavigation({
     portalLandingActive,
     preloadWorld,
     enterWorld,
+    applyWorldChange,
   };
 }

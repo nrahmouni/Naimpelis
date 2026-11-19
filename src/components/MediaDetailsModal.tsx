@@ -13,6 +13,7 @@ import { extractSafeAmbientColor } from '../utils/imageUrl';
 import { shareDedicatedLink } from '../utils/shareDedicatedLink';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import { useSuppressFloatingBubble } from '../utils/useSuppressFloatingBubble';
+import { useBackInterceptor } from '../lib/backInterceptor';
 import { FlagBadgeSvg, MediaLanguageSelector } from './ui/LanguageBadge';
 import {
   AUDIO_LANGUAGE_OPTIONS,
@@ -67,6 +68,10 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
 
   useFocusTrap(Boolean(item), onClose, dialogRef);
   useSuppressFloatingBubble(Boolean(item));
+  useBackInterceptor(Boolean(item), 'media-details-modal', onClose, {
+    priority: 15,
+    lockScroll: true,
+  });
 
   const sendTrailerCommand = useCallback((func: string, args: unknown[] = []) => {
     const win = trailerIframeRef.current?.contentWindow;

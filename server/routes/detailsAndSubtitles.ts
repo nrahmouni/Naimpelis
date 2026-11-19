@@ -18,6 +18,7 @@ import {
 } from '../extractors/gnulaHdExtractor.ts';
 import { fetchTmdbJson, fetchTmdbTitleLogo, resolveLocalizedTmdbTitle } from '../services/tmdbService.ts';
 import { curlPlainGetText } from '../services/vestMirrorService.ts';
+import { filterTmdbValidSeasons } from './catalog/tvDetailsHandler.ts';
 
 const subtitleSearchCache = new LruTtlCache<string, { tracks: any[]; ts: number }>(
   250,
@@ -241,9 +242,16 @@ export function registerDetailsAndSubtitlesRoutes(
         effectiveMediaType === 'movie'
           ? Number(data?.runtime || 0)
           : Number(data?.episode_run_time?.[0] || 0);
+      const validSeasonsCount =
+        effectiveMediaType === 'tv' && Array.isArray(data?.seasons)
+          ? filterTmdbValidSeasons(data.seasons, {
+              lastAiredSeason: Number(data?.last_episode_to_air?.season_number || 0),
+              nextAirSeason: Number(data?.next_episode_to_air?.season_number || 0),
+            }).length
+          : Number(data?.number_of_seasons || 1);
       const runtimeText =
         effectiveMediaType === 'tv'
-          ? `${Number(data?.number_of_seasons || 1)} temp · ${Number(data?.number_of_episodes || 0)} eps`
+          ? `${validSeasonsCount || Number(data?.number_of_seasons || 1)} temp · ${Number(data?.number_of_episodes || 0)} eps`
           : runtimeMin > 0
           ? `${Math.floor(runtimeMin / 60)}h ${runtimeMin % 60}m`
           : undefined;

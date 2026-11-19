@@ -28,11 +28,12 @@ interface UniversalSearchResultsListProps {
   matchedMovies: CatalogMovie[];
   matchedSeries: CatalogMovie[];
   onCloseSearch: () => void;
+  onBeforeDirectPlay?: () => void;
   onPlayMatch: (match: SportsMatch) => void;
   onPlayChannel: (channel: SpanishTdtChannel) => void;
   onSelectGame: (gameId: string) => void;
-  onPlayMovie: (movie: CatalogMovie) => void;
-  onPlaySeries: (series: CatalogMovie) => void;
+  onOpenMovieDetails: (movie: CatalogMovie) => void;
+  onOpenSeriesPage: (series: CatalogMovie) => void;
 }
 
 export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProps> = ({
@@ -44,13 +45,14 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
   matchedMovies,
   matchedSeries,
   onCloseSearch,
+  onBeforeDirectPlay,
   onPlayMatch,
   onPlayChannel,
   onSelectGame,
-  onPlayMovie,
-  onPlaySeries,
+  onOpenMovieDetails,
+  onOpenSeriesPage,
 }) => (
-  <div className="space-y-4 max-h-[460px] overflow-y-auto no-scrollbar pr-1">
+  <div className="space-y-4 max-h-[58dvh] overflow-y-auto no-scrollbar pr-1">
     {/* SECTION: FÚTBOL & DEPORTES */}
     {(activeCategory === 'all' || activeCategory === 'sports') &&
       matchedSports.length > 0 && (
@@ -73,7 +75,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
-                  onCloseSearch();
+                  onBeforeDirectPlay?.();
                   onPlayMatch(match);
                 }}
                 className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#00F593]/50 text-left cursor-pointer transition-all active:scale-[0.98]"
@@ -126,7 +128,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
               type="button"
               onClick={() => {
                 triggerHaptic('light');
-                onCloseSearch();
+                onBeforeDirectPlay?.();
                 onPlayChannel(ch);
               }}
               className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-sky-400/50 text-left cursor-pointer transition-all active:scale-[0.98]"
@@ -207,8 +209,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
-                  onCloseSearch();
-                  onPlayMovie(movie);
+                  onOpenMovieDetails(movie);
                 }}
                 className="group rounded-2xl overflow-hidden bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#9146FF]/50 text-left cursor-pointer transition-all active:scale-[0.98] flex flex-col"
               >
@@ -280,8 +281,7 @@ export const UniversalSearchResultsList: React.FC<UniversalSearchResultsListProp
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
-                  onCloseSearch();
-                  onPlaySeries(s);
+                  onOpenSeriesPage(s);
                 }}
                 className="group rounded-2xl overflow-hidden bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#9146FF]/50 text-left cursor-pointer transition-all active:scale-[0.98] flex flex-col"
               >

@@ -23,7 +23,7 @@ import type {
 import { triggerHaptic } from '../utils/haptics';
 import { usePullToRefresh } from '../lib/viewTransition';
 import { isSameCatalogItem } from '../utils/storage';
-import { useAppStore } from '../store/useAppStore';
+import { useAppStore, type PlaybackReturnContext } from '../store/useAppStore';
 import { MediaDetailsModal } from './MediaDetailsModal';
 import {
   normalizeCatalogPillar,
@@ -210,6 +210,27 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
     onResetWatchlistOnly: resetWatchlistOnly,
   });
 
+  const captureOriginContext = useCallback(
+    (extra?: Partial<PlaybackReturnContext>) => {
+      const store = useAppStore.getState();
+      const prev = store.playbackReturnContext;
+      store.setPlaybackReturnContext({
+        world:
+          store.activeWorld !== 'entry'
+            ? store.activeWorld
+            : worldMode || store.activeWorld,
+        cineTab: effectiveCineTab,
+        cineSpecialPortal: vod.cineSpecialPortal,
+        futbolTab: effectiveFutbolTab,
+        searchQuery: externalSearchQuery ?? '',
+        scrollTopMain: prev?.scrollTopMain,
+        scrollTopCatalog: prev?.scrollTopCatalog,
+        ...extra,
+      });
+    },
+    [worldMode, effectiveCineTab, vod.cineSpecialPortal, effectiveFutbolTab, externalSearchQuery]
+  );
+
   const handleToggleBookmark = (item: CatalogMovie, e: React.MouseEvent) => {
     e.stopPropagation();
     triggerHaptic('light');
@@ -253,14 +274,15 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           useAppStore.getState().setRequestedMovieModal(null);
         }}
         onPlayMovie={(m, pLang, opts) => {
-          onExternalSearchChange?.('');
+          useAppStore.getState().setRequestedMovieModal(null);
+          captureOriginContext({ movieModal: m });
           onPlayMovie(m, pLang, opts);
         }}
         onOpenSeriesEpisodes={(tmdbId, forceSpanish) => {
           const seed = vod.previewItem || undefined;
+          vod.setDetailsReturnPreviewItem(seed || null);
           vod.setPreviewItem(null);
           useAppStore.getState().setRequestedMovieModal(null);
-          onExternalSearchChange?.('');
           vod.openSeriesDetails(tmdbId, seed?.seasonNumber || 1, seed, Boolean(forceSpanish));
         }}
         onToggleBookmark={(m) => onToggleCatalogFavorite(m)}
@@ -272,9 +294,21 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         lang={lang}
         selectedSeries={vod.selectedCatalaSeries}
         loadingEpisodes={vod.loadingCatalaEpisodes}
-        onClose={() => vod.setSelectedCatalaSeries(null)}
+        onClose={() => {
+          vod.setSelectedCatalaSeries(null);
+          useAppStore.getState().setRequestedCatalaModal(null);
+        }}
         onSelectSeason={vod.openCatalaSeriesDetails}
-        onPlayEpisode={onPlayCatalaEpisode}
+        onPlayEpisode={(catSeries, catEp) => {
+          captureOriginContext({
+            catalaModal: {
+              series: catSeries,
+              season: catSeries.activeSeason,
+            },
+          });
+          useAppStore.getState().setRequestedCatalaModal(null);
+          onPlayCatalaEpisode(catSeries, catEp);
+        }}
         onAddToQueue={onAddToQueue}
       />
 
@@ -291,15 +325,52 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         watchHistory={watchHistory}
         isBookmarked={isBookmarked}
         onClose={() => {
+          const returnPreview = vod.detailsReturnPreviewRef.current;
           vod.setSelectedSeries(null);
           vod.setHighlightedEpisodeNumber(null);
+          vod.setDetailsReturnPreviewItem(null);
           useAppStore.getState().setRequestedSeriesModal(null);
+          if (returnPreview) {
+            vod.setPreviewItem(returnPreview);
+          }
         }}
         onSeriesModalLangChange={vod.setSeriesModalLang}
         onOpenSeriesDetails={vod.openSeriesDetails}
         onToggleBookmark={handleToggleBookmark}
-        onReplayHistoryItem={onReplayHistoryItem}
-        onPlaySeriesEpisode={onPlaySeriesEpisode}
+        onReplayHistoryItem={(histItem, forceRestart) => {
+          const returnPreview = vod.detailsReturnPreviewRef.current;
+          if (vod.selectedSeries) {
+            captureOriginContext({
+              seriesModal: {
+                series: vod.selectedSeries,
+                season: histItem.season || vod.selectedSeries.activeSeason,
+                episode: histItem.episode || null,
+                lang: vod.seriesModalLang,
+                forceSpanish: vod.forceSpanishSeriesActive,
+                fromPreviewItem: returnPreview,
+              },
+            });
+            vod.setDetailsReturnPreviewItem(null);
+            useAppStore.getState().setRequestedSeriesModal(null);
+          }
+          onReplayHistoryItem(histItem, forceRestart);
+        }}
+        onPlaySeriesEpisode={(series, ep, pLang, opts) => {
+          const returnPreview = vod.detailsReturnPreviewRef.current;
+          captureOriginContext({
+            seriesModal: {
+              series,
+              season: series.activeSeason,
+              episode: ep.episodeNumber,
+              lang: pLang,
+              forceSpanish: Boolean(opts?.forceSpanish ?? vod.forceSpanishSeriesActive),
+              fromPreviewItem: returnPreview,
+            },
+          });
+          vod.setDetailsReturnPreviewItem(null);
+          useAppStore.getState().setRequestedSeriesModal(null);
+          onPlaySeriesEpisode(series, ep, pLang, opts);
+        }}
         onAddToQueue={onAddToQueue}
       />
 
@@ -455,8 +526,15 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
         epgClockMs={liveTv.epgClockMs}
         loadingEpg={liveTv.loadingEpg}
         getChannelLiveEpg={liveTv.getChannelLiveEpg}
-        onClose={() => liveTv.setSelectedEpgChannel(null)}
-        onPlayChannel={onPlayTdtChannel}
+        onClose={() => {
+          liveTv.setSelectedEpgChannel(null);
+          useAppStore.getState().setRequestedEpgChannel(null);
+        }}
+        onPlayChannel={(ch, sIdx, hint) => {
+          captureOriginContext({ epgChannel: ch });
+          useAppStore.getState().setRequestedEpgChannel(null);
+          onPlayTdtChannel(ch, sIdx, hint);
+        }}
       />
     </div>
   );

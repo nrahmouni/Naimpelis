@@ -10,6 +10,7 @@ import {
 import { useAppStore, type SessionMode, type WorldId } from '../store/useAppStore';
 import { normalizeDeepLinkGameType } from '../utils/appSessionHelpers';
 import { showAppShareToast } from '../utils/shareDedicatedLink';
+import { getLastBackPopHandledAt } from '../lib/backInterceptor';
 import type { RoomGameInviteType } from '../shared/protocol';
 import type { CatalogMovie, SpanishTdtChannel, SportsMatch, TvSeriesDetails } from '../types';
 
@@ -48,6 +49,9 @@ export function useDeepLinkRouter({
 }: UseDeepLinkRouterOptions) {
   const [deepLinkResolving, setDeepLinkResolving] = useState<boolean>(false);
   const lastResolvedRouteKeyRef = useRef<string>('');
+  const lastObservedHrefRef = useRef<string>(
+    typeof window !== 'undefined' ? `${window.location.pathname}${window.location.search}` : ''
+  );
   const quickPoolRef = useRef(quickPool);
   quickPoolRef.current = quickPool;
 
@@ -232,13 +236,18 @@ export function useDeepLinkRouter({
   // Initial route resolution on mount
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    lastObservedHrefRef.current = `${window.location.pathname}${window.location.search}`;
     void resolveAndApplyRoute(window.location.pathname, window.location.search);
   }, [resolveAndApplyRoute]);
 
-  // Re-resolve on browser back/forward navigation
+  // Re-resolve on browser back/forward navigation only when URL actually changed
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const onPopState = () => {
+      if (Date.now() - getLastBackPopHandledAt() < 120) return;
+      const nextHref = `${window.location.pathname}${window.location.search}`;
+      if (nextHref === lastObservedHrefRef.current) return;
+      lastObservedHrefRef.current = nextHref;
       lastResolvedRouteKeyRef.current = '';
       void resolveAndApplyRoute(window.location.pathname, window.location.search);
     };
@@ -305,7 +314,8 @@ export function useDeepLinkRouter({
 
     const currentFull = `${window.location.pathname}${window.location.search}`;
     if (currentFull !== nextRoute) {
-      window.history.replaceState({}, '', nextRoute);
+      lastObservedHrefRef.current = nextRoute;
+      window.history.replaceState(window.history.state, '', nextRoute);
     }
   }, [
     sessionMode,

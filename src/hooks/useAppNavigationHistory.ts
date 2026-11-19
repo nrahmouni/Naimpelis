@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WorldId } from '../store/useAppStore';
 import {
   getActiveBackInterceptorCount,
+  markBackPopHandled,
   subscribeBackInterceptorCount,
   tryConsumeBackInterceptor,
 } from '../lib/backInterceptor';
@@ -175,6 +176,7 @@ export function useAppNavigationHistory(params: {
 
       // Step 1: Close top-most modal / sheet / details / search / active game
       if (tryConsumeBackInterceptor()) {
+        markBackPopHandled();
         disarmExitWindow();
         const stillHasLayer =
           getActiveBackInterceptorCount() > 0 ||
@@ -187,6 +189,7 @@ export function useAppNavigationHistory(params: {
 
       // Step 2: Exit browser fullscreen if active
       if (cur.isFullscreen || document.fullscreenElement) {
+        markBackPopHandled();
         disarmExitWindow();
         cur.onExitFullscreen();
         pushGuard('layer');
@@ -195,6 +198,7 @@ export function useAppNavigationHistory(params: {
 
       // Step 3: Collapse full active player into persistent floating mini-dock
       if (cur.hasActivePlayer && !cur.isPlayerMinimized) {
+        markBackPopHandled();
         disarmExitWindow();
         cur.onMinimizePlayer();
         pushGuard(cur.activeWorld !== 'entry' ? 'layer' : 'root');
@@ -203,6 +207,7 @@ export function useAppNavigationHistory(params: {
 
       // Step 4: Return from any sub-world (Cine, Fútbol, TV, Juegos, Sala, YT) to Entry Home
       if (cur.activeWorld !== 'entry') {
+        markBackPopHandled();
         disarmExitWindow();
         cur.onReturnToEntry();
         pushGuard('root');
@@ -211,6 +216,7 @@ export function useAppNavigationHistory(params: {
 
       // Step 5: Root level sentinel — require double-back within 2.2s before leaving
       if (!readyToExitRef.current) {
+        markBackPopHandled();
         armExitWindow();
         return;
       }

@@ -139,6 +139,9 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
       setIsPlayerMinimized(snap.isPlayerMinimized);
       setCinemaModePersist(snap.isCinemaMode);
     }
+    if (!snap || snap.videoState.mode === 'idle') {
+      opts.onRestorePlaybackOrigin?.({ reason: 'cancel' });
+    }
     triggerHaptic('light');
   }, [
     isExtractingRef,
@@ -151,6 +154,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     setIsPlayerClosedLocally,
     setIsPlayerMinimized,
     setCinemaModePersist,
+    opts,
   ]);
 
   const {
@@ -199,6 +203,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     } else {
       setIsPlayerClosedLocally(true);
     }
+    opts.onRestorePlaybackOrigin?.({ reason: 'close' });
   };
 
   const handleStopRoomPlaybackForEveryone = () => {
@@ -223,6 +228,7 @@ export function usePlaybackOrchestrator(opts: UsePlaybackOrchestratorOptions) {
     };
     setVideoState(idleNext);
     commitVideoStateSync('change_url', idleNext);
+    opts.onRestorePlaybackOrigin?.({ reason: 'close' });
   };
 
   const handleSyncPlayerAction = useCallback(

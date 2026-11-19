@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { triggerHaptic } from '../utils/haptics';
+import {
+  getActiveBackInterceptorCount,
+  tryConsumeBackInterceptor,
+} from './backInterceptor';
 
 type ViewTransitionDoc = Document & {
   startViewTransition?: (cb: () => void | Promise<void>) => {
@@ -65,6 +69,9 @@ export function useSwipeBack(onBack: () => void, enabled = true) {
     startRef.current = null;
     if (dx > 76 && dy < 54) {
       triggerHaptic('light');
+      if (getActiveBackInterceptorCount() > 0 && tryConsumeBackInterceptor()) {
+        return;
+      }
       onBack();
     }
   };

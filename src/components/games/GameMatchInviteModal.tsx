@@ -5,6 +5,7 @@ import type { AppLanguage } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useFocusTrap } from '../../utils/useFocusTrap';
+import { useBackInterceptor } from '../../lib/backInterceptor';
 
 interface GameInviteMeta {
   emoji: string;
@@ -141,6 +142,9 @@ export const GameMatchInviteModal: React.FC<GameMatchInviteModalProps> = ({
 }) => {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   useFocusTrap(Boolean(invite), onDismiss, dialogRef);
+  useBackInterceptor(Boolean(invite), 'game-match-invite-modal', onDismiss, {
+    priority: 18,
+  });
 
   if (!invite) return null;
 

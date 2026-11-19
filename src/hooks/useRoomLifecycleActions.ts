@@ -23,6 +23,7 @@ import {
   parseRoomFromWindow,
 } from '../utils/shortLink';
 import { INITIAL_VIDEO_STATE, normalizeDeepLinkGameType } from '../utils/appSessionHelpers';
+import { getLastBackPopHandledAt } from '../lib/backInterceptor';
 import { socketService } from '../services/socket';
 import { isDedicatedAppPath } from '../shared/dedicatedRoutes';
 import { copyTextToClipboard, showAppShareToast } from '../utils/shareDedicatedLink';
@@ -337,6 +338,7 @@ export function useRoomLifecycleActions(p: UseRoomLifecycleActionsParams) {
 
   useEffect(() => {
     const onPopState = () => {
+      if (Date.now() - getLastBackPopHandledAt() < 120) return;
       const parsed = parseRoomFromWindow();
       if (!parsed.roomId && !parsed.isTvPairLobby && p.inRoomRef.current) {
         p.manualLobbyStayRef.current = true;

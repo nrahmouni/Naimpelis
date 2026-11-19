@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Film, Loader2, Search, Sparkles, Tv, X } from 'lucide-react';
+import { ArrowLeft, Film, Loader2, Search, Sparkles, Tv, X } from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -13,6 +13,8 @@ import { RiffanDiceIcon, RiffanFootballIcon } from '../ui/RiffanIcons';
 import { SkeletonPosterGrid } from '../ui/DesignSystem';
 import { mergeAndRankCatalogResults, normalizeSearchText } from '../../utils/catalogSearchRank';
 import { useSuppressFloatingBubble } from '../../utils/useSuppressFloatingBubble';
+import { useBackInterceptor } from '../../lib/backInterceptor';
+import { useAppStore } from '../../store/useAppStore';
 import {
   HALLMARK_GAMES,
   type AiSearchJobState,
@@ -29,8 +31,9 @@ interface UniversalHomeSearchProps {
   series: CatalogMovie[];
   tdtChannels: SpanishTdtChannel[];
   liveMatches?: SportsMatch[];
-  onPlayMovie: (movie: CatalogMovie) => void;
-  onPlaySeries: (series: CatalogMovie) => void;
+  suppressOverlay?: boolean;
+  onOpenMovieDetails: (movie: CatalogMovie) => void;
+  onOpenSeriesPage: (series: CatalogMovie) => void;
   onPlayChannel: (channel: SpanishTdtChannel) => void;
   onPlayMatch: (match: SportsMatch) => void;
   onSelectGame: (gameId: string) => void;
@@ -42,14 +45,18 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   series,
   tdtChannels,
   liveMatches = [],
-  onPlayMovie,
-  onPlaySeries,
+  suppressOverlay = false,
+  onOpenMovieDetails,
+  onOpenSeriesPage,
   onPlayChannel,
   onPlayMatch,
   onSelectGame,
 }) => {
-  const [query, setQuery] = useState('');
-  const [activeCategory, setActiveCategory] = useState<SearchCategoryFilter>('all');
+  const query = useAppStore((s) => s.homeSearchQuery);
+  const setQuery = useAppStore((s) => s.setHomeSearchQuery);
+  const activeCategory = useAppStore((s) => s.homeSearchCategory);
+  const setActiveCategory = useAppStore((s) => s.setHomeSearchCategory);
+
   const [remoteMovies, setRemoteMovies] = useState<CatalogMovie[]>([]);
   const [remoteSeries, setRemoteSeries] = useState<CatalogMovie[]>([]);
   const [loadingRemote, setLoadingRemote] = useState(false);
@@ -61,6 +68,8 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   });
 
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const overlayInputRef = useRef<HTMLInputElement | null>(null);
+  const prevOverlayOpenRef = useRef<boolean>(false);
   const lastAutoAiQueryRef = useRef<string>('');
   const aiPollRef = useRef<number | null>(null);
 
@@ -68,9 +77,11 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
   const cleanQuery = query.trim();
   const normQuery = norm(cleanQuery);
+  const hasMinQuery = cleanQuery.length >= 2;
   const isSearchActive = cleanQuery.length > 0;
+  const showOverlay = isSearchActive && !suppressOverlay;
 
-  useSuppressFloatingBubble(isSearchActive);
+  useSuppressFloatingBubble(showOverlay);
 
   const clearAiPoll = useCallback(() => {
     if (aiPollRef.current !== null) {
@@ -84,9 +95,45 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const closeSearchOverlay = useCallback(() => {
     clearAiPoll();
     setQuery('');
+    setActiveCategory('all');
     lastAutoAiQueryRef.current = '';
     setAiJob({ status: 'idle', progressLabel: '', item: null });
+  }, [clearAiPoll, setQuery, setActiveCategory]);
+
+  const snapshotSearchOriginBeforeDirectPlay = useCallback(() => {
+    const store = useAppStore.getState();
+    store.setPlaybackReturnContext({
+      world: store.activeWorld,
+      cineTab: store.cineTab,
+      cineSpecialPortal: store.cineSpecialPortal,
+      futbolTab: store.futbolTab,
+      homeSearchQuery: store.homeSearchQuery,
+      homeSearchCategory: store.homeSearchCategory,
+    });
+    clearAiPoll();
   }, [clearAiPoll]);
+
+  useBackInterceptor(showOverlay, 'entry-universal-search', closeSearchOverlay, {
+    priority: 8,
+    lockScroll: true,
+  });
+
+  useEffect(() => {
+    const store = useAppStore.getState();
+    const shouldAutoFocus =
+      showOverlay &&
+      !prevOverlayOpenRef.current &&
+      !store.requestedMovieModal &&
+      !store.requestedSeriesModal;
+    prevOverlayOpenRef.current = showOverlay;
+    if (shouldAutoFocus) {
+      const raf = window.requestAnimationFrame(() => {
+        overlayInputRef.current?.focus();
+      });
+      return () => window.cancelAnimationFrame(raf);
+    }
+    return undefined;
+  }, [showOverlay]);
 
   useEffect(() => {
     if (cleanQuery.length < 2) {
@@ -278,23 +325,23 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   );
 
   const matchedMovies = useMemo(() => {
-    if (!normQuery) return [];
+    if (!hasMinQuery || !normQuery) return [];
     return mergeAndRankCatalogResults(remoteMovies, movies, cleanQuery, {
       limit: 12,
       minLocalScore: 40,
     });
-  }, [normQuery, cleanQuery, movies, remoteMovies]);
+  }, [hasMinQuery, normQuery, cleanQuery, movies, remoteMovies]);
 
   const matchedSeries = useMemo(() => {
-    if (!normQuery) return [];
+    if (!hasMinQuery || !normQuery) return [];
     return mergeAndRankCatalogResults(remoteSeries, series, cleanQuery, {
       limit: 12,
       minLocalScore: 40,
     });
-  }, [normQuery, cleanQuery, series, remoteSeries]);
+  }, [hasMinQuery, normQuery, cleanQuery, series, remoteSeries]);
 
   const matchedSports = useMemo(() => {
-    if (!normQuery) return [];
+    if (!hasMinQuery || !normQuery) return [];
     const isGeneralFootball = /f[uú]tbol|partido|deporte|champions|liga|directo|live/i.test(normQuery);
     return liveMatches
       .filter((m) => {
@@ -311,10 +358,10 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
         );
       })
       .slice(0, 6);
-  }, [normQuery, liveMatches]);
+  }, [hasMinQuery, normQuery, liveMatches]);
 
   const matchedTdt = useMemo(() => {
-    if (!normQuery) return [];
+    if (!hasMinQuery || !normQuery) return [];
     const isGeneralTv = /^(tv|tdt|canal|canales|tele|television|televisión)$/i.test(normQuery);
     return tdtChannels
       .filter((ch) => {
@@ -325,17 +372,17 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
         return n.includes(normQuery) || net.includes(normQuery) || sm.includes(normQuery);
       })
       .slice(0, 8);
-  }, [normQuery, tdtChannels]);
+  }, [hasMinQuery, normQuery, tdtChannels]);
 
   const matchedGames = useMemo(() => {
-    if (!normQuery) return [];
+    if (!hasMinQuery || !normQuery) return [];
     const isGeneralGame = /juego|juegos|game|games|partida|sala/i.test(normQuery);
     return HALLMARK_GAMES.filter((g) => {
       if (isGeneralGame) return true;
       const t = norm(g.title);
       return t.includes(normQuery) || g.matchKeywords.some((k) => normQuery.includes(norm(k)) || norm(k).includes(normQuery));
     });
-  }, [normQuery]);
+  }, [hasMinQuery, normQuery]);
 
   const totalHits =
     matchedMovies.length +
@@ -372,6 +419,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
   useEffect(() => {
     if (
+      !showOverlay ||
       cleanQuery.length < 3 ||
       loadingRemote ||
       aiJob.status !== 'idle' ||
@@ -395,6 +443,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
     return () => window.clearTimeout(timer);
   }, [
+    showOverlay,
     cleanQuery,
     normQuery,
     loadingRemote,
@@ -475,9 +524,8 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 e.preventDefault();
                 if (aiJob.status === 'found' && aiJob.item) {
                   const chosen = aiJob.item;
-                  closeSearchOverlay();
-                  if (chosen.mediaType === 'tv') onPlaySeries(chosen);
-                  else onPlayMovie(chosen);
+                  if (chosen.mediaType === 'tv') onOpenSeriesPage(chosen);
+                  else onOpenMovieDetails(chosen);
                 } else if (aiJob.status === 'idle' && (totalHits === 0 || looksLikeNaturalLanguage)) {
                   lastAutoAiQueryRef.current = normQuery;
                   void triggerAiWebSearch(cleanQuery);
@@ -522,22 +570,39 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
       {/* Immersive Search Results Window Overlay */}
       <AnimatePresence>
-        {isSearchActive && (
+        {showOverlay && (
           <motion.div
             initial={{ opacity: 0, scale: 0.98, y: 10 }}
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.98, y: 10 }}
             transition={{ duration: 0.16 }}
-            className="fixed inset-0 z-50 bg-[#0B0D14]/96 backdrop-blur-2xl flex flex-col p-4 sm:p-8 md:p-12 overflow-y-auto"
+            className="fixed inset-0 z-50 bg-[#0B0D14]/96 backdrop-blur-2xl flex flex-col p-3.5 sm:p-8 md:p-10 overflow-y-auto"
           >
-            <div className="max-w-6xl mx-auto w-full space-y-6 my-auto">
-              {/* Header */}
-              <div className="flex items-center gap-3">
-                <div className="relative flex-1 flex items-center min-h-[58px] px-4 rounded-2xl bg-[#131622] border border-[#9146FF]/40 shadow-[0_10px_30px_rgba(145,70,255,0.25)]">
-                  <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#9146FF]/20 text-[#C4A7FF] mr-3 shrink-0">
+            <div className="max-w-6xl mx-auto w-full space-y-4 sm:space-y-5 pt-safe">
+              {/* Header with explicit Back + Search Input + Clear/Close */}
+              <div className="flex items-center gap-2 sm:gap-3">
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    closeSearchOverlay();
+                  }}
+                  aria-label={pickLang(lang, {
+                    es: 'Volver al inicio',
+                    ca: "Tornar a l'inici",
+                    en: 'Back to home',
+                  })}
+                  className="min-w-11 min-h-11 rounded-2xl bg-white/[0.06] hover:bg-white/[0.14] border border-white/[0.1] text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors active:scale-95"
+                >
+                  <ArrowLeft className="w-5 h-5" />
+                </button>
+
+                <div className="relative flex-1 flex items-center min-h-[52px] sm:min-h-[56px] px-3.5 sm:px-4 rounded-2xl bg-[#131622] border border-[#9146FF]/45 shadow-[0_10px_30px_rgba(145,70,255,0.2)]">
+                  <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#9146FF]/20 text-[#C4A7FF] mr-2.5 shrink-0">
                     <Search className="w-4 h-4" />
                   </div>
                   <input
+                    ref={overlayInputRef}
                     type="text"
                     value={query}
                     onChange={(e) => {
@@ -552,152 +617,178 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                       ca: 'Cercar pel·lícules, sèries, esports, canals...',
                       en: 'Search movies, series, sports, channels...',
                     })}
-                    className="flex-1 min-w-0 bg-transparent text-base font-semibold text-white placeholder:text-zinc-500 focus:outline-none"
-                    autoFocus
+                    className="flex-1 min-w-0 bg-transparent text-sm sm:text-base font-semibold text-white placeholder:text-zinc-500 focus:outline-none"
                   />
                   {loadingRemote && (
-                    <Loader2 className="w-4 h-4 text-[#9146FF] animate-spin shrink-0 mx-2" />
+                    <Loader2 className="w-4 h-4 text-[#9146FF] animate-spin shrink-0 mx-1.5" />
                   )}
                   <button
                     type="button"
                     onClick={() => {
                       triggerHaptic('light');
-                      closeSearchOverlay();
+                      setQuery('');
+                      setAiJob({ status: 'idle', progressLabel: '', item: null });
+                      overlayInputRef.current?.focus();
                     }}
-                    className="min-h-10 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
+                    aria-label={pickLang(lang, {
+                      es: 'Borrar texto',
+                      ca: 'Esborrar text',
+                      en: 'Clear query',
+                    })}
+                    className="w-9 h-9 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-zinc-200 hover:text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
                   >
                     <X className="w-4 h-4" />
-                    <span>{pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}</span>
                   </button>
                 </div>
               </div>
 
-              {/* Filter Tabs */}
-              <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
-                {categories.map((cat) => {
-                  const isActive = activeCategory === cat.id;
-                  return (
-                    <button
-                      key={cat.id}
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('light');
-                        setActiveCategory(cat.id);
-                      }}
-                      className={`min-h-[42px] px-4 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all border ${
-                        isActive
-                          ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_4px_20px_rgba(145,70,255,0.4)]'
-                          : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border-white/[0.08] hover:text-white'
-                      }`}
-                    >
-                      {cat.icon}
-                      <span>{cat.label}</span>
-                      {cat.count !== undefined && cat.count > 0 && (
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-mono tabular-nums leading-none ${
-                            isActive ? 'bg-black/40 text-white' : 'bg-white/10 text-zinc-300'
-                          }`}
-                        >
-                          {cat.count}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Loading Status Banner & Skeletons */}
-              {loadingRemote && (
-                <div className="space-y-4">
-                  <div className="px-4 py-2.5 rounded-2xl bg-[#9146FF]/12 border border-[#9146FF]/30 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
-                    <Loader2 className="w-4 h-4 text-[#BF94FF] animate-spin shrink-0" />
-                    <span>
-                      {pickLang(lang, {
-                        es: `Buscando «${cleanQuery}» en todo el catálogo...`,
-                        ca: `Cercant «${cleanQuery}» a tot el catàleg...`,
-                        en: `Searching "${cleanQuery}" across full catalog...`,
-                      })}
-                    </span>
-                  </div>
-                  {visibleCategoryHits === 0 && <SkeletonPosterGrid count={8} />}
-                </div>
-              )}
-
-              {/* Contextual AI Suggestion Card (only when finished loading or genuinely NL / requested) */}
-              {((!loadingRemote && totalHits === 0) || looksLikeNaturalLanguage || aiJob.status !== 'idle') && (
-                <UniversalSearchAiCard
-                  lang={lang}
-                  cleanQuery={cleanQuery}
-                  aiJob={aiJob}
-                  onTriggerAiSearch={(q) => void triggerAiWebSearch(q)}
-                  onSelectFoundItem={(chosen) => {
-                    closeSearchOverlay();
-                    if (chosen.mediaType === 'tv') onPlaySeries(chosen);
-                    else onPlayMovie(chosen);
-                  }}
-                />
-              )}
-
-              {!loadingRemote && visibleCategoryHits === 0 && totalHits > 0 && (
-                <div className="py-6 px-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] text-center space-y-3">
+              {!hasMinQuery ? (
+                <div className="py-10 px-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] text-center space-y-1.5">
                   <p className="text-sm font-semibold text-zinc-200">
                     {pickLang(lang, {
-                      es: `Sin coincidencias en esta pestaña, pero encontramos ${totalHits} resultados en el catálogo.`,
-                      ca: `Sense coincidències en aquesta pestanya, però hem trobat ${totalHits} resultats al catàleg.`,
-                      en: `No hits in this tab, but ${totalHits} results exist across the catalog.`,
-                    })}
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      triggerHaptic('light');
-                      setActiveCategory('all');
-                    }}
-                    className="min-h-10 px-4 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white cursor-pointer"
-                  >
-                    {pickLang(lang, {
-                      es: `Ver todos (${totalHits})`,
-                      ca: `Veure tots (${totalHits})`,
-                      en: `View all (${totalHits})`,
-                    })}
-                  </button>
-                </div>
-              )}
-
-              {!loadingRemote && totalHits === 0 && aiJob.status === 'idle' && (
-                <div className="py-6 text-center space-y-2">
-                  <p className="text-sm font-semibold text-zinc-300">
-                    {pickLang(lang, {
-                      es: `No hay resultados directos en el catálogo para "${cleanQuery}"`,
-                      ca: `Sense resultats directes al catàleg per "${cleanQuery}"`,
-                      en: `No direct catalog matches for "${cleanQuery}"`,
+                      es: 'Escribe al menos 2 letras para buscar en todo el catálogo',
+                      ca: 'Escriu almenys 2 lletres per cercar a tot el catàleg',
+                      en: 'Type at least 2 characters to search the full catalog',
                     })}
                   </p>
                   <p className="text-xs text-zinc-400">
                     {pickLang(lang, {
-                      es: 'Toca "Buscar con IA" arriba para localizarlo en fuentes externas automáticamente.',
-                      ca: 'Toca "Cercar amb IA" a dalt per localitzar-ho a fonts externes.',
-                      en: 'Tap "Search with AI" above to automatically locate it on external providers.',
+                      es: 'Películas, series, canales de TV y fútbol en directo.',
+                      ca: 'Pel·lícules, sèries, canals de TV i futbol en directe.',
+                      en: 'Movies, series, live TV channels, and football.',
                     })}
                   </p>
                 </div>
-              )}
+              ) : (
+                <>
+                  {/* Filter Tabs */}
+                  <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+                    {categories.map((cat) => {
+                      const isActive = activeCategory === cat.id;
+                      return (
+                        <button
+                          key={cat.id}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setActiveCategory(cat.id);
+                          }}
+                          className={`min-h-[42px] px-4 rounded-xl text-xs font-bold flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer transition-all border ${
+                            isActive
+                              ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_4px_20px_rgba(145,70,255,0.4)]'
+                              : 'bg-white/[0.04] hover:bg-white/[0.09] text-zinc-300 border-white/[0.08] hover:text-white'
+                          }`}
+                        >
+                          {cat.icon}
+                          <span>{cat.label}</span>
+                          {cat.count !== undefined && cat.count > 0 && (
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-mono tabular-nums leading-none ${
+                                isActive ? 'bg-black/40 text-white' : 'bg-white/10 text-zinc-300'
+                              }`}
+                            >
+                              {cat.count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
 
-              <UniversalSearchResultsList
-                lang={lang}
-                activeCategory={activeCategory}
-                matchedSports={matchedSports}
-                matchedTdt={matchedTdt}
-                matchedGames={matchedGames}
-                matchedMovies={matchedMovies}
-                matchedSeries={matchedSeries}
-                onCloseSearch={closeSearchOverlay}
-                onPlayMatch={onPlayMatch}
-                onPlayChannel={onPlayChannel}
-                onSelectGame={onSelectGame}
-                onPlayMovie={onPlayMovie}
-                onPlaySeries={onPlaySeries}
-              />
+                  {/* Loading Status Banner & Skeletons */}
+                  {loadingRemote && (
+                    <div className="space-y-4">
+                      <div className="px-4 py-2.5 rounded-2xl bg-[#9146FF]/12 border border-[#9146FF]/30 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
+                        <Loader2 className="w-4 h-4 text-[#BF94FF] animate-spin shrink-0" />
+                        <span>
+                          {pickLang(lang, {
+                            es: `Buscando «${cleanQuery}» en todo el catálogo...`,
+                            ca: `Cercant «${cleanQuery}» a tot el catàleg...`,
+                            en: `Searching "${cleanQuery}" across full catalog...`,
+                          })}
+                        </span>
+                      </div>
+                      {visibleCategoryHits === 0 && <SkeletonPosterGrid count={8} />}
+                    </div>
+                  )}
+
+                  {/* Contextual AI Suggestion Card (only when finished loading or genuinely NL / requested) */}
+                  {((!loadingRemote && totalHits === 0) || looksLikeNaturalLanguage || aiJob.status !== 'idle') && (
+                    <UniversalSearchAiCard
+                      lang={lang}
+                      cleanQuery={cleanQuery}
+                      aiJob={aiJob}
+                      onTriggerAiSearch={(q) => void triggerAiWebSearch(q)}
+                      onSelectFoundItem={(chosen) => {
+                        if (chosen.mediaType === 'tv') onOpenSeriesPage(chosen);
+                        else onOpenMovieDetails(chosen);
+                      }}
+                    />
+                  )}
+
+                  {!loadingRemote && visibleCategoryHits === 0 && totalHits > 0 && (
+                    <div className="py-6 px-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] text-center space-y-3">
+                      <p className="text-sm font-semibold text-zinc-200">
+                        {pickLang(lang, {
+                          es: `Sin coincidencias en esta pestaña, pero encontramos ${totalHits} resultados en el catálogo.`,
+                          ca: `Sense coincidències en aquesta pestanya, però hem trobat ${totalHits} resultats al catàleg.`,
+                          en: `No hits in this tab, but ${totalHits} results exist across the catalog.`,
+                        })}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          setActiveCategory('all');
+                        }}
+                        className="min-h-10 px-4 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white cursor-pointer"
+                      >
+                        {pickLang(lang, {
+                          es: `Ver todos (${totalHits})`,
+                          ca: `Veure tots (${totalHits})`,
+                          en: `View all (${totalHits})`,
+                        })}
+                      </button>
+                    </div>
+                  )}
+
+                  {!loadingRemote && totalHits === 0 && aiJob.status === 'idle' && (
+                    <div className="py-6 text-center space-y-2">
+                      <p className="text-sm font-semibold text-zinc-300">
+                        {pickLang(lang, {
+                          es: `No hay resultados directos en el catálogo para "${cleanQuery}"`,
+                          ca: `Sense resultats directes al catàleg per "${cleanQuery}"`,
+                          en: `No direct catalog matches for "${cleanQuery}"`,
+                        })}
+                      </p>
+                      <p className="text-xs text-zinc-400">
+                        {pickLang(lang, {
+                          es: 'Toca "Buscar con IA" arriba para localizarlo en fuentes externas automáticamente.',
+                          ca: 'Toca "Cercar amb IA" a dalt per localitzar-ho a fonts externes.',
+                          en: 'Tap "Search with AI" above to automatically locate it on external providers.',
+                        })}
+                      </p>
+                    </div>
+                  )}
+
+                  <UniversalSearchResultsList
+                    lang={lang}
+                    activeCategory={activeCategory}
+                    matchedSports={matchedSports}
+                    matchedTdt={matchedTdt}
+                    matchedGames={matchedGames}
+                    matchedMovies={matchedMovies}
+                    matchedSeries={matchedSeries}
+                    onCloseSearch={closeSearchOverlay}
+                    onBeforeDirectPlay={snapshotSearchOriginBeforeDirectPlay}
+                    onPlayMatch={onPlayMatch}
+                    onPlayChannel={onPlayChannel}
+                    onSelectGame={onSelectGame}
+                    onOpenMovieDetails={onOpenMovieDetails}
+                    onOpenSeriesPage={onOpenSeriesPage}
+                  />
+                </>
+              )}
             </div>
           </motion.div>
         )}
