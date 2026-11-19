@@ -61,7 +61,7 @@ export function useLiveAndQueuePlayback(
     channelIndex: number,
     failedIndices: Set<number> = new Set(),
     activeExtraction?: { reqSeq: number; signal: AbortSignal },
-    allowSameMatchMirrorFallback = channelIndex === 0 && failedIndices.size === 0
+    allowSameMatchMirrorFallback = true
   ) => {
     if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
@@ -125,10 +125,16 @@ export function useLiveAndQueuePlayback(
       if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        if (allowSameMatchMirrorFallback && !match.is247Channel && match.channels.length > 1) {
+        if (allowSameMatchMirrorFallback && match.channels.length > 1) {
           const nextFailed = new Set(failedIndices);
           nextFailed.add(channelIndex);
-          const nextIdx = match.channels.findIndex((_, idx) => !nextFailed.has(idx));
+          const remaining = match.channels
+            .map((ch, idx) => ({ ch, idx }))
+            .filter(({ idx }) => !nextFailed.has(idx));
+          const satCandidate = remaining.find(({ ch }) =>
+            /sat|1080p|dazn|\.m3u8|pig\.footunder/i.test(`${ch.label || ''} ${ch.sourceUrl || ''}`)
+          );
+          const nextIdx = satCandidate ? satCandidate.idx : (remaining[0]?.idx ?? -1);
           if (nextIdx !== -1) {
             await handlePlaySportsMatch(match, nextIdx, nextFailed, extraction, true);
             return;
@@ -209,7 +215,8 @@ export function useLiveAndQueuePlayback(
     signalIndex = 0,
     liveProgramHint?: string,
     activeExtraction?: { reqSeq: number; signal: AbortSignal },
-    allowSameChannelBackup = signalIndex === 0
+    allowSameChannelBackup = true,
+    failedSignals: Set<number> = new Set()
   ) => {
     if (!canChangeMedia) {
       showHostLockNotice(participants.find((p) => p.id === hostId)?.name);
@@ -291,9 +298,21 @@ export function useLiveAndQueuePlayback(
       if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res || !res.ok || !data?.success || !data?.streamUrl) {
-        if (allowSameChannelBackup && signalIndex + 1 < tdtCh.channels.length) {
-          await handlePlayTdtChannel(tdtCh, signalIndex + 1, liveProgramHint, extraction, true);
-          return;
+        if (allowSameChannelBackup && tdtCh.channels.length > 1) {
+          const nextFailed = new Set(failedSignals);
+          nextFailed.add(signalIndex);
+          const nextIdx = tdtCh.channels.findIndex((_, idx) => !nextFailed.has(idx));
+          if (nextIdx !== -1) {
+            await handlePlayTdtChannel(
+              tdtCh,
+              nextIdx,
+              liveProgramHint,
+              extraction,
+              true,
+              nextFailed
+            );
+            return;
+          }
         }
         setExtractionError(
           data?.error ||
@@ -337,9 +356,21 @@ export function useLiveAndQueuePlayback(
       playCinemaSound('play');
     } catch {
       if (signal.aborted || reqSeq !== extractionReqSeqRef.current) return;
-      if (allowSameChannelBackup && signalIndex + 1 < tdtCh.channels.length) {
-        await handlePlayTdtChannel(tdtCh, signalIndex + 1, liveProgramHint, extraction, true);
-        return;
+      if (allowSameChannelBackup && tdtCh.channels.length > 1) {
+        const nextFailed = new Set(failedSignals);
+        nextFailed.add(signalIndex);
+        const nextIdx = tdtCh.channels.findIndex((_, idx) => !nextFailed.has(idx));
+        if (nextIdx !== -1) {
+          await handlePlayTdtChannel(
+            tdtCh,
+            nextIdx,
+            liveProgramHint,
+            extraction,
+            true,
+            nextFailed
+          );
+          return;
+        }
       }
       setExtractionError(`No se pudo conectar con ${tdtCh.name}.`);
     } finally {

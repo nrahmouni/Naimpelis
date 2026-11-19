@@ -22,7 +22,17 @@ import {
   doesScrapedEventMatchFixture,
   buildFootballMatchChannels,
   resolveMatchSpanishBroadcaster,
+  isFeaturedSpanishClubMatch,
+  sortTracksWithDaznPriority,
+  sanitizeScrapedChannelLabel,
 } from './sportsHelpers/footballTeamMatcher.ts';
+import {
+  fetchExtendedFootballCalendar,
+  formatMadridDateLabel,
+  formatSpanishMatchdayLabel,
+  resolveCalendarScopeMode,
+  translateFootballStatusLabel,
+} from './sportsHelpers/upcomingCalendarHelper.ts';
 
 let cachedSportsSchedule: { matches: any[]; ts: number } | null = null;
 let liveScoresCache: { matches: any[]; ts: number } | null = null;
@@ -129,6 +139,13 @@ export function registerSportsRoutes(app: Express): void {
   });
 
   app.get('/api/sports/football-board', async (req, res) => {
+    const orderBoardChannels = (channels: any[], leagueSlug?: string) => {
+      const healthChecked = channelHealthMonitor.prioritizeTracks(channels || []);
+      const alive = healthChecked.filter((c: any) => c.health?.status !== 'down');
+      const down = healthChecked.filter((c: any) => c.health?.status === 'down');
+      return [...sortTracksWithDaznPriority(alive, leagueSlug), ...down];
+    };
+
     const requestedDate = String(req.query.date || '').replace(/\D/g, '').slice(0, 8);
     const madridToday = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Madrid' })
       .format(new Date())
@@ -136,6 +153,37 @@ export function registerSportsRoutes(app: Express): void {
     const dateKey = requestedDate.length === 8 ? requestedDate : madridToday;
     const isToday = dateKey === madridToday;
     const cacheTtlMs = isToday ? 18 * 1000 : 2 * 60 * 1000;
+
+    const calendarScope = resolveCalendarScopeMode({
+      calendar: typeof req.query.calendar === 'string' ? req.query.calendar : '',
+      league: typeof req.query.league === 'string' ? req.query.league : '',
+      team: typeof req.query.team === 'string' ? req.query.team : '',
+    });
+
+    if (calendarScope) {
+      try {
+        const liveFeeds = await fetchLiveSportsAgendaFeeds().catch(() => ({
+          rojaMatches: [],
+          streamXhdFootball: [],
+        }));
+        const calendarItems = await fetchExtendedFootballCalendar(
+          calendarScope,
+          liveFeeds.rojaMatches
+        );
+        const prioritized = calendarItems.map((m) => ({
+          ...m,
+          channels: orderBoardChannels(m.channels || [], m.leagueSlug),
+        }));
+        return res.json({
+          success: true,
+          dateKey,
+          calendarScope: calendarScope.key,
+          matches: prioritized,
+        });
+      } catch (err) {
+        console.warn('Extended football calendar error:', err);
+      }
+    }
 
     if (
       cachedFootballBoard &&
@@ -210,21 +258,14 @@ export function registerSportsRoutes(app: Express): void {
           let statusState: 'live' | 'upcoming' | 'finished' =
             rawState === 'in' ? 'live' : rawState === 'post' ? 'finished' : 'upcoming';
 
-          let statusLabel = '';
-          if (statusState === 'live') {
-            if (statusName.includes('HALFTIME')) {
-              statusLabel = 'Descanso';
-            } else {
-              const clk = String(
-                ev?.status?.displayClock || ev?.status?.type?.shortDetail || ''
-              ).trim();
-              statusLabel = /^(ht|half-time|half time)$/i.test(clk) ? 'Descanso' : (clk || 'EN VIVO');
-            }
-          } else if (statusState === 'finished') {
-            statusLabel = statusName.includes('PEN') ? 'Penaltis' : statusName.includes('AET') ? 'Prórroga' : 'Final';
-          } else {
-            statusLabel = 'Por empezar';
-          }
+          let statusLabel = translateFootballStatusLabel(
+            statusState === 'live'
+              ? statusName.includes('HALFTIME')
+                ? 'HT'
+                : String(ev?.status?.displayClock || ev?.status?.type?.shortDetail || '').trim()
+              : statusName || String(ev?.status?.type?.shortDetail || ''),
+            statusState
+          );
 
           const homeTeam = String(
             home.team?.shortDisplayName || home.team?.displayName || 'Local'
@@ -262,6 +303,7 @@ export function registerSportsRoutes(app: Express): void {
               ? '-'
               : String(away.score ?? '0');
 
+          const kickoffMs = fm?.kickoffMs || kickoffDate.getTime() || 0;
           const channels = buildFootballMatchChannels({
             matchId: `fb-${eventId}`,
             homeTeam,
@@ -269,16 +311,13 @@ export function registerSportsRoutes(app: Express): void {
             statusState,
             league,
             scrapedMatches,
+            kickoffMs,
           });
 
-          const rawRound = comp?.round?.number || comp?.notes?.[0]?.text || '';
-          const matchdayLabel = rawRound
-            ? (/^\d+$/.test(String(rawRound)) ? `Jornada ${rawRound}` : String(rawRound))
-            : (league.slug === 'esp.1' || league.slug === 'esp.2')
-            ? 'Jornada de Liga'
-            : (league.slug === 'uefa.champions')
-            ? 'Fase de Liga · Champions'
-            : league.leagueName;
+          const matchdayLabel = formatSpanishMatchdayLabel(
+            comp?.round?.number ?? comp?.notes?.[0]?.text,
+            league.slug
+          );
 
           items.push({
             id: `fb-${eventId}`,
@@ -293,7 +332,8 @@ export function registerSportsRoutes(app: Express): void {
             priority: league.priority,
             kickoffIso: kickoffDate.toISOString(),
             kickoffTime: fm?.kickoffTime || kickoffTime,
-            kickoffMs: fm?.kickoffMs || kickoffDate.getTime() || 0,
+            kickoffMs,
+            kickoffDateLabel: formatMadridDateLabel(kickoffDate, madridToday),
             statusState,
             statusLabel,
             matchdayLabel,
@@ -316,10 +356,26 @@ export function registerSportsRoutes(app: Express): void {
       if (isToday && liveFeeds.streamXhdFootball.length > 0) {
         for (let idx = 0; idx < liveFeeds.streamXhdFootball.length; idx++) {
           const sx = liveFeeds.streamXhdFootball[idx];
-          const alreadyInBoard = items.some((it) =>
-            doesScrapedEventMatchFixture(it.homeTeam, it.awayTeam, sx)
+          const existingItem = items.find((it) =>
+            doesScrapedEventMatchFixture(it.homeTeam, it.awayTeam, sx) ||
+            (doFootballTeamNamesMatch(it.homeTeam, sx.homeTeam) && doFootballTeamNamesMatch(it.awayTeam, sx.awayTeam)) ||
+            (doFootballTeamNamesMatch(it.homeTeam, sx.awayTeam) && doFootballTeamNamesMatch(it.awayTeam, sx.homeTeam))
           );
-          if (alreadyInBoard) continue;
+          if (existingItem) {
+            // Merge direct streams into existing item avoiding duplicate URLs
+            if (Array.isArray(sx.channels)) {
+              let fIdx = existingItem.channels.length + 1;
+              for (const ch of sx.channels) {
+                if (!existingItem.channels.some((c: any) => c.sourceUrl === ch.sourceUrl)) {
+                  existingItem.channels.push({
+                    ...ch,
+                    label: sanitizeScrapedChannelLabel(ch.label, fIdx++),
+                  });
+                }
+              }
+            }
+            continue;
+          }
 
           const fm = findFotmobMatch(sx.homeTeam, sx.awayTeam);
           if (fm) matchedFotmobIds.add(fm.fotmobId);
@@ -330,6 +386,11 @@ export function registerSportsRoutes(app: Express): void {
             codeUpper === 'COL' ? 'co' : codeUpper === 'ARG' ? 'ar' : codeUpper === 'MEX' ? 'mx'
             : codeUpper === 'CHL' || codeUpper === 'CHI' ? 'cl' : codeUpper === 'PER' ? 'pe'
             : codeUpper === 'BRA' ? 'br' : codeUpper === 'URU' ? 'uy' : codeUpper === 'ECU' ? 'ec' : 'un';
+
+          const sanitizedSxChannels = (sx.channels || []).map((ch: any, cIdx: number) => ({
+            ...ch,
+            label: sanitizeScrapedChannelLabel(ch.label, cIdx + 1),
+          }));
 
           items.push({
             id: `fb-${sxId}`,
@@ -356,13 +417,29 @@ export function registerSportsRoutes(app: Express): void {
             awayScore: fm ? fm.awayScore : '•',
             homeRedCards: fm?.homeRedCards || 0,
             awayRedCards: fm?.awayRedCards || 0,
-            channels: sx.channels,
+            channels: sanitizedSxChannels,
           });
         }
       }
 
       for (const fm of fotmobMatches) {
         if (matchedFotmobIds.has(fm.fotmobId)) continue;
+        const alreadyInBoard = items.find((it) =>
+          (doFootballTeamNamesMatch(it.homeTeam, fm.homeName) && doFootballTeamNamesMatch(it.awayTeam, fm.awayName)) ||
+          (doFootballTeamNamesMatch(it.homeTeam, fm.awayName) && doFootballTeamNamesMatch(it.awayTeam, fm.homeName))
+        );
+        if (alreadyInBoard) {
+          matchedFotmobIds.add(fm.fotmobId);
+          if (!alreadyInBoard.fotmobMatchId) alreadyInBoard.fotmobMatchId = fm.fotmobId;
+          if (fm.statusState === 'live') {
+            alreadyInBoard.statusState = 'live';
+            if (fm.statusLabel) alreadyInBoard.statusLabel = fm.statusLabel;
+            alreadyInBoard.homeScore = fm.homeScore;
+            alreadyInBoard.awayScore = fm.awayScore;
+          }
+          continue;
+        }
+
         if (fm.statusState !== 'live' && fm.ccode !== 'INT' && fm.ccode !== 'ESP' && fm.ccode !== 'EUR') {
           continue;
         }
@@ -381,6 +458,7 @@ export function registerSportsRoutes(app: Express): void {
           statusState: fm.statusState,
           league: pseudoLeague,
           scrapedMatches,
+          kickoffMs: fm.kickoffMs,
         });
 
         items.push({
@@ -419,6 +497,9 @@ export function registerSportsRoutes(app: Express): void {
         if (rank(a.statusState) !== rank(b.statusState)) {
           return rank(a.statusState) - rank(b.statusState);
         }
+        const aFeat = isFeaturedSpanishClubMatch(a.homeTeam, a.awayTeam) ? 0 : 1;
+        const bFeat = isFeaturedSpanishClubMatch(b.homeTeam, b.awayTeam) ? 0 : 1;
+        if (aFeat !== bFeat) return aFeat - bFeat;
         if (a.priority !== b.priority) return a.priority - b.priority;
         return a.kickoffMs - b.kickoffMs;
       });
@@ -426,14 +507,14 @@ export function registerSportsRoutes(app: Express): void {
       cachedFootballBoard = { dateKey, matches: items, ts: Date.now() };
       const prioritizedItems = items.map((m) => ({
         ...m,
-        channels: channelHealthMonitor.prioritizeTracks(m.channels || []),
+        channels: orderBoardChannels(m.channels || [], m.leagueSlug),
       }));
       res.json({ success: true, dateKey, matches: prioritizedItems });
     } catch (err) {
       console.warn('Football matchboard fetch error:', err);
       const fallbackItems = (cachedFootballBoard?.matches || []).map((m: any) => ({
         ...m,
-        channels: channelHealthMonitor.prioritizeTracks(m.channels || []),
+        channels: orderBoardChannels(m.channels || [], m.leagueSlug),
       }));
       res.json({ success: true, dateKey, matches: fallbackItems });
     }

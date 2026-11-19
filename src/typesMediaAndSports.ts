@@ -307,6 +307,8 @@ export interface FootballMatchboardItem {
   leagueLogoUrl?: string;
   kickoffIso: string;
   kickoffTime: string;
+  kickoffMs?: number;
+  kickoffDateLabel?: string;
   statusState: 'live' | 'upcoming' | 'finished';
   statusLabel: string;
   matchdayLabel?: string;

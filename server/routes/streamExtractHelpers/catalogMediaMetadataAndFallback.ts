@@ -426,13 +426,18 @@ export async function buildFallbackCatalogResult(opts: {
     }),
   ]);
 
+  const safeYtFallback =
+    ytFallback && (effectiveMediaType !== 'tv' || ytFallback.exactEpisodeMatch)
+      ? ytFallback
+      : null;
+
   const combinedFallbackTracks: TrackRecord[] =
-    ytFallback && (preferLang === 'ES' || embedFallbackTracks.length === 0)
-      ? [ytFallback.track, ...embedFallbackTracks]
+    safeYtFallback && (preferLang === 'ES' || embedFallbackTracks.length === 0)
+      ? [safeYtFallback.track, ...embedFallbackTracks]
       : embedFallbackTracks.length > 0
-      ? [...embedFallbackTracks, ...(ytFallback ? [ytFallback.track] : [])]
-      : ytFallback
-      ? [ytFallback.track]
+      ? [...embedFallbackTracks, ...(safeYtFallback ? [safeYtFallback.track] : [])]
+      : safeYtFallback
+      ? [safeYtFallback.track]
       : [];
 
   if (combinedFallbackTracks.length === 0) return null;

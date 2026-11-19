@@ -27,6 +27,7 @@ import {
   findGnulaHdUrlByTitle,
   isGnulaHdUrl,
 } from '../../extractors/gnulaHdExtractor.ts';
+import { extractDailymotionSeriesTracks } from '../../extractors/dailymotionExtractor.ts';
 import { sniffStreamWithHeadless } from '../../extractors/sportsExtractor.ts';
 import {
   extractVestStreamsAndSubtitles,
@@ -231,6 +232,7 @@ export async function handleCatalogMediaExtract(
   const [
     movidyTracks,
     gnulaTracks,
+    dailymotionTracks,
     esTracks,
     vidRockTracks,
     bingetrixEnTracks,
@@ -241,6 +243,19 @@ export async function handleCatalogMediaExtract(
   ] = await Promise.all([
     withExtractTimeout(resolveAndExtractMovidy(), 6800, [] as TrackRecord[]),
     withExtractTimeout(resolveAndExtractGnula(), 7000, [] as TrackRecord[]),
+    effectiveMediaType === 'tv' && combinedTitleHints.length > 0
+      ? withExtractTimeout(
+          extractDailymotionSeriesTracks({
+            tmdbId: resolvedTmdbId,
+            mediaType: effectiveMediaType,
+            season: effectiveSeason,
+            episode: effectiveEpisode,
+            titleHints: combinedTitleHints,
+          }),
+          5500,
+          [] as TrackRecord[]
+        )
+      : Promise.resolve([]),
     resolvedTmdbId || combinedTitleHints.length > 0
       ? withExtractTimeout(
           extractEmbed69SpanishTracks({
@@ -357,10 +372,10 @@ export async function handleCatalogMediaExtract(
   const vestDetailMeta = vestExtracted?.detail || extractedVestDetail;
 
   const allDiscovered: TrackRecord[] = isVestLink
-    ? [...vestTracks, ...movidyTracks, ...gnulaTracks, ...enTracks, ...esTracks]
+    ? [...vestTracks, ...movidyTracks, ...gnulaTracks, ...dailymotionTracks, ...enTracks, ...esTracks]
     : !hasExplicitMovidyUrl && hasExplicitGnulaUrl
-    ? [...gnulaTracks, ...movidyTracks, ...enTracks, ...esTracks, ...vestTracks]
-    : [...movidyTracks, ...gnulaTracks, ...enTracks, ...esTracks, ...vestTracks];
+    ? [...gnulaTracks, ...dailymotionTracks, ...movidyTracks, ...enTracks, ...esTracks, ...vestTracks]
+    : [...movidyTracks, ...gnulaTracks, ...dailymotionTracks, ...enTracks, ...esTracks, ...vestTracks];
 
   const { orderedTracks, getLangScore, sourcePriority, getTrackHealthScore } = rankCandidateTracks({
     allDiscovered,

@@ -128,6 +128,12 @@ export async function searchYouTubeFullFallback(opts: {
 
   const normEpTitle = !isGenericEpTitle ? normalizeTitleForMatch(episodeTitleHint) : '';
   const epNumRegex = new RegExp(`\\b0*${effectiveEpisode}\\b`);
+  const explicitSeasonEpRegex = new RegExp(
+    `(?:\\b[TS]0*${effectiveSeason}[_\\s.-]*E0*${effectiveEpisode}\\b|\\b0*${effectiveSeason}\\s*[xX×]\\s*0*${effectiveEpisode}\\b|temporada\\s*0*${effectiveSeason}[^a-z0-9]{0,20}(?:cap(?:[ií]tulo)?|ep(?:isodio)?)\\s*0*${effectiveEpisode}\\b|season\\s*0*${effectiveSeason}[^a-z0-9]{0,20}episode\\s*0*${effectiveEpisode}\\b)`,
+    'i'
+  );
+  const seasonMentionRegex =
+    /(?:\b[TS]0*(\d{1,2})[_\s.-]*E\d{1,3}\b|\b0*(\d{1,2})\s*[xX×]\s*\d{1,3}\b|(?:temporada|season)\s*0*(\d{1,2})\b)/i;
 
   for (const q of queries.slice(0, 2)) {
     try {
@@ -160,13 +166,13 @@ export async function searchYouTubeFullFallback(opts: {
           const durSec = parseYtDurationSeconds(durStr);
 
           if (effectiveMediaType === 'tv') {
-            if (durSec < 360 || durSec > 7200) continue;
+            if (durSec < 1100 || durSec > 7200) continue;
           } else {
             if (durSec < 2700 || durSec > 14400) continue;
           }
 
           if (
-            /\b(trailer|tráiler|teaser|reaction|reaccion|reacción|review|resumen|opening|ending|amv|ost|soundtrack|gameplay|parodia|parody|shorts|#shorts|podcast|entrevista|interview|documentary essay)\b/i.test(
+            /\b(trailer|tráiler|teaser|avance|promo|reaction|reaccion|reacción|review|resumen|opening|ending|amv|ost|soundtrack|gameplay|parodia|parody|shorts|#shorts|podcast|entrevista|interview|tomas falsas|cabecera|documentary essay)\b/i.test(
               vTitle
             )
           ) {
@@ -177,11 +183,31 @@ export async function searchYouTubeFullFallback(opts: {
             continue;
           }
 
+          const seasonMatch = vTitle.match(seasonMentionRegex);
+          if (effectiveMediaType === 'tv' && seasonMatch) {
+            const foundSeason = parseInt(seasonMatch[1] || seasonMatch[2] || seasonMatch[3] || '0', 10);
+            if (foundSeason > 0 && foundSeason !== effectiveSeason) {
+              continue;
+            }
+          }
+
           const normVTitle = normalizeTitleForMatch(vTitle);
+          const hasExplicitSeEp = explicitSeasonEpRegex.test(vTitle);
+          const hasDistinctTitleMatch = Boolean(
+            normEpTitle && normEpTitle.length >= 6 && normVTitle.includes(normEpTitle)
+          );
+          const hasSeason1ImplicitMatch =
+            effectiveSeason === 1 && !seasonMatch && epNumRegex.test(vTitle);
+
           const exactEpisodeMatch =
             effectiveMediaType === 'movie' ||
-            epNumRegex.test(vTitle) ||
-            Boolean(normEpTitle && normEpTitle.length >= 4 && normVTitle.includes(normEpTitle));
+            hasExplicitSeEp ||
+            hasDistinctTitleMatch ||
+            hasSeason1ImplicitMatch;
+
+          if (effectiveMediaType === 'tv' && !exactEpisodeMatch) {
+            continue;
+          }
 
           const ytLangCode =
             preferLang === 'LAT'

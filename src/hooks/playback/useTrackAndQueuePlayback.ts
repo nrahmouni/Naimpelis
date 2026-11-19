@@ -13,6 +13,9 @@ import type {
   YouTubeSearchItem,
 } from '../../types';
 import type { PlaybackCoreContext } from './playbackTypes';
+import { pickBestCleanSatelliteTrackIndex } from '../../components/player/hlsHealthWatchdog';
+
+const failedRuntimeUrlsByStream = new Map<string, Set<string>>();
 
 interface TrackQueueDeps {
   handlePlayYouTubeVideo: (item: YouTubeSearchItem) => void;
@@ -252,6 +255,48 @@ export function createTrackAndQueuePlaybackHandlers(
         setIsExtracting(false);
       }
     }
+  };
+
+  const handleAutoSwitchBackupTrack = async (reason = 'h264_recovery') => {
+    if (!canChangeMedia || !videoState.isLive || videoState.tracks.length <= 1) return;
+
+    const streamKey = videoState.title || 'live-stream';
+    let failedSet = failedRuntimeUrlsByStream.get(streamKey);
+    if (!failedSet) {
+      failedSet = new Set<string>();
+      failedRuntimeUrlsByStream.set(streamKey, failedSet);
+    }
+
+    const currentTrack = videoState.tracks[videoState.activeTrackIndex];
+    const currentRawUrl = currentTrack?.sourceUrl || videoState.rawSourceUrl;
+    if (currentRawUrl) {
+      failedSet.add(currentRawUrl);
+      fetch('/api/telemetry/qoe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'error',
+          sourceUrl: currentRawUrl,
+          reason,
+        }),
+      }).catch(() => {});
+    }
+
+    const nextIdx = pickBestCleanSatelliteTrackIndex(
+      videoState.tracks,
+      videoState.activeTrackIndex,
+      failedSet
+    );
+    if (nextIdx === -1) return;
+
+    const backupTrack = videoState.tracks[nextIdx];
+    showLanguageNotice({
+      type: 'warning',
+      title: `⚡ Pista 1080p alternativa activada`,
+      subtitle: `Conmutando a ${backupTrack.label} para evitar cortes H.264.`,
+    });
+
+    await handleSelectTrack(nextIdx, 0);
   };
 
   const handlePlayCustomUrl = async (rawUrl: string) => {
@@ -557,6 +602,7 @@ export function createTrackAndQueuePlaybackHandlers(
 
   return {
     handleSelectTrack,
+    handleAutoSwitchBackupTrack,
     handlePlayCustomUrl,
     handlePlayQueueItem,
     handlePlaySecondaryChannel,

@@ -4,6 +4,10 @@ import { socketService } from '../../services/socket';
 import { pickLang } from '../../utils/i18n';
 import type { AppLanguage, VideoState } from '../../types';
 import { formatTimecode } from './playerTypes';
+import {
+  isAndroidChromeBrowser,
+  isRenderedFrameGreenOrCorrupt,
+} from './hlsHealthWatchdog';
 
 interface UseHlsPlaybackEngineOptions {
   lang: AppLanguage;
@@ -37,6 +41,7 @@ interface UseHlsPlaybackEngineOptions {
   setLocalPlaying: (playing: boolean) => void;
   scheduleHideControls: () => void;
   showTransientToast: (msg: string) => void;
+  onAutoSwitchBackupTrack?: (reason?: string) => void;
 }
 
 export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
@@ -70,6 +75,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     setLocalPlaying,
     scheduleHideControls,
     showTransientToast,
+    onAutoSwitchBackupTrack,
   } = opts;
 
   // Pause local phone decoding when Battery Saver Remote Mode is enabled
@@ -121,6 +127,23 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
     let cancelled = false;
     let videoWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
+    let frameHealthTimer: ReturnType<typeof setTimeout> | null = null;
+    let didTriggerBackupSwitch = false;
+    const isAndroidChrome = isAndroidChromeBrowser();
+    const triggerBackupSwitch = (reason: string) => {
+      if (
+        cancelled ||
+        didTriggerBackupSwitch ||
+        !videoState.isLive ||
+        !onAutoSwitchBackupTrack ||
+        (videoState.tracks?.length || 0) <= 1
+      ) {
+        return false;
+      }
+      didTriggerBackupSwitch = true;
+      onAutoSwitchBackupTrack(reason);
+      return true;
+    };
     streamLoadStartRef.current = Date.now();
     rebufferCountRef.current = 0;
     qoeStartupSentForUrlRef.current = '';
@@ -243,8 +266,8 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
         startPlaybackSafely();
 
-        // Watchdog: if audio plays for 4s but videoWidth is 0 (black screen / audio-only MSE glitch),
-        // automatically recover media decoder on the SAME signal without switching channels
+        // Watchdog: detect green/flat corrupt H.264 frames or audio-only videoWidth===0 hangs
+        // (extra fast threshold on Android Chrome to switch to a clean 1080p satellite track).
         if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
         videoWatchdogTimer = setTimeout(() => {
           if (cancelled || !video) return;
@@ -254,6 +277,9 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               Boolean(video.canPlayType('application/vnd.apple.mpegurl')) &&
               /iPhone|iPad|iPod|Macintosh|AppleTV/i.test(uaWatch) &&
               !/Chrome|CriOS|FxiOS|EdgiOS|Android/i.test(uaWatch);
+            if (isAndroidChrome && triggerBackupSwitch('android_no_video_frame')) {
+              return;
+            }
             if (isRealAppleHls) {
               const savedT = video.currentTime;
               hls.destroy();
@@ -275,9 +301,31 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               );
             } else {
               hls.recoverMediaError();
+              setTimeout(() => {
+                if (!cancelled && !video.paused && video.videoWidth === 0) {
+                  triggerBackupSwitch('persistent_no_video_frame');
+                }
+              }, 2200);
             }
           }
-        }, 4200);
+        }, isAndroidChrome ? 2600 : 4000);
+
+        if (videoState.isLive && onAutoSwitchBackupTrack) {
+          if (frameHealthTimer) clearTimeout(frameHealthTimer);
+          frameHealthTimer = setTimeout(() => {
+            if (cancelled || !video || video.paused) return;
+            const firstCheck = isRenderedFrameGreenOrCorrupt(video);
+            if (firstCheck.corrupt) {
+              setTimeout(() => {
+                if (cancelled || !video || video.paused) return;
+                const secondCheck = isRenderedFrameGreenOrCorrupt(video);
+                if (secondCheck.corrupt) {
+                  triggerBackupSwitch(secondCheck.reason || 'green_frame');
+                }
+              }, 700);
+            }
+          }, 2800);
+        }
       });
 
       hls.on(Hls.Events.LEVEL_SWITCHED, (_evt, data) => {
@@ -308,19 +356,35 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
 
       let mediaRecoveries = 0;
       let networkRecoveries = 0;
+      let parsingBurstErrors = 0;
 
       hls.on(Hls.Events.FRAG_BUFFERED, () => {
         networkRecoveries = 0;
+        parsingBurstErrors = 0;
         setStreamError(null);
       });
 
       hls.on(Hls.Events.ERROR, (_evt, data) => {
-        if (!data.fatal) return;
+        if (!data.fatal) {
+          if (
+            data.type === Hls.ErrorTypes.MEDIA_ERROR &&
+            (data.details === Hls.ErrorDetails.FRAG_PARSING_ERROR ||
+              data.details === Hls.ErrorDetails.BUFFER_APPEND_ERROR)
+          ) {
+            parsingBurstErrors += 1;
+            const threshold = isAndroidChrome ? 3 : 5;
+            if (parsingBurstErrors >= threshold) {
+              triggerBackupSwitch(`hls_${data.details}`);
+            }
+          }
+          return;
+        }
         const uaErr = typeof navigator !== 'undefined' ? navigator.userAgent || '' : '';
         const isRealAppleHls =
           Boolean(video.canPlayType('application/vnd.apple.mpegurl')) &&
           /iPhone|iPad|iPod|Macintosh|AppleTV/i.test(uaErr) &&
           !/Chrome|CriOS|FxiOS|EdgiOS|Android/i.test(uaErr);
+        const maxMediaRecoveries = isAndroidChrome ? 1 : 3;
 
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR && networkRecoveries < 6) {
           networkRecoveries += 1;
@@ -329,9 +393,11 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
               hls.startLoad();
             }
           }, 1200);
-        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < 4) {
+        } else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries < maxMediaRecoveries) {
           mediaRecoveries += 1;
           hls.recoverMediaError();
+        } else if (triggerBackupSwitch(`fatal_${data.type}_${data.details || 'error'}`)) {
+          setIsBuffering(true);
         } else if (isRealAppleHls) {
           hls.destroy();
           hlsRef.current = null;
@@ -416,6 +482,7 @@ export function useHlsPlaybackEngine(opts: UseHlsPlaybackEngineOptions) {
     return () => {
       cancelled = true;
       if (videoWatchdogTimer) clearTimeout(videoWatchdogTimer);
+      if (frameHealthTimer) clearTimeout(frameHealthTimer);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;

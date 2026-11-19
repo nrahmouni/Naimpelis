@@ -169,7 +169,7 @@ export const TacticalPitchHalf: React.FC<{
           </span>
           {lineup.coach && (
             <span className="text-zinc-300 text-[11px]">
-              {pickLang(lang, { es: 'DT:', ca: 'Entr.:', en: 'Coach:' })}{' '}
+              {pickLang(lang, { es: 'Entr.:', ca: 'Entr.:', en: 'Coach:' })}{' '}
               <strong className="text-white">{lineup.coach}</strong>
             </span>
           )}

@@ -110,6 +110,201 @@ export const EPG_CHANNEL_MAPPING: Record<string, { xmltv: string[]; tdtJson: str
   'uk-sky-racing': { xmltv: ['UK | Sky Sports Racing'], tdtJson: [] },
 };
 
+export const EPG_CHANNEL_STREAM_INFO: Record<
+  string,
+  { label: string; sourceUrl: string; resolverType: 'sports_channel' | 'tdt_hls' }
+> = {
+  'mplus-laliga': {
+    label: 'M+ LaLiga HD',
+    sourceUrl: 'https://pig.footunder.online/stream/84',
+    resolverType: 'sports_channel',
+  },
+  'dazn-laliga': {
+    label: 'DAZN LaLiga HD',
+    sourceUrl: 'https://pig.footunder.online/stream/84',
+    resolverType: 'sports_channel',
+  },
+  'mplus-champions': {
+    label: 'M+ Liga de Campeones HD',
+    sourceUrl: 'https://streamxhd.sbs/live1.php?stream=mligacampeones',
+    resolverType: 'sports_channel',
+  },
+  'dazn-1': {
+    label: 'DAZN 1 HD',
+    sourceUrl: 'https://pig.footunder.online/stream/445',
+    resolverType: 'sports_channel',
+  },
+  'dazn-2': {
+    label: 'DAZN 2 HD',
+    sourceUrl: 'https://pig.footunder.online/stream/446',
+    resolverType: 'sports_channel',
+  },
+  'dazn-3': {
+    label: 'DAZN 3 HD',
+    sourceUrl: 'https://pig.footunder.online/stream/447',
+    resolverType: 'sports_channel',
+  },
+  'dazn-4': {
+    label: 'DAZN 4 HD',
+    sourceUrl: 'https://pig.footunder.online/stream/448',
+    resolverType: 'sports_channel',
+  },
+  'dazn-f1': {
+    label: 'DAZN F1 HD',
+    sourceUrl: 'https://pig.footunder.online/stream/436',
+    resolverType: 'sports_channel',
+  },
+  'tdt-teledeporte': {
+    label: 'Teledeporte RTVE HD',
+    sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/tdp/tdp_main.m3u8',
+    resolverType: 'tdt_hls',
+  },
+  'tdt-la1': {
+    label: 'La 1 RTVE 1080p',
+    sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8',
+    resolverType: 'tdt_hls',
+  },
+  'mplus-vamos': {
+    label: 'Movistar Vamos HD',
+    sourceUrl: 'https://pig.footunder.online/stream/526',
+    resolverType: 'sports_channel',
+  },
+  'mplus-hypermotion': {
+    label: 'LaLiga Hypermotion HD',
+    sourceUrl: 'https://footunder.online/tvtodo/laliga2.php',
+    resolverType: 'sports_channel',
+  },
+  'mplus-deportes': {
+    label: 'M+ Deportes HD',
+    sourceUrl: 'https://pig.footunder.online/stream/435',
+    resolverType: 'sports_channel',
+  },
+  'tdt-rmtv': {
+    label: 'Real Madrid TV HD',
+    sourceUrl: 'https://pig.footunder.online/stream/516',
+    resolverType: 'sports_channel',
+  },
+};
+
+const TEAM_EPG_KEYWORD_ALIASES: Record<string, string[]> = {
+  vienna: ['vienna', 'austria wien', 'viena', 'fkv'],
+  austria_wien: ['austria wien', 'vienna', 'viena', 'austria de viena'],
+  bayern: ['bayern', 'munchen', 'munich', 'fcb'],
+  bayern_munich: ['bayern', 'munchen', 'munich'],
+  bayern_munchen: ['bayern', 'munchen', 'munich'],
+  koge: ['koge', 'hb koge', 'koege'],
+  hb_koge: ['hb koge', 'koge', 'koege'],
+  paris_fc: ['paris fc', 'pfc'],
+  lyon: ['lyon', 'olympique lyon'],
+  servette: ['servette', 'chenois'],
+  real_madrid: ['real madrid', 'madrid'],
+  madrid: ['real madrid'],
+  barcelona: ['barcelona', 'barca', 'fc barcelona'],
+  barca: ['barcelona', 'barca'],
+  atletico_madrid: ['atletico madrid', 'atletico de madrid', 'atletico'],
+  celta: ['celta', 'celta vigo', 'celta de vigo'],
+  celta_vigo: ['celta', 'celta vigo'],
+  osasuna: ['osasuna', 'ca osasuna'],
+  betis: ['betis', 'real betis'],
+  sevilla: ['sevilla', 'sevilla fc'],
+  valencia: ['valencia', 'valencia cf'],
+  espanyol: ['espanyol', 'rcd espanyol'],
+  mallorca: ['mallorca', 'rcd mallorca'],
+  athletic_club: ['athletic', 'athletic bilbao', 'bilbao'],
+  real_sociedad: ['real sociedad', 'la real'],
+};
+
+function extractTokensForEpgMatch(name: string): string[] {
+  const norm = String(name || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  if (!norm) return [];
+  const key = norm.replace(/\s+/g, '_');
+  const aliases = TEAM_EPG_KEYWORD_ALIASES[key] || [];
+  const words = norm.split(' ').filter(
+    (w) =>
+      w.length >= 4 &&
+      !['club', 'real', 'city', 'united', 'women', 'femenino', 'deportivo', 'futbol'].includes(w)
+  );
+  return Array.from(new Set([norm, ...aliases, ...words]));
+}
+
+export function getCachedEpgStore(): Map<string, RawEpgEvent[]> | null {
+  return cachedEpgStore?.byChannel || null;
+}
+
+export function findEpgVerifiedBroadcasterForFixture(
+  homeTeam: string,
+  awayTeam: string,
+  kickoffMs: number,
+  epgStoreOverride?: Map<string, RawEpgEvent[]>
+): {
+  channelId: string;
+  channelLabel: string;
+  sourceUrl: string;
+  resolverType: 'sports_channel' | 'tdt_hls';
+  programTitle: string;
+} | null {
+  const store = epgStoreOverride || cachedEpgStore?.byChannel;
+  if (!store || store.size === 0) return null;
+
+  const homeTokens = extractTokensForEpgMatch(homeTeam);
+  const awayTokens = extractTokensForEpgMatch(awayTeam);
+  if (homeTokens.length === 0 || awayTokens.length === 0) return null;
+
+  const targetTime = kickoffMs > 0 ? kickoffMs : Date.now();
+  // Window: program starts within 2 hours before or 1 hour after kickoff
+  const windowStart = targetTime - 2 * 60 * 60 * 1000;
+  const windowEnd = targetTime + 2.5 * 60 * 60 * 1000;
+
+  // Check sports channels in priority order
+  const channelsToCheck = [
+    'dazn-laliga',
+    'mplus-laliga',
+    'dazn-1',
+    'dazn-2',
+    'mplus-champions',
+    'dazn-3',
+    'dazn-4',
+    'tdt-teledeporte',
+    'tdt-la1',
+    'mplus-vamos',
+    'mplus-hypermotion',
+    'tdt-rmtv',
+  ];
+
+  for (const chId of channelsToCheck) {
+    const streamDef = EPG_CHANNEL_STREAM_INFO[chId];
+    if (!streamDef) continue;
+    const events = store.get(chId) || [];
+    for (const ev of events) {
+      if (ev.stopMs < windowStart || ev.startMs > windowEnd) continue;
+      const hay = `${ev.title} ${ev.subtitle || ''} ${ev.description || ''}`
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+
+      const matchHome = homeTokens.some((tok) => hay.includes(tok));
+      const matchAway = awayTokens.some((tok) => hay.includes(tok));
+
+      if (matchHome && matchAway) {
+        return {
+          channelId: chId,
+          channelLabel: streamDef.label,
+          sourceUrl: streamDef.sourceUrl,
+          resolverType: streamDef.resolverType,
+          programTitle: ev.title,
+        };
+      }
+    }
+  }
+
+  return null;
+}
+
 const madridTimeFormatter = new Intl.DateTimeFormat('es-ES', {
   timeZone: 'Europe/Madrid',
   hour: '2-digit',

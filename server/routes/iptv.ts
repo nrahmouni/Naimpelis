@@ -256,7 +256,8 @@ export function registerIptvAndTdtRoutes(
       iptvChannelResolveCache.delete(channel.id);
     }
 
-    const tracks: TrackRecord[] = Array.isArray(channel.channels) ? channel.channels : [];
+    const rawTracks: TrackRecord[] = Array.isArray(channel.channels) ? channel.channels : [];
+    const tracks = channelHealthMonitor.prioritizeTracks(rawTracks);
     for (const track of tracks) {
       try {
         const sourceUrl = String(track?.sourceUrl || '').trim();

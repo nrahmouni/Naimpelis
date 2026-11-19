@@ -160,6 +160,7 @@ export interface NativeCinemaPlayerProps {
     patch: Partial<VideoState>
   ) => void;
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
+  onAutoSwitchBackupTrack?: (reason?: string) => void;
   onPromoteCloudStreamToNative: (proxiedStreamUrl: string) => void;
   onOpenCatalogSection?: (
     section:

@@ -86,12 +86,12 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
             }`}
           >
             <div className="min-w-0 pt-1">
-              <h2 className="font-display font-bold text-sm sm:text-base text-white truncate drop-shadow">
+              <h2 className="font-display font-bold text-sm sm:text-base text-white leading-tight break-words line-clamp-2 drop-shadow">
                 {videoState.title}
               </h2>
               <div className="flex items-center gap-2 flex-wrap mt-0.5">
                 {videoState.subtitle && (
-                  <p className="text-[11px] sm:text-xs text-zinc-300 truncate">
+                  <p className="text-[11px] sm:text-xs text-zinc-300 leading-snug break-words line-clamp-2">
                     {videoState.subtitle}
                   </p>
                 )}

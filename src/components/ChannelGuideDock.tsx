@@ -242,6 +242,15 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
 
   return (
     <div className="space-y-4 w-full overflow-x-clip">
+      <SimilarChannelsCarousel
+        lang={lang}
+        similarChannels={similarChannels}
+        epgMap={epgMap}
+        clockMs={clockMs}
+        loadingItemId={loadingItemId}
+        onZapChannel={handleZap}
+      />
+
       <section
         aria-label={pickLang(lang, {
           es: 'Guía del canal y programación',
@@ -261,8 +270,8 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
             )}
 
             <div className="min-w-0">
-              <div className="flex items-center gap-1.5 min-w-0">
-                <h3 className="font-display font-bold text-xs sm:text-sm text-white truncate">
+              <div className="flex items-center gap-1.5 min-w-0 flex-wrap">
+                <h3 className="font-display font-bold text-xs sm:text-sm text-white">
                   {pickLang(lang, {
                     es: 'Guía TV en directo',
                     ca: 'Guia TV en directe',
@@ -275,7 +284,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                   </span>
                 )}
               </div>
-              <p className="text-[11px] text-zinc-400 truncate">
+              <p className="text-[11px] text-zinc-400 leading-snug break-words line-clamp-2">
                 {headerChannel ? `${headerChannel.name} · ${headerChannel.network}` : activeChannelTitle}
               </p>
             </div>
@@ -463,15 +472,6 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
           </div>
         )}
       </section>
-
-      <SimilarChannelsCarousel
-        lang={lang}
-        similarChannels={similarChannels}
-        epgMap={epgMap}
-        clockMs={clockMs}
-        loadingItemId={loadingItemId}
-        onZapChannel={handleZap}
-      />
     </div>
   );
 };

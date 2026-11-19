@@ -73,16 +73,9 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
         ? Boolean(startOrOpts.forceSpanish)
         : false;
     const langFullLabelMap: Record<string, string> = {
-      ES: 'Castellano (España)',
-      CAT: 'Català',
-      LAT: 'Español Latino',
-      VOSE: 'Subtitulado (VOSE)',
-      EN: 'Inglés Original (EN)',
-      NL: 'Flamenco (Vlaams)',
-      FR: 'Francés (FR)',
-      AR: 'Árabe (AR)',
-      ZH: 'Chino (中文)',
-      RIF: 'Tarifit (Riffian)',
+      ES: 'Castellano (España)', CAT: 'Català', LAT: 'Español Latino', VOSE: 'Subtitulado (VOSE)',
+      EN: 'Inglés Original (EN)', NL: 'Flamenco (Vlaams)', FR: 'Francés (FR)',
+      AR: 'Árabe (AR)', ZH: 'Chino (中文)', RIF: 'Tarifit (Riffian)',
     };
     const requestedLangName = langFullLabelMap[preferLang] || preferLang || 'Español HD';
 

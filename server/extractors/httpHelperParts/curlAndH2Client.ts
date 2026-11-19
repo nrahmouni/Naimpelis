@@ -157,6 +157,9 @@ export function resolveKnownUpstreamReferer(urlStr: string, explicitReferer?: st
     if (/(\.|^)(rousav\.tech|vidbolt\.(?:st|xyz)|johndoesdmc\.workers\.dev)$/i.test(u.hostname)) {
       return 'https://vidbolt.st/';
     }
+    if (/(\.|^)(dailymotion\.com|dmcdn\.net|dai\.ly)$/i.test(u.hostname)) {
+      return 'https://www.dailymotion.com/';
+    }
     if (/(\.|^)(elahmad\.(?:ru|store)|glwiz\.com|mangomolo\.com)$/i.test(u.hostname)) {
       return 'https://www.elahmad.ru/';
     }

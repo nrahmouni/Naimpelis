@@ -224,6 +224,8 @@ export function useLiveTvAndSportsCatalog({
 
   const footballSectionLiveChannels = useMemo(() => {
     const allowedCats = new Set([
+      'dazn',
+      'movistar',
       'bein_arabic',
       'china_football',
       'uk_sports',
@@ -231,11 +233,9 @@ export function useLiveTvAndSportsCatalog({
       'espn',
       'dsports',
       'tnt_space',
-      'movistar',
-      'dazn',
       'world_cricket',
     ]);
-    return tdtChannels.filter((ch) => {
+    const filtered = tdtChannels.filter((ch) => {
       const isExtraSportCh = ch.id === 'ma-arryadia' || ch.id === 'us-fox-sports1';
       if (!allowedCats.has(ch.category) && !isExtraSportCh) return false;
       if (
@@ -263,6 +263,8 @@ export function useLiveTvAndSportsCatalog({
       }
       return true;
     });
+    const catRank = (cat: string) => (cat === 'dazn' ? 0 : cat === 'movistar' ? 1 : 2);
+    return filtered.sort((a, b) => catRank(a.category) - catRank(b.category));
   }, [tdtChannels, footballLiveBrand, sportsSearch]);
 
   const filteredTdtChannels = tdtChannels.filter((ch) => {

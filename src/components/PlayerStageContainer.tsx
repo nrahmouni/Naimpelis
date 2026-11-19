@@ -102,6 +102,7 @@ interface PlayerStageContainerProps {
   onOpenCatalogSection: (sec: CatalogSection) => void;
   onSyncAction: (type: any, patch: any) => void;
   onSelectTrack: (idx: number, seekSec?: number) => void;
+  onAutoSwitchBackupTrack?: (reason?: string) => void;
   onPromoteCloudStreamToNative: (rawUrl: string) => void;
   onPrevEpisode: () => void;
   onNextEpisode: () => void;
@@ -190,6 +191,7 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
   onOpenCatalogSection,
   onSyncAction,
   onSelectTrack,
+  onAutoSwitchBackupTrack,
   onPromoteCloudStreamToNative,
   onPrevEpisode,
   onNextEpisode,
@@ -276,6 +278,7 @@ export const PlayerStageContainer: React.FC<PlayerStageContainerProps> = ({
               floatingReactions={floatingReactions}
               onSyncAction={onSyncAction}
               onSelectTrack={onSelectTrack}
+              onAutoSwitchBackupTrack={onAutoSwitchBackupTrack}
               onPromoteCloudStreamToNative={onPromoteCloudStreamToNative}
               onPrevEpisode={onPrevEpisode}
               onNextEpisode={onNextEpisode}

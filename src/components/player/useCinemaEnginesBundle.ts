@@ -63,6 +63,7 @@ interface UseCinemaEnginesBundleArgs {
   scheduleHideControls: () => void;
   showTransientToast: (msg: string) => void;
   onSelectTrack: (trackIndex: number, currentTimeSec: number) => void;
+  onAutoSwitchBackupTrack?: (reason?: string) => void;
   onExitTvMode?: () => void;
   onNextEpisode?: () => void;
   onSyncAction: NativeCinemaPlayerProps['onSyncAction'];
@@ -143,6 +144,7 @@ export function useCinemaEnginesBundle(args: UseCinemaEnginesBundleArgs) {
     setLocalPlaying: args.setLocalPlaying,
     scheduleHideControls: args.scheduleHideControls,
     showTransientToast: args.showTransientToast,
+    onAutoSwitchBackupTrack: args.onAutoSwitchBackupTrack,
   });
 
   useYouTubeIframeSync({

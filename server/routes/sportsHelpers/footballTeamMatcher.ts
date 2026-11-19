@@ -1,5 +1,6 @@
 import { type TrackRecord } from '../../extractors/httpHelpers.ts';
 import { getChineseFootballMatchTracks } from '../../extractors/chineseSports.ts';
+import { findEpgVerifiedBroadcasterForFixture } from '../../services/epgService.ts';
 import type { SoccerLeagueFeedDef } from './sportsChannels247.ts';
 
 const COUNTRY_NAME_TO_ISO2: Record<string, string> = {
@@ -82,13 +83,34 @@ const BILINGUAL_TEAM_ALIASES: Record<string, string[]> = {
   sudafrica: ['sudafrica', 'south africa'],
   japon: ['japon', 'japan'],
   corea_del_sur: ['corea del sur', 'south korea', 'korea'],
+  vienna: ['vienna', 'austria wien', 'viena', 'fkv'],
+  viena: ['vienna', 'austria wien', 'viena'],
+  austria_wien: ['austria wien', 'vienna', 'viena', 'austria vienna'],
+  austria_vienna: ['austria wien', 'vienna', 'viena', 'austria vienna'],
+  koge: ['koge', 'hb koge', 'hb koege', 'koge kvinder'],
+  hb_koge: ['hb koge', 'koge', 'hb koege', 'koge kvinder'],
+  paris_fc: ['paris fc', 'paris', 'pfc'],
+  lyon: ['lyon', 'olympique lyonnais', 'ol lyon'],
+  servette: ['servette', 'servette chenois'],
+  bayern: ['bayern', 'bayern munich', 'bayern munchen'],
+  bayern_munich: ['bayern', 'bayern munich', 'bayern munchen'],
+  bayern_munchen: ['bayern', 'bayern munich', 'bayern munchen'],
+  celta: ['celta', 'celta de vigo', 'celta vigo'],
+  celta_vigo: ['celta', 'celta de vigo', 'celta vigo'],
+  osasuna: ['osasuna', 'ca osasuna'],
+  betis: ['betis', 'real betis'],
+  sevilla: ['sevilla', 'sevilla fc'],
+  valencia: ['valencia', 'valencia cf'],
+  espanyol: ['espanyol', 'rcd espanyol'],
+  mallorca: ['mallorca', 'rcd mallorca'],
 };
 
 const GENERIC_TEAM_STOPWORDS = new Set([
   'fc', 'cf', 'sc', 'ac', 'cd', 'ud', 'sd', 'ca', 'rc', 'rcd', 'club', 'real', 'united', 'city',
   'sporting', 'atletico', 'deportivo', 'nacional', 'union', 'america', 'racing', 'independiente',
-  'republica', 'san', 'santa', 'st', 'al', 'de', 'del', 'la', 'el', 'los', 'las', 'women',
-  'femenino', 'fem', 'u21', 'u20', 'u19',
+  'republica', 'san', 'santa', 'st', 'al', 'de', 'del', 'la', 'el', 'los', 'las', 'les', 'the',
+  'women', 'w', 'femenino', 'femenina', 'fem', 'feminines', 'kvinder', 'damen', 'frauen', 'damer',
+  'u21', 'u20', 'u19',
 ]);
 
 export function doesSingleTeamMatchCandidate(
@@ -150,6 +172,46 @@ export function doesScrapedEventMatchFixture(
   return false;
 }
 
+export function isFeaturedSpanishClubMatch(homeTeam: string, awayTeam: string): boolean {
+  const hay = `${normalizeTeamToken(homeTeam)}_${normalizeTeamToken(awayTeam)}`;
+  return /(^|_)(barcelona|fc_barcelona|barca|real_madrid)($|_)/.test(hay);
+}
+
+export function sortTracksWithDaznPriority<T extends { label?: string; lang?: string }>(
+  tracks: T[],
+  leagueSlug?: string
+): T[] {
+  const slugLower = String(leagueSlug || '').toLowerCase();
+  const isLaLiga = slugLower === 'esp.1';
+  return tracks
+    .map((tr, idx) => {
+      const lbl = String(tr.label || '').toLowerCase();
+      const isDaznLaLiga = /\bdazn\b.*laliga/.test(lbl);
+      const isDazn = /\bdazn\b/.test(lbl);
+      const isMovistar = /\bmovistar\b|\bm\+/.test(lbl);
+      const tier = isLaLiga
+        ? isDaznLaLiga
+          ? 0
+          : isDazn
+            ? 1
+            : isMovistar
+              ? 2
+              : tr.lang === 'ES'
+                ? 3
+                : 4
+        : isDazn
+          ? 0
+          : isMovistar
+            ? 1
+            : tr.lang === 'ES'
+              ? 2
+              : 3;
+      return { tr, tier, idx };
+    })
+    .sort((a, b) => a.tier - b.tier || a.idx - b.idx)
+    .map((x) => x.tr);
+}
+
 export function resolveMatchSpanishBroadcaster(
   leagueSlug: string,
   groupTitle?: string
@@ -157,7 +219,24 @@ export function resolveMatchSpanishBroadcaster(
   const slug = String(leagueSlug || '').toLowerCase();
   const title = String(groupTitle || '').toLowerCase();
 
-  if (slug === 'esp.1' || title.includes('laliga ea sports') || title.includes('primera división')) {
+  const isWomen =
+    slug.includes('wchampions') ||
+    slug.includes('femenin') ||
+    title.includes('femenin') ||
+    title.includes('women') ||
+    title.includes('damen') ||
+    title.includes('frauen');
+
+  if (isWomen) {
+    return null;
+  }
+
+  if (
+    slug === 'esp.1' ||
+    title.includes('laliga ea sports') ||
+    title.includes('primera división') ||
+    (title.includes('laliga') && !title.includes('hypermotion') && !title.includes('2'))
+  ) {
     return { name: 'DAZN · Movistar', brand: 'dazn', badgeColor: '#F59E0B' };
   }
   if (slug === 'uefa.champions' || title.includes('champions league') || title.includes('liga de campeones')) {
@@ -179,9 +258,23 @@ export function resolveMatchSpanishBroadcaster(
     return { name: 'Movistar+ · La 1', brand: 'movistar', badgeColor: '#2563EB' };
   }
   if (slug.startsWith('fifa.') || title.includes('selección')) {
-    return { name: 'La 1 RTVE', brand: 'rtve', badgeColor: '#2563EB' };
+    return { name: 'DAZN · La 1 RTVE', brand: 'dazn', badgeColor: '#F59E0B' };
   }
   return null;
+}
+
+export function sanitizeScrapedChannelLabel(rawLabel?: string, idx = 1): string {
+  const lbl = String(rawLabel || '').trim();
+  if (
+    !lbl ||
+    /^(disney\s*\+?|star\s*\+?|vix\s*\+?|paramount\s*\+?|hbo\s*max|peacock|flow|directv\s*go)$/i.test(lbl)
+  ) {
+    return `Señal Directo ${idx} (HD)`;
+  }
+  return lbl
+    .replace(/\b(disney\s*\+|star\s*\+|vix\s*\+|paramount\s*\+|peacock)\b/gi, 'Directo')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function buildFootballMatchChannels(params: {
@@ -191,8 +284,9 @@ export function buildFootballMatchChannels(params: {
   statusState: 'live' | 'upcoming' | 'finished';
   league: SoccerLeagueFeedDef;
   scrapedMatches: any[];
+  kickoffMs?: number;
 }): TrackRecord[] {
-  const { matchId, homeTeam, awayTeam, statusState, league, scrapedMatches } = params;
+  const { matchId, homeTeam, awayTeam, statusState, league, scrapedMatches, kickoffMs } = params;
   if (statusState === 'finished') return [];
 
   const channels: TrackRecord[] = [];
@@ -204,6 +298,20 @@ export function buildFootballMatchChannels(params: {
     channels.push(track);
   };
 
+  // 1. HIGHEST ACCURACY: REAL PROGRAMMING VERIFICATION IN SPANISH XMLTV EPG
+  const targetKickoff = kickoffMs && kickoffMs > 0 ? kickoffMs : Date.now();
+  const epgMatch = findEpgVerifiedBroadcasterForFixture(homeTeam, awayTeam, targetKickoff);
+  if (epgMatch) {
+    pushTrack({
+      id: `${matchId}-epg-${epgMatch.channelId}`,
+      label: `${epgMatch.channelLabel} (Oficial · Guía TV)`,
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: epgMatch.sourceUrl,
+      resolverType: epgMatch.resolverType,
+    });
+  }
+
   const homeNorm = normalizeTeamToken(homeTeam);
   const awayNorm = normalizeTeamToken(awayTeam);
   const isSpainNationalMatch =
@@ -212,83 +320,143 @@ export function buildFootballMatchChannels(params: {
       league.slug.startsWith('uefa.euro') ||
       league.slug.startsWith('fifa.'));
 
-  // 1. HIGHEST PRIORITY: OFFICIAL SPANISH BROADCASTERS (DAZN FIRST, THEN MOVISTAR)
-  if (league.slug === 'esp.1') {
-    // LaLiga EA Sports: DAZN LaLiga + DAZN 1 + Movistar LaLiga TV
-    pushTrack({
-      id: `${matchId}-es-daznll`,
-      label: 'DAZN LaLiga HD (Español)',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/84',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-es-dazn1`,
-      label: 'DAZN 1 HD (Español)',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/445',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-es-mlaliga`,
-      label: 'Movistar LaLiga TV HD (Español)',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://footunder.online/tvtodo/laliga.php',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-es-mplus`,
-      label: 'Movistar Plus+ HD (Partidazo)',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/435',
-      resolverType: 'sports_channel',
-    });
-  } else if (league.slug === 'uefa.champions') {
-    // UEFA Champions League: DAZN 1 HD + M+ Liga de Campeones
-    pushTrack({
-      id: `${matchId}-es-dazn1`,
-      label: 'DAZN 1 HD · Champions (Español)',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/445',
-      resolverType: 'sports_channel',
-    });
+  const slugLower = String(league.slug || '').toLowerCase();
+  const nameLower = String(league.leagueName || '').toLowerCase();
+
+  const isWomenCompetition =
+    slugLower.includes('wchampions') ||
+    slugLower.includes('femenin') ||
+    nameLower.includes('femenin') ||
+    nameLower.includes('women') ||
+    nameLower.includes('frauen') ||
+    nameLower.includes('damen');
+
+  const isLaLiga =
+    slugLower === 'esp.1' ||
+    nameLower.includes('laliga ea') ||
+    (nameLower.includes('laliga') && !nameLower.includes('hypermotion') && !nameLower.includes('2'));
+  const isChampions =
+    !isWomenCompetition &&
+    (slugLower === 'uefa.champions' ||
+      nameLower.includes('champions league') ||
+      nameLower.includes('liga de campeones'));
+  const isNations =
+    slugLower.startsWith('uefa.nations') ||
+    nameLower.includes('nations league') ||
+    nameLower.includes('liga de naciones');
+  const isPremier = slugLower === 'eng.1' || nameLower.includes('premier league');
+
+  const nowMs = Date.now();
+  const isMatchLiveOrImminent =
+    statusState === 'live' ||
+    (targetKickoff >= nowMs - 2 * 60 * 60 * 1000 && targetKickoff <= nowMs + 4 * 60 * 60 * 1000);
+
+  // 2. LIVE SCRAPED FEEDS FROM MATCH AGENDA (Direct feeds for this fixture)
+  let feedCounter = 1;
+  for (const sm of scrapedMatches) {
+    if (sm.is247Channel) continue;
+    if (doesScrapedEventMatchFixture(homeTeam, awayTeam, sm)) {
+      for (const ch of sm.channels || []) {
+        const cleanedLabel = sanitizeScrapedChannelLabel(ch.label, feedCounter++);
+        pushTrack({
+          id: `${matchId}-live-${channels.length + 1}`,
+          label: cleanedLabel,
+          lang: ch.lang || 'ES',
+          quality: ch.quality || '1080p',
+          sourceUrl: ch.sourceUrl,
+          resolverType: ch.resolverType || 'sports_channel',
+        });
+      }
+    }
+  }
+
+  // 3. SPANISH PRIMARY COMPETITION FEEDS (Only if match is live or starting today)
+  if (isMatchLiveOrImminent) {
+    if (isLaLiga) {
+      // LaLiga EA Sports: DAZN LaLiga (Sat 84 + DAZN 1 445 + StreamXHD live1/live2 backups)
+      pushTrack({
+        id: `${matchId}-es-daznll`,
+        label: 'DAZN LaLiga HD (Español)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/84',
+        resolverType: 'sports_channel',
+      });
+      pushTrack({
+        id: `${matchId}-es-dazn1`,
+        label: 'DAZN 1 HD (Español)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/445',
+        resolverType: 'sports_channel',
+      });
+      pushTrack({
+        id: `${matchId}-es-daznll-sxhd`,
+        label: 'DAZN LaLiga Señal 2 HD (Español)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live1.php?stream=daznlaliga',
+        resolverType: 'sports_channel',
+      });
+      pushTrack({
+        id: `${matchId}-es-mplus`,
+        label: 'Movistar Plus+ HD (Partidazo)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/435',
+        resolverType: 'sports_channel',
+      });
+    } else if (isChampions) {
+      // UEFA Champions League (Men's only)
+      pushTrack({
+        id: `${matchId}-es-dazn1`,
+        label: 'DAZN 1 HD · Champions (Español)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://pig.footunder.online/stream/445',
+        resolverType: 'sports_channel',
+      });
+      pushTrack({
+        id: `${matchId}-es-mucl-sxhd`,
+        label: 'M+ Liga de Campeones HD (Español)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live1.php?stream=mligacampeones',
+        resolverType: 'sports_channel',
+      });
+      pushTrack({
+        id: `${matchId}-es-mucl-sxhd2`,
+        label: 'M+ Campeones Señal 2 HD (Español)',
+        lang: 'ES',
+        quality: '1080p',
+        sourceUrl: 'https://streamxhd.sbs/live2.php?stream=mligacampeones',
+        resolverType: 'sports_channel',
+      });
+    }
     pushTrack({
       id: `${matchId}-es-mucl1`,
-      label: 'M+ Liga de Campeones HD (Español)',
+      label: 'M+ Campeones Señal 3 HD (Español)',
       lang: 'ES',
       quality: '1080p',
       sourceUrl: 'https://pig.footunder.online/stream/435',
       resolverType: 'sports_channel',
     });
-    pushTrack({
-      id: `${matchId}-es-mucl2`,
-      label: 'M+ Campeones Señal 2 HD (Español)',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://footunder.online/tvtodo/mligacampeones.php',
-      resolverType: 'sports_channel',
-    });
-    pushTrack({
-      id: `${matchId}-es-dazn2`,
-      label: 'DAZN 2 HD · Champions (Español)',
-      lang: 'ES',
-      quality: '1080p',
-      sourceUrl: 'https://pig.footunder.online/stream/446',
-      resolverType: 'sports_channel',
-    });
-  } else if (league.slug.startsWith('uefa.nations') || league.slug.toLowerCase().includes('nations')) {
-    // Nations League: DAZN + RTVE
+  } else if (isNations) {
+    // Nations League: DAZN 1 & DAZN 2 + La 1 RTVE
     pushTrack({
       id: `${matchId}-es-dazn`,
       label: 'DAZN 1 HD · Nations League (Español)',
       lang: 'ES',
       quality: '1080p',
       sourceUrl: 'https://pig.footunder.online/stream/445',
+      resolverType: 'sports_channel',
+    });
+    pushTrack({
+      id: `${matchId}-es-dazn2`,
+      label: 'DAZN 2 HD · Nations League (Español)',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://pig.footunder.online/stream/446',
       resolverType: 'sports_channel',
     });
     pushTrack({
@@ -299,7 +467,7 @@ export function buildFootballMatchChannels(params: {
       sourceUrl: 'https://rtvelivestream.rtve.es/rtvesec/la1/la1_main.m3u8',
       resolverType: 'tdt_hls',
     });
-  } else if (league.slug === 'uefa.europa' || league.slug === 'uefa.europa.conf') {
+  } else if (slugLower === 'uefa.europa' || slugLower === 'uefa.europa.conf') {
     // UEFA Europa & Conference League: M+ Campeones
     pushTrack({
       id: `${matchId}-es-mucl`,
@@ -317,7 +485,7 @@ export function buildFootballMatchChannels(params: {
       sourceUrl: 'https://footunder.online/tvtodo/mligacampeones.php',
       resolverType: 'sports_channel',
     });
-  } else if (league.slug === 'esp.2') {
+  } else if (slugLower === 'esp.2') {
     // LaLiga Hypermotion: Hypermotion TV + Vamos
     pushTrack({
       id: `${matchId}-es-mhyper`,
@@ -343,8 +511,8 @@ export function buildFootballMatchChannels(params: {
       sourceUrl: 'https://pig.footunder.online/stream/526',
       resolverType: 'sports_channel',
     });
-  } else if (league.slug === 'eng.1') {
-    // Premier League: DAZN 1 & DAZN 2 España + Sky Sports UK
+  } else if (isPremier) {
+    // Premier League: DAZN 1, DAZN 2 & DAZN 3 España
     pushTrack({
       id: `${matchId}-es-dazn1`,
       label: 'DAZN 1 HD · Premier League (Español)',
@@ -361,7 +529,15 @@ export function buildFootballMatchChannels(params: {
       sourceUrl: 'https://pig.footunder.online/stream/446',
       resolverType: 'sports_channel',
     });
-  } else if (league.slug === 'esp.copa_del_rey') {
+    pushTrack({
+      id: `${matchId}-es-dazn3`,
+      label: 'DAZN 3 HD · Premier League (Español)',
+      lang: 'ES',
+      quality: '1080p',
+      sourceUrl: 'https://pig.footunder.online/stream/447',
+      resolverType: 'sports_channel',
+    });
+  } else if (slugLower === 'esp.copa_del_rey') {
     // Copa del Rey: Movistar Plus+ + RTVE La 1
     pushTrack({
       id: `${matchId}-es-mplus`,
@@ -409,7 +585,7 @@ export function buildFootballMatchChannels(params: {
           id: `${matchId}-live-${channels.length + 1}`,
           label: ch.label || `Señal Directo ${channels.length + 1}`,
           lang: ch.lang || 'ES',
-          quality: ch.quality || 'HD',
+          quality: ch.quality || '1080p',
           sourceUrl: ch.sourceUrl,
           resolverType: ch.resolverType || 'sports_channel',
         });
@@ -422,5 +598,5 @@ export function buildFootballMatchChannels(params: {
     pushTrack(zhTrack);
   }
 
-  return channels.slice(0, 10);
+  return sortTracksWithDaznPriority(channels, league.slug).slice(0, 10);
 }

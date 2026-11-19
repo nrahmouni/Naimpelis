@@ -11,6 +11,7 @@ import {
   sniffStreamWithHeadless,
   verifyM3u8HasCleanVideoFrame,
 } from '../../extractors/sportsExtractor.ts';
+import { channelHealthMonitor } from '../../services/channelHealthMonitor.ts';
 
 export function formatExtractResponseForClient(
   req: express.Request,
@@ -76,16 +77,24 @@ export async function handleExternalSportsExtract(params: {
   const directSports = await extractLiveSportsHlsDirect(fullTargetUrl);
 
   if (directSports?.isBrokenGreenFeed) {
+    channelHealthMonitor.setTrackHealth(fullTargetUrl, {
+      status: 'down',
+      failCount: 3,
+      checkedAt: Date.now(),
+      qoeFailures: 3,
+    });
     return sendJsonStatus(502, {
       success: false,
+      brokenGreenFeed: true,
       canUseCloudBrowser: false,
       error:
-        'Señal satélite en mantenimiento temporal; cambiando automáticamente a señal alternativa.',
+        'Trama H.264 corrupta o pantalla verde (#005200) descartada; cambiando automáticamente a pista satélite 1080p verificada.',
     });
   }
 
   const isKnownDirectMirror = /footunder\.online|tilinhd\.|streamxhd\./i.test(fullTargetUrl);
   if (!directSports && resolverType === 'sports_channel' && isKnownDirectMirror) {
+    channelHealthMonitor.recordPlaybackFeedback(fullTargetUrl, { failed: true });
     return sendJsonStatus(404, {
       success: false,
       canUseCloudBrowser: false,
@@ -96,7 +105,7 @@ export async function handleExternalSportsExtract(params: {
   const sniffed = directSports || (await sniffStreamWithHeadless(fullTargetUrl));
 
   if (sniffed && sniffed.streamUrl) {
-    if (!sniffed.isDirectMp4 && resolverType === 'sports_channel') {
+    if (!sniffed.isDirectMp4 && (resolverType === 'sports_channel' || /\.m3u8(\?|$)/i.test(sniffed.streamUrl))) {
       const checkM3u = await fetchSportsHtmlHop(sniffed.streamUrl, sniffed.referer);
       if (checkM3u.includes('#EXTM3U')) {
         const clean = await verifyM3u8HasCleanVideoFrame(
@@ -105,11 +114,18 @@ export async function handleExternalSportsExtract(params: {
           sniffed.referer
         );
         if (!clean) {
+          channelHealthMonitor.setTrackHealth(fullTargetUrl, {
+            status: 'down',
+            failCount: 3,
+            checkedAt: Date.now(),
+            qoeFailures: 3,
+          });
           return sendJsonStatus(502, {
             success: false,
+            brokenGreenFeed: true,
             canUseCloudBrowser: false,
             error:
-              'Señal con interferencias descartada automáticamente; saltando a respaldo HD.',
+              'Señal con interferencias H.264 descartada automáticamente; saltando a pista satélite 1080p limpia.',
           });
         }
       }

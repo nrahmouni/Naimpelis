@@ -151,6 +151,7 @@ export const RegionFlagImg: React.FC<{
 
 interface FootballMatchDetailSheetProps {
   lang: AppLanguage;
+  showZhIndicator?: boolean;
   selectedMatchObj: FootballMatchboardItem | null;
   selectedSportsMatch: SportsMatch | null;
   selectedMatchDetails: FootballMatchDetails | null;
@@ -167,6 +168,7 @@ interface FootballMatchDetailSheetProps {
 
 export const FootballMatchDetailSheet: React.FC<FootballMatchDetailSheetProps> = ({
   lang,
+  showZhIndicator = false,
   selectedMatchObj,
   selectedSportsMatch,
   selectedMatchDetails,
@@ -179,149 +181,208 @@ export const FootballMatchDetailSheet: React.FC<FootballMatchDetailSheetProps> =
   onLoadDetails,
   onPlaySportsMatch,
   onPlaySecondaryChannel,
-}) => (
-  <BottomSheet
-    isOpen={Boolean(selectedMatchObj)}
-    onClose={onClose}
-    title={selectedMatchObj ? `${selectedMatchObj.homeTeam} vs ${selectedMatchObj.awayTeam}` : ''}
-    subtitle={selectedMatchObj?.groupTitle}
-    maxWidth="sm:max-w-2xl"
-    lang={lang}
-  >
-    {selectedMatchObj && selectedSportsMatch && (
-      <div className="space-y-4">
-        <SegmentedControl<MatchSheetTab>
-          value={sheetTab}
-          onChange={(val) => {
-            setSheetTab(val);
-            if (val === 'stats') onLoadDetails(selectedMatchObj, false);
-          }}
-          layoutId="match-detail-sheet-tabs"
-          options={[
-            {
-              id: 'signals',
-              label: pickLang(lang, { es: 'Señales', ca: 'Senyals', en: 'Signals' }),
-            },
-            {
-              id: 'stats',
-              label: pickLang(lang, {
-                es: 'Estadísticas y alineaciones',
-                ca: 'Estadístiques i alineacions',
-                en: 'Stats & lineups',
-              }),
-            },
-          ]}
-        />
+}) => {
+  const [expandOtherLangs, setExpandOtherLangs] = useState(false);
 
-        {sheetTab === 'signals' ? (
-          <div className="space-y-2.5">
-            {selectedMatchObj.channels.length > 0 ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {selectedMatchObj.channels.map((ch, idx) => {
-                  const isActiveSignal = activeVideoRawUrl === ch.sourceUrl;
-                  const isZh = ch.lang === 'ZH' || /中文/.test(ch.label || '');
-                  const isSpanish =
-                    ch.lang === 'ES' ||
-                    /(español|dazn|movistar|m\+|laliga|campeones|vamos|rtve|la 1|teledeporte)/i.test(
-                      ch.label || ''
-                    );
-                  const isMplus = /movistar|m\+/i.test(ch.label || '');
-                  const isDazn = /dazn/i.test(ch.label || '');
+  const channelEntries = (selectedMatchObj?.channels || []).map((ch, idx) => ({
+    ch,
+    idx,
+    isZh: ch.lang === 'ZH' || /中文/.test(ch.label || ''),
+  }));
+  const mainChannels = showZhIndicator
+    ? channelEntries
+    : channelEntries.filter((e) => !e.isZh);
+  const hiddenZhChannels = showZhIndicator
+    ? []
+    : channelEntries.filter((e) => e.isZh);
+  const visibleChannels =
+    expandOtherLangs || mainChannels.length === 0 ? channelEntries : mainChannels;
 
-                  return (
-                    <div key={`${selectedMatchObj.id}-${ch.id}-${idx}`} className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={Boolean(loadingItemId)}
-                        onClick={() => {
-                          triggerHaptic('medium');
-                          onPlaySportsMatch(selectedSportsMatch, idx);
-                          onClose();
-                        }}
-                        className={`flex-1 min-h-14 px-3.5 py-2 rounded-2xl text-xs font-bold flex items-center justify-between gap-2.5 cursor-pointer transition-colors border ${
-                          isActiveSignal
-                            ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-lg'
-                            : isSpanish
-                            ? 'bg-amber-500/[0.08] hover:bg-amber-500/[0.16] border-amber-500/30 text-white'
-                            : 'bg-white/[0.06] hover:bg-white/[0.12] text-white border-white/[0.1]'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <Play className="w-3.5 h-3.5 fill-current shrink-0 text-[#BF94FF]" />
-                          <div className="text-left min-w-0">
-                            <p className="truncate text-xs font-bold text-white">
-                              {ch.label ||
-                                `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`}
-                            </p>
-                            <p className="text-[10px] font-medium text-zinc-400 truncate">
-                              {isSpanish
-                                ? isMplus
-                                  ? 'Movistar Plus+ · Español'
-                                  : isDazn
-                                  ? 'DAZN España · Español'
-                                  : 'Español Oficial'
-                                : isZh
-                                ? 'Transmisión China · 中文'
-                                : 'Señal Internacional'}
-                            </p>
-                          </div>
-                        </div>
+  return (
+    <BottomSheet
+      isOpen={Boolean(selectedMatchObj)}
+      onClose={onClose}
+      title={selectedMatchObj ? `${selectedMatchObj.homeTeam} vs ${selectedMatchObj.awayTeam}` : ''}
+      subtitle={selectedMatchObj?.groupTitle}
+      maxWidth="sm:max-w-2xl"
+      lang={lang}
+    >
+      {selectedMatchObj && selectedSportsMatch && (
+        <div className="space-y-4">
+          <SegmentedControl<MatchSheetTab>
+            value={sheetTab}
+            onChange={(val) => {
+              setSheetTab(val);
+              if (val === 'stats') onLoadDetails(selectedMatchObj, false);
+            }}
+            layoutId="match-detail-sheet-tabs"
+            options={[
+              {
+                id: 'signals',
+                label: pickLang(lang, { es: 'Señales', ca: 'Senyals', en: 'Signals' }),
+              },
+              {
+                id: 'stats',
+                label: pickLang(lang, {
+                  es: 'Estadísticas y alineaciones',
+                  ca: 'Estadístiques i alineacions',
+                  en: 'Stats & lineups',
+                }),
+              },
+            ]}
+          />
 
-                        <div className="flex items-center gap-1 shrink-0">
-                          {isSpanish && (
-                            <span className="px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-300 text-[10px] font-extrabold tracking-wide border border-amber-500/40">
-                              ES
-                            </span>
-                          )}
-                          {isZh && (
-                            <span className="px-1.5 py-0.5 rounded bg-white/15 text-zinc-200 text-[10px] font-bold">
-                              中文
-                            </span>
-                          )}
-                          <span className="px-1.5 py-0.5 rounded bg-white/[0.08] text-zinc-300 text-[10px] font-mono">
-                            {ch.quality || '1080p'}
-                          </span>
-                        </div>
-                      </button>
-
-                      {activeVideoRawUrl && !isActiveSignal && onPlaySecondaryChannel && (
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            onPlaySecondaryChannel(selectedSportsMatch, idx);
-                            onClose();
-                          }}
-                          aria-label={pickLang(lang, {
-                            es: 'Segunda pantalla',
-                            ca: 'Segona pantalla',
-                            en: 'Second screen',
-                          })}
-                          className="min-w-12 min-h-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-zinc-200 flex items-center justify-center cursor-pointer"
-                        >
-                          <Columns2 className="w-4 h-4" />
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="text-sm text-zinc-300 py-3">
-                {selectedMatchObj.statusState === 'finished'
-                  ? pickLang(lang, {
-                      es: 'Partido finalizado.',
-                      ca: 'Partit finalitzat.',
-                      en: 'Match finished.',
-                    })
-                  : pickLang(lang, {
-                      es: `Las señales se activarán antes del inicio (${selectedMatchObj.kickoffTime}).`,
-                      ca: `Els senyals s’activaran abans de l’inici (${selectedMatchObj.kickoffTime}).`,
-                      en: `Streams open before kickoff (${selectedMatchObj.kickoffTime}).`,
+          {sheetTab === 'signals' ? (
+            <div className="space-y-2.5">
+              {visibleChannels.length > 0 && (
+                <div className="px-3 py-2 rounded-xl bg-amber-500/[0.08] border border-amber-500/25 flex items-center justify-between gap-2 text-[11px]">
+                  <span className="font-semibold text-amber-200">
+                    {pickLang(lang, {
+                      es: 'Selector oficial en español · DAZN prioritario',
+                      ca: 'Selector oficial en espanyol · DAZN prioritari',
+                      en: 'Official Spanish channels · DAZN first',
                     })}
-              </p>
-            )}
-          </div>
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono font-bold text-[10px] shrink-0">
+                    ES · 1080p
+                  </span>
+                </div>
+              )}
+              {visibleChannels.length > 0 ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {visibleChannels.map(({ ch, idx, isZh }) => {
+                      const isActiveSignal = activeVideoRawUrl === ch.sourceUrl;
+                      const isSpanish =
+                        ch.lang === 'ES' ||
+                        /(español|dazn|movistar|m\+|laliga|campeones|vamos|rtve|la 1|teledeporte)/i.test(
+                          ch.label || ''
+                        );
+                      const isMplus = /movistar|m\+/i.test(ch.label || '');
+                      const isDazn = /dazn/i.test(ch.label || '');
+
+                      return (
+                        <div key={`${selectedMatchObj.id}-${ch.id}-${idx}`} className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={Boolean(loadingItemId)}
+                            onClick={() => {
+                              triggerHaptic('medium');
+                              onPlaySportsMatch(selectedSportsMatch, idx);
+                              onClose();
+                            }}
+                            className={`flex-1 min-h-14 px-3.5 py-2 rounded-2xl text-xs font-bold flex items-center justify-between gap-2.5 cursor-pointer transition-colors border ${
+                              isActiveSignal
+                                ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-lg'
+                                : isSpanish
+                                ? 'bg-amber-500/[0.08] hover:bg-amber-500/[0.16] border-amber-500/30 text-white'
+                                : 'bg-white/[0.06] hover:bg-white/[0.12] text-white border-white/[0.1]'
+                            }`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <Play className="w-3.5 h-3.5 fill-current shrink-0 text-[#BF94FF]" />
+                              <div className="text-left min-w-0">
+                                <p className="text-xs font-bold text-white leading-snug break-words">
+                                  {ch.label ||
+                                    `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`}
+                                </p>
+                                <p className="text-[10px] font-medium text-zinc-400 leading-snug">
+                                  {isSpanish
+                                    ? isDazn
+                                      ? 'DAZN España · Español'
+                                      : isMplus
+                                      ? 'Movistar Plus+ · Español'
+                                      : 'Español Oficial'
+                                    : isZh
+                                    ? pickLang(lang, {
+                                        es: 'Señal Internacional · Chino (CCTV-5)',
+                                        ca: 'Senyal Internacional · Xinès (CCTV-5)',
+                                        en: 'International Feed · Chinese (CCTV-5)',
+                                      })
+                                    : pickLang(lang, {
+                                        es: 'Señal Internacional',
+                                        ca: 'Senyal Internacional',
+                                        en: 'International Feed',
+                                      })}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-1 shrink-0">
+                              {isSpanish && (
+                                <span className="px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-300 text-[10px] font-extrabold tracking-wide border border-amber-500/40">
+                                  ES
+                                </span>
+                              )}
+                              {isZh && (
+                                <span className="px-1.5 py-0.5 rounded bg-white/15 text-zinc-200 text-[10px] font-bold">
+                                  ZH
+                                </span>
+                              )}
+                              <span className="px-1.5 py-0.5 rounded bg-white/[0.08] text-zinc-200 text-[10px] font-mono font-bold">
+                                {ch.quality || '1080p'}
+                              </span>
+                            </div>
+                          </button>
+
+                          {activeVideoRawUrl && !isActiveSignal && onPlaySecondaryChannel && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                triggerHaptic('light');
+                                onPlaySecondaryChannel(selectedSportsMatch, idx);
+                                onClose();
+                              }}
+                              aria-label={pickLang(lang, {
+                                es: 'Segunda pantalla',
+                                ca: 'Segona pantalla',
+                                en: 'Second screen',
+                              })}
+                              className="min-w-12 min-h-12 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-zinc-200 flex items-center justify-center cursor-pointer"
+                            >
+                              <Columns2 className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {hiddenZhChannels.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => setExpandOtherLangs((v) => !v)}
+                      className="w-full min-h-10 px-3 rounded-xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.07] text-[11px] font-semibold text-zinc-400 hover:text-zinc-200 cursor-pointer transition-colors"
+                    >
+                      {expandOtherLangs
+                        ? pickLang(lang, {
+                            es: 'Ocultar señales internacionales',
+                            ca: 'Amagar senyals internacionals',
+                            en: 'Hide international feeds',
+                          })
+                        : pickLang(lang, {
+                            es: `Mostrar ${hiddenZhChannels.length} señales en otros idiomas (China / CCTV-5)`,
+                            ca: `Mostrar ${hiddenZhChannels.length} senyals en altres idiomes (Xina / CCTV-5)`,
+                            en: `Show ${hiddenZhChannels.length} international feeds (China / CCTV-5)`,
+                          })}
+                    </button>
+                  )}
+                </>
+              ) : (
+                <p className="text-sm text-zinc-300 py-3">
+                  {selectedMatchObj.statusState === 'finished'
+                    ? pickLang(lang, {
+                        es: 'Partido finalizado.',
+                        ca: 'Partit finalitzat.',
+                        en: 'Match finished.',
+                      })
+                    : pickLang(lang, {
+                        es: `Las señales se activarán antes del inicio (${selectedMatchObj.kickoffTime}).`,
+                        ca: `Els senyals s’activaran abans de l’inici (${selectedMatchObj.kickoffTime}).`,
+                        en: `Streams open before kickoff (${selectedMatchObj.kickoffTime}).`,
+                      })}
+                </p>
+              )}
+            </div>
         ) : (
           <React.Suspense
             fallback={<div className="py-8 text-center text-xs text-zinc-400">Cargando...</div>}
@@ -349,5 +410,6 @@ export const FootballMatchDetailSheet: React.FC<FootballMatchDetailSheetProps> =
         )}
       </div>
     )}
-  </BottomSheet>
-);
+    </BottomSheet>
+  );
+};

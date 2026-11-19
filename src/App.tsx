@@ -433,6 +433,9 @@ export function App() {
                 onSelectTrack={(idx, seekSec) => {
                   void playback.handleSelectTrack(idx, seekSec || 0);
                 }}
+                onAutoSwitchBackupTrack={(reason) => {
+                  void playback.handleAutoSwitchBackupTrack(reason);
+                }}
                 onPromoteCloudStreamToNative={playback.handlePromoteCloudStreamToNative}
                 onPrevEpisode={playback.handlePrevEpisode}
                 onNextEpisode={playback.handleNextEpisode}

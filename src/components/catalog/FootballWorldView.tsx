@@ -160,6 +160,10 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
             langFilter={futbolLangFilter}
             leagueFilter={futbolLeagueFilter}
             brandFilter={footballLiveBrand}
+            onClearCalendarScope={() => {
+              setSportsSearch('');
+              setFutbolLeagueFilter('');
+            }}
             activeVideoRawUrl={activeVideoRawUrl}
             loadingItemId={loadingItemId}
             onPlaySportsMatch={onPlaySportsMatch}
@@ -222,15 +226,19 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
                   <div className="relative z-10 flex-1 min-w-0 flex items-center gap-3 pointer-events-none">
                     <ChannelLogoBadge channel={ch} size="md" />
                     <div className="min-w-0 flex-1">
-                      <p className="font-display font-bold text-sm text-white truncate flex items-center gap-1.5">
-                        <span className="truncate">{ch.name}</span>
+                      <p className="font-display font-bold text-sm text-white leading-snug break-words flex items-baseline flex-wrap gap-x-1.5">
+                        <span className="break-words">{ch.name}</span>
                         <span className="text-xs font-medium text-zinc-400 shrink-0">
                           · {regMeta.langTag}
                         </span>
                       </p>
                       <p className="text-xs text-zinc-400 truncate mt-0.5">
                         {ch.category === 'china_football'
-                          ? 'China (中文 · 欧冠/西甲/英超)'
+                          ? pickLang(lang, {
+                              es: 'China · Fútbol Internacional HD',
+                              ca: 'Xina · Futbol Internacional HD',
+                              en: 'China · World Football HD',
+                            })
                           : ch.network}
                       </p>
                     </div>
@@ -314,7 +322,12 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
                 <button
                   key={lg.id || 'all-lg'}
                   type="button"
-                  onClick={() => setFutbolLeagueFilter(lg.id)}
+                  onClick={() => {
+                    setFutbolLeagueFilter(lg.id);
+                    if (lg.id && effectiveFutbolTab !== 'matches') {
+                      setEffectiveFutbolTab('matches');
+                    }
+                  }}
                   className={`min-h-10 px-3.5 rounded-xl text-xs font-semibold border cursor-pointer transition-colors ${
                     futbolLeagueFilter === lg.id
                       ? 'bg-[#9146FF] border-[#9146FF] text-white'
@@ -339,11 +352,11 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
               {(
                 [
                   { id: 'all', flagCode: 'all', label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
+                  { id: 'dazn', flagCode: 'es', label: 'DAZN (España · Prioritario)' },
                   { id: 'movistar', flagCode: 'es', label: 'Movistar Plus+ (España)' },
-                  { id: 'dazn', flagCode: 'es', label: 'DAZN (España)' },
-                  { id: 'china_football', flagCode: 'cn', label: 'Fútbol China (中文)' },
-                  { id: 'bein_arabic', flagCode: 'qa', label: 'beIN SPORTS (العربية)' },
-                  { id: 'uk_sports', flagCode: 'uk', label: 'UK Sports (EN)' },
+                  { id: 'china_football', flagCode: 'cn', label: pickLang(lang, { es: 'Fútbol China (CCTV-5)', ca: 'Futbol Xina (CCTV-5)', en: 'China Football (CCTV-5)' }) },
+                  { id: 'bein_arabic', flagCode: 'qa', label: pickLang(lang, { es: 'beIN SPORTS (Árabe)', ca: 'beIN SPORTS (Àrab)', en: 'beIN SPORTS (Arabic)' }) },
+                  { id: 'uk_sports', flagCode: 'uk', label: pickLang(lang, { es: 'Deportes Reino Unido (EN)', ca: 'Esports Regne Unit (EN)', en: 'UK Sports (EN)' }) },
                   { id: 'beinsports', flagCode: 'all', label: 'beIN SPORTS (Global)' },
                   { id: 'espn', flagCode: 'lat', label: 'ESPN (1–7)' },
                   { id: 'dsports', flagCode: 'lat', label: 'DSports' },

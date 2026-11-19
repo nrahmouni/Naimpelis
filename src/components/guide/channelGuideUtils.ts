@@ -128,3 +128,95 @@ export function cleanEpgDescription(desc?: string): string {
   if (!desc) return '';
   return desc.replace(/^\([^)]+\)\s*/, '').trim();
 }
+
+export interface MiniGuideSummary {
+  startLabel: string;
+  stopLabel: string;
+  remainingMin: number;
+  progressPct: number;
+  nowTitle: string;
+  nextStartLabel: string;
+  nextTitle: string;
+  isEstimated: boolean;
+}
+
+function formatMadridHourMinute(ms: number): string {
+  try {
+    return new Intl.DateTimeFormat('es-ES', {
+      timeZone: 'Europe/Madrid',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).format(new Date(ms));
+  } catch {
+    const d = new Date(ms);
+    return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  }
+}
+
+export function buildMiniGuideForChannel(
+  ch: SpanishTdtChannel,
+  snap: ChannelLiveEpg | null,
+  clockMs: number
+): MiniGuideSummary {
+  if (snap?.now) {
+    return {
+      startLabel: snap.now.startLabel,
+      stopLabel: snap.now.stopLabel,
+      remainingMin: snap.remainingMin,
+      progressPct: snap.progressPct,
+      nowTitle: snap.now.title,
+      nextStartLabel: snap.next?.startLabel || snap.now.stopLabel,
+      nextTitle: snap.next?.title || `${ch.network} · Emisión continua`,
+      isEstimated: false,
+    };
+  }
+
+  const slotMs = 2 * 60 * 60 * 1000;
+  const blockStart = Math.floor(clockMs / slotMs) * slotMs;
+  const blockStop = blockStart + slotMs;
+  const nextStop = blockStop + slotMs;
+  const elapsed = Math.max(0, clockMs - blockStart);
+  const progressPct = Math.max(8, Math.min(96, Math.round((elapsed / slotMs) * 100)));
+  const remainingMin = Math.max(1, Math.ceil((blockStop - clockMs) / 60_000));
+
+  const cleanDesc = cleanEpgDescription(ch.description);
+  const descParts = cleanDesc
+    .split(/[·:]/)
+    .map((p) => p.trim())
+    .filter((p) => p.length > 2);
+
+  const defaultByCat: Record<string, [string, string]> = {
+    bein_arabic: ['Fútbol en directo · Matchday Live', 'Análisis postpartido y Champions'],
+    dazn: ['Retransmisión en directo · DAZN Live', 'Postpartido y resúmenes de jornada'],
+    movistar: ['Programación deportiva y partidos en directo', 'El Post · Resúmenes y tertulia'],
+    uk_sports: ['Premier League & Live Studio', 'Highlights & Match Replay'],
+    china_football: ['Liga y fútbol europeo en directo (中文)', 'Resumen de la jornada'],
+    beinsports: ['Fútbol internacional en vivo', 'Lo mejor de la jornada'],
+    espn: ['SportsCenter y fútbol en directo', 'Debate deportivo en vivo'],
+    dsports: ['DSports Fútbol en directo', 'Conexión Sudamérica y resúmenes'],
+    cine_series: ['Sesión continua de cine y series', 'Estreno de noche · HD'],
+    documentales: ['Documental en emisión', 'Reportaje especial'],
+    generalistas: ['Programación en directo', 'Edición informativa y entretenimiento'],
+  };
+
+  const fallbackPair = defaultByCat[ch.category] || [
+    `${ch.network} en directo`,
+    `Continuación · ${ch.network}`,
+  ];
+
+  const nowTitle = descParts[0] || cleanDesc || fallbackPair[0];
+  const nextTitle = descParts[1] || fallbackPair[1];
+
+  return {
+    startLabel: formatMadridHourMinute(blockStart),
+    stopLabel: formatMadridHourMinute(blockStop),
+    remainingMin,
+    progressPct,
+    nowTitle,
+    nextStartLabel: formatMadridHourMinute(blockStop),
+    nextTitle: `${nextTitle} (${formatMadridHourMinute(blockStop)}–${formatMadridHourMinute(nextStop)})`,
+    isEstimated: true,
+  };
+}
+

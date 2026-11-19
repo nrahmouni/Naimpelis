@@ -73,8 +73,10 @@ describe('Audit Checklist & Asset Integrity', () => {
       'utf8'
     );
     expect(catalogSrc).toContain("worldMode === 'cine'");
-    expect(footballViewSrc).toContain('Fútbol China (中文)');
-    expect(footballViewSrc).toContain('欧冠/西甲/英超');
+    expect(footballViewSrc).toContain('Fútbol China (CCTV-5)');
+    expect(footballViewSrc).toContain('China · Fútbol Internacional HD');
+    expect(footballViewSrc).not.toContain('العربية');
+    expect(footballViewSrc).not.toContain('欧冠');
 
     const appSrc = fs.readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
     const worldsSrc = fs.readFileSync(path.join(ROOT, 'src/components/AppWorldsContent.tsx'), 'utf8');

@@ -1,18 +1,19 @@
-import { spawn } from 'child_process';
-import fs from 'fs';
-import ffmpegStatic from 'ffmpeg-static';
 import { sniffStreamViaHttp } from '../services/streamSnifferService.ts';
-import { LruTtlCache } from '../utils/lruCache.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import { CHROME_UA, curlGetText, isBlockedAdUrl } from './httpHelpers.ts';
+import {
+  analyzeDecodedRgbFrame,
+  isFatalH264Stderr,
+  validateH264StreamBuffer,
+  verifyM3u8HasCleanVideoFrame,
+} from './h264FrameValidator.ts';
 
-const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg')
-  ? '/usr/bin/ffmpeg'
-  : typeof ffmpegStatic === 'string' && fs.existsSync(ffmpegStatic)
-    ? ffmpegStatic
-    : 'ffmpeg';
-
-const liveFrameHealthCache = new LruTtlCache<string, boolean>(300, 150_000);
+export {
+  analyzeDecodedRgbFrame,
+  isFatalH264Stderr,
+  validateH264StreamBuffer,
+  verifyM3u8HasCleanVideoFrame,
+};
 
 export function healUpstreamSportsDomain(rawUrl: string): string {
   return rawUrl.replace(/\/\/(?:doc|dog)\.tilinhd\.lol\b/gi, '//pig.footunder.online');
@@ -83,186 +84,6 @@ export async function fetchSportsHtmlHop(url: string, referer: string): Promise<
   return fb.text;
 }
 
-export async function verifyM3u8HasCleanVideoFrame(
-  m3uText: string,
-  m3uUrl: string,
-  referer: string
-): Promise<boolean> {
-  const cached = liveFrameHealthCache.get(m3uUrl);
-  if (cached !== undefined) {
-    return cached;
-  }
-
-  try {
-    const segLines = m3uText
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter((l) => l && !l.startsWith('#'));
-    if (segLines.length === 0) return false;
-
-    const chosenRel =
-      segLines.length >= 2 ? segLines[segLines.length - 2] : segLines[segLines.length - 1];
-    const segUrl = new URL(chosenRel, m3uUrl).href;
-
-    if (/\.m3u8(\?|$)/i.test(segUrl)) {
-      const subText = await fetchSportsHtmlHop(segUrl, referer);
-      if (subText.includes('#EXTM3U')) {
-        return verifyM3u8HasCleanVideoFrame(subText, segUrl, referer);
-      }
-      return false;
-    }
-
-    const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), 4200);
-    const chunks: Buffer[] = [];
-    let totalBytes = 0;
-
-    try {
-      const resp = await streamingFetch(segUrl, {
-        headers: {
-          Referer: referer,
-          'User-Agent': CHROME_UA,
-          Range: 'bytes=0-520000',
-        },
-        signal: ctrl.signal,
-      });
-      if (!resp.ok || !resp.body) {
-        clearTimeout(timer);
-        liveFrameHealthCache.set(m3uUrl, false);
-        return false;
-      }
-
-      const reader = resp.body.getReader();
-      while (totalBytes < 520_000) {
-        const { done, value } = await reader.read();
-        if (done || !value) break;
-        chunks.push(Buffer.from(value));
-        totalBytes += value.byteLength;
-      }
-      ctrl.abort();
-    } catch {
-      // Partial buffer already collected before abort is expected
-    } finally {
-      clearTimeout(timer);
-    }
-
-    const sampleBuf = Buffer.concat(chunks);
-    if (sampleBuf.length < 4_096) {
-      liveFrameHealthCache.set(m3uUrl, false);
-      return false;
-    }
-
-    const hasMpegTsSync =
-      (sampleBuf[0] === 0x47 && sampleBuf.length > 188 && sampleBuf[188] === 0x47) ||
-      sampleBuf.indexOf(0x47) !== -1;
-    const hasMp4Box =
-      sampleBuf.includes(Buffer.from('ftyp')) || sampleBuf.includes(Buffer.from('moof'));
-    if (!hasMpegTsSync && !hasMp4Box) {
-      liveFrameHealthCache.set(m3uUrl, false);
-      return false;
-    }
-
-    let ffmpegSpawnFailed = false;
-    let ffmpegExitCode: number | null = null;
-    let ffmpegStderr = '';
-    const rawFrame = await new Promise<Buffer>((resolve) => {
-      const ff = spawn(FFMPEG_BIN, [
-        '-hide_banner',
-        '-loglevel',
-        'error',
-        '-i',
-        'pipe:0',
-        '-vf',
-        'scale=160:90',
-        '-frames:v',
-        '1',
-        '-f',
-        'rawvideo',
-        '-pix_fmt',
-        'rgb24',
-        'pipe:1',
-      ]);
-      const outChunks: Buffer[] = [];
-      const errChunks: Buffer[] = [];
-      const killTimer = setTimeout(() => {
-        try {
-          ff.kill('SIGKILL');
-        } catch {
-          // ignore
-        }
-      }, 2500);
-      ff.stdout.on('data', (c: Buffer) => outChunks.push(c));
-      ff.stderr.on('data', (c: Buffer) => errChunks.push(c));
-      ff.on('error', () => {
-        ffmpegSpawnFailed = true;
-        clearTimeout(killTimer);
-        resolve(Buffer.alloc(0));
-      });
-      ff.on('close', (code) => {
-        ffmpegExitCode = code;
-        ffmpegStderr = Buffer.concat(errChunks).toString('utf8');
-        clearTimeout(killTimer);
-        resolve(Buffer.concat(outChunks));
-      });
-      ff.stdin.on('error', () => {});
-      ff.stdin.end(sampleBuf);
-    });
-
-    const expectedBytes = 160 * 90 * 3;
-    if (ffmpegSpawnFailed || rawFrame.length < expectedBytes) {
-      liveFrameHealthCache.set(m3uUrl, false);
-      return false;
-    }
-
-    const fatalH264SliceError =
-      /deblocking_filter_idc|reference overflow|decode_slice_header error|cabac_init_idc|Missing reference picture/i.test(
-        ffmpegStderr
-      );
-    if (ffmpegExitCode !== 0 && fatalH264SliceError) {
-      liveFrameHealthCache.set(m3uUrl, false);
-      return false;
-    }
-
-    const uniqueBytes = new Set(rawFrame).size;
-    if (uniqueBytes <= 4) {
-      // Flat uniform uninitialized buffer (e.g. 129,129,129 grey or 0,76,0 green macroblock buffer)
-      liveFrameHealthCache.set(m3uUrl, false);
-      return false;
-    }
-
-    const totalPixels = 160 * 90;
-    const bottomStartY = 45;
-    const bottomPixels = 160 * (90 - bottomStartY);
-    let decoderGreenAll = 0;
-    let decoderGreenBottom = 0;
-
-    for (let y = 0; y < 90; y++) {
-      for (let x = 0; x < 160; x++) {
-        const idx = (y * 160 + x) * 3;
-        const r = rawFrame[idx];
-        const g = rawFrame[idx + 1];
-        const b = rawFrame[idx + 2];
-
-        const isBrightGreen = g > 90 && r < 50 && b < 50 && g > r + 45 && g > b + 45;
-        const isDarkGreen = g > 35 && r < 40 && b < 40 && g > r + 15 && g > b + 15;
-        if (isBrightGreen || isDarkGreen) {
-          decoderGreenAll++;
-          if (y >= bottomStartY) decoderGreenBottom++;
-        }
-      }
-    }
-
-    const greenAllRatio = decoderGreenAll / totalPixels;
-    const greenBottomRatio = decoderGreenBottom / bottomPixels;
-    const isClean = greenBottomRatio < 0.18 && greenAllRatio < 0.20;
-
-    liveFrameHealthCache.set(m3uUrl, isClean);
-    return isClean;
-  } catch {
-    return false;
-  }
-}
-
 export async function extractLiveSportsHlsDirect(
   initialUrl: string
 ): Promise<{
@@ -290,6 +111,15 @@ export async function extractLiveSportsHlsDirect(
         const refOrigin = new URL(currentUrl).origin + '/';
         const checkM3u = await fetchSportsHtmlHop(streamXhdM3u, refOrigin);
         if (checkM3u.includes('#EXTM3U')) {
+          const frameOk = await verifyM3u8HasCleanVideoFrame(checkM3u, streamXhdM3u, refOrigin);
+          if (!frameOk) {
+            return {
+              streamUrl: '',
+              referer: refOrigin,
+              isDirectMp4: false,
+              isBrokenGreenFeed: true,
+            };
+          }
           return {
             streamUrl: streamXhdM3u,
             referer: refOrigin,
@@ -306,19 +136,30 @@ export async function extractLiveSportsHlsDirect(
       const rawCandidate: string = cfg?.stream_url_nop2p || cfg?.stream_url || '';
       if (rawCandidate) {
         const origin = new URL(currentUrl).origin;
-        const candidateTargets: { url: string; ref: string }[] = [
-          rawCandidate.startsWith('http')
-            ? {
-                url: `${origin}/playstream.php?stream_tv=${Buffer.from(rawCandidate).toString('base64')}`,
+        const b64Std = Buffer.from(rawCandidate).toString('base64');
+        const b64Url = Buffer.from(rawCandidate).toString('base64url');
+        const candidateTargets: { url: string; ref: string }[] = rawCandidate.startsWith('http')
+          ? [
+              {
+                url: `${origin}/playstream.php?stream_tv=${b64Std}`,
                 ref: currentUrl,
-              }
-            : { url: new URL(rawCandidate, currentUrl).href, ref: currentUrl },
-        ];
+              },
+              ...(b64Url !== b64Std
+                ? [{ url: `${origin}/playstream.php?stream_tv=${b64Url}`, ref: currentUrl }]
+                : []),
+            ]
+          : [{ url: new URL(rawCandidate, currentUrl).href, ref: currentUrl }];
 
         if (!origin.includes('pig.footunder.online') && rawCandidate.startsWith('http')) {
           candidateTargets.push({
-            url: `https://pig.footunder.online/playstream.php?stream_tv=${Buffer.from(rawCandidate).toString('base64')}`,
+            url: `https://pig.footunder.online/playstream.php?stream_tv=${b64Std}`,
             ref: 'https://pig.footunder.online/playstream.php',
+          });
+        }
+        if (rawCandidate.startsWith('http') && /\.m3u8(\?|$)/i.test(rawCandidate)) {
+          candidateTargets.push({
+            url: rawCandidate,
+            ref: currentUrl,
           });
         }
 

@@ -1,0 +1,17 @@
+Actúa como Arquitecto de Software Senior y Desarrollador Full-Stack experto en streaming de vídeo, TV en directo y aplicaciones deportivas con React, TypeScript y Node.js. 
+
+Necesito que implementes y mantengas las siguientes especificaciones técnicas y funcionales en la aplicación de streaming y deportes:
+
+1. CORRECCIÓN DEFINITIVA DE PANTALLA VERDE Y DECODIFICACIÓN H.264
+- Implementar validación estricta de tramas H.264 en el servidor (extractor de streams deportivos) para detectar y descartar automáticamente buffers corruptos, tramas planas en gris/verde (#005200) o con cabeceras de slice fuera de rango.
+- Forzar la conmutación automática e instantánea a pistas satélite 1080p limpias y verificadas para evitar cuelgues o pantallas verdes en dispositivos móviles (Android Chrome).
+
+2. PRIORIZACIÓN DE DAZN SOBRE MOVISTAR Y SINCRONIZACIÓN DE FÚTBOL ESPAÑOL
+- Dar preferencia absoluta a los canales y emisiones de DAZN (DAZN LaLiga, DAZN 1, DAZN 2, etc.) por delante de Movistar en las retransmisiones de LaLiga EA Sports, UEFA Champions League y Premier League.
+- Asegurar que los partidos de los equipos principales (FC Barcelona y Real Madrid), así como toda la Champions League, Premier League y Liga de Naciones, aparezcan destacados y en las primeras posiciones del calendario de FútbolTV.
+
+3. ATAJOS RÁPIDOS Y NAVEGACIÓN DIRECTA EN EL CALENDARIO DE PARTIDOS
+- Incluir una barra superior de atajos rápidos por equipos y competiciones (Barça, Real Madrid, Champions, Premier, LaLiga) que filtre el calendario de forma inmediata al hacer clic.
+- Permitir que al seleccionar cualquier partido del calendario o de los atajos, se despliegue directamente el selector de canales oficiales en español (con indicador de calidad 1080p y distintivo ES) para reproducir el partido al instante.
+
+Sigue rigurosamente las mejores prácticas de arquitectura de software, manteniendo cada archivo por debajo de 700 líneas de código y asegurando una interfaz de usuario limpia y con experiencia UX perfecta.
