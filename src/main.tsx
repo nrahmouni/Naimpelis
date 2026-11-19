@@ -31,30 +31,53 @@ try {
     });
   }
 
-  // Register Service Worker with non-disruptive prompt-to-update banner
-  if ('serviceWorker' in navigator && import.meta.env.PROD) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker
-        .register('/sw.js', { scope: '/' })
-        .then((reg) => {
-          if (reg.waiting) {
-            useAppStore.getState().setSwUpdate({ waitingWorker: reg.waiting });
-          }
-          reg.addEventListener('updatefound', () => {
-            const nextWorker = reg.installing;
-            if (!nextWorker) return;
-            nextWorker.addEventListener('statechange', () => {
-              if (nextWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                useAppStore.getState().setSwUpdate({ waitingWorker: nextWorker });
-              }
+  // Register Service Worker in production only; unregister any stale dev SW in dev mode
+  if ('serviceWorker' in navigator) {
+    if (import.meta.env.PROD) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker
+          .register('/sw.js', { scope: '/' })
+          .then((reg) => {
+            if (reg.waiting) {
+              useAppStore.getState().setSwUpdate({ waitingWorker: reg.waiting });
+            }
+            reg.addEventListener('updatefound', () => {
+              const nextWorker = reg.installing;
+              if (!nextWorker) return;
+              nextWorker.addEventListener('statechange', () => {
+                if (nextWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                  useAppStore.getState().setSwUpdate({ waitingWorker: nextWorker });
+                }
+              });
             });
+          })
+          .catch(() => {
+            // Graceful fallback when running outside HTTPS/PWA scope
           });
+      });
+    } else {
+      navigator.serviceWorker
+        .getRegistrations()
+        .then((regs) => {
+          for (const reg of regs) {
+            void reg.unregister();
+          }
         })
-        .catch(() => {
-          // Graceful fallback when running outside HTTPS/PWA scope
-        });
-    });
+        .catch(() => {});
+    }
   }
+  // Case A Google Maps quota & auth circuit-breaker listener
+  (window as Window & { gm_authFailure?: () => void }).gm_authFailure = () => {
+    window.dispatchEvent(new Event('gmp-quota-exceeded'));
+  };
+  const origConsoleError = console.error;
+  console.error = (...args: unknown[]) => {
+    const joined = args.map((a) => (typeof a === 'string' ? a : String(a ?? ''))).join(' ');
+    if (/OverQuotaMapError|QuotaExceededError|RESOURCE_EXHAUSTED|429.*maps|maps.*quota/i.test(joined)) {
+      window.dispatchEvent(new Event('gmp-quota-exceeded'));
+    }
+    origConsoleError.apply(console, args);
+  };
 } catch {
   // ignore storage/SW unavailability in restricted WebViews
 }

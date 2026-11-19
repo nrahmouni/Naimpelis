@@ -61,19 +61,27 @@ describe('Cross-Platform Version Control & Google TV 10-Foot UI', () => {
   });
 
   it('serves valid ES5 JavaScript in public/tv-receiver.html with D-Pad Hub + Pairing + OTA sync', () => {
-    const htmlPath = path.resolve(process.cwd(), 'public', 'tv-receiver.html');
+    const publicDir = path.resolve(process.cwd(), 'public');
+    const htmlPath = path.join(publicDir, 'tv-receiver.html');
     const html = fs.readFileSync(htmlPath, 'utf8');
 
-    expect(html).toContain('id="tv-hub-screen"');
-    expect(html).toContain('id="pairing-screen"');
-    expect(html).toContain('id="tv-series-modal"');
-    expect(html).toContain('/api/app/latest?platform=tv');
-    expect(html).toContain('/api/catalog/latest-releases');
-    expect(html).toContain('/api/catalog/tv/');
-    expect(html).toContain('moveFocusDirection');
+    const scriptMatches = Array.from(html.matchAll(/<script\s+src="(\/tv\/[^"]+\.js)"\s*><\/script>/gi));
+    expect(scriptMatches.length).toBeGreaterThanOrEqual(5);
 
-    const match = html.match(/<script>\s*([\s\S]*?)<\/script>\s*<\/body>/i);
-    expect(match?.[1]).toBeTruthy();
-    expect(() => new vm.Script(match![1])).not.toThrow();
+    const jsSources = scriptMatches.map((m) => {
+      const scriptFile = path.join(publicDir, m[1].replace(/^\//, ''));
+      const code = fs.readFileSync(scriptFile, 'utf8');
+      expect(() => new vm.Script(code)).not.toThrow();
+      return code;
+    });
+
+    const combined = `${html}\n${jsSources.join('\n')}`;
+    expect(combined).toContain('id="tv-hub-screen"');
+    expect(combined).toContain('id="pairing-screen"');
+    expect(combined).toContain('id="tv-series-modal"');
+    expect(combined).toContain('/api/app/latest?platform=tv');
+    expect(combined).toContain('/api/catalog/latest-releases');
+    expect(combined).toContain('/api/catalog/tv/');
+    expect(combined).toContain('moveFocusDirection');
   });
 });

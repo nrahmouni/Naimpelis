@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import type { User } from 'firebase/auth';
+import { auth } from '../firebase';
 import type {
   CatalogMovie,
   CloudSavedRoom,
@@ -9,12 +10,19 @@ import type {
 } from '../types';
 import type { CatalogSection } from '../components/MediaCatalogHub';
 import {
+  checkGoogleRedirectSignInResult,
   deleteCloudWatchHistoryItem,
   ensureCloudUserProfile,
+  fetchSqlAccountState,
   migrateLocalStateToCloud,
   subscribeAuthState,
   subscribeUserCloudCollections,
+  toCloudUserLike,
 } from '../services/userCloudSync';
+import {
+  getStoredCloudSession,
+  subscribeCloudSession,
+} from '../utils/cloudSession';
 import {
   deduplicateWatchlist,
   getFavoriteChannels,
@@ -56,6 +64,7 @@ export function useCloudSyncSubscriptions(params: {
   setWatchlist: React.Dispatch<React.SetStateAction<CatalogMovie[]>>;
   setFavoriteChannels: (channels: FavoriteChannelItem[]) => void;
   setSavedFriends: (friends: SavedFriend[]) => void;
+  onRedirectAuthError?: (errorCode: string, hostname: string) => void;
 }) {
   const {
     savedRoomsCacheKey,
@@ -79,14 +88,24 @@ export function useCloudSyncSubscriptions(params: {
     setWatchlist,
     setFavoriteChannels,
     setSavedFriends,
+    onRedirectAuthError,
   } = params;
 
   useEffect(() => {
     let detachCloudListeners: (() => void) | null = null;
     let migrationTimer: ReturnType<typeof setTimeout> | null = null;
     let active = true;
+    let latestFirebaseUser: User | null = auth.currentUser;
 
-    const unsubAuth = subscribeAuthState(async (user) => {
+    // Resolve any pending Google signInWithRedirect result cleanly on app boot
+    void checkGoogleRedirectSignInResult().then((res) => {
+      if (!active) return;
+      if (res.errorCode) {
+        onRedirectAuthError?.(res.errorCode, res.hostname || '');
+      }
+    });
+
+    const handleEffectiveSessionChange = async () => {
       if (detachCloudListeners) {
         detachCloudListeners();
         detachCloudListeners = null;
@@ -97,9 +116,19 @@ export function useCloudSyncSubscriptions(params: {
       }
 
       if (!active) return;
-      setAuthUser(user);
 
-      if (!user || !user.emailVerified) {
+      const cloudSess = getStoredCloudSession();
+      const verifiedFbUser =
+        latestFirebaseUser && !latestFirebaseUser.isAnonymous ? latestFirebaseUser : null;
+      const effectiveUser: User | null = verifiedFbUser
+        ? verifiedFbUser
+        : cloudSess?.cloudToken
+        ? toCloudUserLike(cloudSess)
+        : null;
+
+      setAuthUser(effectiveUser);
+
+      if (!effectiveUser) {
         setAuthLoading(false);
         setSavedRooms([]);
         try {
@@ -115,16 +144,80 @@ export function useCloudSyncSubscriptions(params: {
       const localChannelsSnapshot = getFavoriteChannels();
       const localFriendsSnapshot = getSavedFriends();
 
+      // 1. Hydrate from Cloud SQL PostgreSQL (works for Google Firebase, Chrome Bridge & 6-Char Link Code)
+      const sqlState = await fetchSqlAccountState();
+      if (!active) return;
+
+      if (sqlState) {
+        if (sqlState.profile && (!getStoredProfile().isCustomized || effectiveUser.emailVerified)) {
+          saveStoredProfile(sqlState.profile, true);
+          setProfile(sqlState.profile);
+        }
+        if (sqlState.watchlist.length > 0) {
+          setWatchlist((prev) => {
+            const combined = [...sqlState.watchlist, ...prev];
+            return saveWatchlist(deduplicateWatchlist(combined));
+          });
+        }
+        if (sqlState.favoriteChannels.length > 0) {
+          const seen = new Set<string>();
+          const mergedChannels = [...sqlState.favoriteChannels, ...localChannelsSnapshot].filter(
+            (ch) => {
+              if (seen.has(ch.favId)) return false;
+              seen.add(ch.favId);
+              return true;
+            }
+          );
+          setFavoriteChannels(mergedChannels);
+          saveFavoriteChannels(mergedChannels);
+        }
+        if (sqlState.watchHistory.length > 0) {
+          const seenHist = new Set<string>();
+          const mergedHist = [...sqlState.watchHistory, ...localHistorySnapshot].filter((h) => {
+            if (seenHist.has(h.id)) return false;
+            seenHist.add(h.id);
+            return true;
+          });
+          setWatchHistory(mergedHist);
+          saveWatchHistory(mergedHist);
+        }
+        if (sqlState.friends.length > 0) {
+          const seenFr = new Set<string>();
+          const mergedFr = [...sqlState.friends, ...localFriendsSnapshot].filter((f) => {
+            if (seenFr.has(f.friendId)) return false;
+            seenFr.add(f.friendId);
+            return true;
+          });
+          setSavedFriends(mergedFr);
+          saveFriendsList(mergedFr);
+        }
+        if (sqlState.savedRooms.length > 0) {
+          setSavedRooms(sqlState.savedRooms);
+          try {
+            localStorage.setItem(savedRoomsCacheKey, JSON.stringify(sqlState.savedRooms));
+          } catch {
+            // ignore
+          }
+          sqlState.savedRooms.forEach((cr) => {
+            if (cr.hasPin && cr.pinCode) {
+              rememberSessionPin(cr.roomCode, cr.pinCode);
+            }
+          });
+        }
+      }
+
       let resolvedProfile = getStoredProfile();
       try {
-        const cloudProfile = await ensureCloudUserProfile(user, resolvedProfile);
+        const cloudProfile = await ensureCloudUserProfile(effectiveUser, resolvedProfile);
         if (!active) return;
         resolvedProfile = cloudProfile;
-        saveStoredProfile(cloudProfile, true);
+        saveStoredProfile(cloudProfile, resolvedProfile.isCustomized !== false);
         setProfile(cloudProfile);
-        setShowGuestPopup(false);
+        if (effectiveUser.emailVerified) {
+          setShowGuestPopup(false);
+        }
       } catch {
-        // Error already logged by handleFirestoreError
+        // Error already logged cleanly
       } finally {
         if (active) setAuthLoading(false);
       }
@@ -132,6 +225,7 @@ export function useCloudSyncSubscriptions(params: {
       if (!active) return;
 
       if (
+        effectiveUser.emailVerified &&
         !inRoomRef.current &&
         !manualLobbyStayRef.current &&
         !isTvPairLobbyRef.current
@@ -146,7 +240,7 @@ export function useCloudSyncSubscriptions(params: {
           generateShortRoomCode(4);
         const firstName =
           resolvedProfile.name?.split(' ')[0] ||
-          user.displayName?.split(' ')[0] ||
+          effectiveUser.displayName?.split(' ')[0] ||
           'Cine';
         const targetRoomTitle =
           primaryCloudRoom?.roomName ||
@@ -160,55 +254,59 @@ export function useCloudSyncSubscriptions(params: {
         setInRoom(true);
       }
 
-      detachCloudListeners = subscribeUserCloudCollections(user.uid, {
-        onWatchHistory: (cloudItems) => {
-          const cleanItems = cloudItems.filter((item) => {
-            const isArcade =
-              String(item.movidyUrl || '').startsWith('arcade://') ||
-              String(item.bingetrixUrl || '').startsWith('arcade://') ||
-              String(item.id || '').startsWith('arcade');
-            if (isArcade) {
-              deleteCloudWatchHistoryItem(item.id).catch(() => {});
-              return false;
-            }
-            return true;
-          });
-          setWatchHistory(cleanItems);
-          saveWatchHistory(cleanItems);
-        },
-        onFavorites: (cloudWatchlist, cloudChannels) => {
-          setWatchlist((prev) => {
-            const merged = cloudWatchlist.map((cw) => {
-              const localMatch = prev.find((p) => isSameCatalogItem(p, cw));
-              return localMatch ? mergeCatalogItemMetadata(localMatch, cw) : cw;
+      // 2. Attach Firestore real-time listeners when Firebase SDK session is verified
+      if (verifiedFbUser && verifiedFbUser.emailVerified) {
+        detachCloudListeners = subscribeUserCloudCollections(verifiedFbUser.uid, {
+          onWatchHistory: (cloudItems) => {
+            const cleanItems = cloudItems.filter((item) => {
+              const isArcade =
+                String(item.movidyUrl || '').startsWith('arcade://') ||
+                String(item.bingetrixUrl || '').startsWith('arcade://') ||
+                String(item.id || '').startsWith('arcade');
+              if (isArcade) {
+                deleteCloudWatchHistoryItem(item.id).catch(() => {});
+                return false;
+              }
+              return true;
             });
-            return saveWatchlist(deduplicateWatchlist(merged));
-          });
-          setFavoriteChannels(cloudChannels);
-          saveFavoriteChannels(cloudChannels);
-        },
-        onSavedRooms: (cloudRooms) => {
-          setSavedRooms(cloudRooms);
-          try {
-            localStorage.setItem(
-              savedRoomsCacheKey,
-              JSON.stringify(cloudRooms)
-            );
-          } catch {
-            // ignore
-          }
-          cloudRooms.forEach((cr) => {
-            if (cr.hasPin && cr.pinCode) {
-              rememberSessionPin(cr.roomCode, cr.pinCode);
+            setWatchHistory(cleanItems);
+            saveWatchHistory(cleanItems);
+          },
+          onFavorites: (cloudWatchlist, cloudChannels) => {
+            setWatchlist((prev) => {
+              const merged = cloudWatchlist.map((cw) => {
+                const localMatch = prev.find((p) => isSameCatalogItem(p, cw));
+                return localMatch ? mergeCatalogItemMetadata(localMatch, cw) : cw;
+              });
+              return saveWatchlist(deduplicateWatchlist(merged));
+            });
+            setFavoriteChannels(cloudChannels);
+            saveFavoriteChannels(cloudChannels);
+          },
+          onSavedRooms: (cloudRooms) => {
+            setSavedRooms(cloudRooms);
+            try {
+              localStorage.setItem(
+                savedRoomsCacheKey,
+                JSON.stringify(cloudRooms)
+              );
+            } catch {
+              // ignore
             }
-          });
-        },
-        onFriends: (cloudFriends) => {
-          setSavedFriends(cloudFriends);
-          saveFriendsList(cloudFriends);
-        },
-      });
+            cloudRooms.forEach((cr) => {
+              if (cr.hasPin && cr.pinCode) {
+                rememberSessionPin(cr.roomCode, cr.pinCode);
+              }
+            });
+          },
+          onFriends: (cloudFriends) => {
+            setSavedFriends(cloudFriends);
+            saveFriendsList(cloudFriends);
+          },
+        });
+      }
 
+      // 3. Merge guest local history / favorites / channels / friends into Cloud (both SQL & Firestore)
       migrationTimer = setTimeout(() => {
         migrateLocalStateToCloud({
           localHistory: localHistorySnapshot,
@@ -217,11 +315,21 @@ export function useCloudSyncSubscriptions(params: {
           localFriends: localFriendsSnapshot,
         }).catch(() => {});
       }, 900);
+    };
+
+    const unsubAuth = subscribeAuthState((fbUser) => {
+      latestFirebaseUser = fbUser;
+      void handleEffectiveSessionChange();
+    });
+
+    const unsubCloudSess = subscribeCloudSession(() => {
+      void handleEffectiveSessionChange();
     });
 
     return () => {
       active = false;
       unsubAuth();
+      unsubCloudSess();
       if (detachCloudListeners) detachCloudListeners();
       if (migrationTimer) clearTimeout(migrationTimer);
     };

@@ -31,13 +31,6 @@ export interface ChapasPhysicsStepResult {
   postHitCount: number;
 }
 
-const GOALPOSTS = [
-  { x: CHAPAS_GOAL_LEFT, y: CHAPAS_PITCH_TOP },
-  { x: CHAPAS_GOAL_RIGHT, y: CHAPAS_PITCH_TOP },
-  { x: CHAPAS_GOAL_LEFT, y: CHAPAS_PITCH_BOTTOM },
-  { x: CHAPAS_GOAL_RIGHT, y: CHAPAS_PITCH_BOTTOM },
-];
-
 export function stepChapasPhysicsFrame(
   caps: ChapasCap[],
   ball: ChapasBall
@@ -143,7 +136,13 @@ export function stepChapasPhysicsFrame(
 
     // 4. Ball vs Goalposts (cylindrical posts)
     const minPostDist = CHAPAS_BALL_RADIUS + CHAPAS_GOALPOST_RADIUS;
-    for (const post of GOALPOSTS) {
+    const goalposts = [
+      { x: CHAPAS_GOAL_LEFT, y: CHAPAS_PITCH_TOP },
+      { x: CHAPAS_GOAL_RIGHT, y: CHAPAS_PITCH_TOP },
+      { x: CHAPAS_GOAL_LEFT, y: CHAPAS_PITCH_BOTTOM },
+      { x: CHAPAS_GOAL_RIGHT, y: CHAPAS_PITCH_BOTTOM },
+    ];
+    for (const post of goalposts) {
       const dx = ball.x - post.x;
       const dy = ball.y - post.y;
       const dist = Math.hypot(dx, dy);

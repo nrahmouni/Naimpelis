@@ -1,9 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { Lock, ArrowRight, LogOut, AlertCircle } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { triggerHaptic } from '../utils/haptics';
 import { pickLang } from '../utils/i18n';
 import { useFocusTrap } from '../utils/useFocusTrap';
+import { useBackInterceptor } from '../lib/backInterceptor';
 
 interface RoomPinPromptModalProps {
   isOpen: boolean;
@@ -27,8 +28,13 @@ export const RoomPinPromptModal: React.FC<RoomPinPromptModalProps> = ({
   const [pin, setPin] = useState<string>('');
   const inputRef = useRef<HTMLInputElement | null>(null);
   const dialogRef = useRef<HTMLDivElement | null>(null);
+  const pinBackId = useId();
 
   useFocusTrap(isOpen, onLeaveProtectedRoom, dialogRef);
+  useBackInterceptor(isOpen, `room-pin-${pinBackId}`, onLeaveProtectedRoom, {
+    priority: 50,
+    lockScroll: true,
+  });
 
   useEffect(() => {
     if (isOpen) {

@@ -1,0 +1,396 @@
+/* =================================================================== */
+/* POSTER CARDS, LIVE BROADCAST CARDS, SEARCH & SERIES/VOICE MODALS    */
+/* =================================================================== */
+.tv-card {
+  position: relative;
+  width: 174px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+  margin-right: 16px;
+  margin-bottom: 16px;
+  border-radius: 15px;
+  background: #141419;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  cursor: pointer;
+  text-align: left;
+  padding: 0;
+  color: #ffffff;
+  -webkit-transition: -webkit-transform 0.15s ease, border-color 0.15s ease;
+  transition: transform 0.15s ease, border-color 0.15s ease;
+}
+.tv-card:focus,
+.tv-card:hover {
+  -webkit-transform: scale(1.055);
+  transform: scale(1.055);
+  border-color: #9146ff;
+  z-index: 5;
+}
+.tv-card-poster-wrap {
+  position: relative;
+  width: 100%;
+  height: 248px;
+  background: linear-gradient(155deg, #211d30 0%, #121218 100%);
+  overflow: hidden;
+}
+.tv-card-poster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.tv-card-poster-fallback {
+  display: none;
+  width: 100%;
+  height: 100%;
+  padding: 16px;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 15px;
+  font-weight: 800;
+  color: #e4e4ec;
+  background: linear-gradient(155deg, #27203d 0%, #111116 100%);
+}
+.tv-card-poster-grad {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 64px;
+  background: linear-gradient(to top, rgba(20, 20, 25, 0.96) 0%, rgba(20, 20, 25, 0) 100%);
+  pointer-events: none;
+}
+.tv-card-body { padding: 9px 12px 12px 12px; }
+.tv-card-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #ffffff;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv-card-meta {
+  font-size: 12px;
+  color: #a6a6b4;
+  margin-top: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Network-Branded Broadcast Cards for Live TV & Sports */
+.tv-card.channel-card {
+  width: 248px;
+  background: #10121c;
+  border-color: rgba(255, 255, 255, 0.11);
+}
+.tv-channel-stage {
+  position: relative;
+  width: 100%;
+  height: 128px;
+  padding: 11px 13px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  overflow: hidden;
+}
+.tv-channel-stage-top {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+}
+.tv-channel-dial {
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 11px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.92);
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: rgba(8, 10, 16, 0.48);
+}
+.tv-channel-live {
+  display: -webkit-inline-flex;
+  display: inline-flex;
+  -webkit-align-items: center;
+  align-items: center;
+  font-size: 10px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.05em;
+  padding: 2px 7px;
+  border-radius: 7px;
+  background: rgba(8, 10, 16, 0.48);
+}
+.tv-live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 999px;
+  background: #ff3b30;
+  box-shadow: 0 0 8px #ff3b30;
+  margin-right: 5px;
+}
+.tv-channel-logo-stage {
+  height: 68px;
+  width: 100%;
+  border-radius: 11px;
+  background: rgba(8, 10, 16, 0.56);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  padding: 8px 14px;
+  overflow: hidden;
+}
+.tv-channel-logo-img {
+  max-width: 100%;
+  max-height: 50px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  display: block;
+  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.6));
+}
+.tv-channel-mark {
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+  color: #ffffff;
+  text-shadow: 0 4px 16px rgba(0, 0, 0, 0.55);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tv-channel-epg-bar {
+  width: 100%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.14);
+  border-radius: 99px;
+  overflow: hidden;
+  margin-top: 8px;
+}
+.tv-channel-epg-fill { height: 100%; background: #9146ff; }
+.tv-channel-epg-now {
+  font-size: 12px;
+  color: #d4d4df;
+  margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Search Panel, Voice Modal & Series Episode Modal */
+#tv-voice-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(7, 8, 13, 0.94);
+  z-index: 45;
+  padding: 28px 48px;
+  overflow-y: auto;
+}
+.voice-modal-card {
+  max-width: 1060px;
+  margin: 0 auto;
+  border-radius: 22px;
+  background: #10121c;
+  border: 1px solid rgba(145, 70, 255, 0.42);
+  padding: 24px 28px;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.92), 0 0 60px rgba(145, 70, 255, 0.18);
+}
+.voice-modal-head {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+.voice-reply-banner {
+  padding: 16px 20px;
+  border-radius: 16px;
+  background: rgba(145, 70, 255, 0.14);
+  border: 1px solid rgba(191, 148, 255, 0.35);
+  font-size: 19px;
+  font-weight: 800;
+  color: #ffffff;
+  margin-bottom: 16px;
+}
+.tv-search-panel {
+  padding: 18px 22px;
+  border-radius: 18px;
+  background: #131318;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  margin-bottom: 20px;
+}
+.tv-search-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.tv-search-input {
+  -webkit-flex: 1;
+  flex: 1;
+  height: 48px;
+  padding: 0 18px;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: #09090c;
+  color: #ffffff;
+  font-size: 16px;
+  font-weight: 600;
+  margin-right: 10px;
+}
+.tv-chips-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+}
+.tv-chip-btn {
+  height: 38px;
+  padding: 0 14px;
+  margin: 4px 7px 4px 0;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #efeff1;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.tv-chip-btn:focus,
+.tv-chip-btn:hover {
+  background: #9146ff;
+  border-color: #ffffff;
+}
+#tv-series-modal {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(6, 6, 9, 0.94);
+  z-index: 40;
+  padding: 32px 48px;
+  overflow-y: auto;
+}
+.series-modal-card {
+  max-width: 1120px;
+  margin: 0 auto;
+  border-radius: 22px;
+  background: #131318;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  padding: 26px 30px;
+  box-shadow: 0 30px 90px rgba(0, 0, 0, 0.92);
+}
+.series-modal-top {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: flex-start;
+  align-items: flex-start;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+.series-modal-info {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: flex-start;
+  align-items: flex-start;
+  -webkit-flex: 1;
+  flex: 1;
+  margin-right: 16px;
+}
+.series-modal-poster {
+  width: 116px;
+  height: 170px;
+  border-radius: 14px;
+  object-fit: cover;
+  margin-right: 20px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+  background: #1d1d24;
+}
+.series-lang-row,
+.series-season-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.series-pill-btn {
+  height: 40px;
+  padding: 0 16px;
+  margin: 0 8px 8px 0;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e4e4e7;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.series-pill-btn.active {
+  background: #9146ff;
+  border-color: #ffffff;
+  color: #ffffff;
+}
+.series-episodes-grid {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 6px 4px;
+}
+.ep-tile-btn {
+  width: 31.8%;
+  margin: 0 1.5% 10px 0;
+  padding: 13px 15px;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.055);
+  color: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+.ep-tile-btn:focus,
+.ep-tile-btn:hover {
+  background: rgba(145, 70, 255, 0.36);
+  border-color: #ffffff;
+}
+.ep-tile-num {
+  font-size: 12px;
+  font-weight: 800;
+  color: #c6a2ff;
+  margin-bottom: 4px;
+}
+.ep-tile-title {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

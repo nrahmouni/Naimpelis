@@ -2,13 +2,14 @@ import React, { useEffect, useState } from 'react';
 import { User } from 'firebase/auth';
 import { motion } from 'motion/react';
 import {
-  RiffanArrowRightIcon,
-  RiffanClockIcon,
-  RiffanPlayIcon,
-  RiffanRoomKeyIcon,
-  RiffanSettingsGearIcon,
-  RiffanShuffleIcon,
-} from './ui/RiffanIcons';
+  ArrowRight,
+  Shuffle,
+  Play,
+  Clock,
+  Settings,
+  KeyRound,
+  Check,
+} from 'lucide-react';
 import { AppLanguage } from '../types';
 import { pickLang, formatRoomTitle } from '../utils/i18n';
 import {
@@ -51,6 +52,7 @@ interface LobbyScreenProps {
   onEnterRoom: (roomId: string, profile: StoredProfile, roomName?: string) => void;
   onOpenTvPairLobby?: () => void;
   onOpenAdsPage?: () => void;
+  onOpenLinkDevice?: () => void;
 }
 
 export const LobbyScreen: React.FC<LobbyScreenProps> = ({
@@ -68,6 +70,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onReplayIntro,
   onEnterRoom,
   onOpenTvPairLobby,
+  onOpenLinkDevice,
 }) => {
   const isDesktop = effectiveView === 'desktop';
   const [name, setName] = useState(
@@ -180,7 +183,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               en: 'Settings',
             })}
           >
-            <RiffanSettingsGearIcon size={20} animate="hover" />
+            <Settings className="w-5 h-5" />
           </IconButton>
         </header>
 
@@ -226,7 +229,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
             {recentRooms.length > 0 && (
               <div className="space-y-2 pb-4 border-b border-white/[0.07]">
                 <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
-                  <RiffanClockIcon size={14} animate="hover" />
+                  <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
                   <span>
                     {pickLang(lang, {
                       es: 'Continuar en tus salas',
@@ -250,7 +253,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       }}
                       className="scroll-snap-item min-h-12 px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] text-xs font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-[0.97] transition-all"
                     >
-                      <RiffanPlayIcon size={14} animate="hover" className="shrink-0" />
+                      <Play className="w-3.5 h-3.5 text-[#BF94FF] fill-current shrink-0" />
                       <span>{formatRoomChipName(room.name)}</span>
                     </button>
                   ))}
@@ -306,7 +309,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       en: 'Random name',
                     })}
                   >
-                    <RiffanShuffleIcon size={16} animate="hover" />
+                    <Shuffle className="w-4 h-4" />
                   </IconButton>
                 </div>
               </div>
@@ -324,14 +327,14 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     en: 'Enter',
                   })}
                 </span>
-                <RiffanArrowRightIcon size={17} tone="current" animate="hover" className="shrink-0" />
+                <ArrowRight className="w-4 h-4 shrink-0" />
               </PrimaryButton>
             </div>
 
             {/* Actions: Google & Join on same level, App Install below */}
             <div className="pt-3 border-t border-white/[0.07] space-y-3">
               <div className="grid grid-cols-2 gap-2 w-full">
-                {!authUser ? (
+                {!authUser || authUser.isAnonymous ? (
                   <button
                     type="button"
                     disabled={authLoading}
@@ -362,14 +365,23 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                     <span className="truncate">
                       {authLoading
                         ? pickLang(lang, { es: '...', ca: '...', en: '...' })
+                        : authUser?.isAnonymous
+                        ? pickLang(lang, { es: 'Vincular Google', ca: 'Vincular Google', en: 'Link Google' })
                         : pickLang(lang, { es: 'Google', ca: 'Google', en: 'Google' })}
                     </span>
                   </button>
                 ) : (
-                  <div className="min-h-11 px-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-[11px] font-semibold text-emerald-200 flex items-center justify-center gap-1.5 truncate">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0" />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      onOpenLinkDevice?.();
+                    }}
+                    className="min-h-11 px-3 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/18 border border-emerald-500/30 text-[11px] font-semibold text-emerald-200 flex items-center justify-center gap-1.5 truncate cursor-pointer transition-colors"
+                  >
+                    <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span className="truncate">{authUser.displayName || 'Google'}</span>
-                  </div>
+                  </button>
                 )}
 
                 <button
@@ -380,7 +392,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                   }}
                   className="min-h-11 px-3 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[11px] font-semibold text-[#BF94FF] hover:text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors truncate"
                 >
-                  <RiffanRoomKeyIcon size={15} animate="hover" className="shrink-0" />
+                  <KeyRound className="w-3.5 h-3.5 shrink-0" />
                   <span className="truncate">
                     {pickLang(lang, {
                       es: 'Unirme',
@@ -432,7 +444,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                       : 'bg-transparent hover:bg-white/[0.06] text-zinc-400 hover:text-white border-transparent'
                   }`}
                 >
-                  <FlagBadgeSvg code={item.flag} className="w-5 h-3.5 shrink-0" />
+                  <FlagBadgeSvg code={item.flag} className="w-4 h-3" />
                   <span>{item.label}</span>
                 </button>
               );
@@ -446,7 +458,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           onClose={() => setShowJoinSheet(false)}
           lang={lang}
           maxWidth="sm:max-w-sm"
-          icon={<RiffanRoomKeyIcon size={20} animate="always" />}
+          icon={<KeyRound className="w-5 h-5" />}
           title={pickLang(lang, {
             es: 'Unirme con código',
             ca: 'Unir-me amb codi',
@@ -479,7 +491,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
               <span>
                 {pickLang(lang, { es: 'Unirme', ca: 'Unir-me', en: 'Join' })}
               </span>
-              <RiffanArrowRightIcon size={16} animate="hover" />
+              <ArrowRight className="w-4 h-4" />
             </SecondaryButton>
           </form>
         </BottomSheet>
@@ -497,6 +509,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           onSignIn={onSignIn}
           onSignOut={onSignOut}
           onOpenTvPairLobby={onOpenTvPairLobby}
+          onOpenLinkDevice={onOpenLinkDevice}
         />
       </div>
     </div>

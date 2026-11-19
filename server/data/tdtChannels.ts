@@ -9,6 +9,8 @@ import { TDT_UK_SPORTS_CHANNELS } from './tdtUkSportsChannels.ts';
 import { TDT_AMERICAS_SPORTS_CHANNELS } from './tdtAmericasSportsChannels.ts';
 import { TDT_THEMATIC_AND_REGIONAL_CHANNELS } from './tdtThematicAndRegionalChannels.ts';
 import { INTERNATIONAL_TV_CHANNELS } from './internationalChannels.ts';
+import { INTERNATIONAL_CRICKET_AND_SPORTS_CHANNELS } from './internationalSportsAndCricket.ts';
+import { INTERNATIONAL_ELAHMAD_AND_ADRAR_CHANNELS } from './internationalElahmadAndAdrarChannels.ts';
 import { CHINESE_FOOTBALL_CHANNELS } from '../extractors/chineseSports.ts';
 
 export type { SpanishTdtChannelDef };
@@ -24,4 +26,6 @@ export const SPANISH_TDT_CHANNELS: SpanishTdtChannelDef[] = [
   ...TDT_AMERICAS_SPORTS_CHANNELS,
   ...TDT_THEMATIC_AND_REGIONAL_CHANNELS,
   ...INTERNATIONAL_TV_CHANNELS,
+  ...INTERNATIONAL_CRICKET_AND_SPORTS_CHANNELS,
+  ...INTERNATIONAL_ELAHMAD_AND_ADRAR_CHANNELS,
 ];

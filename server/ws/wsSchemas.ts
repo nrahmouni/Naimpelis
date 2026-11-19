@@ -47,6 +47,13 @@ export const wsSendChatSchema = z.object({
   roomId: roomIdSchema,
   text: z.string().trim().min(1).max(600),
   user: wsParticipantSchema.optional(),
+  replyTo: z
+    .object({
+      id: z.string().trim().min(1).max(120),
+      senderName: z.string().trim().min(1).max(40),
+      text: z.string().trim().min(1).max(200),
+    })
+    .optional(),
 });
 
 export const wsPinChatSchema = z.object({
@@ -393,6 +400,29 @@ export const wsBlackjackActionSchema = z.object({
   action: z.enum(['hit', 'stand', 'double', 'split']),
 });
 
+export const wsCinema3dEnterMoveSchema = z.object({
+  roomId: roomIdSchema,
+  x: z.number().min(-8).max(8).optional(),
+  y: z.number().min(0).max(6).optional(),
+  z: z.number().min(-6).max(10).optional(),
+  yaw: z.number().min(-Math.PI * 4).max(Math.PI * 4).optional(),
+  seatId: z.string().trim().max(24).nullable().optional(),
+  hasPopcorn: z.boolean().optional(),
+});
+
+export const wsCinema3dActionSchema = z.object({
+  roomId: roomIdSchema,
+  action: z.enum(['idle', 'eat_popcorn', 'throw_popcorn', 'wave', 'clap', 'cheer', 'say']),
+  text: z.string().trim().max(90).optional(),
+  hasPopcorn: z.boolean().optional(),
+});
+
+export const wsCinema3dInteractSchema = z.object({
+  roomId: roomIdSchema,
+  targetUserId: safeIdSchema,
+  kind: z.enum(['pass_popcorn', 'highfive', 'wave_at']),
+});
+
 export const wsEnvelopeSchema = z.object({
   type: z.string().trim().min(1).max(48),
   payload: z.record(z.string(), z.any()).optional().default({}),
@@ -429,7 +459,12 @@ const WS_EVENT_LIMITS: Record<string, { max: number; windowMs: number }> = {
   POKER_ACTION: { max: 25, windowMs: 5_000 },
   BLACKJACK_BET: { max: 40, windowMs: 5_000 },
   BLACKJACK_ACTION: { max: 25, windowMs: 5_000 },
-  __GLOBAL__: { max: 420, windowMs: 10_000 },
+  CINEMA3D_ENTER: { max: 15, windowMs: 10_000 },
+  CINEMA3D_MOVE: { max: 160, windowMs: 10_000 },
+  CINEMA3D_ACTION: { max: 35, windowMs: 5_000 },
+  CINEMA3D_INTERACT: { max: 25, windowMs: 5_000 },
+  CINEMA3D_LEAVE: { max: 15, windowMs: 10_000 },
+  __GLOBAL__: { max: 480, windowMs: 10_000 },
 };
 
 export class WsRateLimiter {

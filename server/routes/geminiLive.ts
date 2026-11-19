@@ -408,8 +408,15 @@ Reglas clave de herramientas:
             }
           },
           onerror: (err: unknown) => {
-            logger.warn({ err }, 'gemini_live_session_error');
-            sendJson(clientWs, { error: 'Gemini Live session error', fallback: true });
+            const msg = err instanceof Error ? err.message : String(err || '');
+            const isLimit = /429|RESOURCE_EXHAUSTED|spending\s*cap|quota/i.test(msg);
+            logger.warn({ isLimit, err }, 'gemini_live_session_error');
+            sendJson(clientWs, {
+              error: isLimit
+                ? 'Límite mensual de gasto o cuota alcanzado en AI Studio; activando modo voz local.'
+                : 'Gemini Live session error',
+              fallback: true,
+            });
           },
           onclose: () => {
             if (!isClosed && clientWs.readyState === WebSocket.OPEN) {
@@ -419,8 +426,15 @@ Reglas clave de herramientas:
         },
       });
     } catch (err) {
-      logger.warn({ err }, 'gemini_live_connect_failed');
-      sendJson(clientWs, { error: 'Unable to connect Gemini Live session', fallback: true });
+      const msg = err instanceof Error ? err.message : String(err || '');
+      const isLimit = /429|RESOURCE_EXHAUSTED|spending\s*cap|quota/i.test(msg);
+      logger.warn({ isLimit, err }, 'gemini_live_connect_failed');
+      sendJson(clientWs, {
+        error: isLimit
+          ? 'Límite mensual de gasto o cuota alcanzado en AI Studio; modo voz local activo.'
+          : 'Unable to connect Gemini Live session',
+        fallback: true,
+      });
       clientWs.close();
       return;
     }

@@ -19,6 +19,7 @@ import {
   toSportsMatch,
   type MatchSheetTab,
 } from './sports/FootballMatchboardParts';
+import { getLeaguePriorityRank, isPriorityTeamMatch } from './sports/FootballMatchboardHelpers';
 
 interface FootballMatchboardProps {
   lang: AppLanguage;
@@ -26,6 +27,7 @@ interface FootballMatchboardProps {
   onSearchQueryChange: (val: string) => void;
   langFilter?: 'all' | 'ZH';
   leagueFilter?: string;
+  brandFilter?: string;
   activeVideoRawUrl?: string;
   loadingItemId?: string | null;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
@@ -39,8 +41,10 @@ type StatusTab = 'live' | 'upcoming' | 'all';
 export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   lang,
   searchQuery,
+  onSearchQueryChange,
   langFilter = 'all',
   leagueFilter = '',
+  brandFilter = 'all',
   activeVideoRawUrl,
   loadingItemId,
   onPlaySportsMatch,
@@ -161,9 +165,31 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
         const hasZh = m.channels.some((c) => c.lang === 'ZH' || /中文/.test(c.label || ''));
         if (!hasZh) return false;
       }
+      if (brandFilter && brandFilter !== 'all') {
+        if (brandFilter === 'movistar') {
+          const isM =
+            m.spanishBroadcaster?.brand === 'movistar' ||
+            m.spanishBroadcaster?.brand === 'dazn_mplus' ||
+            m.channels.some((c) => /movistar|m\+/i.test(c.label || ''));
+          if (!isM) return false;
+        } else if (brandFilter === 'dazn') {
+          const isD =
+            m.spanishBroadcaster?.brand === 'dazn' ||
+            m.spanishBroadcaster?.brand === 'dazn_mplus' ||
+            m.channels.some((c) => /dazn/i.test(c.label || ''));
+          if (!isD) return false;
+        } else if (brandFilter === 'china_football') {
+          const hasZh = m.channels.some((c) => c.lang === 'ZH' || /中文/.test(c.label || ''));
+          if (!hasZh) return false;
+        }
+      }
       if (lf) {
-        const hayLeague = `${m.groupTitle} ${m.leagueSlug} ${m.regionName}`.toLowerCase();
-        if (lf === 'hypermotion') {
+        const hayLeague = `${m.groupTitle} ${m.leagueSlug} ${m.leagueName} ${m.regionName}`.toLowerCase();
+        if (lf === 'champions') {
+          if (!/champions|uefa\.champions|liga de campeones/i.test(hayLeague)) return false;
+        } else if (lf === 'laliga' || lf === 'esp.1') {
+          if (!/laliga|esp\.1|primera|ea sports/i.test(hayLeague)) return false;
+        } else if (lf === 'hypermotion') {
           if (!/hypermotion|segunda|laliga 2|esp\.2/.test(hayLeague)) return false;
         } else if (lf === 'europa') {
           if (!/europa league|uefa\.europa/.test(hayLeague)) return false;
@@ -181,7 +207,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
       }
       return true;
     });
-  }, [matches, statusTab, searchQuery, langFilter, leagueFilter]);
+  }, [matches, statusTab, searchQuery, langFilter, leagueFilter, brandFilter]);
 
   const groupedCompetitions = useMemo(() => {
     const groups: {
@@ -209,6 +235,31 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
       }
       grp.items.push(item);
     }
+
+    groups.sort((a, b) => {
+      const aLive = a.items.some((m) => m.statusState === 'live') ? 1000 : 0;
+      const bLive = b.items.some((m) => m.statusState === 'live') ? 1000 : 0;
+      const aItem = a.items[0];
+      const bItem = b.items[0];
+      const aRank = aLive + getLeaguePriorityRank(aItem?.leagueSlug || '', a.groupTitle, aItem?.homeTeam || '', aItem?.awayTeam || '');
+      const bRank = bLive + getLeaguePriorityRank(bItem?.leagueSlug || '', b.groupTitle, bItem?.homeTeam || '', bItem?.awayTeam || '');
+      return bRank - aRank;
+    });
+
+    for (const grp of groups) {
+      grp.items.sort((a, b) => {
+        if (a.statusState === 'live' && b.statusState !== 'live') return -1;
+        if (b.statusState === 'live' && a.statusState !== 'live') return 1;
+        const aPriority = isPriorityTeamMatch(a.homeTeam, a.awayTeam) ? 10 : 0;
+        const bPriority = isPriorityTeamMatch(b.homeTeam, b.awayTeam) ? 10 : 0;
+        if (aPriority !== bPriority) return bPriority - aPriority;
+        const aHasEs = a.spanishBroadcaster ? 1 : 0;
+        const bHasEs = b.spanishBroadcaster ? 1 : 0;
+        if (aHasEs !== bHasEs) return bHasEs - aHasEs;
+        return a.kickoffTime.localeCompare(b.kickoffTime);
+      });
+    }
+
     return groups;
   }, [filteredMatches]);
 
@@ -314,6 +365,39 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
               <ChevronRight className="w-4 h-4" />
             </button>
           </div>
+        </div>
+
+        {/* Quick Shortcuts Bar for Barça, Real Madrid, Champions & Premier */}
+        <div className="px-3 py-2 bg-[#121520] border-b border-white/[0.06] flex items-center gap-2 overflow-x-auto scrollbar-none">
+          <span className="text-[10px] font-extrabold text-zinc-400 uppercase tracking-wider shrink-0">
+            {pickLang(lang, { es: 'Atajos:', ca: 'Dreceres:', en: 'Shortcuts:' })}
+          </span>
+          {[
+            { label: '⚽ Barça', query: 'barcelona' },
+            { label: '⚽ Real Madrid', query: 'real madrid' },
+            { label: '🏆 Champions', query: 'champions' },
+            { label: '🏴󠁧󠁢󠁥󠁮󠁧󠁿 Premier', query: 'premier' },
+            { label: '🇪🇸 LaLiga', query: 'laliga' },
+          ].map((sc) => {
+            const isActive = searchQuery.toLowerCase().includes(sc.query);
+            return (
+              <button
+                key={sc.query}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onSearchQueryChange(isActive ? '' : sc.query);
+                }}
+                className={`min-h-8 px-3 rounded-lg text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                  isActive
+                    ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-sm'
+                    : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.08] text-zinc-300 hover:text-white'
+                }`}
+              >
+                {sc.label}
+              </button>
+            );
+          })}
         </div>
 
         {/* Matchboard Body */}
@@ -440,7 +524,33 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                         </div>
 
                         {/* Teams + Score */}
-                        <div className="relative z-[1] pointer-events-none flex-1 min-w-0 space-y-2">
+                        <div className="relative z-[1] pointer-events-none flex-1 min-w-0 space-y-1.5">
+                          {(item.matchdayLabel || item.spanishBroadcaster) && (
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {item.matchdayLabel && (
+                                <span className="px-1.5 py-0.5 rounded bg-white/[0.08] text-[10px] font-bold text-zinc-300 uppercase tracking-wider">
+                                  {item.matchdayLabel}
+                                </span>
+                              )}
+                              {item.spanishBroadcaster && (
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[10px] font-extrabold inline-flex items-center gap-1"
+                                  style={{
+                                    backgroundColor: `${item.spanishBroadcaster.badgeColor}18`,
+                                    color: item.spanishBroadcaster.badgeColor,
+                                    border: `1px solid ${item.spanishBroadcaster.badgeColor}38`,
+                                  }}
+                                >
+                                  <span
+                                    className="w-1.5 h-1.5 rounded-full shrink-0"
+                                    style={{ backgroundColor: item.spanishBroadcaster.badgeColor }}
+                                  />
+                                  <span>{item.spanishBroadcaster.name}</span>
+                                </span>
+                              )}
+                            </div>
+                          )}
+
                           <div className="flex items-center justify-between gap-2 min-w-0">
                             <div className="flex items-center gap-2 min-w-0">
                               <TeamCrestImg
@@ -534,6 +644,8 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                 className={`min-h-10 px-3 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-all active:scale-95 whitespace-nowrap border ${
                                   isPlayingThisMatch
                                     ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_16px_rgba(145,70,255,0.4)]'
+                                    : item.spanishBroadcaster
+                                    ? 'bg-amber-500/[0.12] hover:bg-amber-500/[0.22] border-amber-500/40 text-amber-200 hover:text-white'
                                     : 'bg-white/[0.06] hover:bg-[#9146FF] border-white/[0.12] hover:border-[#9146FF] text-zinc-100 hover:text-white'
                                 }`}
                               >
@@ -542,8 +654,10 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                                 ) : (
                                   <Play className="w-3.5 h-3.5 fill-current" />
                                 )}
-                                <span className="max-w-[82px] truncate">
-                                  {primaryCh.label || pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}
+                                <span className="max-w-[88px] truncate">
+                                  {primaryCh.label
+                                    ? primaryCh.label.replace(/\s*\(Español\)/i, '').replace(/\s*HD/i, '').trim()
+                                    : pickLang(lang, { es: 'Ver', ca: 'Veure', en: 'Watch' })}
                                 </span>
                               </button>
                             </>

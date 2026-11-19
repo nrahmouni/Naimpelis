@@ -163,6 +163,8 @@ export async function verifyM3u8HasCleanVideoFrame(
     }
 
     let ffmpegSpawnFailed = false;
+    let ffmpegExitCode: number | null = null;
+    let ffmpegStderr = '';
     const rawFrame = await new Promise<Buffer>((resolve) => {
       const ff = spawn(FFMPEG_BIN, [
         '-hide_banner',
@@ -181,20 +183,24 @@ export async function verifyM3u8HasCleanVideoFrame(
         'pipe:1',
       ]);
       const outChunks: Buffer[] = [];
+      const errChunks: Buffer[] = [];
       const killTimer = setTimeout(() => {
         try {
           ff.kill('SIGKILL');
         } catch {
           // ignore
         }
-      }, 2400);
+      }, 2500);
       ff.stdout.on('data', (c: Buffer) => outChunks.push(c));
+      ff.stderr.on('data', (c: Buffer) => errChunks.push(c));
       ff.on('error', () => {
         ffmpegSpawnFailed = true;
         clearTimeout(killTimer);
         resolve(Buffer.alloc(0));
       });
-      ff.on('close', () => {
+      ff.on('close', (code) => {
+        ffmpegExitCode = code;
+        ffmpegStderr = Buffer.concat(errChunks).toString('utf8');
         clearTimeout(killTimer);
         resolve(Buffer.concat(outChunks));
       });
@@ -204,8 +210,24 @@ export async function verifyM3u8HasCleanVideoFrame(
 
     const expectedBytes = 160 * 90 * 3;
     if (ffmpegSpawnFailed || rawFrame.length < expectedBytes) {
-      liveFrameHealthCache.set(m3uUrl, true);
-      return true;
+      liveFrameHealthCache.set(m3uUrl, false);
+      return false;
+    }
+
+    const fatalH264SliceError =
+      /deblocking_filter_idc|reference overflow|decode_slice_header error|cabac_init_idc|Missing reference picture/i.test(
+        ffmpegStderr
+      );
+    if (ffmpegExitCode !== 0 && fatalH264SliceError) {
+      liveFrameHealthCache.set(m3uUrl, false);
+      return false;
+    }
+
+    const uniqueBytes = new Set(rawFrame).size;
+    if (uniqueBytes <= 4) {
+      // Flat uniform uninitialized buffer (e.g. 129,129,129 grey or 0,76,0 green macroblock buffer)
+      liveFrameHealthCache.set(m3uUrl, false);
+      return false;
     }
 
     const totalPixels = 160 * 90;
@@ -221,9 +243,9 @@ export async function verifyM3u8HasCleanVideoFrame(
         const g = rawFrame[idx + 1];
         const b = rawFrame[idx + 2];
 
-        const isDecoderGreen =
-          g > 95 && r < 45 && b < 45 && g > r + 55 && g > b + 55;
-        if (isDecoderGreen) {
+        const isBrightGreen = g > 90 && r < 50 && b < 50 && g > r + 45 && g > b + 45;
+        const isDarkGreen = g > 35 && r < 40 && b < 40 && g > r + 15 && g > b + 15;
+        if (isBrightGreen || isDarkGreen) {
           decoderGreenAll++;
           if (y >= bottomStartY) decoderGreenBottom++;
         }

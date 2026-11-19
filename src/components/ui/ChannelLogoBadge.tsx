@@ -3,18 +3,126 @@ import type { SpanishTdtChannel, TdtCategory } from '../../types';
 import type { FlagCode } from './LanguageBadge';
 import { renderSpainAndSportsArtwork } from './channelArtworkSpainAndSports';
 
-export type TvRegionId = 'all' | 'es' | 'latam' | 'ar' | 'ma' | 'docs' | 'us' | 'eu' | 'uk' | 'cn';
+export type TvRegionId =
+  | 'all'
+  | 'es'
+  | 'latam'
+  | 'ar'
+  | 'ma'
+  | 'docs'
+  | 'us'
+  | 'eu'
+  | 'uk'
+  | 'cn'
+  | 'world_cricket'
+  | 'elahmad_mena'
+  | 'adrar_europa';
 
 export interface ChannelRegionMeta {
   region: Exclude<TvRegionId, 'all'>;
   flagCode: FlagCode;
-  langTag: 'ES' | 'CAT' | 'EN' | 'AR' | 'FR' | 'DE' | 'IT' | 'PT' | '中文';
+  langTag: 'ES' | 'CAT' | 'EN' | 'AR' | 'FR' | 'DE' | 'IT' | 'PT' | 'TR' | 'NL' | 'RU' | '中文';
   countryEs: string;
   countryCa: string;
   countryEn: string;
 }
 
-export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'category' | 'network'>): ChannelRegionMeta {
+export function getChannelRegionMeta(
+  ch: Pick<SpanishTdtChannel, 'id' | 'category' | 'network' | 'countryCode'>
+): ChannelRegionMeta {
+  if (ch.category === 'world_cricket' || ch.id.startsWith('sport-') || ch.id.startsWith('fl-sport-')) {
+    const cCode = (ch.countryCode || '').toLowerCase();
+    const flagMap: Record<string, FlagCode> = {
+      in: 'in',
+      pk: 'pk',
+      tr: 'tr',
+      it: 'it',
+      de: 'de',
+      fr: 'fr',
+      uk: 'uk',
+      gb: 'uk',
+      us: 'us',
+      iq: 'iq',
+      bh: 'bh',
+    };
+    const langTag: ChannelRegionMeta['langTag'] =
+      cCode === 'tr' ? 'TR' : cCode === 'it' ? 'IT' : cCode === 'de' ? 'DE' : cCode === 'iq' || cCode === 'bh' ? 'AR' : 'EN';
+    return {
+      region: 'world_cricket',
+      flagCode: flagMap[cCode] || 'all',
+      langTag,
+      countryEs: 'Deportes Mundial & Cricket (Sportzfy / Famelack)',
+      countryCa: 'Esports Mundial i Cricket (Sportzfy / Famelack)',
+      countryEn: 'World Sports & Cricket (Sportzfy / Famelack)',
+    };
+  }
+  if (
+    ch.category === 'elahmad_mena' ||
+    ch.id.startsWith('elahmad-') ||
+    (ch.category === 'kids_world' && ch.id.includes('cnarabia'))
+  ) {
+    const cCode = (ch.countryCode || '').toLowerCase();
+    const inferredFlag: FlagCode =
+      cCode === 'dz' || ch.id.includes('-dz-')
+        ? 'dz'
+        : cCode === 'eg' || ch.id.includes('-eg-')
+        ? 'eg'
+        : cCode === 'sa' || ch.id.includes('-sa-')
+        ? 'sa'
+        : cCode === 'ae' || ch.id.includes('-ae-')
+        ? 'ae'
+        : cCode === 'kw' || ch.id.includes('-kw-')
+        ? 'kw'
+        : cCode === 'om' || ch.id.includes('-om-')
+        ? 'om'
+        : cCode === 'qa' || ch.id.includes('-qa-')
+        ? 'qa'
+        : cCode === 'ma'
+        ? 'ma'
+        : 'ar';
+    return {
+      region: 'elahmad_mena',
+      flagCode: inferredFlag,
+      langTag: 'AR',
+      countryEs: 'Elahmad MENA · Magreb · Golfo (العربية)',
+      countryCa: 'Elahmad MENA · Magrib · Golf (العربية)',
+      countryEn: 'Elahmad MENA · Maghreb · Gulf (Arabic)',
+    };
+  }
+  if (ch.category === 'adrar_europa' || ch.id.startsWith('adrar-')) {
+    const cCode = (ch.countryCode || '').toLowerCase();
+    const flagMap: Record<string, { flag: FlagCode; lang: ChannelRegionMeta['langTag'] }> = {
+      fr: { flag: 'fr', lang: 'FR' },
+      de: { flag: 'de', lang: 'DE' },
+      it: { flag: 'it', lang: 'IT' },
+      tr: { flag: 'tr', lang: 'TR' },
+      uk: { flag: 'uk', lang: 'EN' },
+      gb: { flag: 'uk', lang: 'EN' },
+      nl: { flag: 'nl', lang: 'NL' },
+      be: { flag: 'be', lang: 'FR' },
+      ru: { flag: 'ru', lang: 'RU' },
+      es: { flag: 'es', lang: 'ES' },
+    };
+    const inferred =
+      flagMap[cCode] ||
+      (ch.id.includes('-fr-')
+        ? flagMap.fr
+        : ch.id.includes('-de-')
+        ? flagMap.de
+        : ch.id.includes('-it-')
+        ? flagMap.it
+        : ch.id.includes('-tr-')
+        ? flagMap.tr
+        : { flag: 'eu' as FlagCode, lang: 'EN' as ChannelRegionMeta['langTag'] });
+    return {
+      region: 'adrar_europa',
+      flagCode: inferred.flag,
+      langTag: inferred.lang,
+      countryEs: 'ADRAR Europa · FR · DE · IT · TR · UK · NL · BE · RU',
+      countryCa: 'ADRAR Europa · FR · DE · IT · TR · UK · NL · BE · RU',
+      countryEn: 'ADRAR Europe · FR · DE · IT · TR · UK · NL · BE · RU',
+    };
+  }
   if (ch.category === 'china_football' || ch.id.startsWith('cn-')) {
     return {
       region: 'cn',
@@ -57,7 +165,7 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
       countryEn: 'World News (Al Jazeera / MENA)',
     };
   }
-  if (ch.category === 'documentales' || ch.id.startsWith('doc-')) {
+  if (ch.category === 'documentales' || ch.id.startsWith('doc-') || ch.id.startsWith('fl-doc-')) {
     const isEs =
       ch.id === 'doc-natgeo-latam' ||
       ch.id === 'doc-natgeo-mx' ||
@@ -84,7 +192,14 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
       countryEn: 'United States · FOX / NBC / CNN',
     };
   }
-  if (ch.category === 'europa_tv' || ch.id.startsWith('eu-')) {
+  if (
+    ch.category === 'europa_tv' ||
+    ch.category === 'famelack_movies' ||
+    ch.category === 'kids_world' ||
+    ch.id.startsWith('eu-') ||
+    ch.id.startsWith('fl-mov-') ||
+    ch.id.startsWith('fl-kids-')
+  ) {
     const langTag: ChannelRegionMeta['langTag'] = ch.id.endsWith('-es')
       ? 'ES'
       : ch.id.endsWith('-ar')
@@ -102,9 +217,9 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
       region: 'eu',
       flagCode: 'eu',
       langTag,
-      countryEs: 'Europa · BBC / Euronews / DW / France 24',
-      countryCa: 'Europa · BBC / Euronews / DW / France 24',
-      countryEn: 'Europe · BBC / Euronews / DW / France 24',
+      countryEs: 'Europa & Mundial · Famelack / Free-TV',
+      countryCa: 'Europa i Mundial · Famelack / Free-TV',
+      countryEn: 'Europe & World · Famelack / Free-TV',
     };
   }
   if (ch.category === 'uk_sports' || ch.id.startsWith('uk-')) {
@@ -152,12 +267,15 @@ export function getChannelRegionMeta(ch: Pick<SpanishTdtChannel, 'id' | 'categor
 }
 
 export function getCategoryRegion(category: 'all' | 'tdt_all' | TdtCategory): TvRegionId {
+  if (category === 'world_cricket') return 'world_cricket';
+  if (category === 'elahmad_mena') return 'elahmad_mena';
+  if (category === 'adrar_europa') return 'adrar_europa';
   if (category === 'china_football') return 'cn';
   if (category === 'marruecos') return 'ma';
   if (category === 'bein_arabic' || category === 'noticias_intl') return 'ar';
   if (category === 'documentales') return 'docs';
   if (category === 'usa_tv') return 'us';
-  if (category === 'europa_tv') return 'eu';
+  if (category === 'europa_tv' || category === 'famelack_movies' || category === 'kids_world') return 'eu';
   if (category === 'uk_sports') return 'uk';
   if (
     category === 'espn' ||

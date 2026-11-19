@@ -220,6 +220,14 @@ export const FootballMatchDetailSheet: React.FC<FootballMatchDetailSheetProps> =
                 {selectedMatchObj.channels.map((ch, idx) => {
                   const isActiveSignal = activeVideoRawUrl === ch.sourceUrl;
                   const isZh = ch.lang === 'ZH' || /中文/.test(ch.label || '');
+                  const isSpanish =
+                    ch.lang === 'ES' ||
+                    /(español|dazn|movistar|m\+|laliga|campeones|vamos|rtve|la 1|teledeporte)/i.test(
+                      ch.label || ''
+                    );
+                  const isMplus = /movistar|m\+/i.test(ch.label || '');
+                  const isDazn = /dazn/i.test(ch.label || '');
+
                   return (
                     <div key={`${selectedMatchObj.id}-${ch.id}-${idx}`} className="flex items-center gap-2">
                       <button
@@ -230,23 +238,50 @@ export const FootballMatchDetailSheet: React.FC<FootballMatchDetailSheetProps> =
                           onPlaySportsMatch(selectedSportsMatch, idx);
                           onClose();
                         }}
-                        className={`flex-1 min-h-12 px-4 rounded-2xl text-xs font-bold flex items-center justify-between gap-2 cursor-pointer transition-colors ${
+                        className={`flex-1 min-h-14 px-3.5 py-2 rounded-2xl text-xs font-bold flex items-center justify-between gap-2.5 cursor-pointer transition-colors border ${
                           isActiveSignal
-                            ? 'bg-[#9146FF] text-white'
-                            : 'bg-white/[0.06] hover:bg-white/[0.12] text-white border border-white/[0.1]'
+                            ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-lg'
+                            : isSpanish
+                            ? 'bg-amber-500/[0.08] hover:bg-amber-500/[0.16] border-amber-500/30 text-white'
+                            : 'bg-white/[0.06] hover:bg-white/[0.12] text-white border-white/[0.1]'
                         }`}
                       >
-                        <span className="flex items-center gap-2">
-                          <Play className="w-3.5 h-3.5 fill-current shrink-0" />
-                          <span>
-                            {pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} {idx + 1}
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Play className="w-3.5 h-3.5 fill-current shrink-0 text-[#BF94FF]" />
+                          <div className="text-left min-w-0">
+                            <p className="truncate text-xs font-bold text-white">
+                              {ch.label ||
+                                `${pickLang(lang, { es: 'Señal', ca: 'Senyal', en: 'Feed' })} ${idx + 1}`}
+                            </p>
+                            <p className="text-[10px] font-medium text-zinc-400 truncate">
+                              {isSpanish
+                                ? isMplus
+                                  ? 'Movistar Plus+ · Español'
+                                  : isDazn
+                                  ? 'DAZN España · Español'
+                                  : 'Español Oficial'
+                                : isZh
+                                ? 'Transmisión China · 中文'
+                                : 'Señal Internacional'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          {isSpanish && (
+                            <span className="px-1.5 py-0.5 rounded bg-amber-500/25 text-amber-300 text-[10px] font-extrabold tracking-wide border border-amber-500/40">
+                              ES
+                            </span>
+                          )}
+                          {isZh && (
+                            <span className="px-1.5 py-0.5 rounded bg-white/15 text-zinc-200 text-[10px] font-bold">
+                              中文
+                            </span>
+                          )}
+                          <span className="px-1.5 py-0.5 rounded bg-white/[0.08] text-zinc-300 text-[10px] font-mono">
+                            {ch.quality || '1080p'}
                           </span>
-                        </span>
-                        {isZh && (
-                          <span className="px-2 py-0.5 rounded bg-white/15 text-[11px] font-bold">
-                            中文
-                          </span>
-                        )}
+                        </div>
                       </button>
 
                       {activeVideoRawUrl && !isActiveSignal && onPlaySecondaryChannel && (

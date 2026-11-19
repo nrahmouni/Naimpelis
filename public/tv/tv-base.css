@@ -1,0 +1,430 @@
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+html,
+body {
+  width: 100%;
+  height: 100%;
+  background-color: #0E0E10;
+  color: #f4f4f6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+button,
+input {
+  font-family: inherit;
+}
+
+/* 10-Foot Crisp Luminous NAIMCINE Violet D-Pad Focus Ring */
+button:focus,
+input:focus,
+.tv-card:focus,
+.ep-tile-btn:focus {
+  outline: 2.5px solid #bf94ff !important;
+  outline-offset: 2px;
+  box-shadow:
+    0 0 0 6px rgba(145, 70, 255, 0.65),
+    0 18px 40px rgba(0, 0, 0, 0.88) !important;
+}
+
+/* Cinema Ambient Stage Glow */
+.ambient-glow {
+  position: fixed;
+  top: -240px;
+  left: 28%;
+  width: 980px;
+  height: 480px;
+  border-radius: 999px;
+  background: radial-gradient(
+    circle,
+    rgba(145, 70, 255, 0.22) 0%,
+    rgba(56, 189, 248, 0.08) 42%,
+    rgba(9, 9, 12, 0) 72%
+  );
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* =================================================================== */
+/* COMMON 10-FOOT CONTROLS                                             */
+/* =================================================================== */
+.tv-btn {
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.08);
+  color: #f4f4f6;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-transition: background 0.14s ease, -webkit-transform 0.14s ease;
+  transition: background 0.14s ease, transform 0.14s ease;
+}
+.tv-btn:hover,
+.tv-btn:focus {
+  background: rgba(255, 255, 255, 0.2);
+}
+.tv-btn-primary {
+  height: 46px;
+  padding: 0 22px;
+  border-radius: 13px;
+  border: 1px solid rgba(255, 255, 255, 0.24);
+  background: linear-gradient(180deg, #a15eff 0%, #772ce8 100%);
+  color: #ffffff;
+  font-size: 15px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+  box-shadow: 0 12px 30px rgba(145, 70, 255, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+.tv-btn-primary:hover,
+.tv-btn-primary:focus {
+  background: linear-gradient(180deg, #b078ff 0%, #8338f5 100%);
+}
+.tv-btn-primary.unlocked {
+  background: rgba(16, 185, 129, 0.24);
+  border-color: rgba(52, 211, 153, 0.6);
+  color: #a7f3d0;
+  box-shadow: none;
+}
+.tv-btn-fullscreen {
+  height: 44px;
+  padding: 0 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(191, 148, 255, 0.45);
+  background: rgba(145, 70, 255, 0.22);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 800;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tv-btn-fullscreen:hover,
+.tv-btn-fullscreen:focus {
+  background: #9146ff;
+}
+.tv-btn-fullscreen.active-fs {
+  border-color: rgba(52, 211, 153, 0.65);
+  background: rgba(16, 185, 129, 0.22);
+  color: #a7f3d0;
+}
+
+/* =================================================================== */
+/* SCREEN 0: GOOGLE TV 10-FOOT CUSTOM HUB (D-PAD NAVIGABLE)            */
+/* =================================================================== */
+#tv-hub-screen {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 100%;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-direction: column;
+  flex-direction: column;
+  padding: 20px 42px 14px 42px;
+}
+.hub-topbar {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 16px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.hub-left-cluster {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-flex: 1;
+  flex: 1;
+  min-width: 0;
+}
+.hub-brand {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-right: 22px;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.brand-logo-box {
+  width: 42px;
+  height: 42px;
+  border-radius: 12px;
+  background: #16161c;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-justify-content: center;
+  justify-content: center;
+  margin-right: 11px;
+  box-shadow: 0 8px 24px rgba(145, 70, 255, 0.25);
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.brand-title {
+  font-size: 19px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #ffffff;
+  white-space: nowrap;
+}
+.brand-title .accent { color: #a970ff; }
+.brand-title .tag {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #d4bbff;
+  margin-left: 7px;
+}
+.brand-sub {
+  font-size: 11px;
+  color: #9f9fac;
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.hub-nav-pills {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  padding: 4px;
+  border-radius: 15px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  overflow-x: auto;
+}
+.hub-nav-pills::-webkit-scrollbar { display: none; }
+.hub-tab-btn {
+  height: 38px;
+  padding: 0 14px;
+  margin: 0 2px;
+  border-radius: 11px;
+  border: none;
+  background: transparent;
+  color: #b4b4c0;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+}
+.hub-tab-btn.search-left-btn {
+  background: rgba(145, 70, 255, 0.18);
+  border: 1px solid rgba(191, 148, 255, 0.35);
+  color: #ffffff;
+  margin-right: 6px;
+  padding: 0 15px;
+}
+.hub-tab-btn.active {
+  background: #9146ff;
+  color: #ffffff;
+  box-shadow: 0 6px 18px rgba(145, 70, 255, 0.45);
+}
+.hub-tab-btn:focus {
+  color: #ffffff;
+  background: rgba(145, 70, 255, 0.52);
+}
+
+.hub-right-actions {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+  -webkit-flex-shrink: 0;
+  flex-shrink: 0;
+  margin-left: 12px;
+}
+.hub-right-actions > * { margin-left: 8px; }
+.pair-pill-btn {
+  height: 40px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(191, 148, 255, 0.42);
+  background: rgba(145, 70, 255, 0.16);
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.pair-pill-btn strong {
+  color: #d4bbff;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 14px;
+  letter-spacing: 0.08em;
+  margin-left: 4px;
+}
+
+.hub-scroll-body {
+  -webkit-flex: 1;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 4px 6px 42px 2px;
+}
+.hub-scroll-body::-webkit-scrollbar { width: 6px; }
+.hub-scroll-body::-webkit-scrollbar-thumb {
+  background: rgba(145, 70, 255, 0.42);
+  border-radius: 99px;
+}
+
+/* 10-Foot Featured Cinema Hero */
+.tv-hero {
+  position: relative;
+  width: 100%;
+  min-height: 290px;
+  border-radius: 22px;
+  overflow: hidden;
+  background: #121217;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  margin-bottom: 26px;
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: flex-end;
+  align-items: flex-end;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.72);
+}
+.tv-hero-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.52;
+}
+.tv-hero-grad {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background:
+    linear-gradient(90deg, #09090c 0%, rgba(9, 9, 12, 0.88) 46%, rgba(9, 9, 12, 0.18) 100%),
+    linear-gradient(to top, rgba(9, 9, 12, 0.95) 0%, rgba(9, 9, 12, 0) 60%);
+}
+.tv-hero-content {
+  position: relative;
+  z-index: 2;
+  padding: 28px 34px;
+  max-width: 720px;
+}
+.tv-hero-meta {
+  font-size: 13px;
+  font-weight: 700;
+  color: #c6a2ff;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  margin-bottom: 6px;
+}
+.tv-hero-title {
+  font-size: 36px;
+  font-weight: 800;
+  color: #ffffff;
+  line-height: 1.12;
+  margin-bottom: 10px;
+  text-shadow: 0 4px 18px rgba(0, 0, 0, 0.8);
+}
+.tv-hero-desc {
+  font-size: 15px;
+  color: #d4d4dc;
+  line-height: 1.45;
+  margin-bottom: 18px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.tv-hero-btns {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: center;
+  align-items: center;
+}
+.tv-hero-btns > * { margin-right: 12px; }
+
+/* Filter Pills Row & Horizontal TV Rails */
+.tv-filter-row {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  -webkit-align-items: center;
+  align-items: center;
+  margin-bottom: 18px;
+}
+.tv-filter-pill {
+  height: 38px;
+  padding: 0 15px;
+  margin: 0 8px 8px 0;
+  border-radius: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #d4d4dc;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.tv-filter-pill.active {
+  background: linear-gradient(180deg, #a15eff 0%, #772ce8 100%);
+  border-color: #d4bbff;
+  color: #ffffff;
+}
+.tv-filter-pill:focus,
+.tv-filter-pill:hover {
+  background: rgba(145, 70, 255, 0.42);
+  color: #ffffff;
+}
+.tv-section { margin-bottom: 26px; }
+.tv-section-head {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-align-items: baseline;
+  align-items: baseline;
+  -webkit-justify-content: space-between;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding: 0 2px;
+}
+.tv-section-title {
+  font-size: 20px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.01em;
+}
+.tv-section-sub { font-size: 13px; color: #9e9eac; }
+.tv-rail {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: nowrap;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  overflow-y: visible;
+  padding: 8px 6px 16px 6px;
+}
+.tv-rail::-webkit-scrollbar { display: none; }
+.tv-grid {
+  display: -webkit-flex;
+  display: flex;
+  -webkit-flex-wrap: wrap;
+  flex-wrap: wrap;
+  padding: 8px 6px 22px 6px;
+}

@@ -190,6 +190,12 @@ export interface SubtitleTrackItem {
   rawContent?: string;
 }
 
+export interface ChatReplyReference {
+  id: string;
+  senderName: string;
+  text: string;
+}
+
 export interface ChatMessage {
   id: string;
   senderId: string;
@@ -198,6 +204,7 @@ export interface ChatMessage {
   senderColor: string;
   text: string;
   timestamp: number;
+  replyTo?: ChatReplyReference;
   isSystem?: boolean;
   systemUserId?: string;
   systemType?:

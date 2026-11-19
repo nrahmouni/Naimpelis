@@ -1,7 +1,8 @@
 import {
+  getRedirectResult,
   onAuthStateChanged,
-  signInAnonymously,
   signInWithPopup,
+  signInWithRedirect,
   signOut,
   User,
 } from 'firebase/auth';
@@ -20,6 +21,7 @@ import {
   isTransientFirestoreError,
   OperationType,
 } from '../../firebase';
+import { clearStoredCloudSession } from '../../utils/cloudSession';
 import { StoredProfile } from '../../utils/storage';
 import {
   clampString,
@@ -33,10 +35,45 @@ export interface GoogleSignInResult {
   user: User | null;
   errorCode?: string;
   hostname?: string;
+  redirecting?: boolean;
 }
 
-export async function signInWithGoogleAccountDetailed(): Promise<GoogleSignInResult> {
+export interface GoogleSignInOptions {
+  allowRedirectFallback?: boolean;
+  preferRedirect?: boolean;
+}
+
+let cachedRedirectPromise: Promise<GoogleSignInResult> | null = null;
+
+export function checkGoogleRedirectSignInResult(): Promise<GoogleSignInResult> {
+  if (typeof window === 'undefined') {
+    return Promise.resolve({ user: null });
+  }
+  if (!cachedRedirectPromise) {
+    cachedRedirectPromise = getRedirectResult(auth)
+      .then((cred) => ({ user: cred?.user ?? null }))
+      .catch((err: unknown) => {
+        const code =
+          err && typeof err === 'object' && 'code' in err
+            ? String((err as { code?: string }).code)
+            : 'auth/redirect-failed';
+        const hostname = window.location.hostname || '';
+        return { user: null, errorCode: code, hostname };
+      });
+  }
+  return cachedRedirectPromise;
+}
+
+export async function signInWithGoogleAccountDetailed(
+  options?: GoogleSignInOptions
+): Promise<GoogleSignInResult> {
+  const hostname =
+    typeof window !== 'undefined' ? window.location.hostname : '';
   try {
+    if (options?.preferRedirect) {
+      await signInWithRedirect(auth, googleProvider);
+      return { user: null, redirecting: true };
+    }
     const cred = await signInWithPopup(auth, googleProvider);
     return { user: cred.user };
   } catch (err: unknown) {
@@ -50,20 +87,21 @@ export async function signInWithGoogleAccountDetailed(): Promise<GoogleSignInRes
     ) {
       return { user: null };
     }
-    const hostname =
-      typeof window !== 'undefined' ? window.location.hostname : '';
     if (
-      code === 'auth/unauthorized-domain' ||
-      code === 'auth/popup-blocked' ||
-      code === 'auth/operation-not-supported-in-this-environment'
+      options?.allowRedirectFallback &&
+      (code === 'auth/popup-blocked' ||
+        code === 'auth/operation-not-supported-in-this-environment')
     ) {
       try {
-        const anonCred = await signInAnonymously(auth);
-        return { user: anonCred.user };
-      } catch {
-        // fallback
+        await signInWithRedirect(auth, googleProvider);
+        return { user: null, redirecting: true };
+      } catch (redirErr: unknown) {
+        const redirCode =
+          redirErr && typeof redirErr === 'object' && 'code' in redirErr
+            ? String((redirErr as { code?: string }).code)
+            : code;
+        return { user: null, errorCode: redirCode || 'auth/unknown', hostname };
       }
-      return { user: null, errorCode: code, hostname };
     }
     return { user: null, errorCode: code || 'auth/unknown', hostname };
   }
@@ -76,6 +114,7 @@ export async function signInWithGoogleAccount(): Promise<User | null> {
 
 export async function signOutGoogleAccount(): Promise<void> {
   clearCloudSyncCaches();
+  clearStoredCloudSession();
   await signOut(auth);
 }
 
@@ -94,6 +133,22 @@ export async function ensureCloudUserProfile(
   user: User,
   localProfile: StoredProfile
 ): Promise<StoredProfile> {
+  if (!auth.currentUser || auth.currentUser.uid !== user.uid || auth.currentUser.isAnonymous) {
+    return {
+      id: user.uid,
+      name: clampString(
+        localProfile.isCustomized
+          ? localProfile.name
+          : user.displayName || localProfile.name,
+        24,
+        'Cineasta'
+      ),
+      avatar: clampString(localProfile.avatar || '🍿', 16, '🍿'),
+      color: sanitizeHexColor(localProfile.color),
+      isCustomized: true,
+    };
+  }
+
   const path = `userProfiles/${user.uid}`;
   const profileRef = doc(db, 'userProfiles', user.uid);
 

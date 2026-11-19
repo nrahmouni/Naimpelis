@@ -21,6 +21,7 @@ import {
   resolveTeamBadgeUrl,
   doesScrapedEventMatchFixture,
   buildFootballMatchChannels,
+  resolveMatchSpanishBroadcaster,
 } from './sportsHelpers/footballTeamMatcher.ts';
 
 let cachedSportsSchedule: { matches: any[]; ts: number } | null = null;
@@ -270,6 +271,15 @@ export function registerSportsRoutes(app: Express): void {
             scrapedMatches,
           });
 
+          const rawRound = comp?.round?.number || comp?.notes?.[0]?.text || '';
+          const matchdayLabel = rawRound
+            ? (/^\d+$/.test(String(rawRound)) ? `Jornada ${rawRound}` : String(rawRound))
+            : (league.slug === 'esp.1' || league.slug === 'esp.2')
+            ? 'Jornada de Liga'
+            : (league.slug === 'uefa.champions')
+            ? 'Fase de Liga · Champions'
+            : league.leagueName;
+
           items.push({
             id: `fb-${eventId}`,
             eventId,
@@ -286,6 +296,8 @@ export function registerSportsRoutes(app: Express): void {
             kickoffMs: fm?.kickoffMs || kickoffDate.getTime() || 0,
             statusState,
             statusLabel,
+            matchdayLabel,
+            spanishBroadcaster: resolveMatchSpanishBroadcaster(league.slug, league.leagueName),
             homeTeam,
             awayTeam,
             homeShort: String(home.team?.abbreviation || homeTeam.slice(0, 3)).toUpperCase(),
@@ -386,6 +398,8 @@ export function registerSportsRoutes(app: Express): void {
           kickoffMs: fm.kickoffMs,
           statusState: fm.statusState,
           statusLabel: fm.statusLabel,
+          matchdayLabel: fm.leagueName || 'Fútbol en Directo',
+          spanishBroadcaster: resolveMatchSpanishBroadcaster(pseudoLeague.slug, pseudoLeague.leagueName),
           homeTeam: fm.homeName,
           awayTeam: fm.awayName,
           homeShort: fm.homeName.slice(0, 3).toUpperCase(),

@@ -409,6 +409,8 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           onTvRegionChange={liveTv.setTvRegion}
           onTdtCategoryChange={liveTv.setTdtCategory}
           onEpgFilterChange={liveTv.setEpgFilter}
+          adrarCountryFilter={liveTv.adrarCountryFilter}
+          onAdrarCountryFilterChange={liveTv.setAdrarCountryFilter}
         />
       )}
 

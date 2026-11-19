@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useId, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'motion/react';
 import {
@@ -11,6 +11,7 @@ import {
 import type { AppLanguage } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
+import { useBackInterceptor } from '../lib/backInterceptor';
 
 interface FloatingRoomBubbleProps {
   lang: AppLanguage;
@@ -53,6 +54,11 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
   children,
 }) => {
   const [orbPos, setOrbPos] = useState<{ x: number; y: number }>(() => getDefaultOrbPos());
+  const bubbleBackId = useId();
+  useBackInterceptor(visible && isSheetOpen, `floating-room-${bubbleBackId}`, onCloseSheet, {
+    priority: 28,
+    lockScroll: true,
+  });
 
   // Keep orb safely inside viewport on resize / rotation
   useEffect(() => {

@@ -7,12 +7,25 @@ const SCHEDULED_ROOMS_KEY = 'naimcine_scheduled_rooms_v1';
 const LAST_WORLD_KEY = 'riffantv_last_world_v1';
 
 export type ShellNavSection = 'home' | 'search' | 'rooms' | 'my_list' | 'profile';
-export type PrimaryWorldId = 'cine' | 'futbol' | 'tv' | 'juegos' | 'sala' | 'kids';
+export type PrimaryWorldId =
+  | 'cine'
+  | 'futbol'
+  | 'tv'
+  | 'juegos'
+  | 'kids'
+  | 'sala';
 export type WorldId = 'entry' | PrimaryWorldId | 'youtube';
 export type CineSubTab = 'movies' | 'series';
 export type FutbolSubTab = 'matches' | 'channels';
 
-const PRIMARY_WORLDS: PrimaryWorldId[] = ['cine', 'futbol', 'tv', 'juegos', 'sala', 'kids'];
+const PRIMARY_WORLDS: PrimaryWorldId[] = [
+  'cine',
+  'futbol',
+  'tv',
+  'juegos',
+  'kids',
+  'sala',
+];
 
 function loadLastUsedWorld(): PrimaryWorldId | null {
   if (typeof localStorage === 'undefined') return null;

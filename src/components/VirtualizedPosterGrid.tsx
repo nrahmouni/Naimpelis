@@ -96,14 +96,18 @@ export function VirtualizedPosterGrid<T>({
     ro.observe(el);
     if (parent && parent !== document.documentElement) {
       ro.observe(parent);
+      parent.addEventListener('scroll', updateMetrics, { passive: true });
     }
     window.addEventListener('resize', updateMetrics);
 
     return () => {
       ro.disconnect();
+      if (parent && parent !== document.documentElement) {
+        parent.removeEventListener('scroll', updateMetrics);
+      }
       window.removeEventListener('resize', updateMetrics);
     };
-  }, [items.length]);
+  }, [items.length, columns]);
 
   const rows = useMemo(() => {
     const chunked: T[][] = [];
@@ -132,8 +136,8 @@ export function VirtualizedPosterGrid<T>({
     scrollMargin,
   });
 
-  // Render cleanly without virtualizer gap if small enough (<= 80 items) or before scrollEl attaches
-  if (items.length <= 80 || !scrollEl) {
+  // Render cleanly in natural document flow CSS Grid up to 400 items so sticky desktop players never shift virtual hitboxes
+  if (items.length <= 400 || !scrollEl) {
     return (
       <div
         ref={containerRef}
@@ -146,7 +150,11 @@ export function VirtualizedPosterGrid<T>({
         }}
       >
         {items.map((item, idx) => (
-          <div key={getKey ? getKey(item, idx) : idx} className="min-w-0">
+          <div
+            key={getKey ? getKey(item, idx) : idx}
+            className="min-w-0"
+            style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 260px' }}
+          >
             {renderItem(item, idx)}
           </div>
         ))}

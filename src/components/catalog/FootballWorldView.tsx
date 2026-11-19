@@ -159,6 +159,7 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
             onSearchQueryChange={setSportsSearch}
             langFilter={futbolLangFilter}
             leagueFilter={futbolLeagueFilter}
+            brandFilter={footballLiveBrand}
             activeVideoRawUrl={activeVideoRawUrl}
             loadingItemId={loadingItemId}
             onPlaySportsMatch={onPlaySportsMatch}
@@ -338,15 +339,16 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
               {(
                 [
                   { id: 'all', flagCode: 'all', label: pickLang(lang, { es: 'Todos', ca: 'Tots', en: 'All' }) },
-                  { id: 'bein_arabic', flagCode: 'qa', label: 'beIN SPORTS (العربية)' },
+                  { id: 'movistar', flagCode: 'es', label: 'Movistar Plus+ (España)' },
+                  { id: 'dazn', flagCode: 'es', label: 'DAZN (España)' },
                   { id: 'china_football', flagCode: 'cn', label: 'Fútbol China (中文)' },
-                  { id: 'movistar', flagCode: 'es', label: 'Movistar+' },
-                  { id: 'dazn', flagCode: 'es', label: 'DAZN' },
+                  { id: 'bein_arabic', flagCode: 'qa', label: 'beIN SPORTS (العربية)' },
                   { id: 'uk_sports', flagCode: 'uk', label: 'UK Sports (EN)' },
                   { id: 'beinsports', flagCode: 'all', label: 'beIN SPORTS (Global)' },
                   { id: 'espn', flagCode: 'lat', label: 'ESPN (1–7)' },
                   { id: 'dsports', flagCode: 'lat', label: 'DSports' },
                   { id: 'tnt_space', flagCode: 'lat', label: 'TNT y Space' },
+                  { id: 'world_cricket', flagCode: 'all', label: 'Cricket & Mundial' },
                 ] as const
               ).map((br) => {
                 const netCount = footballNetworkCounts[br.id] ?? 0;

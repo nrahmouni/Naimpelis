@@ -182,12 +182,16 @@ describe('Audit & Feature Verification Suite', () => {
 
   it('includes LG webOS remote keys, low-overhead HLS config, and AirPlay 2 in tv-receiver.html', () => {
     const html = readFileSync(join(process.cwd(), 'public/tv-receiver.html'), 'utf8');
-    expect(html).toContain('x-webkit-airplay="allow"');
-    expect(html).toContain('isLgWebOsUa');
-    expect(html).toContain('abs=1');
-    expect(html).toContain('461');
-    expect(html).toContain('413');
-    expect(html).toContain('enableWorker: !isSmartTvUa');
+    const tvScripts = ['tv-i18n.js', 'tv-state.js', 'tv-player-core.js', 'tv-player-modes.js', 'tv-hub.js', 'tv-nav-voice.js']
+      .map((name) => readFileSync(join(process.cwd(), 'public/tv', name), 'utf8'))
+      .join('\n');
+    const combined = `${html}\n${tvScripts}`;
+    expect(combined).toContain('x-webkit-airplay="allow"');
+    expect(combined).toContain('isLgWebOsUa');
+    expect(combined).toContain('abs=1');
+    expect(combined).toContain('461');
+    expect(combined).toContain('413');
+    expect(combined).toContain('enableWorker: !isSmartTvUa');
   });
 
   it('orients Fútbol Chapas bottom-to-top per player team symmetrically', () => {

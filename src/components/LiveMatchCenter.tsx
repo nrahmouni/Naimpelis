@@ -8,7 +8,10 @@ import {
   RefreshCw,
   UserCheck,
   X,
+  Sparkles,
+  ExternalLink,
 } from 'lucide-react';
+import { studioFetch } from '../utils/studioApi';
 import type {
   AppLanguage,
   FootballMatchDetails,
@@ -86,6 +89,9 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
   const [selectedShot, setSelectedShot] = useState<FootballMatchShotItem | null>(null);
   const [selectedPlayer, setSelectedPlayer] = useState<FootballMatchLineupPlayer | null>(null);
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [matchAiAnswer, setMatchAiAnswer] = useState<string | null>(null);
+  const [matchAiSources, setMatchAiSources] = useState<Array<{ title: string; uri: string }>>([]);
+  const [matchAiBusy, setMatchAiBusy] = useState(false);
 
   const resolvedHomeTeam = details?.homeTeam || homeTeam;
   const resolvedAwayTeam = details?.awayTeam || awayTeam;
@@ -95,6 +101,52 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
   const resolvedAwayScore = details?.awayScore ?? awayScore ?? '-';
   const resolvedState = details?.statusState || statusState || 'upcoming';
   const resolvedStatusLabel = details?.statusLabel || statusLabel || '';
+
+  const handleAskMatchAi = async () => {
+    if (matchAiBusy) return;
+    triggerHaptic('light');
+    setMatchAiBusy(true);
+    try {
+      const data = await studioFetch<{
+        ok: boolean;
+        reply: string;
+        sources?: Array<{ kind: 'web' | 'maps'; title: string; uri: string }>;
+      }>('/api/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'gemini-4-hydrogen',
+          grounding: 'search',
+          lang,
+          messages: [
+            {
+              role: 'user',
+              text: `Dame las claves tácticas, bajas importantes, racha reciente y datos clave del partido ${resolvedHomeTeam} vs ${resolvedAwayTeam}${
+                competition ? ` (${competition})` : ''
+              }. Sé breve, directo y con viñetas claras.`,
+            },
+          ],
+        }),
+      });
+      setMatchAiAnswer(data.reply);
+      setMatchAiSources(
+        Array.isArray(data.sources)
+          ? data.sources.slice(0, 4).map((s) => ({ title: s.title, uri: s.uri }))
+          : []
+      );
+    } catch (err) {
+      setMatchAiAnswer(
+        err instanceof Error && err.message
+          ? err.message
+          : pickLang(lang, {
+              es: 'No se pudo obtener el análisis en este momento.',
+              ca: 'No s’ha pogut obtenir l’anàlisi ara mateix.',
+              en: 'Could not load match analysis right now.',
+            })
+      );
+    } finally {
+      setMatchAiBusy(false);
+    }
+  };
 
   const periodStats: FootballMatchStatItem[] = useMemo(() => {
     if (!details) return [];
@@ -372,6 +424,20 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               </button>
             ))}
 
+            <button
+              type="button"
+              disabled={matchAiBusy}
+              onClick={() => void handleAskMatchAi()}
+              className="min-h-12 px-3.5 rounded-xl text-xs sm:text-sm font-bold whitespace-nowrap cursor-pointer transition-all flex items-center gap-1.5 bg-[#00F593]/15 hover:bg-[#00F593]/25 border border-[#00F593]/35 text-[#00F593] shrink-0"
+            >
+              {matchAiBusy ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Sparkles className="w-3.5 h-3.5" />
+              )}
+              <span>{pickLang(lang, { es: 'Claves IA', ca: 'Claus IA', en: 'AI Brief' })}</span>
+            </button>
+
             <div className="ml-auto pb-2 flex items-center gap-2 text-[11px] text-zinc-400 shrink-0">
               {details?.referee && (
                 <span className="hidden md:inline truncate max-w-[160px]">
@@ -391,6 +457,47 @@ export const LiveMatchCenter: React.FC<LiveMatchCenterProps> = ({
               )}
             </div>
           </div>
+
+          {matchAiAnswer && (
+            <div className="rounded-2xl bg-[#141724] border border-[#00F593]/25 p-3.5 space-y-2 text-xs text-zinc-200 leading-relaxed">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-bold text-[#00F593] inline-flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>
+                    {pickLang(lang, {
+                      es: 'Claves del partido (Gemini + Search)',
+                      ca: 'Claus del partit (Gemini + Search)',
+                      en: 'Match Brief (Gemini + Search)',
+                    })}
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setMatchAiAnswer(null)}
+                  className="text-zinc-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <p className="whitespace-pre-wrap">{matchAiAnswer}</p>
+              {matchAiSources.length > 0 && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {matchAiSources.map((s, idx) => (
+                    <a
+                      key={idx}
+                      href={s.uri}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2 py-1 rounded-lg bg-white/[0.06] text-[11px] text-[#00F593] inline-flex items-center gap-1"
+                    >
+                      <span className="max-w-[160px] truncate">{s.title}</span>
+                      <ExternalLink className="w-2.5 h-2.5" />
+                    </a>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {loading && !details ? (
             <div className="py-10 flex items-center justify-center gap-2.5 text-xs text-zinc-300">

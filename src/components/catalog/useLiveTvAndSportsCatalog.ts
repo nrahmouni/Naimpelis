@@ -20,7 +20,8 @@ export type FootballBrandFilter =
   | 'dsports'
   | 'tnt_space'
   | 'movistar'
-  | 'dazn';
+  | 'dazn'
+  | 'world_cricket';
 
 interface UseLiveTvAndSportsCatalogArgs {
   worldMode?: 'cine' | 'futbol' | 'tv' | 'youtube';
@@ -41,6 +42,7 @@ export function useLiveTvAndSportsCatalog({
   const [loadingTdt, setLoadingTdt] = useState(false);
   const [tdtCategory, setTdtCategory] = useState<'all' | 'tdt_all' | TdtCategory>('all');
   const [tvRegion, setTvRegion] = useState<TvRegionId>('all');
+  const [adrarCountryFilter, setAdrarCountryFilter] = useState<string>('all');
   const [tvFavOnly, setTvFavOnly] = useState<boolean>(false);
   const [tdtSearch, setTdtSearch] = useState('');
   const [epgMap, setEpgMap] = useState<Record<string, ChannelLiveEpg>>({});
@@ -77,10 +79,27 @@ export function useLiveTvAndSportsCatalog({
   const fetchTdtCatalog = useCallback(async () => {
     setLoadingTdt(true);
     try {
-      const res = await fetch('/api/catalog/tdt');
-      const data = await res.json();
-      if (Array.isArray(data?.channels)) {
-        setTdtChannels(data.channels);
+      const [tdtSettled, worldSettled] = await Promise.allSettled([
+        fetch('/api/catalog/tdt').then((r) => r.json()),
+        fetch('/api/catalog/world-tv').then((r) => r.json()),
+      ]);
+      const baseList: SpanishTdtChannel[] =
+        tdtSettled.status === 'fulfilled' && Array.isArray(tdtSettled.value?.channels)
+          ? tdtSettled.value.channels
+          : [];
+      const worldList: SpanishTdtChannel[] =
+        worldSettled.status === 'fulfilled' && Array.isArray(worldSettled.value?.channels)
+          ? worldSettled.value.channels
+          : [];
+      if (baseList.length > 0 || worldList.length > 0) {
+        const seenIds = new Set<string>();
+        const merged: SpanishTdtChannel[] = [];
+        for (const ch of [...baseList, ...worldList]) {
+          if (!ch?.id || seenIds.has(ch.id)) continue;
+          seenIds.add(ch.id);
+          merged.push(ch);
+        }
+        setTdtChannels(merged);
       }
     } catch {
       // Keep cached channels
@@ -214,6 +233,7 @@ export function useLiveTvAndSportsCatalog({
       'tnt_space',
       'movistar',
       'dazn',
+      'world_cricket',
     ]);
     return tdtChannels.filter((ch) => {
       const isExtraSportCh = ch.id === 'ma-arryadia' || ch.id === 'us-fox-sports1';
@@ -234,7 +254,7 @@ export function useLiveTvAndSportsCatalog({
           norm(ch.shortMark).includes(q) ||
           norm(ch.network).includes(q);
         if (
-          /cctv|china|chino|zh|guangdong|fengyun|xinshijue|tianjin|sky|uk|premier|eurosport|mutv|talksport|fifa|bein|arab|arabe|arryadia|maroc|marruecos|fox|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight/i.test(
+          /cctv|china|chino|zh|guangdong|fengyun|xinshijue|tianjin|sky|uk|premier|eurosport|mutv|talksport|fifa|bein|arab|arabe|arryadia|maroc|marruecos|fox|espn|dsport|directv|tnt|space|movistar|dazn|laliga|campeones|vamos|f1|motor|fight|cricket|willow|sony|star sport|bahrain|rta|iraqia|aci|ekol|famelack|sportzfy/i.test(
             q
           )
         ) {
@@ -254,6 +274,12 @@ export function useLiveTvAndSportsCatalog({
     if (tvRegion !== 'all') {
       const reg = getChannelRegionMeta(ch);
       if (reg.region !== tvRegion) return false;
+      if (tvRegion === 'adrar_europa' && adrarCountryFilter !== 'all') {
+        const cCode = (ch.countryCode || '').toLowerCase();
+        if (cCode !== adrarCountryFilter && !ch.id.includes(`-${adrarCountryFilter}-`)) {
+          return false;
+        }
+      }
     }
 
     if (tdtCategory === 'tdt_all') {
@@ -271,7 +297,12 @@ export function useLiveTvAndSportsCatalog({
         ch.category === 'noticias_intl' ||
         ch.category === 'espn' ||
         ch.category === 'dsports' ||
-        ch.category === 'tnt_space'
+        ch.category === 'tnt_space' ||
+        ch.category === 'world_cricket' ||
+        ch.category === 'elahmad_mena' ||
+        ch.category === 'adrar_europa' ||
+        ch.category === 'famelack_movies' ||
+        ch.category === 'kids_world'
       ) {
         return false;
       }
@@ -292,6 +323,7 @@ export function useLiveTvAndSportsCatalog({
         ch.category === 'beinsports' ||
         ch.category === 'espn' ||
         ch.category === 'dsports' ||
+        ch.category === 'world_cricket' ||
         ch.id === 'tnt-sports' ||
         ch.id.includes('laliga') ||
         ch.id.includes('champions') ||
@@ -303,13 +335,14 @@ export function useLiveTvAndSportsCatalog({
         ch.id.includes('gol') ||
         ch.id.includes('rmtv');
       const isAiringSports =
-        /deporte|f[uú]tbol|laliga|champions|f1|f[oó]rmula|motogp|tenis|baloncesto|nba|acb|ciclismo|golf|motor|directo|liga/i.test(
+        /deporte|f[uú]tbol|laliga|champions|f1|f[oó]rmula|motogp|tenis|baloncesto|nba|acb|ciclismo|golf|motor|directo|liga|cricket/i.test(
           epgHaystack
         );
       if (!isSportsChannel && !isAiringSports) return false;
     } else if (epgFilter === 'cinema_now') {
       const isCinemaChannel =
         ch.category === 'cine_series' ||
+        ch.category === 'famelack_movies' ||
         ch.id === 'tnt-vivo' ||
         ch.id === 'space-vivo' ||
         ch.id === 'mplus-estrenos' ||
@@ -360,6 +393,7 @@ export function useLiveTvAndSportsCatalog({
       'tnt_space',
       'movistar',
       'dazn',
+      'world_cricket',
     ]);
     const counts: Record<string, number> = { all: 0 };
     for (const ch of tdtChannels) {
@@ -385,6 +419,8 @@ export function useLiveTvAndSportsCatalog({
     setTdtCategory,
     tvRegion,
     setTvRegion,
+    adrarCountryFilter,
+    setAdrarCountryFilter,
     tvFavOnly,
     setTvFavOnly,
     epgMadridClock,

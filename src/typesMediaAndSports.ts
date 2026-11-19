@@ -31,6 +31,7 @@ export interface StreamTrack {
     | 'bingetrix_en'
     | 'sports_channel'
     | 'tdt_hls'
+    | 'elahmad_live'
     | 'direct_hls'
     | 'direct_mp4'
     | 'youtube'
@@ -308,6 +309,8 @@ export interface FootballMatchboardItem {
   kickoffTime: string;
   statusState: 'live' | 'upcoming' | 'finished';
   statusLabel: string;
+  matchdayLabel?: string;
+  spanishBroadcaster?: { name: string; brand: 'movistar' | 'dazn' | 'dazn_mplus' | 'rtve'; badgeColor: string } | null;
   homeTeam: string;
   awayTeam: string;
   homeShort: string;
@@ -470,7 +473,12 @@ export type TdtCategory =
   | 'cine_series'
   | 'entretenimiento'
   | 'noticias_deportes'
-  | 'infantil_autonomicas';
+  | 'infantil_autonomicas'
+  | 'world_cricket'
+  | 'elahmad_mena'
+  | 'adrar_europa'
+  | 'famelack_movies'
+  | 'kids_world';
 
 export interface SpanishTdtChannel {
   id: string;
@@ -483,6 +491,8 @@ export interface SpanishTdtChannel {
   category: TdtCategory;
   quality: string;
   description: string;
+  countryCode?: string;
+  sourceHub?: 'tdt' | 'famelack' | 'elahmad' | 'freetv' | 'iptvorg' | 'sportzfy';
   channels: StreamTrack[];
   healthSummary?: ChannelHealthSummary;
 }

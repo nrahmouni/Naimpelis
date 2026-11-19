@@ -547,7 +547,12 @@ async function runAiSearchPipeline(
       ),
     });
   } catch (err: any) {
-    logger.error({ err: err?.message, query }, 'ai_movie_request_failed');
+    const errMsg = String(err?.message || '');
+    if (/429|RESOURCE_EXHAUSTED|spending\s*cap|quota|timeout/i.test(errMsg)) {
+      logger.warn({ err: errMsg, query }, 'ai_movie_request_limited');
+    } else {
+      logger.error({ err: errMsg, query }, 'ai_movie_request_failed');
+    }
     updateJob(job, {
       status: 'error',
       error: err?.message || 'AI search error',

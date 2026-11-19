@@ -13,5 +13,12 @@
     "strict": true,
     "esModuleInterop": true
   },
-  "include": ["server.ts", "server/**/*.ts", "src/shared/**/*.ts"]
+  "include": [
+    "server.ts",
+    "server/**/*.ts",
+    "src/shared/**/*.ts",
+    "src/db/**/*.ts",
+    "src/lib/**/*.ts",
+    "src/middleware/**/*.ts"
+  ]
 }

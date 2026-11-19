@@ -7,6 +7,8 @@ export {
 
 export {
   type GoogleSignInResult,
+  type GoogleSignInOptions,
+  checkGoogleRedirectSignInResult,
   signInWithGoogleAccountDetailed,
   signInWithGoogleAccount,
   signOutGoogleAccount,
@@ -14,6 +16,12 @@ export {
   ensureCloudUserProfile,
   updateCloudUserProfile,
 } from './cloudSync/cloudAuthAndProfile';
+
+export {
+  type SqlAccountState,
+  fetchSqlAccountState,
+  toCloudUserLike,
+} from './cloudSync/cloudSqlSync';
 
 export {
   upsertCloudWatchHistory,

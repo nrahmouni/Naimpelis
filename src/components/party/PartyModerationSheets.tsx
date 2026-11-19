@@ -75,7 +75,7 @@ interface PartyModerationSheetsProps {
   pinDraft: string;
   setPinDraft: (val: string) => void;
   onSetRoomPin: (nextPinCode: string) => void;
-  onCreateNewRoom?: (customRoomName?: string) => void;
+  onCreateNewRoom?: (customRoomName?: string, customSlug?: string) => void;
   newRoomNameDraft: string;
   setNewRoomNameDraft: (val: string) => void;
 }
@@ -130,6 +130,7 @@ export const PartyModerationSheets: React.FC<PartyModerationSheetsProps> = ({
   setNewRoomNameDraft,
 }) => {
   const t = UI_COPY[lang];
+  const [newRoomSlugDraft, setNewRoomSlugDraft] = React.useState('');
 
   return (
     <>
@@ -576,7 +577,7 @@ export const PartyModerationSheets: React.FC<PartyModerationSheetsProps> = ({
         )}
 
         {onCreateNewRoom && (
-          <div className="space-y-2 pt-2 border-t border-white/[0.07]">
+          <div className="space-y-2.5 pt-2 border-t border-white/[0.07]">
             <label className="text-xs font-bold text-zinc-300 flex items-center gap-1.5">
               <Plus className="w-3.5 h-3.5 text-[#BF94FF]" />
               <span>
@@ -595,8 +596,12 @@ export const PartyModerationSheets: React.FC<PartyModerationSheetsProps> = ({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter') {
                     e.preventDefault();
-                    onCreateNewRoom(newRoomNameDraft.trim() || undefined);
+                    onCreateNewRoom(
+                      newRoomNameDraft.trim() || undefined,
+                      newRoomSlugDraft.trim() || undefined
+                    );
                     setNewRoomNameDraft('');
+                    setNewRoomSlugDraft('');
                     setShowRoomSettingsSheet(false);
                   }
                 }}
@@ -608,8 +613,12 @@ export const PartyModerationSheets: React.FC<PartyModerationSheetsProps> = ({
               />
               <PrimaryButton
                 onClick={() => {
-                  onCreateNewRoom(newRoomNameDraft.trim() || undefined);
+                  onCreateNewRoom(
+                    newRoomNameDraft.trim() || undefined,
+                    newRoomSlugDraft.trim() || undefined
+                  );
                   setNewRoomNameDraft('');
+                  setNewRoomSlugDraft('');
                   setShowRoomSettingsSheet(false);
                 }}
               >
@@ -618,6 +627,25 @@ export const PartyModerationSheets: React.FC<PartyModerationSheetsProps> = ({
                   {pickLang(lang, { es: 'Crear', ca: 'Crear', en: 'Create' })}
                 </span>
               </PrimaryButton>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-mono text-zinc-400 shrink-0">/</span>
+              <StandardInput
+                type="text"
+                value={newRoomSlugDraft}
+                maxLength={24}
+                onChange={(e) =>
+                  setNewRoomSlugDraft(
+                    e.target.value.toLowerCase().replace(/[^a-z0-9-_ ]/g, '')
+                  )
+                }
+                placeholder={pickLang(lang, {
+                  es: 'Enlace corto opcional (ej. cine-viernes)',
+                  ca: 'Enllaç curt opcional (ex. cine-divendres)',
+                  en: 'Optional short link (e.g. friday-night)',
+                })}
+                className="font-mono text-xs"
+              />
             </div>
           </div>
         )}

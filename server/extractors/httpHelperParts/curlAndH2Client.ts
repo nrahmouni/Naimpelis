@@ -27,6 +27,7 @@ export interface TrackRecord {
     | 'bingetrix_en'
     | 'sports_channel'
     | 'tdt_hls'
+    | 'elahmad_live'
     | 'direct_hls'
     | 'direct_mp4'
     | 'youtube'
@@ -153,6 +154,12 @@ export function resolveKnownUpstreamReferer(urlStr: string, explicitReferer?: st
       return 'http://www.radio2m.ma/';
     }
     if (/(\.|^)usnlive\.com$/i.test(u.hostname)) return 'https://usnewson.com/';
+    if (/(\.|^)(rousav\.tech|vidbolt\.(?:st|xyz)|johndoesdmc\.workers\.dev)$/i.test(u.hostname)) {
+      return 'https://vidbolt.st/';
+    }
+    if (/(\.|^)(elahmad\.(?:ru|store)|glwiz\.com|mangomolo\.com)$/i.test(u.hostname)) {
+      return 'https://www.elahmad.ru/';
+    }
   } catch {
     // ignore
   }

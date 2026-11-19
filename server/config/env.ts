@@ -21,20 +21,27 @@ export interface AppEnvironmentConfig {
   androidCertSha256: string;
 }
 
+const isProdEnv = process.env.NODE_ENV === 'production';
+const parsedEnvPort = Number(process.env.PORT);
+
 export const ENV: AppEnvironmentConfig = {
-  port: Number(process.env.PORT) || 3000,
+  port: isProdEnv
+    ? parsedEnvPort || 3000
+    : parsedEnvPort && parsedEnvPort !== 8080
+      ? parsedEnvPort
+      : 3000,
   nodeEnv:
-    process.env.NODE_ENV === 'production'
+    isProdEnv
       ? 'production'
       : process.env.NODE_ENV === 'test'
         ? 'test'
         : 'development',
-  isProd: process.env.NODE_ENV === 'production',
+  isProd: isProdEnv,
   tmdbApiKey: process.env.TMDB_API_KEY || '90b2cae8d7161e8ba0f3836240d7d352',
   publicDomain: process.env.PUBLIC_APP_DOMAIN || '',
-  appVersionName: process.env.NAIM_APP_VERSION || '3.1.0',
-  appVersionCodeMobile: Number(process.env.NAIM_MOBILE_VERSION_CODE) || 300,
-  appVersionCodeTv: Number(process.env.NAIM_TV_VERSION_CODE) || 300,
+  appVersionName: process.env.NAIM_APP_VERSION || '3.1.1',
+  appVersionCodeMobile: Number(process.env.NAIM_MOBILE_VERSION_CODE) || 301,
+  appVersionCodeTv: Number(process.env.NAIM_TV_VERSION_CODE) || 301,
   androidMobilePkg: process.env.ANDROID_MOBILE_PKG || 'com.naimcine.mobile',
   androidTvPkg: process.env.ANDROID_TV_PKG || 'com.naimcine.tv',
   legacyAndroidPkg: 'studio.ai.naimcine.app',

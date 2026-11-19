@@ -34,6 +34,11 @@ export const IPTV_GROUP_TITLES: Record<string, string> = {
   infantil_autonomicas: 'Infantil y Autonómicas (TV3 · SX3 · Autonómicas)',
   infantil_kids: 'Riffan Kids (Infantil y Dibujos 24/7)',
   fast_thematic: 'Canales Temáticos FAST 24/7',
+  world_cricket: 'Deportes Mundial & Cricket (Sportzfy · Famelack)',
+  elahmad_mena: 'Elahmad MENA & Árabe (Magreb · MBC · Golfo)',
+  adrar_europa: 'ADRAR Europa (FR · DE · IT · TR · UK · NL · BE · RU)',
+  famelack_movies: 'Famelack Cine & Series 24/7',
+  kids_world: 'Infantil Mundial (Elahmad & Famelack Kids)',
   internacional: 'Canales Internacionales',
 };
 

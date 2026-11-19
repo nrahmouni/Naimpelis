@@ -5,6 +5,7 @@ import type { AppLanguage } from '../../types';
 export { HapticTvRemote, type HapticTvRemoteProps } from './HapticTvRemote';
 import { pickLang } from '../../utils/i18n';
 import { useFocusTrap } from '../../utils/useFocusTrap';
+import { useBackInterceptor } from '../../lib/backInterceptor';
 import { PosterImage } from './PosterImage';
 import {
   RiffanCloseIcon,
@@ -183,6 +184,10 @@ export const BottomSheet: React.FC<BottomSheetProps> = ({
   const sheetRef = useRef<HTMLDivElement | null>(null);
   const titleId = useId();
   useFocusTrap(isOpen, onClose, sheetRef);
+  useBackInterceptor(isOpen, `bottom-sheet-${titleId}`, onClose, {
+    priority: 25,
+    lockScroll: true,
+  });
 
   const content = (
     <AnimatePresence>

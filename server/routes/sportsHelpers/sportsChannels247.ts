@@ -253,6 +253,67 @@ export function getPermanent247SportsMatches() {
       ],
     },
     getChineseFootballMultiplexCard(),
+    {
+      id: 'mux-cricket-world',
+      title: 'Cricket Mundial, Sportzfy & Global Sports · Willow · Sony · Star · Bahrain',
+      competition: 'Cricket IPL / T20 · Global Sports 24/7',
+      sport: 'other',
+      time: 'LIVE',
+      isLive: true,
+      is247Channel: true,
+      channels: [
+        {
+          id: 'ch-cricket-willow',
+          label: 'Willow Sports HD (Cricket)',
+          lang: 'EN',
+          quality: '1080p',
+          sourceUrl:
+            'https://amg01269-amg01269c1-distrotv-us-5379.playouts.now.amagi.tv/playlist/amg01269-willowtvfast-willowplus-distrotvus/playlist.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-cricket-sony3',
+          label: 'Sony Sports Ten 3 HD',
+          lang: 'EN',
+          quality: '1080p',
+          sourceUrl: 'https://r2.amml.in/sony-ten-3-hd/live.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-cricket-star2',
+          label: 'Star Sports 2 HD',
+          lang: 'EN',
+          quality: '720p',
+          sourceUrl: 'https://real-vk.proxy.nellaiiptv.com/SDMEDIA/index.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-cricket-dd',
+          label: 'DD Sports India HD',
+          lang: 'EN',
+          quality: '1080p',
+          sourceUrl:
+            'https://d3qs3d2rkhfqrt.cloudfront.net/out/v1/b17adfe543354fdd8d189b110617cddd/index.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-world-sport1-de',
+          label: 'Sport1 Alemania HD',
+          lang: 'DE',
+          quality: '1080p',
+          sourceUrl: 'https://r.eu.cdn-redge.media/livehls/oeu/mt/live/sport1/live.livx/playlist.m3u8',
+          resolverType: 'tdt_hls',
+        },
+        {
+          id: 'ch-world-bahrain1',
+          label: 'Bahrain Sports 1 HD',
+          lang: 'AR',
+          quality: '1080p',
+          sourceUrl: 'https://www.elahmad.ru/tv/arabic-tv-online.php?id=bahrainsport',
+          resolverType: 'elahmad_live',
+        },
+      ],
+    },
   ];
 }
 

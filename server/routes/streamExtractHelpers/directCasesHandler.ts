@@ -14,6 +14,10 @@ import {
 import { unpackVidhideToHls } from '../../extractors/vidhideEmbed69.ts';
 import { isMovidyVerUrl, resolveMovidyEmbedTrack } from '../../extractors/bingetrixMovidy.ts';
 import { sniffStreamWithHeadless } from '../../extractors/sportsExtractor.ts';
+import {
+  isElahmadUrl,
+  resolveElahmadChannelToHls,
+} from '../../extractors/elahmadExtractor.ts';
 
 export async function handleDirectExtractCases(params: {
   rawInput: string;
@@ -110,6 +114,42 @@ export async function handleDirectExtractCases(params: {
       requestedLang: resolvedChLang,
       resolvedLang: resolvedChLang,
       expiresAt: Date.now() + 4 * 60 * 1000,
+    };
+    setCache(cacheKey, result);
+    return sendOk(result);
+  }
+
+  // CASE 0B: Elahmad TV dynamic encrypted live HLS channel (`elahmad_live`)
+  if ((resolverType === 'elahmad_live' || isElahmadUrl(rawInput)) && rawInput) {
+    const resolved = await resolveElahmadChannelToHls(rawInput);
+    if (!resolved) {
+      return sendErr(404, 'Señal de Elahmad TV temporalmente sin emisión disponible.');
+    }
+    if (resolved.isYoutube && resolved.youtubeId) {
+      const ytResult: ExtractedStreamResult = {
+        success: true,
+        mode: 'youtube',
+        streamUrl: resolved.youtubeId,
+        youtubeId: resolved.youtubeId,
+        title: titleHint || 'Elahmad Live TV',
+        requestedLang: preferLang || 'AR',
+        resolvedLang: 'AR',
+        expiresAt: Date.now() + 10 * 60 * 1000,
+      };
+      setCache(cacheKey, ytResult);
+      return sendOk(ytResult);
+    }
+    const signedUrl = await maybeSignEasyBroadcastUrl(resolved.streamUrl);
+    const result: ExtractedStreamResult = {
+      success: true,
+      mode: 'hls',
+      streamUrl: buildHlsProxyUrl(signedUrl, resolved.referer),
+      rawStreamUrl: signedUrl,
+      referer: resolved.referer,
+      title: titleHint || 'Elahmad Live TV',
+      requestedLang: preferLang || 'AR',
+      resolvedLang: 'AR',
+      expiresAt: Date.now() + 3 * 60 * 1000,
     };
     setCache(cacheKey, result);
     return sendOk(result);

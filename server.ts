@@ -29,6 +29,7 @@ import {
   getLiveVoiceMatches,
 } from './server/routes/sports.ts';
 import { registerIptvAndTdtRoutes, getLiveVoiceChannels } from './server/routes/iptv.ts';
+import { registerWorldTvRoutes } from './server/routes/worldTvRoutes.ts';
 import { registerEpgRoutes } from './server/services/epgService.ts';
 import { registerCastellanoCatalogRoutes } from './server/routes/castellanoCatalog.ts';
 import { registerCatalaCatalogRoutes } from './server/routes/catalaCatalog.ts';
@@ -56,6 +57,7 @@ import {
   applySyncedStreamsToChannels,
   refreshLiveIptvRegistry,
 } from './server/services/iptvPlaylistService.ts';
+import { refreshFamelackAndWorldCatalog } from './server/services/famelackIptvService.ts';
 import { createRoomHub } from './server/ws/roomHub.ts';
 import { type TrackRecord } from './server/extractors/httpHelpers.ts';
 import { resolveActiveGnulaMirrors } from './server/extractors/gnulaHdExtractor.ts';
@@ -165,6 +167,7 @@ registerKidsRoutes(app);
 registerProxyRoutes(app, { getPublicOrigin });
 registerSportsRoutes(app);
 registerIptvAndTdtRoutes(app, { getPublicOrigin });
+registerWorldTvRoutes(app);
 registerEpgRoutes(app);
 registerCastellanoCatalogRoutes(app);
 registerCatalaCatalogRoutes(app);
@@ -371,6 +374,7 @@ function rankCandidateTracks({
     if (tr.id.startsWith('movidy-') || tr.resolverType === 'movidy_embed') return 1;
     if (tr.id.startsWith('gnula-')) return 2;
     if (
+      tr.id.startsWith('vidbolt-') ||
       tr.id.startsWith('bingetrix-') ||
       tr.id.startsWith('vidrock-') ||
       tr.id.startsWith('2embed-') ||
@@ -501,7 +505,11 @@ async function startServer() {
         express.static(distDir, {
           maxAge: '7d',
           setHeaders: (res, filePath) => {
-            if (filePath.endsWith('.html') || filePath.endsWith('sw.js')) {
+            if (
+              filePath.endsWith('.html') ||
+              filePath.endsWith('sw.js') ||
+              filePath.includes(`${path.sep}tv${path.sep}`)
+            ) {
               res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
             }
           },
@@ -537,6 +545,7 @@ async function startServer() {
         try {
           void resolveActiveGnulaMirrors().catch(() => undefined);
           void refreshLiveIptvRegistry(false).catch(() => undefined);
+          void refreshFamelackAndWorldCatalog(false).catch(() => undefined);
           channelHealthMonitor.startScheduler(
             () => [
               ...applySyncedStreamsToChannels(SPANISH_TDT_CHANNELS),

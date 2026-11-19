@@ -14,6 +14,7 @@ import {
 import {
   extract2EmbedEnglishTracks,
   extractBingetrixEnglishTracks,
+  extractGhostflixVidboltTracks,
   extractMovidyPageTracks,
   extractVidRockHlsTracks,
   extractVidsrcBuzzHlsTracks,
@@ -97,11 +98,11 @@ export async function handleCatalogMediaExtract(
   const bingetrixTvMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch\/)?tv\/(\d+)\/(\d+)\/(\d+)/i);
   const bingetrixMovieMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch|movie)\/(\d+)/i);
   const externalEmbedTvMatch =
-    rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)[/-](\d+)/i) ||
+    rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?tv\/(tt\d+|\d+)\/(\d+)[/-](\d+)/i) ||
     rawInput.match(/2embed\.[a-z]+\/(?:embedtv|tv)\/(tt\d+|\d+)(?:&s=|\/)(\d+)(?:&e=|\/)(\d+)/i) ||
     rawInput.match(/[?&]tmdb=(\d+).*?[?&]season=(\d+).*?[?&]episode=(\d+)/i);
   const externalEmbedMovieMatch = !externalEmbedTvMatch
-    ? rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed|2embed)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:movie\/)?(tt\d+|\d+)/i) ||
+    ? rawInput.match(/(?:vidfast|vidlink|vidsrc|videm|vidrock|vidnest|vsembed|2embed|ghostflix|vidbolt)\.[a-z.]+\/(?:v2\/)?(?:embed\/)?(?:(?:movies?|watch)\/)?(tt\d+|\d+)/i) ||
       rawInput.match(/[?&]tmdb=(\d+)/i)
     : null;
 
@@ -236,6 +237,7 @@ export async function handleCatalogMediaExtract(
     twoEmbedEnTracks,
     vidBuzzHlsTracks,
     vestExtracted,
+    ghostflixExtracted,
   ] = await Promise.all([
     withExtractTimeout(resolveAndExtractMovidy(), 6800, [] as TrackRecord[]),
     withExtractTimeout(resolveAndExtractGnula(), 7000, [] as TrackRecord[]),
@@ -326,9 +328,25 @@ export async function handleCatalogMediaExtract(
           null
         )
       : Promise.resolve(null),
+    resolvedTmdbId
+      ? withExtractTimeout(
+          extractGhostflixVidboltTracks({
+            tmdbId: resolvedTmdbId,
+            mediaType: effectiveMediaType,
+            season: effectiveSeason,
+            episode: effectiveEpisode,
+            force: forceExtract,
+          }),
+          6500,
+          { tracks: [] as TrackRecord[], subtitles: [], detectedLangs: [] }
+        )
+      : Promise.resolve({ tracks: [] as TrackRecord[], subtitles: [], detectedLangs: [] }),
   ]);
 
+  const ghostflixTracks: TrackRecord[] = ghostflixExtracted?.tracks || [];
+  const ghostflixSubtitles = ghostflixExtracted?.subtitles || [];
   const enTracks: TrackRecord[] = [
+    ...ghostflixTracks,
     ...vidRockTracks,
     ...bingetrixEnTracks,
     ...twoEmbedEnTracks,
@@ -500,7 +518,7 @@ export async function handleCatalogMediaExtract(
           : baseCleanTitle
         : 'RiffanTV HD');
 
-    let combinedSubtitles = vestSubtitles;
+    let combinedSubtitles = [...vestSubtitles, ...ghostflixSubtitles];
     if (combinedSubtitles.length === 0 && resolvedTmdbId) {
       combinedSubtitles = await fetchAndCacheSubtitles(
         String(resolvedTmdbId),

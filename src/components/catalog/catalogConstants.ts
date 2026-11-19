@@ -75,8 +75,31 @@ export const ALL_LIVE_CATEGORIES: { id: 'all' | 'tdt_all' | TdtCategory; es: str
   { id: 'tnt_space', es: 'TNT y Space', ca: 'TNT i Space', en: 'TNT & Space' },
   { id: 'movistar', es: 'Movistar+', ca: 'Movistar+', en: 'Movistar+' },
   { id: 'dazn', es: 'DAZN', ca: 'DAZN', en: 'DAZN' },
+  { id: 'world_cricket', es: 'Cricket & Deportes (Sportzfy)', ca: 'Cricket i Esports (Sportzfy)', en: 'Cricket & Sports (Sportzfy)' },
+  { id: 'elahmad_mena', es: 'Elahmad MENA (Magreb · Golfo)', ca: 'Elahmad MENA (Magrib · Golf)', en: 'Elahmad MENA (Maghreb · Gulf)' },
+  { id: 'adrar_europa', es: 'ADRAR Europa (FR·DE·IT·TR·UK·NL·RU)', ca: 'ADRAR Europa (FR·DE·IT·TR·UK·NL·RU)', en: 'ADRAR Europe (FR·DE·IT·TR·UK·NL·RU)' },
+  { id: 'famelack_movies', es: 'Cine 24/7 Mundial (Famelack)', ca: 'Cinema 24/7 Mundial (Famelack)', en: 'World Movies 24/7 (Famelack)' },
+  { id: 'kids_world', es: 'Infantil Mundial (Kids)', ca: 'Infantil Mundial (Kids)', en: 'World Kids TV' },
   { id: 'tdt_all', es: 'TDT España', ca: 'TDT Espanya', en: 'Spain TDT' },
   { id: 'generalistas', es: 'La 1 · A3 · T5 · laSexta', ca: 'La 1 · A3 · T5 · laSexta', en: 'Main Channels (1–6)' },
+];
+
+export const ADRAR_COUNTRY_FILTERS: {
+  id: string;
+  flagCode: FlagCode;
+  es: string;
+  ca: string;
+  en: string;
+}[] = [
+  { id: 'all', flagCode: 'eu', es: 'Toda ADRAR', ca: 'Tota ADRAR', en: 'All ADRAR' },
+  { id: 'fr', flagCode: 'fr', es: 'Francia', ca: 'França', en: 'France' },
+  { id: 'de', flagCode: 'de', es: 'Alemania', ca: 'Alemanya', en: 'Germany' },
+  { id: 'it', flagCode: 'it', es: 'Italia', ca: 'Itàlia', en: 'Italy' },
+  { id: 'tr', flagCode: 'tr', es: 'Turquía', ca: 'Turquia', en: 'Turkey' },
+  { id: 'uk', flagCode: 'uk', es: 'UK', ca: 'UK', en: 'UK' },
+  { id: 'nl', flagCode: 'nl', es: 'Países Bajos', ca: 'Països Baixos', en: 'Netherlands' },
+  { id: 'be', flagCode: 'be', es: 'Bélgica', ca: 'Bèlgica', en: 'Belgium' },
+  { id: 'ru', flagCode: 'ru', es: 'Rusia', ca: 'Rússia', en: 'Russia' },
 ];
 
 export interface TvFilterGroup {
@@ -110,6 +133,45 @@ export const TV_FILTER_GROUPS: TvFilterGroup[] = [
       { id: 'entretenimiento', es: 'Entretenimiento', ca: 'Entreteniment', en: 'Entertainment' },
       { id: 'noticias_deportes', es: '24h y Deportes', ca: '24h i Esports', en: 'News & Sports' },
       { id: 'infantil_autonomicas', es: 'Infantil y Autonómicas', ca: 'Infantil i Autonòmiques', en: 'Kids & Regional' },
+    ],
+  },
+  {
+    region: 'world_cricket',
+    flagCode: 'all',
+    name: { es: 'Cricket & Deportes Mundial', ca: 'Cricket i Esports Mundial', en: 'World Cricket & Sports' },
+    sub: {
+      es: 'Sportzfy · Famelack · IPTV-Org (Willow, Sony Ten, Star Sports, Bahrain)',
+      ca: 'Sportzfy · Famelack · IPTV-Org (Willow, Sony Ten, Star Sports, Bahrain)',
+      en: 'Sportzfy · Famelack · IPTV-Org (Willow, Sony Ten, Star Sports, Bahrain)',
+    },
+    categories: [
+      { id: 'world_cricket', es: 'Cricket · Famelack · Sportzfy', ca: 'Cricket · Famelack · Sportzfy', en: 'Cricket · Famelack · Sportzfy' },
+    ],
+  },
+  {
+    region: 'elahmad_mena',
+    flagCode: 'dz',
+    name: { es: 'Elahmad TV · Magreb y Golfo', ca: 'Elahmad TV · Magrib i Golf', en: 'Elahmad TV · Maghreb & Gulf' },
+    sub: {
+      es: 'Marruecos, Argelia, Egipto, Arabia Saudí, EAU, Qatar y Kuwait en directo',
+      ca: 'Marroc, Algèria, Egipte, Aràbia Saudita, EAU, Qatar i Kuwait en directe',
+      en: 'Morocco, Algeria, Egypt, Saudi Arabia, UAE, Qatar & Kuwait Live',
+    },
+    categories: [
+      { id: 'elahmad_mena', es: 'Elahmad MENA (العربية en directo)', ca: 'Elahmad MENA (العربية en directe)', en: 'Elahmad MENA (Arabic Live)' },
+    ],
+  },
+  {
+    region: 'adrar_europa',
+    flagCode: 'eu',
+    name: { es: 'ADRAR TV Europa', ca: 'ADRAR TV Europa', en: 'ADRAR TV Europe' },
+    sub: {
+      es: 'Francia, Alemania, Italia, Turquía, UK, Países Bajos, Bélgica y Rusia',
+      ca: 'França, Alemanya, Itàlia, Turquia, UK, Països Baixos, Bèlgica i Rússia',
+      en: 'France, Germany, Italy, Turkey, UK, Netherlands, Belgium & Russia',
+    },
+    categories: [
+      { id: 'adrar_europa', es: 'Paquete ADRAR Europa (8 países)', ca: 'Paquet ADRAR Europa (8 països)', en: 'ADRAR Europe Pack (8 countries)' },
     ],
   },
   {
@@ -168,14 +230,16 @@ export const TV_FILTER_GROUPS: TvFilterGroup[] = [
   {
     region: 'eu',
     flagCode: 'eu',
-    name: { es: 'Europa', ca: 'Europa', en: 'Europe' },
+    name: { es: 'Europa, Cine 24/7 e Infantil', ca: 'Europa, Cinema 24/7 i Infantil', en: 'Europe, 24/7 Movies & Kids' },
     sub: {
-      es: 'BBC News, Euronews, France 24, DW, BFM TV, ARD, RAI y RTP',
-      ca: 'BBC News, Euronews, France 24, DW, BFM TV, ARD, RAI i RTP',
-      en: 'BBC News, Euronews, France 24, DW, BFM TV, ARD, RAI & RTP',
+      es: 'BBC News, Euronews, France 24, DW, RAI y Famelack Cine/Kids',
+      ca: 'BBC News, Euronews, France 24, DW, RAI i Famelack Cinema/Kids',
+      en: 'BBC News, Euronews, France 24, DW, RAI & Famelack Movies/Kids',
     },
     categories: [
       { id: 'europa_tv', es: 'Canales Europeos (BBC · Euronews · RAI · DW)', ca: 'Canals Europeus (BBC · Euronews · RAI · DW)', en: 'European Channels (BBC · Euronews · RAI · DW)' },
+      { id: 'famelack_movies', es: 'Cine 24/7 Mundial (Famelack)', ca: 'Cinema 24/7 Mundial (Famelack)', en: 'World Movies 24/7 (Famelack)' },
+      { id: 'kids_world', es: 'Infantil Mundial (Kids)', ca: 'Infantil Mundial (Kids)', en: 'World Kids TV' },
     ],
   },
   {

@@ -26,9 +26,16 @@ export interface SpanishTdtChannelDef {
     | 'cine_series'
     | 'entretenimiento'
     | 'noticias_deportes'
-    | 'infantil_autonomicas';
+    | 'infantil_autonomicas'
+    | 'world_cricket'
+    | 'elahmad_mena'
+    | 'adrar_europa'
+    | 'famelack_movies'
+    | 'kids_world';
   quality: string;
   description: string;
   logoUrl?: string;
+  countryCode?: string;
+  sourceHub?: 'tdt' | 'famelack' | 'elahmad' | 'freetv' | 'iptvorg' | 'sportzfy';
   channels: TrackRecord[];
 }

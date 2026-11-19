@@ -1,12 +1,16 @@
 import React from 'react';
 import { RefreshCw } from 'lucide-react';
 import { pickLang } from '../utils/i18n';
+import { isChunkOrModuleLoadError } from '../utils/lazyWithRetry';
+import { clearStaleCachesAndReload } from '../utils/versionSync';
 import type { AppLanguage } from '../types';
 
 interface State {
   hasError: boolean;
   message: string;
 }
+
+const CHUNK_RELOAD_GUARD_KEY = 'naim_chunk_reload_at';
 
 function getBoundaryLang(): AppLanguage {
   try {
@@ -32,12 +36,27 @@ export class AppErrorBoundary extends React.Component<
     return { hasError: true, message: raw };
   }
 
+  componentDidCatch(error: unknown) {
+    if (!isChunkOrModuleLoadError(error)) return;
+    try {
+      const lastReloadAt = Number(sessionStorage.getItem(CHUNK_RELOAD_GUARD_KEY) || '0');
+      const now = Date.now();
+      if (!Number.isFinite(lastReloadAt) || now - lastReloadAt > 15_000) {
+        sessionStorage.setItem(CHUNK_RELOAD_GUARD_KEY, String(now));
+        void clearStaleCachesAndReload();
+      }
+    } catch {
+      // ignore sessionStorage blocks in restricted WebViews
+    }
+  }
+
   render() {
     if (!this.state.hasError) {
       return this.props.children;
     }
 
     const isQuota = this.state.message.toLowerCase().includes('quota exceeded');
+    const isChunk = isChunkOrModuleLoadError(this.state.message);
     const lang = getBoundaryLang();
 
     return (
@@ -50,11 +69,17 @@ export class AppErrorBoundary extends React.Component<
                   ca: 'Límit diari de sincronització al núvol assolit',
                   en: 'Daily cloud sync quota reached',
                 })
-              : pickLang(lang, {
-                  es: 'Se produjo una interrupción temporal',
-                  ca: "S'ha produït una interrupció temporal",
-                  en: 'A temporary interruption occurred',
-                })}
+              : isChunk
+                ? pickLang(lang, {
+                    es: 'Actualizando módulos de RiffanTV',
+                    ca: 'Actualitzant mòduls de RiffanTV',
+                    en: 'Updating RiffanTV modules',
+                  })
+                : pickLang(lang, {
+                    es: 'Se produjo una interrupción temporal',
+                    ca: "S'ha produït una interrupció temporal",
+                    en: 'A temporary interruption occurred',
+                  })}
           </h2>
           <p className="text-xs sm:text-sm text-[#A9AEBE] leading-relaxed">
             {isQuota
@@ -71,7 +96,7 @@ export class AppErrorBoundary extends React.Component<
           </p>
           <button
             type="button"
-            onClick={() => window.location.reload()}
+            onClick={() => void clearStaleCachesAndReload()}
             className="min-h-[44px] px-5 rounded-2xl bg-[#8B5CF6] hover:bg-[#7C3AED] text-xs sm:text-sm font-semibold text-white inline-flex items-center gap-2 cursor-pointer"
           >
             <RefreshCw className="w-4 h-4" />

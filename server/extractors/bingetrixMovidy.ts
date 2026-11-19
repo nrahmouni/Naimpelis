@@ -29,9 +29,13 @@ import {
   normalizeMovidyUrl,
   verifyMovidyMetaMatch,
 } from './bingetrixHelpers/movidyScraper.ts';
+import {
+  hasGhostflixVidboltStreamFast,
+} from './bingetrixHelpers/ghostflixVidboltExtractor.ts';
 
 export * from './bingetrixHelpers/englishStreamExtractors.ts';
 export * from './bingetrixHelpers/movidyScraper.ts';
+export * from './bingetrixHelpers/ghostflixVidboltExtractor.ts';
 
 const availableLangsCache = new LruTtlCache<string, ('ES' | 'LAT' | 'VOSE' | 'EN')[]>(
   500,
@@ -233,11 +237,23 @@ export async function probeAvailableLanguages(opts: {
       new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
     ]);
 
-  const [mvTracks, gnTracks, esTracks, hasEn] = await Promise.all([
+  const [mvTracks, gnTracks, esTracks, hasEn, vidboltProbe] = await Promise.all([
     withProbeTimeout(movidyPromise, 5500, [] as TrackRecord[]),
     withProbeTimeout(gnulaPromise, 5500, [] as TrackRecord[]),
     withProbeTimeout(embedPromise, opts.force ? 8500 : 6500, [] as TrackRecord[]),
     withProbeTimeout(checkAnyEnglishStream(), 4500, false),
+    cleanId
+      ? withProbeTimeout(
+          hasGhostflixVidboltStreamFast({
+            tmdbId: cleanId,
+            mediaType: opts.mediaType,
+            season: season || undefined,
+            episode: episode || undefined,
+          }),
+          3600,
+          { ok: false, langs: [] as ('ES' | 'LAT' | 'VOSE' | 'EN')[] }
+        )
+      : Promise.resolve({ ok: false, langs: [] as ('ES' | 'LAT' | 'VOSE' | 'EN')[] }),
   ]);
   const foundSet = new Set<'ES' | 'LAT' | 'VOSE' | 'EN'>();
 
@@ -249,6 +265,11 @@ export async function probeAvailableLanguages(opts: {
   }
   if (hasEn) {
     foundSet.add('EN');
+  }
+  if (vidboltProbe.ok) {
+    for (const code of vidboltProbe.langs) {
+      foundSet.add(code);
+    }
   }
 
   const vestMatch =

@@ -1,10 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { Film, Loader2, Play, Sparkles, Star, Users, ChevronDown, ChevronUp } from 'lucide-react';
+import {
+  Film,
+  Loader2,
+  Play,
+  Sparkles,
+  Users,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  Search,
+} from 'lucide-react';
 import type { AppLanguage, CatalogMovie, MediaRichDetails } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { PosterImage } from './ui/PosterImage';
 import { LanguageBadge } from './ui/LanguageBadge';
+import { studioFetch } from '../utils/studioApi';
 
 export interface ActiveMovieContext {
   tmdbId?: number;
@@ -35,8 +46,15 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
   const [loading, setLoading] = useState(false);
   const [synopsisExpanded, setSynopsisExpanded] = useState(false);
   const [collapsed, setCollapsed] = useState(false);
+  const [aiQuery, setAiQuery] = useState('');
+  const [aiAnswer, setAiAnswer] = useState<string | null>(null);
+  const [aiSources, setAiSources] = useState<Array<{ title: string; uri: string }>>([]);
+  const [aiBusy, setAiBusy] = useState(false);
 
   useEffect(() => {
+    setAiAnswer(null);
+    setAiSources([]);
+    setAiQuery('');
     const cleanTitle = (movie.title || '').trim();
     if (!movie.tmdbId && !cleanTitle) {
       setDetails(null);
@@ -79,6 +97,50 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
   const genres = details?.genres || [];
   const cast = details?.cast || [];
   const similarMovies = (details?.similar || []).filter((item) => item.title && item.title !== title);
+
+  const askMovieAi = async (question: string) => {
+    const q = question.trim();
+    if (!q || aiBusy) return;
+    setAiBusy(true);
+    try {
+      const data = await studioFetch<{
+        ok: boolean;
+        reply: string;
+        sources?: Array<{ kind: 'web' | 'maps'; title: string; uri: string }>;
+      }>('/api/ai/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          model: 'gemini-4-hydrogen',
+          grounding: 'search',
+          lang,
+          messages: [
+            {
+              role: 'user',
+              text: `Sobre la película "${title}"${year ? ` (${year})` : ''}: ${q}. Responde breve y directo (sin spoilers graves salvo que te lo pida).`,
+            },
+          ],
+        }),
+      });
+      setAiAnswer(data.reply);
+      setAiSources(
+        Array.isArray(data.sources)
+          ? data.sources.slice(0, 4).map((s) => ({ title: s.title, uri: s.uri }))
+          : []
+      );
+    } catch (err) {
+      setAiAnswer(
+        err instanceof Error && err.message
+          ? err.message
+          : pickLang(lang, {
+              es: 'No se pudo consultar en este momento.',
+              ca: 'No s’ha pogut consultar ara mateix.',
+              en: 'Could not query AI right now.',
+            })
+      );
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   return (
     <section
@@ -134,42 +196,42 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
             </div>
 
             <div className="min-w-0 flex-1 space-y-2">
-              <div className="space-y-1">
+              <div className="space-y-1.5">
                 <h2 className="font-display font-extrabold text-base sm:text-lg text-white leading-snug">
                   {title}
                 </h2>
-                <div className="flex flex-wrap items-center gap-1.5 text-xs text-zinc-300">
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-zinc-400 tabular-nums">
                   {rating && (
-                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-[#9146FF]/20 border border-[#9146FF]/40 text-[#E9D5FF] font-mono font-bold tabular-nums">
-                      <Star className="w-3 h-3 fill-current text-amber-300" />
-                      {rating}
+                    <span className="font-mono font-bold text-[#E9D5FF]">
+                      ★ {rating}
                     </span>
                   )}
+                  {rating && (year || runtime) && (
+                    <span className="text-zinc-600" aria-hidden="true">·</span>
+                  )}
                   {year && (
-                    <span className="px-2 py-0.5 rounded-lg bg-white/[0.06] text-zinc-200 font-semibold tabular-nums">
+                    <span className="text-zinc-200 font-semibold">
                       {year}
                     </span>
                   )}
+                  {year && runtime && (
+                    <span className="text-zinc-600" aria-hidden="true">·</span>
+                  )}
                   {runtime ? (
-                    <span className="px-2 py-0.5 rounded-lg bg-white/[0.06] text-zinc-300 tabular-nums">
+                    <span className="text-zinc-300">
                       {runtime}
                     </span>
                   ) : null}
-                  <LanguageBadge code={preferLang} size="xs" />
+                  <span className="inline-flex items-center ml-0.5">
+                    <LanguageBadge code={preferLang} size="xs" />
+                  </span>
                 </div>
               </div>
 
               {genres.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {genres.slice(0, 4).map((g) => (
-                    <span
-                      key={g}
-                      className="px-2 py-0.5 rounded-lg bg-white/[0.04] border border-white/[0.07] text-[11px] font-medium text-zinc-300"
-                    >
-                      {g}
-                    </span>
-                  ))}
-                </div>
+                <p className="text-[11px] font-medium text-zinc-400 leading-snug">
+                  {genres.slice(0, 4).join(' · ')}
+                </p>
               )}
 
               {overview && (
@@ -236,6 +298,103 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
             </div>
           )}
 
+          {/* RiffanAI In-Player Movie Copilot */}
+          <div className="rounded-2xl bg-[#0B0D14] border border-white/[0.08] p-3.5 space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[#D8B4FE]">
+                <Sparkles className="w-3.5 h-3.5 text-[#9146FF]" />
+                <span>
+                  {pickLang(lang, {
+                    es: 'Asistente IA de esta película',
+                    ca: 'Assistent IA d’aquesta pel·lícula',
+                    en: 'Movie AI Copilot',
+                  })}
+                </span>
+              </div>
+              {aiBusy && <Loader2 className="w-3.5 h-3.5 animate-spin text-[#BF94FF]" />}
+            </div>
+
+            <div className="flex flex-wrap gap-1.5">
+              {[
+                pickLang(lang, {
+                  es: '¿Tiene escena post-créditos?',
+                  ca: 'Té escena postcrèdits?',
+                  en: 'Does it have a post-credits scene?',
+                }),
+                pickLang(lang, {
+                  es: 'Curiosidades del rodaje',
+                  ca: 'Curiositats del rodatge',
+                  en: 'Behind-the-scenes trivia',
+                }),
+                pickLang(lang, {
+                  es: '¿Vale la pena y crítica?',
+                  ca: 'Val la pena i crítica?',
+                  en: 'Reviews & audience reception',
+                }),
+              ].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  disabled={aiBusy}
+                  onClick={() => void askMovieAi(preset)}
+                  className="px-2.5 py-1.5 rounded-xl bg-white/[0.05] hover:bg-[#9146FF]/25 border border-white/[0.08] hover:border-[#9146FF]/45 text-[11px] font-semibold text-zinc-200 cursor-pointer transition-colors"
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void askMovieAi(aiQuery);
+              }}
+              className="flex items-center gap-2"
+            >
+              <input
+                type="text"
+                value={aiQuery}
+                onChange={(e) => setAiQuery(e.target.value)}
+                placeholder={pickLang(lang, {
+                  es: `Pregunta algo sobre "${title}"...`,
+                  ca: `Pregunta sobre "${title}"...`,
+                  en: `Ask about "${title}"...`,
+                })}
+                className="flex-1 min-h-9 px-3 rounded-xl bg-[#10121B] border border-white/[0.1] text-xs text-white placeholder:text-zinc-500 focus:outline-none focus:border-[#9146FF]"
+              />
+              <button
+                type="submit"
+                disabled={aiBusy || !aiQuery.trim()}
+                className="min-h-9 px-3 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] disabled:opacity-45 text-white text-xs font-bold inline-flex items-center gap-1 cursor-pointer"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>{pickLang(lang, { es: 'Buscar', ca: 'Cercar', en: 'Ask' })}</span>
+              </button>
+            </form>
+
+            {aiAnswer && (
+              <div className="rounded-xl bg-[#141724] border border-white/[0.07] p-3 space-y-2 text-xs text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                <p>{aiAnswer}</p>
+                {aiSources.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {aiSources.map((s, idx) => (
+                      <a
+                        key={idx}
+                        href={s.uri}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2 py-1 rounded-lg bg-white/[0.05] text-[11px] text-[#C4A7FF] inline-flex items-center gap-1"
+                      >
+                        <span className="max-w-[160px] truncate">{s.title}</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* Similar / Suggested Movies */}
           {similarMovies.length > 0 && (
             <div className="space-y-2.5">
@@ -262,7 +421,7 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                         triggerHaptic('medium');
                         onSelectMovie(sim, preferLang);
                       }}
-                      className="group w-[124px] sm:w-[138px] shrink-0 rounded-xl bg-[#161822] hover:bg-[#1E2130] border border-white/[0.08] hover:border-[#9146FF]/60 overflow-hidden text-left cursor-pointer transition-all active:scale-[0.97] flex flex-col"
+                      className="group w-[124px] sm:w-[138px] shrink-0 rounded-xl bg-[#10121B] hover:bg-[#171A26] border border-white/[0.07] hover:border-[#9146FF]/60 overflow-hidden text-left cursor-pointer transition-all active:scale-[0.97] flex flex-col"
                     >
                       <div className="relative aspect-[2/3] w-full bg-[#0A0B10] overflow-hidden">
                         <PosterImage
@@ -273,11 +432,6 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                           imgClassName="object-cover group-hover:scale-105 transition-transform duration-300"
                         />
                         <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                        {sim.rating && (
-                          <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-black/75 text-[10px] font-mono font-bold text-amber-300 tabular-nums">
-                            ★ {sim.rating}
-                          </span>
-                        )}
                         <span className="absolute bottom-1.5 right-1.5 w-7 h-7 rounded-full bg-[#9146FF] text-white flex items-center justify-center shadow-md opacity-95 group-hover:scale-105 transition-transform">
                           {isLoadingThis ? (
                             <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -290,8 +444,9 @@ export const MoviePlaybackDock: React.FC<MoviePlaybackDockProps> = ({
                         <p className="text-xs font-bold text-white line-clamp-1 group-hover:text-[#D8B4FE]">
                           {sim.title}
                         </p>
-                        <p className="text-[10px] text-zinc-400 tabular-nums mt-0.5">
+                        <p className="text-[10px] text-zinc-400 tabular-nums mt-0.5 truncate">
                           {sim.year || 'HD'}
+                          {sim.rating ? ` · ★ ${sim.rating}` : ''}
                         </p>
                       </div>
                     </button>

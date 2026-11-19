@@ -1,6 +1,20 @@
 import React, { useState } from 'react';
 import type { User } from 'firebase/auth';
-import { Palette, QrCode } from 'lucide-react';
+import {
+  Cloud,
+  Download,
+  LogIn,
+  LogOut,
+  Monitor,
+  Palette,
+  Settings,
+  Smartphone,
+  Tv,
+  ChevronRight,
+  ChevronDown,
+  QrCode,
+  KeyRound,
+} from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import type { AppLanguage } from '../types';
 import { pickLang } from '../utils/i18n';
@@ -10,19 +24,6 @@ import type { EffectiveViewMode } from './MobileViewportGuard';
 import { BottomSheet, SecondaryButton, StandardInput } from './ui/DesignSystem';
 import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
 import { useAppStore } from '../store/useAppStore';
-import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
-import {
-  RiffanChevronDownIcon,
-  RiffanChevronRightIcon,
-  RiffanDownloadIcon,
-  RiffanLogoutIcon,
-  RiffanMobileIcon,
-  RiffanMonitorIcon,
-  RiffanRoomKeyIcon,
-  RiffanSettingsGearIcon,
-  RiffanSyncIcon,
-  RiffanTvRemoteIcon,
-} from './ui/RiffanIcons';
 
 interface SettingsBottomSheetProps {
   isOpen: boolean;
@@ -42,6 +43,7 @@ interface SettingsBottomSheetProps {
   onClaimTvCode?: (code: string) => void | Promise<void>;
   onLeaveRoom?: () => void;
   onOpenDesignSystem?: () => void;
+  onOpenLinkDevice?: () => void;
 }
 
 export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
@@ -62,7 +64,9 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
   onClaimTvCode,
   onLeaveRoom,
   onOpenDesignSystem,
+  onOpenLinkDevice,
 }) => {
+  const isVerifiedAccount = Boolean(authUser && !authUser.isAnonymous);
   const { isIOS, isAndroid } = usePWAInstall();
   const [installSheetOpen, setInstallSheetOpen] = useState(false);
   const [tvAdvancedOpen, setTvAdvancedOpen] = useState(false);
@@ -86,7 +90,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
         onClose={onClose}
         lang={lang}
         maxWidth="sm:max-w-md"
-        icon={<RiffanSettingsGearIcon size={20} animate="always" />}
+        icon={<Settings className="w-5 h-5" />}
         title={pickLang(lang, { es: 'Ajustes', ca: 'Ajustos', en: 'Settings' })}
         subtitle={pickLang(lang, {
           es: 'Cuenta, preferencias, TV e instalación',
@@ -102,15 +106,15 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
             </h4>
             <div className={rowClass}>
               <div className="flex items-center gap-3 min-w-0">
-                <RiffanSyncIcon
-                  size={20}
-                  animate={authLoading ? 'always' : 'hover'}
-                  className="shrink-0"
+                <Cloud
+                  className={`w-5 h-5 shrink-0 ${
+                    isVerifiedAccount ? 'text-[#00F593]' : 'text-[#BF94FF]'
+                  }`}
                 />
                 <div className="min-w-0">
                   <div className="text-sm font-bold text-white truncate">
-                    {authUser
-                      ? authUser.displayName || authUser.email
+                    {isVerifiedAccount
+                      ? authUser?.displayName || authUser?.email || 'Google'
                       : pickLang(lang, {
                           es: 'Sincronizar con Google',
                           ca: 'Sincronitzar amb Google',
@@ -118,11 +122,12 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                         })}
                   </div>
                   <div className="text-xs text-zinc-400 truncate">
-                    {authUser
-                      ? pickLang(lang, {
-                          es: 'conectado',
-                          ca: 'connectat',
-                          en: 'connected',
+                    {isVerifiedAccount
+                      ? authUser?.email ||
+                        pickLang(lang, {
+                          es: 'Cuenta vinculada',
+                          ca: 'Compte vinculat',
+                          en: 'Account linked',
                         })
                       : pickLang(lang, {
                           es: 'Guarda historial, listas y salas',
@@ -133,7 +138,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 </div>
               </div>
 
-              {!authUser && (
+              {!isVerifiedAccount && (
                 <SecondaryButton
                   onClick={() => {
                     triggerHaptic('medium');
@@ -142,7 +147,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                   loading={authLoading}
                   className="!min-h-10 !px-3.5 shrink-0"
                 >
-                  <RiffanSyncIcon size={16} animate={authLoading ? 'always' : 'hover'} />
+                  <LogIn className="w-4 h-4 text-[#BF94FF]" />
                   <span>
                     {pickLang(lang, {
                       es: 'Conectar',
@@ -153,7 +158,51 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 </SecondaryButton>
               )}
             </div>
-            {!authUser && authNotice && (
+            {onOpenLinkDevice && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onClose();
+                  onOpenLinkDevice();
+                }}
+                className={`${rowClass} cursor-pointer active:scale-[0.98]`}
+              >
+                <span className="flex items-center gap-3 min-w-0">
+                  <KeyRound className="w-4 h-4 text-[#BF94FF] shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block text-sm font-semibold text-white">
+                      {isVerifiedAccount
+                        ? pickLang(lang, {
+                            es: 'Vincular otro dispositivo',
+                            ca: 'Vincular un altre dispositiu',
+                            en: 'Link another device',
+                          })
+                        : pickLang(lang, {
+                            es: 'Vincular con código de 6 dígitos',
+                            ca: 'Vincular amb codi de 6 dígits',
+                            en: 'Link with 6-character code',
+                          })}
+                    </span>
+                    <span className="block text-xs text-zinc-400">
+                      {isVerifiedAccount
+                        ? pickLang(lang, {
+                            es: 'Generar código temporal para APK o TV',
+                            ca: 'Generar codi temporal per APK o TV',
+                            en: 'Generate temporary code for APK or TV',
+                          })
+                        : pickLang(lang, {
+                            es: 'Conecta tu cuenta desde otro móvil o PC',
+                            ca: 'Connecta el teu compte des d’un altre dispositiu',
+                            en: 'Connect your account from another device',
+                          })}
+                    </span>
+                  </span>
+                </span>
+                <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
+              </button>
+            )}
+            {!isVerifiedAccount && authNotice && (
               <p className="rounded-2xl bg-white/[0.04] border border-white/[0.1] px-3 py-2 text-[11px] leading-relaxed text-zinc-300">
                 {authNotice}
               </p>
@@ -180,9 +229,9 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
             >
               <span className="flex items-center gap-3 min-w-0">
                 {effectiveView === 'desktop' ? (
-                  <RiffanMobileIcon size={20} animate="hover" className="shrink-0" />
+                  <Smartphone className="w-5 h-5 text-[#BF94FF] shrink-0" />
                 ) : (
-                  <RiffanMonitorIcon size={20} animate="hover" className="shrink-0" />
+                  <Monitor className="w-5 h-5 text-[#BF94FF] shrink-0" />
                 )}
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">
@@ -213,7 +262,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                   </span>
                 </span>
               </span>
-              <RiffanChevronRightIcon size={16} animate="hover" className="shrink-0 opacity-75" />
+              <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
 
             {/* Language Selector */}
@@ -229,29 +278,26 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               </span>
               <div className="grid grid-cols-5 gap-1.5">
                 {[
-                  { id: 'es', flag: 'es' as FlagCode, label: 'ES', title: 'Español' },
-                  { id: 'ca', flag: 'ca' as FlagCode, label: 'CA', title: 'Català' },
-                  { id: 'en', flag: 'en' as FlagCode, label: 'EN', title: 'English' },
-                  { id: 'rif', flag: 'rif' as FlagCode, label: 'RIF', title: 'Tarifit' },
-                  { id: 'zh', flag: 'zh' as FlagCode, label: '中文', title: '中文' },
+                  { id: 'es', label: 'Español' },
+                  { id: 'ca', label: 'Català' },
+                  { id: 'en', label: 'English' },
+                  { id: 'rif', label: 'Tarifit' },
+                  { id: 'zh', label: '中文' },
                 ].map((l) => (
                   <button
                     key={l.id}
                     type="button"
-                    title={l.title}
-                    aria-label={l.title}
                     onClick={() => {
                       triggerHaptic('light');
                       onChangeLang(l.id as AppLanguage);
                     }}
-                    className={`min-h-10 px-1.5 rounded-xl text-[11px] font-semibold border cursor-pointer transition-colors flex items-center justify-center gap-1.5 ${
+                    className={`min-h-8 px-1.5 rounded-lg text-[11px] font-semibold border cursor-pointer transition-colors ${
                       lang === l.id
-                        ? 'bg-[#9146FF] text-white border-[#A970FF]/70 shadow-[0_4px_12px_rgba(145,70,255,0.35)]'
+                        ? 'bg-[#9146FF] text-white border-[#9146FF]'
                         : 'bg-white/[0.05] hover:bg-white/[0.1] border-white/[0.08] text-zinc-300'
                     }`}
                   >
-                    <FlagBadgeSvg code={l.flag} className="w-4 h-3 shrink-0" />
-                    <span>{l.label}</span>
+                    {l.label}
                   </button>
                 ))}
               </div>
@@ -281,7 +327,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               className={`${rowClass} cursor-pointer active:scale-[0.98]`}
             >
               <span className="flex items-center gap-3 min-w-0">
-                <RiffanTvRemoteIcon size={20} animate="hover" className="shrink-0" />
+                <Tv className="w-5 h-5 text-[#BF94FF] shrink-0" />
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">
                     {pickLang(lang, {
@@ -301,7 +347,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                   </span>
                 </span>
               </span>
-              <RiffanChevronRightIcon size={16} animate="hover" className="shrink-0 opacity-75" />
+              <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
 
             <div className="rounded-2xl bg-white/[0.03] border border-white/[0.08] overflow-hidden">
@@ -315,7 +361,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                 className="w-full min-h-12 px-4 flex items-center justify-between gap-3 text-left cursor-pointer hover:bg-white/[0.04]"
               >
                 <span className="flex items-center gap-3 text-sm font-semibold text-white">
-                  <RiffanRoomKeyIcon size={17} animate="hover" />
+                  <QrCode className="w-4 h-4 text-[#BF94FF]" />
                   <span>
                     {pickLang(lang, {
                       es: 'Vincular con código',
@@ -324,10 +370,8 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                     })}
                   </span>
                 </span>
-                <RiffanChevronDownIcon
-                  size={16}
-                  animate="hover"
-                  className={`transition-transform duration-150 ${
+                <ChevronDown
+                  className={`w-4 h-4 text-zinc-400 transition-transform duration-150 ${
                     tvAdvancedOpen ? 'rotate-180' : ''
                   }`}
                 />
@@ -390,7 +434,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                         onOpenTvPairLobby();
                       }}
                     >
-                      <RiffanTvRemoteIcon size={16} animate="hover" />
+                      <Tv className="w-4 h-4 text-[#BF94FF]" />
                       <span>
                         {pickLang(lang, {
                           es: 'Usar esta pantalla como TV',
@@ -423,13 +467,13 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
               className={`${rowClass} cursor-pointer active:scale-[0.98]`}
             >
               <span className="flex items-center gap-3 min-w-0">
-                <RiffanDownloadIcon size={20} animate="hover" className="shrink-0" />
+                <Download className="w-5 h-5 text-[#BF94FF] shrink-0" />
                 <span className="min-w-0">
                   <span className="block text-sm font-bold text-white">
                     {pickLang(lang, {
-                      es: 'Instalar RiffanTV',
-                      ca: 'Instal·lar RiffanTV',
-                      en: 'Install RiffanTV',
+                      es: 'Instalar NAIMCINE',
+                      ca: 'Instal·lar NAIMCINE',
+                      en: 'Install NAIMCINE',
                     })}
                   </span>
                   <span className="block text-xs text-zinc-400">
@@ -437,7 +481,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                   </span>
                 </span>
               </span>
-              <RiffanChevronRightIcon size={16} animate="hover" className="shrink-0 opacity-75" />
+              <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
             </button>
 
             {onOpenDesignSystem && (
@@ -469,15 +513,15 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                     </span>
                   </span>
                 </span>
-                <RiffanChevronRightIcon size={16} animate="hover" className="shrink-0 opacity-75" />
+                <ChevronRight className="w-4 h-4 text-zinc-400 shrink-0" />
               </button>
             )}
           </section>
 
           {/* Cerrar sesión */}
-          {(authUser || onLeaveRoom) && (
+          {(isVerifiedAccount || onLeaveRoom) && (
             <div className="pt-2 border-t border-white/[0.07] space-y-2">
-              {authUser && (
+              {isVerifiedAccount && (
                 <SecondaryButton
                   fullWidth
                   onClick={() => {
@@ -486,7 +530,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                     onClose();
                   }}
                 >
-                  <RiffanLogoutIcon size={16} animate="hover" />
+                  <LogOut className="w-4 h-4 text-zinc-300" />
                   <span>
                     {pickLang(lang, {
                       es: 'Cerrar sesión',
@@ -505,7 +549,7 @@ export const SettingsBottomSheet: React.FC<SettingsBottomSheetProps> = ({
                     onLeaveRoom();
                   }}
                 >
-                  <RiffanLogoutIcon size={16} animate="hover" />
+                  <LogOut className="w-4 h-4 text-zinc-400" />
                   <span>
                     {pickLang(lang, {
                       es: 'Cambiar de perfil o acceso',

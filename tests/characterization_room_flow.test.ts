@@ -1,16 +1,48 @@
-import { describe, it, expect } from 'vitest';
-import WebSocket from 'ws';
+import express from 'express';
+import { createServer, type Server } from 'http';
+import { afterAll, beforeAll, describe, it, expect } from 'vitest';
+import WebSocket, { WebSocketServer } from 'ws';
+import { createRoomHub } from '../server/ws/roomHub';
 
 interface WSMessage {
   type: string;
   payload: any;
 }
 
-const SERVER_WS_URL = 'ws://127.0.0.1:3000/ws';
+let httpServer: Server;
+let wss: WebSocketServer;
+let serverWsUrl = '';
+
+beforeAll(async () => {
+  const app = express();
+  app.use(express.json());
+  httpServer = createServer(app);
+  wss = new WebSocketServer({ noServer: true });
+  httpServer.on('upgrade', (req, socket, head) => {
+    const pathname = (req.url || '').split('?')[0];
+    if (pathname === '/ws') {
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        wss.emit('connection', ws, req);
+      });
+    } else {
+      socket.destroy();
+    }
+  });
+  createRoomHub(app, wss);
+  await new Promise<void>((resolve) => httpServer.listen(0, '127.0.0.1', resolve));
+  const addr = httpServer.address() as { port: number };
+  serverWsUrl = `ws://127.0.0.1:${addr.port}/ws`;
+});
+
+afterAll(async () => {
+  wss?.clients.forEach((c) => c.close());
+  await new Promise<void>((resolve) => wss.close(() => resolve()));
+  await new Promise<void>((resolve) => httpServer.close(() => resolve()));
+});
 
 function connectWs(): Promise<WebSocket> {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket(SERVER_WS_URL);
+    const ws = new WebSocket(serverWsUrl);
     ws.on('open', () => resolve(ws));
     ws.on('error', (err) => reject(err));
   });

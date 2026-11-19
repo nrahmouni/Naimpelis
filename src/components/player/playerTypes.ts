@@ -1,6 +1,7 @@
 import type {
   AppLanguage,
   ChatMessage,
+  ChatReplyReference,
   CloudBrowserState,
   FloatingReaction,
   LanguageNoticePopup,
@@ -202,7 +203,7 @@ export interface NativeCinemaPlayerProps {
   onDismissLanguageNotice?: () => void;
   messages?: ChatMessage[];
   currentUserId?: string;
-  onSendMessage?: (text: string) => void;
+  onSendMessage?: (text: string, replyTo?: ChatReplyReference) => void;
   onSendReaction?: (emoji: string) => void;
   floatingChatOpen?: boolean;
   onToggleFloatingChat?: () => void;
