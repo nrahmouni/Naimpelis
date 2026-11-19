@@ -1,15 +1,10 @@
 import { spawn } from 'child_process';
 import fs from 'fs';
-import ffmpegStatic from 'ffmpeg-static';
 import { LruTtlCache } from '../utils/lruCache.ts';
 import { streamingFetch } from '../utils/tlsFetch.ts';
 import { CHROME_UA, curlGetText } from './httpHelpers.ts';
 
-const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg')
-  ? '/usr/bin/ffmpeg'
-  : typeof ffmpegStatic === 'string' && fs.existsSync(ffmpegStatic)
-    ? ffmpegStatic
-    : 'ffmpeg';
+const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg') ? '/usr/bin/ffmpeg' : 'ffmpeg';
 
 const FRAME_W = 160;
 const FRAME_H = 90;
@@ -237,6 +232,7 @@ export async function verifyM3u8HasCleanVideoFrame(
       return false;
     }
 
+    let ffmpegMissingBinary = false;
     let ffmpegSpawnFailed = false;
     let ffmpegExitCode: number | null = null;
     let ffmpegStderr = '';
@@ -268,8 +264,12 @@ export async function verifyM3u8HasCleanVideoFrame(
       }, 2500);
       ff.stdout.on('data', (c: Buffer) => outChunks.push(c));
       ff.stderr.on('data', (c: Buffer) => errChunks.push(c));
-      ff.on('error', () => {
-        ffmpegSpawnFailed = true;
+      ff.on('error', (err: NodeJS.ErrnoException) => {
+        if (err?.code === 'ENOENT') {
+          ffmpegMissingBinary = true;
+        } else {
+          ffmpegSpawnFailed = true;
+        }
         clearTimeout(killTimer);
         resolve(Buffer.alloc(0));
       });
@@ -282,6 +282,10 @@ export async function verifyM3u8HasCleanVideoFrame(
       ff.stdin.on('error', () => {});
       ff.stdin.end(sampleBuf);
     });
+
+    if (ffmpegMissingBinary) {
+      return true;
+    }
 
     if (ffmpegSpawnFailed || (ffmpegExitCode !== 0 && isFatalH264Stderr(ffmpegStderr))) {
       liveFrameHealthCache.set(m3uUrl, false);

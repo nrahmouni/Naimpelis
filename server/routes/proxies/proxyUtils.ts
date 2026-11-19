@@ -1,13 +1,8 @@
 import crypto from 'crypto';
 import type express from 'express';
 import fs from 'fs';
-import ffmpegStatic from 'ffmpeg-static';
 
-export const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg')
-  ? '/usr/bin/ffmpeg'
-  : typeof ffmpegStatic === 'string' && fs.existsSync(ffmpegStatic)
-    ? ffmpegStatic
-    : 'ffmpeg';
+export const FFMPEG_BIN: string = fs.existsSync('/usr/bin/ffmpeg') ? '/usr/bin/ffmpeg' : 'ffmpeg';
 
 export function getOrCreateRequestId(req: express.Request): string {
   const existing = String(req.headers['x-naim-request-id'] || '').trim();

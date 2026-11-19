@@ -19,3 +19,4 @@ sbom.json
 android/.gradle/
 android/app/build/
 android/local.properties
+public/assets/aistudio/
