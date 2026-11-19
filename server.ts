@@ -380,7 +380,8 @@ function rankCandidateTracks({
     if (!hasExplicitMovidyUrl && hasExplicitGnulaUrl && tr.id.startsWith('gnula-')) return 0;
     if (tr.id.startsWith('movidy-') || tr.resolverType === 'movidy_embed') return 1;
     if (tr.id.startsWith('gnula-')) return 2;
-    if (tr.id.startsWith('dm-')) return 2;
+    if (tr.id.startsWith('dm-') || tr.id.startsWith('seriesmetro-')) return 2;
+    if (tr.id.startsWith('archive-')) return 3;
     if (
       tr.id.startsWith('vidbolt-') ||
       tr.id.startsWith('bingetrix-') ||

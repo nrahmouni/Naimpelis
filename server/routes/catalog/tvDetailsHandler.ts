@@ -11,6 +11,34 @@ export const tvLangProbeCache = new LruTtlCache<
   { availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[]; ts: number }
 >(400, 30 * 60 * 1000);
 
+export function filterTmdbValidSeasons(
+  rawSeasons: any[],
+  opts?: { lastAiredSeason?: number; nextAirSeason?: number; todayMs?: number }
+): any[] {
+  const todayMs = opts?.todayMs ?? Date.now();
+  const lastAiredSeason = Number(opts?.lastAiredSeason || 0);
+  const nextAirSeason = Number(opts?.nextAirSeason || 0);
+  return (Array.isArray(rawSeasons) ? rawSeasons : [])
+    .filter((s: any) => {
+      if (!s || typeof s.season_number !== 'number' || s.season_number < 1) return false;
+      if (Number(s.episode_count) <= 0 && s.season_number !== 1) return false;
+      // Filter distant future placeholder seasons (e.g., TMDB Season 18 air_date 2027-11-16)
+      if (
+        s.season_number > 1 &&
+        typeof s.air_date === 'string' &&
+        /^\d{4}-\d{2}-\d{2}$/.test(s.air_date)
+      ) {
+        const airMs = new Date(`${s.air_date}T00:00:00Z`).getTime();
+        const isDistantFuture = airMs - todayMs > 45 * 24 * 60 * 60 * 1000;
+        if (isDistantFuture && s.season_number > lastAiredSeason && s.season_number !== nextAirSeason) {
+          return false;
+        }
+      }
+      return true;
+    })
+    .sort((a: any, b: any) => a.season_number - b.season_number);
+}
+
 export async function fetchTvSeriesDetailsPayload(opts: {
   cleanId: string;
   season?: number;
@@ -43,15 +71,10 @@ export async function fetchTvSeriesDetailsPayload(opts: {
 
   if (!showJson) return null;
 
-    const baseSeasons = (Array.isArray(showJson?.seasons) ? showJson.seasons : [])
-      .filter(
-        (s: any) =>
-          s &&
-          typeof s.season_number === 'number' &&
-          s.season_number >= 1 &&
-          (Number(s.episode_count) > 0 || s.season_number === 1)
-      )
-      .sort((a: any, b: any) => a.season_number - b.season_number)
+    const baseSeasons = filterTmdbValidSeasons(showJson?.seasons, {
+      lastAiredSeason: Number(showJson?.last_episode_to_air?.season_number || 0),
+      nextAirSeason: Number(showJson?.next_episode_to_air?.season_number || 0),
+    })
       .map((s: any) => ({
         seasonNumber: s.season_number,
         name:

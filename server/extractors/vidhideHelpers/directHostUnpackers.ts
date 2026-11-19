@@ -164,9 +164,11 @@ export async function unpackVidhideToHls(
       return null;
     }
 
-    // 2. Standard Vidhide / Smoothpre / Earnvids / Streamwish / 2vcdn Dean Edwards Unpacker
+    // 2. Standard Vidhide / Smoothpre / Earnvids / Streamwish / Fastream / 2vcdn Dean Edwards Unpacker
     const refererOrigin = embedUrl.includes('gnulahd')
       ? 'https://ww3.gnulahd.nu/'
+      : embedUrl.includes('fastream')
+      ? 'https://www3.seriesmetro.net/'
       : embedUrl.includes('2vcdn')
       ? 'https://streamsrcs.2embed.cc/'
       : 'https://embed69.org/';
@@ -194,16 +196,41 @@ export async function unpackVidhideToHls(
     }
 
     const unpacked = unpackDeanEdwards(html);
-    if (!unpacked) return null;
-
-    const linksMatch = unpacked.match(/var\s+links\s*=\s*(\{[^}]+\})/);
-    if (!linksMatch) return null;
-
-    const links = JSON.parse(linksMatch[1]);
     const origin = new URL(embedUrl).origin;
-    const rawCandidates = [links.hls4, links.hls2, links.hls3]
-      .map((c) => String(c || '').trim())
-      .filter(Boolean);
+    const rawCandidates: string[] = [];
+
+    if (unpacked) {
+      const linksMatch = unpacked.match(/var\s+links\s*=\s*(\{[^}]+\})/);
+      if (linksMatch) {
+        try {
+          const links = JSON.parse(linksMatch[1]);
+          for (const c of [links.hls4, links.hls2, links.hls3]) {
+            const s = String(c || '').trim();
+            if (s) rawCandidates.push(s);
+          }
+        } catch {
+          // fall through to generic m3u8 extraction
+        }
+      }
+
+      if (rawCandidates.length === 0) {
+        const jwSources = [
+          ...unpacked.matchAll(/(?:file|src)\s*:\s*["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/gi),
+          ...unpacked.matchAll(/["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/gi),
+        ];
+        for (const m of jwSources) {
+          const s = String(m[1] || '').trim();
+          if (s && !rawCandidates.includes(s)) rawCandidates.push(s);
+        }
+      }
+    }
+
+    if (rawCandidates.length === 0) {
+      const plainM3u8 = html.match(
+        /(?:file|src)\s*:\s*["'](https?:\/\/[^"'\s]+\.m3u8[^"'\s]*)["']/i
+      )?.[1];
+      if (plainM3u8) rawCandidates.push(plainM3u8.trim());
+    }
 
     if (rawCandidates.length === 0) return null;
 
