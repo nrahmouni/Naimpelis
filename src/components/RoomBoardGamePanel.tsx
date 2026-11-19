@@ -401,7 +401,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
     <div
       className={`relative flex flex-col ${
         fullScreenMode
-          ? 'justify-between h-full overflow-hidden gap-2 max-w-[600px] w-full mx-auto'
+          ? 'justify-between min-h-full gap-2 max-w-[600px] w-full mx-auto'
           : largeMode
           ? 'gap-3 max-w-[540px] w-full mx-auto'
           : 'gap-2 w-full'
@@ -607,8 +607,8 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
       <div
         className={`flex-1 ${
           fullScreenMode
-            ? 'h-full overflow-hidden p-1.5 sm:p-2 flex flex-col'
-            : 'overflow-y-auto p-3 space-y-2.5 custom-scrollbar'
+            ? 'min-h-full overflow-y-auto touch-pan-y custom-scrollbar p-1.5 sm:p-2 flex flex-col'
+            : 'overflow-y-auto touch-pan-y p-3 space-y-2.5 custom-scrollbar'
         }`}
       >
         {onBack && !hideGameSwitcher && (

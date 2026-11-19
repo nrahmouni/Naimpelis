@@ -525,7 +525,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
               </div>
             )}
 
-          <div className="flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar">
+          <div className="flex-1 min-h-0 flex flex-col overflow-y-auto touch-pan-y custom-scrollbar">
             {isChapas ? (
               <FutbolChapasStage
                 key={`chapas-${hubMode}`}

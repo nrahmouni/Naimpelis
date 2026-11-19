@@ -50,8 +50,9 @@ interface EntryHomeScreenProps {
   series?: CatalogMovie[];
   tdtChannels?: SpanishTdtChannel[];
   liveMatches?: SportsMatch[];
-  onPlayMovie?: (movie: CatalogMovie) => void;
-  onPlaySeries?: (series: CatalogMovie, targetSeason?: number, targetEpisode?: number) => void;
+  suppressSearchOverlay?: boolean;
+  onOpenMovieDetails?: (movie: CatalogMovie) => void;
+  onOpenSeriesPage?: (series: CatalogMovie) => void;
   onPlayChannel?: (channel: SpanishTdtChannel) => void;
   onPlayMatch?: (match: SportsMatch) => void;
   onSelectGame?: (gameId: string) => void;
@@ -79,8 +80,9 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   series = [],
   tdtChannels = [],
   liveMatches = [],
-  onPlayMovie = () => {},
-  onPlaySeries = () => {},
+  suppressSearchOverlay = false,
+  onOpenMovieDetails = () => {},
+  onOpenSeriesPage = () => {},
   onPlayChannel = () => {},
   onPlayMatch = () => {},
   onSelectGame = () => {},
@@ -300,8 +302,9 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             series={series}
             tdtChannels={tdtChannels}
             liveMatches={liveMatches}
-            onPlayMovie={onPlayMovie}
-            onPlaySeries={onPlaySeries}
+            suppressOverlay={suppressSearchOverlay}
+            onOpenMovieDetails={onOpenMovieDetails}
+            onOpenSeriesPage={onOpenSeriesPage}
             onPlayChannel={onPlayChannel}
             onPlayMatch={onPlayMatch}
             onSelectGame={onSelectGame}

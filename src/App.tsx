@@ -651,6 +651,9 @@ export function App() {
             onDeleteSavedRoom={socialActions.handleDeleteSavedRoom}
             onPlayMovie={playback.handlePlayMovie}
             onPlaySeriesEpisode={playback.handlePlaySeriesEpisode}
+            loadingItemId={playback.loadingItemId}
+            worldSearchQuery={worldSearchQuery}
+            onAddToQueue={lifecycle.handleAddToQueue}
             onPlayChannel={(ch) => {
               void playback.handlePlayTdtChannel(ch, 0);
             }}

@@ -120,11 +120,14 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
   useEffect(() => {
     const store = useAppStore.getState();
+    const cameFromInlineBar =
+      typeof document !== 'undefined' && document.activeElement === inputRef.current;
     const shouldAutoFocus =
       showOverlay &&
       !prevOverlayOpenRef.current &&
       !store.requestedMovieModal &&
-      !store.requestedSeriesModal;
+      !store.requestedSeriesModal &&
+      (cameFromInlineBar || cleanQuery.length <= 2);
     prevOverlayOpenRef.current = showOverlay;
     if (shouldAutoFocus) {
       const raf = window.requestAnimationFrame(() => {
@@ -133,7 +136,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       return () => window.cancelAnimationFrame(raf);
     }
     return undefined;
-  }, [showOverlay]);
+  }, [showOverlay, cleanQuery.length]);
 
   useEffect(() => {
     if (cleanQuery.length < 2) {
@@ -324,11 +327,27 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     [lang, activeCategory, clearAiPoll]
   );
 
+  const queryMatchesFields = useCallback((fields: string[], rawNormQ: string): boolean => {
+    if (!rawNormQ || rawNormQ.length < 2) return false;
+    const shortStopwords = new Set(['el', 'la', 'lo', 'un', 'de', 'al', 'en', 'se', 'es', 'the', 'of', 'in', 'to']);
+    const normalizedFields = fields.map((f) => norm(f)).filter(Boolean);
+    if (normalizedFields.length === 0) return false;
+
+    if (rawNormQ.length < 3) {
+      if (shortStopwords.has(rawNormQ)) {
+        return normalizedFields.some((f) => f === rawNormQ || f.startsWith(`${rawNormQ} `));
+      }
+      return normalizedFields.some((f) => f.split(' ').some((w) => w.startsWith(rawNormQ)));
+    }
+
+    return normalizedFields.some((f) => f.includes(rawNormQ));
+  }, [norm]);
+
   const matchedMovies = useMemo(() => {
     if (!hasMinQuery || !normQuery) return [];
     return mergeAndRankCatalogResults(remoteMovies, movies, cleanQuery, {
       limit: 12,
-      minLocalScore: 40,
+      minLocalScore: 60,
     });
   }, [hasMinQuery, normQuery, cleanQuery, movies, remoteMovies]);
 
@@ -336,29 +355,28 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     if (!hasMinQuery || !normQuery) return [];
     return mergeAndRankCatalogResults(remoteSeries, series, cleanQuery, {
       limit: 12,
-      minLocalScore: 40,
+      minLocalScore: 60,
     });
   }, [hasMinQuery, normQuery, cleanQuery, series, remoteSeries]);
 
   const matchedSports = useMemo(() => {
     if (!hasMinQuery || !normQuery) return [];
-    const isGeneralFootball = /f[uú]tbol|partido|deporte|champions|liga|directo|live/i.test(normQuery);
+    const isGeneralFootball = /\b(futbol|partido|partidos|deporte|deportes|champions|laliga|directo|live)\b/i.test(normQuery);
     return liveMatches
       .filter((m) => {
         if (isGeneralFootball) return true;
-        const titleNorm = norm(m.title);
-        const compNorm = norm(m.competition);
-        const homeNorm = norm(m.matchMeta?.homeTeam || '');
-        const awayNorm = norm(m.matchMeta?.awayTeam || '');
-        return (
-          titleNorm.includes(normQuery) ||
-          compNorm.includes(normQuery) ||
-          homeNorm.includes(normQuery) ||
-          awayNorm.includes(normQuery)
+        return queryMatchesFields(
+          [
+            m.title,
+            m.competition,
+            m.matchMeta?.homeTeam || '',
+            m.matchMeta?.awayTeam || '',
+          ],
+          normQuery
         );
       })
       .slice(0, 6);
-  }, [hasMinQuery, normQuery, liveMatches]);
+  }, [hasMinQuery, normQuery, liveMatches, queryMatchesFields]);
 
   const matchedTdt = useMemo(() => {
     if (!hasMinQuery || !normQuery) return [];
@@ -366,23 +384,19 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     return tdtChannels
       .filter((ch) => {
         if (isGeneralTv) return true;
-        const n = norm(ch.name);
-        const net = norm(ch.network || '');
-        const sm = norm(ch.shortMark || '');
-        return n.includes(normQuery) || net.includes(normQuery) || sm.includes(normQuery);
+        return queryMatchesFields([ch.name, ch.network || '', ch.shortMark || ''], normQuery);
       })
       .slice(0, 8);
-  }, [hasMinQuery, normQuery, tdtChannels]);
+  }, [hasMinQuery, normQuery, tdtChannels, queryMatchesFields]);
 
   const matchedGames = useMemo(() => {
     if (!hasMinQuery || !normQuery) return [];
-    const isGeneralGame = /juego|juegos|game|games|partida|sala/i.test(normQuery);
+    const isGeneralGame = /\b(juego|juegos|game|games|partida|sala)\b/i.test(normQuery);
     return HALLMARK_GAMES.filter((g) => {
       if (isGeneralGame) return true;
-      const t = norm(g.title);
-      return t.includes(normQuery) || g.matchKeywords.some((k) => normQuery.includes(norm(k)) || norm(k).includes(normQuery));
+      return queryMatchesFields([g.title, ...g.matchKeywords], normQuery);
     });
-  }, [hasMinQuery, normQuery]);
+  }, [hasMinQuery, normQuery, queryMatchesFields]);
 
   const totalHits =
     matchedMovies.length +

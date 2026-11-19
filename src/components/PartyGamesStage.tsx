@@ -371,7 +371,7 @@ export const PartyGamesStage: React.FC<PartyGamesStageProps> = ({
         : pickLang(lang, { es: '🃏 UNO Oficial 1971', ca: '🃏 UNO Oficial 1971', en: '🃏 Official UNO' });
 
     return (
-      <div className="relative flex-1 flex flex-col justify-between p-2.5 sm:p-4 overflow-hidden gap-3">
+      <div className="relative flex-1 min-h-full flex flex-col justify-between p-2.5 sm:p-4 overflow-y-auto touch-pan-y custom-scrollbar gap-3">
         {!hideHeaderChrome && (
           <GameFloatingReactionToast reaction={floatingReaction} className="top-12 right-2" />
         )}

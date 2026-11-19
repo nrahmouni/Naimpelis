@@ -19,6 +19,15 @@ const FEATURED_4K_IDS = new Set([
   27205, 299534, 533535,
 ]);
 
+const SEARCH_STOPWORDS = new Set([
+  'el', 'la', 'los', 'las', 'lo',
+  'un', 'una', 'unos', 'unas',
+  'de', 'del', 'al', 'en', 'con', 'por', 'para', 'sin', 'sobre',
+  'que', 'se', 'su', 'sus', 'es', 'son', 'y', 'o', 'e', 'u',
+  'the', 'of', 'in', 'on', 'at', 'to', 'and', 'or', 'is', 'for', 'with',
+  'els', 'les', 'amb', 'per', 'i',
+]);
+
 export function scoreCatalogItemForQuery(
   item: Pick<
     CatalogMovie,
@@ -32,6 +41,9 @@ export function scoreCatalogItemForQuery(
 
   const compactQ = normQ.replace(/\s+/g, '');
   const qTokens = normQ.split(' ').filter((t) => t.length >= 2 || /^\d+$/.test(t));
+  const meaningfulTokens = qTokens.filter(
+    (t) => !SEARCH_STOPWORDS.has(t) && (t.length >= 3 || /^\d+$/.test(t))
+  );
 
   const title = normalizeSearchText(item.title || '');
   const orig = normalizeSearchText(item.originalTitle || '');
@@ -48,45 +60,41 @@ export function scoreCatalogItemForQuery(
     (titleCompact === compactQ || (origCompact && origCompact === compactQ))
   ) {
     score = 920;
-  } else if (title.startsWith(`${normQ} `) || title.startsWith(normQ)) {
+  } else if (title.startsWith(`${normQ} `) || (normQ.length >= 3 && title.startsWith(normQ))) {
     score = 720;
-  } else if (orig && (orig.startsWith(`${normQ} `) || orig.startsWith(normQ))) {
+  } else if (orig && (orig.startsWith(`${normQ} `) || (normQ.length >= 3 && orig.startsWith(normQ)))) {
     score = 680;
-  } else if (title.includes(normQ) || (orig && orig.includes(normQ))) {
+  } else if (normQ.length >= 3 && (title.includes(normQ) || (orig && orig.includes(normQ)))) {
     score = 520;
   } else if (
-    compactQ.length >= 3 &&
+    compactQ.length >= 4 &&
     (titleCompact.includes(compactQ) || (origCompact && origCompact.includes(compactQ)))
   ) {
     score = 460;
-  } else if (qTokens.length > 0) {
+  } else if (meaningfulTokens.length > 0) {
     const titleWords = title.split(' ').filter(Boolean);
     const origWords = orig.split(' ').filter(Boolean);
-    const allInTitle = qTokens.every((tok) =>
-      titleWords.some((w) => w === tok || w.startsWith(tok) || w.includes(tok))
-    );
+    const matchesToken = (words: string[], tok: string) =>
+      words.some((w) => w === tok || w.startsWith(tok) || (tok.length >= 4 && w.includes(tok)));
+
+    const allInTitle = meaningfulTokens.every((tok) => matchesToken(titleWords, tok));
     const allInOrig =
-      orig.length > 0 &&
-      qTokens.every((tok) =>
-        origWords.some((w) => w === tok || w.startsWith(tok) || w.includes(tok))
-      );
+      orig.length > 0 && meaningfulTokens.every((tok) => matchesToken(origWords, tok));
 
     if (allInTitle || allInOrig) {
       score = 360;
       const targetWordCount = allInTitle ? titleWords.length : origWords.length;
       score += Math.max(0, 40 - Math.abs(targetWordCount - qTokens.length) * 8);
-    } else {
+    } else if (meaningfulTokens.length >= 2) {
       const combinedWords = [...titleWords, ...origWords];
-      const matchedCount = qTokens.filter((tok) =>
-        combinedWords.some((w) => w === tok || w.startsWith(tok) || (tok.length >= 3 && w.includes(tok)))
-      ).length;
-      if (matchedCount > 0) {
-        score = Math.round((matchedCount / qTokens.length) * 200);
+      const matchedCount = meaningfulTokens.filter((tok) => matchesToken(combinedWords, tok)).length;
+      if (matchedCount >= Math.ceil(meaningfulTokens.length * 0.65)) {
+        score = Math.round((matchedCount / meaningfulTokens.length) * 200);
       }
     }
   }
 
-  if (score === 0 && normQ.length >= 4 && overview.includes(normQ)) {
+  if (score === 0 && normQ.length >= 5 && !SEARCH_STOPWORDS.has(normQ) && overview.includes(normQ)) {
     score = 35;
   }
 

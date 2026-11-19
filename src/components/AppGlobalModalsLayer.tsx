@@ -14,11 +14,12 @@ import { AvatarMenuSheet } from './AvatarMenuSheet';
 import { SettingsBottomSheet } from './SettingsBottomSheet';
 import { GameMatchInviteModal } from './games/GameMatchInviteModal';
 import { AppDiscoveryModalsGroup } from './app/AppDiscoveryModalsGroup';
+import { GlobalVodModals } from './catalog/GlobalVodModals';
 import type { ProfileHubTab } from './UserProfileHubModal';
 import type { ActiveMovieContext } from './MoviePlaybackDock';
 import type { ActiveSportsMatchMeta } from '../hooks/useLiveSportsMatchDetails';
 import type { CatalogSection } from './MediaCatalogHub';
-import type { WorldId } from '../store/useAppStore';
+import { useAppStore, type WorldId } from '../store/useAppStore';
 import type { RecentRoomEntry, StoredProfile } from '../utils/storage';
 import type { NativeApkUpdateAvailable } from '../utils/versionSync';
 import { pickLang } from '../utils/i18n';
@@ -31,6 +32,7 @@ import type {
   IncomingRoomInvite,
   OnlineAppUser,
   Participant,
+  RoomQueueItem,
   SavedFriend,
   SpanishTdtChannel,
   SportsMatch,
@@ -184,12 +186,20 @@ interface AppGlobalModalsLayerProps {
   onSwitchRoom: (code: string, name?: string) => void;
   onTogglePermanentRoom: () => Promise<void>;
   onDeleteSavedRoom: (code: string) => Promise<void>;
-  onPlayMovie: (movie: CatalogMovie, preferLang?: string) => Promise<void>;
+  onPlayMovie: (
+    movie: CatalogMovie,
+    preferLang?: string,
+    opts?: number | { startAtSec?: number; forceSpanish?: boolean }
+  ) => Promise<void>;
   onPlaySeriesEpisode: (
     series: TvSeriesDetails,
     ep: TvEpisodeItem,
-    preferLang: string
+    preferLang: string,
+    opts?: number | { startAtSec?: number; forceSpanish?: boolean }
   ) => Promise<void>;
+  loadingItemId: string | null;
+  worldSearchQuery: string;
+  onAddToQueue: (item: Omit<RoomQueueItem, 'id' | 'addedBy'>) => void;
   onPlayChannel: (ch: SpanishTdtChannel) => void;
   onPlayMatch: (m: SportsMatch) => void;
   onSyncPlayerAction: (action: 'play' | 'pause' | 'seek' | 'change_url', patch: Partial<VideoState>) => void;
@@ -305,6 +315,9 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
     onDeleteSavedRoom,
     onPlayMovie,
     onPlaySeriesEpisode,
+    loadingItemId,
+    worldSearchQuery,
+    onAddToQueue,
     onPlayChannel,
     onPlayMatch,
     onSyncPlayerAction,
@@ -312,6 +325,9 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
     setCatalogSection,
     enterWorld,
   } = p;
+
+  const activeWorld = useAppStore((s) => s.activeWorld);
+  const shareRoomId = sessionMode !== 'solo' && roomId ? roomId : undefined;
 
   return (
     <>
@@ -619,6 +635,29 @@ export const AppGlobalModalsLayer: React.FC<AppGlobalModalsLayerProps> = (p) => 
         onAccept={onAcceptGameInvite}
         onDismiss={onDismissGameInvite}
       />
+
+      {activeWorld !== 'kids' && (
+        <GlobalVodModals
+          lang={lang}
+          shareRoomId={shareRoomId}
+          loadingItemId={loadingItemId}
+          watchHistory={watchHistory}
+          watchlist={watchlist}
+          worldSearchQuery={worldSearchQuery}
+          effectiveCineCastellano={cineCastellano}
+          onToggleCatalogFavorite={onToggleCatalogFavorite}
+          onPlayMovie={(movie, preferLang, opts) => {
+            void onPlayMovie(movie, preferLang, opts);
+          }}
+          onPlaySeriesEpisode={(series, episode, preferLang, opts) => {
+            void onPlaySeriesEpisode(series, episode, preferLang, opts);
+          }}
+          onReplayHistoryItem={(item, forceRestart) => {
+            void onReplayHistoryItem(item, forceRestart);
+          }}
+          onAddToQueue={onAddToQueue}
+        />
+      )}
     </>
   );
 };

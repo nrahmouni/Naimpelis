@@ -1,14 +1,12 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type {
   AppLanguage,
   CatalaCatalogItem,
   CatalaSeriesDetails,
   CatalogMovie,
-  TvSeriesDetails,
   YouTubeSearchItem,
 } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
-import { pickLang } from '../../utils/i18n';
 import { mergeAndRankCatalogResults } from '../../utils/catalogSearchRank';
 import type { CatalogSection } from './catalogConstants';
 
@@ -31,8 +29,6 @@ export function useVodCatalogState({
   effectiveCineCastellano,
   externalSearchQuery,
 }: UseVodCatalogStateArgs) {
-  const [previewItem, setPreviewItem] = useState<CatalogMovie | null>(null);
-
   const [homeGenreId] = useState<number | null>(null);
   const [homeProvider] = useState<string>('all');
   const [homeSortBy] = useState<
@@ -77,22 +73,6 @@ export function useVodCatalogState({
   const [loadingSeries, setLoadingSeries] = useState(false);
   const [loadingMoreSeries, setLoadingMoreSeries] = useState(false);
 
-  const [selectedSeries, setSelectedSeries] = useState<TvSeriesDetails | null>(null);
-  const [highlightedEpisodeNumber, setHighlightedEpisodeNumber] = useState<number | null>(null);
-  const [seriesModalLang, setSeriesModalLang] = useState<string>('ES');
-  const [forceSpanishSeriesActive, setForceSpanishSeriesActive] = useState(false);
-  const [loadingSeriesDetails, setLoadingSeriesDetails] = useState(false);
-  const [probingSeriesLangs, setProbingSeriesLangs] = useState(false);
-  const seriesFetchSeqRef = useRef(0);
-  const [detailsReturnPreviewItem, setDetailsReturnPreviewItemState] =
-    useState<CatalogMovie | null>(null);
-  const detailsReturnPreviewRef = useRef<CatalogMovie | null>(null);
-  const setDetailsReturnPreviewItem = (item: CatalogMovie | null) => {
-    detailsReturnPreviewRef.current = item;
-    setDetailsReturnPreviewItemState(item);
-  };
-  const requestedMovieModal = useAppStore((s) => s.requestedMovieModal);
-  const requestedSeriesModal = useAppStore((s) => s.requestedSeriesModal);
   const requestedCatalaModal = useAppStore((s) => s.requestedCatalaModal);
 
   const [ytQuery, setYtQuery] = useState(worldMode === 'youtube' ? (externalSearchQuery || '') : '');
@@ -132,62 +112,6 @@ export function useVodCatalogState({
       setYtQuery(externalSearchQuery);
     }
   }, [externalSearchQuery, worldMode]);
-
-  useEffect(() => {
-    if (!requestedMovieModal) return;
-    setPreviewItem(requestedMovieModal);
-  }, [requestedMovieModal]);
-
-  useEffect(() => {
-    if (!requestedSeriesModal) return;
-    const rawSeries = requestedSeriesModal.series;
-    const reqSeason =
-      requestedSeriesModal.season ||
-      ('activeSeason' in rawSeries ? rawSeries.activeSeason : undefined) ||
-      1;
-    setHighlightedEpisodeNumber(requestedSeriesModal.episode || null);
-    if (requestedSeriesModal.fromPreviewItem !== undefined) {
-      setDetailsReturnPreviewItem(requestedSeriesModal.fromPreviewItem || null);
-    }
-    if (typeof requestedSeriesModal.forceSpanish === 'boolean') {
-      setForceSpanishSeriesActive(requestedSeriesModal.forceSpanish);
-    }
-    if (requestedSeriesModal.lang) {
-      setSeriesModalLang(requestedSeriesModal.lang);
-    }
-    if (
-      'episodes' in rawSeries &&
-      Array.isArray(rawSeries.episodes) &&
-      rawSeries.episodes.length > 0 &&
-      rawSeries.activeSeason === reqSeason
-    ) {
-      setSelectedSeries(rawSeries);
-      setLoadingSeriesDetails(false);
-      if (Array.isArray(rawSeries.availableLanguages) && rawSeries.availableLanguages.length > 0) {
-        const avail = rawSeries.availableLanguages;
-        if (!requestedSeriesModal.lang) {
-          setSeriesModalLang(avail.includes('ES') ? 'ES' : avail[0]);
-        }
-        setProbingSeriesLangs(false);
-      } else if (rawSeries.tmdbId) {
-        openSeriesDetails(
-          Number(rawSeries.tmdbId),
-          reqSeason,
-          rawSeries,
-          Boolean(requestedSeriesModal.forceSpanish)
-        );
-      }
-      return;
-    }
-    if (rawSeries.tmdbId) {
-      openSeriesDetails(
-        Number(rawSeries.tmdbId),
-        reqSeason,
-        rawSeries,
-        Boolean(requestedSeriesModal.forceSpanish)
-      );
-    }
-  }, [requestedSeriesModal]);
 
   useEffect(() => {
     if (!requestedCatalaModal) return;
@@ -491,141 +415,6 @@ export function useVodCatalogState({
     debouncedSeriesQuery,
   ]);
 
-  const openSeriesDetails = (
-    tmdbId: number,
-    seasonNum = 1,
-    seedShow?: Partial<CatalogMovie>,
-    forceSpanishProbe = false
-  ) => {
-    const reqSeq = ++seriesFetchSeqRef.current;
-    setLoadingSeriesDetails(true);
-    if (forceSpanishProbe) {
-      setSeriesModalLang('ES');
-      setForceSpanishSeriesActive(true);
-    } else if (!selectedSeries || selectedSeries.tmdbId !== tmdbId) {
-      const preferredDefault = effectiveCineCastellano
-        ? 'ES'
-        : seriesLangMode === 'EN' || seriesLangMode === 'VOSE'
-        ? seriesLangMode
-        : 'ES';
-      setSeriesModalLang(preferredDefault);
-      setForceSpanishSeriesActive(false);
-    }
-
-    setSelectedSeries((prev) => {
-      if (prev && prev.tmdbId === tmdbId) {
-        return { ...prev, activeSeason: seasonNum };
-      }
-      return {
-        tmdbId,
-        title:
-          seedShow?.title ||
-          pickLang(lang, {
-            es: 'Cargando serie...',
-            ca: 'Carregant sèrie...',
-            en: 'Loading series...',
-          }),
-        originalTitle: seedShow?.originalTitle || seedShow?.title || '',
-        year: seedShow?.year || 'TV',
-        rating: seedShow?.rating || '',
-        overview: seedShow?.overview || '',
-        poster: seedShow?.poster || '',
-        backdrop: seedShow?.backdrop || seedShow?.poster || '',
-        seasons: [
-          {
-            seasonNumber: seasonNum,
-            name: pickLang(lang, {
-              es: `Temporada ${seasonNum}`,
-              ca: `Temporada ${seasonNum}`,
-              en: `Season ${seasonNum}`,
-            }),
-            episodeCount: 0,
-          },
-        ],
-        activeSeason: seasonNum,
-        episodes: [],
-      };
-    });
-
-    const apiLang = forceSpanishProbe ? 'es' : lang === 'en' ? 'en' : 'es';
-    fetch(
-      `/api/catalog/tv/${tmdbId}?season=${seasonNum}&lang=${apiLang}${
-        forceSpanishProbe ? '&force=1&forceSpanish=1' : ''
-      }`
-    )
-      .then((r) => r.json())
-      .then((data) => {
-        if (reqSeq !== seriesFetchSeqRef.current) return;
-        if (data?.success && data?.details) {
-          const nextSeries: TvSeriesDetails = data.details;
-          setSelectedSeries(nextSeries);
-          setLoadingSeriesDetails(false);
-
-          if (
-            !forceSpanishProbe &&
-            Array.isArray(nextSeries.availableLanguages) &&
-            nextSeries.availableLanguages.length > 0
-          ) {
-            setProbingSeriesLangs(false);
-            const avail = nextSeries.availableLanguages;
-            setSeriesModalLang((prev) =>
-              avail.includes('ES') ? 'ES' : avail.includes(prev as 'ES' | 'LAT' | 'VOSE' | 'EN') ? prev : avail[0]
-            );
-          } else {
-            setProbingSeriesLangs(true);
-            const firstEp = nextSeries.episodes[0]?.episodeNumber || 1;
-            fetch(
-              `/api/catalog/tv/${tmdbId}/languages?season=${nextSeries.activeSeason}&episode=${firstEp}&title=${encodeURIComponent(
-                nextSeries.title || ''
-              )}&origTitle=${encodeURIComponent(nextSeries.originalTitle || '')}${
-                forceSpanishProbe ? '&force=1&forceSpanish=1' : ''
-              }`
-            )
-              .then((r2) => r2.json())
-              .then((langData) => {
-                if (reqSeq !== seriesFetchSeqRef.current) return;
-                const avail: ('ES' | 'LAT' | 'VOSE' | 'EN')[] = Array.isArray(
-                  langData?.availableLanguages
-                )
-                  ? langData.availableLanguages
-                  : [];
-                if (avail.length > 0) {
-                  setSelectedSeries((curr) =>
-                    curr && curr.tmdbId === tmdbId
-                      ? { ...curr, availableLanguages: avail }
-                      : curr
-                  );
-                  setSeriesModalLang((prev) =>
-                    forceSpanishProbe
-                      ? avail.includes('ES')
-                        ? 'ES'
-                        : avail[0]
-                      : avail.includes('ES')
-                      ? 'ES'
-                      : avail.includes(prev as 'ES' | 'LAT' | 'VOSE' | 'EN')
-                      ? prev
-                      : avail[0]
-                  );
-                }
-              })
-              .catch(() => {})
-              .finally(() => {
-                if (reqSeq === seriesFetchSeqRef.current) {
-                  setProbingSeriesLangs(false);
-                }
-              });
-          }
-        } else {
-          setLoadingSeriesDetails(false);
-        }
-      })
-      .catch(() => {
-        if (reqSeq === seriesFetchSeqRef.current) {
-          setLoadingSeriesDetails(false);
-        }
-      });
-  };
-
   // YouTube search
   useEffect(() => {
     if (worldMode !== 'youtube' && activeSection !== 'youtube') return;
@@ -720,8 +509,6 @@ export function useVodCatalogState({
   };
 
   return {
-    previewItem,
-    setPreviewItem,
     homeGenreId,
     homeProvider,
     homeSortBy,
@@ -754,19 +541,6 @@ export function useVodCatalogState({
     seriesList,
     loadingSeries,
     loadingMoreSeries,
-    selectedSeries,
-    setSelectedSeries,
-    highlightedEpisodeNumber,
-    setHighlightedEpisodeNumber,
-    detailsReturnPreviewItem,
-    detailsReturnPreviewRef,
-    setDetailsReturnPreviewItem,
-    seriesModalLang,
-    setSeriesModalLang,
-    forceSpanishSeriesActive,
-    loadingSeriesDetails,
-    probingSeriesLangs,
-    openSeriesDetails,
     debouncedYtQuery,
     setYtQuery,
     setDebouncedYtQuery,

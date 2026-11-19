@@ -1,5 +1,4 @@
 import React from 'react';
-import { TvEpisodeItem, TvSeriesDetails } from '../types';
 import type { RoomGameInviteType } from '../shared/protocol';
 import { pickLang } from '../utils/i18n';
 import { socketService } from '../services/socket';
@@ -51,13 +50,17 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     setFutbolTab,
     setShowDesignSystem,
     setProfileHubOpen,
+    profileHubOpen,
     setProfileHubTab,
     setShowCommandSearch,
+    showCommandSearch,
     setShowSurpriseModal,
+    showSurpriseModal,
     setAiSearchLaunch,
     setShowWatchlistOnly,
     showWatchlistOnly,
     setShowVoiceAssistant,
+    showVoiceAssistant,
     setSmartTvModalOpen,
     roomId,
     worldSearchQuery,
@@ -77,8 +80,22 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
     playback,
     lifecycle,
     hasConnectedSmartTv,
+    isPlayerActive,
+    isDockedMini,
     sessionMode,
   } = c;
+
+  const requestedMovieModal = useAppStore((s) => s.requestedMovieModal);
+  const requestedSeriesModal = useAppStore((s) => s.requestedSeriesModal);
+  const suppressHomeSearchOverlay = Boolean(
+    requestedMovieModal ||
+      requestedSeriesModal ||
+      (isPlayerActive && !isDockedMini) ||
+      showSurpriseModal ||
+      showCommandSearch ||
+      showVoiceAssistant ||
+      profileHubOpen
+  );
 
   const shareRoomId = sessionMode !== 'solo' && roomId ? roomId : undefined;
 
@@ -186,36 +203,27 @@ export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
           series={quickPool.series}
           tdtChannels={quickPool.tdt}
           liveMatches={homeFootballMatches}
-          onPlayMovie={(movieItem) => {
-            void playback.handlePlayMovie(movieItem, cineCastellano ? 'ES' : 'VOSE');
+          suppressSearchOverlay={suppressHomeSearchOverlay}
+          onOpenMovieDetails={(movieItem) => {
+            const store = useAppStore.getState();
+            store.setRequestedSeriesModal(null);
+            store.setRequestedMovieModal(movieItem);
           }}
-          onPlaySeries={async (seriesItem, targetSeason, targetEpisode) => {
-            if (seriesItem.tmdbId) {
-              try {
-                const seasonNum = targetSeason || seriesItem.seasonNumber || 1;
-                const res = await fetch(
-                  `/api/catalog/tv/${seriesItem.tmdbId}?season=${seasonNum}&lang=${lang}`
-                );
-                const data = await res.json();
-                const episodes = (data?.details?.episodes || []) as TvEpisodeItem[];
-                if (episodes.length > 0) {
-                  const episodeNum = targetEpisode || seriesItem.episodeNumber || 1;
-                  const targetEp =
-                    episodes.find((ep) => ep.episodeNumber === episodeNum) ||
-                    episodes[episodeNum - 1] ||
-                    episodes[0];
-                  await playback.handlePlaySeriesEpisode(
-                    data.details as TvSeriesDetails,
-                    targetEp,
-                    cineCastellano ? 'ES' : 'VOSE'
-                  );
-                  return;
-                }
-              } catch {
-                // fallback
-              }
+          onOpenSeriesPage={(seriesItem) => {
+            const store = useAppStore.getState();
+            const resolvedTmdbId = Number(
+              seriesItem.tmdbId || String(seriesItem.id || '').replace(/[^\d]/g, '') || 0
+            );
+            if (resolvedTmdbId > 0) {
+              store.setRequestedMovieModal(null);
+              store.setRequestedSeriesModal({
+                series: { ...seriesItem, tmdbId: resolvedTmdbId, mediaType: 'tv' },
+                season: seriesItem.seasonNumber || 1,
+              });
+              return;
             }
-            enterWorld('cine');
+            store.setRequestedSeriesModal(null);
+            store.setRequestedMovieModal(seriesItem);
           }}
           onOpenDesignSystem={() => setShowDesignSystem(true)}
           onChangeLang={setLang}

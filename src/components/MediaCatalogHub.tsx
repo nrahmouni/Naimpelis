@@ -24,7 +24,6 @@ import { triggerHaptic } from '../utils/haptics';
 import { usePullToRefresh } from '../lib/viewTransition';
 import { isSameCatalogItem } from '../utils/storage';
 import { useAppStore, type PlaybackReturnContext } from '../store/useAppStore';
-import { MediaDetailsModal } from './MediaDetailsModal';
 import {
   normalizeCatalogPillar,
   TV_FILTER_GROUPS,
@@ -33,7 +32,6 @@ import {
   type TvFilterGroup,
 } from './catalog/catalogConstants';
 import { CatalaEpisodePickerModal } from './catalog/CatalaEpisodePickerModal';
-import { SeriesEpisodePickerModal } from './catalog/SeriesEpisodePickerModal';
 import { LiveTvWorldView } from './catalog/LiveTvWorldView';
 import { EpgChannelModal } from './catalog/EpgChannelModal';
 import { YouTubeWorldView } from './catalog/YouTubeWorldView';
@@ -119,15 +117,12 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
   lang,
   activeVideoRawUrl,
   loadingItemId,
-  watchHistory,
   watchlist,
   favoriteChannels,
   onToggleCatalogFavorite,
   onToggleChannelFavorite,
   onPlayMovie,
-  onPlaySeriesEpisode,
   onPlayCatalaEpisode,
-  onReplayHistoryItem,
   onPlaySportsMatch,
   onPlayTdtChannel,
   onPlayYouTubeVideo,
@@ -255,41 +250,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       className="@container w-full min-w-0 max-w-full space-y-4 pb-24 sm:pb-8"
       data-pillar={activePillar}
     >
-      <MediaDetailsModal
-        item={vod.previewItem}
-        lang={lang}
-        shareRoomId={shareRoomId}
-        defaultAudioLang={
-          effectiveCineCastellano
-            ? 'ES'
-            : vod.cineAudioOverride === 'EN'
-            ? 'EN'
-            : vod.seriesLangMode === 'EN'
-            ? 'EN'
-            : 'VOSE'
-        }
-        isBookmarked={vod.previewItem ? isBookmarked(vod.previewItem) : false}
-        onClose={() => {
-          vod.setPreviewItem(null);
-          useAppStore.getState().setRequestedMovieModal(null);
-        }}
-        onPlayMovie={(m, pLang, opts) => {
-          useAppStore.getState().setRequestedMovieModal(null);
-          captureOriginContext({ movieModal: m });
-          onPlayMovie(m, pLang, opts);
-        }}
-        onOpenSeriesEpisodes={(tmdbId, forceSpanish) => {
-          const seed = vod.previewItem || undefined;
-          vod.setDetailsReturnPreviewItem(seed || null);
-          vod.setPreviewItem(null);
-          useAppStore.getState().setRequestedMovieModal(null);
-          vod.openSeriesDetails(tmdbId, seed?.seasonNumber || 1, seed, Boolean(forceSpanish));
-        }}
-        onToggleBookmark={(m) => onToggleCatalogFavorite(m)}
-        onAddToQueue={onAddToQueue}
-        onSelectSimilar={(sim) => vod.setPreviewItem(sim)}
-      />
-
       <CatalaEpisodePickerModal
         lang={lang}
         selectedSeries={vod.selectedCatalaSeries}
@@ -308,68 +268,6 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           });
           useAppStore.getState().setRequestedCatalaModal(null);
           onPlayCatalaEpisode(catSeries, catEp);
-        }}
-        onAddToQueue={onAddToQueue}
-      />
-
-      <SeriesEpisodePickerModal
-        lang={lang}
-        selectedSeries={vod.selectedSeries}
-        highlightedEpisodeNumber={vod.highlightedEpisodeNumber}
-        shareRoomId={shareRoomId}
-        seriesModalLang={vod.seriesModalLang}
-        forceSpanishSeriesActive={vod.forceSpanishSeriesActive}
-        loadingSeriesDetails={vod.loadingSeriesDetails}
-        probingSeriesLangs={vod.probingSeriesLangs}
-        loadingItemId={loadingItemId}
-        watchHistory={watchHistory}
-        isBookmarked={isBookmarked}
-        onClose={() => {
-          const returnPreview = vod.detailsReturnPreviewRef.current;
-          vod.setSelectedSeries(null);
-          vod.setHighlightedEpisodeNumber(null);
-          vod.setDetailsReturnPreviewItem(null);
-          useAppStore.getState().setRequestedSeriesModal(null);
-          if (returnPreview) {
-            vod.setPreviewItem(returnPreview);
-          }
-        }}
-        onSeriesModalLangChange={vod.setSeriesModalLang}
-        onOpenSeriesDetails={vod.openSeriesDetails}
-        onToggleBookmark={handleToggleBookmark}
-        onReplayHistoryItem={(histItem, forceRestart) => {
-          const returnPreview = vod.detailsReturnPreviewRef.current;
-          if (vod.selectedSeries) {
-            captureOriginContext({
-              seriesModal: {
-                series: vod.selectedSeries,
-                season: histItem.season || vod.selectedSeries.activeSeason,
-                episode: histItem.episode || null,
-                lang: vod.seriesModalLang,
-                forceSpanish: vod.forceSpanishSeriesActive,
-                fromPreviewItem: returnPreview,
-              },
-            });
-            vod.setDetailsReturnPreviewItem(null);
-            useAppStore.getState().setRequestedSeriesModal(null);
-          }
-          onReplayHistoryItem(histItem, forceRestart);
-        }}
-        onPlaySeriesEpisode={(series, ep, pLang, opts) => {
-          const returnPreview = vod.detailsReturnPreviewRef.current;
-          captureOriginContext({
-            seriesModal: {
-              series,
-              season: series.activeSeason,
-              episode: ep.episodeNumber,
-              lang: pLang,
-              forceSpanish: Boolean(opts?.forceSpanish ?? vod.forceSpanishSeriesActive),
-              fromPreviewItem: returnPreview,
-            },
-          });
-          vod.setDetailsReturnPreviewItem(null);
-          useAppStore.getState().setRequestedSeriesModal(null);
-          onPlaySeriesEpisode(series, ep, pLang, opts);
         }}
         onAddToQueue={onAddToQueue}
       />
@@ -428,10 +326,50 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
           onDiscoveryGenresLoaded={() => {}}
           isBookmarked={isBookmarked}
           onToggleBookmark={handleToggleBookmark}
-          onOpenPreviewItem={vod.setPreviewItem}
-          onOpenSeriesDetails={(tmdbId, seasonNum, seed) =>
-            vod.openSeriesDetails(tmdbId, seasonNum, seed)
-          }
+          onOpenPreviewItem={(item) => {
+            const store = useAppStore.getState();
+            const resolvedKind =
+              item.mediaType === 'tv' ||
+              (effectiveCineTab === 'series' && item.mediaType !== 'movie')
+                ? 'tv'
+                : 'movie';
+            if (resolvedKind === 'tv') {
+              const tmdbId = Number(
+                item.tmdbId || String(item.id || '').replace(/[^\d]/g, '') || 0
+              );
+              if (tmdbId > 0) {
+                store.setRequestedMovieModal(null);
+                store.setRequestedSeriesModal({
+                  series: { ...item, tmdbId, mediaType: 'tv' },
+                  season: item.seasonNumber || 1,
+                });
+                return;
+              }
+            }
+            store.setRequestedSeriesModal(null);
+            store.setRequestedMovieModal(item);
+          }}
+          onOpenSeriesDetails={(tmdbId, seasonNum, seed) => {
+            const store = useAppStore.getState();
+            store.setRequestedMovieModal(null);
+            store.setRequestedSeriesModal({
+              series: seed
+                ? { ...seed, tmdbId, mediaType: 'tv' }
+                : {
+                    id: `tv-${tmdbId}`,
+                    tmdbId,
+                    mediaType: 'tv',
+                    title: '',
+                    poster: '',
+                    backdrop: '',
+                    year: '',
+                    rating: '',
+                    overview: '',
+                    languages: [],
+                  },
+              season: seasonNum || 1,
+            });
+          }}
           onOpenCatalaSeriesDetails={vod.openCatalaSeriesDetails}
           onPlayMovie={onPlayMovie}
           onPlayCustomUrl={onPlayCustomUrl}

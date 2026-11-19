@@ -157,8 +157,8 @@ export const ParchisBoardView: React.FC<ParchisBoardViewProps> = ({
     <div
       className={`flex-1 flex flex-col ${
         fullScreenMode
-          ? 'justify-between overflow-hidden p-1.5 sm:p-2 gap-1.5'
-          : 'overflow-y-auto p-3 space-y-2.5 custom-scrollbar'
+          ? 'min-h-full justify-between overflow-y-auto touch-pan-y custom-scrollbar p-1.5 sm:p-2 gap-1.5'
+          : 'overflow-y-auto touch-pan-y p-3 space-y-2.5 custom-scrollbar'
       }`}
     >
       {!hideHeaderChrome && (

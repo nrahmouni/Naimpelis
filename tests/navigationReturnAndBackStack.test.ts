@@ -8,6 +8,10 @@ import {
 } from '../src/lib/backInterceptor';
 import { useAppStore } from '../src/store/useAppStore';
 import { filterTmdbValidSeasons } from '../server/routes/catalog/tvDetailsHandler';
+import {
+  mergeAndRankCatalogResults,
+  scoreCatalogItemForQuery,
+} from '../src/utils/catalogSearchRank';
 
 describe('Global LIFO backInterceptor priority stack & pop coordination', () => {
   const cleanups: Array<() => void> = [];
@@ -219,5 +223,84 @@ describe('TMDB placeholder future season filtering (LQSA 17 vs 18 temp)', () => 
     ]);
 
     expect(valid.map((s) => s.season_number)).toEqual([16, 17]);
+  });
+});
+
+describe('Portada universal search persistence & noise-free partial query ranking', () => {
+  afterEach(() => {
+    const store = useAppStore.getState();
+    store.setHomeSearchQuery('');
+    store.setHomeSearchCategory('all');
+    store.setPlaybackReturnContext(null);
+  });
+
+  it('persists homeSearchQuery and homeSearchCategory in global store and PlaybackReturnContext', () => {
+    const store = useAppStore.getState();
+    store.setHomeSearchQuery('La que se avecina');
+    store.setHomeSearchCategory('series');
+
+    expect(useAppStore.getState().homeSearchQuery).toBe('La que se avecina');
+    expect(useAppStore.getState().homeSearchCategory).toBe('series');
+
+    const updated = useAppStore.getState();
+    store.setPlaybackReturnContext({
+      world: 'entry',
+      homeSearchQuery: updated.homeSearchQuery,
+      homeSearchCategory: updated.homeSearchCategory,
+    });
+    expect(useAppStore.getState().playbackReturnContext?.world).toBe('entry');
+    expect(useAppStore.getState().playbackReturnContext?.homeSearchQuery).toBe('La que se avecina');
+    expect(useAppStore.getState().playbackReturnContext?.homeSearchCategory).toBe('series');
+  });
+
+  it('filters noisy stopword matches on partial typing while ranking exact series prefix first', () => {
+    const pool = [
+      {
+        id: 'tv-1',
+        tmdbId: 1,
+        mediaType: 'tv' as const,
+        title: 'La casa de papel',
+        poster: '',
+        year: '2017',
+        rating: '8.2',
+        overview: 'Una banda organizada que planea un atraco en Madrid.',
+        languages: ['ES'],
+      },
+      {
+        id: 'tv-2',
+        tmdbId: 2,
+        mediaType: 'tv' as const,
+        title: 'Lo que hacemos en las sombras',
+        poster: '',
+        year: '2019',
+        rating: '8.5',
+        overview: 'Serie sobre lo que pasa cada noche.',
+        languages: ['ES'],
+      },
+      {
+        id: 'tv-35338',
+        tmdbId: 35338,
+        mediaType: 'tv' as const,
+        title: 'La que se avecina',
+        poster: '',
+        year: '2007',
+        rating: '8.4',
+        overview: 'Comedia vecinal española en Mirador de Montepinar.',
+        languages: ['ES'],
+      },
+    ];
+
+    // Partial typing "L que" should not explode with unrelated stopword shows
+    expect(scoreCatalogItemForQuery(pool[0], 'L que')).toBe(0);
+    expect(scoreCatalogItemForQuery(pool[1], 'L que')).toBe(0);
+
+    // "La que se avecina" ranks cleanly #1 as soon as user types "la q" or "La que"
+    const rankedPartial = mergeAndRankCatalogResults([], pool, 'la q', { minLocalScore: 60 });
+    expect(rankedPartial.map((m) => m.title)).toEqual(['La que se avecina']);
+
+    const rankedFull = mergeAndRankCatalogResults([], pool, 'La que se avecina', {
+      minLocalScore: 60,
+    });
+    expect(rankedFull[0]?.title).toBe('La que se avecina');
   });
 });
