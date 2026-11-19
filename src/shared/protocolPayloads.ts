@@ -7,7 +7,7 @@ import type {
   PokerGameState,
   Pool8BallState,
   BlackjackGameState,
-} from './protocolGameTypes';
+} from './protocolGameTypes.ts';
 
 export type MediaType = 'movie' | 'tv' | 'youtube' | 'direct' | 'stream' | 'cloud';
 

@@ -91,7 +91,7 @@ import {
   formatPokerRank,
   choosePokerBotAction,
   redactPokerStateForUser,
-} from './pokerHandEvaluator';
+} from './pokerHandEvaluator.ts';
 
 export {
   compareHandTuples,

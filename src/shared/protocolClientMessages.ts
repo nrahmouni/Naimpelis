@@ -16,7 +16,7 @@ import type {
   PoolDifficulty,
   PoolPocketId,
   PoolShotInput,
-} from './protocolGameTypes';
+} from './protocolGameTypes.ts';
 import type {
   AuthoritativeVideoState,
   RoomGameInviteType,
@@ -25,7 +25,7 @@ import type {
   TypingUserPayload,
   VideoSyncAction,
   VoiceSignalPayload,
-} from './protocolPayloads';
+} from './protocolPayloads.ts';
 
 export type ClientWsMessage =
   | { type: 'PING'; payload?: { clientTs: number } }

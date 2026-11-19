@@ -18,7 +18,7 @@ import type {
   Pool8BallState,
   PoolBallState,
   PoolShotInput,
-} from './protocolGameTypes';
+} from './protocolGameTypes.ts';
 import type {
   AuthoritativeVideoState,
   FloatingReactionEvent,
@@ -31,11 +31,11 @@ import type {
   VideoSyncAction,
   VoicePeerState,
   VoiceSignalPayload,
-} from './protocolPayloads';
+} from './protocolPayloads.ts';
 
-export * from './protocolGameTypes';
-export * from './protocolPayloads';
-export type { ClientWsMessage } from './protocolClientMessages';
+export * from './protocolGameTypes.ts';
+export * from './protocolPayloads.ts';
+export type { ClientWsMessage } from './protocolClientMessages.ts';
 
 export type ServerWsMessage =
   | { type: 'PONG'; payload: { clientTs: number; serverTs: number } }

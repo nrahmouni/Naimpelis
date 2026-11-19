@@ -13,7 +13,7 @@ import {
   HS_HEAD_RADIUS,
   HS_BALL_RADIUS,
   HS_MATCH_DURATION_SEC,
-} from './headSoccerConstants';
+} from './headSoccerConstants.ts';
 
 export {
   HS_ARENA_W,
@@ -668,4 +668,4 @@ export {
   joinHeadSoccerSeat,
   selectHeadSoccerSkin,
   startHeadSoccerMatch,
-} from './headSoccerOnline';
+} from './headSoccerOnline.ts';

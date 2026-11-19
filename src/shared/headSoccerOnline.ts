@@ -2,8 +2,8 @@ import type {
   HeadSoccerSeat,
   HeadSoccerOnlineState,
   HeadSoccerSkinId,
-} from './headSoccer';
-import { HS_MATCH_DURATION_SEC } from './headSoccerConstants';
+} from './headSoccer.ts';
+import { HS_MATCH_DURATION_SEC } from './headSoccerConstants.ts';
 
 export type { HeadSoccerSeat, HeadSoccerOnlineState };
 

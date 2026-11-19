@@ -5,18 +5,18 @@ import type {
   BoardGameType,
   BoardSide,
   ChessPromotionPiece,
-} from './boardGames';
+} from './boardGames.ts';
 import type {
   ParchisGameState,
   PartyColor,
   PartyGameState,
   PartyGameType,
   UnoGameState,
-} from './partyGames';
+} from './partyGames.ts';
 import type {
   PinturilloGameState,
   PinturilloStroke,
-} from './pinturillo';
+} from './pinturillo.ts';
 import type {
   Pool8BallState,
   PoolBallGroup,
@@ -25,7 +25,7 @@ import type {
   PoolFoulType,
   PoolPocketId,
   PoolShotInput,
-} from './pool8Ball';
+} from './pool8Ball.ts';
 import type {
   ChapasCap,
   ChapasFlagId,
@@ -33,25 +33,25 @@ import type {
   ChapasShotInput,
   ChapasTeamId,
   FutbolChapasState,
-} from './futbolChapas';
+} from './futbolChapas.ts';
 import type {
   HeadSoccerInput,
   HeadSoccerOnlineState,
   HeadSoccerSeat,
   HeadSoccerSimulation,
   HeadSoccerSkinId,
-} from './headSoccer';
+} from './headSoccer.ts';
 import type {
   PokerActionType,
   PokerCard,
   PokerGameState,
   PokerSeat,
-} from './texasHoldem';
+} from './texasHoldem.ts';
 import type {
   BjCard,
   BlackjackGameState,
   BlackjackSeat,
-} from './blackjack';
+} from './blackjack.ts';
 
 export type {
   BjCard,

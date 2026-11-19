@@ -16,7 +16,7 @@ import {
   type ChapasShotInput,
   type ChapasTeamId,
   type FutbolChapasState,
-} from './futbolChapas';
+} from './futbolChapas.ts';
 
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));

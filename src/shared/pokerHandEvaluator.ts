@@ -5,7 +5,7 @@ import type {
   PokerActionType,
   PokerCard,
   PokerGameState,
-} from './texasHoldem';
+} from './texasHoldem.ts';
 
 const SUITS: CardSuit[] = ['spades', 'hearts', 'diamonds', 'clubs'];
 const SUIT_CODE: Record<CardSuit, string> = {

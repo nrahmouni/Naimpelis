@@ -6,7 +6,7 @@
  * - First team to 3 goals wins (Goles para ganar: 3)
  * - 1v1 or 2v2 teams with toggleable AI bots and selectable national team emblems
  */
-import { stepChapasPhysicsFrame, chooseChapasAiShot, type ChapasPhysicsStepResult } from './chapasPhysicsAndAi';
+import { stepChapasPhysicsFrame, chooseChapasAiShot, type ChapasPhysicsStepResult } from './chapasPhysicsAndAi.ts';
 export { stepChapasPhysicsFrame, chooseChapasAiShot, type ChapasPhysicsStepResult };
 
 export const CHAPAS_ARENA_W = 540;
