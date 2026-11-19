@@ -574,9 +574,12 @@ describe('Multiplayer Lobbies, 15s Timer & WebRTC Voice Chat', () => {
     expect(hubSrc).toContain('VoiceWaveBars');
     expect(hubSrc).not.toContain('showPartyWaitingColors');
 
-    const poolSrc = fs.readFileSync(path.join(ROOT, 'src/components/Pool8BallStage.tsx'), 'utf8');
-    expect(poolSrc).toContain('VoiceSpeakerIndicator');
-    expect(poolSrc).toContain('audioLevel={p0Level}');
+    const poolHeaderSrc = fs.readFileSync(
+      path.join(ROOT, 'src/components/games/PoolStageHeader.tsx'),
+      'utf8'
+    );
+    expect(poolHeaderSrc).toContain('VoiceSpeakerIndicator');
+    expect(poolHeaderSrc).toContain('audioLevel={p0Level}');
 
     const voiceHookSrc = fs.readFileSync(path.join(ROOT, 'src/hooks/useGameVoiceChat.ts'), 'utf8');
     expect(voiceHookSrc).toContain('openrelay.metered.ca');
@@ -848,19 +851,26 @@ describe('Audit Checklist & Asset Integrity', () => {
       path.join(ROOT, 'src/components/MediaCatalogHub.tsx'),
       'utf8'
     );
+    const footballViewSrc = fs.readFileSync(
+      path.join(ROOT, 'src/components/catalog/FootballWorldView.tsx'),
+      'utf8'
+    );
     expect(catalogSrc).toContain("worldMode === 'cine'");
-    expect(catalogSrc).toContain('Fútbol China (中文)');
-    expect(catalogSrc).toContain('欧冠/西甲/英超');
+    expect(footballViewSrc).toContain('Fútbol China (中文)');
+    expect(footballViewSrc).toContain('欧冠/西甲/英超');
 
     const appSrc = fs.readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
-    expect(appSrc).toContain('<EntryHomeScreen');
-    expect(appSrc).toContain('<WorldShell');
+    const worldsSrc = fs.readFileSync(path.join(ROOT, 'src/components/AppWorldsContent.tsx'), 'utf8');
+    expect(appSrc).toContain('<AppWorldsContent');
+    expect(worldsSrc).toContain('<EntryHomeScreen');
+    expect(worldsSrc).toContain('<WorldShell');
   });
 
   it('guarantees fluid vertical scrolling across mobile, desktop and TV without nested overflow-y traps', () => {
     const appSrc = fs.readFileSync(path.join(ROOT, 'src/App.tsx'), 'utf8');
+    const worldsSrc = fs.readFileSync(path.join(ROOT, 'src/components/AppWorldsContent.tsx'), 'utf8');
     expect(appSrc).toContain('className="h-[100dvh] w-full max-w-[100vw] bg-[#0B0B0E] text-[#EFEFF1] overflow-hidden"');
-    expect(appSrc).toContain('ref={catalogScrollRef} className="w-full min-w-0 shrink-0"');
+    expect(worldsSrc).toContain('ref={catalogScrollRef} className="w-full min-w-0 shrink-0"');
     expect(appSrc).toContain('overflow-y-auto overflow-x-clip touch-pan-y smooth-scroll-area');
 
     const entrySrc = fs.readFileSync(path.join(ROOT, 'src/components/EntryHomeScreen.tsx'), 'utf8');

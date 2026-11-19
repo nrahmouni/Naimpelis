@@ -157,11 +157,15 @@ describe('Signed Android APK Builder Service', () => {
       path.resolve(process.cwd(), 'src/components/DesignSystemShowcase.tsx'),
       'utf8'
     );
+    const postersTabSrc = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/components/design/DesignPostersTab.tsx'),
+      'utf8'
+    );
     expect(dsSrc).toContain('https://riffantv.ai.studio');
-    expect(dsSrc).toContain('<QRCodeSVG value="https://riffantv.ai.studio"');
+    expect(postersTabSrc).toContain('<QRCodeSVG value="https://riffantv.ai.studio"');
 
     const friendsSrc = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/components/FriendsInviteModal.tsx'),
+      path.resolve(process.cwd(), 'src/components/friends/GlobalIncomingInviteBanner.tsx'),
       'utf8'
     );
     expect(friendsSrc).toContain('z-[240]');

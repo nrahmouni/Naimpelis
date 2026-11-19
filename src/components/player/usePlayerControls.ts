@@ -394,8 +394,8 @@ export function usePlayerControls(opts: UsePlayerControlsOptions) {
     );
   };
 
-  const handleTogglePiP = async (e: React.MouseEvent) => {
-    e.stopPropagation();
+  const handleTogglePiP = async (e?: React.MouseEvent) => {
+    e?.stopPropagation();
     triggerHaptic('medium');
     const video = videoRef.current as WebKitVideoElement | null;
     if (!video) return;

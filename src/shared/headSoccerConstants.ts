@@ -1,0 +1,10 @@
+export const HS_ARENA_W = 900;
+export const HS_ARENA_H = 520;
+export const HS_GROUND_Y = 448;
+export const HS_GOAL_W = 68;
+export const HS_GOAL_H = 156;
+export const HS_CROSSBAR_Y = HS_GROUND_Y - HS_GOAL_H;
+export const HS_POST_RADIUS = 7;
+export const HS_HEAD_RADIUS = 28;
+export const HS_BALL_RADIUS = 17;
+export const HS_MATCH_DURATION_SEC = 60;

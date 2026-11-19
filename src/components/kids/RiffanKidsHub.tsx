@@ -30,17 +30,11 @@ import { KidsCinemaTab } from './KidsCinemaTab';
 import { KidsIndependentPlayer } from './KidsIndependentPlayer';
 import { KidsGamesHub } from './KidsGamesHub';
 import { KidsLanguagesStudio } from './KidsLanguagesStudio';
-import { KidsPetWorldModal } from './KidsPetWorldModal';
-import { KidsDiplomaModal } from './KidsDiplomaModal';
-import { KidsStoryStudio } from './KidsStoryStudio';
-import { KidsFamilyOnboardingModal } from './KidsFamilyOnboardingModal';
-import { KidsApkModal } from './KidsApkModal';
-import { KidsStepWizard } from './KidsStepWizard';
-import { KidsAlbumModal } from './KidsAlbumModal';
-import { KidsPinGateModal, type PinActionIntent } from './KidsPinGateModal';
-import { KidsParentPanelModal } from './KidsParentPanelModal';
-import { KidsLangAndRestOverlays, KidsPortalScreen } from './KidsPortalScreen';
+import { type PinActionIntent } from './KidsPinGateModal';
+import { KidsPortalScreen } from './KidsPortalScreen';
 import { KidsHubHeader, KidsLandscapeNavRail, type KidsHubTab } from './KidsHubHeaderAndRail';
+import { KidsHubModalsLayer } from './KidsHubModalsLayer';
+import { useKidsHubEffects } from './useKidsHubEffects';
 
 export { KIDS_EXIT_PIN, isValidKidsExitPin };
 
@@ -214,117 +208,6 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
     },
   });
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const onOnline = () => setIsOffline(false);
-    const onOffline = () => setIsOffline(true);
-    window.addEventListener('online', onOnline);
-    window.addEventListener('offline', onOffline);
-    return () => {
-      window.removeEventListener('online', onOnline);
-      window.removeEventListener('offline', onOffline);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (isTvActive && typeof document !== 'undefined') {
-      document.documentElement.classList.add('tv-dpad-active', 'is-google-tv');
-    }
-  }, [isTvActive]);
-
-  useEffect(() => {
-    const id = window.setInterval(() => {
-      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
-        tickActiveMinute();
-      }
-    }, 60_000);
-    return () => window.clearInterval(id);
-  }, [tickActiveMinute]);
-
-  useEffect(() => {
-    if (!bedtimeMode || !lullabyPlaying || typeof window === 'undefined') {
-      if (lullabyIntervalRef.current) {
-        window.clearInterval(lullabyIntervalRef.current);
-        lullabyIntervalRef.current = null;
-      }
-      return;
-    }
-
-    const notes = [392.0, 440.0, 493.88, 392.0, 329.63, 293.66];
-    let step = 0;
-    let ctx: AudioContext | null = null;
-    try {
-      const AC =
-        window.AudioContext ||
-        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
-      if (AC) ctx = new AC();
-    } catch {
-      ctx = null;
-    }
-
-    const playSoftNote = () => {
-      if (!ctx) return;
-      try {
-        if (ctx.state === 'suspended') void ctx.resume();
-        const now = ctx.currentTime;
-        const osc = ctx.createOscillator();
-        const gain = ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(notes[step % notes.length], now);
-        step += 1;
-        gain.gain.setValueAtTime(0.001, now);
-        gain.gain.linearRampToValueAtTime(0.045, now + 0.08);
-        gain.gain.exponentialRampToValueAtTime(0.0005, now + 0.85);
-        osc.connect(gain);
-        gain.connect(ctx.destination);
-        osc.start(now);
-        osc.stop(now + 0.9);
-      } catch {
-        // ignore WebAudio restrictions
-      }
-    };
-
-    playSoftNote();
-    lullabyIntervalRef.current = window.setInterval(playSoftNote, 950);
-
-    return () => {
-      if (lullabyIntervalRef.current) {
-        window.clearInterval(lullabyIntervalRef.current);
-        lullabyIntervalRef.current = null;
-      }
-      if (ctx) {
-        void ctx.close().catch(() => {});
-      }
-    };
-  }, [bedtimeMode, lullabyPlaying]);
-
-  useEffect(() => {
-    if (exitPromptSeq > 0) {
-      setPinIntent('exit');
-      setPendingCastMovie(null);
-      setPinDigits('');
-      setPinError(false);
-      setPinModalOpen(true);
-    }
-  }, [exitPromptSeq]);
-
-  useEffect(() => {
-    const mins = progress.parentPrefs?.timerMinutes;
-    const started = progress.parentPrefs?.timerStartedAt;
-    if (!mins || !started) {
-      setRemainingMins(null);
-      return;
-    }
-    const update = () => {
-      const elapsedMs = Date.now() - started;
-      const left = Math.max(0, Math.ceil((mins * 60_000 - elapsedMs) / 60_000));
-      setRemainingMins(left);
-    };
-    update();
-    const id = window.setInterval(update, 15_000);
-    return () => window.clearInterval(id);
-  }, [progress.parentPrefs?.timerMinutes, progress.parentPrefs?.timerStartedAt]);
-
   const openPinModal = (intent: PinActionIntent = 'exit', movieForCast?: CatalogMovie) => {
     triggerHaptic('light');
     setPinIntent(intent);
@@ -333,6 +216,20 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
     setPinError(false);
     setPinModalOpen(true);
   };
+
+  useKidsHubEffects({
+    isTvActive,
+    bedtimeMode,
+    lullabyPlaying,
+    lullabyIntervalRef,
+    exitPromptSeq,
+    timerMinutes: progress.parentPrefs?.timerMinutes,
+    timerStartedAt: progress.parentPrefs?.timerStartedAt,
+    tickActiveMinute,
+    setIsOffline,
+    setRemainingMins,
+    openPinModal,
+  });
 
   const handleDigitPress = (digit: string) => {
     triggerHaptic('light');
@@ -662,146 +559,94 @@ export const RiffanKidsHub: React.FC<RiffanKidsHubProps> = ({
         />
       )}
 
-      <KidsLangAndRestOverlays
-        langModalOpen={langModalOpen}
-        onCloseLangModal={() => setLangModalOpen(false)}
-        isTimeUp={isTimeUp}
-        pinModalOpen={pinModalOpen}
-        parentModalOpen={parentModalOpen}
+      <KidsHubModalsLayer
+        shellLang={shellLang}
         dir={dir}
         t={t}
         progress={progress}
-        onSelectLang={handleSelectKidsLang}
-        openPinModal={openPinModal}
-      />
-
-      <KidsAlbumModal
-        open={albumModalOpen}
-        onClose={() => setAlbumModalOpen(false)}
-        dir={dir}
-        progress={progress}
         profilesStore={profilesStore}
         ux={ux}
-        bedtimeMode={bedtimeMode}
-        lullabyPlaying={lullabyPlaying}
+        ageGroups={AGE_GROUPS}
+        recommendedSessionMinutes={ageAdaptation.recommendedSessionMinutes}
+        parentPin={parentPin}
         activeMascot={activeMascot}
         dailyMissions={dailyMissions}
         chestReady={chestReady}
         levelInfo={levelInfo}
         rankLabel={rankLabel}
-        t={t}
-        newSiblingName={newSiblingName}
-        setNewSiblingName={setNewSiblingName}
-        newSiblingAvatar={newSiblingAvatar}
-        setNewSiblingAvatar={setNewSiblingAvatar}
-        newSiblingAge={newSiblingAge}
-        setNewSiblingAge={setNewSiblingAge}
-        cycleMobileAgeGroup={cycleMobileAgeGroup}
-        onOpenWizard={() => setWizardOpen(true)}
-        toggleLowStimulation={toggleLowStimulation}
-        setBedtimeMode={setBedtimeMode}
+        isTimeUp={isTimeUp}
+        langModalOpen={langModalOpen}
+        setLangModalOpen={setLangModalOpen}
+        albumModalOpen={albumModalOpen}
+        setAlbumModalOpen={setAlbumModalOpen}
+        pinModalOpen={pinModalOpen}
+        setPinModalOpen={setPinModalOpen}
+        parentModalOpen={parentModalOpen}
+        setParentModalOpen={setParentModalOpen}
+        wizardOpen={wizardOpen}
+        setWizardOpen={setWizardOpen}
+        petWorldOpen={petWorldOpen}
+        setPetWorldOpen={setPetWorldOpen}
+        storyStudioOpen={storyStudioOpen}
+        setStoryStudioOpen={setStoryStudioOpen}
+        diplomaOpen={diplomaOpen}
+        setDiplomaOpen={setDiplomaOpen}
+        familyOnboardingOpen={familyOnboardingOpen}
+        setFamilyOnboardingOpen={setFamilyOnboardingOpen}
+        apkModalOpen={apkModalOpen}
+        setApkModalOpen={setApkModalOpen}
+        bedtimeMode={bedtimeMode}
+        lullabyPlaying={lullabyPlaying}
         setLullabyPlaying={setLullabyPlaying}
-        handleClaimChest={handleClaimChest}
-        handleSwitchSibling={handleSwitchSibling}
-        handleDeleteSibling={handleDeleteSibling}
-        handleCreateSibling={handleCreateSibling}
-        handlePickMascot={handlePickMascot}
-        handleUnlockShopItem={handleUnlockShopItem}
-      />
-
-      <KidsPinGateModal
-        open={pinModalOpen}
-        onClose={() => setPinModalOpen(false)}
-        dir={dir}
-        preferredLang={progress.preferredLang}
         pinIntent={pinIntent}
         setPinIntent={setPinIntent}
         pendingCastMovie={pendingCastMovie}
         pinDigits={pinDigits}
         setPinDigits={setPinDigits}
         pinError={pinError}
-        handleDigitPress={handleDigitPress}
-        t={t}
-      />
-
-      <KidsParentPanelModal
-        open={parentModalOpen}
-        onClose={() => setParentModalOpen(false)}
-        dir={dir}
-        t={t}
-        progress={progress}
-        ux={ux}
-        ageGroups={AGE_GROUPS}
-        recommendedSessionMinutes={ageAdaptation.recommendedSessionMinutes}
-        parentPin={parentPin}
         curPinInput={curPinInput}
         setCurPinInput={setCurPinInput}
         newPinInput={newPinInput}
         setNewPinInput={setNewPinInput}
         pinChangeNotice={pinChangeNotice}
         setPinChangeNotice={setPinChangeNotice}
-        resetDefaultPin={resetDefaultPin}
-        handleSaveCustomPin={handleSaveCustomPin}
-        updateParentPrefs={updateParentPrefs}
-        toggleSound={toggleSound}
-        toggleLowStimulation={toggleLowStimulation}
-        toggleDyslexiaFont={toggleDyslexiaFont}
-        toggleSyllableHighlight={toggleSyllableHighlight}
-        toggleTortoiseSpeech={toggleTortoiseSpeech}
+        newSiblingName={newSiblingName}
+        setNewSiblingName={setNewSiblingName}
+        newSiblingAvatar={newSiblingAvatar}
+        setNewSiblingAvatar={setNewSiblingAvatar}
+        newSiblingAge={newSiblingAge}
+        setNewSiblingAge={setNewSiblingAge}
         parentCandidatePool={parentCandidatePool}
-        toggleApprovedTitle={toggleApprovedTitle}
         ytImportUrl={ytImportUrl}
         setYtImportUrl={setYtImportUrl}
         ytImportLoading={ytImportLoading}
         setYtImportLoading={setYtImportLoading}
         ytImportStatus={ytImportStatus}
         setYtImportStatus={setYtImportStatus}
+        onSelectLang={handleSelectKidsLang}
+        openPinModal={openPinModal}
+        handleDigitPress={handleDigitPress}
+        cycleMobileAgeGroup={cycleMobileAgeGroup}
+        toggleLowStimulation={toggleLowStimulation}
+        setBedtimeMode={setBedtimeMode}
+        handleClaimChest={handleClaimChest}
+        handleSwitchSibling={handleSwitchSibling}
+        handleDeleteSibling={handleDeleteSibling}
+        handleCreateSibling={handleCreateSibling}
+        handlePickMascot={handlePickMascot}
+        handleUnlockShopItem={handleUnlockShopItem}
+        resetDefaultPin={resetDefaultPin}
+        handleSaveCustomPin={handleSaveCustomPin}
+        updateParentPrefs={updateParentPrefs}
+        toggleSound={toggleSound}
+        toggleDyslexiaFont={toggleDyslexiaFont}
+        toggleSyllableHighlight={toggleSyllableHighlight}
+        toggleTortoiseSpeech={toggleTortoiseSpeech}
+        toggleApprovedTitle={toggleApprovedTitle}
+        updateActiveProgress={updateActiveProgress}
+        handleEarnStar={handleEarnStar}
         onOpenSmartTv={onOpenSmartTv}
-        onOpenFamilyOnboarding={() => setFamilyOnboardingOpen(true)}
         onExitKids={onExitKids}
-      />
-
-      {wizardOpen && (
-        <KidsStepWizard
-          shellLang={shellLang}
-          currentProgress={progress}
-          onCompleteWizard={(updated) => {
-            updateActiveProgress((prev) => ({ ...prev, ...updated }));
-          }}
-          onClose={() => setWizardOpen(false)}
-        />
-      )}
-
-      <KidsPetWorldModal
-        open={petWorldOpen}
-        onClose={() => setPetWorldOpen(false)}
-        kidsLang={progress.preferredLang}
-        onClaimChest={handleClaimChest}
-        onOpenDiploma={() => setDiplomaOpen(true)}
-      />
-
-      <KidsStoryStudio
-        open={storyStudioOpen}
-        onClose={() => setStoryStudioOpen(false)}
-        kidsLang={progress.preferredLang}
-        ageGroup={progress.ageGroup}
-        onEarnStar={handleEarnStar}
-      />
-
-      <KidsDiplomaModal
-        open={diplomaOpen}
-        onClose={() => setDiplomaOpen(false)}
-        kidsLang={progress.preferredLang}
-      />
-
-      <KidsFamilyOnboardingModal
-        open={familyOnboardingOpen}
-        onClose={() => setFamilyOnboardingOpen(false)}
-      />
-
-      <KidsApkModal
-        open={apkModalOpen}
-        onClose={() => setApkModalOpen(false)}
       />
     </div>
   );

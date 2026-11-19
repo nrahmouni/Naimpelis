@@ -1,23 +1,8 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
-  ChevronLeft,
-  ChevronRight,
-  Heart,
-  Magnet,
-  Play,
-  Rocket,
-  RotateCcw,
-  Shield,
-  Star,
-  Trophy,
-  Volume2,
-} from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import type { KidsAgeGroup, KidsLanguageCode } from '../../types';
 import { triggerHaptic } from '../../utils/haptics';
 import { useKidsStore } from '../../store/useKidsStore';
-import { FlagBadgeSvg } from '../ui/LanguageBadge';
 import { KIDS_LANGUAGES } from './kidsData';
-import { EXTENDED_VOCAB_ITEMS, type ExtendedVocabItem } from './kidsCurriculumData';
 import {
   playKidsComboNote,
   playKidsPowerupSound,
@@ -26,48 +11,25 @@ import {
 } from './kidsAudioEngine';
 import { getKidsDir, getKidsUiCopy } from './kidsI18n';
 import { speakKidsText } from './kidsTtsHelper';
-import { KidsSquishButton } from './KidsPrimitives';
 import { KidsConfettiCanvas } from './KidsConfettiCanvas';
-
-interface FallingObject {
-  id: number;
-  xFrac: number;
-  yFrac: number;
-  vxFrac: number;
-  speed: number;
-  radius: number;
-  kind: 'word_target' | 'word_decoy' | 'star' | 'magnet' | 'shield' | 'meteor';
-  label?: string;
-  angle: number;
-  rotSpeed: number;
-}
-
-interface Particle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  maxLife: number;
-  radius: number;
-  color: string;
-}
-
-interface FloatingText {
-  x: number;
-  y: number;
-  text: string;
-  color: string;
-  life: number;
-}
-
-interface SpaceMissionChallenge {
-  vocabId: string;
-  promptDisplay: string;
-  spokenPrompt: string;
-  targetLabel: string;
-  decoys: string[];
-}
+import {
+  KidsStarCatcherBumpers,
+  KidsStarCatcherHud,
+  KidsStarCatcherOverlay,
+} from './KidsStarCatcherChrome';
+import {
+  buildWaveChallenge,
+  drawMeteorShape,
+  drawRocketSprite,
+  drawStarShape,
+  drawWordCapsule,
+  readBestScore,
+  saveBestScore,
+  type FallingObject,
+  type FloatingText,
+  type Particle,
+  type SpaceMissionChallenge,
+} from './kidsStarCatcherCanvas';
 
 interface KidsStarCatcherGameProps {
   kidsLang: KidsLanguageCode;
@@ -75,233 +37,6 @@ interface KidsStarCatcherGameProps {
   unlockedRewards: string[];
   onEarnStar: (stars: number, badgeId?: string) => void;
   onMissionPlay?: () => void;
-}
-
-const BEST_SCORE_KEY = 'riffan_kids_stars_best_v1';
-
-function cleanWord(raw: string): string {
-  const idx = raw.indexOf('(');
-  return (idx >= 0 ? raw.slice(0, idx) : raw).trim() || raw.trim();
-}
-
-function readBestScore(): number {
-  if (typeof localStorage === 'undefined') return 0;
-  try {
-    return Number(localStorage.getItem(BEST_SCORE_KEY) || 0) || 0;
-  } catch {
-    return 0;
-  }
-}
-
-function saveBestScore(score: number): void {
-  if (typeof localStorage === 'undefined') return;
-  try {
-    localStorage.setItem(BEST_SCORE_KEY, String(score));
-  } catch {
-    // ignore
-  }
-}
-
-function buildWaveChallenge(
-  nativeLang: KidsLanguageCode,
-  practiceLang: KidsLanguageCode
-): SpaceMissionChallenge {
-  const pool = EXTENDED_VOCAB_ITEMS;
-  const pickIdx = Math.floor(Math.random() * pool.length);
-  const item: ExtendedVocabItem = pool[pickIdx];
-  const natWord = cleanWord((item.translations[nativeLang] || item.translations.es).word);
-  const tgtWord = cleanWord((item.translations[practiceLang] || item.translations.en).word);
-
-  const decoyWords: string[] = [];
-  for (let i = 1; decoyWords.length < 2 && i < pool.length; i++) {
-    const d = pool[(pickIdx + i * 7) % pool.length];
-    const dw = cleanWord((d.translations[practiceLang] || d.translations.en).word);
-    if (d.id !== item.id && dw !== tgtWord && !decoyWords.includes(dw)) {
-      decoyWords.push(dw);
-    }
-  }
-
-  return {
-    vocabId: item.id,
-    promptDisplay: natWord,
-    spokenPrompt: tgtWord,
-    targetLabel: tgtWord,
-    decoys: decoyWords,
-  };
-}
-
-function drawStarShape(
-  ctx: CanvasRenderingContext2D,
-  cx: number,
-  cy: number,
-  outerR: number,
-  fill: string,
-  stroke: string
-) {
-  ctx.beginPath();
-  for (let i = 0; i < 10; i++) {
-    const r = i % 2 === 0 ? outerR : outerR * 0.46;
-    const a = (i * Math.PI) / 5 - Math.PI / 2;
-    const x = cx + Math.cos(a) * r;
-    const y = cy + Math.sin(a) * r;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  ctx.fillStyle = fill;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = stroke;
-  ctx.stroke();
-}
-
-function drawWordCapsule(
-  ctx: CanvasRenderingContext2D,
-  label: string,
-  isTargetHint: boolean
-) {
-  ctx.font = '900 13px Outfit, system-ui, sans-serif';
-  const metrics = ctx.measureText(label);
-  const pillW = Math.max(66, Math.min(138, metrics.width + 24));
-  const pillH = 30;
-
-  ctx.beginPath();
-  ctx.roundRect(-pillW / 2, -pillH / 2, pillW, pillH, 14);
-  const grad = ctx.createLinearGradient(0, -pillH / 2, 0, pillH / 2);
-  grad.addColorStop(0, isTargetHint ? '#1D4ED8' : '#1E293B');
-  grad.addColorStop(1, isTargetHint ? '#0F172A' : '#0F172A');
-  ctx.fillStyle = grad;
-  ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = '#38BDF8';
-  ctx.stroke();
-
-  ctx.fillStyle = '#FFFFFF';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText(label, 0, 1, pillW - 12);
-}
-
-function drawMeteorShape(ctx: CanvasRenderingContext2D, r: number) {
-  const pts = [1.0, 0.78, 0.96, 0.72, 0.92, 0.8, 0.98, 0.74];
-  ctx.beginPath();
-  for (let i = 0; i < pts.length; i++) {
-    const a = (i / pts.length) * Math.PI * 2;
-    const rr = r * pts[i];
-    const x = Math.cos(a) * rr;
-    const y = Math.sin(a) * rr;
-    if (i === 0) ctx.moveTo(x, y);
-    else ctx.lineTo(x, y);
-  }
-  ctx.closePath();
-  const g = ctx.createRadialGradient(-r * 0.3, -r * 0.3, 2, 0, 0, r);
-  g.addColorStop(0, '#94A3B8');
-  g.addColorStop(0.65, '#475569');
-  g.addColorStop(1, '#1E293B');
-  ctx.fillStyle = g;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#F97316';
-  ctx.stroke();
-}
-
-function drawRocketSprite(
-  ctx: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  tiltRad: number,
-  isGolden: boolean,
-  hasShield: boolean,
-  hasMagnet: boolean,
-  invulnSec: number,
-  phase: number
-) {
-  if (invulnSec > 0 && Math.floor(invulnSec * 16) % 2 === 1) {
-    ctx.globalAlpha = 0.45;
-  }
-
-  ctx.save();
-  ctx.translate(x, y);
-
-  if (hasMagnet) {
-    ctx.save();
-    ctx.rotate(phase * 0.25);
-    ctx.beginPath();
-    ctx.setLineDash([7, 6]);
-    ctx.arc(0, 0, 42, 0, Math.PI * 2);
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = 'rgba(52, 211, 153, 0.78)';
-    ctx.stroke();
-    ctx.restore();
-  }
-
-  if (hasShield) {
-    ctx.beginPath();
-    ctx.arc(0, 0, 35, 0, Math.PI * 2);
-    ctx.fillStyle = 'rgba(56, 189, 248, 0.18)';
-    ctx.fill();
-    ctx.lineWidth = 2.5;
-    ctx.strokeStyle = 'rgba(125, 211, 252, 0.9)';
-    ctx.stroke();
-  }
-
-  ctx.rotate(tiltRad);
-
-  const flameH = 14 + Math.sin(phase) * 5;
-  ctx.beginPath();
-  ctx.moveTo(-8, 19);
-  ctx.lineTo(0, 19 + flameH);
-  ctx.lineTo(8, 19);
-  ctx.closePath();
-  ctx.fillStyle = isGolden ? '#FDE047' : '#F97316';
-  ctx.fill();
-
-  ctx.fillStyle = isGolden ? '#D97706' : '#F43F5E';
-  ctx.beginPath();
-  ctx.moveTo(-13, 4);
-  ctx.lineTo(-27, 21);
-  ctx.lineTo(-10, 18);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(13, 4);
-  ctx.lineTo(27, 21);
-  ctx.lineTo(10, 18);
-  ctx.closePath();
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.moveTo(0, -30);
-  ctx.quadraticCurveTo(18, -6, 13, 19);
-  ctx.lineTo(-13, 19);
-  ctx.quadraticCurveTo(-18, -6, 0, -30);
-  ctx.closePath();
-  ctx.fillStyle = isGolden ? '#FBBF24' : '#F8FAFC';
-  ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = '#0F172A';
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.moveTo(0, -30);
-  ctx.quadraticCurveTo(10, -18, 11, -8);
-  ctx.lineTo(-11, -8);
-  ctx.quadraticCurveTo(-10, -18, 0, -30);
-  ctx.closePath();
-  ctx.fillStyle = isGolden ? '#B45309' : '#EF4444';
-  ctx.fill();
-
-  ctx.beginPath();
-  ctx.arc(0, 2, 7.5, 0, Math.PI * 2);
-  ctx.fillStyle = '#38BDF8';
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#0F172A';
-  ctx.stroke();
-
-  ctx.restore();
-  ctx.globalAlpha = 1;
 }
 
 export const KidsStarCatcherGame: React.FC<KidsStarCatcherGameProps> = ({
@@ -849,69 +584,28 @@ export const KidsStarCatcherGame: React.FC<KidsStarCatcherGameProps> = ({
         onComplete={() => setConfettiActive(false)}
       />
 
-      {/* TOP HUD + LIVE VOCABULARY RADIO MISSION */}
-      <div className="shrink-0 flex flex-wrap items-center justify-between gap-2 px-3 py-1.5 rounded-2xl bg-[#101836] border border-white/15 text-xs font-black">
-        <div className="flex items-center gap-2 min-w-0">
-          <FlagBadgeSvg code={practiceLangMeta.flagCode} className="w-4 h-3 shrink-0" />
-          <select
-            aria-label={t.chooseLanguageTitle}
-            value={practiceLang}
-            onChange={(e) => {
-              const nl = e.target.value as KidsLanguageCode;
-              setPracticeLang(nl);
-              setChallenge(buildWaveChallenge(kidsLang, nl));
-            }}
-            className="h-8 px-2 rounded-lg bg-[#1A244D] border border-white/15 text-xs font-black text-white outline-none cursor-pointer"
-          >
-            {KIDS_LANGUAGES.map((l) => (
-              <option key={l.code} value={l.code}>
-                {l.nativeLabel}
-              </option>
-            ))}
-          </select>
-
-          <button
-            type="button"
-            onClick={() =>
-              void speakKidsText(challenge.spokenPrompt, practiceLang, {
-                ageGroup,
-                rate: ux.tortoiseSpeech ? 0.68 : undefined,
-              })
-            }
-            className="h-8 px-2.5 rounded-lg bg-amber-400 text-slate-950 font-black flex items-center gap-1.5 cursor-pointer"
-          >
-            <Volume2 className="w-3.5 h-3.5 shrink-0" />
-            <span className="truncate max-w-[140px]">Atrapa: {challenge.promptDisplay}</span>
-          </button>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="inline-flex items-center gap-1 text-amber-300 tabular-nums">
-            <Star className="w-3.5 h-3.5 fill-amber-300" />
-            {score}
-          </span>
-          {combo > 1 && (
-            <span className="px-1.5 py-0.5 rounded bg-emerald-400/20 text-emerald-300 tabular-nums">
-              x{combo}
-            </span>
-          )}
-          <div className="flex items-center gap-0.5">
-            {[0, 1, 2].map((i) => (
-              <Heart
-                key={i}
-                className={`w-3.5 h-3.5 ${
-                  i < lives ? 'fill-rose-500 text-rose-500' : 'text-white/20'
-                }`}
-              />
-            ))}
-          </div>
-          {shieldActive && <Shield className="w-3.5 h-3.5 text-sky-300" />}
-          {magnetActive && <Magnet className="w-3.5 h-3.5 text-emerald-300" />}
-          <span className="px-2 py-0.5 rounded-lg bg-white/10 text-white tabular-nums">
-            {timeLeft}s
-          </span>
-        </div>
-      </div>
+      <KidsStarCatcherHud
+        t={t}
+        practiceLang={practiceLang}
+        practiceLangFlag={practiceLangMeta.flagCode}
+        challenge={challenge}
+        score={score}
+        combo={combo}
+        lives={lives}
+        shieldActive={shieldActive}
+        magnetActive={magnetActive}
+        timeLeft={timeLeft}
+        onChangePracticeLang={(nl) => {
+          setPracticeLang(nl);
+          setChallenge(buildWaveChallenge(kidsLang, nl));
+        }}
+        onSpeakPrompt={() =>
+          void speakKidsText(challenge.spokenPrompt, practiceLang, {
+            ageGroup,
+            rate: ux.tortoiseSpeech ? 0.68 : undefined,
+          })
+        }
+      />
 
       {/* CANVAS STAGE */}
       <div className="relative flex-1 min-h-0 rounded-2xl border-2 border-amber-300/35 overflow-hidden bg-[#05081A]">
@@ -923,59 +617,20 @@ export const KidsStarCatcherGame: React.FC<KidsStarCatcherGameProps> = ({
         />
 
         {gameState !== 'playing' && (
-          <div className="absolute inset-0 bg-[#070C24]/85 backdrop-blur-sm flex flex-col items-center justify-center p-4 text-center gap-3">
-            <div className="w-16 h-16 rounded-2xl bg-amber-400/20 border border-amber-300/45 flex items-center justify-center shadow-lg">
-              {gameState === 'gameover' ? (
-                <Trophy className="w-9 h-9 text-amber-300" />
-              ) : (
-                <Rocket className="w-9 h-9 text-amber-300" />
-              )}
-            </div>
-
-            <div>
-              <h3 className="font-display font-black text-2xl sm:text-3xl text-white">
-                {gameState === 'gameover'
-                  ? `${t.mathScore}: ${score} (${wordsCaught} palabras)`
-                  : 'Misión Lingüística Espacial'}
-              </h3>
-              {gameState === 'gameover' && (
-                <p className="text-xs font-extrabold text-amber-300 mt-1 tabular-nums">
-                  Record: {bestScore}
-                </p>
-              )}
-              <p className="text-xs sm:text-sm font-semibold text-sky-200/85 max-w-md mt-1">
-                Escucha la radio y pilota el cohete para atrapar la cápsula en {practiceLangMeta.nativeLabel} mientras esquivas meteoros.
-              </p>
-            </div>
-
-            <KidsSquishButton
-              onClick={startGame}
-              className="px-7 rounded-2xl bg-gradient-to-b from-amber-300 to-amber-500 text-slate-950 border-b-4 border-amber-700 font-black text-base flex items-center gap-2 shadow-xl"
-            >
-              {gameState === 'gameover' ? <RotateCcw className="w-4 h-4" /> : <Play className="w-4 h-4 fill-current" />}
-              <span>{gameState === 'gameover' ? t.funPlayAgain : t.funPlayNow}</span>
-            </KidsSquishButton>
-          </div>
+          <KidsStarCatcherOverlay
+            t={t}
+            gameState={gameState}
+            score={score}
+            wordsCaught={wordsCaught}
+            bestScore={bestScore}
+            practiceLangLabel={practiceLangMeta.nativeLabel}
+            onStart={startGame}
+          />
         )}
       </div>
 
       {/* TOUCH / D-PAD ARCADE BUMPERS */}
-      <div className="shrink-0 grid grid-cols-2 gap-2">
-        <KidsSquishButton
-          onClick={() => nudgeRocket(-0.14)}
-          ariaLabel="Mover izquierda"
-          className="landscape:h-11 rounded-2xl bg-[#1A2552] hover:bg-[#253470] border-2 border-b-4 border-sky-400/40 text-white font-black flex items-center justify-center"
-        >
-          <ChevronLeft className="w-6 h-6" />
-        </KidsSquishButton>
-        <KidsSquishButton
-          onClick={() => nudgeRocket(0.14)}
-          ariaLabel="Mover derecha"
-          className="landscape:h-11 rounded-2xl bg-[#1A2552] hover:bg-[#253470] border-2 border-b-4 border-sky-400/40 text-white font-black flex items-center justify-center"
-        >
-          <ChevronRight className="w-6 h-6" />
-        </KidsSquishButton>
-      </div>
+      <KidsStarCatcherBumpers onNudge={nudgeRocket} />
     </div>
   );
 };

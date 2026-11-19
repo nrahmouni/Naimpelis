@@ -14,49 +14,9 @@ import {
   Shuffle,
   Users,
 } from 'lucide-react';
-import type {
-  AppLanguage,
-  BlackjackGameState,
-  BoardClockMinutes,
-  BoardCoord,
-  BoardGameState,
-  BoardGameType,
-  ChapasFlagId,
-  ChapasShotInput,
-  ChapasTeamId,
-  ChessPromotionPiece,
-  FutbolChapasState,
-  HeadSoccerInput,
-  HeadSoccerOnlineState,
-  HeadSoccerSimulation,
-  HeadSoccerSkinId,
-  Participant,
-  PinturilloGameState,
-  PinturilloStroke,
-  PokerActionType,
-  PokerGameState,
-  Pool8BallState,
-  PoolDifficulty,
-  PoolPocketId,
-  PoolShotInput,
-} from '../types';
-import type { RoomMatchResponsesState } from '../shared/protocol';
-import {
-  applyBoardMove,
-  resetBoardGame,
-  resignBoardGame,
-  startBoardMatch,
-} from '../shared/boardGames';
-import { type PartyColor, type PartyGameState, type PartyGameType } from '../shared/partyGames';
-import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
-import { RoomBoardGamePanel } from './RoomBoardGamePanel';
-import { PartyGamesStage, type PartyOnlineAction } from './PartyGamesStage';
 import { PinturilloStage } from './PinturilloStage';
 import { Pool8BallStage } from './Pool8BallStage';
 import { FutbolChapasStage } from './FutbolChapasStage';
-import { HeadSoccerStage } from './HeadSoccerStage';
-import { PokerHoldemStage } from './PokerHoldemStage';
-import { BlackjackStage } from './BlackjackStage';
 import {
   GameFloatingReactionToast,
   GameMuteButton,
@@ -66,7 +26,8 @@ import {
 } from './games/GameEffects';
 import { VoiceWaveBars } from './games/GameVoiceBar';
 import { GamesHubLobby } from './games/GamesHubLobby';
-import type { UnifiedGameId } from './games/GameLogos';
+import { GamesHubSecondaryStages } from './games/GamesHubSecondaryStages';
+import type { GamesHubSectionProps } from './games/gamesHubTypes';
 import {
   GameSwitcherModal,
   GAME_SIGNATURES,
@@ -80,93 +41,6 @@ import {
 } from './games/useGamesHubController';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
-
-interface GamesHubSectionProps {
-  lang: AppLanguage;
-  roomId?: string;
-  currentUser: Participant;
-  participants: Participant[];
-  roomBoardGame: BoardGameState | null;
-  roomPartyGame: PartyGameState | null;
-  roomPinturilloGame?: PinturilloGameState | null;
-  roomPoolGame?: Pool8BallState | null;
-  roomChapasGame?: FutbolChapasState | null;
-  roomHeadSoccerGame?: HeadSoccerOnlineState | null;
-  headSoccerSyncSnapshot?: { seq: number; sim: HeadSoccerSimulation } | null;
-  headSoccerPeerInput?: { side: 0 | 1; input: HeadSoccerInput; seq: number } | null;
-  roomPokerGame?: PokerGameState | null;
-  roomBlackjackGame?: BlackjackGameState | null;
-  matchResponses?: RoomMatchResponsesState | null;
-  gameMoveError?: string | null;
-  isHost?: boolean;
-  voiceChat?: GameVoiceChatState;
-  requestedGameOpen?: { gameType: UnifiedGameId; seq: number } | null;
-  onSelectedGameChange?: (game: UnifiedGameId | null) => void;
-  onSwitchRoomGame?: (game: UnifiedGameId) => void;
-  onStartRoomBoardGame?: (gt: BoardGameType, soloLocal?: boolean, clockMinutes?: BoardClockMinutes) => void;
-  onJoinBoardSeat?: (side: 'w' | 'b' | 'spectate') => void;
-  onStartBoardMatch?: () => void;
-  onMoveBoardGame?: (from: BoardCoord, to: BoardCoord, promo?: ChessPromotionPiece) => void;
-  onResignBoardGame?: () => void;
-  onResetBoardGame?: (opts?: { gameType?: BoardGameType; swapColors?: boolean; clockMinutes?: BoardClockMinutes }) => void;
-  onCloseBoardGame?: () => void;
-  onStartRoomPartyGame?: (gt: PartyGameType) => void;
-  onRoomPartyAction?: (
-    action: PartyOnlineAction,
-    opts?: { pieceId?: number; cardId?: string; chosenColor?: PartyColor; seatIndex?: number }
-  ) => void;
-  onCloseRoomPartyGame?: () => void;
-  onStartRoomPinturillo?: () => void;
-  onStartPinturilloMatch?: () => void;
-  onPinturilloPickWord?: (wordId: string) => void;
-  onPinturilloStroke?: (stroke: PinturilloStroke) => void;
-  onPinturilloUndo?: () => void;
-  onPinturilloClear?: () => void;
-  onPinturilloGuess?: (text: string) => void;
-  onPinturilloRematch?: () => void;
-  onCloseRoomPinturillo?: () => void;
-  onStartRoomPool?: (difficulty?: PoolDifficulty) => void;
-  onStartPoolMatch?: () => void;
-  onPoolJoinSeat?: (seatIndex: 0 | 1 | 'spectate') => void;
-  onPoolCallPocket?: (pocketId: PoolPocketId) => void;
-  onPoolPlaceCue?: (x: number, y: number) => void;
-  onPoolTakeShot?: (shot: PoolShotInput) => void;
-  onPoolSyncChecksum?: (turnNumber: number, checksum: number) => void;
-  onPoolForfeit?: () => void;
-  onPoolRematch?: () => void;
-  onCloseRoomPool?: () => void;
-  onStartRoomChapas?: (opts?: { botsEnabled?: boolean }) => void;
-  onChapasJoinSeat?: (seatIndex: 0 | 1 | 2 | 3 | 'spectate') => void;
-  onChapasUpdateTeam?: (team: ChapasTeamId, flag: ChapasFlagId) => void;
-  onChapasToggleBots?: (botsEnabled: boolean) => void;
-  onChapasStartMatch?: () => void;
-  onChapasShoot?: (shot: ChapasShotInput) => void;
-  onChapasForfeit?: () => void;
-  onChapasRematch?: () => void;
-  onCloseRoomChapas?: () => void;
-  onStartRoomHeadSoccer?: () => void;
-  onHeadSoccerJoinSeat?: (seatIndex: 0 | 1 | 'spectate') => void;
-  onHeadSoccerSelectSkin?: (skinId: HeadSoccerSkinId) => void;
-  onHeadSoccerStartMatch?: () => void;
-  onHeadSoccerInput?: (side: 0 | 1, input: HeadSoccerInput) => void;
-  onHeadSoccerSyncState?: (sim: HeadSoccerSimulation) => void;
-  onHeadSoccerRematch?: () => void;
-  onCloseRoomHeadSoccer?: () => void;
-  onStartRoomPoker?: (botsEnabled?: boolean) => void;
-  onPokerJoinSeat?: (seatIndex?: number | 'spectate') => void;
-  onPokerToggleBots?: (botsEnabled: boolean) => void;
-  onPokerStartMatch?: () => void;
-  onPokerAction?: (action: PokerActionType, raiseTo?: number) => void;
-  onPokerRebuy?: () => void;
-  onCloseRoomPoker?: () => void;
-  onStartRoomBlackjack?: () => void;
-  onBlackjackJoinSeat?: (seatIndex?: number | 'spectate') => void;
-  onBlackjackBet?: (op: { kind: 'add'; amount: number } | { kind: 'clear' } | { kind: 'rebet' } | { kind: 'rebuy' }) => void;
-  onBlackjackDeal?: () => void;
-  onBlackjackAction?: (action: 'hit' | 'stand' | 'double' | 'split') => void;
-  onBlackjackNewRound?: () => void;
-  onCloseRoomBlackjack?: () => void;
-}
 
 export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   lang,
@@ -652,64 +526,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             )}
 
           <div className="flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar">
-            {isHeadSoccer ? (
-              <HeadSoccerStage
-                key={`headsoccer-${hubMode}`}
-                lang={lang}
-                currentUser={currentUser}
-                participants={participants}
-                headSoccerState={hubMode === 'offline' ? null : roomHeadSoccerGame}
-                latestSyncSnapshot={headSoccerSyncSnapshot}
-                remotePeerInput={headSoccerPeerInput}
-                isOffline={hubMode === 'offline'}
-                isHost={isHost}
-                voiceChat={voiceChat}
-                mutedOverride={muted}
-                onStartOnline={() => onStartRoomHeadSoccer?.()}
-                onJoinSeatOnline={onHeadSoccerJoinSeat}
-                onSelectSkinOnline={onHeadSoccerSelectSkin}
-                onStartMatchOnline={onHeadSoccerStartMatch}
-                onSendInputOnline={onHeadSoccerInput}
-                onSendSyncStateOnline={onHeadSoccerSyncState}
-                onRematchOnline={onHeadSoccerRematch}
-              />
-            ) : isPoker ? (
-              <PokerHoldemStage
-                key={`poker-${hubMode}`}
-                lang={lang}
-                currentUser={currentUser}
-                participants={participants}
-                pokerState={hubMode === 'offline' ? null : roomPokerGame}
-                isOffline={hubMode === 'offline'}
-                isHost={isHost}
-                voiceChat={voiceChat}
-                mutedOverride={muted}
-                onStartOnline={onStartRoomPoker}
-                onJoinSeatOnline={onPokerJoinSeat}
-                onToggleBotsOnline={onPokerToggleBots}
-                onStartMatchOnline={onPokerStartMatch}
-                onActionOnline={onPokerAction}
-                onRebuyOnline={onPokerRebuy}
-              />
-            ) : isBlackjack ? (
-              <BlackjackStage
-                key={`blackjack-${hubMode}`}
-                lang={lang}
-                currentUser={currentUser}
-                participants={participants}
-                blackjackState={hubMode === 'offline' ? null : roomBlackjackGame}
-                isOffline={hubMode === 'offline'}
-                isHost={isHost}
-                voiceChat={voiceChat}
-                mutedOverride={muted}
-                onStartOnline={() => onStartRoomBlackjack?.()}
-                onJoinSeatOnline={onBlackjackJoinSeat}
-                onBetOnline={onBlackjackBet}
-                onDealOnline={onBlackjackDeal}
-                onActionOnline={onBlackjackAction}
-                onNewRoundOnline={onBlackjackNewRound}
-              />
-            ) : isChapas ? (
+            {isChapas ? (
               <FutbolChapasStage
                 key={`chapas-${hubMode}`}
                 lang={lang}
@@ -770,91 +587,59 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
                 onSendGuessOnline={onPinturilloGuess}
                 onRematchOnline={onPinturilloRematch}
               />
-            ) : isParty ? (
-              <PartyGamesStage
-                key={`${selectedGame}-${hubMode}`}
+            ) : (
+              <GamesHubSecondaryStages
+                selectedGame={selectedGame}
+                hubMode={hubMode}
                 lang={lang}
                 currentUser={currentUser}
                 participants={participants}
-                partyGameState={hubMode === 'offline' ? null : roomPartyGame}
-                isOffline={hubMode === 'offline'}
                 isHost={isHost}
-                fullScreenMode={true}
+                muted={muted}
+                toggleMute={toggleMute}
                 voiceChat={voiceChat}
-                initialOfflineGameType={hubMode === 'offline' ? selectedGame : null}
-                hideHeaderChrome={true}
-                hideVoiceBar={true}
-                mutedOverride={muted}
-                onToggleMuteOverride={toggleMute}
-                onStartOnline={onStartRoomPartyGame}
-                onOnlineAction={onRoomPartyAction}
-                onCloseOnline={handleBackToGames}
-              />
-            ) : hubMode === 'offline' ? (
-              <RoomBoardGamePanel
-                key={`${selectedGame}-offline`}
-                gameState={localBoardGame}
-                currentUser={currentUser}
-                lang={lang}
-                moveError={localMoveErr}
-                isOnlineRoom={false}
-                isHost={true}
-                fullScreenMode={true}
-                hideGameSwitcher={true}
-                hideVoiceBar={true}
-                mutedOverride={muted}
-                onToggleMuteOverride={toggleMute}
-                onStartGame={(gt) => setLocalBoardGame(makeOfflineBoardState(gt, 'w'))}
-                onJoinSeat={handleJoinOfflineBoardSeat}
-                onStartMatch={() =>
-                  setLocalBoardGame((curr) => (curr ? startBoardMatch(curr) : curr))
-                }
-                onMove={(from, to, promo) => {
-                  if (!localBoardGame || localBoardGame.status !== 'playing') return;
-                  const activeSeat = localBoardGame.players[localBoardGame.turn];
-                  if (activeSeat?.userId !== currentUser.id) return;
-                  const res = applyBoardMove(localBoardGame, currentUser.id, from, to, promo || 'Q');
-                  if (!res.ok) {
-                    setLocalMoveErr(res.error);
-                    return;
-                  }
-                  setLocalMoveErr(null);
-                  setLocalBoardGame(res.state);
-                }}
-                onResign={() => {
-                  if (!localBoardGame) return;
-                  const resigned = resignBoardGame(localBoardGame, currentUser.id);
-                  if (resigned) setLocalBoardGame(resigned);
-                }}
-                onReset={(opts) => {
-                  if (!localBoardGame) return;
-                  setLocalMoveErr(null);
-                  setLocalBoardGame(resetBoardGame(localBoardGame, opts));
-                }}
-                onCloseGame={handleBackToGames}
-              />
-            ) : (
-              <RoomBoardGamePanel
-                key={`${selectedGame}-online`}
-                gameState={activeBoardState}
-                currentUser={currentUser}
-                lang={lang}
-                moveError={gameMoveError}
-                voiceChat={voiceChat}
-                isOnlineRoom={true}
-                isHost={isHost}
-                fullScreenMode={true}
-                hideGameSwitcher={true}
-                hideVoiceBar={true}
-                mutedOverride={muted}
-                onToggleMuteOverride={toggleMute}
-                onStartGame={(gt, solo, clockMin) => onStartRoomBoardGame?.(gt, solo, clockMin)}
-                onJoinSeat={(side) => onJoinBoardSeat?.(side)}
-                onStartMatch={onStartBoardMatch}
-                onMove={(from, to, promo) => onMoveBoardGame?.(from, to, promo)}
-                onResign={() => onResignBoardGame?.()}
-                onReset={(opts) => onResetBoardGame?.(opts)}
-                onCloseGame={handleBackToGames}
+                roomHeadSoccerGame={roomHeadSoccerGame}
+                headSoccerSyncSnapshot={headSoccerSyncSnapshot}
+                headSoccerPeerInput={headSoccerPeerInput}
+                roomPokerGame={roomPokerGame}
+                roomBlackjackGame={roomBlackjackGame}
+                roomPartyGame={roomPartyGame}
+                activeBoardState={activeBoardState}
+                localBoardGame={localBoardGame}
+                setLocalBoardGame={setLocalBoardGame}
+                localMoveErr={localMoveErr}
+                setLocalMoveErr={setLocalMoveErr}
+                gameMoveError={gameMoveError}
+                makeOfflineBoardState={makeOfflineBoardState}
+                handleJoinOfflineBoardSeat={handleJoinOfflineBoardSeat}
+                handleBackToGames={handleBackToGames}
+                onStartRoomHeadSoccer={onStartRoomHeadSoccer}
+                onHeadSoccerJoinSeat={onHeadSoccerJoinSeat}
+                onHeadSoccerSelectSkin={onHeadSoccerSelectSkin}
+                onHeadSoccerStartMatch={onHeadSoccerStartMatch}
+                onHeadSoccerInput={onHeadSoccerInput}
+                onHeadSoccerSyncState={onHeadSoccerSyncState}
+                onHeadSoccerRematch={onHeadSoccerRematch}
+                onStartRoomPoker={onStartRoomPoker}
+                onPokerJoinSeat={onPokerJoinSeat}
+                onPokerToggleBots={onPokerToggleBots}
+                onPokerStartMatch={onPokerStartMatch}
+                onPokerAction={onPokerAction}
+                onPokerRebuy={onPokerRebuy}
+                onStartRoomBlackjack={onStartRoomBlackjack}
+                onBlackjackJoinSeat={onBlackjackJoinSeat}
+                onBlackjackBet={onBlackjackBet}
+                onBlackjackDeal={onBlackjackDeal}
+                onBlackjackAction={onBlackjackAction}
+                onBlackjackNewRound={onBlackjackNewRound}
+                onStartRoomPartyGame={onStartRoomPartyGame}
+                onRoomPartyAction={onRoomPartyAction}
+                onStartRoomBoardGame={onStartRoomBoardGame}
+                onJoinBoardSeat={onJoinBoardSeat}
+                onStartBoardMatch={onStartBoardMatch}
+                onMoveBoardGame={onMoveBoardGame}
+                onResignBoardGame={onResignBoardGame}
+                onResetBoardGame={onResetBoardGame}
               />
             )}
           </div>

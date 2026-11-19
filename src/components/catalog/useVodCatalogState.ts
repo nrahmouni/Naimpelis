@@ -1,0 +1,649 @@
+import React, { useEffect, useRef, useState } from 'react';
+import type {
+  AppLanguage,
+  CatalaCatalogItem,
+  CatalaSeriesDetails,
+  CatalogMovie,
+  TvSeriesDetails,
+  YouTubeSearchItem,
+} from '../../types';
+import { pickLang } from '../../utils/i18n';
+import type { CatalogSection } from './catalogConstants';
+
+interface UseVodCatalogStateArgs {
+  lang: AppLanguage;
+  worldMode?: 'cine' | 'futbol' | 'tv' | 'youtube';
+  activeSection: CatalogSection;
+  showWatchlistOnly: boolean;
+  effectiveCineTab: 'movies' | 'series';
+  effectiveCineCastellano: boolean;
+  externalSearchQuery?: string;
+}
+
+export function useVodCatalogState({
+  lang,
+  worldMode,
+  activeSection,
+  showWatchlistOnly,
+  effectiveCineTab,
+  effectiveCineCastellano,
+  externalSearchQuery,
+}: UseVodCatalogStateArgs) {
+  const [previewItem, setPreviewItem] = useState<CatalogMovie | null>(null);
+
+  const [homeGenreId] = useState<number | null>(null);
+  const [homeProvider] = useState<string>('all');
+  const [homeSortBy] = useState<
+    'popularity.desc' | 'vote_average.desc' | 'primary_release_date.desc'
+  >('popularity.desc');
+  const [homeQuery, setHomeQuery] = useState('');
+  const [debouncedHomeQuery, setDebouncedHomeQuery] = useState('');
+  const [homeMovieResults, setHomeMovieResults] = useState<CatalogMovie[]>([]);
+  const [homeSeriesResults, setHomeSeriesResults] = useState<CatalogMovie[]>([]);
+  const [loadingHomeSearch, setLoadingHomeSearch] = useState(false);
+  const [homeShowcaseMovies, setHomeShowcaseMovies] = useState<CatalogMovie[]>([]);
+  const [homeShowcaseSeries, setHomeShowcaseSeries] = useState<CatalogMovie[]>([]);
+  const [heroSlideIndex, setHeroSlideIndex] = useState(0);
+  const [, setIsHeroHovered] = useState(false);
+
+  const [movieQuery, setMovieQuery] = useState('');
+  const [debouncedMovieQuery, setDebouncedMovieQuery] = useState('');
+  const [movieSort, setMovieSort] = useState<string>('trending');
+  const [movieGenre, setMovieGenre] = useState<string>('');
+  const [moviePage, setMoviePage] = useState<number>(1);
+  const [hasMoreMovies, setHasMoreMovies] = useState<boolean>(false);
+  const [movies, setMovies] = useState<CatalogMovie[]>([]);
+  const [loadingMovies, setLoadingMovies] = useState(false);
+  const [loadingMoreMovies, setLoadingMoreMovies] = useState(false);
+
+  const [seriesQuery, setSeriesQuery] = useState('');
+  const [debouncedSeriesQuery, setDebouncedSeriesQuery] = useState('');
+  const [seriesSort, setSeriesSort] = useState<string>('trending');
+  const [seriesGenre, setSeriesGenre] = useState<string>('');
+  const [seriesLangMode, setSeriesLangMode] = useState<'ES' | 'LAT' | 'VOSE' | 'EN'>('ES');
+  const [seriesPage, setSeriesPage] = useState<number>(1);
+  const [hasMoreSeries, setHasMoreSeries] = useState<boolean>(false);
+  const [seriesList, setSeriesList] = useState<CatalogMovie[]>([]);
+  const [loadingSeries, setLoadingSeries] = useState(false);
+  const [loadingMoreSeries, setLoadingMoreSeries] = useState(false);
+
+  const [selectedSeries, setSelectedSeries] = useState<TvSeriesDetails | null>(null);
+  const [seriesModalLang, setSeriesModalLang] = useState<string>('ES');
+  const [forceSpanishSeriesActive, setForceSpanishSeriesActive] = useState(false);
+  const [loadingSeriesDetails, setLoadingSeriesDetails] = useState(false);
+  const [probingSeriesLangs, setProbingSeriesLangs] = useState(false);
+  const seriesFetchSeqRef = useRef(0);
+
+  const [ytQuery, setYtQuery] = useState('');
+  const [debouncedYtQuery, setDebouncedYtQuery] = useState(
+    'resumen partido laliga champions highlights hd'
+  );
+  const [ytResults, setYtResults] = useState<YouTubeSearchItem[]>([]);
+  const [loadingYt, setLoadingYt] = useState(false);
+
+  const [cineSpecialPortal, setCineSpecialPortal] = useState<'none' | 'catala'>('none');
+  const [cineFiltersOpen, setCineFiltersOpen] = useState(false);
+  const [cineAudioOverride, setCineAudioOverride] = useState<'ES' | 'VOSE' | 'EN'>('ES');
+
+  const [catalaQuery, setCatalaQuery] = useState('');
+  const [debouncedCatalaQuery, setDebouncedCatalaQuery] = useState('');
+  const [catalaItems, setCatalaItems] = useState<CatalaCatalogItem[]>([]);
+  const [loadingCatala, setLoadingCatala] = useState<boolean>(false);
+  const [selectedCatalaSeries, setSelectedCatalaSeries] = useState<CatalaSeriesDetails | null>(
+    null
+  );
+  const [loadingCatalaEpisodes, setLoadingCatalaEpisodes] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (externalSearchQuery === undefined) return;
+    if (worldMode === 'cine') {
+      setHomeQuery(externalSearchQuery);
+      setMovieQuery(externalSearchQuery);
+      setSeriesQuery(externalSearchQuery);
+      setCatalaQuery(externalSearchQuery);
+    } else if (worldMode === 'youtube') {
+      setYtQuery(externalSearchQuery);
+    }
+  }, [externalSearchQuery, worldMode]);
+
+  useEffect(() => {
+    const clean = homeQuery.trim();
+    if (!clean || /^https?:\/\//i.test(clean)) {
+      setDebouncedHomeQuery('');
+      return;
+    }
+    const timer = setTimeout(() => setDebouncedHomeQuery(clean), 260);
+    return () => clearTimeout(timer);
+  }, [homeQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedMovieQuery(movieQuery.trim());
+      setMoviePage(1);
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [movieQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSeriesQuery(seriesQuery.trim());
+      setSeriesPage(1);
+    }, 280);
+    return () => clearTimeout(timer);
+  }, [seriesQuery]);
+
+  useEffect(() => {
+    const clean = ytQuery.trim();
+    if (!clean) return;
+    const timer = setTimeout(() => setDebouncedYtQuery(clean), 340);
+    return () => clearTimeout(timer);
+  }, [ytQuery]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedCatalaQuery(catalaQuery.trim()), 280);
+    return () => clearTimeout(timer);
+  }, [catalaQuery]);
+
+  // Showcase movies & series
+  useEffect(() => {
+    if (homeShowcaseMovies.length > 0 && homeShowcaseSeries.length > 0) return;
+    let cancelled = false;
+
+    Promise.all([
+      fetch('/api/catalog/movies?provider=all&category=trending&page=1')
+        .then((r) => r.json())
+        .catch(() => ({ items: [] })),
+      fetch('/api/catalog/series?provider=all&category=trending&page=1&lang=es')
+        .then((r) => r.json())
+        .catch(() => ({ items: [] })),
+    ]).then(([mData, sData]) => {
+      if (cancelled) return;
+      const mItems: CatalogMovie[] = Array.isArray(mData?.items)
+        ? mData.items
+        : Array.isArray(mData?.movies)
+        ? mData.movies
+        : [];
+      const sItems: CatalogMovie[] = Array.isArray(sData?.items)
+        ? sData.items.map((it: CatalogMovie) => ({ ...it, mediaType: 'tv' as const }))
+        : Array.isArray(sData?.series)
+        ? sData.series.map((it: CatalogMovie) => ({ ...it, mediaType: 'tv' as const }))
+        : [];
+      if (mItems.length > 0) setHomeShowcaseMovies(mItems);
+      if (sItems.length > 0) setHomeShowcaseSeries(sItems);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [homeShowcaseMovies.length, homeShowcaseSeries.length]);
+
+  // Unified Home/Cine Search
+  useEffect(() => {
+    const activeForHomeSearch = worldMode === 'cine' || activeSection === 'home';
+    if (!activeForHomeSearch || debouncedHomeQuery.length < 2) {
+      setHomeMovieResults([]);
+      setHomeSeriesResults([]);
+      setLoadingHomeSearch(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    let active = true;
+    let pending = 2;
+    setLoadingHomeSearch(true);
+
+    const markDone = () => {
+      pending -= 1;
+      if (active && pending <= 0) {
+        setLoadingHomeSearch(false);
+      }
+    };
+
+    fetch(
+      `/api/catalog/movies?provider=all&category=trending&page=1&query=${encodeURIComponent(
+        debouncedHomeQuery
+      )}`,
+      { signal: controller.signal }
+    )
+      .then((r) => (r.ok ? r.json() : { movies: [] }))
+      .then((mData) => {
+        if (!active) return;
+        setHomeMovieResults(Array.isArray(mData?.movies) ? mData.movies.slice(0, 12) : []);
+      })
+      .catch(() => {
+        if (active && !controller.signal.aborted) setHomeMovieResults([]);
+      })
+      .finally(markDone);
+
+    fetch(
+      `/api/catalog/series?provider=all&category=trending&page=1&lang=es&query=${encodeURIComponent(
+        debouncedHomeQuery
+      )}`,
+      { signal: controller.signal }
+    )
+      .then((r) => (r.ok ? r.json() : { series: [] }))
+      .then((sData) => {
+        if (!active) return;
+        setHomeSeriesResults(Array.isArray(sData?.series) ? sData.series.slice(0, 12) : []);
+      })
+      .catch(() => {
+        if (active && !controller.signal.aborted) setHomeSeriesResults([]);
+      })
+      .finally(markDone);
+
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [worldMode, activeSection, debouncedHomeQuery]);
+
+  // Fetch Movies
+  useEffect(() => {
+    const inCineMovies =
+      worldMode === 'cine' && effectiveCineTab === 'movies' && cineSpecialPortal === 'none';
+    const shouldFetch =
+      inCineMovies || activeSection === 'movies' || activeSection === 'vose';
+    if (!shouldFetch || showWatchlistOnly) return;
+
+    let cancelled = false;
+    if (moviePage === 1) setLoadingMovies(true);
+    else setLoadingMoreMovies(true);
+
+    const activeCatParam = movieGenre || movieSort;
+    const useVose =
+      activeSection === 'vose' ||
+      (worldMode === 'cine' && !effectiveCineCastellano && cineAudioOverride === 'EN');
+    const endpoint = useVose
+      ? `/api/catalog/bingetrix?provider=all&category=${encodeURIComponent(
+          activeCatParam
+        )}&sort=${encodeURIComponent(movieSort)}&page=${moviePage}&query=${encodeURIComponent(
+          debouncedMovieQuery
+        )}`
+      : `/api/catalog/movies?provider=all&category=${encodeURIComponent(
+          activeCatParam
+        )}&sort=${encodeURIComponent(movieSort)}&page=${moviePage}&query=${encodeURIComponent(
+          debouncedMovieQuery
+        )}`;
+
+    fetch(endpoint)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const incoming: CatalogMovie[] = Array.isArray(data?.movies) ? data.movies : [];
+        setHasMoreMovies(Boolean(data?.hasMore));
+        setMovies((prev) => {
+          if (moviePage === 1) return incoming;
+          const seen = new Set(prev.map((m) => m.id));
+          return [...prev, ...incoming.filter((m) => !seen.has(m.id))];
+        });
+      })
+      .catch(() => {
+        if (!cancelled && moviePage === 1) setMovies([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingMovies(false);
+          setLoadingMoreMovies(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    worldMode,
+    effectiveCineTab,
+    effectiveCineCastellano,
+    cineAudioOverride,
+    cineSpecialPortal,
+    activeSection,
+    movieSort,
+    movieGenre,
+    moviePage,
+    debouncedMovieQuery,
+    showWatchlistOnly,
+  ]);
+
+  // Fetch TV Series
+  useEffect(() => {
+    const inCineSeries =
+      worldMode === 'cine' && effectiveCineTab === 'series' && cineSpecialPortal === 'none';
+    if (!inCineSeries && activeSection !== 'series') return;
+    let cancelled = false;
+    if (seriesPage === 1) setLoadingSeries(true);
+    else setLoadingMoreSeries(true);
+
+    const activeCatParam = seriesGenre || seriesSort;
+    const apiLang =
+      !effectiveCineCastellano && (seriesLangMode === 'EN' || seriesLangMode === 'VOSE')
+        ? 'en'
+        : 'es';
+    fetch(
+      `/api/catalog/series?provider=all&category=${encodeURIComponent(
+        activeCatParam
+      )}&sort=${encodeURIComponent(seriesSort)}&page=${seriesPage}&lang=${apiLang}&query=${encodeURIComponent(
+        debouncedSeriesQuery
+      )}`
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        const incoming: CatalogMovie[] = Array.isArray(data?.series) ? data.series : [];
+        setHasMoreSeries(Boolean(data?.hasMore));
+        setSeriesList((prev) => {
+          if (seriesPage === 1) return incoming;
+          const seen = new Set(prev.map((s) => s.id));
+          return [...prev, ...incoming.filter((s) => !seen.has(s.id))];
+        });
+      })
+      .catch(() => {
+        if (!cancelled && seriesPage === 1) setSeriesList([]);
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingSeries(false);
+          setLoadingMoreSeries(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    worldMode,
+    effectiveCineTab,
+    effectiveCineCastellano,
+    cineSpecialPortal,
+    activeSection,
+    seriesSort,
+    seriesGenre,
+    seriesPage,
+    seriesLangMode,
+    debouncedSeriesQuery,
+  ]);
+
+  const openSeriesDetails = (
+    tmdbId: number,
+    seasonNum = 1,
+    seedShow?: Partial<CatalogMovie>,
+    forceSpanishProbe = false
+  ) => {
+    const reqSeq = ++seriesFetchSeqRef.current;
+    setLoadingSeriesDetails(true);
+    if (forceSpanishProbe) {
+      setSeriesModalLang('ES');
+      setForceSpanishSeriesActive(true);
+    } else if (!selectedSeries || selectedSeries.tmdbId !== tmdbId) {
+      setSeriesModalLang(seriesLangMode === 'EN' || seriesLangMode === 'VOSE' ? seriesLangMode : 'ES');
+      setForceSpanishSeriesActive(false);
+    }
+
+    setSelectedSeries((prev) => {
+      if (prev && prev.tmdbId === tmdbId) {
+        return { ...prev, activeSeason: seasonNum };
+      }
+      return {
+        tmdbId,
+        title:
+          seedShow?.title ||
+          pickLang(lang, {
+            es: 'Cargando serie...',
+            ca: 'Carregant sèrie...',
+            en: 'Loading series...',
+          }),
+        originalTitle: seedShow?.originalTitle || seedShow?.title || '',
+        year: seedShow?.year || 'TV',
+        rating: seedShow?.rating || '',
+        overview: seedShow?.overview || '',
+        poster: seedShow?.poster || '',
+        backdrop: seedShow?.backdrop || seedShow?.poster || '',
+        seasons: [
+          {
+            seasonNumber: seasonNum,
+            name: pickLang(lang, {
+              es: `Temporada ${seasonNum}`,
+              ca: `Temporada ${seasonNum}`,
+              en: `Season ${seasonNum}`,
+            }),
+            episodeCount: 0,
+          },
+        ],
+        activeSeason: seasonNum,
+        episodes: [],
+      };
+    });
+
+    const apiLang = forceSpanishProbe ? 'es' : lang === 'en' ? 'en' : 'es';
+    fetch(
+      `/api/catalog/tv/${tmdbId}?season=${seasonNum}&lang=${apiLang}${
+        forceSpanishProbe ? '&force=1&forceSpanish=1' : ''
+      }`
+    )
+      .then((r) => r.json())
+      .then((data) => {
+        if (reqSeq !== seriesFetchSeqRef.current) return;
+        if (data?.success && data?.details) {
+          const nextSeries: TvSeriesDetails = data.details;
+          setSelectedSeries(nextSeries);
+          setLoadingSeriesDetails(false);
+
+          if (
+            !forceSpanishProbe &&
+            Array.isArray(nextSeries.availableLanguages) &&
+            nextSeries.availableLanguages.length > 0
+          ) {
+            setProbingSeriesLangs(false);
+            const avail = nextSeries.availableLanguages;
+            setSeriesModalLang((prev) =>
+              avail.includes('ES') ? 'ES' : avail.includes(prev as 'ES' | 'LAT' | 'VOSE' | 'EN') ? prev : avail[0]
+            );
+          } else {
+            setProbingSeriesLangs(true);
+            const firstEp = nextSeries.episodes[0]?.episodeNumber || 1;
+            fetch(
+              `/api/catalog/tv/${tmdbId}/languages?season=${nextSeries.activeSeason}&episode=${firstEp}&title=${encodeURIComponent(
+                nextSeries.title || ''
+              )}&origTitle=${encodeURIComponent(nextSeries.originalTitle || '')}${
+                forceSpanishProbe ? '&force=1&forceSpanish=1' : ''
+              }`
+            )
+              .then((r2) => r2.json())
+              .then((langData) => {
+                if (reqSeq !== seriesFetchSeqRef.current) return;
+                const avail: ('ES' | 'LAT' | 'VOSE' | 'EN')[] = Array.isArray(
+                  langData?.availableLanguages
+                )
+                  ? langData.availableLanguages
+                  : [];
+                if (avail.length > 0) {
+                  setSelectedSeries((curr) =>
+                    curr && curr.tmdbId === tmdbId
+                      ? { ...curr, availableLanguages: avail }
+                      : curr
+                  );
+                  setSeriesModalLang((prev) =>
+                    forceSpanishProbe
+                      ? avail.includes('ES')
+                        ? 'ES'
+                        : avail[0]
+                      : avail.includes('ES')
+                      ? 'ES'
+                      : avail.includes(prev as 'ES' | 'LAT' | 'VOSE' | 'EN')
+                      ? prev
+                      : avail[0]
+                  );
+                }
+              })
+              .catch(() => {})
+              .finally(() => {
+                if (reqSeq === seriesFetchSeqRef.current) {
+                  setProbingSeriesLangs(false);
+                }
+              });
+          }
+        } else {
+          setLoadingSeriesDetails(false);
+        }
+      })
+      .catch(() => {
+        if (reqSeq === seriesFetchSeqRef.current) {
+          setLoadingSeriesDetails(false);
+        }
+      });
+  };
+
+  // YouTube search
+  useEffect(() => {
+    if (worldMode !== 'youtube' && activeSection !== 'youtube') return;
+    let cancelled = false;
+    setLoadingYt(true);
+
+    fetch(`/api/catalog/youtube?q=${encodeURIComponent(debouncedYtQuery)}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data?.videos)) {
+          setYtResults(data.videos);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setYtResults([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingYt(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [worldMode, activeSection, debouncedYtQuery]);
+
+  // Català Anime Catalog
+  useEffect(() => {
+    const inCineCatala = worldMode === 'cine' && cineSpecialPortal === 'catala';
+    if (!inCineCatala && activeSection !== 'catala') return;
+    let cancelled = false;
+    setLoadingCatala(true);
+
+    const params = new URLSearchParams({
+      category: 'all',
+      query: debouncedCatalaQuery,
+    });
+
+    fetch(`/api/catalog/catala?${params.toString()}`)
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        if (Array.isArray(data?.items)) setCatalaItems(data.items);
+      })
+      .catch(() => {
+        if (!cancelled) setCatalaItems([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingCatala(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [worldMode, cineSpecialPortal, activeSection, debouncedCatalaQuery]);
+
+  const openCatalaSeriesDetails = async (item: CatalaCatalogItem, seasonNum = 1) => {
+    setLoadingCatalaEpisodes(true);
+
+    setSelectedCatalaSeries((prev) =>
+      prev && prev.id === item.id
+        ? { ...prev, activeSeason: seasonNum }
+        : {
+            id: item.id,
+            title: item.title,
+            originalTitle: item.originalTitle,
+            eraTag: item.eraTag,
+            year: item.year,
+            rating: item.rating,
+            overview: item.overview,
+            poster: item.poster,
+            backdrop: item.backdrop || item.poster,
+            activeSeason: seasonNum,
+            seasons: [{ seasonNumber: seasonNum, name: `Temporada ${seasonNum}`, episodeCount: 0 }],
+            episodes: [],
+          }
+    );
+
+    try {
+      const res = await fetch(
+        `/api/catalog/catala/${encodeURIComponent(item.id)}/episodes?season=${seasonNum}`
+      );
+      const data = await res.json();
+      if (res.ok && data?.success && data?.details) {
+        setSelectedCatalaSeries(data.details);
+      }
+    } catch {
+      // Keep shell
+    } finally {
+      setLoadingCatalaEpisodes(false);
+    }
+  };
+
+  return {
+    previewItem,
+    setPreviewItem,
+    homeGenreId,
+    homeProvider,
+    homeSortBy,
+    homeQuery,
+    homeMovieResults,
+    homeSeriesResults,
+    loadingHomeSearch,
+    homeShowcaseMovies,
+    homeShowcaseSeries,
+    heroSlideIndex,
+    setHeroSlideIndex,
+    setIsHeroHovered,
+    movieSort,
+    setMovieSort,
+    movieGenre,
+    setMovieGenre,
+    setMoviePage,
+    hasMoreMovies,
+    movies,
+    loadingMovies,
+    loadingMoreMovies,
+    seriesSort,
+    setSeriesSort,
+    seriesGenre,
+    setSeriesGenre,
+    seriesLangMode,
+    setSeriesLangMode,
+    setSeriesPage,
+    hasMoreSeries,
+    seriesList,
+    loadingSeries,
+    loadingMoreSeries,
+    selectedSeries,
+    setSelectedSeries,
+    seriesModalLang,
+    setSeriesModalLang,
+    forceSpanishSeriesActive,
+    loadingSeriesDetails,
+    probingSeriesLangs,
+    openSeriesDetails,
+    debouncedYtQuery,
+    setYtQuery,
+    setDebouncedYtQuery,
+    ytResults,
+    loadingYt,
+    cineSpecialPortal,
+    setCineSpecialPortal,
+    cineFiltersOpen,
+    setCineFiltersOpen,
+    cineAudioOverride,
+    setCineAudioOverride,
+    catalaItems,
+    loadingCatala,
+    selectedCatalaSeries,
+    setSelectedCatalaSeries,
+    loadingCatalaEpisodes,
+    openCatalaSeriesDetails,
+  };
+}

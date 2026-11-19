@@ -1,578 +1,31 @@
-import { execFile } from 'child_process';
 import { areTitlesStrictlyEqual } from '../extractors/httpHelpers.ts';
+import {
+  VEST_MIRROR_ORIGINS,
+  type VestDubbingVariant,
+  type VestEpisodeEntry,
+  type VestParsedDetail,
+  type VestQualityItem,
+  type VestSubtitleItem,
+  type VestTrackRecord,
+  buildVestDetailUrl,
+  curlPlainGetText,
+  decodeVestEncryptedContent,
+  inferVestVariantLanguage,
+  isVestMirrorUrl,
+  mapVestQualityLabel,
+  normalizeVestTitle,
+  parseVestDetailUrl,
+} from './vestHelpers/vestTypesAndUtils.ts';
+import {
+  findVestSeedWithEpisode,
+  registerDiscoveredVestEntry,
+} from './vestHelpers/vestSeedsAndRegistry.ts';
 
-export const VEST_MIRROR_ORIGINS = [
-  'https://www3.dramasfree.com',
-  'https://ww20.321moviesfree.com',
-  'https://es.cuevana4br.com',
-  'https://flixlat.com',
-  'https://ver.123pelicula.com',
-] as const;
-
-export const VEST_MIRROR_HOST_RE =
-  /(?:^|\.)(?:dramasfree\.com|321moviesfree\.com|cuevana4br\.com|flixlat\.com|123pelicula\.com)$/i;
-
-export interface VestSubtitleItem {
-  id: string;
-  label: string;
-  lang: string;
-  url: string;
-}
-
-export interface VestEpisodeEntry {
-  id: string;
-  episodeNumber: number;
-  title: string;
-  url: string;
-  width?: number;
-  height?: number;
-  fileSize?: number;
-  subtitlingList: {
-    language: string;
-    languageAbbr: string;
-    subtitlingUrl: string;
-    translateType?: number;
-  }[];
-}
-
-export interface VestDubbingVariant {
-  id: string;
-  paramIds: string;
-  name: string;
-  cleanName: string;
-  websiteParam: string;
-  category: number;
-  audioLanguageCode: string | null;
-  dubMode: string | null;
-  dubLang: string | null;
-  subtitleLang: string | null;
-  subtitlesType: number | null;
-  coverVerticalUrl: string;
-  inferredLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'OTHER';
-  langLabel: string;
-}
-
-export interface VestQualityItem {
-  qualityCode: string;
-  title: string;
-  url: string;
-}
-
-export interface VestParsedDetail {
-  sourceUrl: string;
-  mirrorOrigin: string;
-  mirrorName: string;
-  id: string;
-  paramIds: string;
-  websiteParam: string;
-  mediaType: 'movie' | 'tv';
-  category: number;
-  rawName: string;
-  cleanTitle: string;
-  score: string;
-  tagNameList: string[];
-  coverVerticalUrl: string;
-  coverHorizontalUrl: string;
-  overview: string;
-  currentEpisodeNumber: number;
-  totalEpisodes: number;
-  audioLanguageCode: string | null;
-  dubMode: string | null;
-  dubLang: string | null;
-  subtitleLang: string | null;
-  inferredLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'OTHER';
-  mediaInfoList: { currentDefinition: string; mediaUrl: string }[];
-  qualityList: VestQualityItem[];
-  episodes: VestEpisodeEntry[];
-  dubbingList: VestDubbingVariant[];
-  refList: {
-    id: string;
-    paramIds: string;
-    name: string;
-    websiteParam: string;
-    category: number;
-    coverVerticalUrl: string;
-    score?: string;
-  }[];
-  currentSubtitles: {
-    language: string;
-    languageAbbr: string;
-    subtitlingUrl: string;
-  }[];
-}
-
-export interface VestCatalogEntry {
-  key: string; // e.g. 'vdXAbbyiZgaslQlAZ9Z6H'
-  websiteParam: string;
-  mediaType: 'movie' | 'tv';
-  tmdbId?: number;
-  title: string;
-  originalTitle: string;
-  year: string;
-  rating: string;
-  overview: string;
-  poster: string;
-  backdrop: string;
-  vestUrl: string;
-  mirrorUrls: string[];
-  languages: string[];
-  seasonNumber?: number;
-  episodeCount?: number;
-  discoveredAt: number;
-}
-
-export interface VestTrackRecord {
-  id: string;
-  label: string;
-  lang: string;
-  quality: string;
-  sourceUrl: string;
-  resolverType: 'vest_hls';
-  resolvedStreamUrl: string;
-}
-
-export function isVestMirrorUrl(rawUrl: string): boolean {
-  try {
-    const parsed = new URL(rawUrl.trim());
-    return VEST_MIRROR_HOST_RE.test(parsed.hostname);
-  } catch {
-    return /dramasfree\.com|321moviesfree\.com|cuevana4br\.com|flixlat\.com|123pelicula\.com/i.test(
-      rawUrl
-    );
-  }
-}
-
-export function parseVestDetailUrl(rawUrl: string): {
-  origin: string;
-  locale: string;
-  typeSeg: 'movie' | 'drama';
-  slug: string;
-  paramId: string;
-  episodeNum: number | null;
-} | null {
-  try {
-    const u = new URL(rawUrl.trim());
-    if (!VEST_MIRROR_HOST_RE.test(u.hostname)) return null;
-    const parts = u.pathname.split('/').filter(Boolean);
-    let idx = 0;
-    let locale = 'es';
-    if (parts[0] && /^(es|en|pt|ar|fr|de|tr|id|th|vi|tl|ru)$/i.test(parts[0])) {
-      locale = parts[0].toLowerCase();
-      idx = 1;
-    }
-    if (parts[idx] !== 'detail') return null;
-    const rawType = (parts[idx + 1] || 'drama').toLowerCase();
-    const typeSeg: 'movie' | 'drama' = rawType === 'movie' ? 'movie' : 'drama';
-    const slug = parts[idx + 2] || '';
-    if (!slug) return null;
-    const paramId = slug.split('-')[0] || slug;
-    const epRaw = parts[idx + 3] ? parseInt(parts[idx + 3], 10) : NaN;
-    const episodeNum = Number.isFinite(epRaw) && epRaw > 0 ? epRaw : null;
-    return {
-      origin: u.origin,
-      locale,
-      typeSeg,
-      slug,
-      paramId,
-      episodeNum,
-    };
-  } catch {
-    return null;
-  }
-}
-
-export function buildVestDetailUrl(opts: {
-  origin?: string;
-  locale?: string;
-  typeSeg: 'movie' | 'drama';
-  slug: string;
-  episodeNum?: number | null;
-}): string {
-  const baseOrigin = (opts.origin || VEST_MIRROR_ORIGINS[0]).replace(/\/+$/, '');
-  const locale = opts.locale || 'es';
-  const epPart = opts.episodeNum && opts.episodeNum > 0 ? `/${opts.episodeNum}` : '';
-  return `${baseOrigin}/${locale}/detail/${opts.typeSeg}/${opts.slug}${epPart}/`;
-}
-
-export function normalizeVestTitle(rawName: string): string {
-  return String(rawName || '')
-    .replace(/^(?:\[[^\]]+\]\s*)+/g, '')
-    .trim();
-}
-
-export function inferVestVariantLanguage(opts: {
-  rawName?: string;
-  audioLanguageCode?: string | null;
-  dubMode?: string | null;
-  dubLang?: string | null;
-  subtitleLang?: string | null;
-  subtitlesType?: number | null;
-}): { inferredLang: 'ES' | 'LAT' | 'VOSE' | 'EN' | 'OTHER'; langLabel: string } {
-  const nameLower = String(opts.rawName || '').toLowerCase();
-  const audio = String(opts.audioLanguageCode || '').toLowerCase();
-  const dubLang = String(opts.dubLang || '').toLowerCase();
-  const subLang = String(opts.subtitleLang || '').toLowerCase();
-
-  if (
-    /latino/i.test(nameLower) ||
-    audio === 'es-419' ||
-    dubLang === 'es-419' ||
-    /lat/i.test(dubLang)
-  ) {
-    return { inferredLang: 'LAT', langLabel: 'Español Latino' };
-  }
-  if (
-    /doblaje\s*espa[ñn]ol|castellano|\[es\]/i.test(nameLower) ||
-    (opts.dubMode === '1' && (audio === 'es' || dubLang === 'es')) ||
-    (audio === 'es' && opts.subtitlesType !== 2)
-  ) {
-    return { inferredLang: 'ES', langLabel: 'Español Doblado' };
-  }
-  if (
-    /sub\s*espa[ñn]ol|subtitulado/i.test(nameLower) ||
-    subLang === 'es' ||
-    (opts.subtitlesType === 2 && !audio.startsWith('en'))
-  ) {
-    return { inferredLang: 'VOSE', langLabel: 'Sub Español (VOSE)' };
-  }
-  if (audio === 'en' || /english|ingl[eé]s/i.test(nameLower)) {
-    return { inferredLang: 'EN', langLabel: 'English (VO)' };
-  }
-  if (audio === 'pt' || /portugu[eê]s/i.test(nameLower) || dubLang === 'pt' || subLang === 'pt') {
-    return { inferredLang: 'OTHER', langLabel: 'Português' };
-  }
-  if (/t[uü]rk[çc]e/i.test(nameLower) || dubLang === 'tr' || subLang === 'tr') {
-    return { inferredLang: 'OTHER', langLabel: 'Türkçe' };
-  }
-  return {
-    inferredLang: 'VOSE',
-    langLabel: opts.audioLanguageCode ? `VO (${opts.audioLanguageCode.toUpperCase()})` : 'VOSE',
-  };
-}
-
-export function decodeVestEncryptedContent(encryptedContent: string): Record<string, any> | null {
-  try {
-    const raw = String(encryptedContent || '').trim();
-    if (!raw) return null;
-    const reversed = raw.split('').reverse().join('');
-    const jsonText = Buffer.from(reversed, 'base64').toString('utf8');
-    const parsed = JSON.parse(jsonText);
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-export function mapVestQualityLabel(defCode: string, fallbackTitle?: string): string {
-  if (fallbackTitle && /\d+p/i.test(fallbackTitle)) {
-    return fallbackTitle.toUpperCase();
-  }
-  switch (String(defCode || '').toUpperCase()) {
-    case 'GROOT_HD':
-    case 'GROOT_FHD':
-      return '1080P';
-    case 'GROOT_SD':
-      return '720P';
-    case 'GROOT_LD':
-      return '540P';
-    case 'GROOT_FD':
-      return '360P';
-    default:
-      return fallbackTitle || 'HD';
-  }
-}
-
-export function curlPlainGetText(targetUrl: string, maxTimeSec = 9): Promise<string> {
-  return new Promise((resolve, reject) => {
-    // Plain curl WITHOUT Chrome UA or Sec-Fetch-* headers bypasses Cloudflare JS/WAF on all 4 mirrors cleanly
-    execFile(
-      'curl',
-      ['-sS', '-L', '--compressed', '--max-time', String(maxTimeSec), targetUrl],
-      { maxBuffer: 15 * 1024 * 1024 },
-      (err, stdout, stderr) => {
-        if (err && !stdout) {
-          return reject(new Error(stderr || err.message));
-        }
-        resolve(String(stdout || ''));
-      }
-    );
-  });
-}
+export * from './vestHelpers/vestTypesAndUtils.ts';
+export * from './vestHelpers/vestSeedsAndRegistry.ts';
 
 const vestDetailCache = new Map<string, { detail: VestParsedDetail; ts: number }>();
-const vestCatalogRegistry = new Map<string, VestCatalogEntry>();
-
-// Pre-seeded verified entries crawled from the user's 4 mirror sites
-const INITIAL_VEST_SEEDS: VestCatalogEntry[] = [
-  {
-    key: 'vdXAbbyiZgaslQlAZ9Z6H',
-    websiteParam: 'vdXAbbyiZgaslQlAZ9Z6H-One-Piece',
-    mediaType: 'tv',
-    tmdbId: 37854,
-    title: 'One Piece',
-    originalTitle: 'One Piece',
-    year: '1999',
-    rating: '8.9',
-    overview:
-      'Monkey D. Luffy se lanza a la mar para encontrar el tesoro legendario One Piece y convertirse en el Rey de los Piratas. Disponible en Doblaje Español y Sub Español (720p HLS + subtítulos multiidioma).',
-    poster:
-      'https://img.321moviesfree.com/cover/20260519/1779176008983_b032a8f6de28e5a88036819840a8da11uiIB9ctqZFbfRXXimtpmZb5dusi.webp',
-    backdrop: 'https://image.tmdb.org/t/p/w1280/2rmK7mnchw9Xr3XdiTFSxTTLXqv.jpg',
-    vestUrl: 'https://ww20.321moviesfree.com/es/detail/drama/vdXAbbyiZgaslQlAZ9Z6H-One-Piece/1/',
-    mirrorUrls: [
-      'https://ww20.321moviesfree.com/es/detail/drama/vdXAbbyiZgaslQlAZ9Z6H-One-Piece/1/',
-      'https://es.cuevana4br.com/es/detail/drama/vdXAbbyiZgaslQlAZ9Z6H-One-Piece/1/',
-      'https://flixlat.com/es/detail/drama/vdXAbbyiZgaslQlAZ9Z6H-One-Piece/1/',
-      'https://ver.123pelicula.com/es/detail/drama/vdXAbbyiZgaslQlAZ9Z6H-One-Piece/1/',
-    ],
-    languages: ['Castellano', 'VOSE'],
-    episodeCount: 1188,
-    discoveredAt: Date.now(),
-  },
-  {
-    key: 'MdpUkP2oMneAfFppRBkY4',
-    websiteParam: 'MdpUkP2oMneAfFppRBkY4-One-Piece',
-    mediaType: 'tv',
-    tmdbId: 37854,
-    title: 'One Piece (Doblaje Español)',
-    originalTitle: 'One Piece',
-    year: '1999',
-    rating: '8.9',
-    overview:
-      'One Piece en Doblaje Español completo (1.180 episodios en streaming HLS directo 720p/540p sin anuncios en 321moviesfree, Cuevana4br, FlixLat y 123pelicula).',
-    poster:
-      'https://img.321moviesfree.com/cover/20260518/1779082523894_b032a8f6de28e5a88036819840a8da11ONE%20PIECE.webp',
-    backdrop: 'https://image.tmdb.org/t/p/w1280/2rmK7mnchw9Xr3XdiTFSxTTLXqv.jpg',
-    vestUrl: 'https://ww20.321moviesfree.com/es/detail/drama/MdpUkP2oMneAfFppRBkY4-One-Piece/1/',
-    mirrorUrls: [
-      'https://ww20.321moviesfree.com/es/detail/drama/MdpUkP2oMneAfFppRBkY4-One-Piece/1/',
-      'https://es.cuevana4br.com/es/detail/drama/MdpUkP2oMneAfFppRBkY4-One-Piece/1/',
-      'https://flixlat.com/es/detail/drama/MdpUkP2oMneAfFppRBkY4-One-Piece/1/',
-      'https://ver.123pelicula.com/es/detail/drama/MdpUkP2oMneAfFppRBkY4-One-Piece/1/',
-    ],
-    languages: ['Castellano'],
-    episodeCount: 1180,
-    discoveredAt: Date.now(),
-  },
-  // Jujutsu Kaisen (TMDB 95479) — Temporadas 1, 2 y 3 (DramasFree / 321Movies)
-  {
-    key: 'gCt2oc0DFw51NrR5EAVrx',
-    websiteParam: 'gCt2oc0DFw51NrR5EAVrx-Jujutsu-Kaisen',
-    mediaType: 'tv',
-    tmdbId: 95479,
-    seasonNumber: 1,
-    title: 'Jujutsu Kaisen · Temporada 1',
-    originalTitle: 'Jujutsu Kaisen',
-    year: '2020',
-    rating: '8.6',
-    overview:
-      'Yuji Itadori se adentra en el mundo de los hechiceros jujutsu tras ingerir un dedo maldito de Ryomen Sukuna. Temporada 1 completa en Doblaje Español y VOSE.',
-    poster:
-      'https://img.dramasfree.com/cover/20260518/1779098925895_cb5aae9815e76914bbe111173fb547d0Jujutsu%20Kaisen.webp',
-    backdrop: 'https://image.tmdb.org/t/p/w1280/flgn0jXbg8GIe2qaWfd70A0uzfp.jpg',
-    vestUrl: 'https://www3.dramasfree.com/es/detail/drama/gCt2oc0DFw51NrR5EAVrx-Jujutsu-Kaisen/1/',
-    mirrorUrls: [
-      'https://www3.dramasfree.com/es/detail/drama/gCt2oc0DFw51NrR5EAVrx-Jujutsu-Kaisen/1/',
-      'https://ww20.321moviesfree.com/es/detail/drama/gCt2oc0DFw51NrR5EAVrx-Jujutsu-Kaisen/1/',
-    ],
-    languages: ['Castellano', 'VOSE'],
-    episodeCount: 24,
-    discoveredAt: Date.now(),
-  },
-  {
-    key: '3r6P9qNezGIHi5KaUglFH',
-    websiteParam: '3r6P9qNezGIHi5KaUglFH-Jujutsu-Kaisen-Season-2',
-    mediaType: 'tv',
-    tmdbId: 95479,
-    seasonNumber: 2,
-    title: 'Jujutsu Kaisen · Temporada 2 (Shibuya)',
-    originalTitle: 'Jujutsu Kaisen Season 2',
-    year: '2023',
-    rating: '8.8',
-    overview:
-      'El pasado de Satoru Gojo y Geto seguido del Incidente de Shibuya. Temporada 2 completa en Doblaje Español y Sub Español.',
-    poster:
-      'https://img.dramasfree.com/cover/20260518/1779099350450_23a174129837f4db7af067e2a948910cJujutsu%20Kaisen%20Season%202.png',
-    backdrop: 'https://image.tmdb.org/t/p/w1280/flgn0jXbg8GIe2qaWfd70A0uzfp.jpg',
-    vestUrl:
-      'https://www3.dramasfree.com/es/detail/drama/3r6P9qNezGIHi5KaUglFH-Jujutsu-Kaisen-Season-2/1/',
-    mirrorUrls: [
-      'https://www3.dramasfree.com/es/detail/drama/3r6P9qNezGIHi5KaUglFH-Jujutsu-Kaisen-Season-2/1/',
-      'https://ww20.321moviesfree.com/es/detail/drama/3r6P9qNezGIHi5KaUglFH-Jujutsu-Kaisen-Season-2/1/',
-    ],
-    languages: ['Castellano', 'VOSE'],
-    episodeCount: 23,
-    discoveredAt: Date.now(),
-  },
-  {
-    key: '48BzZjCCHYX5ZQvFviD9V',
-    websiteParam: '48BzZjCCHYX5ZQvFviD9V-Jujutsu-Kaisen-Season-3',
-    mediaType: 'tv',
-    tmdbId: 95479,
-    seasonNumber: 3,
-    title: 'Jujutsu Kaisen · Temporada 3 (Culling Game)',
-    originalTitle: 'Jujutsu Kaisen Season 3',
-    year: '2026',
-    rating: '9.0',
-    overview:
-      'El Juego del Sacrificio comienza tras el Incidente de Shibuya. Temporada 3 completa (12 episodios) en Doblaje Español y Sub Español HD.',
-    poster:
-      'https://img.dramasfree.com/cover/20251230/1767080544319_4eb5f2c10b0df3bd35bca2f45b23390c5TmWcu2Gs0uhyCQXle3cCvgrbIA.webp',
-    backdrop: 'https://image.tmdb.org/t/p/w1280/flgn0jXbg8GIe2qaWfd70A0uzfp.jpg',
-    vestUrl:
-      'https://www3.dramasfree.com/es/detail/drama/48BzZjCCHYX5ZQvFviD9V-Jujutsu-Kaisen-Season-3/1/',
-    mirrorUrls: [
-      'https://www3.dramasfree.com/es/detail/drama/48BzZjCCHYX5ZQvFviD9V-Jujutsu-Kaisen-Season-3/1/',
-      'https://ww20.321moviesfree.com/es/detail/drama/48BzZjCCHYX5ZQvFviD9V-Jujutsu-Kaisen-Season-3/1/',
-    ],
-    languages: ['Castellano', 'VOSE'],
-    episodeCount: 12,
-    discoveredAt: Date.now(),
-  },
-  // From (TMDB 124364) — Temporadas 1, 2, 3 y 4 (321MoviesFree / DramasFree)
-  {
-    key: 'v3HBgSbGMGBfDZO6EzXza',
-    websiteParam: 'v3HBgSbGMGBfDZO6EzXza-From',
-    mediaType: 'tv',
-    tmdbId: 124364,
-    seasonNumber: 1,
-    title: 'From · Temporada 1',
-    originalTitle: 'From',
-    year: '2022',
-    rating: '8.2',
-    overview:
-      'Un pueblo de pesadilla en América atrapa a todo el que entra mientras criaturas nocturnas acechan en el bosque.',
-    poster: 'https://image.tmdb.org/t/p/w500/7pHMZ6EsZfs2qZu0Lv2UGtTo5MU.jpg',
-    backdrop: 'https://image.tmdb.org/t/p/w1280/m7eiSGHFzr584zFmetGqkqaU6BN.jpg',
-    vestUrl: 'https://ww20.321moviesfree.com/es/detail/drama/v3HBgSbGMGBfDZO6EzXza-From/1/',
-    mirrorUrls: [
-      'https://ww20.321moviesfree.com/es/detail/drama/v3HBgSbGMGBfDZO6EzXza-From/1/',
-      'https://www3.dramasfree.com/es/detail/drama/v3HBgSbGMGBfDZO6EzXza-From/1/',
-    ],
-    languages: ['Castellano', 'VOSE'],
-    episodeCount: 10,
-    discoveredAt: Date.now(),
-  },
-  {
-    key: '5D00Ra6GMcEITfE8DfE2d',
-    websiteParam: '5D00Ra6GMcEITfE8DfE2d-From-Season-2',
-    mediaType: 'tv',
-    tmdbId: 124364,
-    seasonNumber: 2,
-    title: 'From · Temporada 2',
-    originalTitle: 'From Season 2',
-    year: '2023',
-    rating: '8.2',
-    overview: 'Nuevas verdades ocultas salen a la luz en el pueblo mientras el terror escala.',
-    poster: 'https://image.tmdb.org/t/p/w500/7pHMZ6EsZfs2qZu0Lv2UGtTo5MU.jpg',
-    backdrop: 'https://image.tmdb.org/t/p/w1280/m7eiSGHFzr584zFmetGqkqaU6BN.jpg',
-    vestUrl:
-      'https://ww20.321moviesfree.com/es/detail/drama/5D00Ra6GMcEITfE8DfE2d-From-Season-2/1/',
-    mirrorUrls: [
-      'https://ww20.321moviesfree.com/es/detail/drama/5D00Ra6GMcEITfE8DfE2d-From-Season-2/1/',
-    ],
-    languages: ['Castellano', 'VOSE'],
-    episodeCount: 10,
-    discoveredAt: Date.now(),
-  },
-  {
-    key: 'wsUcgDlN09vM0f3AUIoJD',
-    websiteParam: 'wsUcgDlN09vM0f3AUIoJD-From-Season-3',
-    mediaType: 'tv',
-    tmdbId: 124364,
-    seasonNumber: 3,
-    title: 'From · Temporada 3',
-    originalTitle: 'From Season 3',
-    year: '2024',
-    rating: '8.3',
-    overview: 'La lucha por escapar se vuelve más desesperada que nunca.',
-    poster: 'https://image.tmdb.org/t/p/w500/7pHMZ6EsZfs2qZu0Lv2UGtTo5MU.jpg',
-    backdrop: 'https://image.tmdb.org/t/p/w1280/m7eiSGHFzr584zFmetGqkqaU6BN.jpg',
-    vestUrl:
-      'https://ww20.321moviesfree.com/es/detail/drama/wsUcgDlN09vM0f3AUIoJD-From-Season-3/1/',
-    mirrorUrls: [
-      'https://ww20.321moviesfree.com/es/detail/drama/wsUcgDlN09vM0f3AUIoJD-From-Season-3/1/',
-    ],
-    languages: ['Castellano', 'VOSE'],
-    episodeCount: 10,
-    discoveredAt: Date.now(),
-  },
-  {
-    key: '8JsoLCi6DNWXexKol4WnR',
-    websiteParam: '8JsoLCi6DNWXexKol4WnR-From-Season-4',
-    mediaType: 'tv',
-    tmdbId: 124364,
-    seasonNumber: 4,
-    title: 'From · Temporada 4 (Español)',
-    originalTitle: 'From Season 4',
-    year: '2026',
-    rating: '8.4',
-    overview:
-      'Nueva Temporada 4 completa (10 episodios) en Doblaje Español y Sub Español HD con subtítulos sincronizados.',
-    poster:
-      'https://img.321moviesfree.com/cover/20260518/1779099655641_9b678d1469ec7cc0b2e3a72dff432890From%20Season%204.webp',
-    backdrop:
-      'https://img.321moviesfree.com/cover/20260518/1779099661401_5580672950692c6fda24472c9a072868From%20Season%204.webp',
-    vestUrl:
-      'https://ww20.321moviesfree.com/es/detail/drama/8JsoLCi6DNWXexKol4WnR-From-Season-4/1/',
-    mirrorUrls: [
-      'https://ww20.321moviesfree.com/es/detail/drama/8JsoLCi6DNWXexKol4WnR-From-Season-4/1/',
-      'https://ww20.321moviesfree.com/es/detail/drama/MKkK0ZMtYN54vJuysYznp-From-Season-4/1/',
-      'https://www3.dramasfree.com/es/detail/drama/8JsoLCi6DNWXexKol4WnR-From-Season-4/1/',
-    ],
-    languages: ['Castellano', 'VOSE'],
-    episodeCount: 10,
-    discoveredAt: Date.now(),
-  },
-  {
-    key: 'MKkK0ZMtYN54vJuysYznp',
-    websiteParam: 'MKkK0ZMtYN54vJuysYznp-From-Season-4',
-    mediaType: 'tv',
-    tmdbId: 124364,
-    seasonNumber: 4,
-    title: 'From · Temporada 4 (VOSE)',
-    originalTitle: 'From Season 4',
-    year: '2026',
-    rating: '8.4',
-    overview:
-      'Desvela el misterio de un pueblo de pesadilla que atrapa a todos los que entran. Temporada 4 completa en Sub Español y Doblaje Español.',
-    poster:
-      'https://img.321moviesfree.com/cover/20260518/1779099655641_9b678d1469ec7cc0b2e3a72dff432890From%20Season%204.webp',
-    backdrop:
-      'https://img.321moviesfree.com/cover/20260518/1779099661401_5580672950692c6fda24472c9a072868From%20Season%204.webp',
-    vestUrl:
-      'https://ww20.321moviesfree.com/es/detail/drama/MKkK0ZMtYN54vJuysYznp-From-Season-4/1/',
-    mirrorUrls: [
-      'https://ww20.321moviesfree.com/es/detail/drama/MKkK0ZMtYN54vJuysYznp-From-Season-4/1/',
-      'https://ww20.321moviesfree.com/es/detail/drama/8JsoLCi6DNWXexKol4WnR-From-Season-4/1/',
-    ],
-    languages: ['VOSE', 'Castellano'],
-    episodeCount: 10,
-    discoveredAt: Date.now(),
-  },
-];
-
-for (const seed of INITIAL_VEST_SEEDS) {
-  vestCatalogRegistry.set(seed.key, seed);
-}
-
-function registerDiscoveredVestEntry(entry: VestCatalogEntry) {
-  const prev = vestCatalogRegistry.get(entry.key);
-  if (!prev) {
-    vestCatalogRegistry.set(entry.key, entry);
-    return;
-  }
-  vestCatalogRegistry.set(entry.key, {
-    ...prev,
-    ...entry,
-    tmdbId: prev.tmdbId || entry.tmdbId,
-    poster: entry.poster || prev.poster,
-    backdrop: prev.backdrop || prev.backdrop || prev.poster,
-    overview: entry.overview || prev.overview,
-    languages: Array.from(new Set([...(prev.languages || []), ...(entry.languages || [])])),
-    mirrorUrls: Array.from(new Set([...(prev.mirrorUrls || []), ...(entry.mirrorUrls || [])])),
-  });
-}
+const tmdbAbsEpCache = new Map<string, { absEp: number; ts: number }>();
 
 export function parseVestDetailHtml(html: string, sourceUrl: string): VestParsedDetail | null {
   try {
@@ -726,7 +179,6 @@ export function parseVestDetailHtml(html: string, sourceUrl: string): VestParsed
         score: r.score ? String(r.score) : undefined,
       }));
 
-    // Auto-index primary entry + dubbingList + refList into vestCatalogRegistry
     const primaryTypeSeg: 'movie' | 'drama' = mediaType === 'movie' ? 'movie' : 'drama';
     const primarySlug = String(pp.websiteParam || pp.paramIds);
     registerDiscoveredVestEntry({
@@ -844,7 +296,6 @@ export async function fetchVestDetailPage(
     return cached.detail;
   }
 
-  // Try requested domain first, then automatically fail over across the remaining 3 mirrors
   const originsToTry = [
     parsed.origin,
     ...VEST_MIRROR_ORIGINS.filter((o) => o !== parsed.origin),
@@ -876,8 +327,6 @@ export async function fetchVestDetailPage(
 
   return null;
 }
-
-const tmdbAbsEpCache = new Map<string, { absEp: number; ts: number }>();
 
 export async function resolveTmdbAbsoluteEpisodeNumber(
   tmdbId: number,
@@ -913,129 +362,6 @@ export async function resolveTmdbAbsoluteEpisodeNumber(
   } catch {
     return episode;
   }
-}
-
-export function findVestSeedWithEpisode(opts: {
-  tmdbId?: string | number | null;
-  mediaType?: 'movie' | 'tv';
-  yearHint?: string;
-  titleHints?: string[];
-  preferLang?: string;
-  season?: number;
-  episode?: number;
-}): { seed: VestCatalogEntry; mappedEpisode?: number } | null {
-  const numTmdb = opts.tmdbId ? Number(String(opts.tmdbId).replace(/\D/g, '')) : 0;
-  const reqSeason = Math.max(1, opts.season || 1);
-  const reqEpisode = Math.max(1, opts.episode || 1);
-  const prefUpper = String(opts.preferLang || 'ES').toUpperCase();
-  const expYear =
-    opts.yearHint && /^\d{4}$/.test(opts.yearHint.trim()) ? Number(opts.yearHint.trim()) : 0;
-
-  const pickPreferred = (list: VestCatalogEntry[]): VestCatalogEntry => {
-    if (prefUpper === 'VOSE' || prefUpper === 'EN') {
-      return (
-        list.find((m) => m.languages[0] === 'VOSE' || m.key === 'MKkK0ZMtYN54vJuysYznp') ||
-        list[0]
-      );
-    }
-    return (
-      list.find(
-        (m) =>
-          m.languages[0] === 'Castellano' ||
-          m.key === 'MdpUkP2oMneAfFppRBkY4' ||
-          m.key === '8JsoLCi6DNWXexKol4WnR'
-      ) || list[0]
-    );
-  };
-
-  if (numTmdb) {
-    const matches: VestCatalogEntry[] = [];
-    for (const entry of vestCatalogRegistry.values()) {
-      if (opts.mediaType && entry.mediaType !== opts.mediaType) continue;
-      if (entry.tmdbId === numTmdb) matches.push(entry);
-    }
-
-    if (matches.length > 0) {
-      // Jujutsu Kaisen (95479): TMDB lists all 59 episodes in Season 1, while Vest splits T1 (1-24), T2 (25-47), T3 (48-59)
-      if (numTmdb === 95479) {
-        let targetSeason = reqSeason;
-        let mappedEp = reqEpisode;
-        if (reqSeason === 1 && reqEpisode >= 48) {
-          targetSeason = 3;
-          mappedEp = reqEpisode - 47;
-        } else if (reqSeason === 1 && reqEpisode >= 25) {
-          targetSeason = 2;
-          mappedEp = reqEpisode - 24;
-        }
-        const seasonMatches = matches.filter((m) => m.seasonNumber === targetSeason);
-        if (seasonMatches.length > 0) {
-          return { seed: pickPreferred(seasonMatches), mappedEpisode: mappedEp };
-        }
-      }
-
-      // Season-specific matching (e.g. From S1..S4)
-      const exactSeasonMatches = matches.filter((m) => m.seasonNumber === reqSeason);
-      if (exactSeasonMatches.length > 0) {
-        return { seed: pickPreferred(exactSeasonMatches), mappedEpisode: reqEpisode };
-      }
-
-      return { seed: pickPreferred(matches) };
-    }
-  }
-
-  const normalizedHints = (opts.titleHints || [])
-    .map((t) =>
-      String(t || '')
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .replace(/[^a-z0-9]+/g, ' ')
-        .trim()
-    )
-    .filter((h) => h.length >= 3);
-
-  for (const entry of vestCatalogRegistry.values()) {
-    if (opts.mediaType && entry.mediaType !== opts.mediaType) continue;
-    // Never hijack a TMDB-identified title using an unverified dynamic Vest entry with year 'HD'
-    if (numTmdb && entry.tmdbId && entry.tmdbId !== numTmdb) continue;
-    const entryYear = /^\d{4}$/.test(String(entry.year || '').trim())
-      ? Number(entry.year.trim())
-      : 0;
-    if (expYear > 1900) {
-      if (entryYear > 1900 && Math.abs(entryYear - expYear) > 1) continue;
-      if (numTmdb && !entry.tmdbId && entryYear === 0) continue;
-    } else if (numTmdb && !entry.tmdbId) {
-      continue;
-    }
-
-    const entryNorm = entry.title
-      .replace(/\s*\([^)]*\)\s*/g, ' ')
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, ' ')
-      .trim();
-    if (normalizedHints.some((h) => h === entryNorm)) {
-      return {
-        seed: entry,
-        mappedEpisode: entry.seasonNumber !== undefined ? reqEpisode : undefined,
-      };
-    }
-  }
-
-  return null;
-}
-
-export function findVestSeedForMedia(opts: {
-  tmdbId?: string | number | null;
-  mediaType?: 'movie' | 'tv';
-  yearHint?: string;
-  titleHints?: string[];
-  preferLang?: string;
-  season?: number;
-  episode?: number;
-}): VestCatalogEntry | null {
-  return findVestSeedWithEpisode(opts)?.seed || null;
 }
 
 export async function extractVestStreamsAndSubtitles(opts: {
@@ -1141,7 +467,6 @@ export async function extractVestStreamsAndSubtitles(opts: {
       : 'Sub Español (VOSE)'
   );
 
-  // Automatically fetch primary alternate dubbing variants (e.g. Spanish Dub <-> Sub Español <-> English)
   const targetEpNum = primaryDetail.currentEpisodeNumber || epOverride || 1;
   const candidateVariants = primaryDetail.dubbingList
     .filter(
@@ -1169,7 +494,6 @@ export async function extractVestStreamsAndSubtitles(opts: {
 
   for (const vd of variantDetails) {
     if (!vd || vd.qualityList.length === 0) continue;
-    // Ensure episode actually matches target when checking long-running dubs (e.g. dub has 1180 eps vs 1188)
     if (
       vd.mediaType === 'tv' &&
       vd.totalEpisodes > 0 &&
@@ -1188,7 +512,6 @@ export async function extractVestStreamsAndSubtitles(opts: {
     appendQualitiesForDetail(vd, prefix);
   }
 
-  // Gather synchronized .srt subtitles from primary detail + fallback variant
   const subMap = new Map<string, VestSubtitleItem>();
   const addSubsFrom = (d: VestParsedDetail | null) => {
     if (!d) return;
@@ -1212,13 +535,11 @@ export async function extractVestStreamsAndSubtitles(opts: {
   addSubsFrom(primaryDetail);
   for (const vd of variantDetails) addSubsFrom(vd);
 
-  // Order subtitles so Español & English are first
   const subtitles = Array.from(subMap.values()).sort((a, b) => {
     const rank = (l: string) => (l === 'ES' ? 1 : l === 'EN' ? 2 : 3);
     return rank(a.lang) - rank(b.lang);
   });
 
-  // Sort tracks putting requested preferLang first, then best quality
   const pref = String(opts.preferLang || 'ES').toUpperCase();
   const langRank = (l: string) => {
     const u = String(l || '').toUpperCase();
@@ -1231,47 +552,4 @@ export async function extractVestStreamsAndSubtitles(opts: {
   tracks.sort((a, b) => langRank(a.lang) - langRank(b.lang));
 
   return { detail: primaryDetail, tracks, subtitles };
-}
-
-export function listVestCatalogEntries(opts?: {
-  mediaType?: 'movie' | 'tv' | 'all';
-  query?: string;
-}): any[] {
-  const mType = opts?.mediaType || 'all';
-  const qNorm = String(opts?.query || '')
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .trim();
-
-  const out: any[] = [];
-  for (const entry of vestCatalogRegistry.values()) {
-    if (mType !== 'all' && entry.mediaType !== mType) continue;
-    if (qNorm) {
-      const hay = `${entry.title} ${entry.originalTitle} ${entry.overview}`
-        .toLowerCase()
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '');
-      if (!hay.includes(qNorm)) continue;
-    }
-    out.push({
-      id: `vest-${entry.key}`,
-      tmdbId: entry.tmdbId,
-      mediaType: entry.mediaType,
-      title: entry.title,
-      originalTitle: entry.originalTitle,
-      year: entry.year,
-      rating: entry.rating,
-      overview: entry.overview,
-      poster: entry.poster
-        ? `/api/img-proxy?url=${encodeURIComponent(entry.poster)}`
-        : '',
-      backdrop: entry.backdrop || entry.poster,
-      vestUrl: entry.vestUrl,
-      languages: entry.languages,
-      seasonNumber: entry.seasonNumber,
-      platform: 'DramasFree · 321Movies · Cuevana4 · FlixLat',
-    });
-  }
-  return out;
 }

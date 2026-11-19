@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import Hls from 'hls.js';
-import { SecondaryHlsStage } from './SecondaryHlsStage';
 import { useAppStore } from '../store/useAppStore';
 import { useFocusTrap } from '../utils/useFocusTrap';
 import {
@@ -8,31 +7,22 @@ import {
   type YouTubePlayerInstance,
 } from './player/playerTypes';
 import { useDirectCast } from './player/useDirectCast';
-import { CloudBrowserOverlay } from './player/CloudBrowserOverlay';
 import { PlayerProSettingsModal } from './player/PlayerProSettingsModal';
 import { VoiceWaveBars } from './games/GameVoiceBar';
 import { resolveTrackLang } from './player/trackLabelUtils';
-import { IdleStandbyStage } from './player/IdleStandbyStage';
-import { EmbedStagePanel } from './player/EmbedStagePanel';
-import { PlayerTransportBar } from './player/PlayerTransportBar';
-import { MiniPlayerHud } from './player/MiniPlayerHud';
 import { useEmbedExternalWindow } from './player/useEmbedExternalWindow';
 import { usePlayerSubtitles } from './player/usePlayerSubtitles';
-import { useYouTubeIframeSync } from './player/useYouTubeIframeSync';
-import { useCinemaPlatformApis } from './player/useCinemaPlatformApis';
-import { useTvReceiverRemote } from './player/useTvReceiverRemote';
-import { useHlsPlaybackEngine } from './player/useHlsPlaybackEngine';
+import { useCinemaEnginesBundle } from './player/useCinemaEnginesBundle';
 import { usePlayerControls } from './player/usePlayerControls';
-import { PlayerTopHudBar } from './player/PlayerTopHudBar';
 import { PlayerBottomControlStrip } from './player/PlayerBottomControlStrip';
-import { PlayerStageOverlays } from './player/PlayerStageOverlays';
 import { usePlayerVideoCallbacks } from './player/usePlayerVideoCallbacks';
 import { PlayerFullscreenVoiceControls } from './player/PlayerFullscreenVoiceControls';
 import { useNativePlayerStageState } from './player/useNativePlayerStageState';
-import { PlayerVoiceBanner, PlayerYoutubeStage } from './player/PlayerYoutubeAndVoiceAlert';
+import { PlayerVoiceBanner } from './player/PlayerYoutubeAndVoiceAlert';
 import { PlayerStripVoiceControls } from './player/PlayerStripVoiceControls';
+import { PlayerViewportContent } from './player/PlayerViewportContent';
+import { createStagePointerHandlers, getPlayerSectionClass, getStageWrapperClass, getStageWrapperStyle } from './player/playerStageLayout';
 import { UI_COPY } from '../utils/i18n';
-import { triggerHaptic } from '../utils/haptics';
 
 export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   videoState,
@@ -125,19 +115,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const [isHorizontalFullscreen, setIsHorizontalFullscreen] = useState(false);
   const [forceLandscapeRotation, setForceLandscapeRotation] = useState(true);
   const [viewportDims, setViewportDims] = useState<{ w: number; h: number }>(() =>
-    typeof window !== 'undefined'
-      ? { w: window.innerWidth, h: window.innerHeight }
-      : { w: 390, h: 844 }
+    typeof window !== 'undefined' ? { w: window.innerWidth, h: window.innerHeight } : { w: 390, h: 844 }
   );
   const [showControls, setShowControls] = useState(true);
-  const [qualityLevels, setQualityLevels] = useState<
-    { index: number; height: number; bitrate?: number }[]
-  >([]);
+  const [qualityLevels, setQualityLevels] = useState<{ index: number; height: number; bitrate?: number }[]>([]);
   const [selectedQuality, setSelectedQuality] = useState<number>(-1);
   const [autoActiveHeight, setAutoActiveHeight] = useState<number | null>(null);
-  const [hlsAudioTracks, setHlsAudioTracks] = useState<
-    { id: number; name: string; lang: string; default?: boolean }[]
-  >([]);
+  const [hlsAudioTracks, setHlsAudioTracks] = useState<{ id: number; name: string; lang: string; default?: boolean }[]>([]);
   const [selectedHlsAudioTrack, setSelectedHlsAudioTrack] = useState<number>(-1);
   const [activeHudMenu, setActiveHudMenu] = useState<'quality' | 'audio' | null>(null);
   const [cloudUrlInput, setCloudUrlInput] = useState('');
@@ -284,32 +268,21 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     },
   });
 
-  useTvReceiverRemote({
-    isTvMode,
+  const { toggleVocalBoost } = useCinemaEnginesBundle({
+    lang,
     videoState,
     stageWrapperRef,
     videoRef,
     hlsRef,
     ytPlayerRef,
+    ytContainerId,
+    isApplyingRemoteRef,
+    streamLoadStartRef,
+    qoeStartupSentForUrlRef,
+    rebufferCountRef,
+    smoothDriftTimerRef,
     subtitleTracks,
     activeSubId,
-    currentTime,
-    setVolume,
-    setIsMuted,
-    setTvAspectMode,
-    setShowControls,
-    setAmbilightEnabled,
-    handleSelectSubtitleTrack,
-    onSelectTrack,
-    onExitTvMode,
-    showTransientToast,
-  });
-
-  const { toggleVocalBoost } = useCinemaPlatformApis({
-    lang,
-    videoState,
-    stageWrapperRef,
-    videoRef,
     ambilightEnabled,
     vocalBoostEnabled,
     setVocalBoostEnabled,
@@ -318,34 +291,21 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     isTvMode,
     isStageFullscreen,
     isCinemaMode,
-    localPlaying,
-    currentTime,
-    duration,
-    playbackSpeed,
-    setIsInPiP,
-    showTransientToast,
-    onNextEpisode,
-    onSyncAction,
-  });
-
-
-  useHlsPlaybackEngine({
-    lang,
-    videoState,
-    videoRef,
-    hlsRef,
-    isApplyingRemoteRef,
-    streamLoadStartRef,
-    qoeStartupSentForUrlRef,
-    rebufferCountRef,
-    smoothDriftTimerRef,
     isCastingToTv,
     hasConnectedSmartTv,
     batterySaverTvMode,
     setBatterySaverTvMode,
-    isTvMode,
+    localPlaying,
+    currentTime,
+    duration,
     playbackSpeed,
     syncOffsetMs,
+    setVolume,
+    setIsMuted,
+    setTvAspectMode,
+    setShowControls,
+    setAmbilightEnabled,
+    setIsInPiP,
     setIsBuffering,
     clearBufferingIndicator,
     setStreamError,
@@ -355,22 +315,13 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     setHlsAudioTracks,
     setSelectedHlsAudioTrack,
     setActiveHudMenu,
-    setIsMuted,
     setLocalPlaying,
+    handleSelectSubtitleTrack,
     scheduleHideControls,
     showTransientToast,
-  });
-
-  useYouTubeIframeSync({
-    videoState,
-    ytPlayerRef,
-    ytContainerId,
-    isApplyingRemoteRef,
-    smoothDriftTimerRef,
-    syncOffsetMs,
-    setIsMuted,
-    setVolume,
-    setLocalPlaying,
+    onSelectTrack,
+    onExitTvMode,
+    onNextEpisode,
     onSyncAction,
   });
 
@@ -502,387 +453,146 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
     />
   ) : null;
 
+  const stagePointerHandlers = createStagePointerHandlers({
+    isMinimized, lastManualHideAtRef, lastMousePosRef, showControlsRef, revealControls, scheduleHideControls,
+  });
+
   return (
-    <section
-      className={`w-full ${
-        isTvMode
-          ? 'h-screen h-full overflow-hidden bg-black'
-          : isMinimized
-            ? 'overflow-hidden bg-black rounded-2xl border border-white/20 shadow-[0_24px_70px_rgba(0,0,0,0.9)]'
-            : isCinemaMode
-              ? 'bg-transparent'
-              : 'overflow-hidden bg-black lg:rounded-2xl lg:border lg:border-white/[0.08] lg:shadow-2xl lg:shadow-black/60'
-      }`}
-    >
+    <section className={getPlayerSectionClass({ isTvMode, isMinimized, isCinemaMode })}>
       <div
         ref={stageWrapperRef}
-        onPointerMove={(e) => {
-          if (isMinimized) return;
-          if (e.pointerType === 'mouse') {
-            if (Date.now() - lastManualHideAtRef.current < 350) return;
-            const prev = lastMousePosRef.current;
-            if (
-              prev &&
-              Math.hypot(e.clientX - prev.x, e.clientY - prev.y) < 6 &&
-              !showControlsRef.current
-            ) {
-              return;
-            }
-            lastMousePosRef.current = { x: e.clientX, y: e.clientY };
-            revealControls();
-          }
-        }}
-        onPointerDownCapture={() => {
-          if (showControlsRef.current) scheduleHideControls();
-        }}
-        onPointerMoveCapture={(e) => {
-          if (e.pointerType !== 'mouse' && showControlsRef.current) scheduleHideControls();
-        }}
-        style={
-          isStageFullscreen
-            ? {
-                position: 'fixed',
-                inset: 0,
-                width: '100vw',
-                height: '100vh',
-                zIndex: 250,
-                borderRadius: 0,
-              }
-            : undefined
-        }
-        className={`relative w-full bg-black overflow-hidden select-none transition-[height] duration-200 ${
-          isTvMode || isStageFullscreen
-            ? 'h-full'
-            : compactVideoForMobileKeyboard
-            ? 'h-[122px] sm:aspect-video'
-            : isCompressed && !isMinimized
-            ? 'h-[136px] sm:h-[210px] lg:h-[238px]'
-            : 'aspect-video'
-        } ${
-          isCinemaMode && !isMinimized && !isCompressed && !isTvMode && !isStageFullscreen
-            ? 'z-50 lg:rounded-2xl ring-1 ring-white/15 shadow-[0_24px_90px_rgba(0,0,0,0.96)]'
-            : ''
-        }`}
+        {...stagePointerHandlers}
+        style={getStageWrapperStyle(isStageFullscreen)}
+        className={getStageWrapperClass({
+          isTvMode, isStageFullscreen, compactVideoForMobileKeyboard, isCompressed, isMinimized, isCinemaMode,
+        })}
       >
-        <div
-          style={
-            shouldRotate90
-              ? {
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  width: `${viewportDims.h}px`,
-                  height: `${viewportDims.w}px`,
-                  maxWidth: `${viewportDims.h}px`,
-                  maxHeight: `${viewportDims.w}px`,
-                  transform: 'translate(-50%, -50%) rotate(90deg)',
-                  transformOrigin: 'center center',
-                }
-              : undefined
-          }
-          className="relative w-full h-full overflow-hidden select-none"
-        >
-          <PlayerTopHudBar
-            videoState={videoState}
-            isTvMode={isTvMode}
-            isMinimized={isMinimized}
-            isCompressed={isCompressed}
-            isStageFullscreen={isStageFullscreen}
-            isFullscreen={isFullscreen}
-            isHorizontalFullscreen={isHorizontalFullscreen}
-            showControls={showControls}
-            localPlaying={localPlaying}
-            duration={duration}
-            currentTime={currentTime}
-            playbackSpeed={playbackSpeed}
-            isCastingToTv={isCastingToTv}
-            hasConnectedSmartTv={hasConnectedSmartTv}
-            showProMenu={showProMenu}
-            isCinemaMode={isCinemaMode}
-            isInPiP={isInPiP}
-            vocalBoostEnabled={vocalBoostEnabled}
-            activeSubId={activeSubId}
-            canUseNativePiPOrCast={canUseNativePiPOrCast}
-            voiceSlot={fullscreenVoiceSlot}
-            onDirectCastToTv={handleDirectCastToTv}
-            onOpenProMenu={() => setShowProMenu(true)}
-            onTogglePiP={handleTogglePiP}
-            onToggleMinimize={onToggleMinimize}
-            onToggleFullscreen={handleToggleFullscreen}
-            onExitTvMode={onExitTvMode}
-            onClosePlayer={onClosePlayer}
-          />
-
-          {videoState.mode === 'idle' && !isExtracting && !isMinimized && (
-            <IdleStandbyStage
-              lang={lang}
-              isTvMode={isTvMode}
-              isFullscreen={isFullscreen}
-              roomCode={roomCode}
-              roomDisplayName={roomDisplayName}
-              participantCount={participantCount}
-              extractionError={extractionError}
-              onToggleFullscreen={handleToggleFullscreen}
-              onExitTvMode={onExitTvMode}
-              onOpenCatalogSection={onOpenCatalogSection}
-            />
-          )}
-
-          <div
-            onClick={handleVideoSurfaceTap}
-            className={`w-full h-full ${
-              videoState.mode === 'hls' || videoState.mode === 'direct'
-                ? secondaryStream && !isMinimized
-                  ? 'flex items-stretch'
-                  : 'block'
-                : 'hidden'
-            }`}
-          >
-            <video
-              ref={videoRef}
-              playsInline
-              x-webkit-airplay="allow"
-              onClick={handleVideoSurfaceTap}
-              onLoadedMetadata={videoCallbacks.onLoadedMetadata}
-              onEnded={videoCallbacks.onEnded}
-              onTimeUpdate={videoCallbacks.onTimeUpdate}
-              onDurationChange={(e) => setDuration(e.currentTarget.duration || 0)}
-              onCanPlay={clearBufferingIndicator}
-              onCanPlayThrough={clearBufferingIndicator}
-              onWaiting={videoCallbacks.onWaiting}
-              onPlaying={videoCallbacks.onPlaying}
-              onPause={videoCallbacks.onPause}
-              onVolumeChange={videoCallbacks.onVolumeChange}
-              className={`${
-                secondaryStream && !isMinimized && secondaryStream.layout === 'split'
-                  ? 'w-1/2'
-                  : 'w-full'
-              } h-full ${
-                tvAspectMode === 'cover'
-                  ? 'object-cover'
-                  : tvAspectMode === 'fill'
-                  ? 'object-fill'
-                  : 'object-contain'
-              } bg-black cursor-pointer [transform:translateZ(0)]`}
-            />
-
-            <video
-              ref={castBridgeVideoRef}
-              preload="metadata"
-              playsInline
-              muted
-              x-webkit-airplay="allow"
-              className="fixed bottom-0 right-0 w-[2px] h-[2px] opacity-[0.01] pointer-events-none -z-10"
-            />
-
-            {secondaryStream &&
-              !isMinimized &&
-              secondaryStream.layout === 'split' &&
-              onSwapSecondaryStream &&
-              onToggleSecondaryLayout &&
-              onCloseSecondaryStream && (
-                <SecondaryHlsStage
-                  secondaryStream={secondaryStream}
-                  lang={lang}
-                  onSwapWithPrimary={onSwapSecondaryStream}
-                  onToggleLayout={onToggleSecondaryLayout}
-                  onCloseSecondary={onCloseSecondaryStream}
-                />
-              )}
-          </div>
-
-          {secondaryStream &&
-            !isMinimized &&
-            secondaryStream.layout === 'corner' &&
-            (videoState.mode === 'hls' || videoState.mode === 'direct') &&
-            onSwapSecondaryStream &&
-            onToggleSecondaryLayout &&
-            onCloseSecondaryStream && (
-              <SecondaryHlsStage
-                secondaryStream={secondaryStream}
-                lang={lang}
-                onSwapWithPrimary={onSwapSecondaryStream}
-                onToggleLayout={onToggleSecondaryLayout}
-                onCloseSecondary={onCloseSecondaryStream}
-              />
-            )}
-
-          <input
-            ref={subtitleFileInputRef}
-            type="file"
-            accept=".srt,.vtt,text/plain"
-            onChange={handleUploadLocalSubtitle}
-            className="hidden"
-          />
-
-          <PlayerStageOverlays
-            lang={lang}
-            videoState={videoState}
-            isMinimized={isMinimized}
-            isCompressed={isCompressed}
-            isTvMode={isTvMode}
-            isStageFullscreen={isStageFullscreen}
-            isExtracting={isExtracting}
-            isBuffering={isBuffering}
-            streamError={streamError}
-            extractionLabel={extractionLabel}
-            extractingTitleCopy={t.extractingTitle}
-            extractingSubCopy={t.extractingSub}
-            floatingReactions={floatingReactions}
-            seekRipple={seekRipple}
-            activeLanguagePopup={activeLanguagePopup}
-            playerToast={playerToast}
-            recentIncomingChatBubble={recentIncomingChatBubble}
-            floatingChatOpen={floatingChatOpen}
-            isCastingToTv={isCastingToTv}
-            batterySaverTvMode={batterySaverTvMode}
-            hasConnectedSmartTv={hasConnectedSmartTv}
-            castDeviceName={castDeviceName}
-            showControls={showControls}
-            localPlaying={localPlaying}
-            currentTime={currentTime}
-            activeSubId={activeSubId}
-            parsedCues={parsedCues}
-            subtitleOffsetSec={subtitleOffsetSec}
-            subtitleSize={subtitleSize}
-            subtitleStyle={subtitleStyle}
-            autoNextCountdown={autoNextCountdown}
-            onDismissLocalLangPopup={() => setLocalLangPopup(null)}
-            onDismissLanguageNotice={onDismissLanguageNotice}
-            onDismissChatBubble={() => setRecentIncomingChatBubble(null)}
-            onToggleFloatingChat={onToggleFloatingChat}
-            onDisableBatterySaverTvMode={() => setBatterySaverTvMode(false)}
-            onExpandCompressed={onExpandCompressed}
-            onCancelExtraction={onCancelExtraction}
-            onForceReloadStream={handleForceReloadStream}
-            onSelectTrack={onSelectTrack}
-            onSeekRelative={handleSeekRelative}
-            onTogglePlay={handleTogglePlay}
-            onNextEpisode={onNextEpisode}
-            onAcceptAutoNext={() => {
-              triggerHaptic('success');
-              autoNextTriggeredUrlRef.current = videoState.url;
-              setAutoNextCountdown(null);
-              onNextEpisode?.();
-            }}
-            onCancelAutoNext={() => {
-              setAutoNextCancelledForUrl(videoState.url);
-              setAutoNextCountdown(null);
-            }}
-          />
-
-          {videoState.mode === 'youtube' && (
-            <PlayerYoutubeStage
-              containerId={ytContainerId.current}
-              isMinimized={isMinimized}
-              isMuted={isMuted}
-              lang={lang}
-              onToggleMute={handleToggleMute}
-            />
-          )}
-
-          {videoState.mode === 'embed' && videoState.url && (
-            <EmbedStagePanel
-              lang={lang}
-              videoState={videoState}
-              isExtracting={isExtracting}
-              isMinimized={isMinimized}
-              isMobileExternal={isMobileExternal}
-              externalWinState={externalWinState}
-              externalTargetUrl={externalTargetUrl}
-              embedWatchdogPhase={embedWatchdogPhase}
-              activeEmbedInlineUrl={activeEmbedInlineUrl}
-              activeEmbedDirectUrl={activeEmbedDirectUrl}
-              lastAttemptedEmbedUrl={lastAttemptedEmbedUrl}
-              embedRescueDismissedUrl={embedRescueDismissedUrl}
-              setEmbedRescueDismissedUrl={setEmbedRescueDismissedUrl}
-              onPrevEpisode={onPrevEpisode}
-              onNextEpisode={onNextEpisode}
-              onOpenControlledExternalWindow={openControlledExternalWindow}
-              onFocusExternalWindow={handleFocusExternalWindow}
-              onCloseExternalWindow={handleCloseExternalWindow}
-              onSelectExternalServer={handleSelectExternalServer}
-              onMarkInlineServerWorking={handleMarkInlineServerWorking}
-              onRetryInlineEmbed={handleRetryInlineEmbed}
-              onOpenInCloudBrowser={onOpenInCloudBrowser}
-            />
-          )}
-
-          {videoState.mode === 'cloud' && (
-            <CloudBrowserOverlay
-              lang={lang}
-              videoState={videoState}
-              cloudFrame={cloudFrame}
-              cloudState={cloudState}
-              cloudUrlInput={cloudUrlInput}
-              setCloudUrlInput={setCloudUrlInput}
-              isTvMode={isTvMode}
-              isCinemaMode={isCinemaMode}
-              onToggleCinemaMode={onToggleCinemaMode}
-              onClosePlayer={onClosePlayer}
-              onPromoteCloudStreamToNative={onPromoteCloudStreamToNative}
-              onCloudWheel={videoCallbacks.handleCloudWheel}
-              onCloudNavigate={videoCallbacks.handleCloudNavigate}
-              onCloudCanvasClick={videoCallbacks.handleCloudCanvasClick}
-            />
-          )}
-
-          {!isMinimized && (videoState.mode === 'hls' || videoState.mode === 'direct') && (
-            <PlayerTransportBar
-              lang={lang}
-              mode={videoState.mode}
-              isLive={videoState.isLive}
-              duration={duration}
-              currentTime={currentTime}
-              shouldRotate90={shouldRotate90}
-              showControls={showControls}
-              localPlaying={localPlaying}
-              isMuted={isMuted}
-              volume={volume}
-              hlsAudioTracks={hlsAudioTracks}
-              selectedHlsAudioTrack={selectedHlsAudioTrack}
-              qualityLevels={qualityLevels}
-              selectedQuality={selectedQuality}
-              autoActiveHeight={autoActiveHeight}
-              activeHudMenu={activeHudMenu}
-              setActiveHudMenu={setActiveHudMenu}
-              canUseNativePiPOrCast={canUseNativePiPOrCast}
-              isInPiP={isInPiP}
-              isFullscreen={isFullscreen}
-              isHorizontalFullscreen={isHorizontalFullscreen}
-              forceLandscapeRotation={forceLandscapeRotation}
-              revealControls={revealControls}
-              onScrub={handleScrub}
-              onTogglePlay={handleTogglePlay}
-              onToggleMute={handleToggleMute}
-              onVolumeSlider={handleVolumeSlider}
-              onSelectHlsAudioTrack={handleSelectHlsAudioTrack}
-              onChangeQuality={handleChangeQuality}
-              onTogglePiP={handleTogglePiP}
-              onToggleLandscapeRotation={handleToggleLandscapeRotation}
-              onToggleFullscreen={handleToggleFullscreen}
-            />
-          )}
-
-          {isMinimized && (
-            <MiniPlayerHud
-              lang={lang}
-              title={videoState.title}
-              mode={videoState.mode}
-              isLive={videoState.isLive}
-              duration={duration}
-              currentTime={currentTime}
-              localPlaying={localPlaying}
-              isMuted={isMuted}
-              volume={volume}
-              canUseNativePiPOrCast={canUseNativePiPOrCast}
-              onToggleMinimize={onToggleMinimize}
-              onClosePlayer={onClosePlayer}
-              onTogglePlay={handleTogglePlay}
-              onToggleMute={handleToggleMute}
-            />
-          )}
-        </div>
+        <PlayerViewportContent
+          lang={lang}
+          videoState={videoState}
+          isTvMode={isTvMode}
+          isMinimized={isMinimized}
+          isCompressed={isCompressed}
+          isStageFullscreen={isStageFullscreen}
+          isFullscreen={isFullscreen}
+          isHorizontalFullscreen={isHorizontalFullscreen}
+          forceLandscapeRotation={forceLandscapeRotation}
+          shouldRotate90={shouldRotate90}
+          viewportDims={viewportDims}
+          showControls={showControls}
+          localPlaying={localPlaying}
+          duration={duration}
+          currentTime={currentTime}
+          playbackSpeed={playbackSpeed}
+          isMuted={isMuted}
+          volume={volume}
+          isBuffering={isBuffering}
+          isExtracting={isExtracting}
+          streamError={streamError}
+          extractionLabel={extractionLabel}
+          extractionError={extractionError}
+          extractingTitleCopy={t.extractingTitle}
+          extractingSubCopy={t.extractingSub}
+          floatingReactions={floatingReactions}
+          seekRipple={seekRipple}
+          activeLanguagePopup={activeLanguagePopup}
+          playerToast={playerToast}
+          recentIncomingChatBubble={recentIncomingChatBubble}
+          floatingChatOpen={floatingChatOpen}
+          isCastingToTv={isCastingToTv}
+          batterySaverTvMode={batterySaverTvMode}
+          hasConnectedSmartTv={hasConnectedSmartTv}
+          castDeviceName={castDeviceName}
+          showProMenu={showProMenu}
+          isCinemaMode={isCinemaMode}
+          isInPiP={isInPiP}
+          vocalBoostEnabled={vocalBoostEnabled}
+          canUseNativePiPOrCast={canUseNativePiPOrCast}
+          roomCode={roomCode}
+          roomDisplayName={roomDisplayName}
+          participantCount={participantCount}
+          tvAspectMode={tvAspectMode}
+          secondaryStream={secondaryStream}
+          activeSubId={activeSubId}
+          parsedCues={parsedCues}
+          subtitleOffsetSec={subtitleOffsetSec}
+          subtitleSize={subtitleSize}
+          subtitleStyle={subtitleStyle}
+          subtitleFileInputRef={subtitleFileInputRef}
+          autoNextCountdown={autoNextCountdown}
+          autoNextTriggeredUrlRef={autoNextTriggeredUrlRef}
+          ytContainerId={ytContainerId.current}
+          videoRef={videoRef}
+          castBridgeVideoRef={castBridgeVideoRef}
+          cloudFrame={cloudFrame}
+          cloudState={cloudState}
+          cloudUrlInput={cloudUrlInput}
+          setCloudUrlInput={setCloudUrlInput}
+          isMobileExternal={isMobileExternal}
+          externalWinState={externalWinState}
+          externalTargetUrl={externalTargetUrl}
+          embedWatchdogPhase={embedWatchdogPhase}
+          activeEmbedInlineUrl={activeEmbedInlineUrl}
+          activeEmbedDirectUrl={activeEmbedDirectUrl}
+          lastAttemptedEmbedUrl={lastAttemptedEmbedUrl}
+          embedRescueDismissedUrl={embedRescueDismissedUrl}
+          setEmbedRescueDismissedUrl={setEmbedRescueDismissedUrl}
+          hlsAudioTracks={hlsAudioTracks}
+          selectedHlsAudioTrack={selectedHlsAudioTrack}
+          qualityLevels={qualityLevels}
+          selectedQuality={selectedQuality}
+          autoActiveHeight={autoActiveHeight}
+          activeHudMenu={activeHudMenu}
+          setActiveHudMenu={setActiveHudMenu}
+          voiceSlot={fullscreenVoiceSlot}
+          setDuration={setDuration}
+          clearBufferingIndicator={clearBufferingIndicator}
+          revealControls={revealControls}
+          setLocalLangPopup={setLocalLangPopup}
+          setRecentIncomingChatBubble={setRecentIncomingChatBubble}
+          setBatterySaverTvMode={setBatterySaverTvMode}
+          setShowProMenu={setShowProMenu}
+          setAutoNextCancelledForUrl={setAutoNextCancelledForUrl}
+          setAutoNextCountdown={setAutoNextCountdown}
+          onDismissLanguageNotice={onDismissLanguageNotice}
+          onToggleFloatingChat={onToggleFloatingChat}
+          onExpandCompressed={onExpandCompressed}
+          onCancelExtraction={onCancelExtraction}
+          onToggleMinimize={onToggleMinimize}
+          onClosePlayer={onClosePlayer}
+          onExitTvMode={onExitTvMode}
+          onToggleCinemaMode={onToggleCinemaMode}
+          onOpenCatalogSection={onOpenCatalogSection}
+          onPrevEpisode={onPrevEpisode}
+          onNextEpisode={onNextEpisode}
+          onSelectTrack={onSelectTrack}
+          onPromoteCloudStreamToNative={onPromoteCloudStreamToNative}
+          onSwapSecondaryStream={onSwapSecondaryStream}
+          onToggleSecondaryLayout={onToggleSecondaryLayout}
+          onCloseSecondaryStream={onCloseSecondaryStream}
+          onOpenInCloudBrowser={onOpenInCloudBrowser}
+          handleDirectCastToTv={handleDirectCastToTv}
+          handleTogglePiP={handleTogglePiP}
+          handleToggleFullscreen={handleToggleFullscreen}
+          handleToggleLandscapeRotation={handleToggleLandscapeRotation}
+          handleVideoSurfaceTap={handleVideoSurfaceTap}
+          handleUploadLocalSubtitle={handleUploadLocalSubtitle}
+          handleForceReloadStream={handleForceReloadStream}
+          handleSeekRelative={handleSeekRelative}
+          handleTogglePlay={handleTogglePlay}
+          handleToggleMute={handleToggleMute}
+          handleVolumeSlider={handleVolumeSlider}
+          handleScrub={handleScrub}
+          handleSelectHlsAudioTrack={handleSelectHlsAudioTrack}
+          handleChangeQuality={handleChangeQuality}
+          openControlledExternalWindow={openControlledExternalWindow}
+          handleFocusExternalWindow={handleFocusExternalWindow}
+          handleCloseExternalWindow={handleCloseExternalWindow}
+          handleSelectExternalServer={handleSelectExternalServer}
+          handleMarkInlineServerWorking={handleMarkInlineServerWorking}
+          handleRetryInlineEmbed={handleRetryInlineEmbed}
+          videoCallbacks={videoCallbacks}
+        />
       </div>
 
       {!isTvMode &&

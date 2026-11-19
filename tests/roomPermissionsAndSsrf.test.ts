@@ -161,10 +161,16 @@ describe('Room Side Panel Architecture, Copyable Code & Join Deduplication', () 
   });
 
   it('keeps 3 non-redundant sidebar tabs, 1-tap code copy, red-accent leave CTA, members voice copy, and mobile drawer sizing', () => {
-    const sidebarSrc = fs.readFileSync(
-      path.resolve(process.cwd(), 'src/components/PartySidebar.tsx'),
-      'utf8'
-    );
+    const sidebarSrc =
+      fs.readFileSync(
+        path.resolve(process.cwd(), 'src/components/PartySidebar.tsx'),
+        'utf8'
+      ) +
+      '\n' +
+      fs.readFileSync(
+        path.resolve(process.cwd(), 'src/components/party/PartySidebarHeader.tsx'),
+        'utf8'
+      );
     expect(sidebarSrc).toContain('grid-cols-3');
     expect(sidebarSrc).toContain('handleCopyRoomCode');
     expect(sidebarSrc).toContain('bg-red-500/10');

@@ -1,7 +1,6 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AppLanguage,
-  ChapasCap,
   ChapasFlagId,
   ChapasShotInput,
   ChapasTeamId,
@@ -9,13 +8,11 @@ import type {
   Participant,
 } from '../types';
 import {
-  type ChapasBall,
   CHAPAS_ARENA_H,
   CHAPAS_ARENA_W,
   CHAPAS_BALL_RADIUS,
   CHAPAS_CAP_RADIUS,
   CHAPAS_MAX_SIM_FRAMES,
-  CHAPAS_MIN_POWER,
   CHAPAS_PITCH_BOTTOM,
   CHAPAS_PITCH_LEFT,
   CHAPAS_PITCH_RIGHT,
@@ -24,14 +21,8 @@ import {
   CHAPAS_TURN_TIMEOUT_MS,
   createInitialChapasState,
   isChapasFlippedForTeam,
-  joinChapasSeat,
-  orientChapasArenaPoint,
-  startChapasMatch,
   stepChapasPhysicsFrame,
-  toggleChapasBots,
-  updateChapasTeamFlag,
 } from '../shared/futbolChapas';
-import { socketService } from '../services/socket';
 import type { GameVoiceChatState } from '../hooks/useGameVoiceChat';
 import { VictoryCelebrationOverlay, playGameSfx, useGameSoundMute } from './games/GameEffects';
 import {
@@ -54,6 +45,12 @@ import {
   useChapasOnlineAndBot,
   type ActiveChapasPlayback,
 } from './games/useChapasOnlineAndBot';
+import {
+  spawnChapasBurst,
+  stepChapasParticles,
+  useChapasInteractions,
+  type ChapasAimDragState,
+} from './games/useChapasInteractions';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -74,13 +71,6 @@ export interface FutbolChapasStageProps {
   onShootOnline?: (shot: ChapasShotInput) => void;
   onForfeitOnline?: () => void;
   onRematchOnline?: () => void;
-}
-
-interface AimDragState {
-  capId: string;
-  pointerId: number;
-  angle: number;
-  power: number;
 }
 
 /**
@@ -150,7 +140,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const playbackRef = useRef<ActiveChapasPlayback | null>(null);
-  const aimDragRef = useRef<AimDragState | null>(null);
+  const aimDragRef = useRef<ChapasAimDragState | null>(null);
   const particlesRef = useRef<ImpactParticle[]>([]);
   const transformRef = useRef<{ scale: number; offsetX: number; offsetY: number }>({
     scale: 1,
@@ -212,102 +202,47 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
       activeSeat.userId === currentUser.id
   );
 
-  // Pointer coordinate converter (respects per-player bottom-to-top flip)
-  const screenToArena = useCallback((clientX: number, clientY: number) => {
-    const canvas = canvasRef.current;
-    if (!canvas) return { x: CHAPAS_ARENA_W / 2, y: CHAPAS_ARENA_H / 2 };
-    const r = canvas.getBoundingClientRect();
-    const tr = transformRef.current;
-    const rawX = (clientX - r.left - tr.offsetX) / Math.max(0.1, tr.scale);
-    const rawY = (clientY - r.top - tr.offsetY) / Math.max(0.1, tr.scale);
-    return orientChapasArenaPoint(rawX, rawY, isFlippedViewRef.current);
-  }, []);
-
-  const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const st = activeStateRef.current;
-    if (!st || st.status !== 'playing' || playbackRef.current) return;
-    const seat = st.players[st.activeSeatIndex];
-    if (!seat || seat.isBot || seat.userId !== currentUser.id) return;
-
-    const pt = screenToArena(e.clientX, e.clientY);
-    let hitCap: ChapasCap | null = null;
-    let bestDist = CHAPAS_CAP_RADIUS * 1.52;
-    for (const c of st.caps) {
-      if (c.team !== st.activeTeam) continue;
-      const d = Math.hypot(pt.x - c.x, pt.y - c.y);
-      if (d <= bestDist) {
-        bestDist = d;
-        hitCap = c;
-      }
-    }
-    if (!hitCap) return;
-
-    e.currentTarget.setPointerCapture(e.pointerId);
-    aimDragRef.current = {
-      capId: hitCap.id,
-      pointerId: e.pointerId,
-      angle: 0,
-      power: 0,
-    };
-    triggerHaptic('light');
-  };
-
-  const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const drag = aimDragRef.current;
-    const st = activeStateRef.current;
-    if (!drag || !st || drag.pointerId !== e.pointerId) return;
-    const cap = st.caps.find((c) => c.id === drag.capId);
-    if (!cap) return;
-
-    const pt = screenToArena(e.clientX, e.clientY);
-    const dx = cap.x - pt.x;
-    const dy = cap.y - pt.y;
-    const dist = Math.hypot(dx, dy);
-    if (dist < 2) {
-      drag.power = 0;
-      return;
-    }
-    drag.angle = Math.atan2(dy, dx);
-    drag.power = Math.min(1, dist / 118);
-  };
-
-  const handlePointerUp = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    const drag = aimDragRef.current;
-    if (!drag || drag.pointerId !== e.pointerId) return;
-    aimDragRef.current = null;
-    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
-      e.currentTarget.releasePointerCapture(e.pointerId);
-    }
-    if (drag.power >= CHAPAS_MIN_POWER) {
-      triggerHaptic('medium');
-      executeShot(
-        { capId: drag.capId, angle: drag.angle, power: drag.power },
-        currentUser.id
-      );
-    }
-  };
+  const {
+    handlePointerDown,
+    handlePointerMove,
+    handlePointerUp,
+    handleJoinSeat,
+    handleCycleTeamFlag,
+    handleToggleBots,
+    handleStartMatch,
+    handleRematch,
+    sendQuickReaction,
+  } = useChapasInteractions({
+    currentUser,
+    isOffline,
+    activeState,
+    activeStateRef,
+    isFlippedViewRef,
+    canvasRef,
+    transformRef,
+    playbackRef,
+    aimDragRef,
+    particlesRef,
+    setLocalState,
+    setIsSimulatingUI,
+    setGoalBanner,
+    setEmojiMenuOpen,
+    executeShot,
+    triggerFloatingReactionToast,
+    onJoinSeatOnline,
+    onUpdateTeamOnline,
+    onToggleBotsOnline,
+    onStartMatchOnline,
+    onRematchOnline,
+  });
 
   // ============================================================================
   // 60FPS CANVAS STADIUM RENDERER + REALTIME PHYSICS + PARTICLES LOOP
   // ============================================================================
   useEffect(() => {
     let rafId = 0;
-
     const spawnBurst = (x: number, y: number, count: number, palette: string[]) => {
-      for (let i = 0; i < count; i += 1) {
-        const ang = Math.random() * Math.PI * 2;
-        const spd = 1.4 + Math.random() * 3.8;
-        particlesRef.current.push({
-          x,
-          y,
-          vx: Math.cos(ang) * spd,
-          vy: Math.sin(ang) * spd,
-          r: 1.8 + Math.random() * 2.4,
-          alpha: 0.95,
-          color: palette[i % palette.length],
-          kind: 'spark',
-        });
-      }
+      spawnChapasBurst(particlesRef, x, y, count, palette);
     };
 
     const renderFrame = (ts: number) => {
@@ -396,22 +331,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
 
       // Update particles
       if (particlesRef.current.length > 0) {
-        const nextP: ImpactParticle[] = [];
-        for (const p of particlesRef.current) {
-          if (p.kind === 'ring') {
-            p.r += 2.2;
-            p.alpha -= 0.055;
-            if (p.alpha > 0.04 && (!p.maxR || p.r < p.maxR)) nextP.push(p);
-          } else {
-            p.x += p.vx;
-            p.y += p.vy;
-            p.vx *= 0.9;
-            p.vy *= 0.9;
-            p.alpha -= 0.045;
-            if (p.alpha > 0.04) nextP.push(p);
-          }
-        }
-        particlesRef.current = nextP;
+        particlesRef.current = stepChapasParticles(particlesRef.current);
       }
 
       // 2. Fit canvas to container DPR
@@ -612,94 +532,7 @@ export const FutbolChapasStage: React.FC<FutbolChapasStageProps> = ({
     return () => window.cancelAnimationFrame(rafId);
   }, [lang]);
 
-  // ============================================================================
-  // LOBBY & ACTION HANDLERS
-  // ============================================================================
-  const handleJoinSeat = (idx: 0 | 1 | 2 | 3 | 'spectate') => {
-    triggerHaptic('light');
-    if (isOffline) {
-      setLocalState((curr) => {
-        const res = joinChapasSeat(
-          curr,
-          { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, color: currentUser.color },
-          idx
-        );
-        return res.ok ? res.state : curr;
-      });
-    } else {
-      onJoinSeatOnline?.(idx);
-    }
-  };
 
-  const handleCycleTeamFlag = (team: ChapasTeamId) => {
-    if (!activeState) return;
-    triggerHaptic('light');
-    const curFlag = activeState.teamFlags[team];
-    const idx = CHAPAS_TEAM_PRESETS.findIndex((f) => f.id === curFlag);
-    const nextFlag = CHAPAS_TEAM_PRESETS[(idx + 1) % CHAPAS_TEAM_PRESETS.length].id;
-    if (isOffline) {
-      setLocalState((curr) => updateChapasTeamFlag(curr, team, nextFlag));
-    } else {
-      onUpdateTeamOnline?.(team, nextFlag);
-    }
-  };
-
-  const handleToggleBots = () => {
-    if (!activeState) return;
-    triggerHaptic('light');
-    const nextBots = !activeState.botsEnabled;
-    if (isOffline) {
-      setLocalState((curr) => toggleChapasBots(curr, nextBots));
-    } else {
-      onToggleBotsOnline?.(nextBots);
-    }
-  };
-
-  const handleStartMatch = () => {
-    triggerHaptic('success');
-    if (isOffline) {
-      setLocalState((curr) => {
-        const res = startChapasMatch(curr);
-        return res.ok ? res.state : curr;
-      });
-    } else {
-      onStartMatchOnline?.();
-    }
-  };
-
-  const handleRematch = () => {
-    triggerHaptic('medium');
-    playbackRef.current = null;
-    particlesRef.current = [];
-    setIsSimulatingUI(false);
-    setGoalBanner(null);
-    if (isOffline) {
-      setLocalState((curr) =>
-        createInitialChapasState(
-          [
-            {
-              id: currentUser.id,
-              name: currentUser.name,
-              avatar: currentUser.avatar,
-              color: currentUser.color,
-            },
-          ],
-          { waitForHost: false, botsEnabled: true, teamFlags: curr.teamFlags }
-        )
-      );
-    } else {
-      onRematchOnline?.();
-    }
-  };
-
-  const sendQuickReaction = (emoji: string) => {
-    setEmojiMenuOpen(false);
-    triggerHaptic('light');
-    triggerFloatingReactionToast(emoji, currentUser.name);
-    if (!isOffline) {
-      socketService.sendReaction(currentUser, emoji);
-    }
-  };
 
   const voicePeerMap = useMemo(() => {
     const m = new Map<string, { isMuted: boolean }>();

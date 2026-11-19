@@ -1,20 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import {
-  Search,
-  Sparkles,
-  X,
-  Play,
-  Film,
-  Tv,
-  Trophy,
-  Gamepad2,
-  Users,
-  Loader2,
-  CheckCircle2,
-  AlertCircle,
-  ExternalLink,
-} from 'lucide-react';
+import { Film, Loader2, Search, Sparkles, Tv, X } from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -23,12 +9,16 @@ import type {
 } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
-import { PosterImage } from '../ui/PosterImage';
-import { LanguageBadge } from '../ui/LanguageBadge';
-import { ChannelLogoBadge } from '../ui/ChannelLogoBadge';
-import { RiffanFootballIcon, RiffanDiceIcon } from '../ui/RiffanIcons';
+import { RiffanDiceIcon, RiffanFootballIcon } from '../ui/RiffanIcons';
+import {
+  HALLMARK_GAMES,
+  type AiSearchJobState,
+  type SearchCategoryFilter,
+} from './homeSearchTypes';
+import { UniversalSearchAiCard } from './UniversalSearchAiCard';
+import { UniversalSearchResultsList } from './UniversalSearchResultsList';
 
-export type SearchCategoryFilter = 'all' | 'movies' | 'series' | 'sports' | 'tv' | 'games';
+export type { SearchCategoryFilter };
 
 interface UniversalHomeSearchProps {
   lang: AppLanguage;
@@ -42,51 +32,6 @@ interface UniversalHomeSearchProps {
   onPlayMatch: (match: SportsMatch) => void;
   onSelectGame: (gameId: string) => void;
 }
-
-interface AiSearchJobState {
-  status: 'idle' | 'searching' | 'verifying' | 'found' | 'not_found' | 'error';
-  progressLabel: string;
-  item: CatalogMovie | null;
-  error?: string;
-}
-
-const HALLMARK_GAMES = [
-  {
-    id: 'billar',
-    title: 'Billar 8-Ball',
-    desc: 'Partidas 1v1 con físicas reales y apuestas',
-    icon: '🎱',
-    matchKeywords: ['billar', 'pool', '8ball', '8-ball', 'bola 8', 'billiard'],
-  },
-  {
-    id: 'parchis',
-    title: 'Parchís',
-    desc: 'Clásico juego de tablero para 2 a 4 jugadores',
-    icon: '🎲',
-    matchKeywords: ['parchis', 'parchís', 'ludo', 'dados'],
-  },
-  {
-    id: 'uno',
-    title: 'UNO! Party',
-    desc: 'Cartas de colores, saltos y +4 multijugador',
-    icon: '🃏',
-    matchKeywords: ['uno', 'cartas', 'card game', 'wild4'],
-  },
-  {
-    id: 'chapas',
-    title: 'Fútbol Chapas',
-    desc: 'Tiros por turnos sobre tapete de fútbol',
-    icon: '⚽',
-    matchKeywords: ['chapas', 'futbol chapas', 'fútbol chapas', 'chapa'],
-  },
-  {
-    id: 'pinturillo',
-    title: 'Pinturillo',
-    desc: 'Dibuja y adivina palabras en tiempo real',
-    icon: '🎨',
-    matchKeywords: ['pinturillo', 'dibujar', 'pictionary', 'skribbl', 'dibujo'],
-  },
-];
 
 export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   lang,
@@ -106,7 +51,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const [remoteSeries, setRemoteSeries] = useState<CatalogMovie[]>([]);
   const [loadingRemote, setLoadingRemote] = useState(false);
 
-  // AI Web Search state
   const [aiJob, setAiJob] = useState<AiSearchJobState>({
     status: 'idle',
     progressLabel: '',
@@ -114,6 +58,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   });
 
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const lastAutoAiQueryRef = useRef<string>('');
 
   const norm = (s: string) =>
     s
@@ -131,7 +76,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     setAiJob({ status: 'idle', progressLabel: '', item: null });
   }, []);
 
-  // Remote TMDB / catalog auto-fetch on typing
   useEffect(() => {
     if (cleanQuery.length < 2) {
       setRemoteMovies([]);
@@ -179,7 +123,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     };
   }, [cleanQuery, lang]);
 
-  // Execute AI Web Search directly inside the search bar
   const triggerAiWebSearch = useCallback(
     async (qToSearch: string) => {
       const q = qToSearch.trim();
@@ -218,16 +161,21 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
             return;
           }
 
-          // Poll job if still running
-          if (job.status === 'searching_ai' || job.status === 'checking_catalog' || job.status === 'verifying_sources') {
+          if (
+            job.status === 'searching_ai' ||
+            job.status === 'checking_catalog' ||
+            job.status === 'verifying_sources'
+          ) {
             setAiJob((prev) => ({
               ...prev,
               status: 'verifying',
-              progressLabel: job.progressLabel || pickLang(lang, {
-                es: 'Verificando servidores de streaming en vivo...',
-                ca: 'Verificant servidors de reproducció...',
-                en: 'Verifying active streaming servers...',
-              }),
+              progressLabel:
+                job.progressLabel ||
+                pickLang(lang, {
+                  es: 'Verificando servidores de streaming en vivo...',
+                  ca: 'Verificant servidors de reproducció...',
+                  en: 'Verifying active streaming servers...',
+                }),
             }));
 
             const pollTimer = window.setInterval(async () => {
@@ -263,7 +211,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
               }
             }, 1500);
 
-            // Timeout poll after 20s
             window.setTimeout(() => window.clearInterval(pollTimer), 20000);
             return;
           }
@@ -278,7 +225,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
           }),
           item: null,
         });
-      } catch (err) {
+      } catch {
         setAiJob({
           status: 'error',
           progressLabel: pickLang(lang, {
@@ -293,7 +240,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     [lang]
   );
 
-  // 1. Matches: Películas
   const matchedMovies = useMemo(() => {
     if (!normQuery) return [];
     const local = movies.filter((m) => {
@@ -312,7 +258,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     return Array.from(map.values());
   }, [normQuery, movies, remoteMovies]);
 
-  // 2. Matches: Series
   const matchedSeries = useMemo(() => {
     if (!normQuery) return [];
     const local = series.filter((s) => {
@@ -331,7 +276,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     return Array.from(map.values());
   }, [normQuery, series, remoteSeries]);
 
-  // 3. Matches: Fútbol & Deportes
   const matchedSports = useMemo(() => {
     if (!normQuery) return [];
     const isGeneralFootball = /f[uú]tbol|partido|deporte|champions|liga|directo|live/i.test(normQuery);
@@ -352,7 +296,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       .slice(0, 6);
   }, [normQuery, liveMatches]);
 
-  // 4. Matches: Canales TDT
   const matchedTdt = useMemo(() => {
     if (!normQuery) return [];
     const isGeneralTv = /^(tv|tdt|canal|canales|tele|television|televisión)$/i.test(normQuery);
@@ -367,7 +310,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       .slice(0, 8);
   }, [normQuery, tdtChannels]);
 
-  // 5. Matches: Juegos de Sala
   const matchedGames = useMemo(() => {
     if (!normQuery) return [];
     const isGeneralGame = /juego|juegos|game|games|partida|sala/i.test(normQuery);
@@ -378,7 +320,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     });
   }, [normQuery]);
 
-  // Total hits count across all categories
   const totalHits =
     matchedMovies.length +
     matchedSeries.length +
@@ -386,7 +327,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     matchedTdt.length +
     matchedGames.length;
 
-  // Determine if query is natural language or descriptive intent
   const looksLikeNaturalLanguage = useMemo(() => {
     if (cleanQuery.length > 14) return true;
     const nlPatterns = [
@@ -396,8 +336,6 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     return nlPatterns.some((rgx) => rgx.test(cleanQuery));
   }, [cleanQuery]);
 
-  // Auto-trigger AI search once per distinct query when no local hits or descriptive natural-language prompt
-  const lastAutoAiQueryRef = useRef<string>('');
   useEffect(() => {
     if (
       cleanQuery.length < 3 ||
@@ -409,7 +347,9 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     ) {
       return;
     }
-    const shouldAutoSearchAi = totalHits === 0 || (looksLikeNaturalLanguage && matchedMovies.length === 0 && matchedSeries.length === 0);
+    const shouldAutoSearchAi =
+      totalHits === 0 ||
+      (looksLikeNaturalLanguage && matchedMovies.length === 0 && matchedSeries.length === 0);
     if (!shouldAutoSearchAi) return;
     const normalizedKey = normQuery;
     if (lastAutoAiQueryRef.current === normalizedKey) return;
@@ -476,7 +416,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
   return (
     <div className="w-full space-y-3">
-      {/* 1. Large Tactile Smart Search Bar */}
+      {/* Large Tactile Smart Search Bar */}
       <div className="relative group">
         <div className="relative flex items-center min-h-[52px] sm:min-h-[56px] w-full px-3.5 sm:px-4 rounded-2xl bg-[#10121C] hover:bg-[#131624] focus-within:bg-[#151828] border border-white/[0.09] focus-within:border-[#9146FF] shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_10px_28px_rgba(0,0,0,0.42)] transition-all duration-200">
           <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#9146FF]/18 border border-[#9146FF]/30 text-[#C4A7FF] mr-3 shrink-0">
@@ -519,16 +459,12 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
           {cleanQuery ? (
             <div className="flex items-center gap-1.5 ml-2 shrink-0">
-              {loadingRemote && (
-                <Loader2 className="w-4 h-4 text-[#9146FF] animate-spin shrink-0" />
-              )}
+              {loadingRemote && <Loader2 className="w-4 h-4 text-[#9146FF] animate-spin shrink-0" />}
               <button
                 type="button"
                 onClick={() => {
                   triggerHaptic('light');
-                  setQuery('');
-                  lastAutoAiQueryRef.current = '';
-                  setAiJob({ status: 'idle', progressLabel: '', item: null });
+                  closeSearchOverlay();
                   inputRef.current?.focus();
                 }}
                 className="w-8 h-8 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
@@ -549,7 +485,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
         </div>
       </div>
 
-      {/* 2. Large Immersive Search Results Window Overlay */}
+      {/* Immersive Search Results Window Overlay */}
       <AnimatePresence>
         {isSearchActive && (
           <motion.div
@@ -560,7 +496,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
             className="fixed inset-0 z-50 bg-[#0B0D14]/96 backdrop-blur-2xl flex flex-col p-4 sm:p-8 md:p-12 overflow-y-auto"
           >
             <div className="max-w-6xl mx-auto w-full space-y-6 my-auto">
-              {/* Header with Search Bar and Close Button */}
+              {/* Header */}
               <div className="flex items-center gap-3">
                 <div className="relative flex-1 flex items-center min-h-[58px] px-4 rounded-2xl bg-[#131622] border border-[#9146FF]/40 shadow-[0_10px_30px_rgba(145,70,255,0.25)]">
                   <div className="flex items-center justify-center w-8 h-8 rounded-xl bg-[#9146FF]/20 text-[#C4A7FF] mr-3 shrink-0">
@@ -590,9 +526,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                     type="button"
                     onClick={() => {
                       triggerHaptic('light');
-                      setQuery('');
-                      lastAutoAiQueryRef.current = '';
-                      setAiJob({ status: 'idle', progressLabel: '', item: null });
+                      closeSearchOverlay();
                     }}
                     className="min-h-10 px-3 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer transition-colors"
                   >
@@ -636,389 +570,56 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 })}
               </div>
 
-            {/* Smart Contextual AI Suggestion Card (if description / plot or no direct exact hits) */}
-            {(looksLikeNaturalLanguage || totalHits === 0 || aiJob.status !== 'idle') && (
-              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-[#9146FF]/20 via-[#6D28D9]/15 to-[#161824] border border-[#9146FF]/40 space-y-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <Sparkles className="w-4 h-4 text-[#D8B4FE] shrink-0" />
-                    <span className="text-xs font-bold text-white">
-                      {pickLang(lang, {
-                        es: 'Búsqueda Inteligente con IA en la Web',
-                        ca: 'Cerca Intel·ligent amb IA a la Web',
-                        en: 'Smart AI Web Search',
-                      })}
-                    </span>
-                  </div>
+              {/* Contextual AI Suggestion Card */}
+              {(looksLikeNaturalLanguage || totalHits === 0 || aiJob.status !== 'idle') && (
+                <UniversalSearchAiCard
+                  lang={lang}
+                  cleanQuery={cleanQuery}
+                  aiJob={aiJob}
+                  onTriggerAiSearch={(q) => void triggerAiWebSearch(q)}
+                  onSelectFoundItem={(chosen) => {
+                    closeSearchOverlay();
+                    if (chosen.mediaType === 'tv') onPlaySeries(chosen);
+                    else onPlayMovie(chosen);
+                  }}
+                />
+              )}
 
-                  {aiJob.status === 'idle' && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        triggerHaptic('medium');
-                        void triggerAiWebSearch(cleanQuery);
-                      }}
-                      className="min-h-[34px] px-3 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1 cursor-pointer shadow-md shadow-[#9146FF]/30 active:scale-95 transition-all"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Buscar con IA',
-                          ca: 'Cercar amb IA',
-                          en: 'Search with AI',
-                        })}
-                      </span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Progress / Status feedback */}
-                {aiJob.status !== 'idle' && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 text-xs text-zinc-200">
-                      {aiJob.status === 'searching' || aiJob.status === 'verifying' ? (
-                        <Loader2 className="w-4 h-4 text-[#9146FF] animate-spin shrink-0" />
-                      ) : aiJob.status === 'found' ? (
-                        <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
-                      ) : (
-                        <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
-                      )}
-                      <span className="font-medium">{aiJob.progressLabel}</span>
-                    </div>
-
-                    {/* Found Item Card */}
-                    {aiJob.status === 'found' && aiJob.item && (
-                      <div className="flex items-center justify-between gap-3 p-2.5 rounded-xl bg-black/40 border border-white/10">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <PosterImage
-                            src={aiJob.item.poster}
-                            alt={aiJob.item.title}
-                            aspect="poster"
-                            className="w-11 h-16 rounded-lg overflow-hidden shrink-0"
-                            fallbackTitle={aiJob.item.title}
-                          />
-                          <div className="min-w-0 space-y-0.5">
-                            <p className="text-xs font-bold text-white truncate">
-                              {aiJob.item.title}
-                            </p>
-                            <p className="text-[11px] text-zinc-400">
-                              {aiJob.item.year || 'HD'} · ★ {aiJob.item.rating || '8.0'}
-                            </p>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('success');
-                            const chosen = aiJob.item;
-                            if (!chosen) return;
-                            closeSearchOverlay();
-                            if (chosen.mediaType === 'tv') {
-                              onPlaySeries(chosen);
-                            } else {
-                              onPlayMovie(chosen);
-                            }
-                          }}
-                          className="min-h-10 px-3.5 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center gap-1.5 shrink-0 cursor-pointer shadow-md active:scale-95 transition-all"
-                        >
-                          <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>
-                            {pickLang(lang, {
-                              es: 'Reproducir',
-                              ca: 'Reproduir',
-                              en: 'Play',
-                            })}
-                          </span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Empty state when zero hits across anything */}
-            {totalHits === 0 && aiJob.status === 'idle' && (
-              <div className="py-6 text-center space-y-2">
-                <p className="text-sm font-semibold text-zinc-300">
-                  {pickLang(lang, {
-                    es: `No hay resultados locales directos para "${cleanQuery}"`,
-                    ca: `Sense resultats locals directes per "${cleanQuery}"`,
-                    en: `No direct local matches for "${cleanQuery}"`,
-                  })}
-                </p>
-                <p className="text-xs text-zinc-400">
-                  {pickLang(lang, {
-                    es: 'Toca "Buscar con IA" arriba para encontrarlo en fuentes web externas automáticamente.',
-                    ca: 'Toca "Cercar amb IA" a dalt per trobar-ho a fonts web externes.',
-                    en: 'Tap "Search with AI" above to automatically find it on external web providers.',
-                  })}
-                </p>
-              </div>
-            )}
-
-            {/* Categorized Results */}
-            <div className="space-y-4 max-h-[460px] overflow-y-auto no-scrollbar pr-1">
-              {/* SECTION: FÚTBOL & DEPORTES */}
-              {(activeCategory === 'all' || activeCategory === 'sports') &&
-                matchedSports.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#00F593]">
-                      <RiffanFootballIcon size={14} animate="hover" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Fútbol y Deportes en Directo',
-                          ca: 'Futbol i Esports en Directe',
-                          en: 'Live Football & Sports',
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {matchedSports.map((match) => (
-                        <button
-                          key={match.id}
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            closeSearchOverlay();
-                            onPlayMatch(match);
-                          }}
-                          className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#00F593]/50 text-left cursor-pointer transition-all active:scale-[0.98]"
-                        >
-                          <div className="min-w-0 space-y-1">
-                            <div className="flex items-center gap-1.5 text-[10px] text-zinc-400 font-medium">
-                              <span className="truncate">{match.competition}</span>
-                              <span aria-hidden="true">·</span>
-                              <span className="text-zinc-300 tabular-nums">{match.time}</span>
-                            </div>
-                            <p className="text-xs font-bold text-white leading-snug line-clamp-2">
-                              {match.title}
-                            </p>
-                          </div>
-
-                          <div className="flex items-center gap-1.5 shrink-0">
-                            {match.isLive && (
-                              <span className="px-2 py-0.5 rounded-full bg-[#EB0400] text-white text-[10px] font-bold uppercase tracking-wider">
-                                LIVE
-                              </span>
-                            )}
-                            <span className="w-8 h-8 rounded-xl bg-white/[0.06] flex items-center justify-center text-white">
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                            </span>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              {/* SECTION: CANALES TDT */}
-              {(activeCategory === 'all' || activeCategory === 'tv') && matchedTdt.length > 0 && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-1.5 text-xs font-bold text-sky-400">
-                    <Tv className="w-3.5 h-3.5" />
-                    <span>
-                      {pickLang(lang, {
-                        es: 'Canales de TV en Directo (TDT)',
-                        ca: 'Canals de TV en Directe (TDT)',
-                        en: 'Live TV Channels (DTT)',
-                      })}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                    {matchedTdt.map((ch) => (
-                      <button
-                        key={ch.id}
-                        type="button"
-                        onClick={() => {
-                          triggerHaptic('light');
-                          closeSearchOverlay();
-                          onPlayChannel(ch);
-                        }}
-                        className="flex items-center gap-2 p-2.5 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-sky-400/50 text-left cursor-pointer transition-all active:scale-[0.98]"
-                      >
-                        <ChannelLogoBadge channel={ch} size="sm" />
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-white truncate">{ch.name}</p>
-                          <p className="text-[10px] text-zinc-400">Dial {ch.dial}</p>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
+              {totalHits === 0 && aiJob.status === 'idle' && (
+                <div className="py-6 text-center space-y-2">
+                  <p className="text-sm font-semibold text-zinc-300">
+                    {pickLang(lang, {
+                      es: `No hay resultados locales directos para "${cleanQuery}"`,
+                      ca: `Sense resultats locals directes per "${cleanQuery}"`,
+                      en: `No direct local matches for "${cleanQuery}"`,
+                    })}
+                  </p>
+                  <p className="text-xs text-zinc-400">
+                    {pickLang(lang, {
+                      es: 'Toca "Buscar con IA" arriba para encontrarlo en fuentes web externas automáticamente.',
+                      ca: 'Toca "Cercar amb IA" a dalt per trobar-ho a fonts web externes.',
+                      en: 'Tap "Search with AI" above to automatically find it on external web providers.',
+                    })}
+                  </p>
                 </div>
               )}
 
-              {/* SECTION: JUEGOS DE SALA */}
-              {(activeCategory === 'all' || activeCategory === 'games') &&
-                matchedGames.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-fuchsia-400">
-                      <RiffanDiceIcon size={14} animate="hover" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Juegos de Sala',
-                          ca: 'Jocs de Sala',
-                          en: 'Room Games',
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {matchedGames.map((game) => (
-                        <button
-                          key={game.id}
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            closeSearchOverlay();
-                            onSelectGame(game.id);
-                          }}
-                          className="flex items-center justify-between gap-2.5 p-3 rounded-2xl bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-fuchsia-400/50 text-left cursor-pointer transition-all active:scale-[0.98]"
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <span className="text-2xl shrink-0">{game.icon}</span>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-white truncate">{game.title}</p>
-                              <p className="text-[11px] text-zinc-400 truncate">{game.desc}</p>
-                            </div>
-                          </div>
-                          <span className="px-2.5 py-1 rounded-xl bg-fuchsia-500/20 text-fuchsia-300 text-[11px] font-bold shrink-0">
-                            {pickLang(lang, { es: 'Jugar', ca: 'Jugar', en: 'Play' })}
-                          </span>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              {/* SECTION: PELÍCULAS */}
-              {(activeCategory === 'all' || activeCategory === 'movies') &&
-                matchedMovies.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#BF94FF]">
-                      <Film className="w-3.5 h-3.5" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Películas',
-                          ca: 'Pel·lícules',
-                          en: 'Movies',
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {matchedMovies.map((movie) => (
-                        <button
-                          key={movie.id || movie.tmdbId}
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            closeSearchOverlay();
-                            onPlayMovie(movie);
-                          }}
-                          className="group rounded-2xl overflow-hidden bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#9146FF]/50 text-left cursor-pointer transition-all active:scale-[0.98] flex flex-col"
-                        >
-                          <div className="relative aspect-[2/3] w-full bg-[#0D0E15]">
-                            <PosterImage
-                              src={movie.poster}
-                              alt={movie.title}
-                              aspect="poster"
-                              className="w-full h-full"
-                              imgClassName="object-cover group-hover:scale-105 transition-transform duration-200"
-                              fallbackTitle={movie.title}
-                            />
-                            {Boolean(movie.is4k || (movie.tmdbId && [693134, 872585, 157336, 361743, 414906, 335984, 569094, 76600, 558449, 155, 27205, 299534, 533535].includes(movie.tmdbId))) && (
-                              <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded-md bg-black/85 backdrop-blur-md border border-amber-400/80 text-[9px] font-black tracking-wider text-amber-300 shadow-sm flex items-center gap-1">
-                                <span>4K</span>
-                                <span className="text-[8px] text-cyan-300">HDR</span>
-                              </span>
-                            )}
-                            {movie.rating && (
-                              <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-black/75 text-[10px] font-mono font-bold text-amber-300 tabular-nums">
-                                ★ {movie.rating}
-                              </span>
-                            )}
-                          </div>
-                          <div className="p-2 min-w-0">
-                            <p className="text-xs font-bold text-white truncate group-hover:text-[#D8B4FE]">
-                              {movie.title}
-                            </p>
-                            <div className="flex items-center gap-1.5 text-[10px] text-zinc-400">
-                              <span>{movie.year || 'HD'}</span>
-                              {Boolean(movie.is4k) && (
-                                <span className="px-1 rounded bg-amber-400/20 text-amber-300 font-mono text-[9px] font-bold">4K</span>
-                              )}
-                              {movie.languages && movie.languages.length > 0 && (
-                                <LanguageBadge code={movie.languages[0]} size="xs" />
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-              {/* SECTION: SERIES */}
-              {(activeCategory === 'all' || activeCategory === 'series') &&
-                matchedSeries.length > 0 && (
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-1.5 text-xs font-bold text-[#D8B4FE]">
-                      <Tv className="w-3.5 h-3.5" />
-                      <span>
-                        {pickLang(lang, {
-                          es: 'Series de TV',
-                          ca: 'Sèries de TV',
-                          en: 'TV Series',
-                        })}
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                      {matchedSeries.map((s) => (
-                        <button
-                          key={s.id || s.tmdbId}
-                          type="button"
-                          onClick={() => {
-                            triggerHaptic('light');
-                            closeSearchOverlay();
-                            onPlaySeries(s);
-                          }}
-                          className="group rounded-2xl overflow-hidden bg-white/[0.04] hover:bg-white/[0.08] border border-white/[0.08] hover:border-[#9146FF]/50 text-left cursor-pointer transition-all active:scale-[0.98] flex flex-col"
-                        >
-                          <div className="relative aspect-[2/3] w-full bg-[#0D0E15]">
-                            <PosterImage
-                              src={s.poster}
-                              alt={s.title}
-                              aspect="poster"
-                              className="w-full h-full"
-                              imgClassName="object-cover group-hover:scale-105 transition-transform duration-200"
-                              fallbackTitle={s.title}
-                            />
-                            {s.rating && (
-                              <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-black/75 text-[10px] font-mono font-bold text-amber-300 tabular-nums">
-                                ★ {s.rating}
-                              </span>
-                            )}
-                          </div>
-                          <div className="p-2 min-w-0">
-                            <p className="text-xs font-bold text-white truncate group-hover:text-[#D8B4FE]">
-                              {s.title}
-                            </p>
-                            <p className="text-[10px] text-zinc-400">
-                              {s.year || 'HD'} · {pickLang(lang, { es: 'Serie', ca: 'Sèrie', en: 'Series' })}
-                            </p>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+              <UniversalSearchResultsList
+                lang={lang}
+                activeCategory={activeCategory}
+                matchedSports={matchedSports}
+                matchedTdt={matchedTdt}
+                matchedGames={matchedGames}
+                matchedMovies={matchedMovies}
+                matchedSeries={matchedSeries}
+                onCloseSearch={closeSearchOverlay}
+                onPlayMatch={onPlayMatch}
+                onPlayChannel={onPlayChannel}
+                onSelectGame={onSelectGame}
+                onPlayMovie={onPlayMovie}
+                onPlaySeries={onPlaySeries}
+              />
             </div>
-          </div>
           </motion.div>
         )}
       </AnimatePresence>

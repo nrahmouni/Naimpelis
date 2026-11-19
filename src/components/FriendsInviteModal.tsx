@@ -1,30 +1,11 @@
 import React, { useState } from 'react';
-import {
-  UserPlus,
-  UserCheck,
-  Send,
-  Check,
-  Trash2,
-  Copy,
-  Tv,
-  Trophy,
-  Film,
-} from 'lucide-react';
+import { Check, Copy, Send, Trash2, UserCheck, UserPlus } from 'lucide-react';
 import {
   RiffanArrowRightIcon,
-  RiffanCloseIcon,
-  RiffanPlayIcon,
   RiffanShareIcon,
   RiffanUsersIcon,
 } from './ui/RiffanIcons';
-import {
-  AppLanguage,
-  IncomingFriendAddedNotice,
-  IncomingRoomInvite,
-  OnlineAppUser,
-  Participant,
-  SavedFriend,
-} from '../types';
+import { AppLanguage, OnlineAppUser, Participant, SavedFriend } from '../types';
 import { deriveFriendCode } from '../utils/storage';
 import { buildShortInviteUrl } from '../utils/shortLink';
 import { triggerHaptic } from '../utils/haptics';
@@ -36,6 +17,9 @@ import {
   shareOrCopyInvite,
 } from '../utils/inviteShare';
 import { BottomSheet, PrimaryButton, SecondaryButton } from './ui/DesignSystem';
+import { FriendRoomLinkCard } from './friends/FriendRoomLinkCard';
+import { FriendNowPlayingCard } from './friends/FriendNowPlayingCard';
+export { GlobalIncomingInviteBanner } from './friends/GlobalIncomingInviteBanner';
 
 interface FriendsInviteModalProps {
   isOpen: boolean;
@@ -205,15 +189,6 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     }
   };
 
-  const handleCopyInviteLinkOnly = async () => {
-    triggerHaptic('success');
-    const ok = await copyTextSafely(`${localizedInviteText}\n${inviteUrl}`);
-    if (ok) {
-      setCopiedRoomLink(true);
-      setTimeout(() => setCopiedRoomLink(false), 2200);
-    }
-  };
-
   const localizedInviteText = buildLocalizedInviteMessage({
     lang,
     roomName,
@@ -238,6 +213,15 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     activeChannel,
     activeMediaPoster,
   });
+
+  const handleCopyInviteLinkOnly = async () => {
+    triggerHaptic('success');
+    const ok = await copyTextSafely(`${localizedInviteText}\n${inviteUrl}`);
+    if (ok) {
+      setCopiedRoomLink(true);
+      setTimeout(() => setCopiedRoomLink(false), 2200);
+    }
+  };
 
   const handleShareOrCopyLink = async () => {
     triggerHaptic('success');
@@ -331,77 +315,18 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
           </div>
         )}
 
-        {/* 0. Quick Room Link + Copy + WhatsApp Invite Bar right at the top */}
-        <div className="p-3.5 rounded-2xl bg-[#9146FF]/10 border border-[#9146FF]/30 space-y-2.5">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#D8B4FE] block">
-                {pickLang(lang, {
-                  es: 'Invitar con enlace de sala',
-                  ca: 'Convidar amb enllaç de sala',
-                  en: 'Invite via room link',
-                })}
-              </span>
-              <span className="text-xs font-mono text-zinc-300 truncate block">
-                {roomName} · #{roomId}
-              </span>
-            </div>
-            <button
-              type="button"
-              onClick={handleCopyRoomCode}
-              className="min-h-8 px-2.5 rounded-xl bg-black/40 hover:bg-black/60 border border-white/10 text-[11px] font-mono font-bold text-white flex items-center gap-1 cursor-pointer shrink-0 transition-colors"
-            >
-              {copiedRoomId ? (
-                <>
-                  <Check className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>{pickLang(lang, { es: 'Copiado', ca: 'Copiat', en: 'Copied' })}</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 text-[#BF94FF]" />
-                  <span>{roomId}</span>
-                </>
-              )}
-            </button>
-          </div>
+        <FriendRoomLinkCard
+          lang={lang}
+          roomId={roomId}
+          roomName={roomName}
+          copiedRoomId={copiedRoomId}
+          copiedRoomLink={copiedRoomLink}
+          whatsAppShareHref={whatsAppShareHref}
+          onCopyRoomCode={() => void handleCopyRoomCode()}
+          onCopyInviteLink={() => void handleCopyInviteLinkOnly()}
+        />
 
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={handleCopyInviteLinkOnly}
-              className={`min-h-11 px-3 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all border ${
-                copiedRoomLink
-                  ? 'bg-emerald-500/20 border-emerald-400/50 text-emerald-200'
-                  : 'bg-[#9146FF] hover:bg-[#7C2AE8] border-[#9146FF] text-white'
-              }`}
-            >
-              {copiedRoomLink ? (
-                <>
-                  <Check className="w-4 h-4 shrink-0" />
-                  <span>{pickLang(lang, { es: 'Enlace copiado', ca: 'Enllaç copiat', en: 'Link copied' })}</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-4 h-4 shrink-0" />
-                  <span>{pickLang(lang, { es: 'Copiar enlace', ca: 'Copiar enllaç', en: 'Copy link' })}</span>
-                </>
-              )}
-            </button>
-
-            <a
-              href={whatsAppShareHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={() => triggerHaptic('light')}
-              className="min-h-11 px-3 rounded-xl bg-[#25D366] hover:bg-[#20BD5A] text-slate-950 font-bold text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95"
-            >
-              <span>WhatsApp</span>
-              <RiffanArrowRightIcon size={14} tone="current" />
-            </a>
-          </div>
-        </div>
-
-        {/* 1. My code + Copy */}
+        {/* My code + Copy */}
         <div className="p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.08] flex items-center justify-between gap-3">
           <div className="min-w-0">
             <span className="text-xs text-zinc-400 block">
@@ -431,7 +356,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
           </SecondaryButton>
         </div>
 
-        {/* 2. Friends list */}
+        {/* Friends list */}
         <div className="space-y-2">
           <h3 className="text-xs font-bold uppercase tracking-wider text-zinc-400">
             {pickLang(lang, {
@@ -634,7 +559,7 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
           )}
         </div>
 
-        {/* 3. Single Add Friend field */}
+        {/* Add Friend field */}
         <form onSubmit={handleManualAddFriend} className="flex items-center gap-2">
           <input
             type="text"
@@ -668,138 +593,17 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
           </button>
         </form>
 
-        {/* 4. Rich Media Room Preview Card (Movie with poster, Channel with logo, or Partidazo Home vs Away) */}
-        {(activeSportsMatch || activeChannel || activeMovie || activeMediaTitle) && (
-          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-[#161828] to-[#0D0F1A] border border-white/[0.12] space-y-2">
-            <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-zinc-400">
-              <span>
-                {pickLang(lang, {
-                  es: 'En pantalla en esta sala',
-                  ca: 'En pantalla en aquesta sala',
-                  en: 'Now playing in room',
-                })}
-              </span>
-              <span className="px-2 py-0.5 rounded-md bg-[#9146FF]/25 text-[#BF94FF] text-[10px] font-bold">
-                {activeSportsMatch
-                  ? pickLang(lang, { es: 'PARTIDAZO', ca: 'PARTIDÀS', en: 'BIG MATCH' })
-                  : activeMediaIsLive || activeChannel
-                  ? pickLang(lang, { es: 'EN DIRECTO', ca: 'EN DIRECTE', en: 'LIVE' })
-                  : pickLang(lang, { es: 'CINE Y SERIES', ca: 'CINEMA I SÈRIES', en: 'CINEMA' })}
-              </span>
-            </div>
+        <FriendNowPlayingCard
+          lang={lang}
+          activeMediaTitle={activeMediaTitle}
+          activeMediaPoster={activeMediaPoster}
+          activeMediaIsLive={activeMediaIsLive}
+          activeSportsMatch={activeSportsMatch}
+          activeMovie={activeMovie}
+          activeChannel={activeChannel}
+        />
 
-            {activeSportsMatch && activeSportsMatch.homeTeam && activeSportsMatch.awayTeam ? (
-              <div className="p-3 rounded-xl bg-black/50 border border-white/10 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="flex items-center gap-2 min-w-0 flex-1">
-                    <div className="w-8 h-8 rounded-lg bg-white/10 p-1 flex items-center justify-center shrink-0">
-                      {activeSportsMatch.homeLogo ? (
-                        <img
-                          src={activeSportsMatch.homeLogo}
-                          alt={activeSportsMatch.homeTeam}
-                          className="w-full h-full object-contain"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <span className="text-xs font-bold text-white">
-                          {activeSportsMatch.homeTeam.slice(0, 3).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs font-bold text-white truncate">
-                      {activeSportsMatch.homeTeam}
-                    </span>
-                  </div>
-
-                  <div className="px-2.5 py-1 rounded-lg bg-[#9146FF]/30 text-[#D8B4FE] font-mono text-xs font-bold shrink-0">
-                    {activeSportsMatch.score || 'VS'}
-                  </div>
-
-                  <div className="flex items-center justify-end gap-2 min-w-0 flex-1 text-right">
-                    <span className="text-xs font-bold text-white truncate">
-                      {activeSportsMatch.awayTeam}
-                    </span>
-                    <div className="w-8 h-8 rounded-lg bg-white/10 p-1 flex items-center justify-center shrink-0">
-                      {activeSportsMatch.awayLogo ? (
-                        <img
-                          src={activeSportsMatch.awayLogo}
-                          alt={activeSportsMatch.awayTeam}
-                          className="w-full h-full object-contain"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <span className="text-xs font-bold text-white">
-                          {activeSportsMatch.awayTeam.slice(0, 3).toUpperCase()}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {activeSportsMatch.competition && (
-                  <p className="text-[11px] text-zinc-400 text-center truncate pt-0.5">
-                    {activeSportsMatch.competition}
-                  </p>
-                )}
-              </div>
-            ) : activeChannel || (activeMediaIsLive && activeMediaTitle) ? (
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/50 border border-white/10">
-                <div className="w-12 h-10 rounded-lg bg-black/80 border border-white/10 p-1.5 flex items-center justify-center shrink-0">
-                  {activeChannel?.logoUrl || activeMediaPoster ? (
-                    <img
-                      src={activeChannel?.logoUrl || activeMediaPoster}
-                      alt={activeChannel?.name || activeMediaTitle}
-                      className="max-w-full max-h-full object-contain"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <Tv className="w-5 h-5 text-[#BF94FF]" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-xs font-bold text-white truncate">
-                    {activeChannel?.name || activeMediaTitle}
-                  </h4>
-                  <p className="text-[11px] text-zinc-400 truncate">
-                    {activeChannel?.network || 'Emisión en vivo'}
-                    {activeChannel?.dial ? ` · Dial ${activeChannel.dial}` : ''}
-                  </p>
-                </div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3 p-2.5 rounded-xl bg-black/50 border border-white/10">
-                <div className="w-10 h-14 rounded-lg overflow-hidden bg-black/60 border border-white/10 shrink-0">
-                  {activeMovie?.poster || activeMediaPoster ? (
-                    <img
-                      src={activeMovie?.poster || activeMediaPoster}
-                      alt={activeMovie?.title || activeMediaTitle}
-                      className="w-full h-full object-cover"
-                      referrerPolicy="no-referrer"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-zinc-500">
-                      <Film className="w-4 h-4" />
-                    </div>
-                  )}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h4 className="text-xs font-bold text-white truncate">
-                    {activeMovie?.title || activeMediaTitle}
-                  </h4>
-                  <p className="text-[11px] text-zinc-400 truncate">
-                    {activeMovie?.year ? `${activeMovie.year} ` : ''}
-                    {activeMovie?.season && activeMovie?.episode
-                      ? `· T${activeMovie.season}·E${activeMovie.episode} `
-                      : ''}
-                    {activeMovie?.rating ? `· ★ ${activeMovie.rating}` : ''}
-                  </p>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* 5. Dual Share buttons: Native Share / Copy & Direct WhatsApp */}
+        {/* Dual Share buttons */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
           <PrimaryButton fullWidth size="lg" onClick={handleShareOrCopyLink}>
             {copiedRoomLink ? (
@@ -842,200 +646,3 @@ export const FriendsInviteModal: React.FC<FriendsInviteModalProps> = ({
     </BottomSheet>
   );
 };
-
-// ============================================================================
-// GLOBAL FLOATING IN-APP ROOM INVITATION & FRIEND REQUEST BANNER
-// ============================================================================
-interface GlobalIncomingInviteBannerProps {
-  lang?: AppLanguage;
-  invite: IncomingRoomInvite | null;
-  friendAddedNotice: IncomingFriendAddedNotice | null;
-  isAlreadyFriend?: boolean;
-  onAcceptInvite: (invite: IncomingRoomInvite) => void;
-  onDismissInvite: () => void;
-  onAcceptFriendBack: (notice: IncomingFriendAddedNotice) => void;
-  onDismissFriendNotice: () => void;
-}
-
-export const GlobalIncomingInviteBanner: React.FC<GlobalIncomingInviteBannerProps> = ({
-  lang = 'es',
-  invite,
-  friendAddedNotice,
-  isAlreadyFriend,
-  onAcceptInvite,
-  onDismissInvite,
-  onAcceptFriendBack,
-  onDismissFriendNotice,
-}) => {
-  const [savingBack, setSavingBack] = useState(false);
-
-  React.useEffect(() => {
-    setSavingBack(false);
-    if (!friendAddedNotice) return;
-    const timer = window.setTimeout(() => {
-      onDismissFriendNotice();
-    }, 6500);
-    return () => window.clearTimeout(timer);
-  }, [friendAddedNotice, onDismissFriendNotice]);
-
-  React.useEffect(() => {
-    if (!friendAddedNotice) return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        onDismissFriendNotice();
-      }
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [friendAddedNotice, onDismissFriendNotice]);
-
-  if (!invite && !friendAddedNotice) return null;
-
-  return (
-    <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[240] w-[calc(100%-20px)] max-w-[440px] space-y-2 pointer-events-none">
-      {invite && (
-        <div className="pointer-events-auto p-3.5 rounded-3xl bg-[#141418]/96 backdrop-blur-2xl nc-specular-surface border border-[#9146FF]/55 shadow-[0_24px_70px_rgba(145,70,255,0.42)] flex flex-col gap-3 animate-fade-in">
-          <div className="flex items-start justify-between gap-2.5">
-            <div className="flex items-center gap-3 min-w-0">
-              <div
-                className="w-11 h-11 rounded-2xl flex items-center justify-center text-base font-bold text-white border border-white/20 shrink-0 shadow-md"
-                style={{ backgroundColor: invite.fromUserColor || '#9146FF' }}
-              >
-                {invite.fromUserAvatar && invite.fromUserAvatar.length <= 2
-                  ? invite.fromUserAvatar
-                  : invite.fromUserName.slice(0, 2).toUpperCase()}
-              </div>
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="px-2 py-0.5 rounded-full bg-[#9146FF]/25 text-[#BF94FF] text-[10px] font-bold uppercase tracking-wider">
-                    {pickLang(lang, {
-                      es: 'Invitación en Directo',
-                      ca: 'Invitació en Directe',
-                      en: 'Live Invite',
-                    })}
-                  </span>
-                </div>
-                <h4 className="text-sm font-bold text-white truncate mt-0.5">
-                  {pickLang(lang, {
-                    es: `${invite.fromUserName} te invita a su sala`,
-                    ca: `${invite.fromUserName} et convida a la seva sala`,
-                    en: `${invite.fromUserName} invited you to a room`,
-                  })}
-                </h4>
-                <p className="text-xs text-zinc-300 truncate">
-                  {invite.roomName}
-                  {invite.mediaTitle ? ` · 🎬 ${invite.mediaTitle}` : ''}
-                </p>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={onDismissInvite}
-              aria-label={pickLang(lang, {
-                es: 'Cerrar invitación',
-                ca: 'Tancar invitació',
-                en: 'Dismiss invite',
-              })}
-              className="w-9 h-9 rounded-full bg-white/[0.08] hover:bg-white/[0.16] text-zinc-300 hover:text-white flex items-center justify-center shrink-0 cursor-pointer"
-            >
-              <RiffanCloseIcon size={16} tone="current" />
-            </button>
-          </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              onClick={() => onAcceptInvite(invite)}
-              className="min-h-10 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#772CE8] active:scale-95 text-xs font-bold text-white flex items-center justify-center gap-1.5 shadow-[0_8px_24px_rgba(145,70,255,0.4)] cursor-pointer transition-all"
-            >
-              <RiffanPlayIcon size={14} tone="current" />
-              <span>
-                {pickLang(lang, {
-                  es: 'Unirme a la sala',
-                  ca: 'Unir-me a la sala',
-                  en: 'Join room',
-                })}
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={onDismissInvite}
-              className="min-h-10 px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-zinc-300 flex items-center justify-center cursor-pointer transition-colors"
-            >
-              {pickLang(lang, { es: 'Ahora no', ca: 'Ara no', en: 'Not now' })}
-            </button>
-          </div>
-        </div>
-      )}
-
-      {friendAddedNotice && (
-        <div
-          role="status"
-          onClick={() => {
-            triggerHaptic('light');
-            onDismissFriendNotice();
-          }}
-          className="pointer-events-auto p-3 rounded-2xl bg-[#141418]/98 backdrop-blur-2xl nc-specular-surface border border-emerald-500/45 shadow-[0_18px_50px_rgba(0,0,0,0.75)] flex items-center justify-between gap-2.5 animate-fade-in cursor-pointer"
-        >
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div
-              className="w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold text-white shrink-0"
-              style={{ backgroundColor: friendAddedNotice.fromUserColor || '#9146FF' }}
-            >
-              {friendAddedNotice.fromUserAvatar || '👋'}
-            </div>
-            <div className="min-w-0">
-              <div className="text-xs font-bold text-white truncate">
-                {pickLang(lang, {
-                  es: `${friendAddedNotice.fromUserName} te añadió como amigo`,
-                  ca: `${friendAddedNotice.fromUserName} t’ha afegit com a amic`,
-                  en: `${friendAddedNotice.fromUserName} added you as a friend`,
-                })}
-              </div>
-              <div className="text-[11px] text-zinc-400 font-mono">
-                {pickLang(lang, { es: 'Código', ca: 'Codi', en: 'Code' })} #
-                {friendAddedNotice.fromFriendCode}
-              </div>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {!isAlreadyFriend && (
-              <button
-                type="button"
-                disabled={savingBack}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (savingBack) return;
-                  setSavingBack(true);
-                  onAcceptFriendBack(friendAddedNotice);
-                }}
-                className="min-h-9 px-3 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-[11px] font-bold text-slate-950 flex items-center gap-1 cursor-pointer"
-              >
-                <UserPlus className="w-3.5 h-3.5" />
-                <span>
-                  + {pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
-                </span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                triggerHaptic('light');
-                onDismissFriendNotice();
-              }}
-              aria-label={pickLang(lang, { es: 'Cerrar aviso', ca: 'Tancar avís', en: 'Dismiss' })}
-              className="w-10 h-10 rounded-xl bg-white/[0.08] hover:bg-white/[0.16] border border-white/10 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-            >
-              <RiffanCloseIcon size={16} tone="current" />
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
-

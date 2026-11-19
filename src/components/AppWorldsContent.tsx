@@ -1,0 +1,388 @@
+import React from 'react';
+import { TvEpisodeItem, TvSeriesDetails } from '../types';
+import type { RoomGameInviteType } from '../shared/protocol';
+import { pickLang } from '../utils/i18n';
+import { socketService } from '../services/socket';
+import { EntryHomeScreen } from './EntryHomeScreen';
+import { WorldShell } from './worlds/WorldShell';
+import { MediaCatalogHub } from './MediaCatalogHub';
+import type { useAppController } from '../hooks/useAppController';
+
+const GamesHubSection = React.lazy(() =>
+  import('./GamesHubSection').then((m) => ({ default: m.GamesHubSection }))
+);
+const RiffanKidsHub = React.lazy(() =>
+  import('./kids/RiffanKidsHub').then((m) => ({ default: m.RiffanKidsHub }))
+);
+
+interface AppWorldsContentProps {
+  controller: ReturnType<typeof useAppController>;
+  renderPartySidebar: () => React.ReactNode;
+}
+
+export const AppWorldsContent: React.FC<AppWorldsContentProps> = ({
+  controller: c,
+  renderPartySidebar,
+}) => {
+  const {
+    lang,
+    setLang,
+    profile,
+    watchHistory,
+    watchlist,
+    favoriteChannels,
+    kidsExitPromptSeq,
+    quickPool,
+    activeWorld,
+    lastUsedWorld,
+    cineTab,
+    setCineTab,
+    cineCastellano,
+    setCineCastellano,
+    futbolTab,
+    setFutbolTab,
+    setShowDesignSystem,
+    setProfileHubOpen,
+    setProfileHubTab,
+    setShowCommandSearch,
+    setShowSurpriseModal,
+    setAiSearchLaunch,
+    setShowWatchlistOnly,
+    showWatchlistOnly,
+    setShowVoiceAssistant,
+    setSmartTvModalOpen,
+    roomId,
+    worldSearchQuery,
+    setWorldSearchQuery,
+    catalogScrollRef,
+    roomState,
+    isHostUser,
+    currentUser,
+    voiceChat,
+    liveMatchesCount,
+    homeFootballMatches,
+    portalLandingActive,
+    preloadWorld,
+    enterWorld,
+    socialActions,
+    roomGameActions,
+    playback,
+    lifecycle,
+    hasConnectedSmartTv,
+  } = c;
+
+  if (activeWorld === 'entry') {
+    return (
+      <div ref={catalogScrollRef} className="w-full min-w-0 shrink-0">
+        <EntryHomeScreen
+          lang={lang}
+          displayName={profile.name}
+          isGuestName={!profile.isCustomized}
+          onUpdateDisplayName={(newName) =>
+            socialActions.handleUpdateProfile(newName, profile.avatar, profile.color)
+          }
+          watchHistory={watchHistory}
+          onResumeHistoryItem={(item) => {
+            void playback.handleReplayHistoryItem(item, false);
+          }}
+          onOpenContinueWatchingAll={() => {
+            setProfileHubTab('history');
+            setProfileHubOpen(true);
+          }}
+          onOpenSurpriseMe={() => {
+            setAiSearchLaunch((prev) => ({
+              query: '',
+              mediaType: 'all',
+              mode: 'surprise',
+              seq: (prev?.seq || 0) + 1,
+            }));
+            setShowSurpriseModal(true);
+          }}
+          onSelectWorld={(world, originRect) =>
+            enterWorld(world, {
+              withPortal:
+                world === 'cine' ||
+                world === 'futbol' ||
+                world === 'tv' ||
+                world === 'juegos' ||
+                world === 'kids' ||
+                world === 'sala',
+              originRect,
+            })
+          }
+          onPreloadWorld={preloadWorld}
+          lastUsedWorld={lastUsedWorld}
+          liveMatchesCount={liveMatchesCount}
+          roomParticipantsCount={roomState.participants.length}
+          movies={quickPool.movies}
+          series={quickPool.series}
+          tdtChannels={quickPool.tdt}
+          liveMatches={homeFootballMatches}
+          onPlayMovie={(movieItem) => {
+            void playback.handlePlayMovie(movieItem, cineCastellano ? 'ES' : 'VOSE');
+          }}
+          onPlaySeries={async (seriesItem, targetSeason, targetEpisode) => {
+            if (seriesItem.tmdbId) {
+              try {
+                const seasonNum = targetSeason || seriesItem.seasonNumber || 1;
+                const res = await fetch(
+                  `/api/catalog/tv/${seriesItem.tmdbId}?season=${seasonNum}&lang=${lang}`
+                );
+                const data = await res.json();
+                const episodes = (data?.details?.episodes || []) as TvEpisodeItem[];
+                if (episodes.length > 0) {
+                  const episodeNum = targetEpisode || seriesItem.episodeNumber || 1;
+                  const targetEp =
+                    episodes.find((ep) => ep.episodeNumber === episodeNum) ||
+                    episodes[episodeNum - 1] ||
+                    episodes[0];
+                  await playback.handlePlaySeriesEpisode(
+                    data.details as TvSeriesDetails,
+                    targetEp,
+                    cineCastellano ? 'ES' : 'VOSE'
+                  );
+                  return;
+                }
+              } catch {
+                // fallback
+              }
+            }
+            enterWorld('cine');
+          }}
+          onOpenDesignSystem={() => setShowDesignSystem(true)}
+          onChangeLang={setLang}
+          onPlayChannel={(ch) => {
+            void playback.handlePlayTdtChannel(ch, 0);
+          }}
+          onPlayMatch={(matchItem) => {
+            void playback.handlePlaySportsMatch(matchItem, 0);
+          }}
+          onSelectGame={(gid) => {
+            const mappedGame = (gid === 'billar' ? 'pool' : gid) as RoomGameInviteType;
+            roomState.setForcedOpenGame({ gameType: mappedGame, seq: Date.now() });
+            roomState.setIsInActiveGame(true);
+            enterWorld('juegos', { withPortal: true });
+          }}
+          onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        />
+      </div>
+    );
+  }
+
+  if (activeWorld === 'sala') {
+    return (
+      <WorldShell
+        world="sala"
+        title={pickLang(lang, {
+          es: 'Sala con Amigos',
+          ca: 'Sala amb Amics',
+          en: 'Watch Party',
+        })}
+        lang={lang}
+        onBack={() => enterWorld('entry')}
+        onGoHome={() => enterWorld('entry')}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        fullHeight
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        {renderPartySidebar()}
+      </WorldShell>
+    );
+  }
+
+  if (activeWorld === 'juegos') {
+    return (
+      <WorldShell
+        world="juegos"
+        title={pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' })}
+        lang={lang}
+        onBack={() => {
+          if (roomState.isInActiveGame) {
+            roomState.setIsInActiveGame(false);
+            roomState.setForcedOpenGame(null);
+          }
+          enterWorld('entry');
+        }}
+        onGoHome={() => enterWorld('entry')}
+        onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+        fullHeight={roomState.isInActiveGame}
+        className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      >
+        <div
+          className={
+            roomState.isInActiveGame
+              ? 'flex-1 min-h-0 flex flex-col overflow-hidden'
+              : 'w-full flex flex-col'
+          }
+        >
+          <GamesHubSection
+            lang={lang}
+            roomId={roomId}
+            currentUser={currentUser}
+            participants={roomState.participants}
+            roomBoardGame={roomState.roomGameState}
+            roomPartyGame={roomState.partyGameState}
+            roomPinturilloGame={roomState.pinturilloState}
+            roomPoolGame={roomState.poolGameState}
+            roomChapasGame={roomState.chapasGameState}
+            roomHeadSoccerGame={roomState.headSoccerGameState}
+            headSoccerSyncSnapshot={roomState.headSoccerSyncSnapshot}
+            headSoccerPeerInput={roomState.headSoccerPeerInput}
+            roomPokerGame={roomState.pokerGameState}
+            roomBlackjackGame={roomState.blackjackGameState}
+            matchResponses={roomState.matchResponses}
+            gameMoveError={roomState.gameMoveError}
+            isHost={isHostUser}
+            voiceChat={voiceChat}
+            requestedGameOpen={roomState.forcedOpenGame}
+            onSelectedGameChange={(game) => {
+              roomState.activeHubGameRef.current = game;
+              roomState.setIsInActiveGame(game !== null);
+            }}
+            {...roomGameActions}
+          />
+        </div>
+      </WorldShell>
+    );
+  }
+
+  if (activeWorld === 'kids') {
+    return (
+      <div className="fixed inset-0 z-50 w-full h-[100dvh] overflow-hidden bg-[#0A0E23] flex flex-col">
+        <RiffanKidsHub
+          shellLang={lang}
+          exitPromptSeq={kidsExitPromptSeq}
+          onOpenSmartTv={() => setSmartTvModalOpen(true)}
+          onExitKids={() => enterWorld('entry')}
+        />
+      </div>
+    );
+  }
+
+  return (
+    <WorldShell
+      world={activeWorld}
+      className={portalLandingActive ? 'rtv-world-touchdown' : ''}
+      title={
+        activeWorld === 'cine'
+          ? pickLang(lang, { es: 'Cine', ca: 'Cinema', en: 'Cinema' })
+          : activeWorld === 'futbol'
+          ? pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' })
+          : activeWorld === 'tv'
+          ? pickLang(lang, {
+              es: 'TV en Directo',
+              ca: 'TV en Directe',
+              en: 'Live TV',
+            })
+          : 'YouTube'
+      }
+      lang={lang}
+      onBack={() => enterWorld('entry')}
+      onGoHome={() => enterWorld('entry')}
+      onOpenVoiceAssistant={() => setShowVoiceAssistant(true)}
+      searchValue={worldSearchQuery}
+      onSearchChange={setWorldSearchQuery}
+      searchPlaceholder={
+        activeWorld === 'cine'
+          ? pickLang(lang, {
+              es: 'Buscar película, serie o enlace...',
+              ca: 'Cercar pel·lícula, sèrie o enllaç...',
+              en: 'Search movie, series or URL...',
+            })
+          : activeWorld === 'futbol'
+          ? pickLang(lang, {
+              es: 'Buscar partido, equipo o canal...',
+              ca: 'Cercar partit, equip o canal...',
+              en: 'Search match, team or channel...',
+            })
+          : activeWorld === 'tv'
+          ? pickLang(lang, {
+              es: 'Buscar canal o programa...',
+              ca: 'Cercar canal o programa...',
+              en: 'Search channel or show...',
+            })
+          : pickLang(lang, {
+              es: 'Buscar en YouTube...',
+              ca: 'Cercar a YouTube...',
+              en: 'Search YouTube...',
+            })
+      }
+    >
+      <MediaCatalogHub
+        worldMode={activeWorld}
+        externalSearchQuery={worldSearchQuery}
+        onExternalSearchChange={setWorldSearchQuery}
+        cineTab={cineTab}
+        onCineTabChange={setCineTab}
+        cineCastellano={cineCastellano}
+        onCineCastellanoChange={setCineCastellano}
+        futbolTab={futbolTab}
+        onFutbolTabChange={setFutbolTab}
+        activeSection={roomState.catalogSection}
+        onChangeSection={(sec) => {
+          if (sec === 'tdt') enterWorld('tv');
+          else if (sec === 'sports') enterWorld('futbol');
+          else if (sec === 'youtube') enterWorld('youtube');
+          else if (sec === 'games') enterWorld('juegos');
+          else if (sec === 'direct') enterWorld('sala');
+          else roomState.setCatalogSection(sec);
+        }}
+        lang={lang}
+        userName={currentUser.name}
+        activeVideoRawUrl={roomState.videoState.rawSourceUrl}
+        activeMediaTitle={
+          roomState.videoState.mode !== 'idle' ? roomState.videoState.title : ''
+        }
+        loadingItemId={playback.loadingItemId}
+        roomQueue={roomState.roomQueue}
+        watchHistory={watchHistory}
+        watchlist={watchlist}
+        favoriteChannels={favoriteChannels}
+        onToggleCatalogFavorite={socialActions.handleToggleCatalogFavorite}
+        onToggleChannelFavorite={socialActions.handleToggleChannelFavorite}
+        onPlayFavoriteChannel={playback.handlePlayFavoriteChannel}
+        onPlayMovie={playback.handlePlayMovie}
+        onPlaySeriesEpisode={playback.handlePlaySeriesEpisode}
+        onPlayCatalaEpisode={playback.handlePlayCatalaEpisode}
+        onReplayHistoryItem={playback.handleReplayHistoryItem}
+        onRemoveHistoryItem={socialActions.handleRemoveHistoryItem}
+        onClearHistory={socialActions.handleClearAllHistory}
+        onPlaySportsMatch={playback.handlePlaySportsMatch}
+        onPlayTdtChannel={playback.handlePlayTdtChannel}
+        onPlayYouTubeVideo={playback.handlePlayYouTubeVideo}
+        onPlayCustomUrl={playback.handlePlayCustomUrl}
+        onOpenCloudBrowser={lifecycle.handleOpenCloudBrowser}
+        onAddToQueue={lifecycle.handleAddToQueue}
+        onRemoveFromQueue={(id) => socketService.removeFromQueue(id)}
+        onPlayQueueItem={playback.handlePlayQueueItem}
+        onStartPollFromQueue={lifecycle.handleStartPollFromQueue}
+        onPlaySecondaryChannel={playback.handlePlaySecondaryChannel}
+        hasConnectedSmartTv={hasConnectedSmartTv}
+        onCreateNewRoom={lifecycle.handleCreateFreshRoom}
+        showWatchlistOnly={showWatchlistOnly}
+        onWatchlistOnlyChange={setShowWatchlistOnly}
+        currentUser={currentUser}
+        participants={roomState.participants}
+        onSearchWithAi={(query, mediaType = 'all') => {
+          setShowCommandSearch(false);
+          setAiSearchLaunch((prev) => ({
+            query,
+            mediaType,
+            mode: 'request',
+            seq: (prev?.seq || 0) + 1,
+          }));
+          setShowSurpriseModal(true);
+        }}
+        onOpenSurpriseMe={() => {
+          setAiSearchLaunch((prev) => ({
+            query: '',
+            mediaType: 'all',
+            mode: 'surprise',
+            seq: (prev?.seq || 0) + 1,
+          }));
+          setShowSurpriseModal(true);
+        }}
+      />
+    </WorldShell>
+  );
+};
