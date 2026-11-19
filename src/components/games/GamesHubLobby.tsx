@@ -147,6 +147,12 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
 
   const activeLiveGame = gameCatalog.find((g) => isLiveGame(g.id)) || null;
   const featuredGame = activeLiveGame || gameCatalog[1]; // Spotlight live match or 8-Ball Pool
+  const categoryCounts = {
+    all: gameCatalog.length,
+    arcade: gameCatalog.filter((g) => g.category === 'arcade').length,
+    party: gameCatalog.filter((g) => g.category === 'party').length,
+    board: gameCatalog.filter((g) => g.category === 'board').length,
+  };
   const filteredGames = gameCatalog.filter(
     (g) => activeCategory === 'all' || g.category === activeCategory
   );
@@ -232,13 +238,13 @@ export const GamesHubLobby: React.FC<GamesHubLobbyProps> = ({
                 triggerHaptic('light');
                 setActiveCategory(tab.id);
               }}
-              className={`min-h-[44px] px-4 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+              className={`min-h-[44px] px-4 rounded-xl text-xs font-bold whitespace-nowrap shrink-0 cursor-pointer transition-colors border tabular-nums ${
                 active
                   ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_6px_18px_rgba(145,70,255,0.35)]'
                   : 'bg-[#12131C] hover:bg-white/[0.08] text-zinc-300 border-white/[0.08]'
               }`}
             >
-              {tab.label}
+              {tab.label} ({categoryCounts[tab.id]})
             </button>
           );
         })}

@@ -67,7 +67,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2 }}
+      transition={{ duration: 0.14 }}
       whileTap={{ scale: 0.98 }}
       onPointerEnter={() => onPreloadWorld?.('cine')}
       onTouchStart={() => onPreloadWorld?.('cine')}
@@ -157,7 +157,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: 0.04 }}
+      transition={{ duration: 0.14 }}
       whileTap={{ scale: 0.97 }}
       onPointerEnter={() => onPreloadWorld?.('futbol')}
       onTouchStart={() => onPreloadWorld?.('futbol')}
@@ -186,7 +186,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
 
         {liveMatchesCount > 0 ? (
           <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-[#EB0400] text-white text-[10px] font-bold leading-none tabular-nums">
-            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-white" />
             <span>
               {pickLang(lang, {
                 es: `${liveMatchesCount} en vivo`,
@@ -227,7 +227,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: 0.08 }}
+      transition={{ duration: 0.14 }}
       whileTap={{ scale: 0.97 }}
       onPointerEnter={() => onPreloadWorld?.('tv')}
       onTouchStart={() => onPreloadWorld?.('tv')}
@@ -293,7 +293,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: 0.12 }}
+      transition={{ duration: 0.14 }}
       whileTap={{ scale: 0.97 }}
       onPointerEnter={() => onPreloadWorld?.('juegos')}
       onTouchStart={() => onPreloadWorld?.('juegos')}
@@ -356,7 +356,7 @@ export const EntryHomeBentoGrid: React.FC<EntryHomeBentoGridProps> = ({
       type="button"
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.2, delay: 0.16 }}
+      transition={{ duration: 0.14 }}
       whileTap={{ scale: 0.97 }}
       onPointerEnter={() => onPreloadWorld?.('sala')}
       onTouchStart={() => onPreloadWorld?.('sala')}

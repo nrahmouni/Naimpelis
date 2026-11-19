@@ -111,13 +111,13 @@ export const CinePosterCard: React.FC<CinePosterCardProps> = ({
               onToggleBookmark(normalized, e);
             }}
             aria-label={isBookmarked ? 'Quitar de guardados' : 'Guardar título'}
-            className={`absolute top-2 right-2 z-20 w-8 h-8 rounded-xl backdrop-blur-md border flex items-center justify-center cursor-pointer transition-all ${
+            className={`absolute top-2 right-2 z-20 w-9 h-9 rounded-xl backdrop-blur-md border flex items-center justify-center cursor-pointer active:scale-90 transition-all ${
               isBookmarked
                 ? 'bg-[#9146FF] border-[#9146FF] text-white opacity-100 shadow-lg'
-                : 'bg-black/60 border-white/15 text-white opacity-0 group-hover:opacity-100 focus:opacity-100 hover:bg-[#9146FF]'
+                : 'bg-black/70 border-white/20 text-white opacity-85 sm:opacity-0 sm:group-hover:opacity-100 focus:opacity-100 hover:bg-[#9146FF]'
             }`}
           >
-            <RiffanBookmarkIcon size={14} tone="current" active={isBookmarked} animate="none" />
+            <RiffanBookmarkIcon size={15} tone="current" active={isBookmarked} animate="none" />
           </button>
         )}
       </div>

@@ -148,12 +148,15 @@ export function useWorldNavigation({
 
   const preloadWorld = useCallback((world: PrimaryWorldId) => {
     if (world === 'futbol') {
+      void import('../components/catalog/FootballWorldView');
       void import('../components/FootballMatchboard');
+    } else if (world === 'tv') {
+      void import('../components/catalog/LiveTvWorldView');
     } else if (world === 'juegos') {
       void import('../components/GamesHubSection');
     } else if (world === 'kids') {
       void import('../components/kids/RiffanKidsHub');
-    } else if (world === 'cine' || world === 'tv') {
+    } else if (world === 'cine') {
       void import('../components/ExpandedDiscoverySection');
     }
   }, []);
@@ -194,14 +197,14 @@ export function useWorldNavigation({
         const swapTimer = window.setTimeout(() => {
           applyWorldChange(nextWorld);
           setPortalLandingActive(true);
-        }, 760);
+        }, 110);
         const exitTimer = window.setTimeout(() => {
           setActivePortalTransition(null);
           setPortalOriginRect(null);
-        }, 980);
+        }, 210);
         const landingTimer = window.setTimeout(() => {
           setPortalLandingActive(false);
-        }, 1280);
+        }, 320);
         portalTimersRef.current = [swapTimer, exitTimer, landingTimer];
         return;
       }

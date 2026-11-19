@@ -683,32 +683,30 @@ export function App() {
             </div>
           )}
 
-          {shareToast && (
+          {(exitToastVisible || shareToast) && (
             <div
               role="status"
               aria-live="polite"
-              className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[130] w-auto max-w-[calc(100%-2rem)] px-4 py-2.5 rounded-2xl bg-[#121420]/96 backdrop-blur-xl border border-[#9146FF]/55 text-xs font-semibold text-white shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex items-center gap-2 pointer-events-none animate-fade-in"
+              className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[135] w-auto max-w-[calc(100%-2rem)] px-4 py-2.5 rounded-2xl bg-[#121420]/96 backdrop-blur-xl text-xs font-semibold text-white shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex items-center gap-2 pointer-events-none animate-fade-in border ${
+                exitToastVisible ? 'border-white/20' : 'border-[#9146FF]/55'
+              }`}
             >
-              <span className="w-5 h-5 rounded-full bg-[#9146FF]/25 border border-[#BF94FF]/45 flex items-center justify-center text-[#D8B4FE] shrink-0">
-                <Check className="w-3 h-3" />
-              </span>
-              <span className="truncate">{shareToast}</span>
-            </div>
-          )}
-
-          {exitToastVisible && (
-            <div
-              role="status"
-              aria-live="polite"
-              className="fixed bottom-24 sm:bottom-6 left-1/2 -translate-x-1/2 z-[135] w-auto max-w-[calc(100%-2rem)] px-4 py-2.5 rounded-2xl bg-[#121420]/96 backdrop-blur-xl border border-white/20 text-xs font-semibold text-white shadow-[0_20px_50px_rgba(0,0,0,0.85)] pointer-events-none animate-fade-in"
-            >
-              <span>
-                {pickLang(lang, {
-                  es: 'Pulsa atrás de nuevo para salir',
-                  ca: 'Prem enrere de nou per sortir',
-                  en: 'Press back again to exit',
-                })}
-              </span>
+              {exitToastVisible ? (
+                <span>
+                  {pickLang(lang, {
+                    es: 'Pulsa atrás de nuevo para salir',
+                    ca: 'Prem enrere de nou per sortir',
+                    en: 'Press back again to exit',
+                  })}
+                </span>
+              ) : (
+                <>
+                  <span className="w-5 h-5 rounded-full bg-[#9146FF]/25 border border-[#BF94FF]/45 flex items-center justify-center text-[#D8B4FE] shrink-0">
+                    <Check className="w-3 h-3" />
+                  </span>
+                  <span className="truncate">{shareToast}</span>
+                </>
+              )}
             </div>
           )}
         </div>

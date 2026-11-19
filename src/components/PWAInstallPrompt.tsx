@@ -333,16 +333,30 @@ export const OfflineIndicator: React.FC<{ lang: AppLanguage }> = ({ lang }) => {
   if (isOnline) return null;
 
   return (
-    <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 flex items-center gap-2 rounded-xl bg-amber-500/95 px-3.5 py-2 text-xs font-semibold text-zinc-950 shadow-lg">
-      <span className="h-2 w-2 rounded-full bg-zinc-950" />
-      <span>
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed top-16 left-1/2 -translate-x-1/2 z-[125] flex items-center gap-2.5 rounded-2xl bg-amber-500/95 px-3.5 py-2 text-xs font-bold text-zinc-950 shadow-xl"
+    >
+      <span className="h-2 w-2 rounded-full bg-zinc-950 shrink-0" />
+      <span className="whitespace-nowrap">
         {pickLang(lang, {
-          es: 'Sin conexión — Reconectando...',
-          ca: 'Sense connexió — Reconnectant...',
-          en: 'Offline — Reconnecting...',
-          zh: '离线 — 正在重连...',
+          es: 'Sin conexión',
+          ca: 'Sense connexió',
+          en: 'Offline',
+          zh: '已离线',
         })}
       </span>
+      <button
+        type="button"
+        onClick={() => {
+          triggerHaptic('light');
+          window.location.reload();
+        }}
+        className="px-2.5 py-1 rounded-lg bg-zinc-950 text-amber-300 text-[11px] font-bold hover:bg-zinc-900 cursor-pointer whitespace-nowrap shrink-0"
+      >
+        {pickLang(lang, { es: 'Reintentar', ca: 'Reintentar', en: 'Retry', zh: '重试' })}
+      </button>
     </div>
   );
 };

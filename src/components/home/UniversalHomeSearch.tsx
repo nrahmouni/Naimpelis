@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { ArrowLeft, Film, Loader2, Search, Sparkles, Tv, X } from 'lucide-react';
+import { ArrowLeft, Clock, Film, Loader2, Search, Sparkles, Tv, X } from 'lucide-react';
 import type {
   AppLanguage,
   CatalogMovie,
@@ -39,6 +39,20 @@ interface UniversalHomeSearchProps {
   onSelectGame: (gameId: string) => void;
 }
 
+const RECENT_SEARCHES_KEY = 'riffantv_home_recent_searches_v1';
+
+function readRecentSearches(): string[] {
+  try {
+    const raw = localStorage.getItem(RECENT_SEARCHES_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed)
+      ? parsed.filter((q): q is string => typeof q === 'string' && q.trim().length >= 2).slice(0, 6)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
 export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   lang,
   movies,
@@ -60,6 +74,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
   const [remoteMovies, setRemoteMovies] = useState<CatalogMovie[]>([]);
   const [remoteSeries, setRemoteSeries] = useState<CatalogMovie[]>([]);
   const [loadingRemote, setLoadingRemote] = useState(false);
+  const [recentSearches, setRecentSearches] = useState<string[]>(readRecentSearches);
 
   const [aiJob, setAiJob] = useState<AiSearchJobState>({
     status: 'idle',
@@ -100,8 +115,32 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     setAiJob({ status: 'idle', progressLabel: '', item: null });
   }, [clearAiPoll, setQuery, setActiveCategory]);
 
+  const saveRecentSearch = useCallback((rawTerm: string) => {
+    const cleaned = rawTerm.trim();
+    if (cleaned.length < 2) return;
+    setRecentSearches((prev) => {
+      const next = [cleaned, ...prev.filter((item) => item.toLowerCase() !== cleaned.toLowerCase())].slice(0, 6);
+      try {
+        localStorage.setItem(RECENT_SEARCHES_KEY, JSON.stringify(next));
+      } catch {
+        // ignore quota errors
+      }
+      return next;
+    });
+  }, []);
+
+  const clearRecentSearches = useCallback(() => {
+    setRecentSearches([]);
+    try {
+      localStorage.removeItem(RECENT_SEARCHES_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
   const snapshotSearchOriginBeforeDirectPlay = useCallback(() => {
     const store = useAppStore.getState();
+    saveRecentSearch(store.homeSearchQuery);
     store.setPlaybackReturnContext({
       world: store.activeWorld,
       cineTab: store.cineTab,
@@ -111,7 +150,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       homeSearchCategory: store.homeSearchCategory,
     });
     clearAiPoll();
-  }, [clearAiPoll]);
+  }, [clearAiPoll, saveRecentSearch]);
 
   useBackInterceptor(showOverlay, 'entry-universal-search', closeSearchOverlay, {
     priority: 8,
@@ -657,21 +696,74 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
               </div>
 
               {!hasMinQuery ? (
-                <div className="py-10 px-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] text-center space-y-1.5">
-                  <p className="text-sm font-semibold text-zinc-200">
-                    {pickLang(lang, {
-                      es: 'Escribe al menos 2 letras para buscar en todo el catálogo',
-                      ca: 'Escriu almenys 2 lletres per cercar a tot el catàleg',
-                      en: 'Type at least 2 characters to search the full catalog',
-                    })}
-                  </p>
-                  <p className="text-xs text-zinc-400">
-                    {pickLang(lang, {
-                      es: 'Películas, series, canales de TV y fútbol en directo.',
-                      ca: 'Pel·lícules, sèries, canals de TV i futbol en directe.',
-                      en: 'Movies, series, live TV channels, and football.',
-                    })}
-                  </p>
+                <div className="space-y-4">
+                  {recentSearches.length > 0 && (
+                    <div className="p-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] space-y-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                          <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
+                          <span>
+                            {pickLang(lang, {
+                              es: 'Búsquedas recientes',
+                              ca: 'Cerques recents',
+                              en: 'Recent searches',
+                            })}
+                          </span>
+                        </span>
+                        <button
+                          type="button"
+                          onClick={clearRecentSearches}
+                          className="text-xs font-semibold text-zinc-400 hover:text-white cursor-pointer"
+                        >
+                          {pickLang(lang, { es: 'Borrar', ca: 'Esborrar', en: 'Clear' })}
+                        </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {recentSearches.map((term) => (
+                          <button
+                            key={term}
+                            type="button"
+                            onClick={() => {
+                              triggerHaptic('light');
+                              setQuery(term);
+                            }}
+                            className="min-h-10 px-3.5 rounded-xl bg-white/[0.06] hover:bg-[#9146FF]/25 border border-white/[0.09] hover:border-[#9146FF]/55 text-xs font-semibold text-zinc-100 cursor-pointer transition-colors"
+                          >
+                            {term}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="py-8 px-4 rounded-2xl bg-white/[0.03] border border-white/[0.07] text-center space-y-3">
+                    <p className="text-sm font-semibold text-zinc-200">
+                      {pickLang(lang, {
+                        es: 'Escribe al menos 2 letras o prueba una búsqueda rápida',
+                        ca: 'Escriu almenys 2 lletres o prova una cerca ràpida',
+                        en: 'Type at least 2 characters or try a quick search',
+                      })}
+                    </p>
+                    <div className="flex flex-wrap items-center justify-center gap-2">
+                      {[
+                        { label: 'Fútbol hoy', q: 'futbol' },
+                        { label: 'TV en vivo', q: 'tv' },
+                        { label: 'Juegos', q: 'juegos' },
+                      ].map((sug) => (
+                        <button
+                          key={sug.q}
+                          type="button"
+                          onClick={() => {
+                            triggerHaptic('light');
+                            setQuery(sug.q);
+                          }}
+                          className="min-h-9 px-3.5 rounded-xl bg-[#9146FF]/15 hover:bg-[#9146FF]/30 border border-[#9146FF]/35 text-xs font-semibold text-[#E9D5FF] cursor-pointer transition-colors"
+                        >
+                          {sug.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -798,8 +890,14 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                     onPlayMatch={onPlayMatch}
                     onPlayChannel={onPlayChannel}
                     onSelectGame={onSelectGame}
-                    onOpenMovieDetails={onOpenMovieDetails}
-                    onOpenSeriesPage={onOpenSeriesPage}
+                    onOpenMovieDetails={(m) => {
+                      saveRecentSearch(cleanQuery);
+                      onOpenMovieDetails(m);
+                    }}
+                    onOpenSeriesPage={(s) => {
+                      saveRecentSearch(cleanQuery);
+                      onOpenSeriesPage(s);
+                    }}
                   />
                 </>
               )}

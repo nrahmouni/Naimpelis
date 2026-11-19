@@ -1,5 +1,5 @@
 import React from 'react';
-import { AudioLines, PictureInPicture2, RotateCw, Settings2 } from 'lucide-react';
+import { AudioLines, PictureInPicture2, RotateCcw, RotateCw, Settings2 } from 'lucide-react';
 import type { AppLanguage, VideoState } from '../../types';
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
@@ -45,6 +45,8 @@ interface PlayerTransportBarProps {
   onTogglePiP: (e: React.MouseEvent) => void;
   onToggleLandscapeRotation: (e?: React.MouseEvent) => void;
   onToggleFullscreen: (e?: React.MouseEvent) => void;
+  isTouchLocked?: boolean;
+  onSeekRelative?: (delta: number, e?: React.MouseEvent) => void;
 }
 
 export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
@@ -80,13 +82,16 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
   onTogglePiP,
   onToggleLandscapeRotation,
   onToggleFullscreen,
+  isTouchLocked = false,
+  onSeekRelative,
 }) => {
   const t = UI_COPY[lang];
+  const controlsActive = showControls && !isTouchLocked;
 
   return (
     <div
       className={`pointer-events-none absolute bottom-0 inset-x-0 z-30 px-2.5 sm:px-5 pb-2 sm:pb-3 pt-4 bg-gradient-to-t from-black/95 via-black/75 to-transparent transition-opacity duration-300 ${
-        showControls ? 'opacity-100' : 'opacity-0'
+        controlsActive ? 'opacity-100' : 'opacity-0'
       }`}
     >
       {/* Protected Legible Timeline Scrubber (Rotation-aware for 90deg Landscape) */}
@@ -113,7 +118,7 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
             onScrub(Math.round(ratio * duration));
           }}
           className={`relative h-7 flex items-center px-1 mb-0.5 ${
-            showControls ? 'pointer-events-auto' : 'pointer-events-none'
+            controlsActive ? 'pointer-events-auto' : 'pointer-events-none'
           }`}
         >
           <div className="relative w-full h-1.5 rounded-full bg-white/25 overflow-hidden pointer-events-none shadow-inner">
@@ -144,10 +149,10 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
       <div
         onClick={(e) => e.stopPropagation()}
         className={`flex items-center justify-between gap-1 sm:gap-1.5 ${
-          showControls ? 'pointer-events-auto' : 'pointer-events-none'
+          controlsActive ? 'pointer-events-auto' : 'pointer-events-none'
         }`}
       >
-        {/* Left Cluster: Play/Pause + Mute/Volume + Timecode */}
+        {/* Left Cluster: Play/Pause + Quick Seek + Mute/Volume + Timecode */}
         <div className="flex items-center gap-0.5 sm:gap-1 min-w-0 shrink-0">
           <button
             type="button"
@@ -165,6 +170,29 @@ export const PlayerTransportBar: React.FC<PlayerTransportBarProps> = ({
               <RiffanPlayIcon size={20} tone="current" />
             )}
           </button>
+
+          {!isLive && onSeekRelative && (
+            <div className="flex items-center gap-0.5 shrink-0">
+              <button
+                type="button"
+                onClick={(e) => onSeekRelative(-10, e)}
+                aria-label="Retroceder 10 segundos"
+                title="-10s"
+                className="min-h-[38px] min-w-[32px] sm:min-w-[38px] rounded-xl hover:bg-white/12 flex items-center justify-center text-zinc-200 hover:text-white active:scale-90 transition-all cursor-pointer"
+              >
+                <RotateCcw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={(e) => onSeekRelative(10, e)}
+                aria-label="Avanzar 10 segundos"
+                title="+10s"
+                className="min-h-[38px] min-w-[32px] sm:min-w-[38px] rounded-xl hover:bg-white/12 flex items-center justify-center text-zinc-200 hover:text-white active:scale-90 transition-all cursor-pointer"
+              >
+                <RotateCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
+              </button>
+            </div>
+          )}
 
           <div className="flex items-center gap-1 shrink-0">
             <button

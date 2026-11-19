@@ -1,16 +1,13 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { User } from 'firebase/auth';
 import { motion } from 'motion/react';
 import {
-  ArrowRight,
-  Shuffle,
-  Play,
-  Clock,
-  Settings,
-  KeyRound,
   Check,
-  User as UserIcon,
-  Users,
+  ChevronDown,
+  Download,
+  Settings,
+  Shuffle,
+  X,
 } from 'lucide-react';
 import { AppLanguage } from '../types';
 import { pickLang, formatRoomTitle } from '../utils/i18n';
@@ -24,23 +21,18 @@ import {
   extractRoomCodeFromInput,
   generateShortRoomCode,
 } from '../utils/shortLink';
+import { usePWAInstall } from '../utils/usePWAInstall';
 import { NaimBrandLogo } from './NaimBrandLogo';
-import { FlagBadgeSvg } from './ui/LanguageBadge';
+import { FlagBadgeSvg, type FlagCode } from './ui/LanguageBadge';
 import { EffectiveViewMode, getMonogramInitials } from './MobileViewportGuard';
 import { SettingsBottomSheet } from './SettingsBottomSheet';
-import {
-  PrimaryButton,
-  IconButton,
-  BottomSheet,
-  SecondaryButton,
-  StandardInput,
-} from './ui/DesignSystem';
+import { PWAInstallOptionsSheet } from './PWAInstallPrompt';
+import { CinematicNebulaCanvas } from './lobby/CinematicNebulaCanvas';
 import { useAppStore } from '../store/useAppStore';
-import { PWAInstallLandingCard } from './PWAInstallPrompt';
 
 interface LobbyScreenProps {
   initialProfile: StoredProfile;
-  recentRooms: RecentRoomEntry[];
+  recentRooms?: RecentRoomEntry[];
   lang: AppLanguage;
   effectiveView: EffectiveViewMode;
   isFramedMobileOnPc: boolean;
@@ -58,9 +50,24 @@ interface LobbyScreenProps {
   onOpenLinkDevice?: () => void;
 }
 
+const LANG_OPTIONS: Array<{
+  code: AppLanguage;
+  flag: FlagCode;
+  short: string;
+  label: string;
+}> = [
+  { code: 'es', flag: 'es', short: 'ES', label: 'Español' },
+  { code: 'ca', flag: 'ca', short: 'CA', label: 'Català' },
+  { code: 'en', flag: 'en', short: 'EN', label: 'English' },
+  { code: 'rif', flag: 'rif', short: 'RIF', label: 'Tarifit' },
+  { code: 'zh', flag: 'zh', short: 'ZH', label: '中文' },
+];
+
+const TV_FOCUS_CLASS =
+  'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-black focus-visible:shadow-[0_0_24px_rgba(145,70,255,0.85)]';
+
 export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   initialProfile,
-  recentRooms,
   lang,
   effectiveView,
   isFramedMobileOnPc,
@@ -76,15 +83,20 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
   onOpenTvPairLobby,
   onOpenLinkDevice,
 }) => {
-  const isDesktop = effectiveView === 'desktop';
   const [name, setName] = useState(
     authUser?.displayName?.trim() ||
       (initialProfile.isCustomized ? initialProfile.name : '')
   );
   const [roomCode, setRoomCode] = useState('');
+  const [joiningInline, setJoiningInline] = useState(false);
+  const [langMenuOpen, setLangMenuOpen] = useState(false);
   const [showSettingsSheet, setShowSettingsSheet] = useState(false);
-  const [showJoinSheet, setShowJoinSheet] = useState(false);
+  const [showInstallSheet, setShowInstallSheet] = useState(false);
+
   const authNotice = useAppStore((s) => s.authNotice);
+  const { isIOS, isAndroid } = usePWAInstall();
+  const langMenuRef = useRef<HTMLDivElement | null>(null);
+  const joinInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     setName(
@@ -92,6 +104,32 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
         (initialProfile.isCustomized ? initialProfile.name : '')
     );
   }, [authUser?.displayName, initialProfile.id, initialProfile.isCustomized, initialProfile.name]);
+
+  useEffect(() => {
+    if (!langMenuOpen) return;
+    const handlePointerDown = (e: PointerEvent) => {
+      if (langMenuRef.current && !langMenuRef.current.contains(e.target as Node)) {
+        setLangMenuOpen(false);
+      }
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLangMenuOpen(false);
+    };
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [langMenuOpen]);
+
+  useEffect(() => {
+    if (!joiningInline) return;
+    const timer = window.setTimeout(() => {
+      joinInputRef.current?.focus();
+    }, 20);
+    return () => window.clearTimeout(timer);
+  }, [joiningInline]);
 
   const buildProfile = (): StoredProfile => {
     const trimmed = name.trim();
@@ -114,7 +152,7 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     };
   };
 
-  const handleEnterApp = () => {
+  const handleCreateRoom = () => {
     const profile = buildProfile();
     triggerHaptic('success');
     const code = generateShortRoomCode(4);
@@ -130,11 +168,12 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
   const handleJoinByCode = (e: React.FormEvent) => {
     e.preventDefault();
-    const profile = buildProfile();
     const cleanCode = extractRoomCodeFromInput(roomCode);
     if (!cleanCode) return;
+    const profile = buildProfile();
     triggerHaptic('success');
-    setShowJoinSheet(false);
+    setJoiningInline(false);
+    setRoomCode('');
     onEnterRoom(cleanCode, profile);
   };
 
@@ -143,239 +182,286 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
     setName(generateRandomGuestName(name));
   };
 
-  const formatRoomChipName = (roomName: string) => {
-    const cleaned = roomName.trim();
-    return cleaned.length > 20 ? `${cleaned.slice(0, 18)}…` : cleaned;
-  };
+  const currentLangMeta =
+    LANG_OPTIONS.find((item) => item.code === lang) || LANG_OPTIONS[0];
+  const dynamicInitials = getMonogramInitials(name || initialProfile.name || 'TV');
 
   return (
-    <div className="min-h-dvh w-full bg-[#07080C] text-[#F4F5F8] overflow-x-clip relative flex flex-col">
-      {/* Subtle dark purple ambient gradient */}
-      <div
-        aria-hidden="true"
-        className="pointer-events-none fixed inset-0 nc-aurora-ambient"
-      />
+    <div className="h-dvh w-full bg-black text-white overflow-hidden relative flex flex-col select-none">
+      {/* Custom 60fps Volumetric OLED Aurora & Prism Starlight Canvas */}
+      <CinematicNebulaCanvas />
 
       <div
-        className={`@container min-h-dvh w-full flex flex-col pt-safe pb-safe relative z-10 ${
+        className={`relative z-10 h-full w-full flex flex-col pt-safe pb-safe ${
           isFramedMobileOnPc
-            ? 'max-w-[27rem] mx-auto border-x border-white/[0.08] bg-[#07080C] shadow-[0_0_120px_rgba(0,0,0,0.96)]'
+            ? 'max-w-[27rem] mx-auto border-x border-white/10 shadow-[0_0_120px_rgba(0,0,0,0.96)]'
             : ''
         }`}
       >
-        {/* Minimal Access Header: Logo + RiffanTV left, Settings Gear right */}
-        <header
-          className={`w-full max-w-5xl mx-auto ${
-            isDesktop ? 'px-6 h-20' : 'px-4 h-16'
-          } flex items-center justify-between gap-4 shrink-0`}
-        >
+        {/* 1. Compact Floating Header: Logo left, 3 Glass Controls right */}
+        <header className="w-full max-w-6xl mx-auto px-4 sm:px-6 h-14 sm:h-16 flex items-center justify-between gap-2 shrink-0">
           <button
             type="button"
+            data-tv-focusable="true"
             onClick={() => {
               triggerHaptic('light');
               onReplayIntro();
             }}
-            className="flex items-center min-w-0 cursor-pointer text-left group py-1 whitespace-nowrap shrink-0 active:scale-[0.98] transition-transform"
-            aria-label="RiffanTV"
+            className={`flex items-center min-h-[44px] py-1 px-1.5 -ml-1.5 rounded-2xl cursor-pointer text-left group whitespace-nowrap shrink-0 active:scale-[0.98] transition-transform ${TV_FOCUS_CLASS}`}
+            aria-label="Riffan TV"
           >
-            <NaimBrandLogo variant="full" size={34} animated />
+            <NaimBrandLogo variant="full" size={30} animated />
           </button>
 
-          <IconButton
-            type="button"
-            onClick={() => {
-              triggerHaptic('light');
-              setShowSettingsSheet(true);
-            }}
-            aria-label={pickLang(lang, {
-              es: 'Ajustes',
-              ca: 'Ajustos',
-              en: 'Settings',
-            })}
-          >
-            <Settings className="w-5 h-5" />
-          </IconButton>
-        </header>
-
-        {/* Centered Mobile-First Access Stage */}
-        <main className="flex-1 w-full max-w-md mx-auto px-4 py-6 flex flex-col justify-center gap-6">
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.28, ease: [0.16, 1, 0.3, 1] }}
-            className="text-center space-y-2.5"
-          >
-            <h1 className="font-display font-bold text-fluid-hero text-white text-balance">
-              {pickLang(lang, {
-                es: 'Tu sala privada para ver cine, series, TV y deporte juntos.',
-                ca: 'La teva sala privada per veure cinema, sèries, TV i esport junts.',
-                en: 'Your private theater for movies, series, TV and sports together.',
-                zh: '专属于你与好友的私人影院，电影、剧集、直播与体育同步畅享。',
-                rif: 'Ssinima-nnek i lafilmat, siriyat, talfaza d sspor aked imddukkal.',
+          <div className="flex items-center gap-1.5 shrink-0">
+            {/* Control 1: Install PWA */}
+            <button
+              type="button"
+              data-tv-focusable="true"
+              onClick={() => {
+                triggerHaptic('light');
+                setShowInstallSheet(true);
+              }}
+              aria-label={pickLang(lang, {
+                es: 'Instalar aplicación',
+                ca: 'Instal·lar aplicació',
+                en: 'Install app',
+                zh: '安装应用',
               })}
-            </h1>
-            <p className="text-sm text-zinc-400">
-              {pickLang(lang, {
-                es: 'Entra a tu aire en solitario o crea una sala sincronizada.',
-                ca: 'Entra al teu aire en solitari o crea una sala sincronitzada.',
-                en: 'Watch solo at your own pace or create a synced watch party.',
-                zh: '自由独享观看，或随时创建同步房间与好友一起看。',
-                rif: 'Xzar wehdek neɣ egg taxxamt aked imddukkal.',
+              title={pickLang(lang, {
+                es: 'Instalar PWA / Smart TV',
+                ca: 'Instal·lar PWA / Smart TV',
+                en: 'Install PWA / Smart TV',
               })}
-            </p>
-          </motion.div>
+              className={`min-h-[44px] min-w-[44px] rounded-2xl bg-white/[0.045] hover:bg-white/[0.12] backdrop-blur-xl border border-white/[0.09] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all ${TV_FOCUS_CLASS}`}
+            >
+              <Download className="w-4 h-4 shrink-0" />
+            </button>
 
-          <motion.section
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.32, delay: 0.04, ease: [0.16, 1, 0.3, 1] }}
-            className="relative overflow-hidden rounded-3xl bg-[#10121C]/95 border border-white/[0.1] shadow-[0_24px_64px_rgba(0,0,0,0.85),inset_0_1px_0_rgba(255,255,255,0.08)] p-5 sm:p-6 space-y-5"
-          >
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute -top-20 -right-16 w-48 h-48 rounded-full bg-[#9146FF]/15 blur-3xl"
-            />
-            {/* Continuar en tus salas (only if present) */}
-            {recentRooms.length > 0 && (
-              <div className="space-y-2 pb-4 border-b border-white/[0.07]">
-                <div className="flex items-center gap-1.5 text-xs font-semibold text-zinc-300">
-                  <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
-                  <span>
-                    {pickLang(lang, {
-                      es: 'Continuar en tus salas',
-                      ca: 'Continuar a les teves sales',
-                      en: 'Continue in your rooms',
-                      zh: '继续你的房间',
-                      rif: 'Kemmel di texxamin-nnek',
-                    })}
-                  </span>
-                </div>
-                <div className="flex items-center gap-2 overflow-x-auto no-scrollbar scroll-snap-x">
-                  {recentRooms.slice(0, 5).map((room) => (
-                    <button
-                      key={room.id}
-                      type="button"
-                      onClick={() => {
-                        const profile = buildProfile();
-                        if (profile) {
-                          onEnterRoom(room.id, profile, room.name);
-                        }
-                      }}
-                      className="scroll-snap-item min-h-12 px-4 rounded-2xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.09] text-xs font-semibold text-white flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-[0.97] transition-all"
-                    >
-                      <Play className="w-3.5 h-3.5 text-[#BF94FF] fill-current shrink-0" />
-                      <span>{formatRoomChipName(room.name)}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
+            {/* Control 2: Compact Language Dropdown */}
+            <div ref={langMenuRef} className="relative">
+              <button
+                type="button"
+                data-tv-focusable="true"
+                onClick={() => {
+                  triggerHaptic('light');
+                  setLangMenuOpen((v) => !v);
+                }}
+                aria-haspopup="listbox"
+                aria-expanded={langMenuOpen}
+                aria-label={pickLang(lang, {
+                  es: 'Cambiar idioma',
+                  ca: 'Canviar idioma',
+                  en: 'Change language',
+                })}
+                className={`min-h-[44px] px-2.5 sm:px-3 rounded-2xl bg-white/[0.045] hover:bg-white/[0.12] backdrop-blur-xl border border-white/[0.09] flex items-center gap-1.5 text-xs font-display font-bold text-white whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${TV_FOCUS_CLASS}`}
+              >
+                <FlagBadgeSvg code={currentLangMeta.flag} className="w-4 h-3 shrink-0" />
+                <span>{currentLangMeta.short}</span>
+                <ChevronDown
+                  className={`w-3.5 h-3.5 text-zinc-400 transition-transform duration-150 ${
+                    langMenuOpen ? 'rotate-180 text-white' : ''
+                  }`}
+                />
+              </button>
 
-            {/* Single Primary Flow: Tu nombre + ONE Primary Button "Entrar" */}
-            <div className="space-y-3.5">
-              <div className="space-y-1.5">
-                <label
-                  htmlFor="access-nickname"
-                  className="block text-xs font-semibold text-zinc-300 pl-1"
-                >
-                  {pickLang(lang, {
-                    es: 'Tu nombre',
-                    ca: 'El teu nom',
-                    en: 'Your name',
+              {langMenuOpen && (
+                <div
+                  role="listbox"
+                  aria-label={pickLang(lang, {
+                    es: 'Idiomas',
+                    ca: 'Idiomes',
+                    en: 'Languages',
                   })}
-                </label>
-                <div className="flex items-center gap-2">
-                  <div
-                    aria-hidden="true"
-                    className="w-12 h-12 rounded-2xl bg-[#9146FF]/20 border border-[#9146FF]/35 flex items-center justify-center font-display font-bold text-sm text-white shrink-0"
-                  >
-                    {getMonogramInitials(name || initialProfile.name)}
-                  </div>
-                  <input
-                    id="access-nickname"
-                    type="text"
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        e.preventDefault();
-                        handleEnterSoloApp();
-                      }
-                    }}
-                    placeholder={pickLang(lang, {
-                      es: 'Tu nombre (vacío = mote catalán)',
-                      ca: 'El teu nom (buit = malnom català)',
-                      en: 'Your name (blank = random Catalan nick)',
-                    })}
-                    maxLength={24}
-                    className="flex-1 min-w-0 min-h-12 px-4 rounded-2xl bg-white/[0.05] border border-white/[0.1] focus:border-[#9146FF] text-sm font-medium text-white placeholder:text-zinc-500 outline-none transition-colors"
-                  />
-                  <IconButton
-                    type="button"
-                    onClick={handleRandomName}
-                    aria-label={pickLang(lang, {
-                      es: 'Nombre aleatorio',
-                      ca: 'Nom aleatori',
-                      en: 'Random name',
-                    })}
-                  >
-                    <Shuffle className="w-4 h-4" />
-                  </IconButton>
+                  className="absolute right-0 top-full mt-2 w-40 p-1.5 rounded-2xl bg-[#0B0C14]/94 backdrop-blur-2xl border border-white/12 shadow-[0_24px_60px_rgba(0,0,0,0.9)] z-50 space-y-0.5"
+                >
+                  {LANG_OPTIONS.map((opt) => {
+                    const active = opt.code === lang;
+                    return (
+                      <button
+                        key={opt.code}
+                        type="button"
+                        role="option"
+                        aria-selected={active}
+                        data-tv-focusable="true"
+                        onClick={() => {
+                          triggerHaptic('light');
+                          onChangeLang(opt.code);
+                          setLangMenuOpen(false);
+                        }}
+                        className={`w-full min-h-[40px] px-2.5 rounded-xl flex items-center justify-between gap-2 text-xs font-semibold cursor-pointer transition-colors ${TV_FOCUS_CLASS} ${
+                          active
+                            ? 'bg-[#9146FF] text-white'
+                            : 'text-zinc-200 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <FlagBadgeSvg code={opt.flag} className="w-4 h-3 shrink-0" />
+                          <span className="truncate">{opt.label}</span>
+                        </span>
+                        <span className="text-[10px] font-mono opacity-75 shrink-0">
+                          {opt.short}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
-              </div>
-
-              <div className="space-y-2.5">
-                <PrimaryButton
-                  type="button"
-                  onClick={handleEnterSoloApp}
-                  fullWidth
-                  size="lg"
-                >
-                  <UserIcon className="w-4 h-4 shrink-0" />
-                  <span>
-                    {pickLang(lang, {
-                      es: 'Entrar en solitario',
-                      ca: 'Entrar en solitari',
-                      en: 'Enter Solo',
-                      zh: '独自进入',
-                      rif: 'Adef wehdek',
-                    })}
-                  </span>
-                  <ArrowRight className="w-4 h-4 shrink-0" />
-                </PrimaryButton>
-
-                <button
-                  type="button"
-                  onClick={handleEnterApp}
-                  className="w-full min-h-12 px-4 rounded-2xl bg-gradient-to-r from-[#9146FF]/18 via-[#1B182D] to-[#9146FF]/14 hover:from-[#9146FF]/28 hover:to-[#9146FF]/24 border border-[#9146FF]/45 hover:border-[#BF94FF]/70 text-sm font-display font-bold text-white flex items-center justify-center gap-2 cursor-pointer active:scale-[0.985] transition-all shadow-[0_8px_24px_rgba(145,70,255,0.16)]"
-                >
-                  <Users className="w-4 h-4 text-[#D8B4FE] shrink-0" />
-                  <span>
-                    {pickLang(lang, {
-                      es: 'Crear sala con amigos',
-                      ca: 'Crear sala amb amics',
-                      en: 'Create Watch Party',
-                      zh: '创建好友房间',
-                      rif: 'Egg taxxamt aked imddukkal',
-                    })}
-                  </span>
-                  <ArrowRight className="w-4 h-4 text-[#BF94FF] shrink-0" />
-                </button>
-              </div>
+              )}
             </div>
 
-            {/* Actions: Google & Join on same level, App Install below */}
-            <div className="pt-3 border-t border-white/[0.07] space-y-3">
-              <div className="grid grid-cols-2 gap-2 w-full">
+            {/* Control 3: Settings */}
+            <button
+              type="button"
+              data-tv-focusable="true"
+              onClick={() => {
+                triggerHaptic('light');
+                setShowSettingsSheet(true);
+              }}
+              aria-label={pickLang(lang, {
+                es: 'Ajustes',
+                ca: 'Ajustos',
+                en: 'Settings',
+              })}
+              className={`min-h-[44px] min-w-[44px] rounded-2xl bg-white/[0.045] hover:bg-white/[0.12] backdrop-blur-xl border border-white/[0.09] flex items-center justify-center text-zinc-200 hover:text-white cursor-pointer active:scale-95 transition-all ${TV_FOCUS_CLASS}`}
+            >
+              <Settings className="w-4 h-4 shrink-0" />
+            </button>
+          </div>
+        </header>
+
+        {/* Centered Single-Viewport Stage (Zero vertical scroll on mobile & TV) */}
+        <main className="flex-1 min-h-0 w-full max-w-[404px] sm:max-w-[432px] mx-auto px-4 flex flex-col justify-center gap-6 sm:gap-7">
+          {/* 2. Ultra-Clean Minimalist Headline */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.18, ease: [0.16, 1, 0.3, 1] }}
+            className="text-center"
+          >
+            <h1 className="font-display font-bold text-[2.35rem] sm:text-[2.85rem] leading-[1.03] tracking-[-0.035em] text-balance bg-gradient-to-b from-white via-[#FAF8FF] to-white/78 bg-clip-text text-transparent drop-shadow-[0_10px_32px_rgba(0,0,0,0.9)]">
+              {pickLang(lang, {
+                es: 'Cine y TV juntos.',
+                ca: 'Cinema i TV junts.',
+                en: 'Movies & TV together.',
+                zh: '影视电视同步畅享。',
+                rif: 'Ssinima d talfaza aked.',
+              })}
+            </h1>
+          </motion.div>
+
+          {/* 3. Sculpted Smoked Obsidian Glass Card */}
+          <motion.section
+            initial={{ opacity: 0, y: 12 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.2, ease: [0.16, 1, 0.3, 1] }}
+            className="relative overflow-hidden rounded-[26px] bg-[#070810]/54 backdrop-blur-2xl border border-white/[0.12] shadow-[0_28px_80px_rgba(0,0,0,0.88),inset_0_1px_0_rgba(255,255,255,0.16)] p-4 sm:p-5 space-y-2.5"
+          >
+            {/* Top specular prism rim light */}
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-x-6 top-0 h-px bg-gradient-to-r from-transparent via-[#C084FC]/55 to-transparent"
+            />
+
+            {/* Unified Profile Input Bar (No top label) */}
+            <div className="flex items-center gap-2.5 p-1.5 rounded-2xl bg-black/45 border border-white/[0.08] focus-within:border-[#9146FF] focus-within:ring-2 focus-within:ring-[#9146FF]/35 transition-all">
+              <div
+                aria-hidden="true"
+                className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#9146FF]/85 to-[#5B21B6]/90 border border-white/20 shadow-[0_4px_14px_rgba(145,70,255,0.35)] flex items-center justify-center font-display font-bold text-xs text-white shrink-0 tracking-tight"
+              >
+                {dynamicInitials}
+              </div>
+
+              <input
+                id="access-nickname"
+                type="text"
+                data-tv-focusable="true"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    handleEnterSoloApp();
+                  }
+                }}
+                aria-label={pickLang(lang, {
+                  es: 'Tu apodo',
+                  ca: 'El teu sobrenom',
+                  en: 'Your nickname',
+                  zh: '你的昵称',
+                  rif: 'Isem-nnek',
+                })}
+                placeholder={pickLang(lang, {
+                  es: 'Tu apodo',
+                  ca: 'El teu sobrenom',
+                  en: 'Your nickname',
+                  zh: '你的昵称',
+                  rif: 'Isem-nnek',
+                })}
+                maxLength={24}
+                className="flex-1 min-w-0 h-10 px-1 bg-transparent text-[15px] font-medium text-white placeholder:text-zinc-500 outline-none"
+              />
+
+              <button
+                type="button"
+                data-tv-focusable="true"
+                onClick={handleRandomName}
+                aria-label={pickLang(lang, {
+                  es: 'Nombre aleatorio',
+                  ca: 'Nom aleatori',
+                  en: 'Random name',
+                })}
+                className={`w-10 h-10 rounded-xl bg-white/[0.04] hover:bg-white/[0.11] flex items-center justify-center text-zinc-400 hover:text-white cursor-pointer active:scale-95 transition-all shrink-0 ${TV_FOCUS_CLASS}`}
+              >
+                <Shuffle className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Primary Actions (1–2 word micro-copy) */}
+            <div className="space-y-2 pt-0.5">
+              <button
+                type="button"
+                data-tv-focusable="true"
+                onClick={handleEnterSoloApp}
+                className={`w-full min-h-[48px] px-4 rounded-2xl bg-gradient-to-r from-[#8B5CF6] via-[#9146FF] to-[#7C3AED] hover:brightness-110 text-sm font-display font-bold text-white flex items-center justify-center cursor-pointer active:scale-[0.985] transition-all shadow-[inset_0_1px_0_rgba(255,255,255,0.28),0_12px_32px_-4px_rgba(145,70,255,0.58)] whitespace-nowrap ${TV_FOCUS_CLASS}`}
+              >
+                {pickLang(lang, {
+                  es: 'Entrar',
+                  ca: 'Entrar',
+                  en: 'Enter',
+                  zh: '进入',
+                  rif: 'Adef',
+                })}
+              </button>
+
+              <button
+                type="button"
+                data-tv-focusable="true"
+                onClick={handleCreateRoom}
+                className={`w-full min-h-[44px] px-4 rounded-2xl bg-white/[0.055] hover:bg-white/[0.11] border border-white/[0.08] text-sm font-display font-semibold text-zinc-100 flex items-center justify-center cursor-pointer active:scale-[0.985] transition-all whitespace-nowrap ${TV_FOCUS_CLASS}`}
+              >
+                {pickLang(lang, {
+                  es: 'Crear sala',
+                  ca: 'Crear sala',
+                  en: 'Create room',
+                  zh: '创建房间',
+                  rif: 'Egg taxxamt',
+                })}
+              </button>
+            </div>
+
+            {/* Bottom Row: Google | Unirme (Transforms inline on tap) */}
+            {!joiningInline ? (
+              <div className="grid grid-cols-2 gap-2 pt-0.5">
                 {!authUser || authUser.isAnonymous ? (
                   <button
                     type="button"
+                    data-tv-focusable="true"
                     disabled={authLoading}
                     onClick={() => {
                       triggerHaptic('medium');
                       void onSignIn();
                     }}
-                    className="min-h-11 px-3 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[11px] font-semibold text-zinc-200 flex items-center justify-center gap-2 cursor-pointer transition-colors truncate"
+                    className={`min-h-[44px] px-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.09] border border-white/[0.07] text-xs font-semibold text-zinc-200 hover:text-white flex items-center justify-center gap-2 cursor-pointer transition-all whitespace-nowrap ${TV_FOCUS_CLASS}`}
                   >
                     <svg className="w-3.5 h-3.5 shrink-0" viewBox="0 0 24 24" aria-hidden="true">
                       <path
@@ -395,22 +481,17 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
                         d="M12 4.75c1.77 0 3.35.61 4.6 1.8l3.42-3.42C17.95 1.19 15.24 0 12 0 7.31 0 3.26 2.7 1.29 6.62l3.98 3.09c.95-2.85 3.6-4.96 6.73-4.96z"
                       />
                     </svg>
-                    <span className="truncate">
-                      {authLoading
-                        ? pickLang(lang, { es: '...', ca: '...', en: '...' })
-                        : authUser?.isAnonymous
-                        ? pickLang(lang, { es: 'Vincular Google', ca: 'Vincular Google', en: 'Link Google' })
-                        : pickLang(lang, { es: 'Google', ca: 'Google', en: 'Google' })}
-                    </span>
+                    <span>Google</span>
                   </button>
                 ) : (
                   <button
                     type="button"
+                    data-tv-focusable="true"
                     onClick={() => {
                       triggerHaptic('light');
                       onOpenLinkDevice?.();
                     }}
-                    className="min-h-11 px-3 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/18 border border-emerald-500/30 text-[11px] font-semibold text-emerald-200 flex items-center justify-center gap-1.5 truncate cursor-pointer transition-colors"
+                    className={`min-h-[44px] px-3 rounded-2xl bg-emerald-500/12 hover:bg-emerald-500/20 border border-emerald-400/35 text-xs font-semibold text-emerald-200 flex items-center justify-center gap-1.5 truncate cursor-pointer transition-all ${TV_FOCUS_CLASS}`}
                   >
                     <Check className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span className="truncate">{authUser.displayName || 'Google'}</span>
@@ -419,115 +500,94 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
 
                 <button
                   type="button"
+                  data-tv-focusable="true"
                   onClick={() => {
                     triggerHaptic('light');
-                    setShowJoinSheet(true);
+                    setJoiningInline(true);
                   }}
-                  className="min-h-11 px-3 rounded-2xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-[11px] font-semibold text-[#BF94FF] hover:text-white flex items-center justify-center gap-1.5 cursor-pointer transition-colors truncate"
+                  className={`min-h-[44px] px-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.09] border border-white/[0.07] text-xs font-semibold text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer transition-all whitespace-nowrap ${TV_FOCUS_CLASS}`}
                 >
-                  <KeyRound className="w-3.5 h-3.5 shrink-0" />
-                  <span className="truncate">
-                    {pickLang(lang, {
-                      es: 'Unirme',
-                      ca: 'Unir-me',
-                      en: 'Join code',
-                      zh: '通过代码加入',
-                      rif: 'Udef s lkod',
-                    })}
-                  </span>
+                  {pickLang(lang, {
+                    es: 'Unirme',
+                    ca: 'Unir-me',
+                    en: 'Join',
+                    zh: '加入',
+                    rif: 'Udef',
+                  })}
                 </button>
               </div>
-
-              {!authUser && authNotice && (
-                <p className="w-full rounded-2xl bg-white/[0.04] border border-white/[0.1] px-3 py-2 text-[11px] leading-relaxed text-zinc-300 text-center">
-                  {authNotice}
-                </p>
-              )}
-
-              {/* App download / install buttons below */}
-              <div className="w-full">
-                <PWAInstallLandingCard lang={lang} />
-              </div>
-            </div>
-          </motion.section>
-
-          {/* Compact single-row unified language selector exclusively on access screen */}
-          <div className="rounded-2xl bg-[#10121C]/85 border border-white/[0.08] p-1.5 grid grid-cols-5 gap-1.5">
-            {[
-              { code: 'en' as AppLanguage, flag: 'en' as const, label: 'EN', title: 'English' },
-              { code: 'es' as AppLanguage, flag: 'es' as const, label: 'ES', title: 'Español' },
-              { code: 'ca' as AppLanguage, flag: 'ca' as const, label: 'CA', title: 'Català' },
-              { code: 'rif' as AppLanguage, flag: 'rif' as const, label: 'RIF', title: 'Tarifit (Riffian)' },
-              { code: 'zh' as AppLanguage, flag: 'zh' as const, label: 'ZH', title: '中文' },
-            ].map((item) => {
-              const isSelected = lang === item.code;
-              return (
+            ) : (
+              <form
+                onSubmit={handleJoinByCode}
+                className="flex items-center gap-1.5 pt-0.5"
+              >
+                <input
+                  ref={joinInputRef}
+                  type="text"
+                  data-tv-focusable="true"
+                  value={roomCode}
+                  onChange={(e) => setRoomCode(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setJoiningInline(false);
+                      setRoomCode('');
+                    }
+                  }}
+                  placeholder={pickLang(lang, {
+                    es: 'Código...',
+                    ca: 'Codi...',
+                    en: 'Code...',
+                    zh: '房间码...',
+                    rif: 'Lkod...',
+                  })}
+                  aria-label={pickLang(lang, {
+                    es: 'Código de sala',
+                    ca: 'Codi de sala',
+                    en: 'Room code',
+                  })}
+                  className={`flex-1 min-w-0 min-h-[44px] px-3.5 rounded-2xl bg-black/50 border border-white/15 focus:border-[#9146FF] text-xs font-mono uppercase tracking-wider text-white placeholder:text-zinc-500 placeholder:normal-case placeholder:tracking-normal outline-none ${TV_FOCUS_CLASS}`}
+                />
                 <button
-                  key={item.code}
+                  type="submit"
+                  data-tv-focusable="true"
+                  disabled={!roomCode.trim()}
+                  aria-label={pickLang(lang, {
+                    es: 'Confirmar código',
+                    ca: 'Confirmar codi',
+                    en: 'Confirm code',
+                  })}
+                  className={`min-h-[44px] min-w-[44px] rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] disabled:opacity-40 text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0 ${TV_FOCUS_CLASS}`}
+                >
+                  <Check className="w-4 h-4" />
+                </button>
+                <button
                   type="button"
+                  data-tv-focusable="true"
                   onClick={() => {
                     triggerHaptic('light');
-                    onChangeLang(item.code);
+                    setJoiningInline(false);
+                    setRoomCode('');
                   }}
-                  title={item.title}
-                  aria-label={item.title}
-                  className={`min-h-10 px-2 rounded-xl text-xs font-display font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-[0.97] whitespace-nowrap border ${
-                    isSelected
-                      ? 'bg-[#9146FF] text-white border-[#A970FF]/70 shadow-[0_4px_14px_rgba(145,70,255,0.4)]'
-                      : 'bg-transparent hover:bg-white/[0.06] text-zinc-400 hover:text-white border-transparent'
-                  }`}
+                  aria-label={pickLang(lang, {
+                    es: 'Cancelar',
+                    ca: 'Cancel·lar',
+                    en: 'Cancel',
+                  })}
+                  className={`min-h-[44px] min-w-[44px] rounded-2xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all shrink-0 ${TV_FOCUS_CLASS}`}
                 >
-                  <FlagBadgeSvg code={item.flag} className="w-4 h-3" />
-                  <span>{item.label}</span>
+                  <X className="w-4 h-4" />
                 </button>
-              );
-            })}
-          </div>
-        </main>
+              </form>
+            )}
 
-        {/* Unirme con código sheet */}
-        <BottomSheet
-          isOpen={showJoinSheet}
-          onClose={() => setShowJoinSheet(false)}
-          lang={lang}
-          maxWidth="sm:max-w-sm"
-          icon={<KeyRound className="w-5 h-5" />}
-          title={pickLang(lang, {
-            es: 'Unirme con código',
-            ca: 'Unir-me amb codi',
-            en: 'Join with code',
-          })}
-          subtitle={pickLang(lang, {
-            es: 'Introduce el código o enlace de una sala',
-            ca: 'Introdueix el codi o enllaç d’una sala',
-            en: 'Enter a room code or invite link',
-          })}
-        >
-          <form onSubmit={handleJoinByCode} className="space-y-3">
-            <StandardInput
-              value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value)}
-              placeholder={pickLang(lang, {
-                es: 'Código de sala (ej. 4F8K)',
-                ca: 'Codi de sala (ex. 4F8K)',
-                en: 'Room code (e.g. 4F8K)',
-              })}
-              autoFocus
-              className="font-mono uppercase tracking-wider"
-            />
-            <SecondaryButton
-              type="submit"
-              fullWidth
-              size="lg"
-              disabled={!roomCode.trim()}
-            >
-              <span>
-                {pickLang(lang, { es: 'Unirme', ca: 'Unir-me', en: 'Join' })}
-              </span>
-              <ArrowRight className="w-4 h-4" />
-            </SecondaryButton>
-          </form>
-        </BottomSheet>
+            {!authUser && authNotice && (
+              <p className="w-full rounded-xl bg-white/[0.04] border border-white/10 px-3 py-1.5 text-[11px] text-zinc-300 text-center">
+                {authNotice}
+              </p>
+            )}
+          </motion.section>
+        </main>
 
         {/* Shared Settings Bottom Sheet */}
         <SettingsBottomSheet
@@ -543,6 +603,15 @@ export const LobbyScreen: React.FC<LobbyScreenProps> = ({
           onSignOut={onSignOut}
           onOpenTvPairLobby={onOpenTvPairLobby}
           onOpenLinkDevice={onOpenLinkDevice}
+        />
+
+        {/* Shared PWA & Smart TV Install Sheet */}
+        <PWAInstallOptionsSheet
+          isOpen={showInstallSheet}
+          onClose={() => setShowInstallSheet(false)}
+          lang={lang}
+          isIOS={isIOS}
+          isAndroid={isAndroid}
         />
       </div>
     </div>

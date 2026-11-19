@@ -111,6 +111,16 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
     (epgFilter !== 'all' ? 1 : 0) +
     (tvFavOnly ? 1 : 0);
 
+  const favoriteQuickChannels = React.useMemo(
+    () =>
+      tdtChannels
+        .filter((ch) =>
+          isChannelFavorited(buildChannelFavId(ch.channels[0]?.sourceUrl || ch.id, ch.name))
+        )
+        .slice(0, 12),
+    [tdtChannels, isChannelFavorited]
+  );
+
   return (
     <div ref={pull.containerRef} {...pull.pullHandlers} className="space-y-4">
       {pull.pullDistance > 10 && (
@@ -228,6 +238,44 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
         })}
       </div>
 
+      {favoriteQuickChannels.length > 0 && !tvFavOnly && (
+        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
+          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-[#D8B4FE] whitespace-nowrap shrink-0 pr-0.5">
+            <Star className="w-3 h-3 fill-current" />
+            <span>{pickLang(lang, { es: 'Zapping', ca: 'Zàping', en: 'Quick Zap' })}</span>
+          </span>
+          {favoriteQuickChannels.map((ch) => {
+            const chEpg = getChannelLiveEpg(ch.id);
+            const isPlaying = Boolean(
+              activeVideoRawUrl && ch.channels.some((s) => s.sourceUrl === activeVideoRawUrl)
+            );
+            return (
+              <button
+                key={`qzap-${ch.id}`}
+                type="button"
+                onClick={() => {
+                  triggerHaptic('success');
+                  onPlayTdtChannel(ch, 0, chEpg?.now?.title);
+                }}
+                className={`min-h-[44px] pl-1.5 pr-3 rounded-xl border flex items-center gap-2 whitespace-nowrap shrink-0 cursor-pointer active:scale-95 transition-all ${
+                  isPlaying
+                    ? 'bg-[#9146FF] border-[#9146FF] text-white shadow-[0_4px_14px_rgba(145,70,255,0.35)]'
+                    : 'bg-[#11131B] hover:bg-white/[0.08] border-white/[0.08] text-zinc-200'
+                }`}
+              >
+                <span
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-display font-black text-white shrink-0"
+                  style={{ backgroundColor: ch.brandTone || '#38BDF8' }}
+                >
+                  {(ch.shortMark || ch.name).slice(0, 3)}
+                </span>
+                <span className="text-xs font-semibold truncate max-w-[120px]">{ch.name}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       {tvRegion === 'adrar_europa' && !tvFavOnly && (
         <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-0.5">
           {ADRAR_COUNTRY_FILTERS.map((ctry) => {
@@ -259,12 +307,38 @@ export const LiveTvWorldView: React.FC<LiveTvWorldViewProps> = ({
           <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
         </div>
       ) : filteredChannels.length === 0 ? (
-        <div className="py-10 rounded-3xl bg-[#11131B] border border-white/[0.08] text-center text-sm text-zinc-400">
-          {pickLang(lang, {
-            es: 'No hay canales con este filtro.',
-            ca: 'No hi ha canals amb aquest filtre.',
-            en: 'No channels match this filter.',
-          })}
+        <div className="py-10 px-4 rounded-3xl bg-[#11131B] border border-white/[0.08] text-center space-y-3">
+          <p className="text-sm font-semibold text-zinc-200">
+            {tvFavOnly
+              ? pickLang(lang, {
+                  es: 'Todavía no tienes canales favoritos guardados.',
+                  ca: 'Encara no tens canals favorits desats.',
+                  en: 'You have no favorite channels saved yet.',
+                })
+              : pickLang(lang, {
+                  es: 'No hay canales con este filtro.',
+                  ca: 'No hi ha canals amb aquest filtre.',
+                  en: 'No channels match this filter.',
+                })}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('light');
+              onTvFavOnlyChange(false);
+              onTvRegionChange('all');
+              onTdtCategoryChange('all');
+              onEpgFilterChange('all');
+              onAdrarCountryFilterChange?.('all');
+            }}
+            className="min-h-11 px-4 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white cursor-pointer active:scale-95 transition-all"
+          >
+            {pickLang(lang, {
+              es: 'Ver todos los canales',
+              ca: 'Veure tots els canals',
+              en: 'Show all channels',
+            })}
+          </button>
         </div>
       ) : (
         <div className="space-y-2">

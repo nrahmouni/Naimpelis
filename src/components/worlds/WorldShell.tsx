@@ -92,7 +92,7 @@ export const WorldShell: React.FC<WorldShellProps> = ({
     <div
       {...swipeHandlers}
       className={`w-full flex flex-col world-tint-${world} ${
-        fullHeight ? 'flex-1 min-h-0 h-full overflow-hidden' : 'min-h-[calc(100dvh-4rem)] pb-24'
+        fullHeight ? 'flex-1 min-h-0 h-full overflow-hidden' : 'min-h-[calc(100dvh-4rem)] pb-14'
       } ${className}`}
     >
       {/* LIGHTWEIGHT WORLD TOP HEADER */}

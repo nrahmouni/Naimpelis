@@ -98,8 +98,22 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   const smoothDriftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [batterySaverTvMode, setBatterySaverTvMode] = useState<boolean>(false);
 
-  const [isMuted, setIsMuted] = useState(false);
-  const [volume, setVolume] = useState(1);
+  const [isMuted, setIsMuted] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('riffantv_player_muted_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
+  const [volume, setVolume] = useState<number>(() => {
+    try {
+      const raw = Number(localStorage.getItem('riffantv_player_volume_v1'));
+      return Number.isFinite(raw) ? Math.min(1, Math.max(0, raw)) : 1;
+    } catch {
+      return 1;
+    }
+  });
+  const [isTouchLocked, setIsTouchLocked] = useState(false);
   const [localPlaying, setLocalPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -250,6 +264,28 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
   useEffect(() => {
     showControlsRef.current = showControls;
   }, [showControls]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('riffantv_player_muted_v1', String(isMuted));
+      localStorage.setItem('riffantv_player_volume_v1', String(volume));
+    } catch {
+      // ignore storage errors
+    }
+  }, [isMuted, volume]);
+
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    if (Math.abs(vid.volume - volume) > 0.01) vid.volume = volume;
+    if (vid.muted !== isMuted) vid.muted = isMuted;
+  }, [videoState.url, videoState.mode, volume, isMuted]);
+
+  useEffect(() => {
+    if (!isStageFullscreen || isMinimized || videoState.mode === 'idle') {
+      setIsTouchLocked(false);
+    }
+  }, [isStageFullscreen, isMinimized, videoState.mode]);
 
   const {
     subtitleTracks,
@@ -596,6 +632,11 @@ export const NativeCinemaPlayer: React.FC<NativeCinemaPlayerProps> = ({
           handleSelectExternalServer={handleSelectExternalServer}
           handleMarkInlineServerWorking={handleMarkInlineServerWorking}
           handleRetryInlineEmbed={handleRetryInlineEmbed}
+          isTouchLocked={isTouchLocked}
+          onToggleTouchLock={() => {
+            setIsTouchLocked((prev) => !prev);
+            revealControls();
+          }}
           videoCallbacks={videoCallbacks}
         />
       </div>

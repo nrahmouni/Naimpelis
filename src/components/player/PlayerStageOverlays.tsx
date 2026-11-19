@@ -1,5 +1,5 @@
 import React from 'react';
-import { Check, RotateCcw, RotateCw, SkipForward, Tv } from 'lucide-react';
+import { Check, RotateCcw, RotateCw, SkipForward, Tv, Unlock } from 'lucide-react';
 import {
   RiffanChatIcon,
   RiffanCloseIcon,
@@ -69,6 +69,8 @@ export interface PlayerStageOverlaysProps {
   onNextEpisode?: () => void;
   onAcceptAutoNext: () => void;
   onCancelAutoNext: () => void;
+  isTouchLocked?: boolean;
+  onToggleTouchLock?: () => void;
 }
 
 export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
@@ -117,6 +119,8 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
   onNextEpisode,
   onAcceptAutoNext,
   onCancelAutoNext,
+  isTouchLocked = false,
+  onToggleTouchLock,
 }) => {
   return (
     <>
@@ -377,6 +381,33 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
       )}
 
       {!isMinimized &&
+        isTouchLocked &&
+        showControls &&
+        onToggleTouchLock && (
+          <div className="pointer-events-none absolute bottom-6 inset-x-0 z-40 flex justify-center px-4">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                triggerHaptic('medium');
+                onToggleTouchLock();
+              }}
+              className="pointer-events-auto min-h-[44px] px-4 rounded-full bg-[#121420]/90 hover:bg-[#9146FF] backdrop-blur-xl border border-[#9146FF]/60 text-xs font-bold text-white flex items-center gap-2 shadow-[0_12px_32px_rgba(0,0,0,0.75)] cursor-pointer active:scale-95 transition-all"
+            >
+              <Unlock className="w-4 h-4 text-[#D8B4FE]" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Pantalla bloqueada · Toca para desbloquear',
+                  ca: 'Pantalla bloquejada · Toca per desbloquejar',
+                  en: 'Screen locked · Tap to unlock',
+                })}
+              </span>
+            </button>
+          </div>
+        )}
+
+      {!isMinimized &&
+        !isTouchLocked &&
         (videoState.mode === 'hls' || videoState.mode === 'direct') &&
         !isExtracting &&
         !streamError && (
@@ -502,9 +533,16 @@ export const PlayerStageOverlays: React.FC<PlayerStageOverlaysProps> = ({
         )}
 
       {streamError && !isExtracting && !isMinimized && (
-        <div className="absolute inset-0 z-30 bg-black/85 flex flex-col items-center justify-center p-5 text-center gap-3">
+        <div className="absolute inset-0 z-30 bg-black/85 flex flex-col items-center justify-center p-5 text-center gap-2.5">
           <RiffanWarningIcon size={34} animate="always" className="text-amber-400" />
-          <p className="text-xs sm:text-sm text-zinc-200 max-w-md">{streamError}</p>
+          <p className="text-xs sm:text-sm font-semibold text-zinc-100 max-w-md">{streamError}</p>
+          <p className="text-[11px] text-zinc-400 max-w-sm">
+            {pickLang(lang, {
+              es: 'Comprueba tu conexión o prueba otra señal disponible.',
+              ca: 'Comprova la connexió o prova un altre senyal disponible.',
+              en: 'Check your connection or try another available stream.',
+            })}
+          </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
             <button
               type="button"

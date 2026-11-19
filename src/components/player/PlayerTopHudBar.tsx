@@ -3,6 +3,8 @@ import {
   Minimize2,
   ArrowLeft,
   PictureInPicture2,
+  Lock,
+  Unlock,
 } from 'lucide-react';
 import {
   RiffanCastIcon,
@@ -43,6 +45,8 @@ interface PlayerTopHudBarProps {
   onToggleFullscreen: (e?: React.MouseEvent) => void;
   onExitTvMode?: () => void;
   onClosePlayer?: () => void;
+  isTouchLocked?: boolean;
+  onToggleTouchLock?: () => void;
 }
 
 export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
@@ -74,6 +78,8 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
   onToggleFullscreen,
   onExitTvMode,
   onClosePlayer,
+  isTouchLocked = false,
+  onToggleTouchLock,
 }) => {
   return (
     <>
@@ -85,7 +91,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
               showControls ? 'opacity-100' : 'opacity-0'
             }`}
           >
-            <div className="min-w-0 pt-1">
+            <div className={`min-w-0 pt-1 transition-opacity ${isTouchLocked ? 'opacity-0' : 'opacity-100'}`}>
               <h2 className="font-display font-bold text-sm sm:text-base text-white leading-tight break-words line-clamp-2 drop-shadow">
                 {videoState.title}
               </h2>
@@ -107,7 +113,28 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
             </div>
 
             <div className="pointer-events-auto flex items-center gap-1.5 sm:gap-2 shrink-0">
-              {!isTvMode && (isFullscreen || isHorizontalFullscreen) && (
+              {!isTvMode && (isFullscreen || isHorizontalFullscreen) && onToggleTouchLock && (
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    triggerHaptic('medium');
+                    onToggleTouchLock();
+                  }}
+                  title={isTouchLocked ? 'Desbloquear controles táctiles' : 'Bloquear pantalla (evita toques)'}
+                  aria-label={isTouchLocked ? 'Desbloquear pantalla' : 'Bloquear pantalla'}
+                  className={`min-h-[44px] min-w-[44px] px-3 rounded-2xl backdrop-blur-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                    isTouchLocked
+                      ? 'bg-[#9146FF] border-[#BF94FF] text-white shadow-[0_8px_24px_rgba(145,70,255,0.45)]'
+                      : 'bg-[#141418]/75 hover:bg-[#141418]/95 border-white/15 text-white'
+                  }`}
+                >
+                  {isTouchLocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+                  {isTouchLocked && <span className="hidden sm:inline">Desbloquear</span>}
+                </button>
+              )}
+
+              {!isTouchLocked && !isTvMode && (isFullscreen || isHorizontalFullscreen) && (
                 <button
                   type="button"
                   onClick={onDirectCastToTv}
@@ -126,7 +153,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
 
               {voiceSlot}
 
-              {!isTvMode && (isFullscreen || isHorizontalFullscreen) && (
+              {!isTouchLocked && !isTvMode && (isFullscreen || isHorizontalFullscreen) && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -151,7 +178,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                 </button>
               )}
 
-              {!isTvMode && canUseNativePiPOrCast && (
+              {!isTouchLocked && !isTvMode && canUseNativePiPOrCast && (
                 <button
                   type="button"
                   onClick={onTogglePiP}
@@ -220,7 +247,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                 </button>
               )}
 
-              {!isTvMode && (isFullscreen || isHorizontalFullscreen) ? (
+              {!isTouchLocked && (!isTvMode && (isFullscreen || isHorizontalFullscreen) ? (
                 <button
                   type="button"
                   onClick={onToggleFullscreen}
@@ -248,7 +275,7 @@ export const PlayerTopHudBar: React.FC<PlayerTopHudBarProps> = ({
                     <RiffanCloseIcon size={16} tone="current" />
                   </button>
                 )
-              )}
+              ))}
             </div>
           </div>
         )}

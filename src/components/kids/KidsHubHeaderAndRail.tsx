@@ -73,8 +73,8 @@ export const KidsHubHeader: React.FC<KidsHubHeaderProps> = ({
   onOpenSmartTv,
 }) => {
   return (
-    <header className="shrink-0 relative z-[225] flex items-center justify-between gap-2 px-1 sm:px-2 py-1 landscape:py-0.5 pt-safe border-b border-white/10">
-      <div className="flex items-center gap-2 min-w-0">
+    <header className="shrink-0 relative z-[225] flex items-center justify-between gap-1.5 sm:gap-2 px-2 sm:px-3 py-1 landscape:py-0.5 pt-safe border-b border-white/10">
+      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
         {activeTab === 'portal' ? (
           <KidsSquishButton
             onClick={onOpenAlbum}
@@ -172,8 +172,8 @@ export const KidsHubHeader: React.FC<KidsHubHeaderProps> = ({
 
         {/* Brand / Active Section Title */}
         {activeTab === 'portal' ? (
-          <div className="flex items-center gap-1.5 min-w-0">
-            <span className="font-display font-black text-base sm:text-xl tracking-tight bg-gradient-to-r from-amber-300 via-pink-300 to-sky-300 bg-clip-text text-transparent truncate">
+          <div className={`items-center gap-1.5 min-w-0 ${profilesStore.profiles.length > 1 ? 'hidden md:flex' : 'flex'}`}>
+            <span className="font-display font-black text-sm sm:text-xl tracking-tight bg-gradient-to-r from-amber-300 via-pink-300 to-sky-300 bg-clip-text text-transparent truncate whitespace-nowrap">
               Riffan Kids
             </span>
             {isTvActive && (
@@ -196,7 +196,7 @@ export const KidsHubHeader: React.FC<KidsHubHeaderProps> = ({
       </div>
 
       {/* Right Quick Controls */}
-      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+      <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
         {remainingMins !== null && (
           <div className="hidden lg:flex h-10 px-2.5 rounded-xl bg-indigo-500/20 border border-indigo-300/30 items-center gap-1 text-xs font-black text-indigo-100 tabular-nums">
             <Clock className="w-3.5 h-3.5" />
@@ -224,7 +224,7 @@ export const KidsHubHeader: React.FC<KidsHubHeaderProps> = ({
           onClick={onOpenApkModal}
           ariaLabel="Descargar APK para Google TV y Móvil"
           title="Descargar APK para Google TV y Móvil"
-          className="!min-w-[42px] !min-h-[42px] h-10 sm:h-11 px-2 sm:px-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-sky-200 flex items-center justify-center gap-1.5 shrink-0"
+          className="!min-w-[44px] !min-h-[44px] h-11 px-2 sm:px-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/40 text-sky-200 flex items-center justify-center gap-1.5 shrink-0 whitespace-nowrap"
         >
           <Download className="w-4 h-4 text-sky-300 shrink-0" />
           <span className="hidden xl:inline text-xs font-black">APK</span>
@@ -237,7 +237,7 @@ export const KidsHubHeader: React.FC<KidsHubHeaderProps> = ({
           }}
           ariaLabel={t.chooseLanguageTitle}
           title={t.chooseLanguageTitle}
-          className={`!min-w-[42px] !min-h-[42px] h-10 sm:h-11 px-2 sm:px-2.5 rounded-xl border flex items-center justify-center gap-1.5 ${
+          className={`!min-w-[44px] !min-h-[44px] h-11 px-2 sm:px-2.5 rounded-xl border flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 ${
             progress.parentPrefs?.lockedLang
               ? 'bg-white/[0.04] text-zinc-400 border-white/10 cursor-not-allowed'
               : 'bg-white/[0.07] hover:bg-white/[0.13] text-white border-white/10'
@@ -256,7 +256,7 @@ export const KidsHubHeader: React.FC<KidsHubHeaderProps> = ({
           onClick={onToggleSound}
           ariaLabel={ux.soundEnabled ? t.soundOn : t.soundOff}
           title={ux.soundEnabled ? t.soundOn : t.soundOff}
-          className={`!min-w-[42px] !min-h-[42px] h-10 sm:h-11 w-10 sm:w-11 rounded-xl border flex items-center justify-center ${
+          className={`!min-w-[44px] !min-h-[44px] h-11 w-11 rounded-xl border flex items-center justify-center shrink-0 ${
             ux.soundEnabled
               ? 'bg-emerald-500/20 text-emerald-200 border-emerald-400/40'
               : 'bg-white/[0.07] text-zinc-400 border-white/10'
@@ -269,7 +269,7 @@ export const KidsHubHeader: React.FC<KidsHubHeaderProps> = ({
           onClick={() => onOpenPinModal('parent_settings')}
           ariaLabel={t.parentsBtn}
           title={t.parentsBtn}
-          className="!min-w-[42px] !min-h-[42px] h-10 sm:h-11 w-10 sm:w-auto sm:px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/40 text-xs sm:text-sm font-black text-zinc-100 flex items-center justify-center gap-1.5"
+          className="!min-w-[44px] !min-h-[44px] h-11 w-11 sm:w-auto sm:px-3 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-400/40 text-xs sm:text-sm font-black text-zinc-100 flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0"
         >
           <Lock className="w-4 h-4 text-amber-300 shrink-0" />
           <span className="hidden sm:inline whitespace-nowrap">{t.parentsBtn}</span>

@@ -2,6 +2,8 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   CalendarClock,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ChevronUp,
   Clock,
   Layers,
@@ -235,6 +237,15 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
     onSelectChannel(ch, liveSnap?.now?.title);
   };
 
+  const handleStepZap = (delta: -1 | 1) => {
+    if (allChannels.length < 2) return;
+    const anchor = playingChannel || headerChannel;
+    const idx = anchor ? allChannels.findIndex((c) => c.id === anchor.id) : -1;
+    const baseIdx = idx >= 0 ? idx : 0;
+    const nextIdx = (baseIdx + delta + allChannels.length) % allChannels.length;
+    handleZap(allChannels[nextIdx]);
+  };
+
   const activeNow = inspectedEpg?.now || null;
   const activeNext = inspectedEpg?.next || null;
   const upcomingList = inspectedEpg?.upcoming || [];
@@ -298,6 +309,45 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
               </span>
             )}
 
+            {allChannels.length > 1 && (
+              <div className="inline-flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleStepZap(-1)}
+                  aria-label={pickLang(lang, {
+                    es: 'Canal anterior',
+                    ca: 'Canal anterior',
+                    en: 'Previous channel',
+                  })}
+                  title={pickLang(lang, {
+                    es: 'Canal anterior',
+                    ca: 'Canal anterior',
+                    en: 'Previous channel',
+                  })}
+                  className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-[#9146FF]/25 border border-white/[0.08] hover:border-[#9146FF]/60 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleStepZap(1)}
+                  aria-label={pickLang(lang, {
+                    es: 'Canal siguiente',
+                    ca: 'Canal següent',
+                    en: 'Next channel',
+                  })}
+                  title={pickLang(lang, {
+                    es: 'Canal siguiente',
+                    ca: 'Canal següent',
+                    en: 'Next channel',
+                  })}
+                  className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-[#9146FF]/25 border border-white/[0.08] hover:border-[#9146FF]/60 text-zinc-200 hover:text-white flex items-center justify-center cursor-pointer active:scale-95 transition-all"
+                >
+                  <ChevronRight className="w-4 h-4" />
+                </button>
+              </div>
+            )}
+
             <button
               type="button"
               onClick={() => {
@@ -309,7 +359,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                 ca: 'Actualitzar guia TV',
                 en: 'Refresh TV guide',
               })}
-              className="w-8 h-8 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${loadingEpg ? 'animate-spin text-[#BF94FF]' : ''}`} />
             </button>
@@ -325,7 +375,7 @@ export const ChannelGuideDock: React.FC<ChannelGuideDockProps> = ({
                   ? pickLang(lang, { es: 'Mostrar guía', ca: 'Mostrar guia', en: 'Show guide' })
                   : pickLang(lang, { es: 'Ocultar guía', ca: 'Amagar guia', en: 'Hide guide' })
               }
-              className="w-8 h-8 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
+              className="w-9 h-9 rounded-xl bg-white/[0.05] hover:bg-white/[0.1] border border-white/[0.08] text-zinc-300 hover:text-white flex items-center justify-center cursor-pointer transition-colors"
             >
               {collapsed ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
             </button>

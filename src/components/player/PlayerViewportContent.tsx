@@ -146,6 +146,8 @@ export interface PlayerViewportContentProps {
   handleSelectExternalServer: (trackIndex: number) => void;
   handleMarkInlineServerWorking: () => void;
   handleRetryInlineEmbed: () => void;
+  isTouchLocked?: boolean;
+  onToggleTouchLock?: () => void;
   videoCallbacks: {
     onLoadedMetadata: (e: React.SyntheticEvent<HTMLVideoElement>) => void;
     onEnded: () => void;
@@ -211,6 +213,8 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
         onToggleFullscreen={p.handleToggleFullscreen}
         onExitTvMode={p.onExitTvMode}
         onClosePlayer={p.onClosePlayer}
+        isTouchLocked={p.isTouchLocked}
+        onToggleTouchLock={p.onToggleTouchLock}
       />
 
       {p.videoState.mode === 'idle' && !p.isExtracting && !p.isMinimized && (
@@ -229,7 +233,7 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
       )}
 
       <div
-        onClick={p.handleVideoSurfaceTap}
+        onClick={p.isTouchLocked ? () => p.revealControls() : p.handleVideoSurfaceTap}
         className={`w-full h-full ${
           p.videoState.mode === 'hls' || p.videoState.mode === 'direct'
             ? p.secondaryStream && !p.isMinimized
@@ -242,7 +246,7 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
           ref={p.videoRef}
           playsInline
           x-webkit-airplay="allow"
-          onClick={p.handleVideoSurfaceTap}
+          onClick={p.isTouchLocked ? () => p.revealControls() : p.handleVideoSurfaceTap}
           onLoadedMetadata={p.videoCallbacks.onLoadedMetadata}
           onEnded={p.videoCallbacks.onEnded}
           onTimeUpdate={p.videoCallbacks.onTimeUpdate}
@@ -369,6 +373,8 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
           p.setAutoNextCancelledForUrl(p.videoState.url);
           p.setAutoNextCountdown(null);
         }}
+        isTouchLocked={p.isTouchLocked}
+        onToggleTouchLock={p.onToggleTouchLock}
       />
 
       {p.videoState.mode === 'youtube' && (
@@ -461,6 +467,8 @@ export const PlayerViewportContent: React.FC<PlayerViewportContentProps> = (p) =
           onTogglePiP={p.handleTogglePiP}
           onToggleLandscapeRotation={p.handleToggleLandscapeRotation}
           onToggleFullscreen={p.handleToggleFullscreen}
+          isTouchLocked={p.isTouchLocked}
+          onSeekRelative={p.handleSeekRelative}
         />
       )}
 

@@ -31,14 +31,26 @@ import {
   type CatalogSection,
   type TvFilterGroup,
 } from './catalog/catalogConstants';
-import { CatalaEpisodePickerModal } from './catalog/CatalaEpisodePickerModal';
-import { LiveTvWorldView } from './catalog/LiveTvWorldView';
-import { EpgChannelModal } from './catalog/EpgChannelModal';
-import { YouTubeWorldView } from './catalog/YouTubeWorldView';
 import { CineWorldView } from './catalog/CineWorldView';
-import { FootballWorldView } from './catalog/FootballWorldView';
 import { useVodCatalogState } from './catalog/useVodCatalogState';
 import { useLiveTvAndSportsCatalog } from './catalog/useLiveTvAndSportsCatalog';
+import { RiffanLoaderR } from './ui/RiffanIcons';
+
+const CatalaEpisodePickerModal = React.lazy(() =>
+  import('./catalog/CatalaEpisodePickerModal').then((m) => ({ default: m.CatalaEpisodePickerModal }))
+);
+const LiveTvWorldView = React.lazy(() =>
+  import('./catalog/LiveTvWorldView').then((m) => ({ default: m.LiveTvWorldView }))
+);
+const EpgChannelModal = React.lazy(() =>
+  import('./catalog/EpgChannelModal').then((m) => ({ default: m.EpgChannelModal }))
+);
+const YouTubeWorldView = React.lazy(() =>
+  import('./catalog/YouTubeWorldView').then((m) => ({ default: m.YouTubeWorldView }))
+);
+const FootballWorldView = React.lazy(() =>
+  import('./catalog/FootballWorldView').then((m) => ({ default: m.FootballWorldView }))
+);
 
 export { normalizeCatalogPillar, TV_FILTER_GROUPS };
 export type { CatalogSection, CatalogPillar, TvFilterGroup };
@@ -250,27 +262,31 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
       className="@container w-full min-w-0 max-w-full space-y-4 pb-24 sm:pb-8"
       data-pillar={activePillar}
     >
-      <CatalaEpisodePickerModal
-        lang={lang}
-        selectedSeries={vod.selectedCatalaSeries}
-        loadingEpisodes={vod.loadingCatalaEpisodes}
-        onClose={() => {
-          vod.setSelectedCatalaSeries(null);
-          useAppStore.getState().setRequestedCatalaModal(null);
-        }}
-        onSelectSeason={vod.openCatalaSeriesDetails}
-        onPlayEpisode={(catSeries, catEp) => {
-          captureOriginContext({
-            catalaModal: {
-              series: catSeries,
-              season: catSeries.activeSeason,
-            },
-          });
-          useAppStore.getState().setRequestedCatalaModal(null);
-          onPlayCatalaEpisode(catSeries, catEp);
-        }}
-        onAddToQueue={onAddToQueue}
-      />
+      {vod.selectedCatalaSeries && (
+        <React.Suspense fallback={null}>
+          <CatalaEpisodePickerModal
+            lang={lang}
+            selectedSeries={vod.selectedCatalaSeries}
+            loadingEpisodes={vod.loadingCatalaEpisodes}
+            onClose={() => {
+              vod.setSelectedCatalaSeries(null);
+              useAppStore.getState().setRequestedCatalaModal(null);
+            }}
+            onSelectSeason={vod.openCatalaSeriesDetails}
+            onPlayEpisode={(catSeries, catEp) => {
+              captureOriginContext({
+                catalaModal: {
+                  series: catSeries,
+                  season: catSeries.activeSeason,
+                },
+              });
+              useAppStore.getState().setRequestedCatalaModal(null);
+              onPlayCatalaEpisode(catSeries, catEp);
+            }}
+            onAddToQueue={onAddToQueue}
+          />
+        </React.Suspense>
+      )}
 
       {/* WORLD 1: CINE */}
       {(worldMode === 'cine' || (!worldMode && activeSection === 'home')) && (
@@ -381,99 +397,127 @@ export const MediaCatalogHub: React.FC<MediaCatalogHubProps> = ({
 
       {/* WORLD 2: FÚTBOL */}
       {(worldMode === 'futbol' || (!worldMode && activeSection === 'sports')) && (
-        <FootballWorldView
-          lang={lang}
-          shareRoomId={shareRoomId}
-          pull={futbolPull}
-          effectiveFutbolTab={effectiveFutbolTab}
-          setEffectiveFutbolTab={setEffectiveFutbolTab}
-          futbolFiltersOpen={liveTv.futbolFiltersOpen}
-          setFutbolFiltersOpen={liveTv.setFutbolFiltersOpen}
-          futbolLeagueFilter={liveTv.futbolLeagueFilter}
-          setFutbolLeagueFilter={liveTv.setFutbolLeagueFilter}
-          futbolLangFilter={liveTv.futbolLangFilter}
-          setFutbolLangFilter={liveTv.setFutbolLangFilter}
-          footballLiveBrand={liveTv.footballLiveBrand}
-          setFootballLiveBrand={liveTv.setFootballLiveBrand}
-          sportsSearch={liveTv.sportsSearch}
-          setSportsSearch={liveTv.setSportsSearch}
-          activeVideoRawUrl={activeVideoRawUrl}
-          loadingItemId={loadingItemId}
-          loadingTdt={liveTv.loadingTdt}
-          footballSectionLiveChannels={liveTv.footballSectionLiveChannels}
-          footballNetworkCounts={liveTv.footballNetworkCounts}
-          isChannelFavorited={liveTv.isChannelFavorited}
-          onToggleChannelFavorite={onToggleChannelFavorite}
-          onPlaySportsMatch={onPlaySportsMatch}
-          onPlaySecondaryChannel={onPlaySecondaryChannel}
-          onPlayTdtChannel={onPlayTdtChannel}
-        />
+        <React.Suspense
+          fallback={
+            <div className="py-12 flex items-center justify-center">
+              <RiffanLoaderR size={36} />
+            </div>
+          }
+        >
+          <FootballWorldView
+            lang={lang}
+            shareRoomId={shareRoomId}
+            pull={futbolPull}
+            effectiveFutbolTab={effectiveFutbolTab}
+            setEffectiveFutbolTab={setEffectiveFutbolTab}
+            futbolFiltersOpen={liveTv.futbolFiltersOpen}
+            setFutbolFiltersOpen={liveTv.setFutbolFiltersOpen}
+            futbolLeagueFilter={liveTv.futbolLeagueFilter}
+            setFutbolLeagueFilter={liveTv.setFutbolLeagueFilter}
+            futbolLangFilter={liveTv.futbolLangFilter}
+            setFutbolLangFilter={liveTv.setFutbolLangFilter}
+            footballLiveBrand={liveTv.footballLiveBrand}
+            setFootballLiveBrand={liveTv.setFootballLiveBrand}
+            sportsSearch={liveTv.sportsSearch}
+            setSportsSearch={liveTv.setSportsSearch}
+            activeVideoRawUrl={activeVideoRawUrl}
+            loadingItemId={loadingItemId}
+            loadingTdt={liveTv.loadingTdt}
+            footballSectionLiveChannels={liveTv.footballSectionLiveChannels}
+            footballNetworkCounts={liveTv.footballNetworkCounts}
+            isChannelFavorited={liveTv.isChannelFavorited}
+            onToggleChannelFavorite={onToggleChannelFavorite}
+            onPlaySportsMatch={onPlaySportsMatch}
+            onPlaySecondaryChannel={onPlaySecondaryChannel}
+            onPlayTdtChannel={onPlayTdtChannel}
+          />
+        </React.Suspense>
       )}
 
       {/* WORLD 3: TV EN DIRECTO */}
       {(worldMode === 'tv' || (!worldMode && activeSection === 'tdt')) && (
-        <LiveTvWorldView
-          lang={lang}
-          shareRoomId={shareRoomId}
-          pull={tvPull}
-          tdtChannels={liveTv.tdtChannels}
-          filteredChannels={liveTv.filteredTdtChannels}
-          loadingTdt={liveTv.loadingTdt}
-          activeVideoRawUrl={activeVideoRawUrl}
-          tdtCategory={liveTv.tdtCategory}
-          tvRegion={liveTv.tvRegion}
-          tvFavOnly={liveTv.tvFavOnly}
-          epgFilter={liveTv.epgFilter}
-          epgMadridClock={liveTv.epgMadridClock}
-          tvFiltersOpen={liveTv.tvFiltersOpen}
-          tvCategoryCounts={liveTv.tvCategoryCounts}
-          getChannelLiveEpg={liveTv.getChannelLiveEpg}
-          isChannelFavorited={liveTv.isChannelFavorited}
-          onToggleChannelFavorite={onToggleChannelFavorite}
-          onPlayTdtChannel={onPlayTdtChannel}
-          onOpenEpgModal={liveTv.setSelectedEpgChannel}
-          onTvFiltersOpenChange={liveTv.setTvFiltersOpen}
-          onTvFavOnlyChange={liveTv.setTvFavOnly}
-          onTvRegionChange={liveTv.setTvRegion}
-          onTdtCategoryChange={liveTv.setTdtCategory}
-          onEpgFilterChange={liveTv.setEpgFilter}
-          adrarCountryFilter={liveTv.adrarCountryFilter}
-          onAdrarCountryFilterChange={liveTv.setAdrarCountryFilter}
-        />
+        <React.Suspense
+          fallback={
+            <div className="py-12 flex items-center justify-center">
+              <RiffanLoaderR size={36} />
+            </div>
+          }
+        >
+          <LiveTvWorldView
+            lang={lang}
+            shareRoomId={shareRoomId}
+            pull={tvPull}
+            tdtChannels={liveTv.tdtChannels}
+            filteredChannels={liveTv.filteredTdtChannels}
+            loadingTdt={liveTv.loadingTdt}
+            activeVideoRawUrl={activeVideoRawUrl}
+            tdtCategory={liveTv.tdtCategory}
+            tvRegion={liveTv.tvRegion}
+            tvFavOnly={liveTv.tvFavOnly}
+            epgFilter={liveTv.epgFilter}
+            epgMadridClock={liveTv.epgMadridClock}
+            tvFiltersOpen={liveTv.tvFiltersOpen}
+            tvCategoryCounts={liveTv.tvCategoryCounts}
+            getChannelLiveEpg={liveTv.getChannelLiveEpg}
+            isChannelFavorited={liveTv.isChannelFavorited}
+            onToggleChannelFavorite={onToggleChannelFavorite}
+            onPlayTdtChannel={onPlayTdtChannel}
+            onOpenEpgModal={liveTv.setSelectedEpgChannel}
+            onTvFiltersOpenChange={liveTv.setTvFiltersOpen}
+            onTvFavOnlyChange={liveTv.setTvFavOnly}
+            onTvRegionChange={liveTv.setTvRegion}
+            onTdtCategoryChange={liveTv.setTdtCategory}
+            onEpgFilterChange={liveTv.setEpgFilter}
+            adrarCountryFilter={liveTv.adrarCountryFilter}
+            onAdrarCountryFilterChange={liveTv.setAdrarCountryFilter}
+          />
+        </React.Suspense>
       )}
 
       {/* WORLD 4: YOUTUBE */}
       {(worldMode === 'youtube' || (!worldMode && activeSection === 'youtube')) && (
-        <YouTubeWorldView
-          lang={lang}
-          debouncedQuery={vod.debouncedYtQuery}
-          loading={vod.loadingYt}
-          results={vod.ytResults}
-          onSelectTopic={(q) => {
-            vod.setYtQuery(q);
-            vod.setDebouncedYtQuery(q);
-          }}
-          onPlayVideo={onPlayYouTubeVideo}
-          onAddToQueue={onAddToQueue}
-        />
+        <React.Suspense
+          fallback={
+            <div className="py-12 flex items-center justify-center">
+              <RiffanLoaderR size={36} />
+            </div>
+          }
+        >
+          <YouTubeWorldView
+            lang={lang}
+            debouncedQuery={vod.debouncedYtQuery}
+            loading={vod.loadingYt}
+            results={vod.ytResults}
+            onSelectTopic={(q) => {
+              vod.setYtQuery(q);
+              vod.setDebouncedYtQuery(q);
+            }}
+            onPlayVideo={onPlayYouTubeVideo}
+            onAddToQueue={onAddToQueue}
+          />
+        </React.Suspense>
       )}
 
-      <EpgChannelModal
-        lang={lang}
-        channel={liveTv.selectedEpgChannel}
-        epgClockMs={liveTv.epgClockMs}
-        loadingEpg={liveTv.loadingEpg}
-        getChannelLiveEpg={liveTv.getChannelLiveEpg}
-        onClose={() => {
-          liveTv.setSelectedEpgChannel(null);
-          useAppStore.getState().setRequestedEpgChannel(null);
-        }}
-        onPlayChannel={(ch, sIdx, hint) => {
-          captureOriginContext({ epgChannel: ch });
-          useAppStore.getState().setRequestedEpgChannel(null);
-          onPlayTdtChannel(ch, sIdx, hint);
-        }}
-      />
+      {liveTv.selectedEpgChannel && (
+        <React.Suspense fallback={null}>
+          <EpgChannelModal
+            lang={lang}
+            channel={liveTv.selectedEpgChannel}
+            epgClockMs={liveTv.epgClockMs}
+            loadingEpg={liveTv.loadingEpg}
+            getChannelLiveEpg={liveTv.getChannelLiveEpg}
+            onClose={() => {
+              liveTv.setSelectedEpgChannel(null);
+              useAppStore.getState().setRequestedEpgChannel(null);
+            }}
+            onPlayChannel={(ch, sIdx, hint) => {
+              captureOriginContext({ epgChannel: ch });
+              useAppStore.getState().setRequestedEpgChannel(null);
+              onPlayTdtChannel(ch, sIdx, hint);
+            }}
+          />
+        </React.Suspense>
+      )}
     </div>
   );
 };

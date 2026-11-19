@@ -87,7 +87,6 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
   onPlayMatch = () => {},
   onSelectGame = () => {},
   onOpenVoiceAssistant,
-  onOpenDesignSystem,
   onChangeLang,
   sessionMode = 'party',
 }) => {
@@ -194,7 +193,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
   return (
     <div className="relative w-full overflow-x-clip">
-      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-3 sm:pt-5 pb-20 sm:pb-24 pb-[calc(env(safe-area-inset-bottom,0px)+5.5rem)] space-y-4 sm:space-y-5 @container">
+      <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 pt-3 sm:pt-5 pb-16 sm:pb-20 space-y-4 sm:space-y-5 @container">
         {/* 1. COMPACT EDITORIAL GREETING */}
         <section className="flex items-end justify-between gap-3">
           <div className="min-w-0 space-y-0.5">
@@ -350,6 +349,12 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                   item.mediaType === 'tv' && item.season && item.episode
                     ? `T${item.season}·E${item.episode}`
                     : null;
+                const minsLeft =
+                  item.durationSec &&
+                  item.resumeTimeSec &&
+                  item.durationSec > item.resumeTimeSec
+                    ? Math.max(1, Math.round((item.durationSec - item.resumeTimeSec) / 60))
+                    : null;
                 const cleanedSubtitle = item.subtitle
                   ? epBadge
                     ? item.subtitle
@@ -387,6 +392,11 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                           {epBadge}
                         </span>
                       )}
+                      {minsLeft !== null && (
+                        <span className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded-md bg-black/75 text-[10px] font-semibold text-zinc-200 tabular-nums">
+                          ~{minsLeft}m
+                        </span>
+                      )}
                       <div className="absolute inset-x-0 bottom-0 h-[3.5px] bg-white/20">
                         <div className="h-full bg-[#9146FF] shadow-[0_0_8px_rgba(145,70,255,0.75)]" style={{ width: `${pct}%` }} />
                       </div>
@@ -398,6 +408,14 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                       {cleanedSubtitle ? (
                         <p className="text-[11px] text-zinc-400 truncate mt-1">
                           {cleanedSubtitle}
+                        </p>
+                      ) : minsLeft !== null ? (
+                        <p className="text-[11px] text-zinc-400 truncate mt-1 tabular-nums">
+                          {pickLang(lang, {
+                            es: `Quedan ~${minsLeft} min`,
+                            ca: `Queden ~${minsLeft} min`,
+                            en: `~${minsLeft} min left`,
+                          })}
                         </p>
                       ) : (
                         <p className="text-[11px] text-zinc-500 truncate mt-1">
@@ -434,7 +452,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             type="button"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, delay: 0.16 }}
+            transition={{ duration: 0.14 }}
             whileTap={{ scale: 0.985 }}
             onPointerEnter={() => onPreloadWorld?.('kids')}
             onTouchStart={() => onPreloadWorld?.('kids')}
@@ -465,7 +483,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
             type="button"
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.2, delay: 0.18 }}
+            transition={{ duration: 0.14 }}
             whileTap={{ scale: 0.985 }}
             onClick={() => {
               triggerHaptic('light');
@@ -535,25 +553,6 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
                 );
               })}
             </div>
-          )}
-
-          {onOpenDesignSystem && (
-            <footer className="flex items-center justify-center pt-1">
-              <button
-                type="button"
-                onClick={() => {
-                  triggerHaptic('light');
-                  onOpenDesignSystem();
-                }}
-                className="px-3 py-1.5 rounded-lg text-[11px] font-medium text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer"
-              >
-                {pickLang(lang, {
-                  es: 'Acerca de RiffanTV · Identidad y recursos de marca',
-                  ca: 'Quant a RiffanTV · Identitat i recursos de marca',
-                  en: 'About RiffanTV · Brand identity & media kit',
-                })}
-              </button>
-            </footer>
           )}
         </section>
       </div>
