@@ -110,12 +110,25 @@ export async function extractDailymotionSeriesTracks(opts: {
     `${mainTitle} T${season} E${episode}`,
     `${mainTitle} ${season}x${epPad}`,
     `${mainTitle} temporada ${season} capitulo ${episode}`,
+    ...(isLqsa ? [`LQSA ${season}x${epPad}`, `La que se avecina T${season}_E${episode}`] : []),
   ];
 
-  const searchResults = await Promise.all(
-    queries.map((q) =>
+  const searchRequests: Promise<any>[] = queries.map((q) =>
+    fetch(
+      `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration&limit=20`,
+      {
+        headers: { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' },
+        signal: AbortSignal.timeout(4000),
+      }
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+  );
+
+  if (isLqsa && season >= 17) {
+    searchRequests.push(
       fetch(
-        `https://api.dailymotion.com/videos?search=${encodeURIComponent(q)}&fields=id,title,duration&limit=20`,
+        'https://api.dailymotion.com/user/x3qhrza/videos?fields=id,title,duration&limit=20',
         {
           headers: { 'User-Agent': CHROME_UA, 'Accept-Language': 'es-ES,es;q=0.9' },
           signal: AbortSignal.timeout(4000),
@@ -123,9 +136,12 @@ export async function extractDailymotionSeriesTracks(opts: {
       )
         .then((r) => (r.ok ? r.json() : null))
         .catch(() => null)
-    )
-  );
+    );
+  }
 
+  const searchResults = await Promise.all(searchRequests);
+
+  const lqsaHints = isLqsa ? [...titleHints, 'LQSA'] : titleHints;
   for (const data of searchResults) {
     const list: any[] = Array.isArray(data?.list) ? data.list : [];
     for (const item of list) {
@@ -134,7 +150,7 @@ export async function extractDailymotionSeriesTracks(opts: {
       const duration = Number(item?.duration || 0);
       if (!id || duration < 900 || duration > 7200) continue;
       if (/\b(trailer|avance|promo|teaser|resumen|cabecera|tomas falsas)\b/i.test(vTitle)) continue;
-      if (!titleMatchesHint(vTitle, titleHints)) continue;
+      if (!titleMatchesHint(vTitle, lqsaHints)) continue;
 
       const parsed = parseSeasonEpisodeFromTitle(vTitle);
       if (parsed.season !== season || parsed.episode !== episode) continue;
@@ -142,9 +158,15 @@ export async function extractDailymotionSeriesTracks(opts: {
     }
   }
 
+  const resolvedPairs = await Promise.all(
+    candidateIds.slice(0, 6).map(async (vid) => ({
+      vid,
+      m3uUrl: await resolveDailymotionVideoToM3u8(vid),
+    }))
+  );
+
   const tracks: TrackRecord[] = [];
-  for (const vid of candidateIds.slice(0, 3)) {
-    const m3uUrl = await resolveDailymotionVideoToM3u8(vid);
+  for (const { vid, m3uUrl } of resolvedPairs) {
     if (!m3uUrl) continue;
     tracks.push({
       id: `dm-${vid}`,

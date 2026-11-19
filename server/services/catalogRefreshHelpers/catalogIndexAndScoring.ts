@@ -171,16 +171,12 @@ export function scoreTitleRelevance(
     const candTokens = nSpace.split(' ').filter(Boolean);
     if (
       qTokens.length > 0 &&
-      qTokens.every(
-        (qt) =>
-          qTokens.length <= candTokens.length &&
-          qTokens.every((qtInner) =>
-            candTokens.some((ct) => doTokensMatchFuzzy(qtInner, ct) && Boolean(qt))
-          )
-      )
+      qTokens.length <= candTokens.length &&
+      qTokens.every((qt) => candTokens.some((ct) => doTokensMatchFuzzy(qt, ct)))
     ) {
       const closeness = Math.round((qTokens.length / Math.max(1, candTokens.length)) * 80);
-      bestTier = Math.max(bestTier, 320 + closeness);
+      const phraseBonus = nSpace.includes(normQ) ? 60 : 0;
+      bestTier = Math.max(bestTier, 320 + closeness + phraseBonus);
       continue;
     }
 

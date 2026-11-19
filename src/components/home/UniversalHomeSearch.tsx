@@ -10,6 +10,9 @@ import type {
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { RiffanDiceIcon, RiffanFootballIcon } from '../ui/RiffanIcons';
+import { SkeletonPosterGrid } from '../ui/DesignSystem';
+import { mergeAndRankCatalogResults, normalizeSearchText } from '../../utils/catalogSearchRank';
+import { useSuppressFloatingBubble } from '../../utils/useSuppressFloatingBubble';
 import {
   HALLMARK_GAMES,
   type AiSearchJobState,
@@ -59,22 +62,31 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
 
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastAutoAiQueryRef = useRef<string>('');
+  const aiPollRef = useRef<number | null>(null);
 
-  const norm = (s: string) =>
-    s
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '');
+  const norm = normalizeSearchText;
 
   const cleanQuery = query.trim();
   const normQuery = norm(cleanQuery);
   const isSearchActive = cleanQuery.length > 0;
 
+  useSuppressFloatingBubble(isSearchActive);
+
+  const clearAiPoll = useCallback(() => {
+    if (aiPollRef.current !== null) {
+      window.clearInterval(aiPollRef.current);
+      aiPollRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => clearAiPoll(), [clearAiPoll]);
+
   const closeSearchOverlay = useCallback(() => {
+    clearAiPoll();
     setQuery('');
     lastAutoAiQueryRef.current = '';
     setAiJob({ status: 'idle', progressLabel: '', item: null });
-  }, []);
+  }, [clearAiPoll]);
 
   useEffect(() => {
     if (cleanQuery.length < 2) {
@@ -85,13 +97,14 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     }
 
     const controller = new AbortController();
+    let active = true;
     setLoadingRemote(true);
 
     const timer = window.setTimeout(() => {
       let pending = 2;
       const doneOne = () => {
         pending -= 1;
-        if (pending <= 0) setLoadingRemote(false);
+        if (active && pending <= 0) setLoadingRemote(false);
       };
 
       fetch(
@@ -100,9 +113,17 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       )
         .then((r) => (r.ok ? r.json() : { movies: [] }))
         .then((data) => {
-          setRemoteMovies(Array.isArray(data?.movies) ? data.movies.slice(0, 8) : []);
+          if (!active) return;
+          const list = Array.isArray(data?.movies)
+            ? data.movies
+            : Array.isArray(data?.items)
+            ? data.items
+            : [];
+          setRemoteMovies(list.slice(0, 16));
         })
-        .catch(() => setRemoteMovies([]))
+        .catch(() => {
+          if (active && !controller.signal.aborted) setRemoteMovies([]);
+        })
         .finally(doneOne);
 
       fetch(
@@ -111,13 +132,22 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       )
         .then((r) => (r.ok ? r.json() : { series: [] }))
         .then((data) => {
-          setRemoteSeries(Array.isArray(data?.series) ? data.series.slice(0, 8) : []);
+          if (!active) return;
+          const list = Array.isArray(data?.series)
+            ? data.series
+            : Array.isArray(data?.items)
+            ? data.items
+            : [];
+          setRemoteSeries(list.slice(0, 16));
         })
-        .catch(() => setRemoteSeries([]))
+        .catch(() => {
+          if (active && !controller.signal.aborted) setRemoteSeries([]);
+        })
         .finally(doneOne);
-    }, 220);
+    }, 200);
 
     return () => {
+      active = false;
       window.clearTimeout(timer);
       controller.abort();
     };
@@ -127,6 +157,10 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     async (qToSearch: string) => {
       const q = qToSearch.trim();
       if (q.length < 2) return;
+      clearAiPoll();
+
+      const aiMediaType =
+        activeCategory === 'movies' ? 'movie' : activeCategory === 'series' ? 'tv' : 'all';
 
       setAiJob({
         status: 'searching',
@@ -142,7 +176,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
         const res = await fetch('/api/ai/request-movie', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: q, mediaType: 'all', lang }),
+          body: JSON.stringify({ query: q, mediaType: aiMediaType, lang }),
         });
         const data = await res.json();
         const job = data?.job;
@@ -184,7 +218,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 const pollData = await pollRes.json();
                 const updatedJob = pollData?.job;
                 if (updatedJob?.status === 'found' && updatedJob.item) {
-                  window.clearInterval(pollTimer);
+                  clearAiPoll();
                   setAiJob({
                     status: 'found',
                     progressLabel: pickLang(lang, {
@@ -195,7 +229,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                     item: updatedJob.item,
                   });
                 } else if (updatedJob?.status === 'not_found' || updatedJob?.status === 'error') {
-                  window.clearInterval(pollTimer);
+                  clearAiPoll();
                   setAiJob({
                     status: 'not_found',
                     progressLabel: pickLang(lang, {
@@ -207,11 +241,14 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                   });
                 }
               } catch {
-                window.clearInterval(pollTimer);
+                clearAiPoll();
               }
             }, 1500);
+            aiPollRef.current = pollTimer;
 
-            window.setTimeout(() => window.clearInterval(pollTimer), 20000);
+            window.setTimeout(() => {
+              if (aiPollRef.current === pollTimer) clearAiPoll();
+            }, 20000);
             return;
           }
         }
@@ -237,44 +274,24 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
         });
       }
     },
-    [lang]
+    [lang, activeCategory, clearAiPoll]
   );
 
   const matchedMovies = useMemo(() => {
     if (!normQuery) return [];
-    const local = movies.filter((m) => {
-      const t = norm(m.title);
-      const ot = norm(m.originalTitle || '');
-      const ov = norm(m.overview || '');
-      return t.includes(normQuery) || ot.includes(normQuery) || (normQuery.length >= 4 && ov.includes(normQuery));
+    return mergeAndRankCatalogResults(remoteMovies, movies, cleanQuery, {
+      limit: 12,
+      minLocalScore: 40,
     });
-
-    const map = new Map<string, CatalogMovie>();
-    for (const item of [...remoteMovies, ...local]) {
-      const k = item.tmdbId ? `tmdb-${item.tmdbId}` : `id-${item.id}`;
-      if (!map.has(k)) map.set(k, item);
-      if (map.size >= 8) break;
-    }
-    return Array.from(map.values());
-  }, [normQuery, movies, remoteMovies]);
+  }, [normQuery, cleanQuery, movies, remoteMovies]);
 
   const matchedSeries = useMemo(() => {
     if (!normQuery) return [];
-    const local = series.filter((s) => {
-      const t = norm(s.title);
-      const ot = norm(s.originalTitle || '');
-      const ov = norm(s.overview || '');
-      return t.includes(normQuery) || ot.includes(normQuery) || (normQuery.length >= 4 && ov.includes(normQuery));
+    return mergeAndRankCatalogResults(remoteSeries, series, cleanQuery, {
+      limit: 12,
+      minLocalScore: 40,
     });
-
-    const map = new Map<string, CatalogMovie>();
-    for (const item of [...remoteSeries, ...local]) {
-      const k = item.tmdbId ? `tmdb-${item.tmdbId}` : `id-${item.id}`;
-      if (!map.has(k)) map.set(k, item);
-      if (map.size >= 8) break;
-    }
-    return Array.from(map.values());
-  }, [normQuery, series, remoteSeries]);
+  }, [normQuery, cleanQuery, series, remoteSeries]);
 
   const matchedSports = useMemo(() => {
     if (!normQuery) return [];
@@ -327,10 +344,27 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
     matchedTdt.length +
     matchedGames.length;
 
+  const visibleCategoryHits = useMemo(() => {
+    if (activeCategory === 'movies') return matchedMovies.length;
+    if (activeCategory === 'series') return matchedSeries.length;
+    if (activeCategory === 'sports') return matchedSports.length;
+    if (activeCategory === 'tv') return matchedTdt.length;
+    if (activeCategory === 'games') return matchedGames.length;
+    return totalHits;
+  }, [
+    activeCategory,
+    matchedMovies.length,
+    matchedSeries.length,
+    matchedSports.length,
+    matchedTdt.length,
+    matchedGames.length,
+    totalHits,
+  ]);
+
   const looksLikeNaturalLanguage = useMemo(() => {
-    if (cleanQuery.length > 14) return true;
+    if (cleanQuery.length > 36) return true;
     const nlPatterns = [
-      /\b(esa|ese|donde|cuando|peli|pelicula|película|serie|miedo|terror|risa|comedia|espacio|viaje|tiempo|asesino|policiaca|amor|romance|accion|animacion|anime)\b/i,
+      /\b(esa peli|ese capitulo|donde sale|como se llama|de miedo|de risa)\b/i,
       /\b(algo de|quiero ver|recomienda|recomiendame|parecida a|similar a)\b/i,
     ];
     return nlPatterns.some((rgx) => rgx.test(cleanQuery));
@@ -428,6 +462,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
             type="text"
             value={query}
             onChange={(e) => {
+              clearAiPoll();
               setQuery(e.target.value);
               if (aiJob.status !== 'idle') {
                 setAiJob({ status: 'idle', progressLabel: '', item: null });
@@ -506,6 +541,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                     type="text"
                     value={query}
                     onChange={(e) => {
+                      clearAiPoll();
                       setQuery(e.target.value);
                       if (aiJob.status !== 'idle') {
                         setAiJob({ status: 'idle', progressLabel: '', item: null });
@@ -570,8 +606,25 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 })}
               </div>
 
-              {/* Contextual AI Suggestion Card */}
-              {(looksLikeNaturalLanguage || totalHits === 0 || aiJob.status !== 'idle') && (
+              {/* Loading Status Banner & Skeletons */}
+              {loadingRemote && (
+                <div className="space-y-4">
+                  <div className="px-4 py-2.5 rounded-2xl bg-[#9146FF]/12 border border-[#9146FF]/30 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
+                    <Loader2 className="w-4 h-4 text-[#BF94FF] animate-spin shrink-0" />
+                    <span>
+                      {pickLang(lang, {
+                        es: `Buscando «${cleanQuery}» en todo el catálogo...`,
+                        ca: `Cercant «${cleanQuery}» a tot el catàleg...`,
+                        en: `Searching "${cleanQuery}" across full catalog...`,
+                      })}
+                    </span>
+                  </div>
+                  {visibleCategoryHits === 0 && <SkeletonPosterGrid count={8} />}
+                </div>
+              )}
+
+              {/* Contextual AI Suggestion Card (only when finished loading or genuinely NL / requested) */}
+              {((!loadingRemote && totalHits === 0) || looksLikeNaturalLanguage || aiJob.status !== 'idle') && (
                 <UniversalSearchAiCard
                   lang={lang}
                   cleanQuery={cleanQuery}
@@ -585,20 +638,46 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 />
               )}
 
-              {totalHits === 0 && aiJob.status === 'idle' && (
+              {!loadingRemote && visibleCategoryHits === 0 && totalHits > 0 && (
+                <div className="py-6 px-4 rounded-2xl bg-white/[0.03] border border-white/[0.08] text-center space-y-3">
+                  <p className="text-sm font-semibold text-zinc-200">
+                    {pickLang(lang, {
+                      es: `Sin coincidencias en esta pestaña, pero encontramos ${totalHits} resultados en el catálogo.`,
+                      ca: `Sense coincidències en aquesta pestanya, però hem trobat ${totalHits} resultats al catàleg.`,
+                      en: `No hits in this tab, but ${totalHits} results exist across the catalog.`,
+                    })}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      triggerHaptic('light');
+                      setActiveCategory('all');
+                    }}
+                    className="min-h-10 px-4 rounded-xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white cursor-pointer"
+                  >
+                    {pickLang(lang, {
+                      es: `Ver todos (${totalHits})`,
+                      ca: `Veure tots (${totalHits})`,
+                      en: `View all (${totalHits})`,
+                    })}
+                  </button>
+                </div>
+              )}
+
+              {!loadingRemote && totalHits === 0 && aiJob.status === 'idle' && (
                 <div className="py-6 text-center space-y-2">
                   <p className="text-sm font-semibold text-zinc-300">
                     {pickLang(lang, {
-                      es: `No hay resultados locales directos para "${cleanQuery}"`,
-                      ca: `Sense resultats locals directes per "${cleanQuery}"`,
-                      en: `No direct local matches for "${cleanQuery}"`,
+                      es: `No hay resultados directos en el catálogo para "${cleanQuery}"`,
+                      ca: `Sense resultats directes al catàleg per "${cleanQuery}"`,
+                      en: `No direct catalog matches for "${cleanQuery}"`,
                     })}
                   </p>
                   <p className="text-xs text-zinc-400">
                     {pickLang(lang, {
-                      es: 'Toca "Buscar con IA" arriba para encontrarlo en fuentes web externas automáticamente.',
-                      ca: 'Toca "Cercar amb IA" a dalt per trobar-ho a fonts web externes.',
-                      en: 'Tap "Search with AI" above to automatically find it on external web providers.',
+                      es: 'Toca "Buscar con IA" arriba para localizarlo en fuentes externas automáticamente.',
+                      ca: 'Toca "Cercar amb IA" a dalt per localitzar-ho a fonts externes.',
+                      en: 'Tap "Search with AI" above to automatically locate it on external providers.',
                     })}
                   </p>
                 </div>

@@ -285,11 +285,21 @@ export function registerDetailsAndSubtitlesRoutes(
         fetchTmdbTitleLogo(Number(cleanId), effectiveMediaType, req.query.lang === 'en' ? 'en' : 'es'),
       ]);
 
+      const origLang = String(data?.original_language || '').toLowerCase();
+      const origCountries: string[] = Array.isArray(data?.origin_country)
+        ? data.origin_country
+        : [];
+      const isSpanishNative = origLang === 'es' || origCountries.includes('ES');
+
       const availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[] =
         probedLanguages.length > 0
-          ? probedLanguages
+          ? isSpanishNative && !probedLanguages.includes('ES')
+            ? ['ES', ...probedLanguages]
+            : probedLanguages
           : isReleasedTmdbTitle
-          ? ['EN']
+          ? isSpanishNative || langParam === 'es-ES'
+            ? ['ES', 'EN']
+            : ['EN']
           : [];
 
       const ytVideos = allVideosResolved.filter((v) => v && v.site === 'YouTube' && v.key);

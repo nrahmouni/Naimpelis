@@ -4,6 +4,7 @@ import { CornerDownLeft, Film, Loader2, Search, Sparkles, Trophy, Tv, Wand2, X }
 import type { AppLanguage, CatalogMovie, SpanishTdtChannel } from '../types';
 import { pickLang } from '../utils/i18n';
 import { useGlobalEscape } from '../utils/useGlobalEscape';
+import { mergeAndRankCatalogResults, compactSearchText, normalizeSearchText } from '../utils/catalogSearchRank';
 import { BottomSheet, StandardInput } from './ui/DesignSystem';
 import { PosterImage } from './ui/PosterImage';
 import { ChannelLogoBadge } from './ui/ChannelLogoBadge';
@@ -103,7 +104,12 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
         .then((r) => (r.ok ? r.json() : { movies: [] }))
         .then((data) => {
           if (!active) return;
-          setRemoteMovies(Array.isArray(data?.movies) ? data.movies.slice(0, 8) : []);
+          const list = Array.isArray(data?.movies)
+            ? data.movies
+            : Array.isArray(data?.items)
+            ? data.items
+            : [];
+          setRemoteMovies(list.slice(0, 14));
         })
         .catch(() => {
           if (active && !controller.signal.aborted) setRemoteMovies([]);
@@ -117,7 +123,12 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
         .then((r) => (r.ok ? r.json() : { series: [] }))
         .then((data) => {
           if (!active) return;
-          setRemoteSeries(Array.isArray(data?.series) ? data.series.slice(0, 8) : []);
+          const list = Array.isArray(data?.series)
+            ? data.series
+            : Array.isArray(data?.items)
+            ? data.items
+            : [];
+          setRemoteSeries(list.slice(0, 14));
         })
         .catch(() => {
           if (active && !controller.signal.aborted) setRemoteSeries([]);
@@ -132,62 +143,27 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
     };
   }, [isOpen, query, lang]);
 
-  const normText = (s: string) =>
-    s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-  const normCompact = (s: string) => normText(s).replace(/[^a-z0-9]+/g, '');
+  const normText = normalizeSearchText;
+  const normCompact = compactSearchText;
 
-  const normQuery = normText(query).trim();
+  const normQuery = normText(query);
   const compactQuery = normCompact(query);
 
   const matchedMovies = useMemo(() => {
     if (!normQuery) return movies.slice(0, 6);
-    const localHits = movies.filter((m) => {
-      const t = normText(m.title);
-      const orig = normText(m.originalTitle || '');
-      return (
-        t.includes(normQuery) ||
-        orig.includes(normQuery) ||
-        (compactQuery.length >= 2 &&
-          (normCompact(m.title).includes(compactQuery) ||
-            normCompact(m.originalTitle || '').includes(compactQuery)))
-      );
+    return mergeAndRankCatalogResults(remoteMovies, movies, query, {
+      limit: 10,
+      minLocalScore: 40,
     });
-    const merged: CatalogMovie[] = [];
-    const seen = new Set<string>();
-    for (const item of [...remoteMovies, ...localHits]) {
-      const key = item.tmdbId ? `tmdb-${item.tmdbId}` : `id-${item.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(item);
-      if (merged.length >= 8) break;
-    }
-    return merged;
-  }, [movies, remoteMovies, normQuery, compactQuery]);
+  }, [movies, remoteMovies, normQuery, query]);
 
   const matchedSeries = useMemo(() => {
     if (!normQuery) return series.slice(0, 6);
-    const localHits = series.filter((s) => {
-      const t = normText(s.title);
-      const orig = normText(s.originalTitle || '');
-      return (
-        t.includes(normQuery) ||
-        orig.includes(normQuery) ||
-        (compactQuery.length >= 2 &&
-          (normCompact(s.title).includes(compactQuery) ||
-            normCompact(s.originalTitle || '').includes(compactQuery)))
-      );
+    return mergeAndRankCatalogResults(remoteSeries, series, query, {
+      limit: 10,
+      minLocalScore: 40,
     });
-    const merged: CatalogMovie[] = [];
-    const seen = new Set<string>();
-    for (const item of [...remoteSeries, ...localHits]) {
-      const key = item.tmdbId ? `tmdb-${item.tmdbId}` : `id-${item.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      merged.push(item);
-      if (merged.length >= 8) break;
-    }
-    return merged;
-  }, [series, remoteSeries, normQuery, compactQuery]);
+  }, [series, remoteSeries, normQuery, query]);
 
   const matchedChannels = useMemo(() => {
     if (!normQuery) return tdtChannels.slice(0, 4);
@@ -317,15 +293,27 @@ export const CommandSearchModal: React.FC<CommandSearchModalProps> = ({
         )}
 
         {loadingRemote && (
-          <div className="px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center gap-2 text-xs text-zinc-300">
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-[#BF94FF] shrink-0" />
-            <span>
-              {pickLang(lang, {
-                es: 'Buscando en todo el catálogo...',
-                ca: 'Cercant a tot el catàleg...',
-                en: 'Searching full catalog...',
-              })}
-            </span>
+          <div className="space-y-2.5">
+            <div className="px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center gap-2 text-xs text-zinc-300">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[#BF94FF] shrink-0" />
+              <span>
+                {pickLang(lang, {
+                  es: 'Buscando en todo el catálogo...',
+                  ca: 'Cercant a tot el catàleg...',
+                  en: 'Searching full catalog...',
+                })}
+              </span>
+            </div>
+            {flatActions.length === 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {Array.from({ length: 4 }).map((_, idx) => (
+                  <div
+                    key={idx}
+                    className="h-14 rounded-xl bg-white/[0.04] border border-white/[0.06] skeleton-shimmer"
+                  />
+                ))}
+              </div>
+            )}
           </div>
         )}
 

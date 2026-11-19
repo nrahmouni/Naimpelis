@@ -115,7 +115,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
   // 1) Controlled External Window Active Panel
   if (externalWinState === 'open') {
     return (
-      <div className="relative w-full h-full bg-gradient-to-b from-[#171226] via-[#0F0F15] to-black flex flex-col items-center justify-center p-3 sm:p-5 text-center overflow-y-auto">
+      <div className="relative w-full h-full bg-gradient-to-b from-[#171226] via-[#0F0F15] to-black flex flex-col items-center justify-center pt-14 sm:pt-12 pb-4 px-3 sm:px-5 text-center overflow-y-auto">
         <div className="w-full max-w-lg rounded-2xl bg-[#14141B]/95 border border-[#9146FF]/45 p-3.5 sm:p-4 shadow-2xl space-y-3">
           <div className="flex items-center justify-between gap-2 text-left">
             <div className="min-w-0">
@@ -237,7 +237,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
   // 2) Controlled External Window Closed State
   if (externalWinState === 'closed') {
     return (
-      <div className="relative w-full h-full bg-[#0E0E14] flex flex-col items-center justify-center p-4 text-center gap-3">
+      <div className="relative w-full h-full bg-[#0E0E14] flex flex-col items-center justify-center pt-14 sm:pt-12 pb-4 px-4 text-center gap-3 overflow-y-auto">
         <div className="w-11 h-11 rounded-2xl bg-white/[0.07] border border-white/15 flex items-center justify-center text-zinc-200">
           <ExternalLink className="w-5 h-5" />
         </div>
@@ -275,7 +275,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
   if (externalWinState === 'blocked') {
     const fallbackHref = externalTargetUrl || activeTrackUrl || externalVidfastHref;
     return (
-      <div className="relative w-full h-full bg-[#120E18] flex flex-col items-center justify-center p-4 text-center gap-3">
+      <div className="relative w-full h-full bg-[#120E18] flex flex-col items-center justify-center pt-14 sm:pt-12 pb-4 px-4 text-center gap-3 overflow-y-auto">
         <RiffanWarningIcon size={32} animate="always" className="text-amber-400" />
         <div className="space-y-1 max-w-md">
           <h4 className="font-display font-bold text-sm sm:text-base text-white">
@@ -321,7 +321,7 @@ export const EmbedStagePanel: React.FC<EmbedStagePanelProps> = ({
   // 4) Watchdog Exhausted OR Server Persisted as window_required
   if (embedWatchdogPhase === 'exhausted' || embedWatchdogPhase === 'window_preferred') {
     return (
-      <div className="relative w-full h-full bg-gradient-to-b from-[#171224] to-black flex flex-col items-center justify-center p-4 text-center gap-3">
+      <div className="relative w-full h-full bg-gradient-to-b from-[#171224] to-black flex flex-col items-center justify-center pt-14 sm:pt-12 pb-4 px-4 text-center gap-3 overflow-y-auto">
         <div className="space-y-1 max-w-md">
           <div className="text-[11px] font-bold uppercase tracking-wider text-[#BF94FF]">
             {activeTrack?.label || 'Servidor Web'}

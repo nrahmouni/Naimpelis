@@ -411,6 +411,8 @@ export async function handleSeriesCatalogRequest(
         providerId: provCfg ? provider : undefined,
         genres: mapTmdbGenreLabels(s, langParam),
         seasonsCount: typeof s.number_of_seasons === 'number' ? s.number_of_seasons : undefined,
+        popularity: Number(s.popularity || 0),
+        voteCount: Number(s.vote_count || 0),
       };
     };
 
@@ -506,8 +508,14 @@ export async function handleSeriesCatalogRequest(
                 }
               }
               results = rankTmdbSearchResultsForQuery(deduped, query, true);
+            } else {
+              results = rankTmdbSearchResultsForQuery(results, query, true);
             }
+          } else {
+            results = rankTmdbSearchResultsForQuery(results, query, true);
           }
+        } else if (results.length > 0) {
+          results = rankTmdbSearchResultsForQuery(results, query, true);
         }
       }
 
@@ -612,7 +620,10 @@ export async function handleSeriesCatalogRequest(
       const topSeriesHasMovidy = Boolean(combinedSeries[0]?.movidyUrl);
       const fallbackTv =
         topScore < 240 || !topSeriesHasMovidy
-          ? await liveOnDemandFallbackSearch(cleanSeriesQ, 'tv').catch(() => [])
+          ? await Promise.race([
+              liveOnDemandFallbackSearch(cleanSeriesQ, 'tv').catch(() => []),
+              new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 3200)),
+            ])
           : [];
 
       for (const extra of [...indexedTv, ...fallbackTv]) {
@@ -633,8 +644,16 @@ export async function handleSeriesCatalogRequest(
       }
 
       combinedSeries.sort((a, b) => {
-        const sA = scoreTitleRelevance(a.title, a.originalTitle, cleanSeriesQ, { altTitle: a.altTitle });
-        const sB = scoreTitleRelevance(b.title, b.originalTitle, cleanSeriesQ, { altTitle: b.altTitle });
+        const sA = scoreTitleRelevance(a.title, a.originalTitle, cleanSeriesQ, {
+          altTitle: a.altTitle,
+          popularity: a.popularity,
+          voteCount: a.voteCount,
+        });
+        const sB = scoreTitleRelevance(b.title, b.originalTitle, cleanSeriesQ, {
+          altTitle: b.altTitle,
+          popularity: b.popularity,
+          voteCount: b.voteCount,
+        });
         const diff = sB - sA;
         if (Math.abs(diff) <= 35) {
           const aMov = a.movidyUrl ? 1 : 0;

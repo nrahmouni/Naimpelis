@@ -12,6 +12,7 @@ import type { AppLanguage } from '../types';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 import { useBackInterceptor } from '../lib/backInterceptor';
+import { useAppStore } from '../store/useAppStore';
 
 interface FloatingRoomBubbleProps {
   lang: AppLanguage;
@@ -32,12 +33,12 @@ const ORB_SIZE = 54;
 const MARGIN = 12;
 
 function getDefaultOrbPos(): { x: number; y: number } {
-  if (typeof window === 'undefined') return { x: 280, y: 520 };
+  if (typeof window === 'undefined') return { x: 280, y: 540 };
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   return {
     x: Math.max(MARGIN, vw - ORB_SIZE - 14),
-    y: Math.max(MARGIN, Math.round(vh * 0.62)),
+    y: Math.max(MARGIN, vh - ORB_SIZE - 88),
   };
 }
 
@@ -54,6 +55,7 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
   children,
 }) => {
   const [orbPos, setOrbPos] = useState<{ x: number; y: number }>(() => getDefaultOrbPos());
+  const bubbleSuppressCount = useAppStore((s) => s.floatingBubbleSuppressCount);
   const bubbleBackId = useId();
   useBackInterceptor(visible && isSheetOpen, `floating-room-${bubbleBackId}`, onCloseSheet, {
     priority: 28,
@@ -174,8 +176,8 @@ export const FloatingRoomBubble: React.FC<FloatingRoomBubbleProps> = ({
 
   return createPortal(
     <>
-      {/* 1. ALWAYS-AVAILABLE DRAGGABLE CHAT ORB (WHEN CURTAIN IS CLOSED) */}
-      {!isSheetOpen && (
+      {/* 1. ALWAYS-AVAILABLE DRAGGABLE CHAT ORB (WHEN CURTAIN IS CLOSED & NO MODAL IS OPEN) */}
+      {!isSheetOpen && bubbleSuppressCount === 0 && (
         <button
           type="button"
           onPointerDown={handleOrbPointerDown}

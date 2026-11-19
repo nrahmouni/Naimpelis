@@ -15,6 +15,7 @@ import type {
 import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { useFocusTrap } from '../../utils/useFocusTrap';
+import { useSuppressFloatingBubble } from '../../utils/useSuppressFloatingBubble';
 import { PosterImage } from '../ui/PosterImage';
 
 interface CatalaEpisodePickerModalProps {
@@ -43,6 +44,7 @@ export const CatalaEpisodePickerModal: React.FC<CatalaEpisodePickerModalProps> =
   const [epSortDesc, setEpSortDesc] = useState(false);
 
   useFocusTrap(Boolean(selectedSeries), onClose, modalRef);
+  useSuppressFloatingBubble(Boolean(selectedSeries));
 
   if (!selectedSeries) return null;
 

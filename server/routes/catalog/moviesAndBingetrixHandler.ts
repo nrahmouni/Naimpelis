@@ -92,8 +92,19 @@ export async function handleMoviesCatalogRequest(req: express.Request, res: expr
     };
 
     const searchQueryForScrapers = query ? correctCommonSearchTypos(query) || query : '';
+    const scrapeMovidyMoviesFast = () =>
+      Promise.race([
+        scrapeMovidyCatalog({ category, page, query: searchQueryForScrapers }).catch(() => ({
+          movies: [] as any[],
+          hasMore: false,
+        })),
+        new Promise<{ movies: any[]; hasMore: boolean }>((resolve) =>
+          setTimeout(() => resolve({ movies: [], hasMore: false }), query ? 1900 : 2800)
+        ),
+      ]);
+
     const [movidyData, gnulaData, tmdbData] = await Promise.all([
-      scrapeMovidyCatalog({ category, page, query: searchQueryForScrapers }),
+      scrapeMovidyMoviesFast(),
       scrapeGnulaMoviesFast(),
       fetchTmdbMovieCatalog({ lang: 'es-ES', category, sort, page, query: searchQueryForScrapers, provider }),
     ]);
@@ -186,7 +197,10 @@ export async function handleMoviesCatalogRequest(req: express.Request, res: expr
       const topMovieHasMovidy = Boolean(combinedMovies[0]?.movidyUrl);
       const fallbackHits =
         topExistingScore < 240 || !topMovieHasMovidy
-          ? await liveOnDemandFallbackSearch(searchQueryForScrapers, 'movie')
+          ? await Promise.race([
+              liveOnDemandFallbackSearch(searchQueryForScrapers, 'movie').catch(() => []),
+              new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 3200)),
+            ])
           : [];
 
       for (const extra of [...indexedHits, ...fallbackHits]) {
@@ -338,7 +352,10 @@ export async function handleBingetrixCatalogRequest(req: express.Request, res: e
       const topHasMovidy = Boolean(movies[0]?.movidyUrl);
       const fallbackHits =
         topScore < 240 || !topHasMovidy
-          ? await liveOnDemandFallbackSearch(cleanBingQuery, 'all')
+          ? await Promise.race([
+              liveOnDemandFallbackSearch(cleanBingQuery, 'all').catch(() => []),
+              new Promise<any[]>((resolve) => setTimeout(() => resolve([]), 3200)),
+            ])
           : [];
 
       const seenIds = new Set<string>(
@@ -403,6 +420,7 @@ export async function handleTvLanguagesRequest(req: express.Request, res: expres
     let hints = [titleHint, origTitleHint].filter(Boolean);
     let imdbId: string | null = null;
     let yearHint = '';
+    let isSpanishOriginShow = false;
     let isReleasedShow = false;
 
     const showRes = await fetch(
@@ -419,6 +437,11 @@ export async function handleTvLanguagesRequest(req: express.Request, res: expres
       isReleasedShow =
         !/^(Planned|In Production|Rumored)$/i.test(tvStatus) &&
         (!firstAirDate || firstAirDate <= todayIso);
+      const origLang = String(showJson?.original_language || '').toLowerCase();
+      const origCountries: string[] = Array.isArray(showJson?.origin_country)
+        ? showJson.origin_country
+        : [];
+      isSpanishOriginShow = origLang === 'es' || origCountries.includes('ES');
 
       hints = Array.from(
         new Set([...hints, ...extractLocalizedTmdbTitleHints(showJson)].filter(Boolean))
@@ -437,11 +460,16 @@ export async function handleTvLanguagesRequest(req: express.Request, res: expres
       force,
     });
 
-    const availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[] =
-      probedLanguages.length > 0 ? probedLanguages : isReleasedShow ? ['ES', 'EN'] : [];
+    const normalizedProbed =
+      isSpanishOriginShow && probedLanguages.length > 0 && !probedLanguages.includes('ES')
+        ? (['ES', ...probedLanguages] as ('ES' | 'LAT' | 'VOSE' | 'EN')[])
+        : probedLanguages;
 
-    if (probedLanguages.length > 0) {
-      tvLangProbeCache.set(cacheKey, { availableLanguages: probedLanguages, ts: Date.now() });
+    const availableLanguages: ('ES' | 'LAT' | 'VOSE' | 'EN')[] =
+      normalizedProbed.length > 0 ? normalizedProbed : isReleasedShow ? ['ES', 'EN'] : [];
+
+    if (normalizedProbed.length > 0) {
+      tvLangProbeCache.set(cacheKey, { availableLanguages: normalizedProbed, ts: Date.now() });
     }
     res.json({ success: true, availableLanguages });
   } catch {

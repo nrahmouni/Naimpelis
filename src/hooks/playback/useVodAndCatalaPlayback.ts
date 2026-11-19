@@ -415,7 +415,15 @@ export function useVodAndCatalaPlayback(ctx: PlaybackCoreContext) {
       if (reqSeq !== extractionReqSeqRef.current) return;
 
       if (!res.ok || !data?.success || !data?.streamUrl) {
-        setExtractionError(data?.error || 'Este episodio aún no tiene señal directa disponible.');
+        const errMsg = data?.error || 'Este episodio aún no tiene señal directa disponible.';
+        setExtractionError(errMsg);
+        showLanguageNotice({
+          type: 'warning',
+          title: data?.unreleased
+            ? 'Capítulo aún no estrenado'
+            : `${series.title} · ${episode.seasonNumber}x${String(episode.episodeNumber).padStart(2, '0')}`,
+          subtitle: errMsg,
+        });
         return;
       }
 

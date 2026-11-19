@@ -493,7 +493,17 @@ export function App() {
               sessionMode !== 'solo' &&
               activeWorld !== 'sala' &&
               activeWorld !== 'kids' &&
-              !isTvMode
+              !isTvMode &&
+              !showCommandSearch &&
+              !showSurpriseModal &&
+              !showVoiceAssistant &&
+              !showLegalModal &&
+              !showNotificationCenter &&
+              !showDesignSystem &&
+              !profileHubOpen &&
+              !settingsSheetOpen &&
+              !smartTvModalOpen &&
+              !aiSearchLaunch
             }
             participantsCount={roomState.participants.length}
             voiceActive={voiceChat.isJoined}

@@ -1,10 +1,11 @@
 import React from 'react';
-import { ArrowLeft, Loader2, Wand2 } from 'lucide-react';
+import { ArrowLeft, ArrowRightLeft, Loader2, Wand2 } from 'lucide-react';
 import type { AppLanguage, CatalaCatalogItem, CatalogMovie } from '../../types';
 import { pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { PosterImage } from '../ui/PosterImage';
 import { FlagBadgeSvg } from '../ui/LanguageBadge';
+import { SkeletonPosterGrid } from '../ui/DesignSystem';
 import { VirtualizedPosterGrid } from '../VirtualizedPosterGrid';
 import { CinePosterCard } from './CinePosterCard';
 
@@ -18,6 +19,7 @@ interface CineUnifiedSearchResultsProps {
   isBookmarked: (item: CatalogMovie) => boolean;
   onToggleBookmark: (item: CatalogMovie, e: React.MouseEvent) => void;
   onOpenPosterItem: (item: CatalogMovie) => void;
+  onSwitchTab?: (tab: 'movies' | 'series') => void;
   onSearchWithAi?: (query: string, mediaType?: 'all' | 'movie' | 'tv') => void;
 }
 
@@ -31,86 +33,148 @@ export const CineUnifiedSearchResults: React.FC<CineUnifiedSearchResultsProps> =
   isBookmarked,
   onToggleBookmark,
   onOpenPosterItem,
+  onSwitchTab,
   onSearchWithAi,
-}) => (
-  <div className="space-y-6">
-    {loadingHomeSearch && (
-      <div className="py-6 flex justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
-      </div>
-    )}
+}) => {
+  const activeResults = isSeriesTab ? homeSeriesResults : homeMovieResults;
+  const otherResults = isSeriesTab ? homeMovieResults : homeSeriesResults;
+  const targetSwitchTab: 'movies' | 'series' = isSeriesTab ? 'movies' : 'series';
 
-    {homeMovieResults.length > 0 && (
-      <section className="space-y-3">
-        <h3 className="font-display font-bold text-base text-white">
-          {pickLang(lang, { es: 'Películas', ca: 'Pel·lícules', en: 'Movies' })}
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-          {homeMovieResults.map((item) => (
-            <CinePosterCard
-              key={`${item.id}-movie`}
-              item={item}
-              forcedKind="movie"
-              isBookmarked={isBookmarked(item)}
-              onToggleBookmark={onToggleBookmark}
-              onSelect={onOpenPosterItem}
-            />
-          ))}
-        </div>
-      </section>
-    )}
-
-    {homeSeriesResults.length > 0 && (
-      <section className="space-y-3">
-        <h3 className="font-display font-bold text-base text-white">
-          {pickLang(lang, { es: 'Series', ca: 'Sèries', en: 'Series' })}
-        </h3>
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
-          {homeSeriesResults.map((item) => (
-            <CinePosterCard
-              key={`${item.id}-tv`}
-              item={item}
-              forcedKind="tv"
-              isBookmarked={isBookmarked(item)}
-              onToggleBookmark={onToggleBookmark}
-              onSelect={onOpenPosterItem}
-            />
-          ))}
-        </div>
-      </section>
-    )}
-
-    {!loadingHomeSearch &&
-      homeMovieResults.length === 0 &&
-      homeSeriesResults.length === 0 && (
-        <div className="py-10 px-4 rounded-3xl bg-[#11131B] border border-white/[0.08] text-center space-y-3">
-          <p className="text-sm font-semibold text-white">
-            {pickLang(lang, {
-              es: `Sin resultados para "${trimmedSearch}"`,
-              ca: `Sense resultats per a "${trimmedSearch}"`,
-              en: `No results for "${trimmedSearch}"`,
-            })}
-          </p>
-          {onSearchWithAi && (
-            <button
-              type="button"
-              onClick={() => onSearchWithAi(trimmedSearch, isSeriesTab ? 'tv' : 'all')}
-              className="min-h-11 px-5 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white inline-flex items-center gap-2 cursor-pointer"
-            >
-              <Wand2 className="w-4 h-4" />
-              <span>
-                {pickLang(lang, {
-                  es: 'Buscar en la web',
-                  ca: 'Cercar al web',
-                  en: 'Search web',
-                })}
-              </span>
-            </button>
-          )}
+  return (
+    <div className="space-y-6">
+      {loadingHomeSearch && (
+        <div className="space-y-4">
+          <div className="px-4 py-2.5 rounded-2xl bg-[#9146FF]/12 border border-[#9146FF]/30 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
+            <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF] shrink-0" />
+            <span>
+              {pickLang(lang, {
+                es: `Buscando «${trimmedSearch}» en ${isSeriesTab ? 'Series' : 'Películas'}...`,
+                ca: `Cercant «${trimmedSearch}» a ${isSeriesTab ? 'Sèries' : 'Pel·lícules'}...`,
+                en: `Searching "${trimmedSearch}" in ${isSeriesTab ? 'Series' : 'Movies'}...`,
+              })}
+            </span>
+          </div>
+          {activeResults.length === 0 && <SkeletonPosterGrid count={8} />}
         </div>
       )}
-  </div>
-);
+
+      {activeResults.length > 0 && (
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h3 className="font-display font-bold text-base text-white">
+              {isSeriesTab
+                ? pickLang(lang, { es: 'Series', ca: 'Sèries', en: 'Series' })
+                : pickLang(lang, { es: 'Películas', ca: 'Pel·lícules', en: 'Movies' })}
+              <span className="ml-2 text-xs font-mono text-zinc-400 tabular-nums">
+                ({activeResults.length})
+              </span>
+            </h3>
+
+            {otherResults.length > 0 && onSwitchTab && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onSwitchTab(targetSwitchTab);
+                }}
+                className="min-h-9 px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/[0.1] text-xs font-semibold text-[#D8B4FE] inline-flex items-center gap-1.5 cursor-pointer transition-colors"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 shrink-0" />
+                <span>
+                  {isSeriesTab
+                    ? pickLang(lang, {
+                        es: `Ver ${otherResults.length} películas coincidentes`,
+                        ca: `Veure ${otherResults.length} pel·lícules coincidents`,
+                        en: `View ${otherResults.length} matching movies`,
+                      })
+                    : pickLang(lang, {
+                        es: `Ver ${otherResults.length} series coincidentes`,
+                        ca: `Veure ${otherResults.length} sèries coincidents`,
+                        en: `View ${otherResults.length} matching series`,
+                      })}
+                </span>
+              </button>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 sm:gap-4">
+            {activeResults.map((item) => (
+              <CinePosterCard
+                key={`${item.id}-${isSeriesTab ? 'tv' : 'movie'}`}
+                item={item}
+                forcedKind={isSeriesTab ? 'tv' : 'movie'}
+                isBookmarked={isBookmarked(item)}
+                onToggleBookmark={onToggleBookmark}
+                onSelect={onOpenPosterItem}
+              />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {!loadingHomeSearch && activeResults.length === 0 && (
+        <div className="py-10 px-4 rounded-3xl bg-[#11131B] border border-white/[0.08] text-center space-y-3">
+          <p className="text-sm font-semibold text-white">
+            {isSeriesTab
+              ? pickLang(lang, {
+                  es: `Sin series directas para "${trimmedSearch}"`,
+                  ca: `Sense sèries directes per a "${trimmedSearch}"`,
+                  en: `No series found for "${trimmedSearch}"`,
+                })
+              : pickLang(lang, {
+                  es: `Sin películas directas para "${trimmedSearch}"`,
+                  ca: `Sense pel·lícules directes per a "${trimmedSearch}"`,
+                  en: `No movies found for "${trimmedSearch}"`,
+                })}
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-2.5">
+            {otherResults.length > 0 && onSwitchTab && (
+              <button
+                type="button"
+                onClick={() => {
+                  triggerHaptic('light');
+                  onSwitchTab(targetSwitchTab);
+                }}
+                className="min-h-11 px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/[0.12] text-xs font-bold text-white inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <ArrowRightLeft className="w-4 h-4 text-[#BF94FF]" />
+                <span>
+                  {isSeriesTab
+                    ? pickLang(lang, {
+                        es: `Ver en Películas (${otherResults.length})`,
+                        ca: `Veure a Pel·lícules (${otherResults.length})`,
+                        en: `View in Movies (${otherResults.length})`,
+                      })
+                    : pickLang(lang, {
+                        es: `Ver en Series (${otherResults.length})`,
+                        ca: `Veure a Sèries (${otherResults.length})`,
+                        en: `View in Series (${otherResults.length})`,
+                      })}
+                </span>
+              </button>
+            )}
+            {onSearchWithAi && (
+              <button
+                type="button"
+                onClick={() => onSearchWithAi(trimmedSearch, isSeriesTab ? 'tv' : 'movie')}
+                className="min-h-11 px-5 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white inline-flex items-center gap-2 cursor-pointer"
+              >
+                <Wand2 className="w-4 h-4" />
+                <span>
+                  {pickLang(lang, {
+                    es: 'Buscar en la web con IA',
+                    ca: 'Cercar al web amb IA',
+                    en: 'Search web with AI',
+                  })}
+                </span>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface CineCatalaPortalViewProps {
   lang: AppLanguage;
@@ -146,8 +210,18 @@ export const CineCatalaPortalView: React.FC<CineCatalaPortalViewProps> = ({
     </div>
 
     {loadingCatala ? (
-      <div className="py-10 flex justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
+      <div className="space-y-4">
+        <div className="px-4 py-2.5 rounded-2xl bg-[#9146FF]/12 border border-[#9146FF]/30 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
+          <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF] shrink-0" />
+          <span>
+            {pickLang(lang, {
+              es: 'Cargando catálogo en Català...',
+              ca: 'Carregant catàleg en Català...',
+              en: 'Loading Català catalog...',
+            })}
+          </span>
+        </div>
+        <SkeletonPosterGrid count={10} />
       </div>
     ) : (
       <VirtualizedPosterGrid
@@ -253,8 +327,18 @@ export const CineFilteredGridView: React.FC<CineFilteredGridViewProps> = ({
     )}
 
     {loading ? (
-      <div className="py-10 flex justify-center">
-        <Loader2 className="w-6 h-6 animate-spin text-[#9146FF]" />
+      <div className="space-y-4">
+        <div className="px-4 py-2.5 rounded-2xl bg-[#9146FF]/12 border border-[#9146FF]/30 flex items-center gap-2.5 text-xs font-semibold text-[#E9D5FF]">
+          <Loader2 className="w-4 h-4 animate-spin text-[#BF94FF] shrink-0" />
+          <span>
+            {pickLang(lang, {
+              es: isSeriesTab ? 'Cargando series...' : 'Cargando películas...',
+              ca: isSeriesTab ? 'Carregant sèries...' : 'Carregant pel·lícules...',
+              en: isSeriesTab ? 'Loading series...' : 'Loading movies...',
+            })}
+          </span>
+        </div>
+        <SkeletonPosterGrid count={10} />
       </div>
     ) : (
       <div className="space-y-4">

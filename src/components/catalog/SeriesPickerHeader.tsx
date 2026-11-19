@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Heart, Play, RefreshCw, Share2, X } from 'lucide-react';
 import type {
   AppLanguage,
@@ -60,27 +60,72 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
   onToggleBookmark,
   onReplayHistoryItem,
   onPlaySeriesEpisode,
-}) => (
-  <div className="relative px-3.5 py-3 sm:px-6 sm:py-4 bg-gradient-to-b from-[#131522] to-[#090A10] border-b border-white/[0.08] space-y-2.5 sm:space-y-3 shrink-0">
-    <div className="flex items-center justify-between gap-2">
-      <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1 overflow-x-auto no-scrollbar">
+}) => {
+  const activeSeasonBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    const el = activeSeasonBtnRef.current;
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+  }, [selectedSeries.tmdbId, selectedSeries.activeSeason]);
+
+  return (
+    <div className="relative px-3.5 py-3 sm:px-6 sm:py-4 bg-gradient-to-b from-[#131522] to-[#090A10] border-b border-white/[0.08] space-y-2.5 sm:space-y-3 shrink-0">
+      {/* Row 1: Primary quick actions + always-reachable Close */}
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center flex-wrap gap-1.5 sm:gap-2 min-w-0">
+          <button
+            type="button"
+            onClick={(e) => onToggleBookmark(seriesBookmarkPayload, e)}
+            className="min-h-[40px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+          >
+            <Heart
+              className={`w-3.5 h-3.5 shrink-0 ${
+                seriesSaved ? 'fill-current text-[#E11D48]' : 'text-zinc-300'
+              }`}
+            />
+            <span>
+              {seriesSaved
+                ? pickLang(lang, { es: 'Guardada', ca: 'Desada', en: 'Saved' })
+                : pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
+            </span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              void shareDedicatedLink({
+                target: {
+                  kind: 'series',
+                  tmdbId: selectedSeries.tmdbId,
+                  title: selectedSeries.title,
+                  season: selectedSeries.activeSeason,
+                },
+                roomId: shareRoomId,
+                title: selectedSeries.title,
+              });
+            }}
+            className="min-h-[40px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+          >
+            <Share2 className="w-3.5 h-3.5 shrink-0 text-[#BF94FF]" />
+            <span>
+              {pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
+            </span>
+          </button>
+        </div>
+
         <button
           type="button"
-          onClick={(e) => onToggleBookmark(seriesBookmarkPayload, e)}
-          className="min-h-[40px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
+          onClick={onClose}
+          aria-label="Cerrar serie"
+          className="min-h-[40px] min-w-[40px] rounded-xl bg-white/[0.08] hover:bg-white/[0.14] text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
         >
-          <Heart
-            className={`w-3.5 h-3.5 shrink-0 ${
-              seriesSaved ? 'fill-current text-[#E11D48]' : 'text-zinc-300'
-            }`}
-          />
-          <span>
-            {seriesSaved
-              ? pickLang(lang, { es: 'Guardada', ca: 'Desada', en: 'Saved' })
-              : pickLang(lang, { es: 'Guardar', ca: 'Desar', en: 'Save' })}
-          </span>
+          <X className="w-4 h-4" />
         </button>
+      </div>
 
+      {/* Row 2: Audio language selector + Force Castilian (wraps cleanly with zero clipping) */}
+      <div className="flex items-center flex-wrap gap-1.5 sm:gap-2">
         <MediaLanguageSelector
           labelPrefix={pickLang(lang, { es: 'Idioma:', ca: 'Idioma:', en: 'Language:' })}
           selectedLang={seriesModalLang}
@@ -130,159 +175,131 @@ export const SeriesPickerHeader: React.FC<SeriesPickerHeaderProps> = ({
             })}
           </span>
         </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            void shareDedicatedLink({
-              target: {
-                kind: 'series',
-                tmdbId: selectedSeries.tmdbId,
-                title: selectedSeries.title,
-                season: selectedSeries.activeSeason,
-              },
-              roomId: shareRoomId,
-              title: selectedSeries.title,
-            });
-          }}
-          className="min-h-[40px] px-3 rounded-xl bg-white/[0.06] hover:bg-white/[0.12] border border-white/10 text-xs font-semibold text-white flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors"
-        >
-          <Share2 className="w-3.5 h-3.5 shrink-0 text-[#BF94FF]" />
-          <span>
-            {pickLang(lang, { es: 'Compartir', ca: 'Compartir', en: 'Share' })}
-          </span>
-        </button>
       </div>
 
-      <button
-        type="button"
-        onClick={onClose}
-        aria-label="Cerrar serie"
-        className="min-h-[40px] min-w-[40px] rounded-xl bg-white/[0.08] hover:bg-white/[0.14] text-white flex items-center justify-center shrink-0 cursor-pointer transition-colors"
-      >
-        <X className="w-4 h-4" />
-      </button>
-    </div>
-
-    <div className="flex items-center justify-between gap-3">
-      <div className="min-w-0 flex-1 space-y-0.5">
-        <div className="text-[11px] sm:text-xs text-zinc-400 flex items-center gap-1.5 whitespace-nowrap overflow-hidden">
-          <span className="text-[#BF94FF] font-semibold">
-            {pickLang(lang, { es: 'Serie TV', ca: 'Sèrie TV', en: 'TV Series' })}
-          </span>
-          <span aria-hidden="true">·</span>
-          <span className="text-zinc-200 tabular-nums">{selectedSeries.year}</span>
-          {selectedSeries.rating && (
-            <>
-              <span aria-hidden="true">·</span>
-              <span className="text-zinc-200 font-mono font-semibold tabular-nums">
-                ★ {selectedSeries.rating}
-              </span>
-            </>
+      {/* Row 3: Series metadata + title + responsive CTA */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 sm:gap-3">
+        <div className="min-w-0 flex-1 space-y-0.5">
+          <div className="text-[11px] sm:text-xs text-zinc-400 flex items-center flex-wrap gap-x-1.5 gap-y-0.5">
+            <span className="text-[#BF94FF] font-semibold">
+              {pickLang(lang, { es: 'Serie TV', ca: 'Sèrie TV', en: 'TV Series' })}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span className="text-zinc-200 tabular-nums">{selectedSeries.year}</span>
+            {selectedSeries.rating && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="text-zinc-200 font-mono font-semibold tabular-nums">
+                  ★ {selectedSeries.rating}
+                </span>
+              </>
+            )}
+            <span aria-hidden="true">·</span>
+            <span className="tabular-nums text-zinc-200">
+              {selectedSeries.seasons.length}{' '}
+              {selectedSeries.seasons.length === 1
+                ? pickLang(lang, { es: 'Temporada', ca: 'Temporada', en: 'Season' })
+                : pickLang(lang, { es: 'Temporadas', ca: 'Temporades', en: 'Seasons' })}
+            </span>
+          </div>
+          <h3 className="font-display font-bold text-lg sm:text-2xl text-white leading-snug line-clamp-2 text-balance">
+            {selectedSeries.title}
+          </h3>
+          {selectedSeries.overview && (
+            <p className="hidden sm:block text-xs text-zinc-400 line-clamp-1">
+              {selectedSeries.overview}
+            </p>
           )}
-          <span aria-hidden="true">·</span>
-          <span className="tabular-nums text-zinc-200 truncate">
-            {selectedSeries.seasons.length}{' '}
-            {selectedSeries.seasons.length === 1
-              ? pickLang(lang, { es: 'Temporada', ca: 'Temporada', en: 'Season' })
-              : pickLang(lang, { es: 'Temporadas', ca: 'Temporades', en: 'Seasons' })}
-          </span>
         </div>
-        <h3 className="font-display font-bold text-lg sm:text-2xl text-white leading-snug line-clamp-1 sm:line-clamp-2 text-balance">
-          {selectedSeries.title}
-        </h3>
-        {selectedSeries.overview && (
-          <p className="hidden sm:block text-xs text-zinc-400 line-clamp-1">
-            {selectedSeries.overview}
-          </p>
-        )}
-      </div>
 
-      {selectedSeriesHistory?.season && selectedSeriesHistory?.episode ? (
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic('success');
-            onReplayHistoryItem(selectedSeriesHistory, false);
-            onClose();
-          }}
-          className="min-h-[44px] px-3.5 sm:px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-lg shadow-[#9146FF]/25"
-        >
-          <Play className="w-4 h-4 fill-current shrink-0" />
-          <span className="tabular-nums">
-            {pickLang(lang, {
-              es: `Seguir T${selectedSeriesHistory.season} · Cap. ${selectedSeriesHistory.episode}`,
-              ca: `Seguir T${selectedSeriesHistory.season} · Cap. ${selectedSeriesHistory.episode}`,
-              en: `Resume S${selectedSeriesHistory.season} · Ep ${selectedSeriesHistory.episode}`,
-            })}
-          </span>
-        </button>
-      ) : allSeasonEpisodes.length > 0 ? (
-        <button
-          type="button"
-          onClick={() => {
-            triggerHaptic('success');
-            onPlaySeriesEpisode(
-              selectedSeries,
-              allSeasonEpisodes[0],
-              forceSpanishSeriesActive ? 'ES' : seriesModalLang,
-              forceSpanishSeriesActive ? { forceSpanish: true } : undefined
-            );
-            onClose();
-          }}
-          className="min-h-[44px] px-3.5 sm:px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-lg shadow-[#9146FF]/25"
-        >
-          <Play className="w-4 h-4 fill-current shrink-0" />
-          <span className="tabular-nums">
-            {pickLang(lang, {
-              es: `Ver T${selectedSeries.activeSeason} · Cap. ${allSeasonEpisodes[0].episodeNumber}`,
-              ca: `Veure T${selectedSeries.activeSeason} · Cap. ${allSeasonEpisodes[0].episodeNumber}`,
-              en: `Play S${selectedSeries.activeSeason} · Ep ${allSeasonEpisodes[0].episodeNumber}`,
-            })}
-          </span>
-        </button>
-      ) : null}
-    </div>
-
-    <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-0.5">
-      {selectedSeries.seasons.map((s) => {
-        const isActiveSeason = selectedSeries.activeSeason === s.seasonNumber;
-        return (
+        {selectedSeriesHistory?.season && selectedSeriesHistory?.episode ? (
           <button
-            key={s.seasonNumber}
             type="button"
             onClick={() => {
-              if (s.seasonNumber === selectedSeries.activeSeason && !loadingSeriesDetails) {
-                return;
-              }
-              triggerHaptic('light');
-              onOpenSeriesDetails(selectedSeries.tmdbId, s.seasonNumber);
+              triggerHaptic('success');
+              onReplayHistoryItem(selectedSeriesHistory, false);
+              onClose();
             }}
-            className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
-              isActiveSeason
-                ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_4px_16px_rgba(145,70,255,0.35)]'
-                : 'bg-white/[0.05] hover:bg-white/[0.11] text-zinc-200 border-white/[0.1]'
-            }`}
+            className="w-full sm:w-auto min-h-[44px] px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-lg shadow-[#9146FF]/25"
           >
+            <Play className="w-4 h-4 fill-current shrink-0" />
             <span className="tabular-nums">
               {pickLang(lang, {
-                es: `Temporada ${s.seasonNumber}`,
-                ca: `Temporada ${s.seasonNumber}`,
-                en: `Season ${s.seasonNumber}`,
+                es: `Seguir T${selectedSeriesHistory.season} · Cap. ${selectedSeriesHistory.episode}`,
+                ca: `Seguir T${selectedSeriesHistory.season} · Cap. ${selectedSeriesHistory.episode}`,
+                en: `Resume S${selectedSeriesHistory.season} · Ep ${selectedSeriesHistory.episode}`,
               })}
             </span>
-            {s.episodeCount > 0 && (
-              <span
-                className={`text-[11px] font-normal tabular-nums ${
-                  isActiveSeason ? 'text-purple-200' : 'text-zinc-400'
-                }`}
-              >
-                · {s.episodeCount} cap.
-              </span>
-            )}
           </button>
-        );
-      })}
+        ) : allSeasonEpisodes.length > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              triggerHaptic('success');
+              onPlaySeriesEpisode(
+                selectedSeries,
+                allSeasonEpisodes[0],
+                forceSpanishSeriesActive ? 'ES' : seriesModalLang,
+                forceSpanishSeriesActive ? { forceSpanish: true } : undefined
+              );
+              onClose();
+            }}
+            className="w-full sm:w-auto min-h-[44px] px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-xs font-bold text-white flex items-center justify-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors shadow-lg shadow-[#9146FF]/25"
+          >
+            <Play className="w-4 h-4 fill-current shrink-0" />
+            <span className="tabular-nums">
+              {pickLang(lang, {
+                es: `Ver T${selectedSeries.activeSeason} · Cap. ${allSeasonEpisodes[0].episodeNumber}`,
+                ca: `Veure T${selectedSeries.activeSeason} · Cap. ${allSeasonEpisodes[0].episodeNumber}`,
+                en: `Play S${selectedSeries.activeSeason} · Ep ${allSeasonEpisodes[0].episodeNumber}`,
+              })}
+            </span>
+          </button>
+        ) : null}
+      </div>
+
+      {/* Row 4: Season strip with clean padding and active centering */}
+      <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pt-0.5 px-0.5 scroll-px-1">
+        {selectedSeries.seasons.map((s) => {
+          const isActiveSeason = selectedSeries.activeSeason === s.seasonNumber;
+          return (
+            <button
+              key={s.seasonNumber}
+              ref={isActiveSeason ? activeSeasonBtnRef : undefined}
+              type="button"
+              onClick={() => {
+                if (s.seasonNumber === selectedSeries.activeSeason && !loadingSeriesDetails) {
+                  return;
+                }
+                triggerHaptic('light');
+                onOpenSeriesDetails(selectedSeries.tmdbId, s.seasonNumber);
+              }}
+              className={`min-h-[40px] px-3.5 rounded-xl text-xs font-bold flex items-center gap-1.5 whitespace-nowrap shrink-0 cursor-pointer transition-colors border ${
+                isActiveSeason
+                  ? 'bg-[#9146FF] text-white border-[#9146FF] shadow-[0_4px_16px_rgba(145,70,255,0.35)]'
+                  : 'bg-white/[0.05] hover:bg-white/[0.11] text-zinc-200 border-white/[0.1]'
+              }`}
+            >
+              <span className="tabular-nums">
+                {pickLang(lang, {
+                  es: `Temporada ${s.seasonNumber}`,
+                  ca: `Temporada ${s.seasonNumber}`,
+                  en: `Season ${s.seasonNumber}`,
+                })}
+              </span>
+              {s.episodeCount > 0 && (
+                <span
+                  className={`text-[11px] font-normal tabular-nums ${
+                    isActiveSeason ? 'text-purple-200' : 'text-zinc-400'
+                  }`}
+                >
+                  · {s.episodeCount} cap.
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
     </div>
-  </div>
-);
+  );
+};

@@ -89,6 +89,7 @@ interface AppShellState {
   cineCastellano: boolean;
   futbolTab: FutbolSubTab;
   isFloatingRoomOpen: boolean;
+  floatingBubbleSuppressCount: number;
   showDesignSystem: boolean;
   showLegalModal: boolean;
   showNotificationCenter: boolean;
@@ -122,6 +123,8 @@ interface AppShellState {
   setCineCastellano: (enabled: boolean) => void;
   setFutbolTab: (tab: FutbolSubTab) => void;
   setIsFloatingRoomOpen: (open: boolean) => void;
+  pushBubbleSuppression: () => void;
+  popBubbleSuppression: () => void;
   setShowDesignSystem: (open: boolean) => void;
   setShowLegalModal: (open: boolean) => void;
   setShowNotificationCenter: (open: boolean) => void;
@@ -198,6 +201,7 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   cineCastellano: true,
   futbolTab: 'matches',
   isFloatingRoomOpen: false,
+  floatingBubbleSuppressCount: 0,
   showDesignSystem:
     typeof window !== 'undefined' &&
     window.location.pathname.toLowerCase().includes('/design-system'),
@@ -258,6 +262,12 @@ export const useAppStore = create<AppShellState>((set, get) => ({
   setCineCastellano: (cineCastellano) => set({ cineCastellano }),
   setFutbolTab: (futbolTab) => set({ futbolTab }),
   setIsFloatingRoomOpen: (isFloatingRoomOpen) => set({ isFloatingRoomOpen }),
+  pushBubbleSuppression: () =>
+    set((s) => ({ floatingBubbleSuppressCount: s.floatingBubbleSuppressCount + 1 })),
+  popBubbleSuppression: () =>
+    set((s) => ({
+      floatingBubbleSuppressCount: Math.max(0, s.floatingBubbleSuppressCount - 1),
+    })),
   setShowDesignSystem: (showDesignSystem) => set({ showDesignSystem }),
   setShowLegalModal: (showLegalModal) => set({ showLegalModal }),
   setShowNotificationCenter: (showNotificationCenter) => set({ showNotificationCenter }),

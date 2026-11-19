@@ -37,7 +37,7 @@ export const IdleStandbyStage: React.FC<IdleStandbyStageProps> = ({
   const t = UI_COPY[lang];
 
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center p-5 sm:p-8 text-center bg-gradient-to-b from-[#18181B] via-[#0E0E10] to-[#09090B]">
+    <div className="absolute inset-0 flex flex-col items-center justify-center pt-14 sm:pt-8 pb-5 px-5 text-center bg-gradient-to-b from-[#18181B] via-[#0E0E10] to-[#09090B] overflow-y-auto">
       {isTvMode && (
         <div className="mb-4 px-4 py-1.5 rounded-full bg-[#00F593]/15 border border-[#00F593]/40 text-xs sm:text-sm font-semibold text-[#00F593] flex items-center gap-2">
           <span className="w-2 h-2 rounded-full bg-[#00F593]" />

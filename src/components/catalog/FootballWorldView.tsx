@@ -168,6 +168,12 @@ export const FootballWorldView: React.FC<FootballWorldViewProps> = ({
               setSportsSearch('');
               setFutbolLeagueFilter('');
             }}
+            onResetFilters={() => {
+              setSportsSearch('');
+              setFutbolLeagueFilter('');
+              setFootballLiveBrand('all');
+              setFutbolLangFilter('all');
+            }}
             activeVideoRawUrl={activeVideoRawUrl}
             loadingItemId={loadingItemId}
             onPlaySportsMatch={onPlaySportsMatch}

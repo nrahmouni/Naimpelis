@@ -38,7 +38,15 @@ export async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix: string): P
     reqHeaders.Cookie = cachedEmbed69AnubisCookie.cookie;
   }
 
-  const html = await fetchTextWithCurlFallback(embed69Url, reqHeaders, 5000);
+  const initRes = await streamingFetch(embed69Url, {
+    headers: reqHeaders,
+    timeoutMs: 5000,
+  }).catch(() => null);
+
+  let html = initRes ? await initRes.text().catch(() => '') : '';
+  if (!html) {
+    html = await fetchTextWithCurlFallback(embed69Url, reqHeaders, 5000);
+  }
   if (html.includes('dataLink') || html.includes('OptionsLangDisp')) {
     return html;
   }
@@ -48,12 +56,24 @@ export async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix: string): P
   );
   if (!anubisMatch) return html;
 
+  // Cached cookie expired or rejected — clear and solve fresh challenge
+  cachedEmbed69AnubisCookie = null;
+
   try {
     const parsed = JSON.parse(anubisMatch[1].trim());
     const randomData = String(parsed?.challenge?.randomData || '');
     const challengeId = String(parsed?.challenge?.id || '');
     const difficulty = Math.min(6, Number(parsed?.rules?.difficulty || 4));
     if (!randomData || !challengeId) return '';
+
+    const initSetCookies: string[] = initRes
+      ? typeof (initRes.headers as any).getSetCookie === 'function'
+        ? (initRes.headers as any).getSetCookie()
+        : [initRes.headers.get('set-cookie') || ''].filter(Boolean)
+      : [];
+    const verificationCookies = initSetCookies
+      .map((c) => c.split(';')[0]?.trim())
+      .filter((c) => c && c.includes('='));
 
     const prefix = '0'.repeat(difficulty);
     let nonce = 0;
@@ -78,11 +98,16 @@ export async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix: string): P
       targetPath
     )}&elapsedTime=15`;
 
+    const passHeaders: Record<string, string> = {
+      'User-Agent': CHROME_UA,
+      Referer: embed69Url,
+    };
+    if (verificationCookies.length > 0) {
+      passHeaders.Cookie = verificationCookies.join('; ');
+    }
+
     const passRes = await streamingFetch(passUrl, {
-      headers: {
-        'User-Agent': CHROME_UA,
-        Referer: embed69Url,
-      },
+      headers: passHeaders,
       redirect: 'manual',
       timeoutMs: 4500,
     });
@@ -92,22 +117,22 @@ export async function fetchEmbed69HtmlWithMirrorAndAnubis(imdbSuffix: string): P
         ? (passRes.headers as any).getSetCookie()
         : [passRes.headers.get('set-cookie') || ''].filter(Boolean);
 
-    const cookiePair = rawSetCookies
+    const authCookies = rawSetCookies
       .map((c) => c.split(';')[0]?.trim())
-      .filter((c) => c && c.includes('='))
-      .join('; ');
+      .filter((c) => c && c.includes('=') && !c.endsWith('='));
 
-    if (!cookiePair) return '';
+    const combinedCookie = Array.from(new Set([...verificationCookies, ...authCookies])).join('; ');
+    if (!combinedCookie) return '';
 
     cachedEmbed69AnubisCookie = {
-      cookie: cookiePair,
+      cookie: combinedCookie,
       expiresAt: Date.now() + 6 * 60 * 60 * 1000,
     };
 
     const retryRes = await streamingFetch(embed69Url, {
       headers: {
         'User-Agent': CHROME_UA,
-        Cookie: cookiePair,
+        Cookie: combinedCookie,
       },
       timeoutMs: 5000,
     });

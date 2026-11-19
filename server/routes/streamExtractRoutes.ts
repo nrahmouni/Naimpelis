@@ -106,6 +106,7 @@ export function registerStreamExtractRoute(
         rankCandidateTracks: deps.rankCandidateTracks,
         setCache,
         sendOk,
+        sendUnavailable: (status, body) => res.status(status).json(body),
       });
       if (mediaResp) return mediaResp;
 

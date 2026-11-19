@@ -9,6 +9,7 @@ import {
   Check,
   ChevronLeft,
   ChevronRight,
+  Clock,
   Loader2,
   Play,
   Plus,
@@ -29,6 +30,7 @@ import { UI_COPY, pickLang } from '../../utils/i18n';
 import { triggerHaptic } from '../../utils/haptics';
 import { shareDedicatedLink } from '../../utils/shareDedicatedLink';
 import { useFocusTrap } from '../../utils/useFocusTrap';
+import { useSuppressFloatingBubble } from '../../utils/useSuppressFloatingBubble';
 import { sanitizeItemKey } from '../../utils/storage';
 import { PosterImage } from '../ui/PosterImage';
 import { formatShortTime } from './catalogConstants';
@@ -92,6 +94,7 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
   const [episodeSortDesc, setEpisodeSortDesc] = useState(false);
 
   useFocusTrap(Boolean(selectedSeries), onClose, modalRef);
+  useSuppressFloatingBubble(Boolean(selectedSeries));
 
   const seriesTmdbId = selectedSeries?.tmdbId;
   const activeSeason = selectedSeries?.activeSeason;
@@ -423,6 +426,14 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                   const isHighlightedEp = Boolean(
                     highlightedEpisodeNumber && ep.episodeNumber === highlightedEpisodeNumber
                   );
+                  const todayIso = new Date().toISOString().slice(0, 10);
+                  const isUnreleasedEp = Boolean(
+                    ep.airDate && /^\d{4}-\d{2}-\d{2}$/.test(ep.airDate) && ep.airDate > todayIso
+                  );
+                  const formattedAirDate =
+                    ep.airDate && /^\d{4}-\d{2}-\d{2}$/.test(ep.airDate)
+                      ? `${ep.airDate.slice(8, 10)}/${ep.airDate.slice(5, 7)}/${ep.airDate.slice(0, 4)}`
+                      : ep.airDate || '';
 
                   return (
                     <div
@@ -430,6 +441,8 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                       className={`group relative min-w-0 text-left rounded-2xl border p-2.5 sm:p-3 flex items-center gap-3 transition-colors ${
                         isHighlightedEp
                           ? 'ring-2 ring-[#9146FF] bg-[#9146FF]/10 border-[#9146FF]/60'
+                          : isUnreleasedEp
+                          ? 'bg-[#0D0F16]/80 hover:bg-[#141722] border-amber-400/20 opacity-85'
                           : 'bg-[#0F1119] hover:bg-[#161925] border-white/[0.08] hover:border-white/25'
                       }`}
                     >
@@ -501,6 +514,21 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                               <span>{ep.runtime} min</span>
                             </>
                           ) : null}
+                          {isUnreleasedEp && (
+                            <>
+                              <span aria-hidden="true">·</span>
+                              <span className="inline-flex items-center gap-1 text-amber-300 font-semibold">
+                                <Clock className="w-3 h-3 shrink-0" />
+                                <span>
+                                  {pickLang(lang, {
+                                    es: `Estreno ${formattedAirDate}`,
+                                    ca: `Estrena ${formattedAirDate}`,
+                                    en: `Airs ${formattedAirDate}`,
+                                  })}
+                                </span>
+                              </span>
+                            </>
+                          )}
                           {epProgressPct >= 88 ? (
                             <>
                               <span aria-hidden="true">·</span>
@@ -518,18 +546,24 @@ export const SeriesEpisodePickerModal: React.FC<SeriesEpisodePickerModalProps> =
                         </div>
 
                         <p className="text-xs text-zinc-400/90 line-clamp-2 leading-snug">
-                          {ep.overview ||
-                            (ep.airDate
-                              ? pickLang(lang, {
-                                  es: `Estreno ${ep.airDate} · Pulsa para reproducir`,
-                                  ca: `Estrena ${ep.airDate} · Prem per reproduir`,
-                                  en: `Aired ${ep.airDate} · Tap to play`,
-                                })
-                              : pickLang(lang, {
-                                  es: 'Pulsa para reproducir en tu sala',
-                                  ca: 'Prem per reproduir a la teva sala',
-                                  en: 'Tap to play in room',
-                                }))}
+                          {isUnreleasedEp
+                            ? pickLang(lang, {
+                                es: `Aún no emitido · Estreno programado el ${formattedAirDate}`,
+                                ca: `Encara no emès · Estrena programada el ${formattedAirDate}`,
+                                en: `Not yet aired · Scheduled for ${formattedAirDate}`,
+                              })
+                            : ep.overview ||
+                              (ep.airDate
+                                ? pickLang(lang, {
+                                    es: `Estreno ${ep.airDate} · Pulsa para reproducir`,
+                                    ca: `Estrena ${ep.airDate} · Prem per reproduir`,
+                                    en: `Aired ${ep.airDate} · Tap to play`,
+                                  })
+                                : pickLang(lang, {
+                                    es: 'Pulsa para reproducir en tu sala',
+                                    ca: 'Prem per reproduir a la teva sala',
+                                    en: 'Tap to play in room',
+                                  }))}
                         </p>
                       </div>
 

@@ -37,6 +37,7 @@ interface FootballMatchboardProps {
   leagueFilter?: string;
   brandFilter?: string;
   onClearCalendarScope?: () => void;
+  onResetFilters?: () => void;
   activeVideoRawUrl?: string;
   loadingItemId?: string | null;
   onPlaySportsMatch: (match: SportsMatch, channelIndex: number) => void;
@@ -65,6 +66,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
   leagueFilter = '',
   brandFilter = 'all',
   onClearCalendarScope,
+  onResetFilters,
   activeVideoRawUrl,
   loadingItemId,
   onPlaySportsMatch,
@@ -100,7 +102,10 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
 
   const [matches, setMatches] = useState<FootballMatchboardItem[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [loadedBoardKey, setLoadedBoardKey] = useState<string>('');
+  const [fetchError, setFetchError] = useState<boolean>(false);
   const [hasAutoSelectedTab, setHasAutoSelectedTab] = useState<boolean>(false);
+  const boardSeqRef = useRef<number>(0);
 
   const [selectedMatchId, setSelectedMatchId] = useState<string | null>(null);
   const [sheetTab, setSheetTab] = useState<MatchSheetTab>('signals');
@@ -118,6 +123,7 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     () => resolveActiveCalendarScope(leagueFilter, searchQuery),
     [leagueFilter, searchQuery]
   );
+  const currentBoardKey = `${activeDateInfo.dateKey}:${calendarScope || 'daily'}`;
   const isTeamCalendarScope =
     calendarScope === 'barcelona' ||
     calendarScope === 'real_madrid' ||
@@ -127,18 +133,25 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
     if (leagueFilter || calendarScope) {
       setStatusTab((prev) => (prev === 'live' ? 'all' : prev));
     }
-  }, [leagueFilter, calendarScope]);
+  }, [leagueFilter, calendarScope, setStatusTab]);
 
   const fetchBoard = useCallback(
     async (silent = false) => {
-      if (!silent) setLoading(true);
+      const seq = ++boardSeqRef.current;
+      const reqKey = `${activeDateInfo.dateKey}:${calendarScope || 'daily'}`;
+      if (!silent) {
+        setLoading(true);
+        setFetchError(false);
+      }
       try {
         const params = new URLSearchParams({ date: activeDateInfo.dateKey });
         if (calendarScope) {
           params.set('calendar', calendarScope);
         }
         const res = await fetch(`/api/sports/football-board?${params.toString()}`);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        if (seq !== boardSeqRef.current) return;
         if (Array.isArray(data?.matches)) {
           const rawIncoming: FootballMatchboardItem[] = data.matches;
           const dedupMap = new Map<string, FootballMatchboardItem>();
@@ -149,6 +162,8 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           }
           const incoming = Array.from(dedupMap.values());
           setMatches(incoming);
+          setLoadedBoardKey(reqKey);
+          setFetchError(false);
           if (
             !hasAutoSelectedTab &&
             !requestedMatchSlug &&
@@ -165,9 +180,11 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           }
         }
       } catch {
-        // retain previous matches on transient network hiccup
+        if (seq === boardSeqRef.current && !silent) {
+          setFetchError(true);
+        }
       } finally {
-        if (!silent) setLoading(false);
+        if (seq === boardSeqRef.current && !silent) setLoading(false);
       }
     },
     [
@@ -623,30 +640,60 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
           </div>
         )}
 
-        {loading && matches.length === 0 ? (
-          <div className="divide-y divide-white/[0.06]">
-            {Array.from({ length: 6 }).map((_, idx) => (
-              <div
-                key={idx}
-                className="h-20 bg-[#10121C] px-4 flex items-center justify-between skeleton-shimmer"
-              >
-                <div className="w-14 h-7 rounded bg-white/[0.06]" />
-                <div className="flex-1 mx-4 space-y-2">
-                  <div className="w-40 h-3.5 rounded bg-white/[0.07]" />
-                  <div className="w-32 h-3.5 rounded bg-white/[0.05]" />
+        {loading && (matches.length === 0 || loadedBoardKey !== currentBoardKey) ? (
+          <div>
+            <div className="px-4 py-2.5 bg-[#121520] border-b border-white/[0.06] flex items-center gap-2 text-xs font-semibold text-[#D8B4FE]">
+              <span className="w-2 h-2 rounded-full bg-[#9146FF] animate-pulse shrink-0" />
+              <span>
+                {calendarScope
+                  ? pickLang(lang, {
+                      es: 'Cargando próximos partidos de esta competición...',
+                      ca: 'Carregant pròxims partits d’aquesta competició...',
+                      en: 'Loading upcoming fixtures for this competition...',
+                    })
+                  : pickLang(lang, {
+                      es: 'Cargando partidos...',
+                      ca: 'Carregant partits...',
+                      en: 'Loading matches...',
+                    })}
+              </span>
+            </div>
+            <div className="divide-y divide-white/[0.06]">
+              {Array.from({ length: 6 }).map((_, idx) => (
+                <div
+                  key={idx}
+                  className="h-20 bg-[#10121C] px-4 flex items-center justify-between skeleton-shimmer"
+                >
+                  <div className="w-14 h-7 rounded bg-white/[0.06]" />
+                  <div className="flex-1 mx-4 space-y-2">
+                    <div className="w-40 h-3.5 rounded bg-white/[0.07]" />
+                    <div className="w-32 h-3.5 rounded bg-white/[0.05]" />
+                  </div>
+                  <div className="w-20 h-10 rounded-xl bg-white/[0.06]" />
                 </div>
-                <div className="w-20 h-10 rounded-xl bg-white/[0.06]" />
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
         ) : groupedCompetitions.length === 0 ? (
           <div className="p-8 text-center bg-[#10121C] space-y-3">
-            <p className="text-sm text-zinc-300 font-medium">
-              {statusTab === 'live'
+            <p className="text-sm text-zinc-200 font-semibold">
+              {fetchError
+                ? pickLang(lang, {
+                    es: 'No se pudo cargar la cartelera de partidos ahora.',
+                    ca: 'No s’ha pogut carregar la cartellera de partits ara.',
+                    en: 'Could not load the match schedule right now.',
+                  })
+                : statusTab === 'live'
                 ? pickLang(lang, {
                     es: 'No hay partidos en vivo ahora mismo.',
                     ca: 'No hi ha partits en directe ara mateix.',
                     en: 'No live matches right now.',
+                  })
+                : calendarScope
+                ? pickLang(lang, {
+                    es: 'No hay partidos programados en las próximas fechas con estos filtros.',
+                    ca: 'No hi ha partits programats en les pròximes dates amb aquests filtres.',
+                    en: 'No scheduled fixtures found in upcoming dates with these filters.',
                   })
                 : pickLang(lang, {
                     es: 'No hay partidos con estos filtros.',
@@ -654,19 +701,63 @@ export const FootballMatchboard: React.FC<FootballMatchboardProps> = ({
                     en: 'No matches match these filters.',
                   })}
             </p>
-            {statusTab !== 'all' && matches.length > 0 && (
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              {statusTab !== 'all' && matches.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setStatusTab('all')}
+                  className="min-h-11 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold cursor-pointer transition-colors"
+                >
+                  {pickLang(lang, {
+                    es: 'Ver todos los partidos',
+                    ca: 'Veure tots els partits',
+                    en: 'View all matches',
+                  })}
+                </button>
+              )}
+              {(Boolean(searchQuery.trim()) ||
+                Boolean(leagueFilter) ||
+                brandFilter !== 'all' ||
+                langFilter === 'ZH' ||
+                dayOffset !== 0) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    triggerHaptic('light');
+                    setDayOffset(0);
+                    setStatusTab('all');
+                    if (onResetFilters) {
+                      onResetFilters();
+                    } else if (onClearCalendarScope) {
+                      onClearCalendarScope();
+                    } else {
+                      onSearchQueryChange('');
+                    }
+                  }}
+                  className="min-h-11 px-4 rounded-2xl bg-[#9146FF] hover:bg-[#7C2AE8] text-white text-xs font-bold cursor-pointer transition-colors"
+                >
+                  {pickLang(lang, {
+                    es: 'Limpiar filtros',
+                    ca: 'Netejar filtres',
+                    en: 'Clear filters',
+                  })}
+                </button>
+              )}
               <button
                 type="button"
-                onClick={() => setStatusTab('all')}
-                className="min-h-12 px-5 rounded-2xl bg-[#9146FF] text-white text-xs font-bold cursor-pointer"
+                onClick={() => {
+                  triggerHaptic('light');
+                  void fetchBoard(false);
+                }}
+                className="min-h-11 px-4 rounded-2xl bg-white/[0.08] hover:bg-white/[0.14] border border-white/[0.12] text-zinc-100 text-xs font-bold cursor-pointer transition-colors"
               >
                 {pickLang(lang, {
-                  es: 'Ver todos los partidos',
-                  ca: 'Veure tots els partits',
-                  en: 'View all matches',
+                  es: 'Reintentar',
+                  ca: 'Reintentar',
+                  en: 'Retry',
                 })}
               </button>
-            )}
+            </div>
           </div>
         ) : (
           <div>

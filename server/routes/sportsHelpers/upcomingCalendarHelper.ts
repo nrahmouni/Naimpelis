@@ -329,7 +329,13 @@ export async function fetchExtendedFootballCalendar(
       }
     }
 
-    const upcomingKeys = Array.from(dateKeySet).sort().slice(0, 12);
+    if (dateKeySet.size === 0) {
+      for (let dOffset = 0; dOffset <= 14; dOffset++) {
+        dateKeySet.add(getMadridDateKey(new Date(Date.now() + dOffset * 86_400_000)));
+      }
+    }
+
+    const upcomingKeys = Array.from(dateKeySet).sort().slice(0, 14);
     const scoreboards = await Promise.all([
       Promise.resolve(defaultBoard),
       ...upcomingKeys.map((dk) =>

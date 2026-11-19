@@ -12,6 +12,7 @@ import { pickLang } from '../utils/i18n';
 import { extractSafeAmbientColor } from '../utils/imageUrl';
 import { shareDedicatedLink } from '../utils/shareDedicatedLink';
 import { useFocusTrap } from '../utils/useFocusTrap';
+import { useSuppressFloatingBubble } from '../utils/useSuppressFloatingBubble';
 import { FlagBadgeSvg, MediaLanguageSelector } from './ui/LanguageBadge';
 import {
   AUDIO_LANGUAGE_OPTIONS,
@@ -65,6 +66,7 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
   const dialogRef = useRef<HTMLDivElement | null>(null);
 
   useFocusTrap(Boolean(item), onClose, dialogRef);
+  useSuppressFloatingBubble(Boolean(item));
 
   const sendTrailerCommand = useCallback((func: string, args: unknown[] = []) => {
     const win = trailerIframeRef.current?.contentWindow;
@@ -127,7 +129,13 @@ export const MediaDetailsModal: React.FC<MediaDetailsModalProps> = ({
           setDetails(nextDetails);
           const avail = nextDetails.availableLanguages;
           if (Array.isArray(avail) && avail.length > 0) {
-            setSelectedAudioLang((prev) => (avail.includes(prev) ? prev : avail[0]));
+            setSelectedAudioLang((prev) =>
+              avail.includes(defaultAudioLang)
+                ? defaultAudioLang
+                : avail.includes(prev)
+                ? prev
+                : avail[0]
+            );
           }
         }
       })

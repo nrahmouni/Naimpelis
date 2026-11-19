@@ -68,6 +68,7 @@ export interface CatalogMediaExtractParams {
   rankCandidateTracks: RankCandidateTracksFn;
   setCache: (key: string, val: ExtractedStreamResult) => void;
   sendOk: (payload: ExtractedStreamResult) => express.Response;
+  sendUnavailable?: (status: number, body: Record<string, any>) => express.Response;
 }
 
 export async function handleCatalogMediaExtract(
@@ -94,6 +95,7 @@ export async function handleCatalogMediaExtract(
     rankCandidateTracks,
     setCache,
     sendOk,
+    sendUnavailable,
   } = params;
 
   const bingetrixTvMatch = rawInput.match(/bingetrix\.[a-z]+\/(?:watch\/)?tv\/(\d+)\/(\d+)\/(\d+)/i);
@@ -146,6 +148,9 @@ export async function handleCatalogMediaExtract(
     tmdbRuntimeMin,
     tmdbImdbId,
     tmdbResolvedTitle,
+    tmdbOriginalLanguage,
+    episodeAirDate,
+    isUnreleasedEpisode,
     combinedTitleHints,
     effectiveYearForExtract,
     shouldQueryVest,
@@ -578,6 +583,8 @@ export async function handleCatalogMediaExtract(
     extractedMovidyCleanTitle,
     extractedGnulaCleanTitle,
     tmdbResolvedTitle,
+    tmdbOriginalLanguage,
+    isUnreleasedEpisode,
     effectiveMediaType,
     effectiveSeason,
     effectiveEpisode,
@@ -590,6 +597,28 @@ export async function handleCatalogMediaExtract(
   if (fallbackResult) {
     setCache(cacheKey, fallbackResult);
     return sendOk(fallbackResult);
+  }
+
+  if (sendUnavailable) {
+    if (isUnreleasedEpisode) {
+      const [y, m, d] = episodeAirDate.split('-');
+      const formattedDate = y && m && d ? `${d}/${m}/${y}` : episodeAirDate;
+      return sendUnavailable(404, {
+        success: false,
+        unreleased: true,
+        airDate: episodeAirDate,
+        canUseCloudBrowser: false,
+        error: `Este capítulo aún no se ha estrenado (estreno previsto: ${formattedDate}).`,
+      });
+    }
+    if (tmdbOriginalLanguage === 'es' && preferLang === 'ES') {
+      return sendUnavailable(404, {
+        success: false,
+        canUseCloudBrowser: false,
+        error:
+          'Este capítulo no tiene señal activa en Castellano en este momento. Prueba otro capítulo o inténtalo más tarde.',
+      });
+    }
   }
 
   return null;

@@ -55,6 +55,9 @@ export interface ResolvedCatalogMetadata {
   tmdbRuntimeMin: number;
   tmdbImdbId: string | null;
   tmdbResolvedTitle: string;
+  tmdbOriginalLanguage: string;
+  episodeAirDate: string;
+  isUnreleasedEpisode: boolean;
   combinedTitleHints: string[];
   effectiveYearForExtract: string | undefined;
   shouldQueryVest: boolean;
@@ -174,6 +177,9 @@ export async function resolveCatalogMediaMetadata(opts: {
   let tmdbDirector = '';
   let tmdbRuntimeMin = 0;
   let tmdbImdbId: string | null = null;
+  let tmdbOriginalLanguage = '';
+  let episodeAirDate = '';
+  let isUnreleasedEpisode = false;
   const tmdbAltTitles: string[] = [];
 
   await Promise.all([
@@ -251,11 +257,15 @@ export async function resolveCatalogMediaMetadata(opts: {
   let tmdbResolvedTitle = '';
   if (resolvedTmdbId) {
     try {
+      const appendFields =
+        effectiveMediaType === 'tv'
+          ? `credits,translations,alternative_titles,external_ids,season/${effectiveSeason}`
+          : 'credits,translations,alternative_titles,external_ids';
       const tmJson = await fetchTmdbJson<any>(
         `/${effectiveMediaType}/${resolvedTmdbId}`,
         {
           language: 'es-ES',
-          append_to_response: 'credits,translations,alternative_titles,external_ids',
+          append_to_response: appendFields,
         },
         15 * 60 * 1000
       ).catch(() => null);
@@ -263,9 +273,29 @@ export async function resolveCatalogMediaMetadata(opts: {
         const esTitle = String(tmJson?.title || tmJson?.name || '').trim();
         const origTitle = String(tmJson?.original_title || tmJson?.original_name || '').trim();
         tmdbResolvedTitle = esTitle || origTitle;
+        tmdbOriginalLanguage = String(tmJson?.original_language || '').trim().toLowerCase();
         tmdbVerifiedYear =
           String(tmJson?.release_date || tmJson?.first_air_date || '').split('-')[0] || '';
         tmdbImdbId = tmJson?.imdb_id || tmJson?.external_ids?.imdb_id || null;
+        if (effectiveMediaType === 'tv') {
+          const seasonEps: any[] = Array.isArray(tmJson?.[`season/${effectiveSeason}`]?.episodes)
+            ? tmJson[`season/${effectiveSeason}`].episodes
+            : [];
+          const epMatch = seasonEps.find((ep: any) => Number(ep?.episode_number) === effectiveEpisode);
+          episodeAirDate = String(epMatch?.air_date || '').trim();
+          if (
+            !episodeAirDate &&
+            tmJson?.next_episode_to_air &&
+            Number(tmJson.next_episode_to_air.season_number) === effectiveSeason &&
+            Number(tmJson.next_episode_to_air.episode_number) === effectiveEpisode
+          ) {
+            episodeAirDate = String(tmJson.next_episode_to_air.air_date || '').trim();
+          }
+          if (/^\d{4}-\d{2}-\d{2}$/.test(episodeAirDate)) {
+            const todayIso = new Date().toISOString().slice(0, 10);
+            isUnreleasedEpisode = episodeAirDate > todayIso;
+          }
+        }
         if (effectiveMediaType === 'movie') {
           const crew: any[] = Array.isArray(tmJson?.credits?.crew) ? tmJson.credits.crew : [];
           tmdbDirector = String(crew.find((c) => c?.job === 'Director')?.name || '').trim();
@@ -360,6 +390,9 @@ export async function resolveCatalogMediaMetadata(opts: {
     tmdbRuntimeMin,
     tmdbImdbId,
     tmdbResolvedTitle,
+    tmdbOriginalLanguage,
+    episodeAirDate,
+    isUnreleasedEpisode,
     combinedTitleHints,
     effectiveYearForExtract,
     shouldQueryVest,
@@ -371,6 +404,8 @@ export async function buildFallbackCatalogResult(opts: {
   extractedMovidyCleanTitle: string;
   extractedGnulaCleanTitle: string;
   tmdbResolvedTitle: string;
+  tmdbOriginalLanguage?: string;
+  isUnreleasedEpisode?: boolean;
   effectiveMediaType: 'movie' | 'tv';
   effectiveSeason: number;
   effectiveEpisode: number;
@@ -385,6 +420,8 @@ export async function buildFallbackCatalogResult(opts: {
     extractedMovidyCleanTitle,
     extractedGnulaCleanTitle,
     tmdbResolvedTitle,
+    tmdbOriginalLanguage = '',
+    isUnreleasedEpisode = false,
     effectiveMediaType,
     effectiveSeason,
     effectiveEpisode,
@@ -394,6 +431,12 @@ export async function buildFallbackCatalogResult(opts: {
     rawInput,
     isSandboxedFrame,
   } = opts;
+
+  if (isUnreleasedEpisode) {
+    return null;
+  }
+
+  const isSpanishNativeRequest = tmdbOriginalLanguage === 'es' && preferLang === 'ES';
 
   const fallbackBaseTitle =
     titleHint || extractedMovidyCleanTitle || extractedGnulaCleanTitle || tmdbResolvedTitle || '';
@@ -416,14 +459,16 @@ export async function buildFallbackCatalogResult(opts: {
           effectiveEpisode,
         }).catch(() => null)
       : Promise.resolve(null),
-    buildWebEmbedTracks({
-      resolvedTmdbId,
-      effectiveMediaType,
-      effectiveSeason,
-      effectiveEpisode,
-      rawInput,
-      isSandboxedFrame,
-    }),
+    isSpanishNativeRequest
+      ? Promise.resolve([] as TrackRecord[])
+      : buildWebEmbedTracks({
+          resolvedTmdbId,
+          effectiveMediaType,
+          effectiveSeason,
+          effectiveEpisode,
+          rawInput,
+          isSandboxedFrame,
+        }),
   ]);
 
   const safeYtFallback =

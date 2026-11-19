@@ -9,6 +9,7 @@ import type {
 } from '../../types';
 import { useAppStore } from '../../store/useAppStore';
 import { pickLang } from '../../utils/i18n';
+import { mergeAndRankCatalogResults } from '../../utils/catalogSearchRank';
 import type { CatalogSection } from './catalogConstants';
 
 interface UseVodCatalogStateArgs {
@@ -41,7 +42,10 @@ export function useVodCatalogState({
   const [debouncedHomeQuery, setDebouncedHomeQuery] = useState('');
   const [homeMovieResults, setHomeMovieResults] = useState<CatalogMovie[]>([]);
   const [homeSeriesResults, setHomeSeriesResults] = useState<CatalogMovie[]>([]);
-  const [loadingHomeSearch, setLoadingHomeSearch] = useState(false);
+  const [loadingHomeMovies, setLoadingHomeMovies] = useState(false);
+  const [loadingHomeSeries, setLoadingHomeSeries] = useState(false);
+  const loadingHomeSearch =
+    effectiveCineTab === 'series' ? loadingHomeSeries : loadingHomeMovies;
   const [homeShowcaseMovies, setHomeShowcaseMovies] = useState<CatalogMovie[]>([]);
   const [homeShowcaseSeries, setHomeShowcaseSeries] = useState<CatalogMovie[]>([]);
   const [heroSlideIndex, setHeroSlideIndex] = useState(0);
@@ -225,66 +229,104 @@ export function useVodCatalogState({
     if (!activeForHomeSearch || debouncedHomeQuery.length < 2) {
       setHomeMovieResults([]);
       setHomeSeriesResults([]);
-      setLoadingHomeSearch(false);
+      setLoadingHomeMovies(false);
+      setLoadingHomeSeries(false);
       return;
     }
 
     const controller = new AbortController();
     let active = true;
-    let pending = 2;
-    setLoadingHomeSearch(true);
+    setLoadingHomeMovies(true);
+    setLoadingHomeSeries(true);
 
-    const markDone = () => {
-      pending -= 1;
-      if (active && pending <= 0) {
-        setLoadingHomeSearch(false);
-      }
-    };
+    const useVoseMovies =
+      activeSection === 'vose' ||
+      (worldMode === 'cine' && !effectiveCineCastellano && cineAudioOverride === 'EN');
+    const movieEndpoint = useVoseMovies
+      ? `/api/catalog/bingetrix?provider=all&category=trending&sort=${encodeURIComponent(
+          movieSort
+        )}&page=1&query=${encodeURIComponent(debouncedHomeQuery)}`
+      : `/api/catalog/movies?provider=all&category=trending&sort=${encodeURIComponent(
+          movieSort
+        )}&page=1&query=${encodeURIComponent(debouncedHomeQuery)}`;
 
-    fetch(
-      `/api/catalog/movies?provider=all&category=trending&page=1&query=${encodeURIComponent(
-        debouncedHomeQuery
-      )}`,
-      { signal: controller.signal }
-    )
+    fetch(movieEndpoint, { signal: controller.signal })
       .then((r) => (r.ok ? r.json() : { movies: [] }))
       .then((mData) => {
         if (!active) return;
-        setHomeMovieResults(Array.isArray(mData?.movies) ? mData.movies.slice(0, 12) : []);
+        const raw: CatalogMovie[] = Array.isArray(mData?.movies)
+          ? mData.movies
+          : Array.isArray(mData?.items)
+          ? mData.items
+          : [];
+        setHomeMovieResults(
+          mergeAndRankCatalogResults(raw, [], debouncedHomeQuery, {
+            limit: 15,
+            prefer4k: movieSort === '4k',
+          })
+        );
       })
       .catch(() => {
         if (active && !controller.signal.aborted) setHomeMovieResults([]);
       })
-      .finally(markDone);
+      .finally(() => {
+        if (active) setLoadingHomeMovies(false);
+      });
 
+    const apiSeriesLang =
+      !effectiveCineCastellano && (seriesLangMode === 'EN' || seriesLangMode === 'VOSE')
+        ? 'en'
+        : 'es';
     fetch(
-      `/api/catalog/series?provider=all&category=trending&page=1&lang=es&query=${encodeURIComponent(
-        debouncedHomeQuery
-      )}`,
+      `/api/catalog/series?provider=all&category=trending&sort=${encodeURIComponent(
+        seriesSort
+      )}&page=1&lang=${apiSeriesLang}&query=${encodeURIComponent(debouncedHomeQuery)}`,
       { signal: controller.signal }
     )
       .then((r) => (r.ok ? r.json() : { series: [] }))
       .then((sData) => {
         if (!active) return;
-        setHomeSeriesResults(Array.isArray(sData?.series) ? sData.series.slice(0, 12) : []);
+        const raw: CatalogMovie[] = Array.isArray(sData?.series)
+          ? sData.series
+          : Array.isArray(sData?.items)
+          ? sData.items
+          : [];
+        setHomeSeriesResults(
+          mergeAndRankCatalogResults(raw, [], debouncedHomeQuery, {
+            limit: 15,
+            prefer4k: seriesSort === '4k',
+          })
+        );
       })
       .catch(() => {
         if (active && !controller.signal.aborted) setHomeSeriesResults([]);
       })
-      .finally(markDone);
+      .finally(() => {
+        if (active) setLoadingHomeSeries(false);
+      });
 
     return () => {
       active = false;
       controller.abort();
     };
-  }, [worldMode, activeSection, debouncedHomeQuery]);
+  }, [
+    worldMode,
+    activeSection,
+    debouncedHomeQuery,
+    effectiveCineCastellano,
+    cineAudioOverride,
+    seriesLangMode,
+    movieSort,
+    seriesSort,
+  ]);
 
-  // Fetch Movies
+  // Fetch Movies (skip while Cine unified search already handles the query)
   useEffect(() => {
     const inCineMovies =
       worldMode === 'cine' && effectiveCineTab === 'movies' && cineSpecialPortal === 'none';
+    const isCineSearching = worldMode === 'cine' && debouncedHomeQuery.length >= 2;
     const shouldFetch =
-      inCineMovies || activeSection === 'movies' || activeSection === 'vose';
+      (inCineMovies && !isCineSearching) || activeSection === 'movies' || activeSection === 'vose';
     if (!shouldFetch || showWatchlistOnly) return;
 
     let cancelled = false;
@@ -346,11 +388,12 @@ export function useVodCatalogState({
     showWatchlistOnly,
   ]);
 
-  // Fetch TV Series
+  // Fetch TV Series (skip while Cine unified search already handles the query)
   useEffect(() => {
     const inCineSeries =
       worldMode === 'cine' && effectiveCineTab === 'series' && cineSpecialPortal === 'none';
-    if (!inCineSeries && activeSection !== 'series') return;
+    const isCineSearching = worldMode === 'cine' && debouncedHomeQuery.length >= 2;
+    if ((!inCineSeries || isCineSearching) && activeSection !== 'series') return;
     let cancelled = false;
     if (seriesPage === 1) setLoadingSeries(true);
     else setLoadingMoreSeries(true);
@@ -416,7 +459,12 @@ export function useVodCatalogState({
       setSeriesModalLang('ES');
       setForceSpanishSeriesActive(true);
     } else if (!selectedSeries || selectedSeries.tmdbId !== tmdbId) {
-      setSeriesModalLang(seriesLangMode === 'EN' || seriesLangMode === 'VOSE' ? seriesLangMode : 'ES');
+      const preferredDefault = effectiveCineCastellano
+        ? 'ES'
+        : seriesLangMode === 'EN' || seriesLangMode === 'VOSE'
+        ? seriesLangMode
+        : 'ES';
+      setSeriesModalLang(preferredDefault);
       setForceSpanishSeriesActive(false);
     }
 

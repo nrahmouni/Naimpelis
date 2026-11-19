@@ -491,6 +491,10 @@ export const CineWorldView: React.FC<CineWorldViewProps> = ({
           isBookmarked={isBookmarked}
           onToggleBookmark={onToggleBookmark}
           onOpenPosterItem={openPosterItem}
+          onSwitchTab={(tab) => {
+            onChangeCineSpecialPortal('none');
+            onChangeCineTab(tab);
+          }}
           onSearchWithAi={onSearchWithAi}
         />
       ) : cineSpecialPortal === 'catala' ? (
