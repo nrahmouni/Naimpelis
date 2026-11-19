@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
   AlertCircle,
   ArrowLeft,
@@ -13,7 +13,6 @@ import {
   Share2,
   Shuffle,
   Users,
-  X,
 } from 'lucide-react';
 import type {
   AppLanguage,
@@ -22,7 +21,6 @@ import type {
   BoardCoord,
   BoardGameState,
   BoardGameType,
-  BoardSide,
   ChapasFlagId,
   ChapasShotInput,
   ChapasTeamId,
@@ -44,10 +42,7 @@ import type {
 } from '../types';
 import type { RoomMatchResponsesState } from '../shared/protocol';
 import {
-  BOARD_TURN_DECISION_MS,
   applyBoardMove,
-  chooseAutoBoardMove,
-  createInitialBoardGameState,
   resetBoardGame,
   resignBoardGame,
   startBoardMatch,
@@ -72,9 +67,19 @@ import {
 import { VoiceWaveBars } from './games/GameVoiceBar';
 import { GamesHubLobby } from './games/GamesHubLobby';
 import type { UnifiedGameId } from './games/GameLogos';
+import {
+  GameSwitcherModal,
+  GAME_SIGNATURES,
+  getGamesHubTitleMap,
+  getGameSwitcherOptions,
+} from './games/GameSwitcherModal';
+import {
+  useGamesHubController,
+  isBoardGameId,
+  isPartyGame,
+} from './games/useGamesHubController';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
-import { buildGameInviteUrl } from '../utils/shortLink';
 
 interface GamesHubSectionProps {
   lang: AppLanguage;
@@ -163,14 +168,6 @@ interface GamesHubSectionProps {
   onCloseRoomBlackjack?: () => void;
 }
 
-function isPartyGame(id: UnifiedGameId): id is PartyGameType {
-  return id === 'parchis' || id === 'uno';
-}
-
-function isBoardGameId(id: UnifiedGameId): id is BoardGameType {
-  return id === 'chess' || id === 'checkers' || id === 'connect4';
-}
-
 export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   lang,
   roomId = '',
@@ -254,339 +251,64 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
   onBlackjackNewRound,
   onCloseRoomBlackjack,
 }) => {
-  const [selectedGame, setSelectedGame] = useState<UnifiedGameId | null>(null);
-  const [showGameSwitcher, setShowGameSwitcher] = useState(false);
   const [hubMode, setHubMode] = useState<'offline' | 'online'>('online');
-  const [localBoardGame, setLocalBoardGame] = useState<BoardGameState | null>(null);
-  const [localMoveErr, setLocalMoveErr] = useState<string | null>(null);
-  const [inviteCopied, setInviteCopied] = useState(false);
   const [muted, toggleMute] = useGameSoundMute();
   const { floatingReaction, sendReaction } = useGameFloatingReaction(hubMode === 'offline');
 
-  const handleInviteGame = async (gt: UnifiedGameId) => {
-    triggerHaptic('medium');
-    const url = roomId ? buildGameInviteUrl(roomId, gt) : typeof window !== 'undefined' ? window.location.href : '';
-    if (!url) return;
-    const shareTitle = `RiffanTV · ${gt.toUpperCase()}`;
-    const shareText = pickLang(lang, {
-      es: `¡Únete a mi partida de ${gt} en RiffanTV! Solo pon tu nombre y a jugar:`,
-      ca: `Uneix-te a la meva partida de ${gt} a RiffanTV! Només posa el teu nom i a jugar:`,
-      en: `Join my ${gt} match on RiffanTV! Just enter your name to play:`,
-    });
-    if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
-      try {
-        await navigator.share({ title: shareTitle, text: shareText, url });
-        return;
-      } catch {
-        // user canceled or unsupported -> fallback to clipboard
-      }
-    }
-    try {
-      await navigator.clipboard.writeText(url);
-      setInviteCopied(true);
-      window.setTimeout(() => setInviteCopied(false), 2600);
-    } catch {
-      // ignore clipboard errors
-    }
-  };
-
-  useEffect(() => {
-    onSelectedGameChange?.(selectedGame);
-  }, [selectedGame, onSelectedGameChange]);
-
-  useEffect(() => {
-    return () => {
-      onSelectedGameChange?.(null);
-    };
-  }, [onSelectedGameChange]);
-
-  const lastHandledRequestSeqRef = React.useRef<number>(0);
-  useEffect(() => {
-    if (!requestedGameOpen || requestedGameOpen.seq === lastHandledRequestSeqRef.current) return;
-    lastHandledRequestSeqRef.current = requestedGameOpen.seq;
-    setHubMode('online');
-    setLocalMoveErr(null);
-    setSelectedGame(requestedGameOpen.gameType);
-  }, [requestedGameOpen]);
-
-  // Close switcher dropdown when game changes or Escape is pressed
-  useEffect(() => {
-    setShowGameSwitcher(false);
-  }, [selectedGame]);
-
-  useEffect(() => {
-    if (!showGameSwitcher || typeof window === 'undefined') return;
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setShowGameSwitcher(false);
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [showGameSwitcher]);
-
-  // Keep players synchronized seamlessly when room switches games or closes
-  const prevRoomGameKeyRef = React.useRef<UnifiedGameId | null>(null);
-  useEffect(() => {
-    const incomingType: UnifiedGameId | null = roomChapasGame
-      ? 'chapas'
-      : roomHeadSoccerGame
-      ? 'headsoccer'
-      : roomPokerGame
-      ? 'poker'
-      : roomBlackjackGame
-      ? 'blackjack'
-      : roomPoolGame
-      ? 'pool'
-      : roomPinturilloGame
-      ? 'pinturillo'
-      : roomPartyGame
-      ? roomPartyGame.gameType
-      : roomBoardGame
-      ? roomBoardGame.gameType
-      : null;
-
-    const prevType = prevRoomGameKeyRef.current;
-    if (hubMode === 'online' && selectedGame && incomingType !== prevType) {
-      if (incomingType && incomingType !== selectedGame) {
-        setLocalMoveErr(null);
-        setSelectedGame(incomingType);
-      } else if (!isHost && prevType && !incomingType) {
-        setSelectedGame(null);
-      }
-    }
-    prevRoomGameKeyRef.current = incomingType;
-  }, [
+  const {
+    selectedGame,
+    showGameSwitcher,
+    setShowGameSwitcher,
+    localBoardGame,
+    setLocalBoardGame,
+    localMoveErr,
+    setLocalMoveErr,
+    inviteCopied,
+    handleInviteGame,
+    makeOfflineBoardState,
+    handleBackToGames,
+    switchModeForActiveGame,
+    handleJoinOfflineBoardSeat,
+    getActiveSeatedPlayers,
+    handleSwitchGameInPlace,
+    isLiveGame,
+    openGameCard,
+  } = useGamesHubController({
+    lang,
+    roomId,
+    currentUser,
+    hubMode,
+    setHubMode,
+    isHost,
+    requestedGameOpen,
+    roomBoardGame,
+    roomPartyGame,
+    roomPinturilloGame,
+    roomPoolGame,
     roomChapasGame,
     roomHeadSoccerGame,
     roomPokerGame,
     roomBlackjackGame,
-    roomPoolGame,
-    roomPinturilloGame,
-    roomPartyGame,
-    roomBoardGame,
-    isHost,
-    hubMode,
-    selectedGame,
-  ]);
+    onSelectedGameChange,
+    onSwitchRoomGame,
+    onStartRoomBoardGame,
+    onCloseBoardGame,
+    onStartRoomPartyGame,
+    onCloseRoomPartyGame,
+    onStartRoomPinturillo,
+    onCloseRoomPinturillo,
+    onStartRoomPool,
+    onCloseRoomPool,
+    onStartRoomChapas,
+    onCloseRoomChapas,
+    onStartRoomHeadSoccer,
+    onCloseRoomHeadSoccer,
+    onStartRoomPoker,
+    onCloseRoomPoker,
+    onStartRoomBlackjack,
+    onCloseRoomBlackjack,
+  });
 
-  const makeOfflineBoardState = (gt: BoardGameType, humanSide: BoardSide = 'w'): BoardGameState => {
-    const created = createInitialBoardGameState(
-      gt,
-      { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar, color: currentUser.color },
-      true,
-      undefined,
-      0,
-      [],
-      true
-    );
-    const botSide: BoardSide = humanSide === 'w' ? 'b' : 'w';
-    return {
-      ...created,
-      players: {
-        [humanSide]: {
-          userId: currentUser.id,
-          name: currentUser.name,
-          avatar: currentUser.avatar || '🎮',
-          color: currentUser.color || '#9146FF',
-          score: 0,
-        },
-        [botSide]: {
-          userId: 'bot-board-ia',
-          name: 'Bot IA',
-          avatar: '🤖',
-          color: '#E11D48',
-          score: 0,
-          isBot: true,
-        },
-      } as BoardGameState['players'],
-    };
-  };
-
-  // Offline AI Bot turn + 15s human decision auto-move
-  useEffect(() => {
-    if (hubMode !== 'offline' || !localBoardGame || localBoardGame.status !== 'playing') return;
-    const activeSeat = localBoardGame.players[localBoardGame.turn];
-    const isBotTurn = Boolean(activeSeat?.isBot || activeSeat?.userId === 'bot-board-ia');
-
-    const delayMs = isBotTurn
-      ? 600
-      : Math.max(
-          250,
-          (localBoardGame.turnDeadlineAt || Date.now() + BOARD_TURN_DECISION_MS) - Date.now()
-        );
-
-    const timer = window.setTimeout(() => {
-      setLocalBoardGame((curr) => {
-        if (!curr || curr.status !== 'playing') return curr;
-        const curSeat = curr.players[curr.turn];
-        const moveActorId = curSeat?.userId || currentUser.id;
-        const autoMove = chooseAutoBoardMove(curr);
-        if (!autoMove) return curr;
-        const res = applyBoardMove(curr, moveActorId, autoMove.from, autoMove.to, 'Q');
-        return res.ok ? res.state : curr;
-      });
-    }, delayMs);
-
-    return () => window.clearTimeout(timer);
-  }, [hubMode, localBoardGame, currentUser.id]);
-
-  // Lock body scroll while progressive single-game board view is active
-  useEffect(() => {
-    if (!selectedGame || typeof document === 'undefined') return;
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [selectedGame]);
-
-  const openGameCard = (gt: UnifiedGameId) => {
-    triggerHaptic('medium');
-    setSelectedGame(gt);
-    setLocalMoveErr(null);
-
-    if (hubMode === 'offline') {
-      if (isBoardGameId(gt)) {
-        setLocalBoardGame(makeOfflineBoardState(gt, 'w'));
-      }
-      return;
-    }
-
-    if (gt === 'chapas') {
-      if (!roomChapasGame) {
-        onStartRoomChapas?.();
-      }
-    } else if (gt === 'headsoccer') {
-      if (!roomHeadSoccerGame) {
-        onStartRoomHeadSoccer?.();
-      }
-    } else if (gt === 'poker') {
-      if (!roomPokerGame) {
-        onStartRoomPoker?.(true);
-      }
-    } else if (gt === 'blackjack') {
-      if (!roomBlackjackGame) {
-        onStartRoomBlackjack?.();
-      }
-    } else if (gt === 'pinturillo') {
-      if (!roomPinturilloGame) {
-        onStartRoomPinturillo?.();
-      }
-    } else if (gt === 'pool') {
-      if (!roomPoolGame) {
-        onStartRoomPool?.();
-      }
-    } else if (isPartyGame(gt)) {
-      if (!roomPartyGame || roomPartyGame.gameType !== gt) {
-        onStartRoomPartyGame?.(gt);
-      }
-    } else if (isBoardGameId(gt)) {
-      if (!roomBoardGame || roomBoardGame.gameType !== gt) {
-        onStartRoomBoardGame?.(gt, false, 0);
-      }
-    }
-  };
-
-  const handleBackToGames = () => {
-    triggerHaptic('light');
-    if (selectedGame) {
-      if (hubMode === 'offline') {
-        setLocalBoardGame(null);
-        setLocalMoveErr(null);
-      } else if (selectedGame === 'chapas') {
-        if (isHost && roomChapasGame) {
-          onCloseRoomChapas?.();
-        }
-      } else if (selectedGame === 'headsoccer') {
-        if (isHost && roomHeadSoccerGame) {
-          onCloseRoomHeadSoccer?.();
-        }
-      } else if (selectedGame === 'poker') {
-        if (isHost && roomPokerGame) {
-          onCloseRoomPoker?.();
-        }
-      } else if (selectedGame === 'blackjack') {
-        if (isHost && roomBlackjackGame) {
-          onCloseRoomBlackjack?.();
-        }
-      } else if (selectedGame === 'pinturillo') {
-        if (isHost && roomPinturilloGame) {
-          onCloseRoomPinturillo?.();
-        }
-      } else if (selectedGame === 'pool') {
-        if (isHost && roomPoolGame) {
-          onCloseRoomPool?.();
-        }
-      } else if (isPartyGame(selectedGame)) {
-        if (isHost && roomPartyGame?.gameType === selectedGame) {
-          onCloseRoomPartyGame?.();
-        }
-      } else if (isHost && roomBoardGame?.gameType === selectedGame) {
-        onCloseBoardGame?.();
-      }
-    }
-    setSelectedGame(null);
-  };
-
-  const switchModeForActiveGame = (targetMode: 'online' | 'offline') => {
-    if (!selectedGame || targetMode === hubMode) return;
-    triggerHaptic('light');
-    setHubMode(targetMode);
-    setLocalMoveErr(null);
-
-    if (targetMode === 'offline') {
-      if (isBoardGameId(selectedGame)) {
-        setLocalBoardGame(makeOfflineBoardState(selectedGame, 'w'));
-      }
-    } else {
-      setLocalBoardGame(null);
-      if (selectedGame === 'chapas') {
-        if (!roomChapasGame) {
-          onStartRoomChapas?.();
-        }
-      } else if (selectedGame === 'headsoccer') {
-        if (!roomHeadSoccerGame) {
-          onStartRoomHeadSoccer?.();
-        }
-      } else if (selectedGame === 'poker') {
-        if (!roomPokerGame) {
-          onStartRoomPoker?.(true);
-        }
-      } else if (selectedGame === 'blackjack') {
-        if (!roomBlackjackGame) {
-          onStartRoomBlackjack?.();
-        }
-      } else if (selectedGame === 'pinturillo') {
-        if (!roomPinturilloGame) {
-          onStartRoomPinturillo?.();
-        }
-      } else if (selectedGame === 'pool') {
-        if (!roomPoolGame) {
-          onStartRoomPool?.();
-        }
-      } else if (isPartyGame(selectedGame)) {
-        if (!roomPartyGame || roomPartyGame.gameType !== selectedGame) {
-          onStartRoomPartyGame?.(selectedGame);
-        }
-      } else if (isBoardGameId(selectedGame)) {
-        if (!roomBoardGame || roomBoardGame.gameType !== selectedGame) {
-          onStartRoomBoardGame?.(selectedGame, false, 0);
-        }
-      }
-    }
-  };
-
-  const handleJoinOfflineBoardSeat = (side: 'w' | 'b' | 'spectate') => {
-    if (side === 'spectate' || !selectedGame || !isBoardGameId(selectedGame)) return;
-    setLocalBoardGame((curr) => {
-      if (!curr) return makeOfflineBoardState(selectedGame, side);
-      if (curr.status !== 'waiting' && curr.moveHistory.length > 0) return curr;
-      return makeOfflineBoardState(selectedGame, side);
-    });
-  };
-
-  // ==========================================================================
-  // PROGRESSIVE SINGLE-GAME SCREEN (AFTER TAPPING A GAME CARD)
-  // ==========================================================================
   if (selectedGame) {
     const isParty = isPartyGame(selectedGame);
     const isPinturillo = selectedGame === 'pinturillo';
@@ -604,19 +326,8 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
           : null
         : null;
 
-    const titleMap: Record<UnifiedGameId, string> = {
-      parchis: pickLang(lang, { es: '🎲 Parchís', ca: '🎲 Parxís', en: '🎲 Parchís' }),
-      uno: '🃏 UNO',
-      pinturillo: '🎨 Pinturillo',
-      pool: pickLang(lang, { es: '🎱 Billar Bola 8', ca: '🎱 Billar Bola 8', en: '🎱 8-Ball Pool' }),
-      chapas: pickLang(lang, { es: '⚽ Fútbol Chapas', ca: '⚽ Futbol Xapes', en: '⚽ Soccer Caps' }),
-      headsoccer: pickLang(lang, { es: '🥅 Fútbol Cabezones', ca: '🥅 Futbol Capgrossos', en: '🥅 Head Soccer' }),
-      poker: pickLang(lang, { es: '♠️ Póker Hold’em', ca: '♠️ Pòquer Hold’em', en: '♠️ Texas Hold’em' }),
-      blackjack: '🃏 Blackjack 21',
-      chess: pickLang(lang, { es: '♟️ Ajedrez', ca: '♟️ Escacs', en: '♟️ Chess' }),
-      checkers: pickLang(lang, { es: '🔴 Damas', ca: '🔴 Dames', en: '🔴 Checkers' }),
-      connect4: pickLang(lang, { es: '🟡 Conecta 4', ca: '🟡 Connecta 4', en: '🟡 Connect 4' }),
-    };
+    const titleMap = getGamesHubTitleMap(lang);
+    const switcherOptions = getGameSwitcherOptions(titleMap);
 
     const poolMySeat =
       hubMode === 'online' && roomPoolGame
@@ -739,103 +450,7 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
       );
     };
 
-    const GAME_SIGNATURES: Record<UnifiedGameId, { color: string; label: string }> = {
-      parchis: { color: '#F59E0B', label: 'Parchís' },
-      uno: { color: '#E11D48', label: 'UNO' },
-      pinturillo: { color: '#EC4899', label: 'Pinturillo' },
-      pool: { color: '#10B981', label: 'Billar' },
-      chapas: { color: '#84CC16', label: 'Fútbol Chapas' },
-      headsoccer: { color: '#38BDF8', label: 'Cabezones' },
-      poker: { color: '#A855F7', label: 'Póker' },
-      blackjack: { color: '#10B981', label: 'Blackjack' },
-      chess: { color: '#9146FF', label: 'Ajedrez' },
-      checkers: { color: '#F43F5E', label: 'Damas' },
-      connect4: { color: '#3B82F6', label: 'Conecta 4' },
-    };
-
-    const switcherOptions: Array<{
-      id: UnifiedGameId;
-      label: string;
-      subtitle: string;
-      color: string;
-    }> = [
-      { id: 'headsoccer', label: titleMap.headsoccer, subtitle: '1v1 · 60s', color: GAME_SIGNATURES.headsoccer.color },
-      { id: 'pool', label: titleMap.pool, subtitle: '1v1 · Bola 8', color: GAME_SIGNATURES.pool.color },
-      { id: 'chapas', label: titleMap.chapas, subtitle: '1v1 / 2v2', color: GAME_SIGNATURES.chapas.color },
-      { id: 'poker', label: titleMap.poker, subtitle: '2–6 jug.', color: GAME_SIGNATURES.poker.color },
-      { id: 'blackjack', label: titleMap.blackjack, subtitle: '21 Casino', color: GAME_SIGNATURES.blackjack.color },
-      { id: 'uno', label: titleMap.uno, subtitle: '2–4 jug.', color: GAME_SIGNATURES.uno.color },
-      { id: 'parchis', label: titleMap.parchis, subtitle: '2–4 jug.', color: GAME_SIGNATURES.parchis.color },
-      { id: 'pinturillo', label: titleMap.pinturillo, subtitle: 'Dibuja', color: GAME_SIGNATURES.pinturillo.color },
-      { id: 'chess', label: titleMap.chess, subtitle: '1v1 Tablero', color: GAME_SIGNATURES.chess.color },
-      { id: 'checkers', label: titleMap.checkers, subtitle: '1v1 Tablero', color: GAME_SIGNATURES.checkers.color },
-      { id: 'connect4', label: titleMap.connect4, subtitle: '1v1 Tablero', color: GAME_SIGNATURES.connect4.color },
-    ];
-
-    const getActiveSeatedPlayers = (): Array<{ id: string; name: string; avatar: string }> => {
-      if (hubMode === 'offline') {
-        return [
-          { id: currentUser.id, name: currentUser.name, avatar: currentUser.avatar || '🎮' },
-          { id: 'bot-ia', name: 'Bot IA', avatar: '🤖' },
-        ];
-      }
-      const list: Array<{ id: string; name: string; avatar: string }> = [];
-      const seen = new Set<string>();
-      const push = (id?: string | null, name?: string, avatar?: string, isBot?: boolean) => {
-        if (!id || isBot || id.startsWith('bot-') || seen.has(id)) return;
-        seen.add(id);
-        list.push({ id, name: name || 'Jugador', avatar: avatar || '🎮' });
-      };
-      if (selectedGame === 'pool' && roomPoolGame) {
-        roomPoolGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
-      } else if (selectedGame === 'chapas' && roomChapasGame) {
-        roomChapasGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
-      } else if (selectedGame === 'headsoccer' && roomHeadSoccerGame) {
-        roomHeadSoccerGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
-      } else if (selectedGame === 'poker' && roomPokerGame) {
-        roomPokerGame.seats.forEach((s) => s && push(s.userId, s.name, s.avatar, s.isBot));
-      } else if (selectedGame === 'blackjack' && roomBlackjackGame) {
-        roomBlackjackGame.seats.forEach((s) => s && push(s.userId, s.name, s.avatar, false));
-      } else if (selectedGame === 'pinturillo' && roomPinturilloGame) {
-        roomPinturilloGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
-      } else if (isParty && roomPartyGame) {
-        roomPartyGame.players.forEach((p) => p && push(p.userId, p.name, p.avatar, p.isBot));
-      } else if (activeBoardState) {
-        [activeBoardState.players.w, activeBoardState.players.b].forEach(
-          (p) => p && push(p.userId, p.name, p.avatar, p.isBot)
-        );
-      }
-      if (list.length === 0) {
-        push(currentUser.id, currentUser.name, currentUser.avatar, false);
-      }
-      return list;
-    };
-
-    const handleSwitchGameInPlace = (targetId: UnifiedGameId) => {
-      triggerHaptic('medium');
-      setShowGameSwitcher(false);
-      if (targetId === selectedGame) return;
-      setLocalMoveErr(null);
-
-      if (hubMode === 'offline') {
-        setSelectedGame(targetId);
-        if (isBoardGameId(targetId)) {
-          setLocalBoardGame(makeOfflineBoardState(targetId, 'w'));
-        } else {
-          setLocalBoardGame(null);
-        }
-        return;
-      }
-
-      setSelectedGame(targetId);
-      if (onSwitchRoomGame) {
-        onSwitchRoomGame(targetId);
-      } else {
-        openGameCard(targetId);
-      }
-    };
-
-    const activeSeatedPlayers = showGameSwitcher ? getActiveSeatedPlayers() : [];
+    const activeSeatedPlayers = showGameSwitcher ? getActiveSeatedPlayers(activeBoardState) : [];
 
     return (
       <div
@@ -843,7 +458,6 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
         className="fixed inset-0 z-[185] h-[100dvh] w-full max-w-[100vw] bg-[#070B14] nc-tabletop-slate overflow-hidden flex flex-col pt-safe pb-safe"
       >
         <div className="flex-1 min-h-0 flex flex-col overflow-hidden p-1.5 sm:p-3 max-w-5xl w-full mx-auto gap-1.5">
-          {/* Unified Ultra-Clean Glassmorphism Bar: ← Juegos | Switcher Title | Online/IA Pill | Mute | Voz */}
           <div
             className="flex items-center justify-between gap-1.5 px-2 py-1.5 rounded-2xl nc-arcade-glass border border-white/[0.12] shrink-0 min-w-0"
             style={{
@@ -905,7 +519,6 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
 
             <div className="flex items-center gap-1.5 shrink-0">
-              {/* Animated Sliding Pill for Online vs IA */}
               <div className="flex items-center p-0.5 rounded-xl bg-zinc-950/80 border border-white/[0.1] shadow-inner">
                 <button
                   type="button"
@@ -998,7 +611,6 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
             </div>
           )}
 
-          {/* Live Invitee Responses Banner while match waits in Lobby */}
           {hubMode === 'online' &&
             matchResponses &&
             matchResponses.gameType === selectedGame &&
@@ -1039,7 +651,6 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
               </div>
             )}
 
-          {/* Single Game Stage */}
           <div className="flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar">
             {isHeadSoccer ? (
               <HeadSoccerStage
@@ -1249,131 +860,19 @@ export const GamesHubSection: React.FC<GamesHubSectionProps> = ({
           </div>
         </div>
 
-        {/* In-Game Switcher Modal (switches game seamlessly preserving seated players) */}
         {showGameSwitcher && (
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label={pickLang(lang, {
-              es: 'Cambiar de juego sin salir',
-              ca: 'Canviar de joc sense sortir',
-              en: 'Switch game without leaving',
-            })}
-            className="fixed inset-0 z-[195] bg-black/70 backdrop-blur-md flex items-end sm:items-center justify-center p-2.5 sm:p-4 animate-fade-in"
-            onClick={() => setShowGameSwitcher(false)}
-          >
-            <div
-              className="w-full max-w-lg rounded-3xl bg-[#10121E]/95 border border-white/[0.14] shadow-[0_24px_60px_rgba(0,0,0,0.8)] overflow-hidden flex flex-col max-h-[84dvh]"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className="px-4 py-3 border-b border-white/[0.08] flex items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Shuffle className="w-4 h-4 text-[#BF94FF] shrink-0" />
-                    <h3 className="font-display font-extrabold text-sm sm:text-base text-white truncate">
-                      {pickLang(lang, {
-                        es: 'Cambiar de juego',
-                        ca: 'Canviar de joc',
-                        en: 'Switch game',
-                      })}
-                    </h3>
-                  </div>
-                  <p className="text-[11px] text-zinc-400 mt-0.5">
-                    {pickLang(lang, {
-                      es: 'Cambia al instante sin salir · Se mantienen los jugadores en mesa',
-                      ca: 'Canvia a l’instant sense sortir · Es mantenen els jugadors a taula',
-                      en: 'Switch instantly without exiting · Seated players stay together',
-                    })}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setShowGameSwitcher(false)}
-                  aria-label={pickLang(lang, { es: 'Cerrar', ca: 'Tancar', en: 'Close' })}
-                  className="w-8 h-8 rounded-xl bg-white/[0.06] hover:bg-white/[0.14] border border-white/[0.1] flex items-center justify-center text-zinc-300 hover:text-white cursor-pointer shrink-0"
-                >
-                  <X className="w-4 h-4" />
-                </button>
-              </div>
-
-              {/* Seated players strip */}
-              {activeSeatedPlayers.length > 0 && (
-                <div className="px-4 py-2 bg-white/[0.03] border-b border-white/[0.06] flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 whitespace-nowrap shrink-0">
-                    {pickLang(lang, {
-                      es: 'En mesa:',
-                      ca: 'A taula:',
-                      en: 'Seated:',
-                    })}
-                  </span>
-                  {activeSeatedPlayers.map((p) => (
-                    <span
-                      key={p.id}
-                      className="px-2 py-0.5 rounded-lg bg-white/[0.07] border border-white/[0.1] text-[11px] font-semibold text-zinc-100 inline-flex items-center gap-1 whitespace-nowrap shrink-0"
-                    >
-                      <span>{p.avatar}</span>
-                      <span className="max-w-[96px] truncate">{p.name}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-
-              {/* Games Grid */}
-              <div className="p-3 overflow-y-auto custom-scrollbar grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {switcherOptions.map((opt) => {
-                  const isCurrent = opt.id === selectedGame;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => handleSwitchGameInPlace(opt.id)}
-                      className={`p-2.5 rounded-2xl border text-left flex flex-col gap-1 cursor-pointer active:scale-[0.97] transition-all ${
-                        isCurrent
-                          ? 'bg-[#9146FF]/20 border-[#9146FF] shadow-[0_0_16px_rgba(145,70,255,0.28)]'
-                          : 'bg-white/[0.04] hover:bg-white/[0.09] border-white/[0.09] hover:border-white/25'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-1.5">
-                        <span
-                          className="w-2 h-2 rounded-full shrink-0"
-                          style={{ backgroundColor: opt.color }}
-                        />
-                        {isCurrent && (
-                          <span className="px-1.5 py-0.5 rounded bg-[#9146FF] text-[9px] font-black uppercase text-white">
-                            {pickLang(lang, { es: 'Actual', ca: 'Actual', en: 'Playing' })}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-xs font-extrabold text-white truncate">
-                        {opt.label}
-                      </span>
-                      <span className="text-[10px] text-zinc-400 truncate">
-                        {opt.subtitle}
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
+          <GameSwitcherModal
+            lang={lang}
+            selectedGame={selectedGame}
+            activeSeatedPlayers={activeSeatedPlayers}
+            switcherOptions={switcherOptions}
+            onClose={() => setShowGameSwitcher(false)}
+            onSelectGame={handleSwitchGameInPlace}
+          />
         )}
       </div>
     );
   }
-
-  // ==========================================================================
-  // REDESIGNED RIFFANTV ARCADE & TABLETOP LOUNGE
-  // ==========================================================================
-  const isLiveGame = (gt: UnifiedGameId) => {
-    if (gt === 'pool') return Boolean(roomPoolGame);
-    if (gt === 'pinturillo') return Boolean(roomPinturilloGame);
-    if (gt === 'chapas') return Boolean(roomChapasGame);
-    if (gt === 'headsoccer') return Boolean(roomHeadSoccerGame);
-    if (gt === 'poker') return Boolean(roomPokerGame);
-    if (gt === 'blackjack') return Boolean(roomBlackjackGame);
-    if (isPartyGame(gt)) return roomPartyGame?.gameType === gt;
-    return roomBoardGame?.gameType === gt;
-  };
 
   return (
     <GamesHubLobby

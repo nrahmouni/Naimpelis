@@ -1,11 +1,7 @@
 import React, { useMemo, useState, useEffect, useCallback, useRef } from 'react';
 import {
-  Crown,
-  Flag,
   Maximize2,
   Minimize2,
-  RotateCcw,
-  RefreshCw,
   ArrowUpDown,
   Users,
   Sparkles,
@@ -13,9 +9,7 @@ import {
   ArrowLeft,
   Swords,
   Clock,
-  Trophy,
   ChevronDown,
-  ChevronUp,
   Play,
   Timer,
 } from 'lucide-react';
@@ -41,11 +35,15 @@ import {
   GameFloatingReactionToast,
   GameMuteButton,
   GameReactionButton,
-  VictoryCelebrationOverlay,
   playGameSfx,
   useGameFloatingReaction,
   useGameSoundMute,
 } from './games/GameEffects';
+import {
+  BOARD_CLOCK_OPTIONS,
+  formatBoardClockMs,
+} from './games/ChessCheckersPieces';
+import { BoardGridAndModals } from './games/BoardGridAndModals';
 import { pickLang } from '../utils/i18n';
 import { triggerHaptic } from '../utils/haptics';
 
@@ -71,231 +69,6 @@ interface RoomBoardGamePanelProps {
   mutedOverride?: boolean;
   onToggleMuteOverride?: () => void;
 }
-
-const CLOCK_OPTIONS: BoardClockMinutes[] = [0, 3, 5, 10];
-const FILES = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-
-function formatClockMs(ms: number): string {
-  const safe = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(safe / 60);
-  const s = safe % 60;
-  return `${m}:${s < 10 ? '0' : ''}${s}`;
-}
-
-/**
- * High-contrast Staunton SVG vector pieces with Clásico (Ivory/Ebony) and Neón (Cyber-Glass) themes.
- */
-const StauntonChessPiece: React.FC<{
-  side: BoardSide;
-  kind: string;
-  theme?: 'classic' | 'neon';
-}> = ({ side, kind, theme = 'classic' }) => {
-  const isWhite = side === 'w';
-  const uid = `${isWhite ? 'w' : 'b'}-${theme}`;
-
-  let fill = isWhite ? `url(#chess-ivory-${uid})` : `url(#chess-obsidian-${uid})`;
-  let stroke = isWhite ? '#292018' : '#E2E8F0';
-  let detail = isWhite ? '#5C4D3C' : '#94A3B8';
-  let dropShadow = 'drop-shadow-[0_4px_6px_rgba(0,0,0,0.72)]';
-
-  if (theme === 'neon') {
-    fill = isWhite ? `url(#chess-neon-cyan-${uid})` : `url(#chess-neon-magenta-${uid})`;
-    stroke = isWhite ? '#A5F3FC' : '#FBCFE8';
-    detail = isWhite ? '#0891B2' : '#C026D3';
-    dropShadow = isWhite
-      ? 'drop-shadow-[0_0_8px_rgba(6,182,212,0.85)]'
-      : 'drop-shadow-[0_0_8px_rgba(217,70,239,0.85)]';
-  }
-
-  return (
-    <svg
-      viewBox="0 0 45 45"
-      className={`w-[84%] h-[84%] select-none pointer-events-none transition-transform duration-150 ${dropShadow}`}
-      aria-hidden="true"
-    >
-      <defs>
-        <linearGradient id={`chess-ivory-${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#FFFFFF" />
-          <stop offset="45%" stopColor="#F5EFE0" />
-          <stop offset="100%" stopColor="#D9C9A5" />
-        </linearGradient>
-        <linearGradient id={`chess-obsidian-${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#3F4657" />
-          <stop offset="50%" stopColor="#1E222D" />
-          <stop offset="100%" stopColor="#0A0C10" />
-        </linearGradient>
-        <linearGradient id={`chess-neon-cyan-${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#A5F3FC" />
-          <stop offset="48%" stopColor="#06B6D4" />
-          <stop offset="100%" stopColor="#083344" />
-        </linearGradient>
-        <linearGradient id={`chess-neon-magenta-${uid}`} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0%" stopColor="#FBCFE8" />
-          <stop offset="48%" stopColor="#D946EF" />
-          <stop offset="100%" stopColor="#4A044E" />
-        </linearGradient>
-      </defs>
-
-      {kind === 'K' && (
-        <g strokeLinecap="round" strokeLinejoin="round">
-          <path d="M22.5 11.63V6M20 8h5" stroke={stroke} strokeWidth="2.1" fill="none" />
-          <path
-            d="M22.5 25s4.5-7.5 3-10.5c0 0-1-2.5-3-2.5s-3 2.5-3 2.5c-1.5 3 3 10.5 3 10.5"
-            fill={fill}
-            stroke={stroke}
-            strokeWidth="1.6"
-          />
-          <path
-            d="M11.5 37c5.5 3.5 15.5 3.5 21 0v-7s9-4.5 6-10.5c-4-6.5-13.5-3.5-16 4V27v-3.5c-3.5-7.5-13-10.5-16-4-3 6 5 10 5 10V37z"
-            fill={fill}
-            stroke={stroke}
-            strokeWidth="1.6"
-          />
-          <path
-            d="M11.5 30c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0m-21 3.5c5.5-3 15.5-3 21 0"
-            fill="none"
-            stroke={detail}
-            strokeWidth="1.25"
-          />
-        </g>
-      )}
-
-      {kind === 'Q' && (
-        <g strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="6" cy="12" r="2.3" fill={fill} stroke={stroke} strokeWidth="1.4" />
-          <circle cx="14" cy="9" r="2.3" fill={fill} stroke={stroke} strokeWidth="1.4" />
-          <circle cx="22.5" cy="8" r="2.4" fill={fill} stroke={stroke} strokeWidth="1.4" />
-          <circle cx="31" cy="9" r="2.3" fill={fill} stroke={stroke} strokeWidth="1.4" />
-          <circle cx="39" cy="12" r="2.3" fill={fill} stroke={stroke} strokeWidth="1.4" />
-          <path
-            d="M9 26c8.5-1.5 21-1.5 27 0l2.5-12.5L31 25l-.3-14.1-5.2 13.6-3-14.5-3 14.5-5.2-13.6L14 25 6.5 13.5 9 26z"
-            fill={fill}
-            stroke={stroke}
-            strokeWidth="1.55"
-          />
-          <path
-            d="M9 26c0 2 1.5 2 2.5 4 1 1.5 1 1 .5 3.5-1.5 1-1.5 2.5-1.5 2.5-1.5 1.5.5 2.5.5 2.5 6.5 1 16.5 1 23 0 0 0 1.5-1 0-2.5 0 0 .5-1.5-1-2.5-.5-2.5-.5-2 .5-3.5 1-2 2.5-2 2.5-4-8.5-1.5-18.5-1.5-27 0z"
-            fill={fill}
-            stroke={stroke}
-            strokeWidth="1.55"
-          />
-          <path d="M11.5 30c3.5-1 18.5-1 22 0M12 33.5c6-1 15-1 21 0" fill="none" stroke={detail} strokeWidth="1.25" />
-        </g>
-      )}
-
-      {kind === 'R' && (
-        <g strokeLinecap="round" strokeLinejoin="round">
-          <path
-            d="M9 39h27v-3H9v3zm3-3v-4h21v4H12zm-1-22V9h4v2h5V9h5v2h5V9h4v5"
-            fill={fill}
-            stroke={stroke}
-            strokeWidth="1.6"
-          />
-          <path d="M34 14l-3 3H14l-3-3" fill={fill} stroke={stroke} strokeWidth="1.6" />
-          <path d="M31 17v12.5H14V17" fill={fill} stroke={stroke} strokeWidth="1.6" />
-          <path d="M31 29.5l1.5 2.5h-20l1.5-2.5" fill={fill} stroke={stroke} strokeWidth="1.6" />
-          <path d="M11 14h23" fill="none" stroke={detail} strokeWidth="1.3" />
-        </g>
-      )}
-
-      {kind === 'B' && (
-        <g strokeLinecap="round" strokeLinejoin="round">
-          <path
-            d="M9 36c3.39-.97 10.11.43 13.5-2 3.39 2.43 10.11 1.03 13.5 2 0 0 1.65.54 3 2-.68.97-1.65.99-3 .5-3.39-.97-10.11.46-13.5-1-3.39 1.46-10.11.03-13.5 1-1.354.49-2.323.47-3-.5 1.354-1.94 3-2 3-2z"
-            fill={fill}
-            stroke={stroke}
-            strokeWidth="1.6"
-          />
-          <path
-            d="M15 32c2.5 2.5 12.5 2.5 15 0 .5-1.5 0-2 0-2 0-2.5-2.5-4-2.5-4 5.5-1.5 6-11.5-5-15.5-11 4-10.5 14-5 15.5 0 0-2.5 1.5-2.5 4 0 0-.5.5 0 2z"
-            fill={fill}
-            stroke={stroke}
-            strokeWidth="1.6"
-          />
-          <circle cx="22.5" cy="8" r="2.4" fill={fill} stroke={stroke} strokeWidth="1.5" />
-          <path d="M17.5 26h10M15 30h15m-7.5-14.5v5M20 18h5" fill="none" stroke={detail} strokeWidth="1.35" />
-        </g>
-      )}
-
-      {kind === 'N' && (
-        <g strokeLinecap="round" strokeLinejoin="round">
-          <path
-            d="M22 10c10.5 1 16.5 8 16 29H15c0-9 10-6.5 8-21"
-            fill={fill}
-            stroke={stroke}
-            strokeWidth="1.6"
-          />
-          <path
-            d="M24 18c.38 2.91-5.55 7.37-8 9-3 2-2.82 4.34-5 4-1.042-.94 1.41-3.04 0-3-1 0 .19 1.23-1 2-1 0-4.003 1-4-4 0-2 6-12 6-12s1.89-1.9 2-3.5c-.73-.994-.5-2-.5-3 1-1 3 2.5 3 2.5h2s.78-1.992 2.5-3c1 0 1 3 1 3"
-            fill={fill}
-            stroke={stroke}
-            strokeWidth="1.6"
-          />
-          <circle cx="15" cy="15.5" r="1.2" fill={detail} />
-          <path d="M9.5 25.5a0.7 0.9 30 1 1-1.2 1" stroke={detail} strokeWidth="1.2" fill="none" />
-        </g>
-      )}
-
-      {kind === 'P' && (
-        <path
-          d="M22.5 9c-2.21 0-4 1.79-4 4 0 .89.29 1.71.78 2.38C17.33 16.5 16 18.59 16 21c0 2.03.94 3.84 2.41 5.03-3 1.06-7.41 5.55-7.41 13.47h23c0-7.92-4.41-12.41-7.41-13.47 1.47-1.19 2.41-3 2.41-5.03 0-2.41-1.33-4.5-3.28-5.62.49-.67.78-1.49.78-2.38 0-2.21-1.79-4-4-4z"
-          fill={fill}
-          stroke={stroke}
-          strokeWidth="1.65"
-          strokeLinecap="round"
-        />
-      )}
-    </svg>
-  );
-};
-
-/**
- * Ridged 3D Checkers Disc with machined circular ridges, specular highlights, and golden King Crown.
- */
-const CheckersToken3D: React.FC<{
-  isWhite: boolean;
-  isKing: boolean;
-  animateCrownDrop?: boolean;
-}> = ({ isWhite, isKing, animateCrownDrop = false }) => (
-  <div
-    className={`w-[82%] h-[82%] rounded-full relative flex items-center justify-center transition-transform duration-150 ${
-      isWhite
-        ? 'bg-gradient-to-b from-[#FFFFFF] via-[#EFE6D4] to-[#C4B390] border border-white shadow-[0_5px_12px_rgba(0,0,0,0.7),inset_0_2px_3px_rgba(255,255,255,0.95),inset_0_-3px_5px_rgba(0,0,0,0.28)]'
-        : 'bg-gradient-to-b from-[#FB7185] via-[#E11D48] to-[#7F0E28] border border-rose-300/80 shadow-[0_5px_12px_rgba(0,0,0,0.8),inset_0_2px_3px_rgba(255,255,255,0.45),inset_0_-3px_5px_rgba(50,3,15,0.7)]'
-    }`}
-  >
-    {/* Outer machined ridge */}
-    <div
-      className={`w-[78%] h-[78%] rounded-full border flex items-center justify-center ${
-        isWhite
-          ? 'border-[#B2A07E]/75 shadow-[inset_0_1px_2px_rgba(0,0,0,0.3)]'
-          : 'border-rose-950/70 shadow-[inset_0_1px_2px_rgba(0,0,0,0.55)]'
-      }`}
-    >
-      {/* Inner recessed core */}
-      <div
-        className={`w-[66%] h-[66%] rounded-full border flex items-center justify-center ${
-          isWhite
-            ? 'border-white/80 bg-gradient-to-t from-[#E2D4B6] to-[#FFFFFF]'
-            : 'border-rose-300/40 bg-gradient-to-t from-[#9F1239] to-[#F43F5E]'
-        }`}
-      >
-        {isKing && (
-          <div className="relative w-full h-full flex items-center justify-center">
-            <Crown
-              className={`w-[76%] h-[76%] fill-amber-300 text-amber-500 drop-shadow-[0_2px_6px_rgba(0,0,0,0.65)] ${
-                animateCrownDrop ? 'nc-crown-drop' : ''
-              }`}
-            />
-            <span className="absolute top-0.5 right-0.5 text-amber-200 nc-crown-sparkle text-[9px]">
-              ✨
-            </span>
-          </div>
-        )}
-      </div>
-    </div>
-  </div>
-);
 
 export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
   gameState,
@@ -585,7 +358,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
             <span className="text-[11px] font-semibold text-zinc-300 flex items-center gap-1 mr-1">
               <Clock className="w-3.5 h-3.5 text-[#BF94FF]" />
             </span>
-            {CLOCK_OPTIONS.map((mins) => (
+            {BOARD_CLOCK_OPTIONS.map((mins) => (
               <button
                 key={mins}
                 type="button"
@@ -959,7 +732,7 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
                       : 'bg-white/[0.06] text-zinc-300'
                   }`}
                 >
-                  {formatClockMs(clockMs)}
+                  {formatBoardClockMs(clockMs)}
                 </span>
               ) : (
                 canPickSeat && (
@@ -1057,442 +830,33 @@ export const RoomBoardGamePanel: React.FC<RoomBoardGamePanelProps> = ({
         </div>
       )}
 
-      {/* Interactive Tabletop Stage: Connect 4 (6x7) OR Checkers/Chess (8x8) */}
-      <div className="flex-1 min-h-0 flex items-center justify-center">
-        {gameState.gameType === 'connect4' ? (
-          <div
-            className={`relative mx-auto rounded-2xl p-2 sm:p-2.5 nc-tabletop-slate border border-white/[0.12] select-none touch-manipulation ${
-              fullScreenMode ? 'w-[min(90vw,52dvh)] max-w-[440px] aspect-[7/6]' : 'w-full aspect-[7/6]'
-            }`}
-          >
-            {/* 3D Beveled Cobalt Blue Connect-4 Chassis */}
-            <div className="relative w-full h-full rounded-xl p-1.5 sm:p-2 bg-gradient-to-b from-[#1D4ED8] via-[#1E40AF] to-[#0F172A] border border-blue-400/35 shadow-[inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-8px_16px_rgba(7,14,35,0.85),0_12px_32px_rgba(0,0,0,0.7)] overflow-hidden">
-              {/* Corner screws */}
-              <span className="absolute top-1.5 left-1.5 w-2 h-2 rounded-full bg-slate-300 border border-slate-500 shadow-inner flex items-center justify-center opacity-75 pointer-events-none"><span className="w-1 h-[0.5px] bg-slate-700 rotate-45" /></span>
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-slate-300 border border-slate-500 shadow-inner flex items-center justify-center opacity-75 pointer-events-none"><span className="w-1 h-[0.5px] bg-slate-700 -rotate-45" /></span>
-              <span className="absolute bottom-1.5 left-1.5 w-2 h-2 rounded-full bg-slate-300 border border-slate-500 shadow-inner flex items-center justify-center opacity-75 pointer-events-none"><span className="w-1 h-[0.5px] bg-slate-700 -rotate-12" /></span>
-              <span className="absolute bottom-1.5 right-1.5 w-2 h-2 rounded-full bg-slate-300 border border-slate-500 shadow-inner flex items-center justify-center opacity-75 pointer-events-none"><span className="w-1 h-[0.5px] bg-slate-700 rotate-90" /></span>
-
-              {/* Diagonal glass reflection streak */}
-              <div className="pointer-events-none absolute inset-0 bg-gradient-to-tr from-transparent via-white/[0.06] to-transparent z-15" />
-
-              <div className="grid grid-cols-7 grid-rows-6 gap-1.5 w-full h-full relative z-10">
-                {Array.from({ length: 6 }).map((_, r) =>
-                  Array.from({ length: 7 }).map((__, c) => {
-                    const cell = gameState.board[r]?.[c] ?? null;
-                    const isLastDrop =
-                      gameState.lastMove?.to.r === r && gameState.lastMove?.to.c === c;
-                    const nextDropRow = getConnect4DropRow(gameState.board, c);
-                    const isPreviewTarget =
-                      hoverCol === c && nextDropRow === r && canInteractCurrentTurn && !cell;
-                    const isWinDisc = Boolean(
-                      connect4WinningLine?.some((wCoord) => wCoord.r === r && wCoord.c === c)
-                    );
-
-                    return (
-                      <button
-                        key={`c4-${r}-${c}`}
-                        type="button"
-                        onMouseEnter={() => setHoverCol(c)}
-                        onMouseLeave={() => setHoverCol((curr) => (curr === c ? null : curr))}
-                        onClick={() => handleSquareClick(r, c)}
-                        aria-label={`Columna ${c + 1} Fila ${r + 1}`}
-                        className="relative w-full h-full rounded-full cursor-pointer flex items-center justify-center bg-[#070B14] border border-blue-950/90 shadow-[inset_0_4px_8px_rgba(0,0,0,0.95),inset_0_-1px_2px_rgba(147,197,253,0.25)] transition-transform active:scale-95"
-                      >
-                        {cell ? (
-                          <div
-                            key={isLastDrop ? `drop-${moveSeqKey}` : undefined}
-                            style={
-                              isLastDrop
-                                ? ({ '--drop-rows': r + 1.4 } as React.CSSProperties)
-                                : undefined
-                            }
-                            className={`w-[88%] h-[88%] rounded-full flex items-center justify-center ${
-                              isLastDrop ? 'nc-c4-drop' : ''
-                            } ${
-                              cell === 'w'
-                                ? 'bg-gradient-to-b from-[#FEF08A] via-[#FACC15] to-[#B45309] border border-yellow-100 shadow-[0_3px_8px_rgba(0,0,0,0.65),inset_0_2px_3px_rgba(255,255,255,0.9),inset_0_-3px_5px_rgba(113,63,18,0.65)]'
-                                : 'bg-gradient-to-b from-[#FDA4AF] via-[#E11D48] to-[#881337] border border-rose-200/90 shadow-[0_3px_8px_rgba(0,0,0,0.7),inset_0_2px_3px_rgba(255,255,255,0.65),inset_0_-3px_5px_rgba(76,5,25,0.75)]'
-                            } ${isWinDisc ? 'ring-2 ring-white ring-offset-1 ring-offset-amber-400 brightness-110 shadow-[0_0_16px_rgba(250,204,21,0.9)] animate-pulse' : ''}`}
-                          >
-                            <div
-                              className={`w-[60%] h-[60%] rounded-full border ${
-                                cell === 'w' ? 'border-amber-200/70 shadow-inner' : 'border-rose-200/50 shadow-inner'
-                              }`}
-                            />
-                          </div>
-                        ) : (
-                          isPreviewTarget && (
-                            <div
-                              className={`w-[82%] h-[82%] rounded-full border-2 border-dashed flex items-center justify-center ${
-                                gameState.turn === 'w'
-                                  ? 'bg-amber-400/30 border-amber-300/80 text-amber-200'
-                                  : 'bg-rose-400/30 border-rose-300/80 text-rose-200'
-                              }`}
-                            >
-                              <ChevronDown className="w-4 h-4 animate-bounce" />
-                            </div>
-                          )
-                        )}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Glowing 4-in-a-Row Victory Beam */}
-              {connect4WinningLine && connect4WinningLine.length === 4 && (
-                <svg
-                  viewBox="0 0 7 6"
-                  className="pointer-events-none absolute inset-1.5 sm:inset-2 w-[calc(100%-0.75rem)] sm:w-[calc(100%-1rem)] h-[calc(100%-0.75rem)] sm:h-[calc(100%-1rem)] z-20"
-                >
-                  <line
-                    x1={connect4WinningLine[0].c + 0.5}
-                    y1={connect4WinningLine[0].r + 0.5}
-                    x2={connect4WinningLine[3].c + 0.5}
-                    y2={connect4WinningLine[3].r + 0.5}
-                    stroke="#FFFFFF"
-                    strokeWidth="0.24"
-                    strokeLinecap="round"
-                    opacity="0.6"
-                  />
-                  <line
-                    x1={connect4WinningLine[0].c + 0.5}
-                    y1={connect4WinningLine[0].r + 0.5}
-                    x2={connect4WinningLine[3].c + 0.5}
-                    y2={connect4WinningLine[3].r + 0.5}
-                    stroke="#FACC15"
-                    strokeWidth="0.12"
-                    strokeLinecap="round"
-                  />
-                </svg>
-              )}
-            </div>
-
-            {/* Chassis pedestal feet */}
-            <div className="absolute -bottom-2.5 inset-x-8 flex justify-between pointer-events-none z-0">
-              <div className="w-10 h-3 rounded-b-lg bg-[#0F172A] border-b-2 border-x border-blue-400/35 shadow-[0_4px_8px_rgba(0,0,0,0.85)]" />
-              <div className="w-10 h-3 rounded-b-lg bg-[#0F172A] border-b-2 border-x border-blue-400/35 shadow-[0_4px_8px_rgba(0,0,0,0.85)]" />
-            </div>
-
-            {gameState.status === 'finished' && (
-              <VictoryCelebrationOverlay
-                lang={lang}
-                title={turnLabel}
-                subtitle={winSubtitle}
-                primaryLabel={pickLang(lang, { es: 'Revancha', ca: 'Revenja', en: 'Rematch' })}
-                onPrimaryAction={() => {
-                  triggerHaptic('medium');
-                  onReset({ swapColors: false });
-                }}
-                secondaryLabel={pickLang(lang, {
-                  es: 'Cambiar turnos',
-                  ca: 'Canviar torns',
-                  en: 'Swap starter',
-                })}
-                onSecondaryAction={() => {
-                  triggerHaptic('light');
-                  onReset({ swapColors: true });
-                }}
-              />
-            )}
-          </div>
-        ) : (
-          <div
-            className={`relative mx-auto rounded-2xl p-2 sm:p-2.5 nc-tabletop-slate border border-white/[0.12] select-none touch-manipulation ${
-              fullScreenMode ? 'w-[min(88vw,50dvh)] max-w-[430px] aspect-square' : 'w-full aspect-square'
-            }`}
-          >
-            <div className={`grid grid-cols-8 grid-rows-8 w-full h-full rounded-xl overflow-hidden shadow-inner ${
-              gameState.gameType === 'checkers'
-                ? 'border-2 border-[#180E0A] ring-1 ring-amber-900/30'
-                : 'border border-white/15'
-            }`}>
-              {displayRows.map((r, dispR) =>
-                displayCols.map((c, dispC) => {
-                  const isDark = (r + c) % 2 === 1;
-                  const piece = gameState.board[r][c];
-                  const isSelected = selected?.r === r && selected?.c === c;
-                  const isLastFrom =
-                    gameState.lastMove?.from.r === r && gameState.lastMove?.from.c === c;
-                  const isLastTo =
-                    gameState.lastMove?.to.r === r && gameState.lastMove?.to.c === c;
-                  const legalTarget = legalMoves.find((m) => m.r === r && m.c === c);
-                  const isKingInCheck =
-                    gameState.gameType === 'chess' &&
-                    gameState.inCheck &&
-                    piece === `${gameState.inCheck}K`;
-
-                  // Dedicated Board Themes:
-                  // 1) Damas: Dark Walnut (#231610) vs Cream Maple (#EDE4D0)
-                  // 2) Chess (Classic): Charcoal Slate (#262E3D) vs Polished Slate (#7C869E)
-                  // 3) Chess (Neon): Deep Void (#0A101D) vs Cyber Steel (#1B2742)
-                  let squareBg = '';
-                  if (gameState.gameType === 'checkers') {
-                    if (isSelected) {
-                      squareBg = 'bg-amber-600/75 shadow-[inset_0_0_10px_rgba(245,158,11,0.9)]';
-                    } else if (isLastTo) {
-                      squareBg = isDark ? 'bg-[#55301E]' : 'bg-[#D2B997]';
-                    } else if (isLastFrom) {
-                      squareBg = isDark ? 'bg-[#3D2114]' : 'bg-[#DFCDAF]';
-                    } else if (isDark) {
-                      squareBg = 'bg-[#231610] shadow-[inset_0_2px_4px_rgba(0,0,0,0.65)]';
-                    } else {
-                      squareBg = 'bg-[#ECE3CD]';
-                    }
-                  } else if (chessTheme === 'neon') {
-                    if (isKingInCheck) {
-                      squareBg = 'bg-rose-700/90 nc-check-aura';
-                    } else if (isSelected) {
-                      squareBg = 'bg-cyan-500/50 shadow-[inset_0_0_12px_rgba(6,182,212,0.8)]';
-                    } else if (isLastTo) {
-                      squareBg = isDark ? 'bg-[#163B54]' : 'bg-[#215777]';
-                    } else if (isLastFrom) {
-                      squareBg = isDark ? 'bg-[#102B3E]' : 'bg-[#1B435C]';
-                    } else if (isDark) {
-                      squareBg = 'bg-[#090F1C] border border-cyan-950/40';
-                    } else {
-                      squareBg = 'bg-[#16233B] border border-cyan-800/30';
-                    }
-                  } else {
-                    if (isKingInCheck) {
-                      squareBg = 'bg-rose-700/85 nc-check-aura';
-                    } else if (isSelected) {
-                      squareBg = 'bg-[#9146FF]/65';
-                    } else if (isLastTo) {
-                      squareBg = isDark ? 'bg-[#4f3b7d]' : 'bg-[#7962aa]';
-                    } else if (isLastFrom) {
-                      squareBg = isDark ? 'bg-[#3c2f5c]' : 'bg-[#63528a]';
-                    } else if (isDark) {
-                      squareBg = 'bg-[#28303E]';
-                    } else {
-                      squareBg = 'bg-[#7C879D]';
-                    }
-                  }
-
-                  const showRank = c === displayCols[0];
-                  const showFile = r === displayRows[7];
-
-                  // Compute glide/jump deltas for the piece that just landed on `isLastTo`
-                  let animClass = '';
-                  let animStyle: React.CSSProperties | undefined;
-                  if (isLastTo && gameState.lastMove) {
-                    const fromDispR = displayRows.indexOf(gameState.lastMove.from.r);
-                    const fromDispC = displayCols.indexOf(gameState.lastMove.from.c);
-                    if (fromDispR >= 0 && fromDispC >= 0) {
-                      const dCols = fromDispC - dispC;
-                      const dRows = fromDispR - dispR;
-                      if (gameState.gameType === 'chess') {
-                        animClass = 'nc-chess-glide';
-                        animStyle = {
-                          '--glide-x': `${dCols * 100}%`,
-                          '--glide-y': `${dRows * 100}%`,
-                        } as React.CSSProperties;
-                      } else if (gameState.gameType === 'checkers') {
-                        animClass = gameState.lastMove.captured ? 'nc-checkers-arc' : 'nc-chess-glide';
-                        animStyle = gameState.lastMove.captured
-                          ? ({
-                              '--jump-x': `${dCols * 100}%`,
-                              '--jump-y': `${dRows * 100}%`,
-                            } as React.CSSProperties)
-                          : ({
-                              '--glide-x': `${dCols * 100}%`,
-                              '--glide-y': `${dRows * 100}%`,
-                            } as React.CSSProperties);
-                      }
-                    }
-                  }
-
-                  const renderSquarePiece = () => {
-                    if (!piece) return null;
-                    if (gameState.gameType === 'checkers') {
-                      const isWhite = piece === 'w' || piece === 'W';
-                      const isKing = piece === 'W' || piece === 'B';
-                      return (
-                        <CheckersToken3D
-                          isWhite={isWhite}
-                          isKing={isKing}
-                          animateCrownDrop={Boolean(isLastTo && gameState.lastMove?.promoted)}
-                        />
-                      );
-                    }
-                    const side = (piece[0] as BoardSide) || 'w';
-                    const kind = piece[1] || 'P';
-                    return <StauntonChessPiece side={side} kind={kind} theme={chessTheme} />;
-                  };
-
-                  return (
-                    <button
-                      key={`${r}-${c}`}
-                      type="button"
-                      onClick={() => handleSquareClick(r, c)}
-                      aria-label={`${FILES[c]}${8 - r}`}
-                      className={`relative w-full h-full flex items-center justify-center cursor-pointer transition-colors ${squareBg}`}
-                    >
-                      {showRank && (
-                        <span className="absolute top-0.5 left-0.5 text-[8px] font-mono leading-none opacity-60 text-white pointer-events-none">
-                          {8 - r}
-                        </span>
-                      )}
-                      {showFile && (
-                        <span className="absolute bottom-0.5 right-0.5 text-[8px] font-mono leading-none opacity-60 text-white pointer-events-none">
-                          {FILES[c]}
-                        </span>
-                      )}
-
-                      {piece && (
-                        <div
-                          key={isLastTo ? `move-${moveSeqKey}` : undefined}
-                          style={animStyle}
-                          className={`w-full h-full flex items-center justify-center ${animClass}`}
-                        >
-                          {renderSquarePiece()}
-                        </div>
-                      )}
-
-                      {legalTarget && (
-                        <span
-                          className={`pointer-events-none absolute z-10 ${
-                            legalTarget.isCapture
-                              ? 'inset-1.5 rounded-full border-[3px] border-rose-400/95 shadow-[0_0_14px_rgba(244,63,94,0.95)] animate-pulse'
-                              : 'w-[28%] h-[28%] rounded-full bg-emerald-400/95 shadow-[0_0_10px_rgba(16,185,129,0.85)] animate-pulse'
-                          }`}
-                        />
-                      )}
-                    </button>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Chess Promotion Picker Overlay */}
-            {pendingPromo && (
-              <div className="absolute inset-0 z-20 rounded-2xl bg-black/78 backdrop-blur-sm flex flex-col items-center justify-center gap-3 p-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-white">
-                  {pickLang(lang, {
-                    es: 'Promocionar peón a:',
-                    ca: 'Promocionar peó a:',
-                    en: 'Promote pawn to:',
-                  })}
-                </span>
-                <div className="grid grid-cols-4 gap-2">
-                  {(['Q', 'R', 'B', 'N'] as ChessPromotionPiece[]).map((p) => (
-                    <button
-                      key={p}
-                      type="button"
-                      onClick={() => {
-                        onMove(pendingPromo.from, pendingPromo.to, p);
-                        setPendingPromo(null);
-                        setSelected(null);
-                      }}
-                      className="w-13 h-13 rounded-2xl bg-[#26262C] hover:bg-[#9146FF] border border-white/20 flex items-center justify-center cursor-pointer active:scale-95 transition-all"
-                    >
-                      <StauntonChessPiece side={gameState.turn} kind={p} theme={chessTheme} />
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Metallic Victory Banner + Confetti Overlay */}
-            {gameState.status === 'finished' && (
-              <VictoryCelebrationOverlay
-                lang={lang}
-                title={turnLabel}
-                subtitle={winSubtitle}
-                primaryLabel={pickLang(lang, { es: 'Revancha', ca: 'Revenja', en: 'Rematch' })}
-                onPrimaryAction={() => {
-                  triggerHaptic('medium');
-                  onReset({ swapColors: false });
-                }}
-                secondaryLabel={pickLang(lang, {
-                  es: 'Cambiar colores',
-                  ca: 'Canviar colors',
-                  en: 'Swap colors',
-                })}
-                onSecondaryAction={() => {
-                  triggerHaptic('light');
-                  onReset({ swapColors: true });
-                }}
-              />
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Move History & Controls (Non-truncated clean mobile text) */}
-      <div className="flex items-center justify-between gap-2 pt-0.5 shrink-0">
-        <div className="flex-1 min-w-0 overflow-x-auto whitespace-nowrap text-[11px] font-mono tabular-nums text-zinc-400 bg-white/[0.03] border border-white/[0.06] rounded-xl px-2.5 py-1.5 no-scrollbar">
-          {gameState.moveHistory.length === 0
-            ? pickLang(lang, { es: 'Sin jugadas', ca: 'Sense jugades', en: 'No moves' })
-            : gameState.moveHistory.slice(-8).join(' · ')}
-        </div>
-        <div className="flex items-center gap-1.5 shrink-0">
-          {mySide && gameState.status !== 'finished' && (
-            <button
-              type="button"
-              onClick={() => {
-                triggerHaptic('medium');
-                onResign();
-              }}
-              title={pickLang(lang, { es: 'Rendirse', ca: 'Rendir-se', en: 'Resign' })}
-              className="h-8 px-2.5 rounded-xl bg-white/[0.05] hover:bg-rose-500/20 border border-white/[0.08] text-[11px] font-semibold text-zinc-300 hover:text-rose-200 flex items-center gap-1 whitespace-nowrap cursor-pointer"
-            >
-              <Flag className="w-3 h-3" />
-              <span>{pickLang(lang, { es: 'Rendirse', ca: 'Rendir-se', en: 'Resign' })}</span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => {
-              triggerHaptic('light');
-              onReset({ swapColors: false });
-            }}
-            title={pickLang(lang, { es: 'Reiniciar', ca: 'Reiniciar', en: 'Reset' })}
-            className="h-8 px-2.5 rounded-xl bg-white/[0.05] hover:bg-white/[0.12] border border-white/[0.08] text-[11px] font-semibold text-zinc-200 flex items-center gap-1 whitespace-nowrap cursor-pointer"
-          >
-            <RotateCcw className="w-3 h-3" />
-            <span>{pickLang(lang, { es: 'Reiniciar', ca: 'Reiniciar', en: 'Reset' })}</span>
-          </button>
-        </div>
-      </div>
-
-      {/* Collapsible Match History */}
-      {matchHistory.length > 0 && !fullScreenMode && (
-        <div className="rounded-xl bg-white/[0.03] border border-white/[0.06] overflow-hidden shrink-0">
-          <button
-            type="button"
-            onClick={() => setShowHistory((v) => !v)}
-            className="w-full px-3 py-1.5 flex items-center justify-between text-[11px] font-semibold text-zinc-300 hover:text-white cursor-pointer"
-          >
-            <span className="flex items-center gap-1.5">
-              <Trophy className="w-3.5 h-3.5 text-amber-400" />
-              <span>
-                {pickLang(lang, {
-                  es: `Historial (${matchHistory.length})`,
-                  ca: `Historial (${matchHistory.length})`,
-                  en: `History (${matchHistory.length})`,
-                })}
-              </span>
-            </span>
-            {showHistory ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-          </button>
-          {showHistory && (
-            <div className="px-3 pb-2 space-y-1 border-t border-white/[0.06] pt-1.5 max-h-32 overflow-y-auto custom-scrollbar">
-              {[...matchHistory].reverse().map((mh) => (
-                <div key={mh.id} className="flex items-center justify-between text-[11px] text-zinc-400">
-                  <span className="truncate">
-                    <strong className="text-zinc-200">{mh.winnerName}</strong> · {mh.gameType}
-                  </span>
-                  <span className="font-mono text-[10px] text-zinc-500 shrink-0">
-                    {mh.reason || 'fin'}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+      <BoardGridAndModals
+        lang={lang}
+        gameState={gameState}
+        fullScreenMode={fullScreenMode}
+        canInteractCurrentTurn={canInteractCurrentTurn}
+        selected={selected}
+        setSelected={setSelected}
+        hoverCol={hoverCol}
+        setHoverCol={setHoverCol}
+        connect4WinningLine={connect4WinningLine}
+        displayRows={displayRows}
+        displayCols={displayCols}
+        legalMoves={legalMoves}
+        chessTheme={chessTheme}
+        moveSeqKey={moveSeqKey}
+        turnLabel={turnLabel}
+        winSubtitle={winSubtitle}
+        mySide={mySide}
+        pendingPromo={pendingPromo}
+        setPendingPromo={setPendingPromo}
+        showHistory={showHistory}
+        setShowHistory={setShowHistory}
+        handleSquareClick={handleSquareClick}
+        onMove={onMove}
+        onResign={onResign}
+        onReset={onReset}
+      />
     </div>
   );
 

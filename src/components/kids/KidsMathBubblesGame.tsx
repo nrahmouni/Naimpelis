@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
-  CheckCircle2,
   Clock,
   Flame,
   HelpCircle,
@@ -20,125 +19,30 @@ import { getKidsDir, getKidsUiCopy } from './kidsI18n';
 import { speakKidsText } from './kidsTtsHelper';
 import { KidsSpeakButton, KidsSquishButton } from './KidsPrimitives';
 import { KidsConfettiCanvas } from './KidsConfettiCanvas';
+import {
+  BUBBLE_PALETTES_GALAXY,
+  BUBBLE_PALETTES_STANDARD,
+  computeAdaptiveMathStep,
+  drawSubmarine,
+  generateAdaptiveMathQuestion,
+  ROUND_GOAL,
+  type AdaptiveMathState,
+  type FloatingMathBubble,
+  type MathQuestion,
+  type MathSubMode,
+  type MathVisualShape,
+  type PopParticle,
+  type SonarPulse,
+} from './kidsMathEngine';
+import { KidsMathMontessoriLabs } from './KidsMathMontessoriLabs';
 
-export interface AdaptiveMathState {
-  level: number;
-  streak: number;
-  fallSpeedPxPerSec: number;
-}
-
-/**
- * Adaptive engine for Arrecife Mates:
- * - Every 3 consecutive correct answers levels up & increases pace.
- * - On miss, resets streak and gently lowers speed.
- */
-export function computeAdaptiveMathStep(
-  prev: AdaptiveMathState,
-  isCorrect: boolean,
-  ageGroup: KidsAgeGroup
-): AdaptiveMathState {
-  const baseSpeed = ageGroup === '3-5' ? 30 : ageGroup === '6-8' ? 44 : 56;
-  if (isCorrect) {
-    const nextStreak = prev.streak + 1;
-    const leveledUp = nextStreak > 0 && nextStreak % 3 === 0;
-    const nextLevel = leveledUp ? Math.min(6, prev.level + 1) : prev.level;
-    const nextSpeed = Math.min(125, baseSpeed + (nextLevel - 1) * 14);
-    return {
-      level: nextLevel,
-      streak: nextStreak,
-      fallSpeedPxPerSec: nextSpeed,
-    };
-  }
-  return {
-    level: Math.max(1, prev.level),
-    streak: 0,
-    fallSpeedPxPerSec: Math.max(24, prev.fallSpeedPxPerSec - 12),
-  };
-}
-
-export type MathVisualShape = 'star' | 'gem' | 'circle' | 'leaf';
-
-export interface MathQuestion {
-  prompt: string;
-  visualCountA?: number;
-  visualCountB?: number;
-  visualShape?: MathVisualShape;
-  answer: number;
-  choices: number[];
-}
-
-export function generateAdaptiveMathQuestion(
-  ageGroup: KidsAgeGroup,
-  adaptiveLevel: number
-): MathQuestion {
-  const rand = (min: number, max: number) =>
-    Math.floor(Math.random() * (max - min + 1)) + min;
-
-  let prompt = '';
-  let visualCountA: number | undefined;
-  let visualCountB: number | undefined;
-  let visualShape: MathVisualShape | undefined;
-  let answer = 0;
-
-  if (ageGroup === '3-5') {
-    const cap = Math.min(8, 4 + adaptiveLevel);
-    const a = rand(1, cap);
-    const b = rand(1, Math.max(2, Math.min(4, cap)));
-    answer = a + b;
-    const shapes: MathVisualShape[] = ['star', 'gem', 'circle', 'leaf'];
-    visualShape = shapes[rand(0, shapes.length - 1)];
-    if (a + b <= 10) {
-      visualCountA = a;
-      visualCountB = b;
-    }
-    prompt = `${a} + ${b} = ?`;
-  } else if (ageGroup === '6-8') {
-    const maxNum = 10 + adaptiveLevel * 5;
-    const isAdd = Math.random() > 0.42;
-    if (isAdd) {
-      const a = rand(3, maxNum);
-      const b = rand(2, Math.max(5, Math.floor(maxNum * 0.7)));
-      answer = a + b;
-      prompt = `${a} + ${b} = ?`;
-    } else {
-      const b = rand(2, Math.max(5, Math.floor(maxNum * 0.6)));
-      const res = rand(2, Math.max(6, Math.floor(maxNum * 0.7)));
-      const a = b + res;
-      answer = res;
-      prompt = `${a} − ${b} = ?`;
-    }
-  } else {
-    const multMax = Math.min(12, 6 + adaptiveLevel);
-    const mode = rand(0, 2);
-    if (mode === 0) {
-      const a = rand(3, multMax);
-      const b = rand(3, multMax);
-      answer = a * b;
-      prompt = `${a} × ${b} = ?`;
-    } else if (mode === 1) {
-      const divisor = rand(2, 9);
-      const q = rand(3, multMax);
-      answer = q;
-      prompt = `${divisor * q} ÷ ${divisor} = ?`;
-    } else {
-      const a = rand(8, 22 + adaptiveLevel * 4);
-      const b = rand(5, 18 + adaptiveLevel * 3);
-      answer = a + b;
-      prompt = `${a} + ${b} = ?`;
-    }
-  }
-
-  const wrongSet = new Set<number>([answer]);
-  while (wrongSet.size < 4) {
-    const delta = rand(-5, 6);
-    const cand = Math.max(1, answer + (delta === 0 ? 2 : delta));
-    wrongSet.add(cand);
-  }
-  const choices = Array.from(wrongSet).sort(() => Math.random() - 0.5);
-  return { prompt, visualCountA, visualCountB, visualShape, answer, choices };
-}
-
-type MathSubMode = 'bubbles' | 'scale' | 'fractions' | 'clock_coins' | 'duel';
+export {
+  computeAdaptiveMathStep,
+  generateAdaptiveMathQuestion,
+  type AdaptiveMathState,
+  type MathQuestion,
+  type MathVisualShape,
+};
 
 const CountingShapeRow: React.FC<{ count: number; shape: MathVisualShape; tint: string }> = ({
   count,
@@ -165,78 +69,12 @@ const CountingShapeRow: React.FC<{ count: number; shape: MathVisualShape; tint: 
   </div>
 );
 
-interface FloatingMathBubble {
-  id: number;
-  value: number;
-  xFrac: number;
-  yPx: number;
-  radiusPx: number;
-  color: string;
-  wobblePhase: number;
-}
-
-interface PopParticle {
-  x: number;
-  y: number;
-  vx: number;
-  vy: number;
-  life: number;
-  color: string;
-  r: number;
-}
-
-interface SonarPulse {
-  x: number;
-  y: number;
-  radius: number;
-  color: string;
-  life: number;
-}
-
-const BUBBLE_PALETTES_STANDARD = ['#38BDF8', '#F59E0B', '#10B981', '#EC4899'];
-const BUBBLE_PALETTES_GALAXY = ['#8B5CF6', '#06B6D4', '#F43F5E', '#FBBF24'];
-const ROUND_GOAL = 8;
-
 interface KidsMathBubblesGameProps {
   kidsLang: KidsLanguageCode;
   ageGroup: KidsAgeGroup;
   unlockedRewards: string[];
   onEarnStar: (stars: number, badgeId?: string) => void;
   onMissionPlay?: () => void;
-}
-
-function drawSubmarine(ctx: CanvasRenderingContext2D, x: number, y: number, phase: number) {
-  ctx.save();
-  ctx.translate(x, y + Math.sin(phase * 1.4) * 3);
-  ctx.strokeStyle = '#F59E0B';
-  ctx.lineWidth = 3.5;
-  ctx.beginPath();
-  ctx.moveTo(4, -12);
-  ctx.lineTo(4, -23);
-  ctx.lineTo(11, -23);
-  ctx.stroke();
-
-  const spin = Math.sin(phase * 8) * 6;
-  ctx.fillStyle = '#E2E8F0';
-  ctx.fillRect(-30, -spin - 2, 5, Math.abs(spin) * 2 + 4);
-
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 26, 13, 0, 0, Math.PI * 2);
-  const hullGrad = ctx.createLinearGradient(0, -13, 0, 13);
-  hullGrad.addColorStop(0, '#FDE047');
-  hullGrad.addColorStop(1, '#D97706');
-  ctx.fillStyle = hullGrad;
-  ctx.fill();
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#0F172A';
-  ctx.stroke();
-
-  ctx.beginPath();
-  ctx.arc(8, -1, 6, 0, Math.PI * 2);
-  ctx.fillStyle = '#38BDF8';
-  ctx.fill();
-  ctx.stroke();
-  ctx.restore();
 }
 
 export const KidsMathBubblesGame: React.FC<KidsMathBubblesGameProps> = ({
@@ -256,7 +94,6 @@ export const KidsMathBubblesGame: React.FC<KidsMathBubblesGameProps> = ({
 
   const [subMode, setSubMode] = useState<MathSubMode>('bubbles');
 
-  // Mode 1: Bubbles State
   const [adaptive, setAdaptive] = useState<AdaptiveMathState>(() =>
     computeAdaptiveMathStep({ level: 1, streak: 0, fallSpeedPxPerSec: 40 }, false, ageGroup)
   );
@@ -271,25 +108,21 @@ export const KidsMathBubblesGame: React.FC<KidsMathBubblesGameProps> = ({
   const [hintText, setHintText] = useState<string | null>(null);
   const [hintLoading, setHintLoading] = useState(false);
 
-  // Mode 2: Balance Scale (leftBase + addedWeight = targetTotal)
   const [scaleBase, setScaleBase] = useState(3);
   const [scaleTarget, setScaleTarget] = useState(7);
   const [scaleAdded, setScaleAdded] = useState(0);
   const [scaleStatus, setScaleStatus] = useState<'playing' | 'ok' | 'high'>('playing');
 
-  // Mode 3: Pizza Fractions (numerator / denominator)
   const [fracDenom, setFracDenom] = useState(4);
   const [fracTargetNum, setFracTargetNum] = useState(3);
   const [selectedSlices, setSelectedSlices] = useState<number[]>([]);
   const [fracStatus, setFracStatus] = useState<'playing' | 'ok'>('playing');
 
-  // Mode 4: Clock + Coins alternating challenge
   const [clockTargetHour, setClockTargetHour] = useState(3);
   const [coinTargetEur, setCoinTargetEur] = useState(7);
   const [coinsTray, setCoinsTray] = useState<number[]>([]);
   const [clockAnswerFeedback, setClockAnswerFeedback] = useState<'ok' | 'retry' | null>(null);
 
-  // Mode 5: 2-Player Local Sibling Duel
   const [duelQuestion, setDuelQuestion] = useState<MathQuestion>(() =>
     generateAdaptiveMathQuestion(ageGroup, 1)
   );
@@ -355,7 +188,6 @@ export const KidsMathBubblesGame: React.FC<KidsMathBubblesGameProps> = ({
     restartRound();
   }, [ageGroup, restartRound]);
 
-  // Canvas Reef Animation Loop (only when subMode === 'bubbles')
   useEffect(() => {
     if (subMode !== 'bubbles') return;
     const canvas = canvasRef.current;
@@ -572,7 +404,6 @@ export const KidsMathBubblesGame: React.FC<KidsMathBubblesGameProps> = ({
     ]
   );
 
-  // Balance scale next challenge
   const nextScaleChallenge = () => {
     const cap = ageGroup === '3-5' ? 6 : ageGroup === '6-8' ? 12 : 20;
     const base = Math.floor(Math.random() * Math.max(2, Math.floor(cap / 2))) + 1;
@@ -604,7 +435,6 @@ export const KidsMathBubblesGame: React.FC<KidsMathBubblesGameProps> = ({
     }
   };
 
-  // Pizza Fractions next challenge
   const nextFractionChallenge = () => {
     const denoms = ageGroup === '3-5' ? [2, 4] : [3, 4, 5, 6];
     const d = denoms[Math.floor(Math.random() * denoms.length)];
@@ -661,8 +491,6 @@ export const KidsMathBubblesGame: React.FC<KidsMathBubblesGameProps> = ({
     }
   };
 
-  const coinTotal = coinsTray.reduce((acc, v) => acc + v, 0);
-
   return (
     <div
       dir={dir}
@@ -714,7 +542,7 @@ export const KidsMathBubblesGame: React.FC<KidsMathBubblesGameProps> = ({
       </div>
 
       {/* MODE 1: REEF BUBBLES */}
-      {subMode === 'bubbles' && (
+      {subMode === 'bubbles' ? (
         <>
           <div className="shrink-0 flex items-center justify-between gap-2 px-2.5 py-1 rounded-xl bg-[#081329] border border-white/10 text-xs font-black">
             <div className="flex items-center gap-2.5">
@@ -819,366 +647,44 @@ export const KidsMathBubblesGame: React.FC<KidsMathBubblesGameProps> = ({
             </div>
           )}
         </>
-      )}
-
-      {/* MODE 2: MONTESSORI VISUAL BALANCE SCALE */}
-      {subMode === 'scale' && (
-        <div className="flex-1 min-h-0 flex flex-col items-center justify-between gap-3 p-3 rounded-2xl bg-[#09132B] border border-white/10 overflow-y-auto">
-          <div className="text-center space-y-1">
-            <h3 className="font-display font-black text-lg sm:text-2xl text-white">
-              Equilibra la Báscula: {scaleBase} + <span className="text-amber-300">{scaleAdded}</span> = {scaleTarget}
-            </h3>
-            <p className="text-xs font-bold text-sky-200/80">
-              Pulsa las pesas para igualar ambos lados de la balanza.
-            </p>
-          </div>
-
-          {/* Visual Tilt Beam */}
-          {(() => {
-            const left = scaleBase + scaleAdded;
-            const tiltDeg = Math.max(-12, Math.min(12, (scaleTarget - left) * 3));
-            return (
-              <div className="w-full max-w-md py-4 flex flex-col items-center gap-2">
-                <div
-                  className="w-full flex items-end justify-between gap-4 transition-transform duration-300"
-                  style={{ transform: `rotate(${tiltDeg}deg)` }}
-                >
-                  <div className="flex-1 p-3 rounded-2xl bg-[#182756] border-2 border-amber-400/60 text-center">
-                    <div className="text-[11px] font-bold text-amber-300">IZQUIERDA</div>
-                    <div className="font-display font-black text-3xl text-white tabular-nums">
-                      {left}
-                    </div>
-                  </div>
-                  <div className="flex-1 p-3 rounded-2xl bg-[#182756] border-2 border-sky-400/60 text-center">
-                    <div className="text-[11px] font-bold text-sky-300">OBJETIVO</div>
-                    <div className="font-display font-black text-3xl text-white tabular-nums">
-                      {scaleTarget}
-                    </div>
-                  </div>
-                </div>
-                <div className="w-4/5 h-2 rounded-full bg-slate-600" />
-                <div className="w-8 h-8 bg-slate-700 rounded-t-xl border border-white/20" />
-              </div>
-            );
-          })()}
-
-          {scaleStatus === 'ok' ? (
-            <div className="flex items-center gap-3">
-              <span className="inline-flex items-center gap-1.5 text-emerald-300 font-black text-base">
-                <CheckCircle2 className="w-5 h-5" /> ¡Equilibrado! +3 estrellas
-              </span>
-              <KidsSquishButton
-                onClick={nextScaleChallenge}
-                className="px-5 rounded-xl bg-amber-400 text-slate-950 font-black text-xs"
-              >
-                Siguiente reto
-              </KidsSquishButton>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center justify-center gap-2">
-              {[-1, 1, 2, 5].map((delta) => (
-                <KidsSquishButton
-                  key={delta}
-                  onClick={() => handleAddScaleWeight(delta)}
-                  className="px-5 rounded-2xl bg-[#1E2E68] border-b-4 border-[#0E1638] text-white font-black text-lg tabular-nums"
-                >
-                  {delta > 0 ? `+${delta}` : delta}
-                </KidsSquishButton>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* MODE 3: INTERACTIVE PIZZA FRACTIONS */}
-      {subMode === 'fractions' && (
-        <div className="flex-1 min-h-0 flex flex-col items-center justify-between gap-3 p-3 rounded-2xl bg-[#09132B] border border-white/10 overflow-y-auto">
-          <div className="text-center">
-            <h3 className="font-display font-black text-xl sm:text-2xl text-white">
-              Toca exactamente <span className="text-amber-300">{fracTargetNum}/{fracDenom}</span> de la pizza
-            </h3>
-            <p className="text-xs font-bold text-sky-200/80">
-              Seleccionadas: {selectedSlices.length} de {fracDenom} porciones
-            </p>
-          </div>
-
-          <svg width="210" height="210" viewBox="0 0 200 200" className="drop-shadow-xl">
-            {Array.from({ length: fracDenom }).map((_, i) => {
-              const startA = (i / fracDenom) * Math.PI * 2 - Math.PI / 2;
-              const endA = ((i + 1) / fracDenom) * Math.PI * 2 - Math.PI / 2;
-              const x1 = 100 + Math.cos(startA) * 86;
-              const y1 = 100 + Math.sin(startA) * 86;
-              const x2 = 100 + Math.cos(endA) * 86;
-              const y2 = 100 + Math.sin(endA) * 86;
-              const largeArc = endA - startA > Math.PI ? 1 : 0;
-              const active = selectedSlices.includes(i);
-              return (
-                <path
-                  key={i}
-                  d={`M 100 100 L ${x1} ${y1} A 86 86 0 ${largeArc} 1 ${x2} ${y2} Z`}
-                  fill={active ? '#F59E0B' : '#1E293B'}
-                  stroke="#0F172A"
-                  strokeWidth="4"
-                  className="cursor-pointer transition-colors"
-                  onClick={() => toggleSlice(i)}
-                />
-              );
-            })}
-            <circle cx="100" cy="100" r="88" fill="none" stroke="#FBBF24" strokeWidth="3" pointerEvents="none" />
-          </svg>
-
-          {fracStatus === 'ok' ? (
-            <div className="flex items-center gap-3">
-              <span className="text-emerald-300 font-black text-base">
-                ¡Fracción {fracTargetNum}/{fracDenom} perfecta! +3 estrellas
-              </span>
-              <KidsSquishButton
-                onClick={nextFractionChallenge}
-                className="px-5 rounded-xl bg-emerald-400 text-slate-950 font-black text-xs"
-              >
-                Otra pizza
-              </KidsSquishButton>
-            </div>
-          ) : (
-            <KidsSquishButton
-              onClick={nextFractionChallenge}
-              className="px-4 rounded-xl bg-white/10 text-white text-xs font-black"
-            >
-              Cambiar fracción
-            </KidsSquishButton>
-          )}
-        </div>
-      )}
-
-      {/* MODE 4: ANALOG CLOCK + COINS WORKSHOP */}
-      {subMode === 'clock_coins' && (
-        <div className="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-2 gap-3 overflow-y-auto p-1">
-          {/* Analog Clock Card */}
-          <div className="rounded-2xl bg-[#09132B] border border-white/15 p-3.5 flex flex-col items-center justify-between gap-2.5">
-            <div className="text-center">
-              <div className="text-xs font-black text-sky-300 uppercase">Reloj Analógico</div>
-              <div className="font-display font-black text-lg text-white">
-                ¿Qué hora marca? {clockAnswerFeedback === 'ok' ? '(¡Correcto!)' : ''}
-              </div>
-            </div>
-            <svg width="136" height="136" viewBox="0 0 120 120">
-              <circle cx="60" cy="60" r="54" fill="#17234B" stroke="#38BDF8" strokeWidth="4" />
-              {[12, 3, 6, 9].map((n) => {
-                const ang = (n / 12) * Math.PI * 2 - Math.PI / 2;
-                return (
-                  <text
-                    key={n}
-                    x={60 + Math.cos(ang) * 40}
-                    y={60 + Math.sin(ang) * 40 + 4}
-                    textAnchor="middle"
-                    fill="#E2E8F0"
-                    fontSize="11"
-                    fontWeight="900"
-                  >
-                    {n}
-                  </text>
-                );
-              })}
-              {/* Minute hand at 12 */}
-              <line x1="60" y1="60" x2="60" y2="22" stroke="#94A3B8" strokeWidth="3.5" strokeLinecap="round" />
-              {/* Hour hand */}
-              {(() => {
-                const hAng = (clockTargetHour / 12) * Math.PI * 2 - Math.PI / 2;
-                return (
-                  <line
-                    x1="60"
-                    y1="60"
-                    x2={60 + Math.cos(hAng) * 28}
-                    y2={60 + Math.sin(hAng) * 28}
-                    stroke="#FBBF24"
-                    strokeWidth="5"
-                    strokeLinecap="round"
-                  />
-                );
-              })()}
-              <circle cx="60" cy="60" r="4" fill="#FBBF24" />
-            </svg>
-            <div className="grid grid-cols-4 gap-1.5 w-full">
-              {[clockTargetHour, ((clockTargetHour + 2) % 12) || 12, ((clockTargetHour + 5) % 12) || 12, ((clockTargetHour + 8) % 12) || 12]
-                .sort((a, b) => a - b)
-                .map((h) => (
-                  <button
-                    key={h}
-                    type="button"
-                    onClick={() => {
-                      const ok = h === clockTargetHour;
-                      recordDomainResult('math', ok);
-                      if (ok) {
-                        setClockAnswerFeedback('ok');
-                        playKidsSound('success', ux.soundEnabled, true);
-                        onEarnStar(2);
-                        window.setTimeout(() => {
-                          setClockAnswerFeedback(null);
-                          setClockTargetHour((prev) => ((prev + 3) % 12) || 12);
-                        }, 800);
-                      } else {
-                        setClockAnswerFeedback('retry');
-                        playKidsSound('error', ux.soundEnabled, true);
-                      }
-                    }}
-                    className="h-9 rounded-xl bg-[#1C2A5E] hover:bg-sky-400 hover:text-slate-950 text-white font-black text-xs cursor-pointer"
-                  >
-                    {h}:00
-                  </button>
-                ))}
-            </div>
-          </div>
-
-          {/* Coins Lab Card */}
-          <div className="rounded-2xl bg-[#09132B] border border-white/15 p-3.5 flex flex-col items-center justify-between gap-2.5">
-            <div className="text-center">
-              <div className="text-xs font-black text-amber-300 uppercase">Tienda de Monedas</div>
-              <div className="font-display font-black text-lg text-white">
-                Paga <span className="text-amber-300">{coinTargetEur}€</span> · Llevas{' '}
-                <span className={coinTotal === coinTargetEur ? 'text-emerald-300' : 'text-sky-300'}>
-                  {coinTotal}€
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-center gap-2 min-h-[60px] flex-wrap">
-              {coinsTray.length === 0 ? (
-                <span className="text-xs text-sky-200/60">Toca monedas para sumar</span>
-              ) : (
-                coinsTray.map((val, idx) => (
-                  <span
-                    key={idx}
-                    className="w-11 h-11 rounded-full bg-amber-400 border-2 border-amber-200 text-slate-950 font-black text-sm flex items-center justify-center shadow"
-                  >
-                    {val}€
-                  </span>
-                ))
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 w-full">
-              {[1, 2, 5].map((cVal) => (
-                <KidsSquishButton
-                  key={cVal}
-                  onClick={() => {
-                    const nextTray = [...coinsTray, cVal];
-                    const nextSum = coinTotal + cVal;
-                    setCoinsTray(nextTray);
-                    if (nextSum === coinTargetEur) {
-                      setConfettiActive(true);
-                      playKidsSound('levelUp', ux.soundEnabled, true);
-                      recordDomainResult('math', true);
-                      onEarnStar(3);
-                      window.setTimeout(() => {
-                        setCoinsTray([]);
-                        setCoinTargetEur(Math.floor(Math.random() * 9) + 3);
-                      }, 850);
-                    } else if (nextSum > coinTargetEur) {
-                      playKidsSound('error', ux.soundEnabled, true);
-                      window.setTimeout(() => setCoinsTray([]), 500);
-                    } else {
-                      playKidsSound('tap', ux.soundEnabled, true);
-                    }
-                  }}
-                  className="flex-1 rounded-xl bg-amber-400 text-slate-950 font-black text-sm"
-                >
-                  +{cVal}€
-                </KidsSquishButton>
-              ))}
-              <button
-                type="button"
-                onClick={() => setCoinsTray([])}
-                className="h-11 px-3 rounded-xl bg-white/10 text-white text-xs font-black cursor-pointer"
-              >
-                0
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODE 5: 2-PLAYER LOCAL SIBLING MATH DUEL */}
-      {subMode === 'duel' && (
-        <div className="flex-1 min-h-0 flex flex-col gap-2.5">
-          <div className="shrink-0 p-3 rounded-2xl bg-[#081329] border border-amber-400/35 text-center">
-            <div className="text-[11px] font-black uppercase text-amber-300">
-              Duelo Rápido (primero en 5 puntos)
-            </div>
-            <div className="font-display font-black text-2xl sm:text-4xl text-white">
-              {duelQuestion.prompt}
-            </div>
-          </div>
-
-          {duelWinner ? (
-            <div className="flex-1 rounded-2xl bg-[#0B1533] border border-emerald-400/40 flex flex-col items-center justify-center gap-3 p-4 text-center">
-              <Trophy className="w-12 h-12 text-amber-300" />
-              <h3 className="font-display font-black text-2xl text-white">
-                ¡Gana Jugador {duelWinner}!
-              </h3>
-              <KidsSquishButton
-                onClick={() => {
-                  setP1Score(0);
-                  setP2Score(0);
-                  setDuelWinner(null);
-                  setDuelQuestion(generateAdaptiveMathQuestion(ageGroup, 1));
-                }}
-                className="px-6 rounded-2xl bg-emerald-400 text-slate-950 font-black text-sm"
-              >
-                Revancha
-              </KidsSquishButton>
-            </div>
-          ) : (
-            <div className="flex-1 grid grid-cols-2 gap-3">
-              {[1, 2].map((playerNum) => {
-                const pScore = playerNum === 1 ? p1Score : p2Score;
-                const tint =
-                  playerNum === 1
-                    ? 'border-sky-400/50 bg-[#122048]'
-                    : 'border-pink-400/50 bg-[#24163D]';
-                return (
-                  <div
-                    key={playerNum}
-                    className={`rounded-2xl border-2 p-3 flex flex-col justify-between gap-2 ${tint}`}
-                  >
-                    <div className="flex items-center justify-between font-black text-xs sm:text-sm text-white">
-                      <span>Jugador {playerNum}</span>
-                      <span className="text-amber-300 tabular-nums">{pScore}/5</span>
-                    </div>
-                    <div className="grid grid-cols-2 gap-2 flex-1">
-                      {duelQuestion.choices.map((val) => (
-                        <KidsSquishButton
-                          key={val}
-                          onClick={() => {
-                            if (val === duelQuestion.answer) {
-                              playKidsSound('success', ux.soundEnabled, true);
-                              recordDomainResult('math', true);
-                              const nextScore = pScore + 1;
-                              if (playerNum === 1) setP1Score(nextScore);
-                              else setP2Score(nextScore);
-                              if (nextScore >= 5) {
-                                setDuelWinner(playerNum as 1 | 2);
-                                setConfettiActive(true);
-                                onEarnStar(4, 'math_wizard');
-                                onMissionPlay?.();
-                              } else {
-                                setDuelQuestion(generateAdaptiveMathQuestion(ageGroup, 2));
-                              }
-                            } else {
-                              playKidsSound('error', ux.soundEnabled, true);
-                            }
-                          }}
-                          className="rounded-xl bg-[#0A1128] hover:bg-amber-400 hover:text-slate-950 text-white font-display font-black text-xl tabular-nums"
-                        >
-                          {val}
-                        </KidsSquishButton>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
+      ) : (
+        <KidsMathMontessoriLabs
+          subMode={subMode}
+          ageGroup={ageGroup}
+          soundEnabled={ux.soundEnabled}
+          recordDomainResult={recordDomainResult}
+          onEarnStar={onEarnStar}
+          onMissionPlay={onMissionPlay}
+          setConfettiActive={setConfettiActive}
+          scaleBase={scaleBase}
+          scaleTarget={scaleTarget}
+          scaleAdded={scaleAdded}
+          scaleStatus={scaleStatus}
+          nextScaleChallenge={nextScaleChallenge}
+          handleAddScaleWeight={handleAddScaleWeight}
+          fracDenom={fracDenom}
+          fracTargetNum={fracTargetNum}
+          selectedSlices={selectedSlices}
+          fracStatus={fracStatus}
+          nextFractionChallenge={nextFractionChallenge}
+          toggleSlice={toggleSlice}
+          clockTargetHour={clockTargetHour}
+          setClockTargetHour={setClockTargetHour}
+          coinTargetEur={coinTargetEur}
+          setCoinTargetEur={setCoinTargetEur}
+          coinsTray={coinsTray}
+          setCoinsTray={setCoinsTray}
+          clockAnswerFeedback={clockAnswerFeedback}
+          setClockAnswerFeedback={setClockAnswerFeedback}
+          duelQuestion={duelQuestion}
+          setDuelQuestion={setDuelQuestion}
+          p1Score={p1Score}
+          setP1Score={setP1Score}
+          p2Score={p2Score}
+          setP2Score={setP2Score}
+          duelWinner={duelWinner}
+          setDuelWinner={setDuelWinner}
+        />
       )}
     </div>
   );

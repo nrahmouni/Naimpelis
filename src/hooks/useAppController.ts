@@ -1,0 +1,813 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { User } from 'firebase/auth';
+import type { NativeApkUpdateAvailable } from '../utils/versionSync';
+import {
+  AppLanguage,
+  CatalogMovie,
+  CloudSavedRoom,
+  FavoriteChannelItem,
+  IncomingFriendAddedNotice,
+  IncomingRoomInvite,
+  OnlineAppUser,
+  Participant,
+  RoomRole,
+  SavedFriend,
+  SpanishTdtChannel,
+  VideoState,
+  WatchHistoryItem,
+} from '../types';
+import { pickLang } from '../utils/i18n';
+import {
+  getFavoriteChannels,
+  getRecentRooms,
+  getSavedFriends,
+  getStoredProfile,
+  getWatchHistory,
+  getWatchlist,
+  StoredProfile,
+  wasGuestPopupDismissed,
+} from '../utils/storage';
+import { generateShortRoomCode, parseRoomFromWindow } from '../utils/shortLink';
+import { useViewLayoutMode } from '../components/MobileViewportGuard';
+import type { ProfileHubTab } from '../components/UserProfileHubModal';
+import { useThemeStore } from '../store/useThemeStore';
+import { useAppStore } from '../store/useAppStore';
+import { useNotificationStore } from '../store/useNotificationStore';
+import { useCloudSyncSubscriptions } from './useCloudSyncSubscriptions';
+import { useTvRemoteBridge } from './useTvRemoteBridge';
+import { useGameVoiceChat } from './useGameVoiceChat';
+import { useLiveScoresQuery, useFootballBoardQuery } from './useCatalogQueries';
+import { useMiniPlayerDrag } from './useMiniPlayerDrag';
+import { useTvRoomPolling } from './useTvRoomPolling';
+import { useLiveSportsMatchDetails } from './useLiveSportsMatchDetails';
+import { useRoomSocketEvents } from './useRoomSocketEvents';
+import { usePlaybackOrchestrator } from './usePlaybackOrchestrator';
+import { useRoomSocialActions } from './useRoomSocialActions';
+import { useWorldNavigation } from './useWorldNavigation';
+import { useViewportAndShortcuts } from './useViewportAndShortcuts';
+import { useRoomAuthoritativeState } from './useRoomAuthoritativeState';
+import { useRoomLifecycleActions } from './useRoomLifecycleActions';
+import { useRoomGameActions } from './useRoomGameActions';
+import { isGoogleTvEnvironment } from '../utils/tvSpatialNav';
+import {
+  checkIsNestedSandboxFrame,
+  CINEMA_MODE_SESSION_KEY,
+  INITIAL_VIDEO_STATE,
+  loadCachedSavedRooms,
+  loadSessionRoomPins,
+  normalizeDeepLinkGameType,
+  ROOM_PINS_SESSION_KEY,
+  SAVED_ROOMS_CACHE_KEY,
+} from '../utils/appSessionHelpers';
+
+export function useAppController() {
+  const [lang, setLang] = useState<AppLanguage>('es');
+  const [profile, setProfile] = useState<StoredProfile>(() => getStoredProfile());
+  const [recentRooms, setRecentRooms] = useState(() => getRecentRooms());
+  const [watchHistory, setWatchHistory] = useState<WatchHistoryItem[]>(() => getWatchHistory());
+  const [watchlist, setWatchlist] = useState<CatalogMovie[]>(() => getWatchlist());
+  const [favoriteChannels, setFavoriteChannels] = useState<FavoriteChannelItem[]>(() =>
+    getFavoriteChannels()
+  );
+  const [savedFriends, setSavedFriends] = useState<SavedFriend[]>(() => getSavedFriends());
+  const [onlineUsers, setOnlineUsers] = useState<OnlineAppUser[]>([]);
+  const [friendsModalOpen, setFriendsModalOpen] = useState<boolean>(false);
+  const [incomingInvite, setIncomingInvite] = useState<IncomingRoomInvite | null>(null);
+  const [friendAddedNotice, setFriendAddedNotice] = useState<IncomingFriendAddedNotice | null>(
+    null
+  );
+  const [inviteSentFeedback, setInviteSentFeedback] = useState<string | null>(null);
+  const inviteFeedbackTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const friendNoticeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const seenFriendNoticeBySenderRef = useRef<Map<string, number>>(new Map());
+
+  const { effectiveView, isDesktopLayout, isFramedMobileOnPc, toggleViewMode } =
+    useViewLayoutMode();
+
+  const [authUser, setAuthUser] = useState<User | null>(null);
+  const [authLoading, setAuthLoading] = useState<boolean>(true);
+  const [profileHubOpen, setProfileHubOpen] = useState<boolean>(false);
+  const [profileHubTab, setProfileHubTab] = useState<ProfileHubTab>('history');
+
+  const initialRoute = parseRoomFromWindow();
+  const initialUrlRoom = initialRoute.roomId;
+  const [isTvMode, setIsTvMode] = useState<boolean>(initialRoute.isTvMode);
+  const [isTvPairLobby, setIsTvPairLobby] = useState<boolean>(initialRoute.isTvPairLobby);
+  const [isAdsPageOpen, setIsAdsPageOpen] = useState<boolean>(Boolean(initialRoute.isAdsPage));
+  const initialDeepLinkGame =
+    !initialRoute.isTvMode && !initialRoute.isTvPairLobby && !initialRoute.isAdsPage
+      ? normalizeDeepLinkGameType(initialRoute.gameType)
+      : null;
+  const [tvAuthToken, setTvAuthToken] = useState<string>('');
+
+  const [savedRooms, setSavedRooms] = useState<CloudSavedRoom[]>(() => loadCachedSavedRooms());
+  const [sessionPinMap, setSessionPinMap] = useState<Record<string, string>>(() =>
+    loadSessionRoomPins()
+  );
+  const [pinPromptState, setPinPromptState] = useState<{
+    open: boolean;
+    roomName: string;
+    invalidAttempt: boolean;
+  }>({ open: false, roomName: '', invalidAttempt: false });
+  const [tvClaimStatus, setTvClaimStatus] = useState<{
+    type: 'success' | 'error';
+    message: string;
+  } | null>(null);
+  const [smartTvModalOpen, setSmartTvModalOpen] = useState<boolean>(false);
+
+  const [showIntro, setShowIntro] = useState<boolean>(false);
+  const [introWithSound, setIntroWithSound] = useState<boolean>(false);
+  const [showWatchlistOnly, setShowWatchlistOnly] = useState<boolean>(false);
+  const [showVoiceAssistant, setShowVoiceAssistant] = useState<boolean>(false);
+  const [kidsExitPromptSeq] = useState<number>(0);
+  const [quickPool, setQuickPool] = useState<{
+    movies: CatalogMovie[];
+    series: CatalogMovie[];
+    tdt: SpanishTdtChannel[];
+  }>({ movies: [], series: [], tdt: [] });
+  const [quickPoolLoading, setQuickPoolLoading] = useState<boolean>(false);
+  const [nativeApkUpdate, setNativeApkUpdate] = useState<NativeApkUpdateAvailable | null>(null);
+
+  const reducedMotion = useThemeStore((s) => s.reducedMotion);
+  const activeWorld = useAppStore((s) => s.activeWorld);
+  const setActiveWorld = useAppStore((s) => s.setActiveWorld);
+  const lastUsedWorld = useAppStore((s) => s.lastUsedWorld);
+  const cineTab = useAppStore((s) => s.cineTab);
+  const setCineTab = useAppStore((s) => s.setCineTab);
+  const cineCastellano = useAppStore((s) => s.cineCastellano);
+  const setCineCastellano = useAppStore((s) => s.setCineCastellano);
+  const futbolTab = useAppStore((s) => s.futbolTab);
+  const setFutbolTab = useAppStore((s) => s.setFutbolTab);
+  const isFloatingRoomOpen = useAppStore((s) => s.isFloatingRoomOpen);
+  const setIsFloatingRoomOpen = useAppStore((s) => s.setIsFloatingRoomOpen);
+  const showDesignSystem = useAppStore((s) => s.showDesignSystem);
+  const setShowDesignSystem = useAppStore((s) => s.setShowDesignSystem);
+  const showLegalModal = useAppStore((s) => s.showLegalModal);
+  const setShowLegalModal = useAppStore((s) => s.setShowLegalModal);
+  const showNotificationCenter = useAppStore((s) => s.showNotificationCenter);
+  const setShowNotificationCenter = useAppStore((s) => s.setShowNotificationCenter);
+  const showCommandSearch = useAppStore((s) => s.showCommandSearch);
+  const setShowCommandSearch = useAppStore((s) => s.setShowCommandSearch);
+  const showSurpriseModal = useAppStore((s) => s.showSurpriseModal);
+  const setShowSurpriseModal = useAppStore((s) => s.setShowSurpriseModal);
+  const [aiSearchLaunch, setAiSearchLaunch] = useState<{
+    query: string;
+    mediaType?: 'all' | 'movie' | 'tv';
+    mode?: 'surprise' | 'request';
+    seq: number;
+  } | null>(null);
+  const typingUsers = useAppStore((s) => s.typingUsers);
+  const setTypingUser = useAppStore((s) => s.setTypingUser);
+  const swUpdate = useAppStore((s) => s.swUpdate);
+  const applySwUpdateNow = useAppStore((s) => s.applySwUpdateNow);
+  const deferredAppUpdateVersion = useAppStore((s) => s.deferredAppUpdateVersion);
+
+  const notifications = useNotificationStore((s) => s.notifications);
+  const pushNotification = useNotificationStore((s) => s.pushNotification);
+  const unreadNotificationsCount = notifications.filter((n) => !n.read).length;
+
+  const isGoogleTvApp = isGoogleTvEnvironment();
+  const initialAutoRoom =
+    !initialUrlRoom &&
+    (isGoogleTvApp || initialRoute.isKidsMode) &&
+    !initialRoute.isTvPairLobby &&
+    !initialRoute.isAdsPage
+      ? loadCachedSavedRooms()[0]?.roomCode || getRecentRooms()[0]?.id || generateShortRoomCode(4)
+      : '';
+  const effectiveInitialRoom = initialUrlRoom || initialAutoRoom;
+
+  const [roomId, setRoomId] = useState<string>(effectiveInitialRoom);
+  const [roomName, setRoomName] = useState<string>(
+    effectiveInitialRoom
+      ? initialRoute.isKidsMode
+        ? 'Riffan Kids'
+        : isGoogleTvApp && !initialUrlRoom
+        ? 'RiffanTV · Google TV'
+        : `Sala ${effectiveInitialRoom.toUpperCase()}`
+      : ''
+  );
+  const [inRoom, setInRoom] = useState<boolean>(Boolean(effectiveInitialRoom));
+  const [worldSearchQuery, setWorldSearchQuery] = useState<string>('');
+  const [avatarMenuOpen, setAvatarMenuOpen] = useState<boolean>(false);
+  const [settingsSheetOpen, setSettingsSheetOpen] = useState<boolean>(false);
+  const [isPlayerMinimized, setIsPlayerMinimized] = useState<boolean>(false);
+  const [pinFullPlayerOnChat, setPinFullPlayerOnChat] = useState<boolean>(true);
+  const [isPlayerClosedLocally, setIsPlayerClosedLocally] = useState<boolean>(false);
+  const [isCinemaMode, setIsCinemaMode] = useState<boolean>(() => {
+    try {
+      return sessionStorage.getItem(CINEMA_MODE_SESSION_KEY) === '1';
+    } catch {
+      return false;
+    }
+  });
+  const [showGuestPopup, setShowGuestPopup] = useState<boolean>(() => {
+    if (!initialUrlRoom || isTvMode) return false;
+    const stored = getStoredProfile();
+    return !stored.isCustomized && !wasGuestPopupDismissed(initialUrlRoom);
+  });
+
+  const catalogScrollRef = useRef<HTMLDivElement | null>(null);
+  const mainScrollRef = useRef<HTMLDivElement | null>(null);
+  const inRoomRef = useRef<boolean>(inRoom);
+  inRoomRef.current = inRoom;
+  const isNestedSandboxFrame = checkIsNestedSandboxFrame();
+
+  const setCinemaModePersist = useCallback((next: boolean) => {
+    setIsCinemaMode(next);
+    try {
+      if (next) sessionStorage.setItem(CINEMA_MODE_SESSION_KEY, '1');
+      else sessionStorage.removeItem(CINEMA_MODE_SESSION_KEY);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  const roomState = useRoomAuthoritativeState({
+    effectiveInitialRoom,
+    initialDeepLinkGame,
+    watchHistory,
+    isTvPairLobby,
+    savedRooms,
+    sessionPinMap,
+    isCinemaMode,
+    isPlayerMinimized,
+    isPlayerClosedLocally,
+  });
+
+  const { visualViewportHeight, isMobileKeyboardOpen, isMobileLandscape } =
+    useViewportAndShortcuts({
+      videoStateRef: roomState.videoStateRef,
+      isCinemaModeRef: roomState.isCinemaModeRef,
+      onApkUpdate: setNativeApkUpdate,
+    });
+
+  const {
+    activeSportsMatch,
+    setActiveSportsMatch,
+    activeMatchDetails,
+    setActiveMatchDetails,
+    loadingActiveMatchDetails,
+    showLiveMatchDock,
+    setShowLiveMatchDock,
+    refreshActiveMatchDetails,
+  } = useLiveSportsMatchDetails({
+    videoMode: roomState.videoState.mode,
+    videoIsLive: roomState.videoState.isLive,
+    videoTitle: roomState.videoState.title,
+    videoSubtitle: roomState.videoState.subtitle,
+    isExtracting: roomState.isExtracting,
+  });
+  const activeSportsMatchRef = useRef(activeSportsMatch);
+  activeSportsMatchRef.current = activeSportsMatch;
+  const activeMatchDetailsRef = useRef(activeMatchDetails);
+  activeMatchDetailsRef.current = activeMatchDetails;
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    document.documentElement.lang =
+      lang === 'zh' ? 'zh-CN' : lang === 'ca' ? 'ca' : lang === 'en' ? 'en' : 'es';
+  }, [lang]);
+
+  const rememberSessionPin = useCallback((targetCode: string, pinCode: string) => {
+    const cleanCode = targetCode.trim().toLowerCase();
+    if (!cleanCode) return;
+    setSessionPinMap((prev) => {
+      const next = { ...prev };
+      if (pinCode && /^[0-9]{4}$/.test(pinCode)) next[cleanCode] = pinCode;
+      else delete next[cleanCode];
+      try {
+        sessionStorage.setItem(ROOM_PINS_SESSION_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
+
+  const selfParticipant = roomState.participants.find((p) => p.id === profile.id);
+  const effectiveHostId = roomState.creatorId || roomState.hostId;
+  const isHostUser = Boolean(effectiveHostId) && effectiveHostId === profile.id;
+  const selfRole: RoomRole = isHostUser
+    ? 'host'
+    : selfParticipant?.role === 'mod'
+    ? 'mod'
+    : 'viewer';
+
+  const currentUser: Participant = {
+    id: profile.id,
+    name: isTvMode ? `${profile.name} (TV)` : profile.name,
+    avatar: isTvMode ? '📺' : profile.avatar || '🎬',
+    color: profile.color || '#9146FF',
+    isHost: isHostUser,
+    role: selfRole,
+    joinedAt: selfParticipant?.joinedAt || Date.now(),
+  };
+
+  const canChangeMedia = true;
+  const canControlRoom = true;
+
+  const voiceChat = useGameVoiceChat({
+    roomId,
+    currentUserId: currentUser.id,
+    lang,
+    enabled: inRoom && Boolean(roomId),
+  });
+
+  const { data: liveScores = [] } = useLiveScoresQuery(inRoom && !isTvMode);
+  const liveMatchesCount = liveScores.filter((m) => m.isLive).length;
+  const { data: homeFootballMatches = [] } = useFootballBoardQuery(
+    inRoom && !isTvMode && activeWorld === 'entry'
+  );
+
+  const {
+    activePortalTransition,
+    portalOriginRect,
+    portalLandingActive,
+    preloadWorld,
+    enterWorld,
+  } = useWorldNavigation({
+    roomId,
+    reducedMotion,
+    effectiveInitialRoom,
+    initialIsKidsMode: initialRoute.isKidsMode,
+    initialDeepLinkGame,
+    inRoomRef,
+    mainScrollRef,
+    catalogScrollRef,
+    setActiveWorld,
+    setCatalogSection: roomState.setCatalogSection,
+    setMobileTab: roomState.setMobileTab,
+    setUnreadChatCount: roomState.setUnreadChatCount,
+    setIsInActiveGame: roomState.setIsInActiveGame,
+    setWorldSearchQuery,
+    setShowWatchlistOnly,
+  });
+
+  useEffect(() => {
+    roomState.setIncomingGameInvite(null);
+  }, [roomId, inRoom, roomState.setIncomingGameInvite]);
+
+  const showHostLockNotice = useCallback(
+    (hostDisplayName?: string, reason?: string) => {
+      if (roomState.lockToastTimerRef.current) clearTimeout(roomState.lockToastTimerRef.current);
+      const msg =
+        reason ||
+        pickLang(lang, {
+          es: `Solo ${hostDisplayName || 'el anfitrión'} o un Co-anfitrión puede cambiar canales o películas`,
+          ca: `Només ${hostDisplayName || 'l’amfitrió'} o un Co-amfitrió pot canviar canals o pel·lícules`,
+          en: `Only ${hostDisplayName || 'the host'} or a Co-host can change channels or movies`,
+        });
+      roomState.setLockNoticeToast(msg);
+      roomState.lockToastTimerRef.current = setTimeout(
+        () => roomState.setLockNoticeToast(null),
+        3400
+      );
+    },
+    [lang, roomState.lockToastTimerRef, roomState.setLockNoticeToast]
+  );
+
+  useEffect(() => {
+    const activeNow = roomState.videoState.mode !== 'idle' || roomState.isExtracting;
+    if (activeNow) roomState.hadActivePlaybackRef.current = true;
+    else if (roomState.hadActivePlaybackRef.current) {
+      roomState.hadActivePlaybackRef.current = false;
+      setCinemaModePersist(false);
+    }
+  }, [roomState.videoState.mode, roomState.isExtracting, setCinemaModePersist]);
+
+  useCloudSyncSubscriptions({
+    savedRoomsCacheKey: SAVED_ROOMS_CACHE_KEY,
+    loadCachedSavedRooms,
+    rememberSessionPin,
+    inRoomRef,
+    manualLobbyStayRef: roomState.manualLobbyStayRef,
+    isTvPairLobbyRef: roomState.isTvPairLobbyRef,
+    setAuthUser,
+    setAuthLoading,
+    setSavedRooms,
+    setProfile,
+    setShowGuestPopup,
+    setShowIntro,
+    setCatalogSection: roomState.setCatalogSection,
+    setMobileTab: roomState.setMobileTab,
+    setRoomId,
+    setRoomName,
+    setInRoom,
+    setWatchHistory,
+    setWatchlist,
+    setFavoriteChannels,
+    setSavedFriends,
+  });
+
+  const normalizedRoomCode = roomId.trim().toLowerCase();
+  const currentSavedRoom = savedRooms.find(
+    (r) => r.roomCode.toLowerCase() === normalizedRoomCode
+  );
+  const isCurrentRoomPermanent = Boolean(currentSavedRoom);
+  const currentHostPin =
+    sessionPinMap[normalizedRoomCode] ||
+    (currentSavedRoom?.hasPin ? currentSavedRoom.pinCode : undefined);
+
+  const [roomHasPin, setRoomHasPin] = useState<boolean>(false);
+
+  const socialActions = useRoomSocialActions({
+    lang,
+    authUser,
+    profile,
+    setProfile,
+    roomId,
+    normalizedRoomCode,
+    roomName,
+    setRoomName,
+    inRoom,
+    isCurrentRoomPermanent,
+    currentHostPin,
+    currentSavedRoom,
+    isHostUser,
+    roomHasPin,
+    setRoomHasPin,
+    hostOnlyControl: roomState.hostOnlyControl,
+    videoState: roomState.videoState,
+    roomQueue: roomState.roomQueue,
+    watchHistory,
+    setWatchHistory,
+    setWatchlist,
+    setFavoriteChannels,
+    setSavedFriends,
+    setSavedRooms,
+    setShowGuestPopup,
+    setInviteSentFeedback,
+    setQuickPool,
+    setQuickPoolLoading,
+    quickPoolMoviesLen: quickPool.movies.length,
+    quickPoolSeriesLen: quickPool.series.length,
+    manualLobbyStayRef: roomState.manualLobbyStayRef,
+    inviteFeedbackTimerRef,
+    rememberSessionPin,
+  });
+
+  const isOnMobileSocialTab = activeWorld === 'sala';
+  const effectiveVideoState: VideoState = isPlayerClosedLocally
+    ? INITIAL_VIDEO_STATE
+    : roomState.videoState;
+  const isPlayerActive =
+    (effectiveVideoState.mode !== 'idle' || roomState.isExtracting) && !isPlayerClosedLocally;
+  const isPlayingMediaReady =
+    effectiveVideoState.mode !== 'idle' && !roomState.isExtracting && !isPlayerClosedLocally;
+  const isDockedMini =
+    isPlayerActive &&
+    (isPlayerMinimized ||
+      (isPlayingMediaReady && isOnMobileSocialTab && !pinFullPlayerOnChat));
+
+  const miniDrag = useMiniPlayerDrag({
+    isDockedMini,
+    isExtracting: roomState.isExtracting,
+    isPlayerClosedLocally,
+    videoMode: effectiveVideoState.mode,
+    isMobileKeyboardOpen,
+  });
+
+  const roomGameActions = useRoomGameActions();
+
+  const scrollDesktopToPlayer = useCallback(() => {
+    setIsPlayerClosedLocally(false);
+    setIsPlayerMinimized(false);
+    miniDrag.setIsAutoMiniByScroll(false);
+    mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+    catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [miniDrag]);
+
+  const handleToggleCinemaMode = useCallback(() => {
+    setIsCinemaMode((prev) => {
+      const next = !prev;
+      if (next) {
+        setIsPlayerMinimized(false);
+        miniDrag.setIsAutoMiniByScroll(false);
+        setIsPlayerClosedLocally(false);
+        mainScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+        catalogScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+      try {
+        if (next) sessionStorage.setItem(CINEMA_MODE_SESSION_KEY, '1');
+        else sessionStorage.removeItem(CINEMA_MODE_SESSION_KEY);
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, [miniDrag]);
+
+  const playback = usePlaybackOrchestrator({
+    lang,
+    profileName: profile.name,
+    canChangeMedia,
+    canControlRoom,
+    hostId: roomState.hostId,
+    participants: roomState.participants,
+    isNestedSandboxFrame,
+    cloudState: roomState.cloudState,
+    videoState: roomState.videoState,
+    setVideoState: roomState.setVideoState,
+    videoStateRef: roomState.videoStateRef,
+    videoStateUrlRef: roomState.videoStateUrlRef,
+    isCinemaModeRef: roomState.isCinemaModeRef,
+    watchHistoryRef: roomState.watchHistoryRef,
+    setWatchHistory,
+    isPlayerClosedLocallyRef: roomState.isPlayerClosedLocallyRef,
+    setIsPlayerClosedLocally,
+    isPlayerMinimizedRef: roomState.isPlayerMinimizedRef,
+    setIsPlayerMinimized,
+    setCinemaModePersist,
+    isExtracting: roomState.isExtracting,
+    setIsExtracting: roomState.setIsExtracting,
+    isExtractingRef: roomState.isExtractingRef,
+    activeSportsMatchRef,
+    setActiveSportsMatch,
+    activeMatchDetailsRef,
+    setActiveMatchDetails,
+    setShowLiveMatchDock,
+    activeMovieContextRef: roomState.activeMovieContextRef,
+    setActiveMovieContext: roomState.setActiveMovieContext,
+    secondaryStream: roomState.secondaryStream,
+    setSecondaryStream: roomState.setSecondaryStream,
+    setCatalogSection: roomState.setCatalogSection,
+    setMobileTab: roomState.setMobileTab,
+    showHostLockNotice,
+    scrollDesktopToPlayer,
+  });
+
+  roomState.handlePlayQueueItemRef.current = playback.handlePlayQueueItem;
+
+  useRoomSocketEvents({
+    inRoom,
+    roomId,
+    roomName,
+    isTvMode,
+    isTvPairLobby,
+    tvAuthToken,
+    isKidsRouteMode: Boolean(initialRoute.isKidsMode),
+    lang,
+    profile,
+    mobileTabRef: roomState.mobileTabRef,
+    hostIdRef: roomState.hostIdRef,
+    roomQueueRef: roomState.roomQueueRef,
+    videoStateUrlRef: roomState.videoStateUrlRef,
+    savedRoomsRef: roomState.savedRoomsRef,
+    sessionPinMapRef: roomState.sessionPinMapRef,
+    isExtractingRef: roomState.isExtractingRef,
+    activeHubGameRef: roomState.activeHubGameRef,
+    catalogSectionRef: roomState.catalogSectionRef,
+    handlePlayQueueItemRef: roomState.handlePlayQueueItemRef,
+    inviteFeedbackTimerRef,
+    friendNoticeTimerRef,
+    seenFriendNoticeBySenderRef,
+    tvClaimTimerRef: roomState.tvClaimTimerRef,
+    recordStateInWatchHistory: playback.recordStateInWatchHistory,
+    rememberSessionPin,
+    showHostLockNotice,
+    setTypingUser,
+    pushNotification,
+    setOnlineUsers,
+    setIncomingInvite,
+    setFriendAddedNotice,
+    setInviteSentFeedback,
+    setRoomName,
+    setHostId: roomState.setHostId,
+    setCreatorId: roomState.setCreatorId,
+    setHostOnlyControl: roomState.setHostOnlyControl,
+    setRoomHasPin,
+    setPinPromptState,
+    setActivePoll: roomState.setActivePoll,
+    setRoomGameState: roomState.setRoomGameState,
+    setPartyGameState: roomState.setPartyGameState,
+    setPinturilloState: roomState.setPinturilloState,
+    setPoolGameState: roomState.setPoolGameState,
+    setChapasGameState: roomState.setChapasGameState,
+    setHeadSoccerGameState: roomState.setHeadSoccerGameState,
+    setHeadSoccerPeerInput: roomState.setHeadSoccerPeerInput,
+    setHeadSoccerSyncSnapshot: roomState.setHeadSoccerSyncSnapshot,
+    setPokerGameState: roomState.setPokerGameState,
+    setBlackjackGameState: roomState.setBlackjackGameState,
+    setMatchResponses: roomState.setMatchResponses,
+    setGameMoveError: roomState.setGameMoveError,
+    setParticipants: roomState.setParticipants,
+    setMessages: roomState.setMessages,
+    setPinnedMessage: roomState.setPinnedMessage,
+    setRoomQueue: roomState.setRoomQueue,
+    setRecentRooms,
+    setVideoState: roomState.setVideoState,
+    setIsPlayerClosedLocally,
+    setCloudFrame: roomState.setCloudFrame,
+    setCloudState: roomState.setCloudState,
+    setUnreadChatCount: roomState.setUnreadChatCount,
+    setFloatingReactions: roomState.setFloatingReactions,
+    setTvClaimStatus,
+    setIncomingGameInvite: roomState.setIncomingGameInvite,
+    setForcedOpenGame: roomState.setForcedOpenGame,
+  });
+
+  const { handleClaimTvCode, handleSendTvRemoteCommand } = useTvRoomPolling({
+    inRoom,
+    isTvMode,
+    roomId,
+    roomName,
+    lang,
+    profileId: profile.id,
+    profileName: profile.name,
+    tvAuthToken,
+    sessionPinMap,
+    setRoomName,
+    setParticipants: roomState.setParticipants,
+    setVideoState: roomState.setVideoState,
+    setPinPromptState,
+    setTvClaimStatus,
+    tvClaimTimerRef: roomState.tvClaimTimerRef,
+  });
+
+  const lifecycle = useRoomLifecycleActions({
+    lang,
+    profile,
+    hostId: roomState.hostId,
+    participants: roomState.participants,
+    canChangeMedia,
+    videoState: roomState.videoState,
+    roomQueue: roomState.roomQueue,
+    inRoomRef,
+    manualLobbyStayRef: roomState.manualLobbyStayRef,
+    queueToastTimerRef: roomState.queueToastTimerRef,
+    setProfile,
+    setShowGuestPopup,
+    setIsPlayerMinimized,
+    setIsPlayerClosedLocally,
+    setSecondaryStream: roomState.setSecondaryStream,
+    setCatalogSection: roomState.setCatalogSection,
+    setMobileTab: roomState.setMobileTab,
+    setActiveWorld,
+    setForcedOpenGame: roomState.setForcedOpenGame,
+    setIsInActiveGame: roomState.setIsInActiveGame,
+    setWorldSearchQuery,
+    setAvatarMenuOpen,
+    setRoomId,
+    setRoomName,
+    setInRoom,
+    setIntroWithSound,
+    setShowIntro,
+    setIsTvPairLobby,
+    setIsTvMode,
+    setTvAuthToken,
+    setPinPromptState,
+    setCinemaModePersist,
+    setActivePoll: roomState.setActivePoll,
+    setRoomGameState: roomState.setRoomGameState,
+    setPartyGameState: roomState.setPartyGameState,
+    setPinnedMessage: roomState.setPinnedMessage,
+    setGameMoveError: roomState.setGameMoveError,
+    setHostId: roomState.setHostId,
+    setCreatorId: roomState.setCreatorId,
+    setHostOnlyControl: roomState.setHostOnlyControl,
+    setRoomHasPin,
+    setVideoState: roomState.setVideoState,
+    setCloudFrame: roomState.setCloudFrame,
+    setCloudState: roomState.setCloudState,
+    setIsFloatingRoomOpen,
+    setQueueAddedNotice: roomState.setQueueAddedNotice,
+    setOpenQueueTrigger: roomState.setOpenQueueTrigger,
+    setExtractionError: playback.setExtractionError,
+    setIncomingInvite,
+    setFriendsModalOpen,
+    clearExtractionSnapshot: playback.clearExtractionSnapshot,
+    enterWorld,
+    showHostLockNotice,
+    scrollDesktopToPlayer,
+    handleSyncPlayerAction: playback.handleSyncPlayerAction,
+  });
+
+  useTvRemoteBridge({
+    isAdsPageOpen,
+    setIsAdsPageOpen,
+    smartTvModalOpen,
+    setSmartTvModalOpen,
+    friendsModalOpen,
+    setFriendsModalOpen,
+    profileHubOpen,
+    setProfileHubOpen,
+    floatingChatOpen: roomState.floatingChatOpen,
+    setFloatingChatOpen: roomState.setFloatingChatOpen,
+    sidebarOpen: isFloatingRoomOpen,
+    setSidebarOpen: setIsFloatingRoomOpen,
+    videoState: roomState.videoState,
+    isExtracting: roomState.isExtracting,
+    isPlayerClosedLocally,
+    setIsPlayerClosedLocally,
+    setIsExtracting: roomState.setIsExtracting,
+    inRoom,
+    catalogSection: roomState.catalogSection,
+    setCatalogSection: (sec) => {
+      if (sec === 'home') enterWorld('entry');
+      else roomState.setCatalogSection(sec);
+    },
+    setMobileTab: roomState.setMobileTab,
+    handleSelectTrack: playback.handleSelectTrack,
+  });
+
+  const isScrollCompressed =
+    isPlayerActive &&
+    isPlayingMediaReady &&
+    miniDrag.isAutoMiniByScroll &&
+    !isPlayerMinimized &&
+    !isOnMobileSocialTab;
+  const showCinemaOverlay = isCinemaMode && isPlayerActive && !isDockedMini;
+  const hasConnectedSmartTv = roomState.participants.some(
+    (p) => p.name.includes('(TV)') || p.avatar === '📺'
+  );
+  const isMobileChatWithKeyboard =
+    !isDesktopLayout &&
+    isMobileKeyboardOpen &&
+    (roomState.mobileTab === 'chat' || roomState.floatingChatOpen);
+  const isAutoImmersiveLandscape =
+    !isDesktopLayout &&
+    isMobileLandscape &&
+    isPlayerActive &&
+    !isDockedMini &&
+    !isMobileKeyboardOpen;
+  const hideBrowseBelowPlayer =
+    isPlayingMediaReady &&
+    !isDockedMini &&
+    !isAutoImmersiveLandscape &&
+    activeWorld !== 'sala' &&
+    activeWorld !== 'juegos' &&
+    activeWorld !== 'kids';
+
+  const isMoviePlaybackDockVisible =
+    !isFloatingRoomOpen &&
+    roomState.videoState.mode !== 'idle' &&
+    !isPlayerClosedLocally &&
+    !isPlayerMinimized &&
+    !isAutoImmersiveLandscape &&
+    !activeSportsMatch &&
+    !roomState.videoState.seriesMeta &&
+    !roomState.videoState.isLive &&
+    roomState.videoState.mode !== 'youtube' &&
+    Boolean(roomState.activeMovieContext || roomState.videoState.title);
+
+  const isChannelGuideDockVisible =
+    !isFloatingRoomOpen &&
+    roomState.videoState.mode !== 'idle' &&
+    !isPlayerClosedLocally &&
+    !isPlayerMinimized &&
+    !isAutoImmersiveLandscape &&
+    !activeSportsMatch &&
+    roomState.videoState.mode !== 'youtube' &&
+    (Boolean(roomState.videoState.isLive) ||
+      Boolean(
+        roomState.videoState.tracks?.some(
+          (tr) => tr.resolverType === 'tdt_hls' || tr.resolverType === 'sports_channel'
+        )
+      ));
+
+  const lockMainWorkspaceScroll =
+    activeWorld === 'sala' ||
+    activeWorld === 'kids' ||
+    (activeWorld === 'juegos' && roomState.isInActiveGame);
+
+  return {
+    lang, setLang,
+    profile, recentRooms, watchHistory, watchlist, favoriteChannels,
+    savedFriends, onlineUsers, friendsModalOpen, setFriendsModalOpen,
+    incomingInvite, setIncomingInvite, friendAddedNotice, setFriendAddedNotice,
+    inviteSentFeedback, friendNoticeTimerRef,
+    effectiveView, isDesktopLayout, isFramedMobileOnPc, toggleViewMode,
+    authUser, authLoading, profileHubOpen, setProfileHubOpen, profileHubTab, setProfileHubTab,
+    isTvMode, setIsTvMode, isTvPairLobby, setIsTvPairLobby, isAdsPageOpen, setIsAdsPageOpen,
+    setTvAuthToken, savedRooms, pinPromptState, tvClaimStatus, smartTvModalOpen, setSmartTvModalOpen,
+    showIntro, setShowIntro, introWithSound, setIntroWithSound,
+    showWatchlistOnly, setShowWatchlistOnly, showVoiceAssistant, setShowVoiceAssistant,
+    kidsExitPromptSeq, quickPool, quickPoolLoading, nativeApkUpdate, setNativeApkUpdate,
+    reducedMotion, activeWorld, lastUsedWorld, cineTab, setCineTab,
+    cineCastellano, setCineCastellano, futbolTab, setFutbolTab,
+    isFloatingRoomOpen, setIsFloatingRoomOpen, showDesignSystem, setShowDesignSystem,
+    showLegalModal, setShowLegalModal, showNotificationCenter, setShowNotificationCenter,
+    showCommandSearch, setShowCommandSearch, showSurpriseModal, setShowSurpriseModal,
+    aiSearchLaunch, setAiSearchLaunch, typingUsers, swUpdate, applySwUpdateNow,
+    deferredAppUpdateVersion, unreadNotificationsCount,
+    roomId, setRoomId, roomName, setRoomName, inRoom, setInRoom,
+    worldSearchQuery, setWorldSearchQuery, avatarMenuOpen, setAvatarMenuOpen,
+    settingsSheetOpen, setSettingsSheetOpen, isPlayerMinimized, setIsPlayerMinimized,
+    setPinFullPlayerOnChat, isPlayerClosedLocally, setIsPlayerClosedLocally,
+    isCinemaMode, setCinemaModePersist, showGuestPopup,
+    catalogScrollRef, mainScrollRef,
+    roomState, visualViewportHeight, isMobileKeyboardOpen,
+    activeSportsMatch, activeMatchDetails, loadingActiveMatchDetails,
+    showLiveMatchDock, setShowLiveMatchDock, refreshActiveMatchDetails,
+    isHostUser, currentUser, canChangeMedia, canControlRoom, voiceChat,
+    liveMatchesCount, homeFootballMatches,
+    activePortalTransition, portalOriginRect, portalLandingActive, preloadWorld, enterWorld,
+    showHostLockNotice, isCurrentRoomPermanent, currentHostPin, roomHasPin,
+    socialActions, isOnMobileSocialTab, effectiveVideoState,
+    isPlayerActive, isDockedMini, miniDrag, roomGameActions,
+    handleToggleCinemaMode, playback, handleClaimTvCode, handleSendTvRemoteCommand,
+    lifecycle, isScrollCompressed, showCinemaOverlay, hasConnectedSmartTv,
+    isMobileChatWithKeyboard, isAutoImmersiveLandscape, hideBrowseBelowPlayer,
+    isMoviePlaybackDockVisible, isChannelGuideDockVisible, lockMainWorkspaceScroll,
+  };
+}

@@ -26,6 +26,7 @@ import { triggerHaptic } from '../../utils/haptics';
 import { PosterImage } from '../ui/PosterImage';
 import { LanguageBadge } from '../ui/LanguageBadge';
 import { ChannelLogoBadge } from '../ui/ChannelLogoBadge';
+import { RiffanFootballIcon, RiffanDiceIcon } from '../ui/RiffanIcons';
 
 export type SearchCategoryFilter = 'all' | 'movies' | 'series' | 'sports' | 'tv' | 'games';
 
@@ -457,7 +458,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       id: 'sports',
       label: pickLang(lang, { es: 'Fútbol', ca: 'Futbol', en: 'Football' }),
       count: matchedSports.length,
-      icon: <Trophy className="w-3.5 h-3.5" />,
+      icon: <RiffanFootballIcon size={14} animate="hover" />,
     },
     {
       id: 'tv',
@@ -469,7 +470,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
       id: 'games',
       label: pickLang(lang, { es: 'Juegos', ca: 'Jocs', en: 'Games' }),
       count: matchedGames.length,
-      icon: <Gamepad2 className="w-3.5 h-3.5" />,
+      icon: <RiffanDiceIcon size={14} animate="hover" />,
     },
   ];
 
@@ -764,7 +765,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 matchedSports.length > 0 && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-xs font-bold text-[#00F593]">
-                      <Trophy className="w-3.5 h-3.5" />
+                      <RiffanFootballIcon size={14} animate="hover" />
                       <span>
                         {pickLang(lang, {
                           es: 'Fútbol y Deportes en Directo',
@@ -855,7 +856,7 @@ export const UniversalHomeSearch: React.FC<UniversalHomeSearchProps> = ({
                 matchedGames.length > 0 && (
                   <div className="space-y-2">
                     <div className="flex items-center gap-1.5 text-xs font-bold text-fuchsia-400">
-                      <Gamepad2 className="w-3.5 h-3.5" />
+                      <RiffanDiceIcon size={14} animate="hover" />
                       <span>
                         {pickLang(lang, {
                           es: 'Juegos de Sala',

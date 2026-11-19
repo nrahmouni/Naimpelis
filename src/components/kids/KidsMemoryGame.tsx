@@ -1,21 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ArrowDown,
-  ArrowLeft,
-  ArrowRight,
-  ArrowUp,
-  CheckCircle2,
   ChefHat,
   Compass,
-  Delete,
   Flame,
-  Play,
   RefreshCw,
   Sparkles,
   Star,
-  Trash2,
   Trophy,
-  Utensils,
   Volume2,
 } from 'lucide-react';
 import type { KidsAgeGroup, KidsLanguageCode } from '../../types';
@@ -25,9 +16,7 @@ import { FlagBadgeSvg } from '../ui/LanguageBadge';
 import {
   KIDS_LANGUAGES,
   loadLeitnerBoxes,
-  pickLeitnerEntries,
   updateLeitnerBox,
-  type KidsVocabEntry,
   type LeitnerBoxesMap,
 } from './kidsData';
 import { EXTENDED_VOCAB_ITEMS } from './kidsCurriculumData';
@@ -36,177 +25,21 @@ import { getKidsDir, getKidsUiCopy } from './kidsI18n';
 import { speakKidsText } from './kidsTtsHelper';
 import { KidsSquishButton } from './KidsPrimitives';
 import { KidsConfettiCanvas } from './KidsConfettiCanvas';
-import { KidsAnimatedMascotSvg, KidsVocabSvg } from './KidsSvgArt';
-
-type MemoryArcadeMode = 'memory' | 'kitchen' | 'logic';
-
-interface MemoryCardItem {
-  uid: string;
-  pairId: string;
-  kind: 'art' | 'word';
-  iconId: string;
-  word: string;
-  spokenText: string;
-  flipped: boolean;
-  matched: boolean;
-}
-
-function cleanSpokenWord(raw: string): string {
-  const idx = raw.indexOf('(');
-  return (idx >= 0 ? raw.slice(0, idx) : raw).trim() || raw.trim();
-}
-
-const FULL_VOCAB_ENTRIES: KidsVocabEntry[] = EXTENDED_VOCAB_ITEMS.map((item) => ({
-  id: item.id,
-  category:
-    item.category === 'animals' ||
-    item.category === 'nature' ||
-    item.category === 'numbers' ||
-    item.category === 'family'
-      ? item.category
-      : 'animals',
-  iconId: item.iconId,
-  translations: item.translations,
-}));
-
-function buildLeitnerDeck(
-  lang: KidsLanguageCode,
-  ageGroup: KidsAgeGroup,
-  boxes: LeitnerBoxesMap
-): MemoryCardItem[] {
-  const pairCount = ageGroup === '3-5' ? 3 : 6;
-  const chosen: KidsVocabEntry[] = pickLeitnerEntries(FULL_VOCAB_ENTRIES, boxes, pairCount);
-  const deck: MemoryCardItem[] = [];
-
-  for (const entry of chosen) {
-    const tr = entry.translations[lang] || entry.translations.es;
-    const cleanWord = cleanSpokenWord(tr.word);
-    deck.push({
-      uid: `${entry.id}-art-${Math.random().toString(36).slice(2, 6)}`,
-      pairId: entry.id,
-      kind: 'art',
-      iconId: entry.iconId,
-      word: cleanWord,
-      spokenText: cleanWord,
-      flipped: false,
-      matched: false,
-    });
-    deck.push({
-      uid: `${entry.id}-word-${Math.random().toString(36).slice(2, 6)}`,
-      pairId: entry.id,
-      kind: 'word',
-      iconId: entry.iconId,
-      word: cleanWord,
-      spokenText: cleanWord,
-      flipped: false,
-      matched: false,
-    });
-  }
-  return deck.sort(() => Math.random() - 0.5);
-}
-
-/* ============================================================================
- * KITCHEN ORDER HELPERS
- * ============================================================================ */
-const KITCHEN_FOOD_IDS = ['apple', 'bread', 'milk', 'honey', 'tea', 'orange_fruit', 'water'];
-const CUSTOMER_ANIMALS = [
-  { id: 'cat', name: 'Amucc' },
-  { id: 'lion', name: 'Ayrad' },
-  { id: 'bird', name: 'Ajeḍiḍ' },
-  { id: 'dog', name: 'Aqzin' },
-];
-
-interface KitchenOrder {
-  customer: { id: string; name: string };
-  requiredIds: string[];
-}
-
-function buildKitchenOrder(ageGroup: KidsAgeGroup): KitchenOrder {
-  const count = ageGroup === '3-5' ? 2 : 3;
-  const pool = [...KITCHEN_FOOD_IDS].sort(() => Math.random() - 0.5);
-  const requiredIds = pool.slice(0, count);
-  const customer = CUSTOMER_ANIMALS[Math.floor(Math.random() * CUSTOMER_ANIMALS.length)];
-  return { customer, requiredIds };
-}
-
-/* ============================================================================
- * LOGIC BRIDGE PUZZLE HELPERS (BFS-VERIFIED SOLVABLE)
- * ============================================================================ */
-type LogicDir = 'up' | 'right' | 'down' | 'left';
-
-interface LogicLevel {
-  cols: number;
-  rows: number;
-  start: { x: number; y: number };
-  goal: { x: number; y: number };
-  rocks: Array<{ x: number; y: number }>;
-  bonusStar: { x: number; y: number } | null;
-}
-
-function isPathSolvable(
-  cols: number,
-  rows: number,
-  start: { x: number; y: number },
-  goal: { x: number; y: number },
-  rocks: Array<{ x: number; y: number }>
-): boolean {
-  const rockSet = new Set(rocks.map((r) => `${r.x},${r.y}`));
-  if (rockSet.has(`${start.x},${start.y}`) || rockSet.has(`${goal.x},${goal.y}`)) return false;
-  const queue: Array<{ x: number; y: number }> = [start];
-  const visited = new Set<string>([`${start.x},${start.y}`]);
-  const deltas = [
-    { dx: 1, dy: 0 },
-    { dx: -1, dy: 0 },
-    { dx: 0, dy: 1 },
-    { dx: 0, dy: -1 },
-  ];
-  while (queue.length > 0) {
-    const cur = queue.shift()!;
-    if (cur.x === goal.x && cur.y === goal.y) return true;
-    for (const d of deltas) {
-      const nx = cur.x + d.dx;
-      const ny = cur.y + d.dy;
-      const key = `${nx},${ny}`;
-      if (nx >= 0 && nx < cols && ny >= 0 && ny < rows && !rockSet.has(key) && !visited.has(key)) {
-        visited.add(key);
-        queue.push({ x: nx, y: ny });
-      }
-    }
-  }
-  return false;
-}
-
-function generateLogicLevel(ageGroup: KidsAgeGroup): LogicLevel {
-  const cols = ageGroup === '9-12' ? 5 : 4;
-  const rows = 4;
-  const start = { x: 0, y: rows - 1 };
-  const goal = { x: cols - 1, y: 0 };
-  const rockCount = ageGroup === '3-5' ? 2 : ageGroup === '6-8' ? 3 : 5;
-
-  for (let attempt = 0; attempt < 30; attempt++) {
-    const candidates: Array<{ x: number; y: number }> = [];
-    for (let y = 0; y < rows; y++) {
-      for (let x = 0; x < cols; x++) {
-        if ((x === start.x && y === start.y) || (x === goal.x && y === goal.y)) continue;
-        candidates.push({ x, y });
-      }
-    }
-    const shuffled = candidates.sort(() => Math.random() - 0.5);
-    const rocks = shuffled.slice(0, rockCount);
-    if (isPathSolvable(cols, rows, start, goal, rocks)) {
-      const bonusStar = shuffled[rockCount] || null;
-      return { cols, rows, start, goal, rocks, bonusStar };
-    }
-  }
-  return {
-    cols,
-    rows,
-    start,
-    goal,
-    rocks: [{ x: 1, y: 2 }, { x: 2, y: 1 }],
-    bonusStar: { x: 1, y: 1 },
-  };
-}
+import { KidsVocabSvg } from './KidsSvgArt';
+import {
+  buildKitchenOrder,
+  buildLeitnerDeck,
+  cleanSpokenWord,
+  FULL_VOCAB_ENTRIES,
+  generateLogicLevel,
+  KITCHEN_FOOD_IDS,
+  type KitchenOrder,
+  type LogicDir,
+  type LogicLevel,
+  type MemoryArcadeMode,
+  type MemoryCardItem,
+} from './kidsMemoryHelpers';
+import { KidsKitchenMode, KidsLogicBridgeMode } from './KidsKitchenAndLogicModes';
 
 interface KidsMemoryGameProps {
   kidsLang: KidsLanguageCode;
@@ -390,9 +223,6 @@ export const KidsMemoryGame: React.FC<KidsMemoryGameProps> = ({
     }
   };
 
-  /* ============================================================================
-   * KITCHEN HANDLERS
-   * ============================================================================ */
   const handleAddIngredient = (id: string, word: string) => {
     if (kitchenFeedback === 'ok') return;
     triggerHaptic('light');
@@ -435,9 +265,6 @@ export const KidsMemoryGame: React.FC<KidsMemoryGameProps> = ({
     }
   };
 
-  /* ============================================================================
-   * LOGIC BRIDGE HANDLERS
-   * ============================================================================ */
   const newLogicPuzzle = () => {
     clearLogicTimers();
     const lv = generateLogicLevel(ageGroup);
@@ -527,13 +354,6 @@ export const KidsMemoryGame: React.FC<KidsMemoryGameProps> = ({
   const starRating = moves <= pairCount + 2 ? 3 : moves <= pairCount + 6 ? 2 : 1;
   const activeLangMeta =
     KIDS_LANGUAGES.find((l) => l.code === practiceLang) || KIDS_LANGUAGES[0];
-
-  const renderDirArrow = (d: LogicDir, cls = 'w-4 h-4') => {
-    if (d === 'up') return <ArrowUp className={cls} />;
-    if (d === 'right') return <ArrowRight className={cls} />;
-    if (d === 'down') return <ArrowDown className={cls} />;
-    return <ArrowLeft className={cls} />;
-  };
 
   return (
     <div
@@ -627,9 +447,7 @@ export const KidsMemoryGame: React.FC<KidsMemoryGameProps> = ({
         </div>
       </div>
 
-      {/* =====================================================================
-       * SUBMODE 1: MEMORIA LEITNER (60+ CONCEPTS)
-       * ===================================================================== */}
+      {/* SUBMODE 1: MEMORIA LEITNER */}
       {subMode === 'memory' && (
         <div className="relative flex-1 min-h-0 overflow-y-auto no-scrollbar">
           <div
@@ -716,308 +534,35 @@ export const KidsMemoryGame: React.FC<KidsMemoryGameProps> = ({
         </div>
       )}
 
-      {/* =====================================================================
-       * SUBMODE 2: LA COCINA DEL MUNDO (PEDIDOS EN IDIOMA OBJETIVO)
-       * ===================================================================== */}
       {subMode === 'kitchen' && (
-        <div className="flex-1 min-h-0 flex flex-col gap-3 overflow-y-auto no-scrollbar p-1">
-          {/* Customer Ticket */}
-          <div className="rounded-2xl bg-[#0F152B] border border-pink-400/25 p-3 sm:p-4 flex flex-col sm:flex-row items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="w-14 h-14 rounded-2xl bg-pink-500/15 border border-pink-400/30 flex items-center justify-center shrink-0">
-                <KidsVocabSvg iconId={kitchenOrder.customer.id} size={44} />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[11px] font-black uppercase tracking-wider text-pink-300">
-                  Pedido en {activeLangMeta.nativeLabel}
-                </div>
-                <div className="flex flex-wrap items-center gap-1.5 mt-1">
-                  {kitchenOrder.requiredIds.map((rid) => {
-                    const f = kitchenFoods.find((x) => x.id === rid);
-                    return (
-                      <span
-                        key={rid}
-                        className="px-2.5 py-1 rounded-xl bg-amber-400/15 border border-amber-300/40 text-amber-200 font-display font-black text-sm"
-                      >
-                        {f?.word}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              data-tv-focusable="true"
-              onClick={() => speakOrderPrompt(kitchenOrder)}
-              className="h-10 px-4 rounded-xl bg-sky-500/20 hover:bg-sky-500/30 border border-sky-400/40 text-sky-200 font-black text-xs flex items-center gap-1.5 shrink-0 cursor-pointer"
-            >
-              <Volume2 className="w-4 h-4" />
-              <span>Escuchar pedido</span>
-            </button>
-          </div>
-
-          {/* Pantry Grid */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-7 gap-2.5">
-            {kitchenFoods.map((food) => {
-              const selected = trayIds.includes(food.id);
-              return (
-                <button
-                  key={food.id}
-                  type="button"
-                  data-tv-focusable="true"
-                  onClick={() => handleAddIngredient(food.id, food.word)}
-                  className={`p-3 rounded-2xl border-2 border-b-4 flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer ${
-                    selected
-                      ? 'bg-emerald-500/25 border-emerald-400 text-white scale-[1.03] shadow-lg'
-                      : 'bg-[#19234A] hover:bg-[#223066] border-[#2E3E78] text-sky-100'
-                  }`}
-                >
-                  <KidsVocabSvg iconId={food.iconId} size={46} />
-                  <span className="font-display font-black text-sm text-white leading-tight text-center">
-                    {food.word}
-                  </span>
-                  {ageGroup === '3-5' && (
-                    <span className="text-[10px] font-bold text-sky-300/80">{food.esWord}</span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Serving Tray & Action */}
-          <div className="mt-auto rounded-2xl bg-[#0F152B] border border-white/10 p-3 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-black text-sky-200">Tu bandeja:</span>
-              {trayIds.length === 0 ? (
-                <span className="text-xs font-bold text-slate-400">
-                  Toca los ingredientes del pedido arriba
-                </span>
-              ) : (
-                trayIds.map((tid) => {
-                  const f = kitchenFoods.find((x) => x.id === tid);
-                  return (
-                    <span
-                      key={tid}
-                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/10 text-xs font-black text-white"
-                    >
-                      <KidsVocabSvg iconId={f?.iconId || 'apple'} size={20} />
-                      <span>{f?.word}</span>
-                    </span>
-                  );
-                })
-              )}
-              {kitchenFeedback === 'retry' && (
-                <span className="text-xs font-black text-rose-300">
-                  Revisa los ingredientes del ticket e inténtalo otra vez
-                </span>
-              )}
-              {kitchenFeedback === 'ok' && (
-                <span className="inline-flex items-center gap-1 text-xs font-black text-emerald-300">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Pedido perfecto. +3 estrellas</span>
-                </span>
-              )}
-            </div>
-
-            <KidsSquishButton
-              onClick={handleServeKitchen}
-              disabled={trayIds.length === 0 || kitchenFeedback === 'ok'}
-              className="px-5 rounded-xl bg-gradient-to-b from-emerald-300 to-emerald-500 border-b-4 border-emerald-700 text-slate-950 font-black text-sm flex items-center gap-2 disabled:opacity-45"
-            >
-              <Utensils className="w-4 h-4" />
-              <span>Servir Plato</span>
-            </KidsSquishButton>
-          </div>
-        </div>
+        <KidsKitchenMode
+          activeLangNativeLabel={activeLangMeta.nativeLabel}
+          ageGroup={ageGroup}
+          kitchenOrder={kitchenOrder}
+          kitchenFoods={kitchenFoods}
+          trayIds={trayIds}
+          kitchenFeedback={kitchenFeedback}
+          onSpeakOrder={speakOrderPrompt}
+          onAddIngredient={handleAddIngredient}
+          onServeKitchen={handleServeKitchen}
+        />
       )}
 
-      {/* =====================================================================
-       * SUBMODE 3: PUENTE LÓGICO (PRE-CODING DIRECCIONAL)
-       * ===================================================================== */}
       {subMode === 'logic' && (
-        <div className="flex-1 min-h-0 flex flex-col lg:flex-row gap-3 overflow-y-auto no-scrollbar p-1">
-          {/* Interactive Tile Board */}
-          <div className="flex-1 rounded-2xl bg-[#0B1126] border border-cyan-400/25 p-3 flex flex-col items-center justify-center gap-2">
-            <div className="w-full flex items-center justify-between text-xs font-black">
-              <span className="text-cyan-300">Programa los pasos para llegar al cofre</span>
-              <button
-                type="button"
-                data-tv-focusable="true"
-                onClick={newLogicPuzzle}
-                className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-white flex items-center gap-1 cursor-pointer"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Nuevo Mapa</span>
-              </button>
-            </div>
-
-            <div
-              className="grid gap-1.5 sm:gap-2 w-full max-w-[360px]"
-              style={{ gridTemplateColumns: `repeat(${logicLevel.cols}, minmax(0, 1fr))` }}
-            >
-              {Array.from({ length: logicLevel.rows * logicLevel.cols }).map((_, flatIdx) => {
-                const x = flatIdx % logicLevel.cols;
-                const y = Math.floor(flatIdx / logicLevel.cols);
-                const isPlayer = playerPos.x === x && playerPos.y === y;
-                const isGoal = logicLevel.goal.x === x && logicLevel.goal.y === y;
-                const isRock = logicLevel.rocks.some((r) => r.x === x && r.y === y);
-                const isBonus =
-                  !collectedBonus &&
-                  logicLevel.bonusStar &&
-                  logicLevel.bonusStar.x === x &&
-                  logicLevel.bonusStar.y === y;
-
-                return (
-                  <div
-                    key={`${x}-${y}`}
-                    className={`aspect-square rounded-xl border-2 flex items-center justify-center transition-all ${
-                      isPlayer
-                        ? 'bg-amber-400/25 border-amber-300 scale-105'
-                        : isGoal
-                        ? 'bg-emerald-500/25 border-emerald-400'
-                        : isRock
-                        ? 'bg-slate-800 border-slate-700'
-                        : 'bg-[#172149] border-[#26356F]'
-                    }`}
-                  >
-                    {isPlayer ? (
-                      <KidsAnimatedMascotSvg id={activeMascotId} size={36} />
-                    ) : isGoal ? (
-                      <Trophy className="w-6 h-6 text-emerald-300" />
-                    ) : isRock ? (
-                      <KidsVocabSvg iconId="mountain" size={32} />
-                    ) : isBonus ? (
-                      <Star className="w-5 h-5 fill-amber-300 text-amber-300" />
-                    ) : null}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Direction Command Queue & Pad */}
-          <div className="lg:w-72 shrink-0 rounded-2xl bg-[#0F152B] border border-white/10 p-3 flex flex-col justify-between gap-3">
-            <div>
-              <div className="flex items-center justify-between text-xs font-black text-sky-200 mb-2">
-                <span>Secuencia ({program.length}/10)</span>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    disabled={isRunningLogic || program.length === 0}
-                    onClick={() => setProgram((p) => p.slice(0, -1))}
-                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-40 cursor-pointer"
-                    aria-label="Borrar último paso"
-                  >
-                    <Delete className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    disabled={isRunningLogic || program.length === 0}
-                    onClick={() => {
-                      setProgram([]);
-                      setPlayerPos(logicLevel.start);
-                      setLogicStatus('idle');
-                    }}
-                    className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white disabled:opacity-40 cursor-pointer"
-                    aria-label="Limpiar ruta"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="min-h-[60px] rounded-xl bg-[#0A0F20] border border-white/10 p-2 flex flex-wrap gap-1.5 content-start">
-                {program.length === 0 ? (
-                  <span className="text-[11px] font-bold text-slate-400">
-                    Pulsa las flechas abajo para crear el camino
-                  </span>
-                ) : (
-                  program.map((step, i) => (
-                    <span
-                      key={i}
-                      className="w-7 h-7 rounded-lg bg-cyan-500/20 border border-cyan-400/40 text-cyan-200 flex items-center justify-center"
-                    >
-                      {renderDirArrow(step)}
-                    </span>
-                  ))
-                )}
-              </div>
-            </div>
-
-            {/* Arrow Controls */}
-            <div className="grid grid-cols-3 gap-1.5 max-w-[190px] mx-auto w-full">
-              <div />
-              <button
-                type="button"
-                data-tv-focusable="true"
-                disabled={isRunningLogic || program.length >= 10}
-                onClick={() => setProgram((p) => [...p, 'up'])}
-                className="h-11 rounded-xl bg-[#1C285B] hover:bg-[#283982] border-b-4 border-[#0E1535] text-white flex items-center justify-center cursor-pointer disabled:opacity-40"
-                aria-label="Arriba"
-              >
-                <ArrowUp className="w-5 h-5" />
-              </button>
-              <div />
-              <button
-                type="button"
-                data-tv-focusable="true"
-                disabled={isRunningLogic || program.length >= 10}
-                onClick={() => setProgram((p) => [...p, 'left'])}
-                className="h-11 rounded-xl bg-[#1C285B] hover:bg-[#283982] border-b-4 border-[#0E1535] text-white flex items-center justify-center cursor-pointer disabled:opacity-40"
-                aria-label="Izquierda"
-              >
-                <ArrowLeft className="w-5 h-5" />
-              </button>
-              <button
-                type="button"
-                data-tv-focusable="true"
-                disabled={isRunningLogic || program.length >= 10}
-                onClick={() => setProgram((p) => [...p, 'down'])}
-                className="h-11 rounded-xl bg-[#1C285B] hover:bg-[#283982] border-b-4 border-[#0E1535] text-white flex items-center justify-center cursor-pointer disabled:opacity-40"
-                aria-label="Abajo"
-              >
-                <ArrowDown className="w-5 h-5" />
-              </button>
-              <button
-                type="button"
-                data-tv-focusable="true"
-                disabled={isRunningLogic || program.length >= 10}
-                onClick={() => setProgram((p) => [...p, 'right'])}
-                className="h-11 rounded-xl bg-[#1C285B] hover:bg-[#283982] border-b-4 border-[#0E1535] text-white flex items-center justify-center cursor-pointer disabled:opacity-40"
-                aria-label="Derecha"
-              >
-                <ArrowRight className="w-5 h-5" />
-              </button>
-            </div>
-
-            {logicStatus === 'won' && (
-              <div className="text-center text-xs font-black text-emerald-300">
-                Ruta completada. +{collectedBonus ? 5 : 4} estrellas
-              </div>
-            )}
-            {logicStatus === 'bumped' && (
-              <div className="text-center text-xs font-black text-rose-300">
-                Obstáculo en el camino. Ajusta un paso
-              </div>
-            )}
-            {logicStatus === 'short' && (
-              <div className="text-center text-xs font-black text-amber-300">
-                Faltaron pasos hasta el cofre
-              </div>
-            )}
-
-            <KidsSquishButton
-              onClick={logicStatus === 'won' ? newLogicPuzzle : runLogicProgram}
-              disabled={isRunningLogic || (logicStatus !== 'won' && program.length === 0)}
-              className="w-full rounded-xl bg-gradient-to-b from-cyan-300 to-cyan-500 border-b-4 border-cyan-700 text-slate-950 font-black text-sm flex items-center justify-center gap-1.5 disabled:opacity-45"
-            >
-              <Play className="w-4 h-4 fill-current" />
-              <span>{logicStatus === 'won' ? 'Siguiente Mapa' : 'Ejecutar Ruta'}</span>
-            </KidsSquishButton>
-          </div>
-        </div>
+        <KidsLogicBridgeMode
+          logicLevel={logicLevel}
+          program={program}
+          setProgram={setProgram}
+          playerPos={playerPos}
+          setPlayerPos={setPlayerPos}
+          isRunningLogic={isRunningLogic}
+          logicStatus={logicStatus}
+          setLogicStatus={setLogicStatus}
+          collectedBonus={collectedBonus}
+          activeMascotId={activeMascotId}
+          onNewPuzzle={newLogicPuzzle}
+          onRunProgram={runLogicProgram}
+        />
       )}
     </div>
   );

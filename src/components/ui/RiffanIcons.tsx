@@ -1911,11 +1911,11 @@ export const RiffanKidsFoxIcon: React.FC<RiffanIconProps> = ({
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
       <ToneGradientDef tone={tone} id={gradId} />
-      <g className="rtv-k-trophy" style={{ transformOrigin: '24px 26px' }}>
-        <path {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.2" d="M10 10 L17 18 H31 L38 10 L40 24 C40 33 32 39 24 39 C16 39 8 33 8 24 Z" />
-        <circle fill={paint} cx="18.5" cy="25" r="2.1" />
-        <circle fill={paint} cx="29.5" cy="25" r="2.1" />
-        <circle fill={paint} cx="24" cy="31" r="2.2" />
+      <g className="rtv-k-nudge-up" style={{ transformOrigin: '24px 26px' }}>
+        <path {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.22" d="M13 15 L24 28 L35 15 L38 24 L24 40 L10 24 Z" />
+        <path fill={paint} d="M19 19 L24 25 L29 19 Z" />
+        <circle fill={paint} cx="18" cy="22" r="2" />
+        <circle fill={paint} cx="30" cy="22" r="2" />
       </g>
     </svg>
   );
@@ -2045,4 +2045,124 @@ export const RiffanKidsMagicIcon: React.FC<RiffanIconProps> = ({
     </svg>
   );
 };
+
+export const RiffanKidsOwlIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-wave" style={{ transformOrigin: '24px 24px' }}>
+        <path {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.2" d="M12 18 L16 11 L24 16 L32 11 L36 18 C36 30 32 39 24 39 C16 39 12 30 12 18 Z" />
+        <circle {...BASE_STROKE} stroke={paint} fill="#fff" cx="19" cy="22" r="5" />
+        <circle {...BASE_STROKE} stroke={paint} fill="#fff" cx="29" cy="22" r="5" />
+        <circle fill={paint} cx="19" cy="22" r="2" />
+        <circle fill={paint} cx="29" cy="22" r="2" />
+        <path fill={paint} d="M22 29 L24 33 L26 29 Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanKidsPandaIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-nudge-up" style={{ transformOrigin: '24px 26px' }}>
+        <circle fill={paint} fillOpacity="0.25" cx="15" cy="15" r="5" />
+        <circle fill={paint} fillOpacity="0.25" cx="33" cy="15" r="5" />
+        <circle {...BASE_STROKE} stroke={paint} fill="#fff" cx="24" cy="26" r="14" />
+        <ellipse fill={paint} cx="18" cy="25" rx="3.5" ry="5" transform="rotate(-15 18 25)" />
+        <ellipse fill={paint} cx="30" cy="25" rx="3.5" ry="5" transform="rotate(15 30 25)" />
+        <circle fill="#fff" cx="17.5" cy="24" r="1.2" />
+        <circle fill="#fff" cx="30.5" cy="24" r="1.2" />
+        <path fill={paint} d="M21 31 Q24 34 27 31 Z" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanKidsCatIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-card-fan" style={{ transformOrigin: '24px 26px' }}>
+        <path fill={paint} d="M12 17 L18 23 L14 27 Z" />
+        <path fill={paint} d="M36 17 L30 23 L34 27 Z" />
+        <circle {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.18" cx="24" cy="26" r="13" />
+        <circle fill={paint} cx="19" cy="24" r="2" />
+        <circle fill={paint} cx="29" cy="24" r="2" />
+        <path fill={paint} d="M22 30 L24 32 L26 30 Z" />
+        <path stroke={paint} strokeWidth="1.8" d="M9 28 L15 29 M9 33 L14 32 M39 28 L33 29 M39 33 L34 32" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanKidsBearIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-nudge-up" style={{ transformOrigin: '24px 26px' }}>
+        <circle fill={paint} fillOpacity="0.3" cx="14" cy="14" r="6" />
+        <circle fill={paint} fillOpacity="0.3" cx="34" cy="14" r="6" />
+        <circle {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.16" cx="24" cy="26" r="13" />
+        <circle fill={paint} cx="18" cy="23" r="2" />
+        <circle fill={paint} cx="30" cy="23" r="2" />
+        <ellipse fill={paint} fillOpacity="0.5" cx="24" cy="29" rx="5" ry="3.5" />
+        <circle fill={paint} cx="24" cy="28" r="2" />
+      </g>
+    </svg>
+  );
+};
+
+export const RiffanKidsRabbitIcon: React.FC<RiffanIconProps> = ({
+  size = 24,
+  animate = 'hover',
+  tone = 'kids',
+  className = '',
+  ...props
+}) => {
+  const { gradId, paint } = useRiffanIconDefs(tone);
+  return (
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width={size} height={size} aria-hidden="true" data-anim={animate} className={`rtv-ico shrink-0 ${className}`} {...props}>
+      <ToneGradientDef tone={tone} id={gradId} />
+      <g className="rtv-k-nudge-up" style={{ transformOrigin: '24px 28px' }}>
+        <ellipse {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.2" cx="19" cy="11" rx="3.5" ry="9" />
+        <ellipse {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.2" cx="29" cy="11" rx="3.5" ry="9" />
+        <circle {...BASE_STROKE} stroke={paint} fill={paint} fillOpacity="0.16" cx="24" cy="29" r="11" />
+        <circle fill={paint} cx="20" cy="27" r="1.8" />
+        <circle fill={paint} cx="28" cy="27" r="1.8" />
+        <polygon fill={paint} points="23,31 25,31 24,33" />
+      </g>
+    </svg>
+  );
+};
+
 

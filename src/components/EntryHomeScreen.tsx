@@ -35,6 +35,8 @@ import {
   RiffanPlayIcon,
   RiffanSurpriseIcon,
   RiffanUsersIcon,
+  RiffanFootballIcon,
+  RiffanDiceIcon,
 } from './ui/RiffanIcons';
 
 interface EntryHomeScreenProps {
@@ -560,7 +562,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
             <div className="relative z-10 flex items-center justify-between gap-2">
               <div className="w-9 h-9 rounded-xl bg-emerald-500/12 border border-emerald-400/25 flex items-center justify-center text-emerald-400 shrink-0 group-hover:scale-105 transition-transform">
-                <Trophy className="w-4 h-4" />
+                <RiffanFootballIcon size={18} animate="hover" />
               </div>
 
               {liveMatchesCount > 0 ? (
@@ -700,7 +702,7 @@ export const EntryHomeScreen: React.FC<EntryHomeScreenProps> = ({
 
             <div className="relative z-10 flex items-center justify-between gap-2">
               <div className="w-9 h-9 rounded-xl bg-fuchsia-500/12 border border-fuchsia-400/25 flex items-center justify-center text-fuchsia-400 shrink-0 group-hover:scale-105 transition-transform">
-                <Gamepad2 className="w-4 h-4" />
+                <RiffanDiceIcon size={18} animate="hover" />
               </div>
 
               <div className="flex items-center -space-x-1.5" aria-hidden="true">
